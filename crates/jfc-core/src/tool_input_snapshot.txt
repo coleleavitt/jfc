@@ -1,0 +1,201 @@
+Edit
+  to_value={"file_path":"a.rs","old_string":"x","new_string":"y","replace_all":true}
+  summary=a.rs
+Write
+  to_value={"file_path":"a.rs","content":"c"}
+  summary=a.rs
+Read
+  to_value={"file_path":"a.rs","offset":3,"limit":9}
+  summary=a.rs
+Bash
+  to_value={"command":"ls","timeout":500,"workdir":"/tmp"}
+  summary=ls in /tmp
+Glob
+  to_value={"pattern":"*.rs","path":"src"}
+  summary=*.rs in src
+Grep
+  to_value={"pattern":"fn","path":"src","glob":"*.rs","output_mode":"content"}
+  summary=fn in src
+Search
+  to_value={"query":"foo","path":"src"}
+  summary=foo in src
+ApplyPatch
+  to_value={"patch":"diff"}
+  summary=apply patch (4 bytes)
+TaskCreate
+  to_value={"subject":"s","description":"d","blocked_by":["t1"],"risk":"low"}
+  summary=create: s
+TaskUpdate
+  to_value={"task_id":"t1","status":"done","owner":"me"}
+  summary=update: t1
+TaskList
+  to_value={"status_filter":"pending"}
+  summary=list tasks (pending)
+TaskDone
+  to_value={"task_id":"t1"}
+  summary=done: t1
+TaskStop
+  to_value={"task_id":"t1"}
+  summary=stop: t1
+TaskGet
+  to_value={"task_id":"t1"}
+  summary=get: t1
+TaskValidate
+  to_value={}
+  summary=validate task graph
+Task
+  to_value={"description":"d","prompt":"p","run_in_background":true,"subagent_type":"explore"}
+  summary=d (background)
+Skill
+  to_value={"name":"sk","args":"a"}
+  summary=sk: a
+ToolSearch
+  to_value={"query":"q","limit":5}
+  summary=tool search: q
+ToolSuggest
+  to_value={"intent":"i","limit":5}
+  summary=tool suggest: i
+MemoryCreate
+  to_value={"level":"user","memory_type":"pref","scope":"private","body":"b"}
+  summary=remember (user): b
+MemoryDelete
+  to_value={"path":"/m"}
+  summary=forget: /m
+TeamCreate
+  to_value={"team_name":"t","description":"d"}
+  summary=create team: t
+TeamDelete
+  to_value={}
+  summary=cleanup team
+SendMessage
+  to_value={"to":"a","message":"m","summary":"s"}
+  summary=→ a: s
+TeamMemberMode
+  to_value={"member_name":"a","mode":"plan"}
+  summary=set a → plan
+code_index
+  to_value={"path":"src","query":"q","kind":"function","max_entries":10}
+  summary=code index (kind=function, query=q, path=src)
+graph_query
+  to_value={"query":"fn(\"x\")","max_tokens":2000,"include_handles":false}
+  summary=fn("x")
+run_coverage
+  to_value={"lcov_path":"/c","include_untested_list":false}
+  summary=coverage(/c)
+symbol_edit
+  to_value={"handle":"fn:x","new_content":"...","validate":true,"dispatch_cascade":true}
+  summary=edit: fn:x
+post_bounty
+  to_value={"description":"d","budget":100,"acceptance_criteria":"ac","max_solvers":3,"auto_dispatch":true}
+  summary=bounty (100 tok): d
+market_status
+  to_value={"bounty_id":"b1"}
+  summary=market status: b1
+run_bounty
+  to_value={"bounty_id":"b1","max_solvers":2}
+  summary=run bounty: b1
+ExitPlanMode
+  to_value={"plan":"p"}
+  summary=exit plan mode: p
+MultiEdit
+  to_value={"file_path":"a.rs","edits":[{"old":"x"}]}
+  summary=a.rs (1 edit)
+AskUserQuestion
+  to_value={"questions":[{"question":"q?","options":[{"label":"a"}],"multiSelect":true}]}
+  summary=ask: q?
+WebFetch
+  to_value={"url":"http://x","prompt":"p"}
+  summary=fetch: http://x
+WebSearch
+  to_value={"query":"q","max_results":5}
+  summary=search: q
+CronCreate
+  to_value={"schedule":"@daily","command":"c","description":"d"}
+  summary=cron `@daily`: d
+CronList
+  to_value={}
+  summary=list cron jobs
+CronDelete
+  to_value={"id":"j1"}
+  summary=delete cron: j1
+ScheduleWakeup
+  to_value={"delay_seconds":60,"prompt":"p","reason":"r"}
+  summary=wake in 60s: r
+Monitor
+  to_value={"command":"c","until":"done"}
+  summary=monitor `c` until /done/
+LSP
+  to_value={"kind":"hover","file":"a.rs","line":3,"column":5}
+  summary=lsp hover a.rs:3
+PushNotification
+  to_value={"message":"m","title":"t"}
+  summary=t: m
+RemoteTrigger
+  to_value={"trigger_id":"ci","payload":{"x":1}}
+  summary=trigger: ci
+EnterPlanMode
+  to_value={"reason":"r"}
+  summary=enter plan mode: r
+EnterWorktree
+  to_value={"name":"w","branch":"b"}
+  summary=enter worktree w (b)
+ExitWorktree
+  to_value={}
+  summary=exit worktree
+NotebookRead
+  to_value={"path":"n.ipynb"}
+  summary=n.ipynb
+NotebookEdit
+  to_value={"path":"n.ipynb","cell_id":"c1","new_source":"s","edit_mode":"insert"}
+  summary=notebook insert n.ipynb#c1
+ScratchpadRead
+  to_value={"key":"k"}
+  summary=scratchpad read: k
+ScratchpadWrite
+  to_value={"key":"k","value":"v"}
+  summary=scratchpad write: k
+DesignProjectCreate
+  to_value={"title":"Deck"}
+  summary=design project: Deck
+DesignProjectList
+  to_value={}
+  summary=list design projects
+DesignProjectSetMeta
+  to_value={"project_id":"p1","title":"Deck 2","is_design_system":true}
+  summary=design project meta: p1
+DesignListFiles
+  to_value={"project_id":"p1"}
+  summary=design files: p1
+DesignReadFile
+  to_value={"project_id":"p1","path":"index.html"}
+  summary=design read: p1/index.html
+DesignWriteFile
+  to_value={"project_id":"p1","path":"index.html","content":"<h1>x</h1>","asset_name":"Landing"}
+  summary=design write: p1/index.html
+DesignDeleteFile
+  to_value={"project_id":"p1","path":"old.html"}
+  summary=design delete: p1/old.html
+DesignCopyFile
+  to_value={"project_id":"p1","from_path":"a.html","to_path":"b.html"}
+  summary=design copy: p1/a.html -> b.html
+DesignRegisterAsset
+  to_value={"project_id":"p1","name":"Landing","path":"index.html"}
+  summary=design asset: p1/index.html (Landing)
+DesignUnregisterAsset
+  to_value={"project_id":"p1","path":"index.html"}
+  summary=design unasset: p1/index.html
+DesignBundleHtml
+  to_value={"input":"index.html","output":"standalone.html","require_thumbnail":false}
+  summary=bundle html: index.html -> standalone.html
+DesignHandoff
+  to_value={"project_dir":".","feature":"Onboarding","files":["index.html"]}
+  summary=design handoff: Onboarding in .
+DesignCheckSystem
+  to_value={"project_dir":"."}
+  summary=check design system: .
+DesignCapabilities
+  to_value={"format":"markdown"}
+  summary=design capabilities
+DesignServe
+  to_value={"project_dir":".","port":4321,"file":"index.html"}
+  summary=serve design: ./index.html

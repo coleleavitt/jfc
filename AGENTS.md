@@ -1,0 +1,38 @@
+- Rust workspace: 23 crates under `crates/`:
+  - `jfc-agents` — agent and skill loading, parsing, and prompt construction
+  - `jfc-anthropic-sdk` — Anthropic Messages API client (streaming, tool use, thinking)
+  - `jfc-audit` — audit and safety analysis helpers
+  - `jfc-auth` — authentication helpers
+  - `jfc-bridge` — integration bridge utilities
+  - `jfc-changeset` — change-set tracking
+  - `jfc-config` — configuration loading and policy
+  - `jfc-core` — shared core types
+  - `jfc-daemon` — background daemon, cron, and wakeup scheduling
+  - `jfc-economy` — token/cost tracking, budget enforcement, usage metering
+  - `jfc-graph` — agent graph execution engine and code graph support
+  - `jfc-learn` — learning, memory consolidation, and dreaming jobs
+  - `jfc-markdown` — markdown rendering/parsing support
+  - `jfc-mcp` — MCP registry and tool advertising
+  - `jfc-memory` — persistent memory store and recall
+  - `jfc-provider` — provider abstraction shared by concrete backends
+  - `jfc-providers` — concrete provider implementations
+  - `jfc-remote` — remote-control support
+  - `jfc-session` — session and task persistence
+  - `jfc-theme` — terminal theme support
+  - `jfc-tools` — shared tool helpers
+  - `jfc-ui` — terminal UI (ratatui-based)
+  - `jfc-web` — web support
+- Edition 2024, resolver 2.
+- Run `cargo build` from workspace root. Run `cargo test` from workspace root.
+- Run `cargo clippy --workspace` for linting.
+- Use `thiserror` for error types, `tracing` for instrumentation, `tokio` for async runtime.
+- Prefer traits over functions, enums over strings, impl blocks over derive clones.
+- Zero-cost abstractions. No unnecessary allocations.
+- Use snake_case for all identifiers (Rust standard).
+- Keep modules focused — one responsibility per module.
+- The default branch is `main`.
+
+## Project Guidance
+
+- Root `CLAUDE.md` is intentionally present so JFC dogfoods its own context loader.
+- Keep generated runtime state, crash dumps, profiling output, and vendored research out of source changes unless the task explicitly concerns them.

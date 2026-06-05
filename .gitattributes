@@ -1,0 +1,18 @@
+# Normalize line endings to LF on checkin.
+* text=auto eol=lf
+
+# Rust source
+*.rs text diff=rust
+
+# Treat vendored research tooling as non-source for language stats.
+crates/jfc-graph/research/** linguist-vendored
+
+# Lockfiles and generated artifacts excluded from diffs/stats.
+Cargo.lock -diff linguist-generated
+*.json linguist-generated=false
+
+# Binary assets — no text normalization.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

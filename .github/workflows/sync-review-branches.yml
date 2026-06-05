@@ -1,0 +1,48 @@
+name: Sync review branches
+
+# Keeps the standing review PRs (review/full-codebase, review/rust-only ->
+# review-base) in lockstep with master. Each branch is a single commit whose
+# tree is a snapshot of master, parented on the empty review-base anchor, so
+# the PR diff is always "the entire codebase at current master".
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild review branches from master
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          BASE=$(git rev-parse origin/review-base)
+          SHORT=$(git rev-parse --short origin/master)
+
+          # Full codebase snapshot
+          FULL=$(git commit-tree "origin/master^{tree}" -p "$BASE" \
+            -m "review: entire codebase at master ($SHORT)")
+          git push --force origin "$FULL:refs/heads/review/full-codebase"
+
+          # Rust-only snapshot (*.rs + Cargo.toml/Cargo.lock)
+          export GIT_INDEX_FILE=$(mktemp)
+          git read-tree --empty
+          git ls-tree -r origin/master \
+            | grep -E '\.rs$|Cargo\.(toml|lock)$' \
+            | awk -F'\t' '{split($1,a," "); print a[1]" "a[3]" 0\t"$2}' \
+            | git update-index --index-info
+          TREE=$(git write-tree)
+          unset GIT_INDEX_FILE
+          RUST=$(git commit-tree "$TREE" -p "$BASE" \
+            -m "review: all Rust code at master ($SHORT)")
+          git push --force origin "$RUST:refs/heads/review/rust-only"

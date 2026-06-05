@@ -1,0 +1,21 @@
+[package]
+name = "jfc-provider"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base64 = "0.22"
+futures = { workspace = true }
+jfc-core = { path = "../jfc-core" }
+rand = "0.10.1"
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+http = "1"
+tokio = { workspace = true, features = ["macros", "rt"] }

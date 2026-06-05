@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --workspace
+      - name: Test
+        run: cargo test --workspace
+
+  public-build:
+    name: public build (no sensitive features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Build without anthropic-oauth-sensitive
+        run: cargo build -p jfc-ui --bin jfc --no-default-features --features hooks,permission-automation
+
+  integration:
+    name: integration (CLI/daemon e2e)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Configure git (e2e tests shell out to git)
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+      # Real end-to-end coverage: drive the compiled `jfc` binary against
+      # temp repos (changes_cli_e2e) and exercise the cross-process plan
+      # store (plan_e2e). Hermetic — no network, temp dirs only.
+      - name: CLI + cross-session integration tests
+        run: cargo test -p jfc-ui --test changes_cli_e2e --test plan_e2e
+
+  perf:
+    name: performance baseline gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      # Order-of-magnitude regression gate on the hot persistence paths
+      # (change-set + ledger stores). Generous slack so it only trips on a
+      # real regression, not CI jitter; bump JFC_PERF_SLACK to relax further
+      # on a slow shared runner.
+      - name: Performance baseline
+        env:
+          JFC_PERF_SLACK: "3"
+        run: cargo test -p jfc-changeset --test perf_baseline

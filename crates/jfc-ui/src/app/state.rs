@@ -1,0 +1,1739 @@
+use indexmap::IndexMap;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
+    time::Instant,
+};
+
+use ratatui::layout::Rect;
+use ratatui::style::Style;
+use ratatui::widgets::TableState;
+use ratatui_textarea::TextArea;
+use tokio::sync::Mutex;
+
+use crate::auto_mode::AutoModeConfig;
+use crate::context::{ReadDedupCache, ToolContext};
+use crate::query::QueryCache;
+use crate::render_cache::RenderCache;
+use crate::runtime::{StreamLifecycleStatus, StreamRequestMetadata};
+use crate::slate::SlateRouter;
+use crate::theme::Theme;
+use crate::types::*;
+use jfc_provider::{ModelId, ModelInfo, Provider, ProviderId};
+use jfc_session::TaskId;
+
+use super::{PendingApproval, PermissionMode, load_recent_models};
+
+pub const DEFAULT_CONTEXT_WINDOW_TOKENS: usize = 200_000;
+
+/// The expanded panel state cycled by Ctrl+T — mirrors Claude Code's
+/// `expandedView: "none" | "tasks" | "teammates"` state machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExpandedView {
+    /// No expanded panel — just the normal pinned task row.
+    #[default]
+    None,
+    /// Full task list panel is showing.
+    Tasks,
+    /// Teammates/agents expanded view showing transcript previews.
+    Teammates,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TranscriptSearch {
+    pub query: String,
+    pub matches: Vec<usize>,
+    pub cursor: usize,
+}
+
+/// Ctrl+R reverse-history search over past user prompts (bash-style).
+/// `all` is every prior prompt newest-first; `results` are indices into it
+/// matching `query`; `selected` indexes into `results`.
+#[derive(Debug, Clone, Default)]
+pub struct PromptSearch {
+    pub query: String,
+    pub all: Vec<String>,
+    pub results: Vec<usize>,
+    pub selected: usize,
+}
+
+impl PromptSearch {
+    /// The currently-highlighted prompt, if any.
+    pub fn selected_text(&self) -> Option<&str> {
+        self.results
+            .get(self.selected)
+            .and_then(|&i| self.all.get(i))
+            .map(String::as_str)
+    }
+
+    /// Recompute `results` for the current `query` (case-insensitive
+    /// substring), clamping `selected` into range.
+    pub fn refilter(&mut self) {
+        let q = self.query.to_lowercase();
+        self.results = self
+            .all
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| q.is_empty() || s.to_lowercase().contains(&q))
+            .map(|(i, _)| i)
+            .collect();
+        if self.selected >= self.results.len() {
+            self.selected = self.results.len().saturating_sub(1);
+        }
+    }
+}
+
+/// Priority levels for the message queue. Higher priority messages
+/// are drained first. Mirrors CC 2.1.144's `getCommandsByMaxPriority`
+/// which supports "now" (jump the queue), "next" (drain between tool
+/// batches), and implicit "later" (drain at turn end).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum QueuePriority {
+    /// Drain at end of turn (default for normal user submissions).
+    Later = 0,
+    /// Drain between tool batches (mid-loop steering).
+    Next = 1,
+    /// Immediate — jump the queue, used by interrupt-on-submit.
+    Now = 2,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueuedPrompt {
+    pub text: String,
+    pub is_meta: bool,
+    /// Priority level controlling when this prompt is drained.
+    pub priority: QueuePriority,
+    /// Image/PDF attachments captured at queue time. If the user pasted
+    /// an image and then typed a prompt while another turn was already
+    /// streaming, the referenced `[Image #N]` attachments are extracted
+    /// from `app.pasted_images` and pinned to THIS prompt so they
+    /// attach atomically when `drain_queued_prompts` promotes the entry.
+    pub attachments: Vec<crate::attachments::Attachment>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeferredToolUse {
+    pub id: String,
+    pub name: String,
+    pub input_preview: String,
+    pub reason: String,
+    pub queued_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolUseSummary {
+    pub summary: String,
+    pub preceding_tool_use_ids: Vec<String>,
+    pub created_at: Instant,
+}
+
+/// Priority-based message queue wrapping a VecDeque with priority semantics.
+/// Provides CC 2.1.144-style operations: enqueue with priority, dequeue by
+/// max priority, filter, pop editable, etc.
+#[derive(Debug, Clone, Default)]
+pub struct MessageQueue {
+    entries: std::collections::VecDeque<QueuedPrompt>,
+}
+
+impl MessageQueue {
+    pub fn new() -> Self {
+        Self {
+            entries: std::collections::VecDeque::new(),
+        }
+    }
+
+    /// Enqueue a prompt with the given priority.
+    pub fn push(&mut self, prompt: QueuedPrompt) {
+        self.entries.push_back(prompt);
+    }
+
+    /// Convenience: push with Later priority (default for user submissions).
+    pub fn push_later(
+        &mut self,
+        text: String,
+        is_meta: bool,
+        attachments: Vec<crate::attachments::Attachment>,
+    ) {
+        self.entries.push_back(QueuedPrompt {
+            text,
+            is_meta,
+            priority: QueuePriority::Later,
+            attachments,
+        });
+    }
+
+    /// Dequeue the highest-priority entry. Among same-priority entries,
+    /// FIFO order is preserved (front of the deque wins).
+    pub fn pop_max_priority(&mut self) -> Option<QueuedPrompt> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        let max_idx = self
+            .entries
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, e)| e.priority)
+            .map(|(i, _)| i)?;
+        self.entries.remove(max_idx)
+    }
+
+    /// Dequeue entries matching a minimum priority level (inclusive).
+    /// Returns entries sorted highest-priority-first, FIFO within same level.
+    pub fn drain_at_least(&mut self, min_priority: QueuePriority) -> Vec<QueuedPrompt> {
+        let mut drained = Vec::new();
+        let mut remaining = std::collections::VecDeque::new();
+        for entry in self.entries.drain(..) {
+            if entry.priority >= min_priority {
+                drained.push(entry);
+            } else {
+                remaining.push_back(entry);
+            }
+        }
+        self.entries = remaining;
+        // Stable sort: highest priority first, FIFO within same level
+        drained.sort_by_key(|b| std::cmp::Reverse(b.priority));
+        drained
+    }
+
+    /// Drain ALL entries (turn-end full drain), ordered highest-priority
+    /// first with FIFO preserved within a level. The previous implementation
+    /// drained in raw insertion order, which silently ignored the
+    /// `QueuePriority` of each entry — so a `Now`/`Next` steering prompt
+    /// queued behind older `Later` prompts would not jump ahead. With every
+    /// current caller enqueuing `Later`, the stable sort is a no-op; it makes
+    /// the priority levels actually take effect once callers start using them.
+    pub fn drain_all(&mut self) -> Vec<QueuedPrompt> {
+        let mut drained: Vec<QueuedPrompt> = self.entries.drain(..).collect();
+        drained.sort_by_key(|p| std::cmp::Reverse(p.priority));
+        drained
+    }
+
+    /// Pop the last entry (for Up-arrow "edit queued" feature).
+    pub fn pop_back(&mut self) -> Option<QueuedPrompt> {
+        self.entries.pop_back()
+    }
+
+    /// Pop the first entry (FIFO drain for legacy compat).
+    pub fn pop_front(&mut self) -> Option<QueuedPrompt> {
+        self.entries.pop_front()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    pub fn get(&self, index: usize) -> Option<&QueuedPrompt> {
+        self.entries.get(index)
+    }
+
+    /// Iterate (for rendering, contains checks, etc.).
+    pub fn iter(&self) -> impl Iterator<Item = &QueuedPrompt> {
+        self.entries.iter()
+    }
+}
+
+// Support indexing for backward compat with tests that do `app.queued_prompts[0]`
+impl std::ops::Index<usize> for MessageQueue {
+    type Output = QueuedPrompt;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.entries[index]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkRecoveryProvider {
+    Anthropic,
+    AnthropicOAuth,
+    OpenWebUI,
+}
+
+impl NetworkRecoveryProvider {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::AnthropicOAuth => "anthropic-oauth",
+            Self::OpenWebUI => "openwebui",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkRecoveryReason {
+    Overloaded,
+    RateLimited,
+    ServerError,
+    Transient,
+}
+
+impl NetworkRecoveryReason {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Overloaded => "overloaded",
+            Self::RateLimited => "rate limited",
+            Self::ServerError => "server error",
+            Self::Transient => "retryable",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NetworkRecoveryStatus {
+    pub provider: NetworkRecoveryProvider,
+    pub reason: NetworkRecoveryReason,
+    pub status_code: Option<u16>,
+    pub attempts: u32,
+    pub updated_at: Instant,
+}
+
+/// An in-progress / just-released mouse selection over the transcript, in
+/// terminal cell coordinates. `anchor` is where the drag began, `head` the
+/// current cursor cell. `dragged` flips true once the cursor actually moves,
+/// distinguishing a real selection from a plain click. `finalize` is set on
+/// button-up so the next render extracts + copies the text exactly once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextSelection {
+    pub anchor: (u16, u16),
+    pub head: (u16, u16),
+    pub dragged: bool,
+    pub finalize: bool,
+    /// Set once the selection has been extracted + copied. The highlight then
+    /// persists (so the user sees what was copied) without re-copying, until
+    /// the next mouse-down, any scroll, Esc, or resize clears it. Safe under
+    /// the absolute-screen-cell model precisely because those clear points
+    /// fire the instant the cells could map to different content.
+    pub copied: bool,
+}
+
+impl TextSelection {
+    /// Normalized (top-left, bottom-right) cell span in reading order, so the
+    /// renderer can walk rows top-to-bottom regardless of drag direction.
+    pub fn ordered(&self) -> ((u16, u16), (u16, u16)) {
+        let (a, h) = (self.anchor, self.head);
+        // Order by row, then column.
+        if (a.1, a.0) <= (h.1, h.0) {
+            (a, h)
+        } else {
+            (h, a)
+        }
+    }
+}
+
+/// Granularity of a multi-click selection: double-click → word, triple → line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectKind {
+    Word,
+    Line,
+}
+
+/// A pending word/line selection from a multi-click. The handler records the
+/// clicked cell + granularity; the renderer (which holds the buffer) resolves
+/// it into a `TextSelection` span and hands it to the normal finalize path.
+#[derive(Clone, Copy, Debug)]
+pub struct SelectRequest {
+    pub col: u16,
+    pub row: u16,
+    pub kind: SelectKind,
+}
+
+pub const SPINNER: &[&str] = crate::glyphs::TASK_FRAMES;
+pub const IDLE_TICK_MS: u64 = 80;
+pub const ANIM_TICK_MS: u64 = 33;
+/// Hard idle limit for a provider stream. This must stay longer than the
+/// provider HTTP read timeout (default 300s) so the HTTP layer, not the UI
+/// watchdog, reports real network failures. Anthropic/Bedrock streams can
+/// legitimately go quiet for minutes while the model is thinking or an upstream
+/// proxy is queueing, so we keep ~1 minute of slack above the read timeout.
+/// Users who raise `JFC_STREAM_IDLE_TIMEOUT_MS` past this should raise the
+/// watchdog too, or the watchdog will fire first.
+pub const STREAM_WATCHDOG_TIMEOUT_SECS: u64 = 360;
+/// Cap on how many turns of token usage we retain for the info-sidebar
+/// sparkline. 32 datapoints fit comfortably in a 30-col-wide sidebar
+/// while still showing a meaningful trend.
+pub const TOKEN_HISTORY_CAP: usize = 32;
+pub const DEFERRED_TOOL_USES_CAP: usize = 64;
+pub const TOOL_USE_SUMMARIES_CAP: usize = 32;
+
+/// Maximum number of pending `<system-reminder>` bodies retained between
+/// user turns. Reminders come from filesystem events, MCP changes, and
+/// watcher notifications — during long idle sessions a stream of unique
+/// log lines would otherwise grow `pending_background_reminders`
+/// unbounded. Once the queue is full, the oldest reminder is dropped
+/// before a new one is pushed; on the next turn the survivors get
+/// flushed via `take_background_reminders`. 20 is enough to never lose
+/// signal in normal use, small enough that the per-turn injection stays
+/// bounded.
+pub const BACKGROUND_REMINDERS_CAP: usize = 20;
+
+pub struct BackgroundTask {
+    pub task_id: crate::ids::TaskId,
+    pub description: String,
+    pub status: crate::types::TaskLifecycle,
+    pub started_at: std::time::Instant,
+    /// When the task transitioned into a terminal state (Completed /
+    /// Failed / Aborted). `None` while the task is still alive. Used by
+    /// `render_subagent_tree` to keep the "pinned" hollow-circle row on
+    /// screen for `COMPLETED_PIN_WINDOW` *after completion*, regardless
+    /// of how long the task ran. Without this a solver that took longer
+    /// than 5 minutes would vanish the very instant it finished — the
+    /// "disappearing solver" bug.
+    pub completed_at: Option<std::time::Instant>,
+    pub summary: Option<String>,
+    pub error: Option<String>,
+    pub last_tool: Option<String>,
+    /// Raw string log (kept for daemon log compat and the collapse/expand UI).
+    pub messages: Vec<String>,
+    /// Structured message history mirroring the main chat's Vec<ChatMessage>.
+    /// Populated from AgentChunk (assistant text), TaskProgress (tool activity),
+    /// and TaskCompleted/TaskFailed events. Used by the MessageView renderer to
+    /// give the task view the same visual fidelity as the main conversation.
+    pub chat_messages: Vec<crate::types::ChatMessage>,
+    /// Cumulative tool invocations the subagent has made this run.
+    /// Mirrors v131's `toolUseCount` (cli.2.1.131.beautified.js, `jOH()`).
+    pub tool_use_count: u32,
+    /// Most recent request's input-token count (driven by `Usage` stream
+    /// events when the provider emits them, falls back to a 4-chars-per-
+    /// token byte estimate otherwise). Mirrors v131's `latestInputTokens`.
+    pub latest_input_tokens: u64,
+    /// Most recent request's cache-read token count.
+    pub latest_cache_read_tokens: u64,
+    /// Most recent request's cache-write token count.
+    pub latest_cache_write_tokens: u64,
+    /// Sum of output tokens across every API round-trip in this run.
+    /// Mirrors v131's `cumulativeOutputTokens`. The fan-UI badge displays
+    /// the latest request context plus cumulative output.
+    pub cumulative_output_tokens: u64,
+    /// Model the agent is currently using. Captured from the spawn site
+    /// so per-agent cost can be computed via `cost::cost_for(model, usage)`.
+    pub model_used: Option<String>,
+    /// Agent's own message transcript — populated by AgentChunk events
+    /// from the swarm runner. Used for transcript foregrounding (when
+    /// the user presses Enter on an agent in Ctrl+X, we render these
+    /// instead of app.messages).
+    pub agent_messages: Vec<crate::types::ChatMessage>,
+    /// Per-agent token budget. When set and `latest_input + cumulative_output`
+    /// exceeds it, the agent is forcibly terminated and an error toast
+    /// fires. Defaults to None (unlimited).
+    pub max_input_tokens: Option<u64>,
+    /// Set once per task when the budget gets crossed so we don't fire
+    /// the kill / toast multiple times.
+    pub budget_killed: bool,
+    /// Queued task id (`t<N>`) this delegated agent fulfils, if linked via
+    /// the Task tool's `parent_task_id`. Captured on `TaskStarted` so the
+    /// `TaskCompleted`/`TaskFailed` handlers — which only receive a
+    /// `task_id` (the agent's run id, not the todo id) — can look up which
+    /// `TaskStore` entry to transition. `None` for un-linked delegations.
+    pub parent_task_id: Option<String>,
+    /// Live workflow progress snapshot. Populated only for background tasks
+    /// launched by the Workflow tool (task_id starts with `bgwf_`). Updated
+    /// incrementally by `AppEvent::WorkflowProgress` handlers in the event
+    /// loop. `None` for regular subagent/swarm background tasks.
+    pub workflow_progress: Option<crate::workflows::WorkflowTaskProgress>,
+    /// Wall-clock of the agent's most recent observable activity — a
+    /// streamed chunk, a tool call, or a token/usage update. Drives the
+    /// fan's `stalled Ns` flag: a *running* agent whose `last_activity_at`
+    /// is older than the stall threshold has gone quiet (wedged on a long
+    /// tool, rate-limited, or hung) and gets an amber marker so it stands
+    /// out from agents that are actually progressing. Set at spawn and
+    /// refreshed by the same handlers that bump `last_tool`/token counts.
+    pub last_activity_at: std::time::Instant,
+}
+
+pub struct App {
+    pub theme: Theme,
+    /// Verbosity / formatting style for assistant replies. Routes
+    /// through `OutputStyle::system_prompt_suffix()` at request-build
+    /// time. `Default` is the no-op (current jfc behaviour).
+    pub output_style: crate::output_style::OutputStyle,
+    pub messages: Vec<ChatMessage>,
+    pub streaming_text: String,
+    pub streaming_reasoning: String,
+    /// v126 `responseLengthRef`: a single monotonic "response length"
+    /// accumulator, displayed as `/4` for the spinner's live token count.
+    /// It grows two ways, mirroring cli.js's `i54` reducer:
+    ///   * **chars** — every text/reasoning/tool-input delta adds its byte
+    ///     length (smooth, per-delta growth);
+    ///   * **wire floor** — each `message_delta` usage event floors it up to
+    ///     `streaming_response_baseline + output_tokens*4`, the char-equivalent
+    ///     of the server's cumulative output count.
+    ///
+    /// Because chars keep adding *on top of* each wire correction, the
+    /// displayed `bytes/4` advances smoothly instead of pinning flat to wire
+    /// and jumping ~50 every time a batched usage delta lands. Reset at the
+    /// start of each streaming turn; persists across a turn's sub-streams.
+    pub streaming_response_bytes: usize,
+    /// `responseLengthRef` value captured at the start of the current
+    /// sub-stream (cli.js `responseLengthBaseline`). The wire floor is
+    /// `baseline + output_tokens*4` because `output_tokens` is the *current
+    /// message's* cumulative count, which restarts at 0 each sub-stream — the
+    /// baseline carries forward what earlier sub-streams already accumulated.
+    /// Captured when a usage event reports fewer output tokens than the last
+    /// (a new message began); self-heals to 0 if it ever exceeds the live
+    /// accumulator (a missed turn-boundary reset).
+    pub streaming_response_baseline: usize,
+    /// True output tokens displayed in the status row, straight from the wire
+    /// `message_delta` usage events (no chars/4 estimate). Accumulated by real
+    /// per-event deltas, so it holds steady between usage events then steps by
+    /// the exact increment. Tracks the same lifecycle as
+    /// `streaming_response_bytes` (reset together) — just true values instead
+    /// of an estimate. Updated in `stream_usage.rs`.
+    pub turn_output_tokens: u64,
+    /// Loop guard for the refusal-fallback: set once this turn has already
+    /// switched to the fallback model after a refusal, so a second refusal
+    /// doesn't trigger an endless model-swap loop. Reset at each new user turn.
+    pub refusal_fallback_attempted: bool,
+    /// Server-authoritative cumulative thinking token count from `thinking_delta.estimated_tokens`.
+    /// Populated during extended-thinking phases (live thinking) or redacted-thinking blocks.
+    /// Reset at the start of each streaming turn. Displayed separately from output tokens.
+    pub streaming_thinking_tokens: u64,
+    /// Tokens freed by the most recent compaction, pending forward to the next
+    /// outbound request as `context_hint.target_tokens_saved`
+    /// (context-hint-2026-04-09 beta). Set by the CompactionDone handler;
+    /// drained into `StreamRequestOverrides` on the next send so the hint
+    /// fires exactly once. `None` when no compaction is pending acknowledgement.
+    pub pending_context_hint_tokens_saved: Option<u64>,
+    /// Visible while a provider is silently retrying a transient network/API
+    /// failure. The spinner replaces its normal cycling verb with this code
+    /// until the next real stream byte arrives.
+    pub network_recovery_status: Option<NetworkRecoveryStatus>,
+    pub network_recovery_attempts: u32,
+    /// Latest pre-content request lifecycle phase. Unlike
+    /// `network_recovery_status`, this also covers normal quiet windows:
+    /// context assembly, first-byte wait, stream-open/no-event, and fallback
+    /// attempts. Cleared on the first real stream output/tool/done/error.
+    pub stream_lifecycle: Option<StreamLifecycleStatus>,
+    /// Latest status.claude.com heartbeat. This is intentionally
+    /// best-effort UI context, not a dependency for provider requests.
+    pub claude_status: Option<crate::claude_status::ClaudeStatusSnapshot>,
+    pub claude_status_error: Option<String>,
+    pub streaming_assistant_idx: Option<usize>,
+    /// Last message ID from the API response, for `diagnostics.previous_message_id`.
+    pub last_response_id: Option<String>,
+    pub is_streaming: bool,
+    /// Updated on every inbound stream event (chunk, tool delta, done, error).
+    /// Used by the watchdog to detect stuck `is_streaming` flags — if no
+    /// stream activity arrives within `STREAM_WATCHDOG_TIMEOUT`, the flag is
+    /// force-reset to stop the 30fps animation loop.
+    pub last_stream_event_at: Option<Instant>,
+    /// Wall-clock instant the current turn's stream began. Set when
+    /// `is_streaming` flips true; cleared when it flips false. Drives the
+    /// `(5m 10s · …)` elapsed counter in the v126-style spinner — without
+    /// it, the spinner can't show how long we've been waiting.
+    pub streaming_started_at: Option<Instant>,
+    /// Wall-clock instant the *user-level turn* started. Survives across
+    /// agentic-loop iterations (each tool batch → new sub-stream
+    /// resets `streaming_started_at`, but `turn_started_at` keeps
+    /// running). Reset only when the user submits a fresh prompt OR
+    /// when the agentic loop fully concludes (no more tools to run, no
+    /// pending approvals, EndTurn). The spinner clock reads this so a
+    /// 5-step agentic loop shows `5m 10s` cumulative, not `0s` after
+    /// every sub-stream restart — that's what `Fermenting… (0s · ↓ 69
+    /// tokens)` after a multi-turn turn was: the timer reset every
+    /// loop iteration. v126's spinner uses the same turn-level clock.
+    pub turn_started_at: Option<Instant>,
+    /// Cumulative session cost (USD) snapshotted at the start of the current
+    /// user turn. The end-of-turn footer subtracts this from the live
+    /// cumulative total so it shows the *per-turn* cost ("Cooked for 2m /
+    /// $0.04") rather than the whole session's running spend. Captured at the
+    /// same points `turn_started_at` is set to a fresh `Some(now)`, so it
+    /// survives across agentic-loop sub-streams within one turn.
+    pub turn_start_cost: f64,
+    /// Files the assistant edited during the current user turn (Edit/Write
+    /// `file_path`s), accumulated as tools complete and reset on each fresh
+    /// user submit. Drives `/turn-diff`, which scopes a `git diff` to just
+    /// these paths so you can review one agentic step in isolation from the
+    /// whole working tree.
+    pub turn_edited_files: std::collections::BTreeSet<String>,
+    /// Number of API round-trips in the current user turn (incremented each
+    /// time `continue_agentic_loop` fires). Resets on each user submission.
+    /// Used to enforce a max-turns safety limit (default 200, matching CC
+    /// 2.1.144's `maxTurns`). Without this, a model stuck in a retry loop
+    /// runs indefinitely, burning unlimited API credits.
+    pub agentic_turn_count: u32,
+    /// Consecutive self-continuations (auto-driving the next step without a
+    /// user "continue") since the last real user submit. Capped by
+    /// `max_self_continuations` to prevent a runaway loop when the model keeps
+    /// stalling. Reset to 0 on every genuine user submit.
+    pub self_continuation_count: u32,
+    /// Consecutive empty-but-billed turns we've discarded and re-streamed
+    /// since the last turn that produced real content. A degraded provider
+    /// stream can bill output tokens yet emit no text/tools/reasoning (renders
+    /// as a blank `assistant (Brewed …)` bubble and leaves an `empty_message`
+    /// invariant violation on save). `handle_stream_done` removes that empty
+    /// message and re-streams; this counter caps the retries so a persistently
+    /// broken provider can't loop forever. Reset to 0 whenever a turn produces
+    /// content and on every genuine user submit.
+    pub empty_billed_resend_count: u32,
+    /// Text saved by Esc-clear so Up-arrow can recall it. Single slot —
+    /// each Esc-clear overwrites. None when no text has been cleared.
+    pub esc_saved_text: Option<String>,
+    /// Index into `messages` of the user-prompt the up-arrow recall is
+    /// currently displaying, counting backwards from the end. `None`
+    /// means the user is editing a fresh prompt (not recalled). Each
+    /// up-arrow at empty input increments toward older prompts; each
+    /// down-arrow decrements. Mirrors v126's `useArrowKeyHistory`
+    /// behavior — a quality-of-life win for resend/edit workflows.
+    pub history_cursor: Option<usize>,
+    /// Wall-clock instant of the most recent text/reasoning delta. The
+    /// spinner derives its honest silence signal from this: a `quiet Ns`
+    /// chip past `QUIET_CHIP_SECS` (8s) and a row-dim past `QUIET_DIM_SECS`
+    /// (30s). No fabricated "almost done" reassurance — just measured
+    /// time-since-last-byte.
+    pub streaming_last_token_at: Option<Instant>,
+    /// Trailing window of `(elapsed_since_stream_start, live_token_count)`
+    /// samples used to compute the windowed tokens/sec rate shown in the
+    /// spinner. Sampled each render frame while streaming; trimmed to
+    /// `spinner::TOKEN_RATE_WINDOW`. A windowed Δtokens/Δt is self-smoothing
+    /// and reflects *current* throughput, unlike a lifetime average that lags
+    /// after a fast opening burst tapers. Cleared at end-of-turn.
+    pub token_rate_samples: std::collections::VecDeque<(std::time::Duration, u64)>,
+    /// Instant the model started producing reasoning output (extended
+    /// thinking). Set on the first reasoning chunk per turn; cleared when
+    /// the turn ends. Mirrors v126's `streamMode = "thinking"` transition
+    /// (cli.js HcH:413611).
+    pub thinking_started_at: Option<Instant>,
+    /// Instant the model stopped producing reasoning and switched to
+    /// regular text output (or the stream ended without text). Once set,
+    /// the spinner stops showing "thinking" and starts showing
+    /// `thought for Ns`. Mirrors v126's `streamingEndedAt` field on the
+    /// thinking-status reducer (cli.js HcH:413585).
+    pub thinking_ended_at: Option<Instant>,
+    pub scroll_offset: usize,
+    pub total_lines: usize,
+    /// Cache key for `total_lines`: (message_count, streaming_text_len, last_width).
+    /// When any component changes, `message_view_total_lines` is recomputed.
+    pub total_lines_key: (usize, usize, usize),
+    pub textarea: TextArea<'static>,
+    /// Vim modal-editing state for the prompt. `None` = vim off (default,
+    /// plain insert editing); `Some` = on, toggled by `/vim`. Routes the
+    /// default text-input path through `input::vim` and makes Esc mode-aware.
+    pub vim: Option<crate::input::vim::VimState>,
+    pub show_palette: bool,
+    pub palette_input: String,
+    pub palette_selected: usize,
+    pub show_theme_picker: bool,
+    pub theme_picker_input: String,
+    pub theme_picker_selected: usize,
+    /// The theme active when the picker opened. While the picker is up, the
+    /// highlighted theme is applied live (preview); this restores it if the
+    /// user cancels with Esc. `None` when the picker isn't open.
+    pub theme_preview_original: Option<Theme>,
+    pub spinner_frame: usize,
+    /// Hysteresis state machine for the status label — advanced once per tick
+    /// so the phase ("Thinking"/"Responding"/…) can't flip per-frame. See
+    /// [`crate::spinner::next_phase`].
+    pub spinner_state: crate::spinner::SpinnerState,
+    pub provider: Arc<dyn Provider>,
+    pub providers: Vec<Arc<dyn Provider>>,
+    pub model: ModelId,
+    /// Recently selected models (most recent first, max 5). Shown at the
+    /// top of the model picker for quick switching. Persisted to
+    /// `~/.config/jfc/recent_models.json`.
+    pub recent_models: Vec<String>,
+    pub cwd: String,
+    pub reasoning_expanded: HashMap<usize, bool>,
+    pub pending_approval: Option<PendingApproval>,
+    /// FIFO of tool calls waiting for approval behind the current one. When the
+    /// model emits multiple approvable tools in one turn (six `bash` calls in a
+    /// single response is common), only the first one fits in `pending_approval`
+    /// — the rest queue here. After the user decides on the current tool, the
+    /// next is dequeued into `pending_approval`. Without this, subsequent tools
+    /// were silently dropped, leaving the conversation with a tool_use that
+    /// had no matching tool_result and a stalled agentic loop.
+    pub approval_queue: std::collections::VecDeque<ToolCall>,
+    /// Active `AskUserQuestion` modal, if any. While `Some`, the agentic loop
+    /// is parked (the question is the turn's terminal act) and key input is
+    /// routed to the question handler. Resolved by submit (answer → tool_result)
+    /// or Esc (declined). Unlike `approval_queue`, questions don't queue —
+    /// `AskUserQuestion` is a turn-ending tool, so at most one is ever pending.
+    pub pending_question: Option<crate::app::PendingQuestion>,
+    /// Tool calls that have been yielded to the host but are not executing yet:
+    /// waiting for approval, classifier judgment, or stream_done batch
+    /// dispatch. This is the TUI/remote equivalent of upstream's
+    /// `deferred_tool_use` bookkeeping.
+    pub deferred_tool_uses: VecDeque<DeferredToolUse>,
+    /// IDs currently executing locally or server-side. Mirrors upstream's
+    /// `set_in_progress_tool_use_ids` bridge events so remote/headless clients
+    /// can distinguish "waiting for a result" from "idle".
+    pub in_progress_tool_use_ids: HashSet<String>,
+    /// Short labels for completed tool batches, exposed to remote clients as
+    /// `tool_use_summary` events and retained for diagnostics.
+    pub tool_use_summaries: VecDeque<ToolUseSummary>,
+    /// FIFO of user prompts the user submitted while the model was streaming.
+    /// v126 calls these `queued_command` attachments. They render in the
+    /// transcript immediately as user messages (so the user sees their input
+    /// landed) but don't go to the API until the current turn finishes.
+    /// Drained by `drain_queued_prompts()` after `is_streaming` flips false
+    /// AND the approval pipeline is empty. Each entry remembers whether the
+    /// user typed a slash command (v126's `isMeta: true`) — those run
+    /// locally on drain instead of going to the API.
+    pub queued_prompts: MessageQueue,
+    /// Cached count of agent-isolated worktrees (excludes the primary
+    /// checkout). Refreshed by the Tick handler at most every
+    /// `WORKTREE_REFRESH_MS` so the status-bar badge stays accurate
+    /// without shelling out to `git worktree list` on every redraw.
+    pub worktree_count: usize,
+    pub worktree_count_last_refresh: Option<std::time::Instant>,
+    /// Cached current git branch (e.g. "master", "feat/x"). Updated by
+    /// the Tick handler at most every `GIT_BRANCH_REFRESH_MS` ms so a
+    /// long session reflects branch switches without shelling out
+    /// every render frame. None when not in a git repo.
+    pub git_branch: Option<String>,
+    pub git_branch_last_refresh: Option<std::time::Instant>,
+    /// Set of group-keys (`format!("{msg_idx}:{first_tool_id}")`)
+    /// currently expanded. Default = collapsed: dense Read/Glob/Grep
+    /// runs render as one "▶ N reads · click to expand" row, click
+    /// or `o` toggles.
+    pub tool_group_expanded: std::collections::HashSet<String>,
+    /// Active transcript search. `None` when not searching. The
+    /// search bar at the bottom of the screen, the match highlight
+    /// in messages, and the n/N navigation all key off this.
+    pub transcript_search: Option<TranscriptSearch>,
+    /// Ctrl+R reverse-history search overlay (None = closed).
+    pub prompt_search: Option<PromptSearch>,
+    /// Slash-command autocomplete popup state. `Some(idx)` while the
+    /// user is typing a command and the popup is open. None when the
+    /// popup is dismissed.
+    pub slash_popup_selected: Option<usize>,
+    /// Wall-clock instant of the last successful session save. The
+    /// status-bar render shows "✓ saved" briefly after this fires,
+    /// fading after `SAVED_BADGE_TTL_MS` so the indicator doesn't
+    /// linger on every render.
+    pub last_session_save_at: Option<std::time::Instant>,
+    /// Cycle index for `Ctrl+L`. Each press copies the next-oldest
+    /// `path:line` reference detected in the most recent tool
+    /// output. Reset whenever a fresh ToolResult lands so the user
+    /// always starts from the most recent.
+    pub path_yank_cursor: usize,
+    /// Index into `messages` of the user message currently being
+    /// edited. None when not editing. Submission while this is Some
+    /// rewrites the message at this index and drops everything
+    /// after it before re-firing the turn — `Ctrl+E` to enter,
+    /// Esc to cancel.
+    pub editing_message_idx: Option<usize>,
+    /// Set to true on double-ESC. Streaming, agentic-loop continuation,
+    /// and the subagent runner all sample this between iterations and
+    /// bail when it flips. Wrapped in `Arc` so spawned tasks can clone
+    /// a handle into their own scope. Mirrors v126's `abortController`.
+    /// Toggled by `?` (when input bar is empty). When true, an
+    /// overlay listing every keybinding is rendered on top of the
+    /// transcript. Discoverability for muscle-memory features
+    /// (Ctrl+X chord, ESC×2 interrupt, `o` to expand, etc.) that
+    /// otherwise live only in source comments.
+    pub show_help: bool,
+    /// True between Ctrl+G and the follow-up letter that selects the
+    /// jump target (e/t/m/a). Esc cancels. Drives a small hint row
+    /// in the status area so the user knows the chord is armed.
+    pub jump_armed: bool,
+    pub jump_armed_at: Option<std::time::Instant>,
+    /// Most recent tool-block click timestamp, keyed by tool id. The
+    /// click handler uses this to detect double-click (same tool id
+    /// within `DOUBLE_CLICK_MS`) for the pin gesture.
+    pub last_tool_click: Option<(String, std::time::Instant)>,
+    /// Bounds of the sessions sidebar block (set on each render).
+    /// The mouse handler reads this to decide whether a click hit a
+    /// session row and which row it was. `None` when the sidebar is
+    /// hidden — in that case the click handler ignores sidebar
+    /// coordinates.
+    pub sidebar_rect: std::cell::RefCell<Option<ratatui::layout::Rect>>,
+    /// Bounds of the messages area, used by the drag-scroll handler
+    /// to convert pixel deltas to scroll offsets and to gate scroll
+    /// events to the right region.
+    pub messages_rect: std::cell::RefCell<Option<ratatui::layout::Rect>>,
+    /// Bounds of the toast overlay strip; used by the click handler
+    /// to map a click to a toast index for instant dismissal.
+    pub toasts_rect: std::cell::RefCell<Option<ratatui::layout::Rect>>,
+    /// Last known drag-Y, set on each MouseEventKind::Drag event so
+    /// the next drag delta can advance scroll_offset by the
+    /// difference. Reset on Down / Up so a fresh drag starts cleanly.
+    pub drag_anchor_y: Option<u16>,
+    /// In-progress / just-finished mouse text selection over the transcript.
+    /// Drag inside the messages area paints a reverse-video highlight; on
+    /// button-up the renderer reads the selected buffer cells, copies them to
+    /// the clipboard (OSC 52-aware), and clears the selection. `None` when no
+    /// selection is active.
+    pub text_selection: Option<TextSelection>,
+    /// Click-count tracker for multi-click (word/line) selection:
+    /// `(col, row, count, at)`. Distinct from `last_tool_click` (tool-pin).
+    pub last_click: Option<(u16, u16, u8, Instant)>,
+    /// A word/line selection awaiting renderer resolution against the buffer.
+    pub pending_select_request: Option<SelectRequest>,
+    /// Debounce/cooldown for the clipboard-image-on-refocus hint (fired from
+    /// the focus-gained handler). `None` until the first probe.
+    pub last_focus_hint_at: Option<Instant>,
+    /// Per-turn token usage history (input + output) for the
+    /// sparkline rendered in the info sidebar. Pushed each time a
+    /// `StreamUsage` event lands at end-of-turn. Capped at the last
+    /// `TOKEN_HISTORY_CAP` turns so a long session doesn't grow it
+    /// unbounded.
+    pub token_history: std::collections::VecDeque<u64>,
+    /// task_id of whichever subagent / teammate emitted activity most
+    /// recently (AgentChunk or Progress event). Render that row bold +
+    /// accent in the spinner-area tree so the user can tell which
+    /// agent is currently moving vs. idle. None means nothing has
+    /// reported activity this turn.
+    pub last_active_agent_task: Option<String>,
+    pub interrupt_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Per-turn cancellation token. Cloned into every spawned task that
+    /// holds critical state (stream_response, tool dispatch, compact,
+    /// session save) so an ESC×2 / interrupt can race the in-flight work
+    /// against `.cancelled()` instead of waiting for the AtomicBool poll
+    /// to come around. Re-minted on every fresh user turn so the previous
+    /// token's cancelled state doesn't poison the next stream. wg-async
+    /// pattern: tasks holding state must be explicitly cancellable, not
+    /// just dropped via a flag the task may never poll.
+    pub cancel_token: tokio_util::sync::CancellationToken,
+    /// Abort handle for the *inner* stream-driver task spawned per user turn
+    /// (the one actually running `stream_response`). Watchdog escalation: when
+    /// `check_stream_watchdog` detects a hard-idle stream it cancels the token
+    /// (cooperative) *and* aborts this handle (forceful). Without the forceful
+    /// abort a stream task stuck in a synchronous syscall (DNS resolution,
+    /// audit-log write) would survive the cancel and the next user submission
+    /// would race a second concurrent stream task writing the same conversation
+    /// buffer. This MUST point at the inner task, not the outer supervisor:
+    /// aborting the supervisor only drops its `JoinHandle` to the inner task,
+    /// which *detaches* (keeps running) rather than cancelling it.
+    pub active_stream_handle: Option<tokio::task::AbortHandle>,
+    /// Timestamp of the most recent ESC press in the main shortcut
+    /// handler. The next ESC within `INTERRUPT_DOUBLE_TAP_MS` triggers
+    /// an interrupt instead of just clearing the input.
+    pub last_esc_at: Option<std::time::Instant>,
+    pub always_approved: Vec<String>,
+    pub session_approved: Vec<String>,
+    pub follow_bottom: bool,
+    pub pending_tool_calls: Vec<ToolCall>,
+    /// Count of auto-mode classifier verdicts still in flight. Each tool in
+    /// auto-mode spawns an async classifier call (2-5s); until every verdict
+    /// lands, `stream_done` must hold the turn open instead of finalizing —
+    /// otherwise a late verdict finds the streaming slot already cleared and
+    /// the tool is silently dropped (never dispatched, loop stalls). Reset to
+    /// 0 at the start of every user turn so a verdict that never arrives
+    /// (e.g. cancelled mid-classification) can't wedge the next turn.
+    pub pending_classifications: usize,
+    /// Tool IDs already dispatched mid-stream (safe tools that started
+    /// executing while the model was still generating). stream_done
+    /// skips these to avoid double-dispatch.
+    pub pre_dispatched_tool_ids: std::collections::HashSet<String>,
+    /// Count of eagerly-dispatched tool batches still in flight. Each eager
+    /// dispatch increments this; each AllComplete event decrements it. The
+    /// turn is only truly complete when this reaches 0 AND pending_tool_calls
+    /// is empty.
+    pub in_flight_eager_dispatches: usize,
+    /// Count of dispatched local tool batches whose batch-level completion
+    /// signal has not been observed yet. `pending_tool_calls` is drained when
+    /// a batch starts, so it cannot distinguish "nothing is running" from
+    /// "tools are running and will report later". This counter is the
+    /// authoritative guard against finalizing or rescuing the turn while a
+    /// regular, approval, classifier, advisor, or eager dispatch batch is
+    /// still expected to emit `ToolEvent::AllComplete`.
+    pub in_flight_tool_batches: usize,
+    /// Metadata for the provider request currently streaming or most recently
+    /// finished. Set by `StreamEvent::RequestMetadata` before the first byte
+    /// arrives; cleared when the turn truly ends. Used to detect narration-only
+    /// EndTurn responses on prompts that were expected to call tools.
+    pub current_stream_request: Option<StreamRequestMetadata>,
+    pub max_context_tokens: usize,
+    /// Set by `/compact` slash command. Picked up by the main loop next time
+    /// it would otherwise check `compact::should_compact` — forces compaction
+    /// regardless of token level. Cleared after the compact runs (success or
+    /// not) so a single `/compact` invocation triggers exactly one attempt.
+    pub force_compact_pending: bool,
+    /// Set when a stream's `Done` event carries `StopReason::PauseTurn`
+    /// AND the same response also produced local tools that need to
+    /// run (mixed mode). The dispatch ladder in event_loop.rs sees
+    /// `has_pending_tools` first and routes to local-tool execution,
+    /// shadowing the PauseTurn branch. Without this flag, the
+    /// post-tool `ToolEvent::AllComplete` handler defaults to
+    /// `continue_agentic_loop` which routes through
+    /// `build_provider_messages_with_tool_results` → injects the
+    /// "Continue from where you left off." synthetic-user filler that
+    /// Anthropic's `pause_turn` protocol explicitly forbids
+    /// (cli.js v142:622686). When set, AllComplete instead calls
+    /// `continue_after_pause_turn` so the resume goes out with the
+    /// trailing `server_tool_use` as the resumption cue, intact.
+    ///
+    /// Cleared the moment the resume dispatches OR the turn ends
+    /// without resuming (no pending tools, no pending approvals,
+    /// EndTurn) — single-shot per pause_turn occurrence so a later
+    /// non-pause_turn turn doesn't accidentally inherit the routing.
+    pub pending_pause_turn_resume: bool,
+    /// Set after compaction permanently fails (CircuitBreakerTripped,
+    /// Unsupported, Exhausted). Prevents the post-response handler from
+    /// re-spawning compact on every AllToolsComplete — without this, the
+    /// circuit breaker fires every 4-5s for the rest of the session.
+    /// Cleared on: new session (/clear), manual /compact, model switch.
+    pub compact_suppressed: bool,
+    /// Wall-clock instant the current compaction started. `Some` while a
+    /// compact request is in flight (set on `CompactionStarted`, cleared on
+    /// `CompactionDone`/`CompactionFailed`). The renderer shows a
+    /// `Compacting…` spinner whenever this is `Some`, so a long pre-submit
+    /// compaction doesn't look like a frozen UI.
+    pub compacting_started_at: Option<Instant>,
+    /// Whether a speculative (precomputed) compact has already been
+    /// triggered for this session. Prevents repeated spawns. Resets
+    /// on compaction completion or /clear.
+    pub speculative_compact_fired: bool,
+    /// Cumulative summary-text length collected during the in-flight
+    /// compact (across all retry attempts). The spinner divides by 4 to
+    /// get a chars-per-token estimate and renders `↓ Nk tokens` —
+    /// matches the regular streaming spinner's live counter so the user
+    /// sees the same kind of feedback during compaction.
+    pub compacting_output_chars: u64,
+    /// Sum of completed retry attempts' final output sizes. `compact()`
+    /// retries internally when post_tokens is still over the Blocked
+    /// threshold, and each attempt streams a fresh response from 0.
+    /// Without this baseline, `compacting_output_chars` would jump back
+    /// down at every retry boundary — visible to the user as a
+    /// flickering/resetting counter. The handler bumps this whenever it
+    /// detects the per-attempt counter regressing.
+    pub compacting_attempt_baseline: u64,
+    /// Last `output_chars` value seen this attempt. Used to detect a
+    /// regression (new attempt starting) so the baseline gets the prior
+    /// attempt's high-water added.
+    pub compacting_last_progress: u64,
+    /// Set each frame by the renderer. Used for page-scroll math.
+    pub viewport_height: usize,
+    pub input_wrap_width: usize,
+    pub tool_ctx: ToolContext,
+    pub dedup_cache: Arc<Mutex<ReadDedupCache>>,
+    pub show_model_picker: bool,
+    pub model_picker_filter: String,
+    pub model_picker_selected: usize,
+    pub model_picker_models: Vec<ModelInfo>,
+    /// Session-picker popup state — same `Clear`+centered-table treatment as
+    /// the model picker. Toggled with Ctrl+P. Replaces the "Ctrl+B opens the
+    /// session list as a left sidebar" hack for one-shot session selection.
+    /// `session_picker_filter` filters by `display_title()` substring.
+    pub show_session_picker: bool,
+    pub session_picker_filter: String,
+    pub session_picker_state: TableState,
+    /// Drives selection + scroll for the picker's `Table`. Kept in sync with
+    /// `model_picker_selected` so existing handlers keep working, but ratatui's
+    /// stateful render uses the `TableState` for autoscroll when the cursor moves
+    /// past the visible area.
+    pub model_picker_state: TableState,
+    /// Cache of `Provider::fetch_models()` results, keyed by `Provider::name()`. Populated
+    /// asynchronously at startup; consulted by the picker before falling back to the
+    /// provider's static `available_models()`.
+    pub provider_models: HashMap<ProviderId, Vec<ModelInfo>>,
+    pub model_picker_query_cache: QueryCache<Vec<ModelInfo>>,
+    /// OAuth seat tier from `/api/oauth/profile` (e.g. `"opus"`, `"opusplan"`,
+    /// `"claude-opus-4-6[1m]"`). Drives `apply_seat_tier_filter()` in the picker.
+    pub seat_tier: Option<String>,
+    /// OAuth subscription type (`"max"`, `"pro"`, `"enterprise"`) — shown in the
+    /// status bar so the user knows which plan they're billing against.
+    pub subscription_type: Option<String>,
+    /// Account email from the OAuth profile, surfaced in the status bar.
+    pub account_email: Option<String>,
+    /// Whether the sessions sidebar is visible. Default off so the chat takes
+    /// the full width — toggle with Ctrl+B.
+    pub show_sidebar: bool,
+    /// Cached list of session metadata (newest first), refreshed when the
+    /// sidebar opens. Storing here keeps render() pure of disk I/O. Replaced
+    /// the raw-id `session_ids` cache so the sidebar can show titles, cwd
+    /// badges, and relative timestamps instead of `ses_2026...` ids.
+    pub session_meta: Vec<jfc_session::SessionMetadata>,
+    /// Currently-selected sidebar row.
+    pub session_selected: usize,
+    /// State for the sidebar `List` widget — drives auto-scroll when the
+    /// selection moves past the visible area.
+    pub session_list_state: ratatui::widgets::ListState,
+    /// Active session id (set when the user picks one or starts a new one).
+    pub current_session_id: Option<crate::ids::SessionId>,
+    /// v126 auto-mode classifier config — `enabled: true` routes every tool
+    /// call through the LLM classifier instead of prompting the user.
+    /// Loaded from `~/.config/jfc/settings.json` at startup.
+    pub auto_mode: AutoModeConfig,
+    /// v126 permission mode — controls how tool execution is gated.
+    pub permission_mode: PermissionMode,
+    /// v126 task/todo store. Persists to `~/.config/jfc/tasks/<session>.json`
+    /// so todos survive session resume and compaction. Reused across the
+    /// agent's turns; the slash commands `/task-*` poke it directly.
+    pub task_store: std::sync::Arc<jfc_session::TaskStore>,
+    /// Records when each task transitioned to `Completed` so the footer can
+    /// keep showing them for 30 seconds with dimmed/strikethrough styling.
+    pub task_completion_times: HashMap<TaskId, Instant>,
+    /// Whether the full-screen task panel overlay is visible (Ctrl+T).
+    pub show_task_panel: bool,
+    /// The expanded view state — cycles none → tasks → teammates → none on Ctrl+T.
+    pub expanded_view: ExpandedView,
+    /// Currently-selected row in the task panel.
+    pub task_panel_selected: usize,
+    /// Drives selection + scroll for the task panel's `Table`.
+    pub task_panel_state: TableState,
+    /// Whether the detail pane is shown for the currently-selected task.
+    pub task_panel_detail: bool,
+    /// Transient per-session map of task_id → current activity description.
+    /// Updated by the tool execution loop to show what an in_progress task is
+    /// doing (e.g. "Running bash: cargo test", "Reading src/main.rs").
+    pub task_activities: HashMap<TaskId, String>,
+    /// Plan verification gate: when true, the plan has already been verified
+    /// for the current batch of pending tasks. Reset to false whenever new
+    /// tasks are created via TaskCreate.
+    pub plan_verified_this_batch: bool,
+    /// Cache of task-batch decompositions keyed by a normalized goal signature.
+    /// The factory consults it during plan verification to surface a similar
+    /// prior plan as advisory context (plan reuse).
+    pub plan_cache: jfc_core::PlanCache,
+    pub last_usage_input: u32,
+    pub last_usage_output: u32,
+    /// Auto-expiring toast queue. Pruned every `UiEvent::Tick`. Pushed via
+    /// `AppEvent::Ui(UiEvent::Toast)` from anywhere in the app (compaction milestones,
+    /// session save success, classifier blocks). Mirrors v126's terminal
+    /// `notification()` for non-blocking status surfacing.
+    pub toasts: Vec<crate::toast::Toast>,
+    /// `@filename` autocomplete state. `active=false` when not popping;
+    /// while active, the input handler routes typed chars into
+    /// `query` and `mentions::filter_candidates` re-ranks `candidates`.
+    /// Mirrors v126 cli.js:161602 (`autocomplete:accept` /
+    /// `autocomplete:dismiss`).
+    pub mention: crate::mentions::MentionState,
+    /// Cached file list scanned at the start of each mention session
+    /// so we don't re-walk the cwd on every keystroke. Refreshed when
+    /// `@` is freshly typed.
+    pub mention_all_files: Vec<String>,
+    /// Active LSP diagnostics, keyed by file path. Rendered as a one-line
+    /// `Found N new diagnostic issue(s) in M file(s) (ctrl+o to expand)`
+    /// row above the spinner when non-empty. Updated by
+    /// `AppEvent::Provider(ProviderEvent::DiagnosticsUpdated)`. Mirrors v126 cli.js:338030-338040.
+    pub diagnostics: Vec<crate::diagnostics::DiagnosticEntry>,
+    /// Whether the Ctrl+O diagnostic-expansion panel is open. v126 cli.js
+    /// :338038 advertises `(ctrl+o to expand)` on the summary row; this
+    /// is the destination of that key. The panel groups diagnostics by
+    /// file and lists each as `<symbol> [Line A:B] <message>` matching
+    /// cli.js:338053. Esc closes.
+    pub show_diagnostic_panel: bool,
+    /// Scroll offset (in lines) for the diagnostic panel body. Reset
+    /// to 0 each time the panel is opened so the user always lands at
+    /// the top of the list regardless of where they were before.
+    pub diagnostic_panel_scroll: usize,
+    /// First-launch timestamp for the boot sweep animation. Set in
+    /// `App::new`; the placeholder renderer uses it to drive a brief
+    /// star cascade across "What can I help you with?" on session
+    /// start. After ~1.2s the cascade settles into the static
+    /// placeholder.
+    pub launched_at: std::time::Instant,
+    /// Stable keys for diagnostics already shown to the user, so the
+    /// summary row doesn't keep popping for the same set on every
+    /// re-publish. Mirrors v126 cli.js:231025-231036's per-URI
+    /// "delivered" set. Cleared on `/check` rerun and when the user
+    /// opens the expansion panel (Ctrl+O), since opening implies
+    /// acknowledgment.
+    pub delivered_diagnostics: std::collections::HashSet<String>,
+    /// The (input, output, cache_read, cache_write) reading the last time
+    /// `add_delta` was applied to `usage_by_model`. Anthropic sends
+    /// **cumulative** counts in every `message_delta`, so we have to
+    /// subtract this baseline before adding to per-model totals — otherwise
+    /// every delta would be triple-counted (Claude sends 5-15 deltas per
+    /// turn) and `Usage by model` shows numbers an order of magnitude too
+    /// high. Reset to (0,0,0,0) when a new turn starts.
+    pub usage_apply_baseline: (u32, u32, u32, u32),
+    /// Reasoning-effort pin for this session. `/effort low|medium|high|xhigh|max`
+    /// flips it; `stream_response` mirrors `effort_state.api_param()` into
+    /// the `reasoning_effort` field of `StreamOptions` if the active model
+    /// supports it.
+    pub effort_state: crate::effort::EffortState,
+    /// Sampling-temperature pin for this session. `/temp <0..2>` flips it;
+    /// `prepare_stream_request` only forwards it when the selected provider /
+    /// model request shape can legally carry temperature.
+    pub temperature_state: crate::exploration::TemperatureState,
+    /// Adaptive exploration controller. It fills in effort or temperature
+    /// only when neither `/effort` nor `/temp` has pinned a knob.
+    pub exploration_state: crate::exploration::ExplorationState,
+    /// Last time we fired the OnHeartbeat hook. Tick handler checks this
+    /// every 80ms and fires the hook at most once every 30s when idle.
+    pub last_heartbeat_at: Option<std::time::Instant>,
+    /// Last MCP refresh counter we observed. Tick handler compares this
+    /// against `mcp::registry::refresh_counter()` to detect inbound
+    /// `notifications/tools/list_changed` and emit a toast + reminder.
+    pub last_mcp_refresh_seen: u64,
+    /// Last file-watcher change-counter we observed. Tick handler
+    /// compares against `file_watcher::change_counter()` to detect
+    /// CLAUDE.md / agents / settings edits and prepend a system-
+    /// reminder on the next outbound prompt.
+    pub last_file_watcher_seen: u64,
+    /// Last keybindings-watcher change-counter we observed. Tick handler
+    /// compares against `file_watcher::keybindings_change_counter()` to
+    /// detect `keybindings.toml` edits and hot-reload them.
+    pub last_keybindings_watcher_seen: u64,
+    /// Queue of `<system-reminder>` bodies posted by background events
+    /// (file watcher, MCP `tools/list_changed`, …) awaiting consumption
+    /// by the next outbound stream request. The drain happens in
+    /// `prepare_stream_request`, so the reminder lands in the wire
+    /// payload exactly once and `app.messages` is never mutated by an
+    /// FS-rate signal. Dedup-on-push collapses N filesystem events
+    /// between turns into one reminder.
+    pub pending_background_reminders: Vec<String>,
+    /// Message indices the user pinned via `/pin <idx>`. Compaction
+    /// preserves pinned messages verbatim regardless of token pressure.
+    /// Stored as indices into `messages` rather than a flag on
+    /// ChatMessage so we don't have to touch every construction site.
+    pub pinned_message_indices: std::collections::HashSet<usize>,
+    /// `/verbose` toggle: when true, tool blocks render expanded by
+    /// default. When false (default), they preview to N lines.
+    pub verbose_mode: bool,
+    /// `/fast` toggle — mirrors Claude Code v2.1.139's `/fast` command (Alt+O).
+    /// When true, the `fast-mode-2026-02-01` beta header is added to every
+    /// Anthropic API request, routing to the lower-latency inference path.
+    pub fast_mode: bool,
+    /// Per-session FIFO of tool mutations the user can `/undo`. Each
+    /// entry captures `(file_path, prev_content, op_label)` before the
+    /// tool runs. Capped at 100 entries (the oldest gets dropped). New
+    /// entries push to the back; /undo pops the back (most recent
+    /// first).
+    /// `(tool_id, line)` captured from `ToolOutputChunk`. `stream.rs`
+    /// drains this on the next outbound request so the model sees what
+    /// Highest budget threshold the user has been warned about so far this
+    /// session. 0 = no warnings yet, 80 = 80% warning shown, 100 = 100%
+    /// warning shown. Prevents toast spam when the same threshold is
+    /// crossed multiple times across re-renders.
+    pub cost_budget_warned_at: u8,
+    /// Insertion-ordered map of subagent background tasks. IndexMap preserves
+    /// the spawn order so tab cycling, footer tabs, and "jump to latest" all
+    /// operate on a stable, chronological ordering instead of random HashMap
+    /// iteration order.
+    pub background_tasks: IndexMap<String, BackgroundTask>,
+    pub show_info_sidebar: bool,
+    /// Vertical scroll offset (rows from top) of the right-side info sidebar's
+    /// Tasks section. A long todo list (the user hit 27 in one session) now
+    /// renders compactly and scrolls instead of overflowing the panel.
+    /// Adjusted via Alt+Up / Alt+Down while the sidebar is visible.
+    pub info_sidebar_scroll: u16,
+    pub mcp_servers: Vec<crate::types::McpServerInfo>,
+    pub lsp_servers: Vec<crate::types::LspServerInfo>,
+    pub usage_by_model: HashMap<String, crate::types::ModelUsage>,
+    /// Cached snapshot of the active Anthropic OAuth account's utilization
+    /// (refreshed on every successful stream + every ~10s tick). Drives the
+    /// ribbon's "5h 47% / 7d 12% · opus weekly" display. `None` for non-
+    /// OAuth providers.
+    pub anthropic_account_snapshot: Option<crate::providers::anthropic_accounts::AccountSnapshot>,
+    /// Last instant we re-queried the rotation manager. Throttle to once
+    /// every ~10s so the ribbon stays current without burning a lock per
+    /// frame at 30fps.
+    pub anthropic_snapshot_refreshed_at: Option<std::time::Instant>,
+    /// Last wall-clock time the UI re-read `daemon-state.json` to refresh
+    /// counters for detached background workers. Throttled in the Tick
+    /// handler so we don't hammer the JSON file every frame.
+    pub last_detached_sync_at: Option<std::time::Instant>,
+    /// Cached `daemon-state.json` mtime from the last successful parse.
+    /// Used to skip the (potentially MB-sized) read+parse when the file
+    /// hasn't been touched by any background worker since last poll —
+    /// this is the primary CPU-burn fix for sessions with hundreds of
+    /// historical background agents accumulated in the state file.
+    pub last_detached_state_mtime: Option<std::time::SystemTime>,
+    pub leader_key_active: bool,
+    pub leader_key_timeout: Option<std::time::Instant>,
+    pub viewing_task_id: Option<String>,
+    /// Set of `BackgroundTask.messages` indices the user expanded with `o`
+    /// while drilled into the subagent task view. Long entries (>80 lines or
+    /// >5 KB) collapse to a 5-line preview by default; presence in this set
+    /// > flips them to fully expanded. Cleared whenever `viewing_task_id`
+    /// > changes so expansion state is per-drill-in, not sticky across tasks.
+    ///
+    /// TODO Phase B: once `BackgroundTask.messages` migrates to
+    /// `Vec<ChatMessage>` and the subagent view renders through the same
+    /// `MessageView` pipeline as the main chat, this field collapses into
+    /// per-`ToolCall.display` state and can be removed.
+    /// Per-task expansion state. Keyed by `task_id` so navigating
+    /// between tasks (or out and back in) preserves what the user has
+    /// expanded. Previously a session-wide `HashSet<usize>` that got
+    /// `.clear()`ed on every switch — entering a task with 121 hidden
+    /// lines required pressing `o` again every time.
+    pub viewing_task_expanded: std::collections::HashMap<String, std::collections::HashSet<usize>>,
+    /// Per-prompt image staging. Each Ctrl+V / bracketed paste of an image
+    /// lands here with a unique `id`; the submit path matches `[Image #N]`
+    /// markers in the textarea and moves referenced entries onto the
+    /// submitted ChatMessage's `attachments` field. Replaces the old
+    /// `pending_attachments → push_pending_tool_attachment` global queue.
+    pub pasted_images: Vec<crate::attachments::PastedContent>,
+    /// Large text pastes collapsed to `[Pasted #N · …]` chips: `(chip_token,
+    /// full_text)`. The chip keeps the input box clean; on submit each chip
+    /// in the prompt is expanded back to its full text. Cleared per submit.
+    pub pasted_texts: Vec<(String, String)>,
+    /// Monotonic id for `[Pasted #N · …]` chips.
+    pub paste_counter: u32,
+    /// Monotonically incrementing counter for paste IDs within a session.
+    pub image_counter: u32,
+    /// How many detached background agents transitioned to
+    /// Completed/Failed since the last user submit. Incremented by
+    /// `sync_detached_background_tasks_from_daemon`; drained to 0 and
+    /// surfaced as a system_reminder in `handle_submit` so the parent
+    /// model knows agent results are available in the transcript.
+    pub background_tasks_completed_since_last_turn: u32,
+    /// Whether a background agent has transitioned to a *terminal* state
+    /// (Completed / Failed / Cancelled) **during this process** — set at the
+    /// three real transition sites (live `TaskCompleted` / `TaskFailed`
+    /// handlers and the daemon-sync poll). Crucially NOT set by
+    /// `restore_persistent_background_agents`, which seeds already-terminal
+    /// agents from a *prior* session on `--continue`.
+    ///
+    /// Gates the Case-2 auto-wake in `maybe_resume_after_background`: without
+    /// it, launching `jfc --continue` on a session that had completed
+    /// background agents fired an unsolicited (billed) summary turn at startup
+    /// before the user typed anything — the restored terminal agents tripped
+    /// `all_bg_done` while `turn_started_at` was None. Auto-wake should only
+    /// fire for agents that actually finished *while the user was here*.
+    pub observed_bg_terminal_transition_this_process: bool,
+    /// Per-frame map of `(tool_id, screen_rect)` populated by the message
+    /// renderer as each `ToolBlock` paints. The mouse handler reads this to
+    /// translate a left-click into the tool whose body should expand —
+    /// v126's cli.js (cmd-click on iTerm2) toggles the same per-tool
+    /// expand/collapse affordance via mouse. We use plain left-click here
+    /// because non-iTerm terminals don't surface the cmd modifier the same
+    /// way; the spirit (mouse → toggle that tool) is preserved.
+    ///
+    /// Cleared at the top of every `render::frame()` and re-populated as
+    /// each visible `ToolBlock` renders. Tools scrolled off-screen are not
+    /// pushed, so they're automatically un-clickable. `RefCell` because
+    /// `MessageView` borrows `&App` immutably during `Widget::render`, and
+    /// we need a `&mut` push from inside that path.
+    pub tool_hit_regions: RefCell<Vec<(String, Rect)>>,
+    /// Content-addressed cache for `markdown::to_lines()` output. Keyed on
+    /// `(hash(text), width)` so unchanged messages aren't re-parsed on every
+    /// frame. Uses `RefCell` because `MessageView` borrows `&App` immutably
+    /// during `Widget::render` but needs mutable cache access.
+    pub render_cache: RefCell<RenderCache>,
+    /// Cached result of `collect_diff_stats()`. Keyed on
+    /// `(messages.len(), total_parts_count)` — invalidates when a message is
+    /// appended or a tool result lands. Avoids O(N_messages × N_parts)
+    /// HashMap walk per frame; reduces to O(1) lookup on cache hit.
+    pub diff_stats_cache: RefCell<Option<(usize, usize, crate::render::DiffStats)>>,
+    /// Swarm / team orchestration state. Tracks the current team, spawned
+    /// teammates, and message delivery. `None` when no team is active.
+    pub team_context: crate::swarm::TeamContext,
+    /// Channel receiver for events from in-process teammate runners.
+    /// Polled in the main event loop alongside terminal/stream events.
+    pub teammate_event_rx:
+        Option<tokio::sync::mpsc::UnboundedReceiver<crate::swarm::runner::TeammateEvent>>,
+    /// Sender side — cloned into each spawned teammate's runner.
+    pub teammate_event_tx: tokio::sync::mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
+    /// Remote-control host. `Some` when `/remote-control` is active or RC was
+    /// started at launch. Events are mirrored to connected clients; client
+    /// input is injected into the main event bus. See `crate::remote_host`.
+    pub remote_host: Option<std::sync::Arc<crate::remote_host::RemoteHost>>,
+    /// Slate dynamic model router. `None` when `slate_enabled = false` in the
+    /// loaded config (the common case). When `Some`, callers consult it on
+    /// every user submission to pick a per-turn model — see
+    /// `slate::SlateRouter::route` and `crates/jfc-ui/src/slate.rs`.
+    pub slate: Option<SlateRouter>,
+    /// Advisor session for `/advisor <query>` (see `crate::advisor`).
+    /// `None` until the user invokes `/advisor` for the first time —
+    /// mints lazily so the cost is paid only by users who actually use
+    /// the feature. The session owns its own model id, transcript, and
+    /// token budget; budget exhaustion returns Err and the user must
+    /// reset (e.g. via `/clear`) to get a fresh budget.
+    pub advisor_session: Option<crate::advisor::AdvisorSession>,
+    /// Gate for local advisor access. Startup enables it by default through the
+    /// active model unless the user opts out with `advisor_enabled = false`,
+    /// `--no-advisor`, or `JFC_ADVISOR_DISABLED=1`. When false, manual advisor
+    /// queries surface a hint instead of running.
+    pub advisor_enabled: bool,
+    /// Active local/client-side advisor model. When set, JFC advertises the
+    /// normal `Advisor` tool and executes it through the local provider path,
+    /// returning the advisor reply as a regular tool result.
+    pub local_advisor_model: Option<ModelId>,
+    /// Optional provider prefix for the local advisor model. Preserves
+    /// `provider/model` config so Advisor can run through OpenAI, OpenWebUI,
+    /// LiteLLM, etc. instead of assuming the active chat provider.
+    pub local_advisor_provider: Option<jfc_provider::ProviderId>,
+    /// Active Anthropic server-side advisor model. This is distinct from the
+    /// local parallel `/advisor <query>` session above; when set, outbound
+    /// Anthropic requests advertise the `advisor` server tool.
+    pub server_advisor_model: Option<ModelId>,
+    /// Brief mode — when `true`, the renderer hides plain assistant text
+    /// from the main view; only `SendUserMessage` tool output and explicit
+    /// proactive messages are surfaced. Toggled via `/brief`. Mirrors
+    /// Claude Code v2.1.142+'s `tengu_brief_mode_enabled` setting.
+    pub brief_mode: bool,
+    /// Active autonomous loop state — set when `/loop` is started, cleared
+    /// when the loop stops. Tracks tick counts + loop.md content so the
+    /// renderer can show "loop active" and the wakeup handler can supply
+    /// the right preamble. See `crate::autonomous_loop`.
+    pub autonomous_loop: Option<crate::autonomous_loop::AutonomousLoopState>,
+    /// Active speculation session — set when prompt-suggestion speculation
+    /// is running, cleared on accept/discard. See `crate::speculation`.
+    pub active_speculation_id: Option<String>,
+    /// Per-session accumulated speculation stats (time saved, accept/discard counts).
+    pub speculation_stats: crate::speculation::SpeculationStats,
+    /// Bash sandbox configuration (bwrap network/filesystem isolation).
+    /// When `enabled = true` and bwrap is present, bash commands are wrapped.
+    pub bash_sandbox: crate::sandbox::BashSandboxConfig,
+    /// v137 `/goal <condition>` — session-scoped stop condition. When
+    /// `Some`, the agentic loop will not let the agent settle on
+    /// `EndTurn` until the evaluator (see `crate::goal::evaluate`)
+    /// returns `ok=true`. The struct carries iteration counter +
+    /// set-at timestamp + last unmet reason so the UI can show
+    /// progress and the loop can refuse to spin forever.
+    pub goal: Option<crate::goal::ActiveGoal>,
+    /// True while a goal evaluator call is in flight. Prevents the
+    /// agentic loop from racing two evaluators against the same
+    /// EndTurn (which would double-charge tokens and could disagree).
+    pub goal_evaluator_in_flight: bool,
+    /// Shared flag: true when the UI needs high-frequency ticks (animations,
+    /// kinetic scroll, boot sweep). The tick task reads this to choose
+    /// `ANIM_TICK_MS` vs `IDLE_TICK_MS`.
+    pub wants_animation_frame: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Kinetic scroll velocity (lines/sec). Wheel events inject impulse;
+    /// each animation tick decays by 0.85 and applies to `scroll_offset`.
+    pub scroll_velocity: f32,
+    /// Last tick instant for kinetic scroll dt calculation.
+    pub last_scroll_tick: std::time::Instant,
+    /// Last time the user interacted (typed, submitted, scrolled).
+    /// Used for idle-return detection (suggest /clear after 75min away).
+    pub last_user_activity_at: std::time::Instant,
+    /// Instant of the last direct user interaction (prompt submit, keypress).
+    /// Used by the session recap feature: when the user returns after
+    /// `session_recap::AWAY_THRESHOLD`, a recap is generated from messages
+    /// that arrived after this instant.
+    pub last_user_interaction_at: std::time::Instant,
+    /// Message index at the time of the last user interaction. Messages
+    /// after this index are candidates for the "while you were away" recap.
+    pub interaction_message_idx: usize,
+    /// Whether the idle-return toast has been shown this idle period.
+    pub idle_return_shown: bool,
+    /// User-facing "while you were away" recap banner. Set when the user
+    /// returns and submits after `session_recap::AWAY_THRESHOLD` of the
+    /// agent working autonomously; rendered as a dismissable band at the top
+    /// of the transcript and cleared on the next submit or Esc.
+    pub away_recap: Option<String>,
+    /// Files pinned into the system prompt (survive compaction).
+    /// Auto-populated from files that are re-read after every compaction.
+    pub pinned_files: Vec<std::path::PathBuf>,
+    /// Tracks how many times each file is re-read after compaction.
+    /// When a file exceeds 3 re-reads post-compact, it's promoted to pinned_files.
+    pub post_compact_reads: std::collections::HashMap<std::path::PathBuf, u32>,
+    /// Throttle for idle_prefetch: last time a prefetch batch was fired.
+    pub last_prefetch_at: std::time::Instant,
+    /// Number of prefetch reads currently in-flight (capped at 2).
+    pub prefetch_in_flight: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    /// Cached git repository root. `None` = not yet resolved.
+    /// `Some(None)` = resolved, not in a git repo.
+    /// `Some(Some(path))` = resolved git root directory.
+    pub git_root: Option<Option<std::path::PathBuf>>,
+    /// Estimated token count of the system prompt from the last stream
+    /// request. Used by the compaction handler to add overhead to the
+    /// post-compact `approx_tokens` estimate (system prompt + tool defs
+    /// are invisible to the message-only local estimate).
+    pub last_system_prompt_len: Option<usize>,
+
+    // ── CLI-injected configuration ────────────────────────────────────
+    // These fields are populated from the CLI flags parsed in `cli::run`
+    // and threaded into `App` before the first event-loop tick. The
+    // callers that *consume* these values (stream builder, permission
+    // gate, session save, …) are wired in follow-on work — marking
+    // `` until then keeps the build clean.
+    /// `--max-turns`: ceiling on agentic-loop iterations per user turn.
+    pub max_turns: Option<u32>,
+
+    /// `--max-budget-usd`: hard session spend cap in USD.
+    pub max_budget_usd: Option<f64>,
+
+    /// `--allowed-tools`: parsed allowlist of tool names.
+    pub allowed_tools: Vec<String>,
+
+    /// `--disallowed-tools`: parsed denylist of tool names.
+    pub disallowed_tools: Vec<String>,
+
+    /// Tools disallowed by CLAUDE.md frontmatter (`disallowed-tools` key).
+    /// Refreshed each time the hierarchy is loaded (every turn).
+    pub claudemd_disallowed_tools: Vec<String>,
+
+    /// Additional system-prompt text injected via `--system-prompt` or
+    /// `--system-prompt-file`.
+    pub cli_system_prompt: Option<String>,
+
+    /// `--dangerously-skip-permissions`: bypass every permission gate.
+    pub dangerously_skip_permissions: bool,
+
+    /// `--json`: structured JSON output mode for CI.
+    pub json_mode: bool,
+
+    /// `--add-dir`: extra directories added to the search context.
+    pub extra_dirs: Vec<std::path::PathBuf>,
+
+    /// `--max-thinking-tokens`: per-turn thinking budget cap.
+    pub cli_max_thinking_tokens: Option<u32>,
+
+    /// `--thinking-display`: thinking visibility mode (`show`/`hide`/`summarize`).
+    pub cli_thinking_display: Option<String>,
+
+    /// `--no-session-persistence`: when true, skip all disk persistence.
+    pub no_session_persistence: bool,
+
+    /// `--task-budget`: token budget per task for the beta task-budgets API.
+    pub cli_task_budget: Option<u64>,
+
+    /// `--betas`: custom Anthropic beta tokens appended to native requests.
+    pub custom_betas: Vec<String>,
+
+    /// `--fine-grained-tool-streaming`: attach `eager_input_streaming` to
+    /// Anthropic native tool schemas.
+    pub fine_grained_tool_streaming: bool,
+
+    /// `--strict-tool-schemas`: attach `strict: true` to Anthropic native
+    /// tool schemas.
+    pub strict_tool_schemas: bool,
+
+    /// `--mcp-config`: path to an MCP configuration file.
+    pub mcp_config_path: Option<std::path::PathBuf>,
+
+    /// `--cowork`: IDE pairing mode flag.
+    pub cowork: bool,
+
+    /// ID of an active cron job created by `/babysit-prs <schedule>`.
+    /// `Some(id)` means a recurring PR-status check is registered with
+    /// the local daemon; `/babysit-prs stop` removes it. `None` when no
+    /// PR-watch loop is active. Stored in `App` so the stop command can
+    /// look the id up without round-tripping through user-visible state.
+    pub babysit_prs_cron_id: Option<String>,
+}
+
+impl App {
+    pub fn new(provider: Arc<dyn Provider>, model: impl Into<ModelId>) -> Self {
+        let providers = vec![Arc::clone(&provider)];
+        let (teammate_tx, teammate_rx) =
+            tokio::sync::mpsc::unbounded_channel::<crate::swarm::runner::TeammateEvent>();
+        let mut textarea = TextArea::default();
+        textarea.set_cursor_line_style(Style::default());
+        // Minimal placeholder — the help overlay and `?` shortcut
+        // already document Enter / Shift+Enter; repeating it inline
+        // every render was noise. Just a soft prompt.
+        textarea.set_placeholder_text("send a message…");
+
+        let cwd = std::env::current_dir()
+            .ok()
+            .and_then(|p| p.to_str().map(str::to_owned))
+            .unwrap_or_default();
+
+        let mut app = Self {
+            theme: Theme::dark(),
+            output_style: crate::output_style::OutputStyle::default(),
+            messages: Vec::new(),
+            streaming_text: String::new(),
+            streaming_reasoning: String::new(),
+            streaming_response_bytes: 0,
+            streaming_response_baseline: 0,
+            turn_output_tokens: 0,
+            refusal_fallback_attempted: false,
+            streaming_thinking_tokens: 0,
+            pending_context_hint_tokens_saved: None,
+            network_recovery_status: None,
+            network_recovery_attempts: 0,
+            stream_lifecycle: None,
+            claude_status: None,
+            claude_status_error: None,
+            streaming_assistant_idx: None,
+            last_response_id: None,
+            streaming_started_at: None,
+            streaming_last_token_at: None,
+            token_rate_samples: std::collections::VecDeque::new(),
+            thinking_started_at: None,
+            thinking_ended_at: None,
+            turn_started_at: None,
+            turn_start_cost: 0.0,
+            turn_edited_files: std::collections::BTreeSet::new(),
+            agentic_turn_count: 0,
+            self_continuation_count: 0,
+            empty_billed_resend_count: 0,
+            esc_saved_text: None,
+            history_cursor: None,
+            is_streaming: false,
+            last_stream_event_at: None,
+            scroll_offset: 0,
+            total_lines: 0,
+            total_lines_key: (0, 0, 0),
+            textarea,
+            vim: None,
+            show_palette: false,
+            palette_input: String::new(),
+            palette_selected: 0,
+            show_theme_picker: false,
+            theme_picker_input: String::new(),
+            theme_picker_selected: 0,
+            theme_preview_original: None,
+            spinner_frame: 0,
+            spinner_state: crate::spinner::SpinnerState::new(std::time::Instant::now()),
+            provider,
+            providers,
+            model: model.into(),
+            recent_models: load_recent_models(),
+            cwd,
+            reasoning_expanded: HashMap::new(),
+            pending_approval: None,
+            approval_queue: std::collections::VecDeque::new(),
+            pending_question: None,
+            deferred_tool_uses: VecDeque::with_capacity(DEFERRED_TOOL_USES_CAP),
+            in_progress_tool_use_ids: HashSet::new(),
+            tool_use_summaries: VecDeque::with_capacity(TOOL_USE_SUMMARIES_CAP),
+            queued_prompts: MessageQueue::new(),
+            worktree_count: 0,
+            worktree_count_last_refresh: None,
+            git_branch: None,
+            git_branch_last_refresh: None,
+            tool_group_expanded: std::collections::HashSet::new(),
+            transcript_search: None,
+            prompt_search: None,
+            slash_popup_selected: None,
+            last_session_save_at: None,
+            path_yank_cursor: 0,
+            editing_message_idx: None,
+            show_help: false,
+            jump_armed: false,
+            jump_armed_at: None,
+            last_tool_click: None,
+            sidebar_rect: std::cell::RefCell::new(None),
+            messages_rect: std::cell::RefCell::new(None),
+            toasts_rect: std::cell::RefCell::new(None),
+            drag_anchor_y: None,
+            text_selection: None,
+            last_click: None,
+            pending_select_request: None,
+            last_focus_hint_at: None,
+            token_history: std::collections::VecDeque::with_capacity(TOKEN_HISTORY_CAP),
+            last_active_agent_task: None,
+            interrupt_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            active_stream_handle: None,
+            last_esc_at: None,
+            always_approved: Vec::new(),
+            session_approved: Vec::new(),
+            follow_bottom: true,
+            tool_ctx: ToolContext::new(),
+            dedup_cache: Arc::new(Mutex::new(ReadDedupCache::new())),
+            pending_tool_calls: Vec::new(),
+            pending_classifications: 0,
+            pre_dispatched_tool_ids: std::collections::HashSet::new(),
+            in_flight_eager_dispatches: 0,
+            in_flight_tool_batches: 0,
+            current_stream_request: None,
+            force_compact_pending: false,
+            pending_pause_turn_resume: false,
+            compact_suppressed: false,
+            compacting_started_at: None,
+            speculative_compact_fired: false,
+            compacting_output_chars: 0,
+            compacting_attempt_baseline: 0,
+            compacting_last_progress: 0,
+            max_context_tokens: DEFAULT_CONTEXT_WINDOW_TOKENS,
+            viewport_height: 0,
+            input_wrap_width: 1,
+            show_model_picker: false,
+            model_picker_filter: String::new(),
+            show_session_picker: false,
+            session_picker_filter: String::new(),
+            session_picker_state: TableState::default().with_selected(Some(0)),
+            model_picker_selected: 0,
+            model_picker_models: Vec::new(),
+            model_picker_state: TableState::default().with_selected(Some(0)),
+            provider_models: HashMap::new(),
+            model_picker_query_cache: QueryCache::default(),
+            seat_tier: None,
+            subscription_type: None,
+            account_email: None,
+            show_sidebar: false,
+            session_meta: Vec::new(),
+            session_selected: 0,
+            session_list_state: ratatui::widgets::ListState::default(),
+            current_session_id: Some(jfc_session::generate_session_id()),
+            auto_mode: crate::auto_mode::load_config(),
+            permission_mode: PermissionMode::Default,
+            // Tasks are scoped per-session (mirrors v126 cli.js:271505 keying
+            // todos by `agentId ?? sessionId`). Opening with a freshly-minted
+            // session id means a new run sees an empty task list, even if
+            // prior runs left `~/.config/jfc/tasks/<old>.json` on disk. The
+            // store is re-opened in `switch_session` whenever the session id
+            // changes (load from sidebar, /continue, /clear).
+            // NOTE: initialized as in_memory here; re-opened with the real
+            // session_id after construction (see below).
+            task_store: jfc_session::TaskStore::in_memory(),
+            task_completion_times: HashMap::new(),
+            show_task_panel: false,
+            expanded_view: ExpandedView::None,
+            task_panel_selected: 0,
+            task_panel_state: TableState::default().with_selected(Some(0)),
+            task_panel_detail: false,
+            task_activities: HashMap::new(),
+            plan_verified_this_batch: false,
+            plan_cache: jfc_core::PlanCache::new(64),
+            last_usage_input: 0,
+            last_usage_output: 0,
+            toasts: Vec::new(),
+            mention: crate::mentions::MentionState::default(),
+            mention_all_files: Vec::new(),
+            diagnostics: Vec::new(),
+            show_diagnostic_panel: false,
+            diagnostic_panel_scroll: 0,
+            launched_at: std::time::Instant::now(),
+            delivered_diagnostics: std::collections::HashSet::new(),
+            usage_apply_baseline: (0, 0, 0, 0),
+            effort_state: crate::effort::EffortState::new(),
+            temperature_state: crate::exploration::TemperatureState::new(),
+            exploration_state: crate::exploration::ExplorationState::new(),
+            last_heartbeat_at: None,
+            last_mcp_refresh_seen: 0,
+            last_file_watcher_seen: 0,
+            last_keybindings_watcher_seen: 0,
+            pending_background_reminders: Vec::new(),
+            pinned_message_indices: std::collections::HashSet::new(),
+            verbose_mode: false,
+            fast_mode: false,
+            cost_budget_warned_at: 0,
+            background_tasks: IndexMap::new(),
+            show_info_sidebar: true,
+            info_sidebar_scroll: 0,
+            mcp_servers: Vec::new(),
+            lsp_servers: Vec::new(),
+            usage_by_model: HashMap::new(),
+            anthropic_account_snapshot: None,
+            anthropic_snapshot_refreshed_at: None,
+            last_detached_sync_at: None,
+            last_detached_state_mtime: None,
+            leader_key_active: false,
+            leader_key_timeout: None,
+            viewing_task_id: None,
+            viewing_task_expanded: std::collections::HashMap::new(),
+            pasted_images: Vec::new(),
+            pasted_texts: Vec::new(),
+            paste_counter: 0,
+            image_counter: 0,
+            background_tasks_completed_since_last_turn: 0,
+            observed_bg_terminal_transition_this_process: false,
+            tool_hit_regions: RefCell::new(Vec::new()),
+            render_cache: RefCell::new(RenderCache::new()),
+            diff_stats_cache: RefCell::new(None),
+            team_context: crate::swarm::TeamContext::default(),
+            teammate_event_rx: Some(teammate_rx),
+            teammate_event_tx: teammate_tx,
+            remote_host: None,
+            // Slate is populated *after* `App::new` from the config (see
+            // `main.rs::run_app`). Constructor default = None so the unit
+            // tests that build a bare `App` don't need to plumb a router.
+            slate: None,
+            advisor_session: None,
+            // Read the env gate once at construction. Tests bypass this
+            // by setting the field directly; users who want it on for a
+            // session export `JFC_ADVISOR_ENABLED=1` before launch.
+            advisor_enabled: std::env::var("JFC_ADVISOR_ENABLED")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
+            local_advisor_model: crate::advisor::active_local_advisor_model(),
+            local_advisor_provider: crate::advisor::active_local_advisor_provider(),
+            server_advisor_model: crate::advisor::active_server_advisor_model(),
+            brief_mode: false,
+            autonomous_loop: None,
+            active_speculation_id: None,
+            speculation_stats: crate::speculation::SpeculationStats::default(),
+            bash_sandbox: crate::sandbox::BashSandboxConfig::default(),
+            goal: None,
+            goal_evaluator_in_flight: false,
+            wants_animation_frame: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            scroll_velocity: 0.0,
+            last_scroll_tick: std::time::Instant::now(),
+            last_user_activity_at: std::time::Instant::now(),
+            last_user_interaction_at: std::time::Instant::now(),
+            interaction_message_idx: 0,
+            away_recap: None,
+            idle_return_shown: false,
+            pinned_files: Vec::new(),
+            post_compact_reads: std::collections::HashMap::new(),
+            last_prefetch_at: std::time::Instant::now() - std::time::Duration::from_secs(10),
+            prefetch_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            git_root: None,
+            last_system_prompt_len: None,
+            // CLI-injected configuration: defaults are off / empty; the
+            // `cli::run` entry point overwrites these after construction
+            // when the user passed the corresponding flags.
+            max_turns: None,
+            max_budget_usd: None,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            claudemd_disallowed_tools: Vec::new(),
+            cli_system_prompt: None,
+            dangerously_skip_permissions: false,
+            json_mode: false,
+            extra_dirs: Vec::new(),
+            cli_max_thinking_tokens: None,
+            cli_thinking_display: None,
+            no_session_persistence: false,
+            cli_task_budget: None,
+            custom_betas: Vec::new(),
+            fine_grained_tool_streaming: false,
+            strict_tool_schemas: false,
+            mcp_config_path: None,
+            cowork: false,
+            babysit_prs_cron_id: None,
+        };
+        // Open the task store — prefer project-level persistence so tasks
+        // survive across ALL sessions in the same repo. Falls back to
+        // per-session store only when no git root is discoverable.
+        let git_root = crate::context::discover_git_root();
+        if let Some(ref root) = git_root {
+            app.task_store = jfc_session::TaskStore::open_project(Some(root.as_path()));
+            app.git_root = Some(Some(root.clone()));
+        } else if let Some(ref sid) = app.current_session_id {
+            app.task_store = jfc_session::TaskStore::open(sid.as_str());
+        }
+        app.sync_selected_context_window();
+        tracing::info!(
+            target: "jfc::app",
+            model = %app.model,
+            provider = app.provider.name(),
+            "App::new"
+        );
+        app
+    }
+
+    /// Push a `<system-reminder>` body onto the background-reminders
+    /// queue. Dedupes by exact body — repeated filesystem events
+    /// produce at most one reminder per outgoing turn. The queue is
+    /// capped at [`BACKGROUND_REMINDERS_CAP`]; when full, the oldest
+    /// entry is dropped before pushing. This keeps long idle sessions
+    /// from accumulating an unbounded stream of unique log lines that
+    /// would otherwise leak memory until the next user prompt drains
+    /// the queue.
+    pub fn queue_background_reminder(&mut self, body: impl Into<String>) {
+        let body = body.into();
+        if self
+            .pending_background_reminders
+            .iter()
+            .any(|existing| existing == &body)
+        {
+            return;
+        }
+        if self.pending_background_reminders.len() >= BACKGROUND_REMINDERS_CAP {
+            self.pending_background_reminders.remove(0);
+        }
+        self.pending_background_reminders.push(body);
+    }
+
+    /// Drain the background-reminders queue, transferring ownership to
+    /// the caller. Called by the stream-open path to forward the
+    /// reminders into `StreamRequestOverrides`. After this call the
+    /// queue is empty until the next FS event arrives.
+    pub fn take_background_reminders(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.pending_background_reminders)
+    }
+
+    /// Drain the pending post-compaction savings hint. Returns the value once,
+    /// then clears it so the `context_hint` is only sent on the single request
+    /// immediately following a compaction (matching cli.js's one-shot
+    /// context-hint emission).
+    pub fn take_context_hint_tokens_saved(&mut self) -> Option<u64> {
+        self.pending_context_hint_tokens_saved.take()
+    }
+
+    /// Return the merged list of disallowed tools from CLI flags and
+    /// CLAUDE.md frontmatter. Deduplicated with case-insensitive matching.
+    pub fn effective_disallowed_tools(&self) -> Vec<String> {
+        let mut tools: Vec<String> = self.disallowed_tools.clone();
+        tools.extend(self.claudemd_disallowed_tools.clone());
+        // Deduplicate (case-insensitive)
+        let mut seen = std::collections::HashSet::new();
+        tools.retain(|t| seen.insert(t.to_lowercase()));
+        tools
+    }
+}
