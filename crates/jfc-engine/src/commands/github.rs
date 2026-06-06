@@ -1,32 +1,33 @@
 use tokio::sync::mpsc;
 
-use crate::{app::App, runtime::EngineEvent};
+use crate::app::EngineState;
+use crate::runtime::EngineEvent;
 use jfc_core::ChatMessage;
 
-fn push_gh_unavailable(app: &mut App, cmd: &str) {
+fn push_gh_unavailable(state: &mut EngineState, cmd: &str) {
     let msg = "GitHub CLI not found on PATH. Install via <https://cli.github.com> \
                or set `JFC_GH_BIN_OVERRIDE` to a `gh` binary path."
         .to_owned();
-    jfc_engine::toast::push_with_cap(
-        &mut app.engine.toasts,
-        jfc_engine::toast::Toast::new(
-            jfc_engine::toast::ToastKind::Error,
+    crate::toast::push_with_cap(
+        &mut state.toasts,
+        crate::toast::Toast::new(
+            crate::toast::ToastKind::Error,
             "GitHub CLI (gh) not installed",
         ),
     );
-    app.engine.messages.push(ChatMessage::user(cmd.to_owned()));
-    app.engine.messages.push(ChatMessage::assistant(msg));
+    state.messages.push(ChatMessage::user(cmd.to_owned()));
+    state.messages.push(ChatMessage::assistant(msg));
 }
 
-pub(super) async fn handle_install_github_app(app: &mut App) {
+pub(super) async fn handle_install_github_app(state: &mut EngineState) {
     if !crate::github::is_gh_installed() {
-        push_gh_unavailable(app, "/install-github-app");
+        push_gh_unavailable(state, "/install-github-app");
         return;
     }
     let Some(ctx) = crate::github::current_repo().await else {
-        app.engine.messages
+        state.messages
             .push(ChatMessage::user("/install-github-app".into()));
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Could not determine GitHub repo from `git remote get-url origin`. \
              Run this command from inside a checkout whose `origin` points at GitHub."
                 .into(),
@@ -50,9 +51,9 @@ pub(super) async fn handle_install_github_app(app: &mut App) {
         }
         Err(error) => format!("**Error checking install state:** {error}"),
     };
-    app.engine.messages
+    state.messages
         .push(ChatMessage::user("/install-github-app".into()));
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::assistant(body));
 }
 
 fn parse_pr_num(arg: &str, cmd: &str) -> Result<u64, String> {
@@ -65,17 +66,17 @@ fn parse_pr_num(arg: &str, cmd: &str) -> Result<u64, String> {
         .map_err(|_| format!("`{trimmed}` is not a valid PR number."))
 }
 
-pub(super) async fn handle_pr_view(app: &mut App, arg: &str) {
+pub(super) async fn handle_pr_view(state: &mut EngineState, arg: &str) {
     if !crate::github::is_gh_installed() {
-        push_gh_unavailable(app, &format!("/pr {arg}"));
+        push_gh_unavailable(state, &format!("/pr {arg}"));
         return;
     }
     let cmd = format!("/pr {arg}");
     let number = match parse_pr_num(arg, "/pr") {
         Ok(number) => number,
         Err(error) => {
-            app.engine.messages.push(ChatMessage::user(cmd));
-            app.engine.messages.push(ChatMessage::assistant(error));
+            state.messages.push(ChatMessage::user(cmd));
+            state.messages.push(ChatMessage::assistant(error));
             return;
         }
     };
@@ -143,25 +144,25 @@ pub(super) async fn handle_pr_view(app: &mut App, arg: &str) {
         }
         Err(error) => format!("**Error:** {error}"),
     };
-    app.engine.messages.push(ChatMessage::user(cmd));
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::user(cmd));
+    state.messages.push(ChatMessage::assistant(body));
 }
 
 pub(super) async fn handle_pr_autofix(
-    app: &mut App,
+    state: &mut EngineState,
     arg: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     if !crate::github::is_gh_installed() {
-        push_gh_unavailable(app, &format!("/pr-autofix {arg}"));
+        push_gh_unavailable(state, &format!("/pr-autofix {arg}"));
         return;
     }
     let cmd = format!("/pr-autofix {arg}");
     let number = match parse_pr_num(arg, "/pr-autofix") {
         Ok(number) => number,
         Err(error) => {
-            app.engine.messages.push(ChatMessage::user(cmd));
-            app.engine.messages.push(ChatMessage::assistant(error));
+            state.messages.push(ChatMessage::user(cmd));
+            state.messages.push(ChatMessage::assistant(error));
             return;
         }
     };
@@ -169,114 +170,114 @@ pub(super) async fn handle_pr_autofix(
     let prompt = match crate::github::autofix::run(&client, number).await {
         Ok(prompt) => prompt,
         Err(crate::github::client::GhError::NotAuthenticated) => {
-            app.engine.messages.push(ChatMessage::user(cmd));
-            app.engine.messages.push(ChatMessage::assistant(
+            state.messages.push(ChatMessage::user(cmd));
+            state.messages.push(ChatMessage::assistant(
                 "`gh` is not authenticated - run `gh auth login` and try again.".into(),
             ));
             return;
         }
         Err(crate::github::client::GhError::RateLimited { reminder }) => {
-            app.engine.messages.push(ChatMessage::user(cmd));
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            state.messages.push(ChatMessage::user(cmd));
+            state.messages.push(ChatMessage::assistant(format!(
                 "Rate limited.\n\n{reminder}"
             )));
             return;
         }
         Err(error) => {
-            app.engine.messages.push(ChatMessage::user(cmd));
-            app.engine.messages
+            state.messages.push(ChatMessage::user(cmd));
+            state.messages
                 .push(ChatMessage::assistant(format!("**Error:** {error}")));
             return;
         }
     };
 
-    app.engine.messages.push(ChatMessage::user(cmd));
+    state.messages.push(ChatMessage::user(cmd));
 
     let Some(tx) = tx else {
-        app.engine.messages.push(ChatMessage::assistant(format!(
+        state.messages.push(ChatMessage::assistant(format!(
             "Autofix prompt prepared (no stream channel - submit `/pr-autofix {number}` from the input bar to drive the model):\n\n{prompt}"
         )));
         return;
     };
 
-    let assistant_idx = app.engine.messages.len() + 1;
-    app.engine.messages.push(ChatMessage::user(prompt));
-    app.engine.tool_ctx.total_user_turns += 1;
-    app.engine.messages.push(ChatMessage::assistant(String::new()));
-    app.engine.streaming_text.clear();
-    app.engine.streaming_reasoning.clear();
-    app.engine.streaming_response_bytes = 0;
-    app.engine.network_recovery_status = None;
-    app.engine.network_recovery_attempts = 0;
-    app.engine.streaming_assistant_idx = Some(assistant_idx);
-    app.engine.is_streaming = true;
+    let assistant_idx = state.messages.len() + 1;
+    state.messages.push(ChatMessage::user(prompt));
+    state.tool_ctx.total_user_turns += 1;
+    state.messages.push(ChatMessage::assistant(String::new()));
+    state.streaming_text.clear();
+    state.streaming_reasoning.clear();
+    state.streaming_response_bytes = 0;
+    state.network_recovery_status = None;
+    state.network_recovery_attempts = 0;
+    state.streaming_assistant_idx = Some(assistant_idx);
+    state.is_streaming = true;
     let now = std::time::Instant::now();
-    app.engine.streaming_started_at = Some(now);
-    app.engine.last_stream_event_at = Some(now);
-    app.engine.streaming_last_token_at = Some(now);
-    app.engine.turn_started_at = Some(now);
-    app.engine.turn_start_cost = jfc_engine::cost::total_cost(&app.engine.usage_by_model);
-    app.engine.thinking_started_at = None;
-    app.engine.thinking_ended_at = None;
-    app.engine.last_usage_output = 0;
-    app.engine.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
+    state.streaming_started_at = Some(now);
+    state.last_stream_event_at = Some(now);
+    state.streaming_last_token_at = Some(now);
+    state.turn_started_at = Some(now);
+    state.turn_start_cost = crate::cost::total_cost(&state.usage_by_model);
+    state.thinking_started_at = None;
+    state.thinking_ended_at = None;
+    state.last_usage_output = 0;
+    state.usage_apply_baseline = (0, 0, 0, 0);
+    state.push_effect(crate::app::EngineEffect::ScrollToBottom);
 
-    let session_id = app.engine
+    let session_id = state
         .current_session_id
         .clone()
         .unwrap_or_else(jfc_session::generate_session_id);
     {
         let session_id = session_id.clone();
-        let messages = app.engine.messages.clone();
-        let model = app.engine.model.clone();
+        let messages = state.messages.clone();
+        let model = state.model.clone();
         tokio::spawn(async move {
-            jfc_engine::session::save_session(&session_id, &messages, None, Some(model.as_str())).await;
+            crate::session::save_session(&session_id, &messages, None, Some(model.as_str())).await;
         });
     }
-    app.engine.current_session_id = Some(session_id);
+    state.current_session_id = Some(session_id);
 
-    let provider = app.engine.provider.clone();
-    let messages = jfc_engine::stream::build_provider_messages(&app.engine.messages[..assistant_idx]);
-    let model = app.engine.model.clone();
+    let provider = state.provider.clone();
+    let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
+    let model = state.model.clone();
     let tx_stream = tx.clone();
-    let interrupt = app.engine.interrupt_flag.clone();
+    let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
-    app.engine.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.engine.cancel_token.clone();
+    state.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = state.cancel_token.clone();
     let overrides = crate::runtime::StreamRequestOverrides {
-        background_reminders: app.engine.take_background_reminders(),
-        disallowed_tools: app.engine.effective_disallowed_tools(),
-        allowed_tools: app.engine.allowed_tools.clone(),
-        custom_betas: app.engine.custom_betas.clone(),
-        fine_grained_tool_streaming: app.engine.fine_grained_tool_streaming,
-        strict_tool_schemas: app.engine.strict_tool_schemas,
-        task_budget: app.engine.cli_task_budget,
-        max_thinking_tokens: app.engine.cli_max_thinking_tokens,
-        thinking_display: app.engine.cli_thinking_display.clone(),
-        brief_mode: app.engine.brief_mode,
+        background_reminders: state.take_background_reminders(),
+        disallowed_tools: state.effective_disallowed_tools(),
+        allowed_tools: state.allowed_tools.clone(),
+        custom_betas: state.custom_betas.clone(),
+        fine_grained_tool_streaming: state.fine_grained_tool_streaming,
+        strict_tool_schemas: state.strict_tool_schemas,
+        task_budget: state.cli_task_budget,
+        max_thinking_tokens: state.cli_max_thinking_tokens,
+        thinking_display: state.cli_thinking_display.clone(),
+        brief_mode: state.brief_mode,
         ..Default::default()
     };
     tokio::spawn(async move {
-        jfc_engine::stream::stream_response(
+        crate::stream::stream_response(
             provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
         )
         .await;
     });
 }
 
-pub(super) async fn handle_setup_github_actions(app: &mut App, arg: &str) {
+pub(super) async fn handle_setup_github_actions(state: &mut EngineState, arg: &str) {
     let force = matches!(arg, "force" | "--force" | "-f" | "overwrite");
     let echo = if force {
         "/setup-github-actions force".to_owned()
     } else {
         "/setup-github-actions".to_owned()
     };
-    let repo_root = std::path::PathBuf::from(&app.engine.cwd);
+    let repo_root = std::path::PathBuf::from(&state.cwd);
     let body = match crate::github::actions::write_workflow(&repo_root, force) {
         Ok(outcome) => crate::github::actions::success_message(&outcome),
         Err(error) => format!("**Error writing workflow:** {error}"),
     };
-    app.engine.messages.push(ChatMessage::user(echo));
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::user(echo));
+    state.messages.push(ChatMessage::assistant(body));
 }

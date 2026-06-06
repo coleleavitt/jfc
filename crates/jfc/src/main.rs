@@ -2,10 +2,8 @@ pub mod app;
 
 pub mod attachments;
 pub mod cli;
-pub mod coach;
 
 pub mod file_watcher;
-pub mod github;
 pub mod input;
 pub mod keybindings;
 use jfc_markdown as markdown;

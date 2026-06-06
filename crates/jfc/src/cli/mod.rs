@@ -482,7 +482,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
     // any `jfc_engine::hooks::fire(point, ctx)` call short-circuits to the
     // registered handlers (Logger only, by default — user-defined
     // hooks land via .claude/settings.json in a future pass). Idempotent.
-    jfc_engine::command_spec::register_slash_commands(crate::input::SLASH_COMMANDS);
+    jfc_engine::command_spec::register_slash_commands(crate::input::slash_commands_table());
     jfc_engine::hooks::init_global(jfc_engine::hooks::default_registry());
     // TUI render-cache persistence rides on the session-save hook so the
     // engine-side session layer never links the markdown/render stack.

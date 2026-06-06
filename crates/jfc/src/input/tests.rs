@@ -2939,7 +2939,7 @@ fn palette_items_unfiltered_robust() {
 #[tokio::test]
 #[serial_test::serial]
 async fn slash_registry_every_entry_dispatches_robust() {
-    for (name, _help) in crate::input::SLASH_COMMANDS {
+    for (name, _help) in crate::input::slash_commands_table() {
         let mut app = test_app();
         run_slash_command(&mut app, name).await;
         let hit_fallthrough = app.engine.messages.iter().any(|m| {
@@ -2967,7 +2967,7 @@ fn slash_registry_table_is_nonempty_and_unique_normal() {
     // The macro emits one row per canonical name + one per alias. Names must
     // be unique (a duplicate literal would make the dispatch match arm
     // unreachable and silently shadow a command).
-    let names: Vec<&str> = crate::input::SLASH_COMMANDS
+    let names: Vec<&str> = crate::input::slash_commands_table()
         .iter()
         .map(|(n, _)| *n)
         .collect();

@@ -1,9 +1,9 @@
 //! Slash handlers: account, auth & external actions.
 
-use super::*;
+use crate::commands::prelude::*;
 
 pub(super) async fn cmd_workflow(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -12,7 +12,7 @@ pub(super) async fn cmd_workflow(
     // workflow tasks. `/workflow run <name>` injects a `Workflow({name})`
     // request so the model invokes the real Workflow tool (deterministic JS
     // orchestration). Legacy TOML step-templates are also surfaced.
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
+    state.messages.push(ChatMessage::user(text.to_owned()));
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let arg = parts.get(1).copied().unwrap_or("").trim();
     let mut sub = arg.split_whitespace();
@@ -20,26 +20,26 @@ pub(super) async fn cmd_workflow(
     let rest: String = sub.collect::<Vec<_>>().join(" ");
     match verb {
         "" | "list" => {
-            app.engine.messages
-                .push(ChatMessage::assistant(render_workflow_listing(app, &cwd)));
+            state.messages
+                .push(ChatMessage::assistant(render_workflow_listing(state, &cwd)));
         }
         "run" => {
             if rest.is_empty() {
-                app.engine.messages.push(ChatMessage::assistant(
+                state.messages.push(ChatMessage::assistant(
                     "Usage: `/workflow run <name>`. List available workflows with `/workflow`."
                         .into(),
                 ));
                 return;
             }
             // Resolve the name against the registry (built-in/user/project).
-            if jfc_engine::workflows::resolve(&cwd, &rest).is_none() {
-                app.engine.messages.push(ChatMessage::assistant(format!(
+            if crate::workflows::resolve(&cwd, &rest).is_none() {
+                state.messages.push(ChatMessage::assistant(format!(
                     "Workflow `{rest}` not found. List available workflows with `/workflow`."
                 )));
                 return;
             }
             let Some(tx) = tx else {
-                app.engine.messages.push(ChatMessage::assistant(
+                state.messages.push(ChatMessage::assistant(
                     "Workflow runner needs the event channel; called from a context without one."
                         .into(),
                 ));
@@ -58,7 +58,7 @@ pub(super) async fn cmd_workflow(
                     crate::runtime::ControlEvent::SubmitPrompt(prompt),
                 ))
                 .await;
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            state.messages.push(ChatMessage::assistant(format!(
                 "Dispatching workflow `{rest}` via the Workflow tool…"
             )));
         }
@@ -68,47 +68,47 @@ pub(super) async fn cmd_workflow(
             let mut parts_iter = rest.split_whitespace();
             let (scope, name) = match parts_iter.next() {
                 Some("user") => (
-                    jfc_engine::workflows::SaveScope::User,
+                    crate::workflows::SaveScope::User,
                     parts_iter.collect::<Vec<_>>().join(" "),
                 ),
                 Some("project") => (
-                    jfc_engine::workflows::SaveScope::Project,
+                    crate::workflows::SaveScope::Project,
                     parts_iter.collect::<Vec<_>>().join(" "),
                 ),
                 Some(first) => (
-                    jfc_engine::workflows::SaveScope::Project,
+                    crate::workflows::SaveScope::Project,
                     format!("{} {}", first, parts_iter.collect::<Vec<_>>().join(" "))
                         .trim()
                         .to_owned(),
                 ),
                 None => {
-                    app.engine.messages.push(ChatMessage::assistant(
+                    state.messages.push(ChatMessage::assistant(
                         "Usage: `/workflow save [user|project] <name>`".into(),
                     ));
                     return;
                 }
             };
             if name.is_empty() {
-                app.engine.messages.push(ChatMessage::assistant(
+                state.messages.push(ChatMessage::assistant(
                     "Usage: `/workflow save [user|project] <name>`".into(),
                 ));
                 return;
             }
-            match jfc_engine::workflows::resolve(&cwd, &name) {
+            match crate::workflows::resolve(&cwd, &name) {
                 None => {
-                    app.engine.messages.push(ChatMessage::assistant(format!(
+                    state.messages.push(ChatMessage::assistant(format!(
                         "Workflow `{name}` not found. List available workflows with `/workflow`."
                     )));
                 }
-                Some(wf) => match jfc_engine::workflows::save_workflow(&cwd, scope, &name, &wf.script) {
+                Some(wf) => match crate::workflows::save_workflow(&cwd, scope, &name, &wf.script) {
                     Ok(path) => {
-                        app.engine.messages.push(ChatMessage::assistant(format!(
+                        state.messages.push(ChatMessage::assistant(format!(
                             "Saved workflow `{name}` to `{}`.",
                             path.display()
                         )));
                     }
                     Err(e) => {
-                        app.engine.messages.push(ChatMessage::assistant(format!(
+                        state.messages.push(ChatMessage::assistant(format!(
                             "Failed to save workflow `{name}`: {e}"
                         )));
                     }
@@ -121,7 +121,7 @@ pub(super) async fn cmd_workflow(
             let id_filter = rest.trim().to_owned();
 
             // Collect matching tasks: running + recently completed (terminal).
-            let tasks: Vec<&crate::app::BackgroundTask> = app.engine
+            let tasks: Vec<&crate::app::BackgroundTask> = state
                 .background_tasks
                 .values()
                 .filter(|bt| {
@@ -150,7 +150,7 @@ pub(super) async fn cmd_workflow(
                 .collect();
 
             if tasks.is_empty() {
-                app.engine.messages
+                state.messages
                     .push(ChatMessage::assistant("No active workflow tasks.".into()));
                 return;
             }
@@ -186,12 +186,12 @@ pub(super) async fn cmd_workflow(
                     let done = wfp
                         .agents
                         .iter()
-                        .filter(|a| a.status == jfc_engine::workflows::AgentStatus::Done)
+                        .filter(|a| a.status == crate::workflows::AgentStatus::Done)
                         .count();
                     let failed = wfp
                         .agents
                         .iter()
-                        .filter(|a| a.status == jfc_engine::workflows::AgentStatus::Failed)
+                        .filter(|a| a.status == crate::workflows::AgentStatus::Failed)
                         .count();
                     output.push_str(&format!(
                         "  Agents: {done} done · {running} running · {failed} failed\n"
@@ -221,10 +221,10 @@ pub(super) async fn cmd_workflow(
                 }
             }
 
-            app.engine.messages.push(ChatMessage::assistant(output));
+            state.messages.push(ChatMessage::assistant(output));
         }
         other => {
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            state.messages.push(ChatMessage::assistant(format!(
                 "Unknown subcommand `{other}`. Use `/workflow list`, `/workflow run <name>`, `/workflow save [user|project] <name>`, or `/workflow status [id]`."
             )));
         }
@@ -233,12 +233,12 @@ pub(super) async fn cmd_workflow(
 
 /// Build the `/workflow` listing: running workflow tasks, then available
 /// named workflows (registry), then legacy TOML templates.
-fn render_workflow_listing(app: &App, cwd: &std::path::Path) -> String {
+fn render_workflow_listing(state: &EngineState, cwd: &std::path::Path) -> String {
     use jfc_core::ExecutionStatus;
     let mut body = String::new();
 
     // ── running workflow background tasks ───────────────────────────────
-    let running: Vec<&crate::app::BackgroundTask> = app.engine
+    let running: Vec<&crate::app::BackgroundTask> = state
         .background_tasks
         .values()
         .filter(|bt| {
@@ -261,15 +261,15 @@ fn render_workflow_listing(app: &App, cwd: &std::path::Path) -> String {
     }
 
     // ── available named workflows (registry) ────────────────────────────
-    let registry = jfc_engine::workflows::list_meta(cwd);
+    let registry = crate::workflows::list_meta(cwd);
     if !registry.is_empty() {
         body.push_str("**Available workflows** (run with `/workflow run <name>`):\n\n");
         for (name, description, source) in &registry {
             let src = match source {
-                jfc_engine::workflows::WorkflowSource::BuiltIn => "built-in",
-                jfc_engine::workflows::WorkflowSource::Plugin => "plugin",
-                jfc_engine::workflows::WorkflowSource::User => "user",
-                jfc_engine::workflows::WorkflowSource::Project => "project",
+                crate::workflows::WorkflowSource::BuiltIn => "built-in",
+                crate::workflows::WorkflowSource::Plugin => "plugin",
+                crate::workflows::WorkflowSource::User => "user",
+                crate::workflows::WorkflowSource::Project => "project",
             };
             body.push_str(&format!("- `{name}` ({src}) — {description}\n"));
         }
@@ -277,13 +277,13 @@ fn render_workflow_listing(app: &App, cwd: &std::path::Path) -> String {
     }
 
     // ── legacy TOML step templates ──────────────────────────────────────
-    let legacy = jfc_engine::workflows::list(cwd);
+    let legacy = crate::workflows::list(cwd);
     if !legacy.is_empty() {
         body.push_str("**Legacy TOML templates** (`.jfc/workflows/*.toml`):\n\n");
         for name in &legacy {
             // Attempt to load + render the summary; fall back to the bare name.
-            let line = match jfc_engine::workflows::load(cwd, name) {
-                Ok(wf) => jfc_engine::workflows::render_summary(name, &wf),
+            let line = match crate::workflows::load(cwd, name) {
+                Ok(wf) => crate::workflows::render_summary(name, &wf),
                 Err(_) => format!("- `{name}`\n"),
             };
             body.push_str(&line);
@@ -302,7 +302,7 @@ fn render_workflow_listing(app: &App, cwd: &std::path::Path) -> String {
 }
 
 pub(super) async fn cmd_login(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -313,25 +313,25 @@ pub(super) async fn cmd_login(
     // out to xdg-open / open / start to launch the browser
     // (cheap, async-safe; failures are silent on systems
     // without one of those binaries).
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
+    state.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts
         .get(1)
         .copied()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let dispatch = jfc_engine::providers::login_dispatch::dispatch(arg);
+    let dispatch = crate::providers::login_dispatch::dispatch(arg);
     let url = match &dispatch {
-        jfc_engine::providers::login_dispatch::LoginDispatch::AnthropicApiKey(_)
-        | jfc_engine::providers::login_dispatch::LoginDispatch::ConsoleApiKey(_) => {
+        crate::providers::login_dispatch::LoginDispatch::AnthropicApiKey(_)
+        | crate::providers::login_dispatch::LoginDispatch::ConsoleApiKey(_) => {
             Some("https://console.anthropic.com/settings/keys")
         }
-        jfc_engine::providers::login_dispatch::LoginDispatch::ClaudeAiOAuth(_) => {
+        crate::providers::login_dispatch::LoginDispatch::ClaudeAiOAuth(_) => {
             Some("https://claude.ai/login")
         }
-        jfc_engine::providers::login_dispatch::LoginDispatch::CodexOAuth(_) => {
+        crate::providers::login_dispatch::LoginDispatch::CodexOAuth(_) => {
             Some("https://auth.openai.com/codex/device")
         }
-        jfc_engine::providers::login_dispatch::LoginDispatch::AntigravityOAuth(_) => {
+        crate::providers::login_dispatch::LoginDispatch::AntigravityOAuth(_) => {
             Some("https://accounts.google.com/")
         }
         _ => None,
@@ -350,7 +350,7 @@ pub(super) async fn cmd_login(
         //     .spawn();
         // tracing::info!(target: "jfc::login", %url, "opened browser for /login");
     }
-    app.engine.messages.push(ChatMessage::assistant(format!(
+    state.messages.push(ChatMessage::assistant(format!(
         "{dispatch}{}",
         if url.is_some() {
             "\n\n_(opened the browser for you)_"
@@ -361,12 +361,12 @@ pub(super) async fn cmd_login(
 }
 
 pub(super) async fn cmd_logout(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
+    state.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts
         .get(1)
         .copied()
@@ -403,16 +403,16 @@ pub(super) async fn cmd_logout(
                 .join("\n")
         )
     };
-    app.engine.messages.push(ChatMessage::assistant(summary));
+    state.messages.push(ChatMessage::assistant(summary));
 }
 
 pub(super) async fn cmd_release_notes(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
+    state.messages.push(ChatMessage::user(text.to_owned()));
     // Try to read the workspace CHANGELOG; fall back to a stub
     // pointer when the binary was installed somewhere without it.
     let candidates = ["CHANGELOG.md", "../CHANGELOG.md", "../../CHANGELOG.md"];
@@ -434,17 +434,17 @@ pub(super) async fn cmd_release_notes(
                 super::support::releases_url()
             )
         });
-    app.engine.messages.push(ChatMessage::assistant(notes));
+    state.messages.push(ChatMessage::assistant(notes));
 }
 
 pub(super) async fn cmd_feedback(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
-    let session_id = app.engine
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    let session_id = state
         .current_session_id
         .as_ref()
         .map(|s| s.as_str())
@@ -458,8 +458,8 @@ pub(super) async fn cmd_feedback(
          - OS: `{}`\n\
          - Session ID: `{session_id}`\n",
         env!("CARGO_PKG_VERSION"),
-        app.engine.provider.name(),
-        app.engine.model.as_str(),
+        state.provider.name(),
+        state.model.as_str(),
         std::env::consts::OS,
     );
     let _url = super::support::bug_report_url("", &body);
@@ -472,7 +472,7 @@ pub(super) async fn cmd_feedback(
     // let _ = std::process::Command::new("cmd")
     //     .args(["/C", "start", &url])
     //     .spawn();
-    app.engine.messages.push(ChatMessage::assistant(format!(
+    state.messages.push(ChatMessage::assistant(format!(
         "Opened a pre-filled bug report at {}/issues/new in your browser \
          (version, model, OS, and session id `{session_id}` are already attached).",
         super::support::repo_url(),
@@ -480,13 +480,13 @@ pub(super) async fn cmd_feedback(
 }
 
 pub(super) async fn cmd_upgrade(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
-    app.engine.messages.push(ChatMessage::assistant(format!(
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    state.messages.push(ChatMessage::assistant(format!(
         "To upgrade jfc, run one of:\n\
          * `cargo install --git {}` (HEAD)\n\
          * `cargo install jfc` (latest crates.io release)\n\
@@ -497,7 +497,7 @@ pub(super) async fn cmd_upgrade(
 }
 
 pub(super) async fn cmd_batch(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -507,10 +507,10 @@ pub(super) async fn cmd_batch(
     // 50% discount. The batch ID is returned synchronously;
     // results stream back via the Sessions API in a follow-up
     // turn (poll `/batch status <id>`).
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
+    state.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts.get(1).copied().unwrap_or("").trim();
     if arg.is_empty() {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Usage: `/batch <prompt-file>`. The file should contain one prompt per line.".into(),
         ));
         return;
@@ -519,7 +519,7 @@ pub(super) async fn cmd_batch(
     let content = match std::fs::read_to_string(&path) {
         Ok(c) => c,
         Err(e) => {
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            state.messages.push(ChatMessage::assistant(format!(
                 "Failed to read `{}`: {e}",
                 path.display(),
             )));
@@ -532,18 +532,18 @@ pub(super) async fn cmd_batch(
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .collect();
     if prompts.is_empty() {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "No prompts found (each non-empty, non-`#`-comment line counts as one).".into(),
         ));
         return;
     }
-    let Some(client) = jfc_engine::sdk_bridge::build_client() else {
-        app.engine.messages.push(ChatMessage::assistant(
+    let Some(client) = crate::sdk_bridge::build_client() else {
+        state.messages.push(ChatMessage::assistant(
             "No Anthropic API key configured — `/batch` needs one (set ANTHROPIC_API_KEY).".into(),
         ));
         return;
     };
-    let model = app.engine.model.as_str().to_owned();
+    let model = state.model.as_str().to_owned();
     let prompt_count = prompts.len();
     let path_for_msg = path.display().to_string();
     tokio::spawn(async move {
@@ -594,7 +594,7 @@ pub(super) async fn cmd_batch(
             }
         }
     });
-    app.engine.messages.push(ChatMessage::assistant(format!(
+    state.messages.push(ChatMessage::assistant(format!(
         "Queued {prompt_count} prompts from `{}` for batch processing. \
                  Watch stderr / `/doctor` for the batch ID.",
         path.display()

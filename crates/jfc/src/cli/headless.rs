@@ -358,9 +358,11 @@ pub(super) async fn run_print_mode(
                 // Pre-submit compaction re-fired the prompt.
                 let _ = engine.submit(text, Vec::new(), None).await?;
             }
-            Some(FrontendDirective::RunCommand(_)) => {
-                // Slash commands are not supported in print mode (stage 8 of
-                // the extraction moves engine-pure commands into the engine).
+            Some(FrontendDirective::RunCommand(text)) => {
+                // Engine command semantics are shared since stage 8 — print
+                // mode runs /compact, /model, /task-* etc. like any frontend.
+                let _ = jfc_engine::commands::run_command(&mut engine.state, &text, Some(&tx))
+                    .await;
             }
             None => {}
         }

@@ -178,6 +178,9 @@ pub enum EngineEffect {
 }
 
 pub struct EngineState {
+    /// When this engine instance was constructed — the run clock for
+    /// session-duration reporting (/bug, /status).
+    pub started_at: Instant,
     /// View-facing side effects queued by engine handlers during event
     /// dispatch; the frontend drains these after every `handle_engine_event`
     /// call (see `apply_engine_effects`).
@@ -832,6 +835,7 @@ impl EngineState {
             .and_then(|p| p.to_str().map(str::to_owned))
             .unwrap_or_default();
         let mut state = Self {
+            started_at: Instant::now(),
             effects: Vec::new(),
             output_style: crate::output_style::OutputStyle::default(),
             messages: Vec::new(),

@@ -1,15 +1,15 @@
 //! Slash handlers: task-store CRUD.
 
-use super::*;
+use crate::commands::prelude::*;
 use crate::runtime::EngineEvent;
 
 pub(super) async fn cmd_task_list(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    let tasks = app.engine.task_store.list(jfc_session::DeletedFilter::Exclude);
+    let tasks = state.task_store.list(jfc_session::DeletedFilter::Exclude);
     let body = if tasks.is_empty() {
         "No tasks. Use `/task-add <subject>` to create one.".to_owned()
     } else {
@@ -38,45 +38,45 @@ pub(super) async fn cmd_task_list(
                 icon, t.id, t.subject, owner, blocks
             ));
         }
-        let c = app.engine.task_store.counts();
+        let c = state.task_store.counts();
         s.push_str(&format!(
             "\n*{} pending, {} in progress, {} completed*",
             c.pending, c.in_progress, c.completed
         ));
         s
     };
-    app.engine.messages.push(ChatMessage::user("/tasks".into()));
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::user("/tasks".into()));
+    state.messages.push(ChatMessage::assistant(body));
 }
 
 pub(super) async fn cmd_task_add(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let subject = parts.get(1).copied().unwrap_or("").trim();
     if subject.is_empty() {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Usage: `/task-add <subject>`".into(),
         ));
     } else {
-        match app.engine.task_store.create(
+        match state.task_store.create(
             subject.to_owned(),
             String::new(),
             None,
             Vec::<jfc_session::TaskId>::new(),
         ) {
             Ok(t) => {
-                app.engine.messages
+                state.messages
                     .push(ChatMessage::user(format!("/task-add {subject}")));
-                app.engine.messages.push(ChatMessage::assistant(format!(
+                state.messages.push(ChatMessage::assistant(format!(
                     "Created task `{}`: {}",
                     t.id, t.subject
                 )));
             }
             Err(e) => {
-                app.engine.messages
+                state.messages
                     .push(ChatMessage::assistant(format!("**Error:** {e}")));
             }
         }
@@ -84,18 +84,18 @@ pub(super) async fn cmd_task_add(
 }
 
 pub(super) async fn cmd_task_done(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let id = parts.get(1).copied().unwrap_or("").trim();
     if id.is_empty() {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Usage: `/task-done <id>` (e.g. `/task-done t3`)".into(),
         ));
     } else {
-        match app.engine.task_store.update(
+        match state.task_store.update(
             id,
             jfc_session::TaskPatch {
                 status: Some(jfc_session::TaskStatus::Completed),
@@ -103,15 +103,15 @@ pub(super) async fn cmd_task_done(
             },
         ) {
             Ok(t) => {
-                app.engine.messages
+                state.messages
                     .push(ChatMessage::user(format!("/task-done {id}")));
-                app.engine.messages.push(ChatMessage::assistant(format!(
+                state.messages.push(ChatMessage::assistant(format!(
                     "✓ Completed `{}`: {}",
                     t.id, t.subject
                 )));
             }
             Err(e) => {
-                app.engine.messages
+                state.messages
                     .push(ChatMessage::assistant(format!("**Error:** {e}")));
             }
         }
@@ -119,25 +119,25 @@ pub(super) async fn cmd_task_done(
 }
 
 pub(super) async fn cmd_task_rm(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let id = parts.get(1).copied().unwrap_or("").trim();
     if id.is_empty() {
-        app.engine.messages
+        state.messages
             .push(ChatMessage::assistant("Usage: `/task-rm <id>`".into()));
     } else {
-        match app.engine.task_store.delete(id) {
+        match state.task_store.delete(id) {
             Ok(()) => {
-                app.engine.messages
+                state.messages
                     .push(ChatMessage::user(format!("/task-rm {id}")));
-                app.engine.messages
+                state.messages
                     .push(ChatMessage::assistant(format!("Deleted task `{id}`.")));
             }
             Err(e) => {
-                app.engine.messages
+                state.messages
                     .push(ChatMessage::assistant(format!("**Error:** {e}")));
             }
         }

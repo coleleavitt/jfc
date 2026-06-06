@@ -1,27 +1,26 @@
+use crate::app::EngineState;
 use tokio::sync::mpsc;
 
-use super::theme_picker::{apply_theme, open_theme_picker};
-use crate::app::App;
 use crate::runtime::{ControlEvent, EngineEvent};
 use jfc_core::ChatMessage;
 
 /// `/dump-context` prints everything jfc would inject into the system prompt
 /// into the transcript.
-pub(super) async fn handle_dump_context_command(app: &mut App) {
+pub(super) async fn handle_dump_context_command(state: &mut EngineState) {
     let mut report = String::new();
-    let cwd = std::path::PathBuf::from(&app.engine.cwd);
+    let cwd = std::path::PathBuf::from(&state.cwd);
 
     report.push_str("**Model context dump**\n\n");
-    report.push_str(&format!("- Model: `{}`\n", app.engine.model));
-    report.push_str(&format!("- Cwd: `{}`\n", app.engine.cwd));
-    report.push_str(&format!("- Provider: `{}`\n", app.engine.provider.name()));
-    report.push_str(&format!("- Permission mode: `{:?}`\n", app.engine.permission_mode));
-    if let Some(ref branch) = app.engine.git_branch {
+    report.push_str(&format!("- Model: `{}`\n", state.model));
+    report.push_str(&format!("- Cwd: `{}`\n", state.cwd));
+    report.push_str(&format!("- Provider: `{}`\n", state.provider.name()));
+    report.push_str(&format!("- Permission mode: `{:?}`\n", state.permission_mode));
+    if let Some(ref branch) = state.git_branch {
         report.push_str(&format!("- Git branch: `{branch}`\n"));
     }
     report.push('\n');
 
-    let hierarchy = jfc_engine::context::ClaudeMdHierarchy::load(&cwd);
+    let hierarchy = crate::context::ClaudeMdHierarchy::load(&cwd);
     if let Some(rendered) = hierarchy.render() {
         report.push_str("### CLAUDE.md hierarchy\n\n```\n");
         report.push_str(&rendered);
@@ -32,7 +31,7 @@ pub(super) async fn handle_dump_context_command(app: &mut App) {
         );
     }
 
-    let skills = jfc_engine::agents::load_skills(&cwd);
+    let skills = crate::agents::load_skills(&cwd);
     report.push_str(&format!("### Skills ({})\n\n", skills.len()));
     for skill in &skills {
         report.push_str(&format!("- `{}`\n", skill.name));
@@ -42,7 +41,7 @@ pub(super) async fn handle_dump_context_command(app: &mut App) {
     }
     report.push('\n');
 
-    let memories = jfc_engine::memory::load_all_memories(&cwd);
+    let memories = crate::memory::load_all_memories(&cwd);
     report.push_str(&format!("### Memories ({})\n\n", memories.len()));
     for mem in &memories {
         let name = mem
@@ -60,7 +59,7 @@ pub(super) async fn handle_dump_context_command(app: &mut App) {
     }
     report.push('\n');
 
-    let tools = jfc_engine::tools::all_tool_defs();
+    let tools = crate::tools::all_tool_defs();
     report.push_str(&format!(
         "### Tool definitions sent to API ({})\n\n",
         tools.len()
@@ -70,7 +69,7 @@ pub(super) async fn handle_dump_context_command(app: &mut App) {
     }
     report.push('\n');
 
-    let agents = jfc_engine::agents::load_agents(&cwd);
+    let agents = crate::agents::load_agents(&cwd);
     report.push_str(&format!("### Agents ({})\n\n", agents.len()));
     for a in &agents {
         report.push_str(&format!(
@@ -85,54 +84,30 @@ pub(super) async fn handle_dump_context_command(app: &mut App) {
     }
     report.push('\n');
 
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::user("/dump-context".to_string()));
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::assistant(report));
 }
 
-/// `/theme [name]` switches the live UI theme or opens the picker.
-pub(super) fn handle_theme_command(app: &mut App, args: &str) {
-    let name = args.trim();
-    if name.is_empty() {
-        open_theme_picker(app);
-        return;
-    }
-    match crate::theme::Theme::choice_by_name(name) {
-        Some(choice) => apply_theme(app, choice.name),
-        None => {
-            jfc_engine::toast::push_with_cap(
-                &mut app.engine.toasts,
-                jfc_engine::toast::Toast::new(
-                    jfc_engine::toast::ToastKind::Warning,
-                    format!(
-                        "unknown theme '{name}' — try one of: {}",
-                        crate::theme::Theme::available_names().join(", ")
-                    ),
-                ),
-            );
-        }
-    }
-}
-
 /// `/fleet` prints a snapshot of every active teammate.
-pub(super) fn handle_fleet_command(app: &mut App) {
+pub(super) fn handle_fleet_command(state: &mut EngineState) {
     let mut lines: Vec<String> = Vec::new();
-    if app.engine.team_context.teammates.is_empty() {
+    if state.team_context.teammates.is_empty() {
         lines.push("No active teammates.".into());
         lines.push("Spawn one via the Task tool with `name` + `team_name` set.".into());
     } else {
         lines.push(format!(
             "Fleet: {} teammate{} active",
-            app.engine.team_context.teammates.len(),
-            if app.engine.team_context.teammates.len() == 1 {
+            state.team_context.teammates.len(),
+            if state.team_context.teammates.len() == 1 {
                 ""
             } else {
                 "s"
             }
         ));
         lines.push("".into());
-        for tm in app.engine.team_context.teammates.values() {
+        for tm in state.team_context.teammates.values() {
             let elapsed = tm.spawned_at.elapsed();
             lines.push(format!(
                 "  {} · {} · spawned {}m{}s ago{}",
@@ -147,26 +122,26 @@ pub(super) fn handle_fleet_command(app: &mut App) {
             ));
         }
     }
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::user("/fleet".into()));
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
     tracing::info!(
         target: "jfc::ui::fleet",
-        teammates = app.engine.team_context.teammates.len(),
+        teammates = state.team_context.teammates.len(),
         "/fleet rendered"
     );
 }
 
 /// `/teleport [branch]` lists jfc-managed branches or checks out the named
 /// branch and resumes that session.
-pub(super) async fn handle_teleport_command(app: &mut App, target: &str) {
+pub(super) async fn handle_teleport_command(state: &mut EngineState, target: &str) {
     use std::path::Path;
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let repo_root: &Path = cwd.as_path();
 
     if target.is_empty() {
-        let targets = jfc_engine::swarm::teleport::list_teleport_targets(repo_root);
+        let targets = crate::swarm::teleport::list_teleport_targets(repo_root);
         let body = if targets.is_empty() {
             "No jfc-managed branches in this repo (looking for `jfc/<session>` branches).\n\
              Spawn a teammate via Task to create one, or check out a branch with `git checkout`."
@@ -183,9 +158,9 @@ pub(super) async fn handle_teleport_command(app: &mut App, target: &str) {
             s.push_str("\nRun `/teleport <branch>` to jump.");
             s
         };
-        app.engine.messages
+        state.messages
             .push(jfc_core::ChatMessage::user("/teleport".into()));
-        app.engine.messages
+        state.messages
             .push(jfc_core::ChatMessage::assistant(body));
         return;
     }
@@ -195,11 +170,11 @@ pub(super) async fn handle_teleport_command(app: &mut App, target: &str) {
     } else {
         format!("jfc/{target}")
     };
-    let result = jfc_engine::swarm::teleport::teleport_to_session(repo_root, &target_branch, None);
-    app.engine.messages.push(jfc_core::ChatMessage::user(format!(
+    let result = crate::swarm::teleport::teleport_to_session(repo_root, &target_branch, None);
+    state.messages.push(jfc_core::ChatMessage::user(format!(
         "/teleport {target}"
     )));
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::assistant(result.message.clone()));
     tracing::info!(
         target: "jfc::ui::teleport",
@@ -210,13 +185,13 @@ pub(super) async fn handle_teleport_command(app: &mut App, target: &str) {
 }
 
 /// `/output-style [name]` switches assistant reply style.
-pub(super) fn handle_output_style_command(app: &mut App, args: &str) {
-    use jfc_engine::output_style::OutputStyle;
+pub(super) fn handle_output_style_command(state: &mut EngineState, args: &str) {
+    use crate::output_style::OutputStyle;
     let arg = args.trim();
     if arg.is_empty() {
         let mut lines = vec!["Available output styles:".to_string(), "".to_string()];
         for s in OutputStyle::all() {
-            let active = if *s == app.engine.output_style {
+            let active = if *s == state.output_style {
                 " · ACTIVE"
             } else {
                 ""
@@ -229,18 +204,18 @@ pub(super) fn handle_output_style_command(app: &mut App, args: &str) {
         }
         lines.push("".into());
         lines.push("Use `/output-style <name>` to switch.".into());
-        app.engine.messages
+        state.messages
             .push(jfc_core::ChatMessage::user("/output-style".into()));
-        app.engine.messages
+        state.messages
             .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
         return;
     }
     let parsed = OutputStyle::from_str_loose(arg);
     if parsed == OutputStyle::Default && !arg.eq_ignore_ascii_case("default") {
-        jfc_engine::toast::push_with_cap(
-            &mut app.engine.toasts,
-            jfc_engine::toast::Toast::new(
-                jfc_engine::toast::ToastKind::Warning,
+        crate::toast::push_with_cap(
+            &mut state.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
                 format!(
                     "Unknown output style '{arg}' — try one of: {}",
                     OutputStyle::all()
@@ -253,8 +228,8 @@ pub(super) fn handle_output_style_command(app: &mut App, args: &str) {
         );
         return;
     }
-    app.engine.output_style = parsed;
-    jfc_engine::output_style::set_active(parsed);
+    state.output_style = parsed;
+    crate::output_style::set_active(parsed);
     let persist_msg = match save_output_style(parsed.name()) {
         Ok(_) => format!("output style: {}", parsed.name()),
         Err(e) => {
@@ -262,20 +237,20 @@ pub(super) fn handle_output_style_command(app: &mut App, args: &str) {
             format!("output style: {} (not persisted: {e})", parsed.name())
         }
     };
-    jfc_engine::toast::push_with_cap(
-        &mut app.engine.toasts,
-        jfc_engine::toast::Toast::new(jfc_engine::toast::ToastKind::Success, persist_msg),
+    crate::toast::push_with_cap(
+        &mut state.toasts,
+        crate::toast::Toast::new(crate::toast::ToastKind::Success, persist_msg),
     );
 }
 
 fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {
-    let path = jfc_engine::config::config_path();
+    let path = crate::config::config_path();
     if let Some(parent) = path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
         return Err(format!("cannot create {}: {e}", parent.display()));
     }
-    let mut cfg: jfc_engine::config::Config = match std::fs::read_to_string(&path) {
+    let mut cfg: crate::config::Config = match std::fs::read_to_string(&path) {
         Ok(s) if !s.trim().is_empty() => match toml::from_str(&s) {
             Ok(c) => c,
             Err(e) => {
@@ -285,7 +260,7 @@ fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {
                 ));
             }
         },
-        _ => jfc_engine::config::Config::default(),
+        _ => crate::config::Config::default(),
     };
     cfg.output_style = Some(name.to_string());
     let serialized = toml::to_string_pretty(&cfg).map_err(|e| format!("serialize failed: {e}"))?;
@@ -297,25 +272,25 @@ fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {
 /// `/plan`, `/roadmap`, `/parity`, `/philosophy`, and `/usage` start a normal
 /// model turn that asks JFC to create or update the matching project document.
 pub(super) async fn handle_doc_command(
-    app: &mut App,
-    kind: jfc_engine::document_formats::DocKind,
+    state: &mut EngineState,
+    kind: crate::document_formats::DocKind,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    let cwd = std::path::PathBuf::from(&app.engine.cwd);
-    let target = jfc_engine::document_formats::doc_target(&cwd, kind);
+    let cwd = std::path::PathBuf::from(&state.cwd);
+    let target = crate::document_formats::doc_target(&cwd, kind);
     let exists = target.is_file();
     let echo = format!("/{}", kind.verb());
     let body = kind.prompt_body(&target, exists);
     let action = if exists { "Updating" } else { "Drafting" };
 
-    let idle = !app.engine.is_streaming
-        && app.engine.pending_approval.is_none()
-        && app.engine.approval_queue.is_empty()
-        && app.engine.pending_tool_calls.is_empty();
+    let idle = !state.is_streaming
+        && state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty();
 
     if let (true, Some(tx)) = (idle, tx) {
-        app.engine.messages.push(ChatMessage::user(echo));
-        app.scroll_to_bottom();
+        state.messages.push(ChatMessage::user(echo));
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
         let _ = tx.send(EngineEvent::Control(ControlEvent::SubmitPrompt(body))).await;
         tracing::info!(
             target: "jfc::doc_command",
@@ -323,18 +298,18 @@ pub(super) async fn handle_doc_command(
             "doc command dispatched immediately (idle session)"
         );
     } else {
-        app.engine.messages.push(ChatMessage::user(echo));
-        app.engine.messages.push(ChatMessage::assistant(format!(
+        state.messages.push(ChatMessage::user(echo));
+        state.messages.push(ChatMessage::assistant(format!(
             "{action} `{}` … (queued — will run when the current turn finishes)",
             target.display()
         )));
-        app.engine.queued_prompts.push(crate::app::QueuedPrompt {
+        state.queued_prompts.push(crate::runtime::QueuedPrompt {
             text: body,
             is_meta: false,
-            priority: crate::app::QueuePriority::Later,
+            priority: crate::runtime::QueuePriority::Later,
             attachments: Vec::new(),
         });
-        app.scroll_to_bottom();
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
         tracing::info!(
             target: "jfc::doc_command",
             kind = kind.file_name(),
@@ -344,11 +319,11 @@ pub(super) async fn handle_doc_command(
 }
 
 /// `/init` bootstraps a CLAUDE.md in the current working directory.
-pub(super) async fn handle_init_command(app: &mut App) {
+pub(super) async fn handle_init_command(state: &mut EngineState) {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let target = cwd.join("CLAUDE.md");
 
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::user("/init".into()));
 
     let overwrite_note = if target.exists() {
@@ -524,19 +499,19 @@ pub(super) async fn handle_init_command(app: &mut App) {
         Err(e) => format!("**Error:** Failed to write `{}`: {e}", target.display()),
     };
 
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::assistant(body));
 }
 
 /// `/cost` reports running session cost.
-pub(super) fn handle_cost_command(app: &mut App) {
+pub(super) fn handle_cost_command(state: &mut EngineState) {
     let mut total = 0.0f64;
     let mut lines: Vec<String> = vec!["Session cost so far:".into(), "".into()];
-    if app.engine.usage_by_model.is_empty() {
+    if state.usage_by_model.is_empty() {
         lines.push("  (no model usage yet — try a prompt first)".into());
     } else {
-        for (model, usage) in &app.engine.usage_by_model {
-            let cost = jfc_engine::cost::cost_for(model.as_str(), usage);
+        for (model, usage) in &state.usage_by_model {
+            let cost = crate::cost::cost_for(model.as_str(), usage);
             total += cost;
             lines.push(format!(
                 "  {} · {} in / {} out / {} cache-read / {} cache-write → {}",
@@ -545,22 +520,22 @@ pub(super) fn handle_cost_command(app: &mut App) {
                 usage.output_tokens,
                 usage.cache_read_tokens,
                 usage.cache_write_tokens,
-                jfc_engine::cost::fmt_cost(cost),
+                crate::cost::fmt_cost(cost),
             ));
         }
     }
     lines.push("".into());
-    lines.push(format!("**Total: {}**", jfc_engine::cost::fmt_cost(total)));
-    app.engine.messages
+    lines.push(format!("**Total: {}**", crate::cost::fmt_cost(total)));
+    state.messages
         .push(jfc_core::ChatMessage::user("/cost".into()));
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
 }
 
 /// `/status` reports rich session status.
-pub(super) fn handle_status_command(app: &mut App) {
+pub(super) fn handle_status_command(state: &mut EngineState) {
     let (total_in, total_out, total_cr, total_cw) =
-        app.engine.usage_by_model
+        state.usage_by_model
             .values()
             .fold((0u64, 0u64, 0u64, 0u64), |(i, o, cr, cw), u| {
                 (
@@ -570,23 +545,23 @@ pub(super) fn handle_status_command(app: &mut App) {
                     cw + u.cache_write_tokens,
                 )
             });
-    let total_cost: f64 = app.engine
+    let total_cost: f64 = state
         .usage_by_model
         .iter()
-        .map(|(m, u)| jfc_engine::cost::cost_for(m.as_str(), u))
+        .map(|(m, u)| crate::cost::cost_for(m.as_str(), u))
         .sum();
 
-    let model_str = app.engine.model.as_str();
-    let provider_label = app.engine.provider.name();
-    let turn_count = app.engine
+    let model_str = state.model.as_str();
+    let provider_label = state.provider.name();
+    let turn_count = state
         .messages
         .iter()
         .filter(|m| m.role == jfc_core::Role::User)
         .count();
-    let mcp_count = app.engine.mcp_servers.len();
-    let effort_label = app.engine.effort_state.status();
-    let temperature_label = app.engine.temperature_state.status();
-    let exploration_label = app.engine.exploration_state.status();
+    let mcp_count = state.mcp_servers.len();
+    let effort_label = state.effort_state.status();
+    let temperature_label = state.temperature_state.status();
+    let exploration_label = state.exploration_state.status();
 
     let lines = vec![
         format!("**Version:** jfc v{}", env!("CARGO_PKG_VERSION")),
@@ -597,19 +572,19 @@ pub(super) fn handle_status_command(app: &mut App) {
             "**Tokens:** {} in / {} out / {} cache-read / {} cache-write",
             total_in, total_out, total_cr, total_cw
         ),
-        format!("**Cost:** {}", jfc_engine::cost::fmt_cost(total_cost)),
+        format!("**Cost:** {}", crate::cost::fmt_cost(total_cost)),
         format!("**MCP servers:** {mcp_count} active"),
         format!(
             "**Fast mode:** {}",
-            if app.engine.fast_mode { "ON" } else { "OFF" }
+            if state.fast_mode { "ON" } else { "OFF" }
         ),
         format!("**Effort:** {effort_label}"),
         format!("**Temperature:** {temperature_label}"),
         format!("**Exploration:** {exploration_label}"),
     ];
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::user("/status".into()));
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
 }
 
@@ -618,8 +593,8 @@ pub(super) fn handle_status_command(app: &mut App) {
 /// can copy it if their browser doesn't open. Mirrors `gh issue create
 /// --web` and Claude Code's `/bug`: the title carries the user's short
 /// summary; the body carries the structured environment block.
-pub(super) fn handle_bug_command(app: &mut App, description: String) {
-    let session_id = app.engine
+pub(super) fn handle_bug_command(state: &mut EngineState, description: String) {
+    let session_id = state
         .current_session_id
         .as_ref()
         .map(|s| s.as_str())
@@ -648,9 +623,9 @@ pub(super) fn handle_bug_command(app: &mut App, description: String) {
             trimmed_desc
         },
         env!("CARGO_PKG_VERSION"),
-        app.engine.provider.name(),
-        app.engine.model.as_str(),
-        app.engine.permission_mode,
+        state.provider.name(),
+        state.model.as_str(),
+        state.permission_mode,
         std::env::consts::OS,
     );
     let _url = super::support::bug_report_url(&title, &body);
@@ -663,10 +638,10 @@ pub(super) fn handle_bug_command(app: &mut App, description: String) {
     // let _ = std::process::Command::new("cmd")
     //     .args(["/C", "start", &url])
     //     .spawn();
-    app.engine.messages.push(jfc_core::ChatMessage::user(
+    state.messages.push(jfc_core::ChatMessage::user(
         format!("/bug {description}").trim_end().into(),
     ));
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::assistant(format!(
             "Opened a pre-filled bug report at {}/issues/new in your browser.\n\
              If nothing opened, copy the URL above. Context already attached:\n\
@@ -674,27 +649,27 @@ pub(super) fn handle_bug_command(app: &mut App, description: String) {
              - **Provider/model**: `{}` / `{}`\n\
              - **Mode**: {:?}",
             super::support::repo_url(),
-            app.engine.provider.name(),
-            app.engine.model.as_str(),
-            app.engine.permission_mode,
+            state.provider.name(),
+            state.model.as_str(),
+            state.permission_mode,
         )));
 }
 
 /// `/rewind [N]` drops the last N user/assistant turn pairs from the transcript.
-pub(super) fn handle_rewind_command(app: &mut App, n_str: &str) {
+pub(super) fn handle_rewind_command(state: &mut EngineState, n_str: &str) {
     let n: usize = n_str.parse().unwrap_or(1).max(1);
     use jfc_core::Role;
     let mut dropped_pairs = 0usize;
     while dropped_pairs < n {
-        let last_user_idx = app.engine.messages.iter().rposition(|m| m.role == Role::User);
+        let last_user_idx = state.messages.iter().rposition(|m| m.role == Role::User);
         match last_user_idx {
             Some(idx) => {
-                let removed = app.engine.messages.split_off(idx).len();
+                let removed = state.messages.split_off(idx).len();
                 tracing::info!(
                     target: "jfc::ui::rewind",
                     pair = dropped_pairs + 1,
                     removed,
-                    remaining = app.engine.messages.len(),
+                    remaining = state.messages.len(),
                     "rewind: dropped a turn pair"
                 );
                 dropped_pairs += 1;
@@ -710,14 +685,14 @@ pub(super) fn handle_rewind_command(app: &mut App, n_str: &str) {
              from this point — the trimmed history is gone for this session.",
             dropped_pairs,
             if dropped_pairs == 1 { "" } else { "s" },
-            app.engine.messages.len(),
-            if app.engine.messages.len() == 1 { "" } else { "s" },
+            state.messages.len(),
+            if state.messages.len() == 1 { "" } else { "s" },
         )
     };
-    jfc_engine::toast::push_with_cap(
-        &mut app.engine.toasts,
-        jfc_engine::toast::Toast::new(jfc_engine::toast::ToastKind::Info, body.clone()),
+    crate::toast::push_with_cap(
+        &mut state.toasts,
+        crate::toast::Toast::new(crate::toast::ToastKind::Info, body.clone()),
     );
-    app.engine.messages
+    state.messages
         .push(jfc_core::ChatMessage::assistant(body));
 }

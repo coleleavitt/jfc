@@ -1,10 +1,10 @@
 //! Slash handlers: session & transcript lifecycle.
 
-use super::*;
+use crate::commands::prelude::*;
 use crate::runtime::EngineEvent;
 
 pub(super) async fn cmd_rename(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -14,22 +14,22 @@ pub(super) async fn cmd_rename(
     // precedence chain (custom → ai → firstPrompt → id-slice).
     // Persisted to the session JSON so it survives restarts.
     let new_title = parts.get(1).copied().unwrap_or("").trim().to_owned();
-    app.engine.messages
+    state.messages
         .push(ChatMessage::user(format!("/rename {new_title}")));
-    match (&app.engine.current_session_id, new_title.is_empty()) {
+    match (&state.current_session_id, new_title.is_empty()) {
         (None, _) => {
-            app.engine.messages.push(ChatMessage::assistant(
+            state.messages.push(ChatMessage::assistant(
                 "No active session to rename. Send a message first.".into(),
             ));
         }
         (_, true) => {
-            app.engine.messages.push(ChatMessage::assistant(
+            state.messages.push(ChatMessage::assistant(
                         "Usage: `/rename <title>`. Pass any text to set the session title; the picker / sidebar will show it.".into(),
                     ));
         }
         (Some(id), false) => {
-            jfc_engine::session::set_session_title(id, &new_title).await;
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            crate::session::set_session_title(id, &new_title).await;
+            state.messages.push(ChatMessage::assistant(format!(
                 "Session `{id}` renamed to **{new_title}**.",
             )));
         }
@@ -37,24 +37,24 @@ pub(super) async fn cmd_rename(
 }
 
 pub(super) async fn cmd_clear(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    app.engine.messages.clear();
-    app.engine.streaming_text.clear();
-    app.engine.streaming_reasoning.clear();
-    app.engine.streaming_response_bytes = 0;
-    app.engine.streaming_assistant_idx = None;
+    state.messages.clear();
+    state.streaming_text.clear();
+    state.streaming_reasoning.clear();
+    state.streaming_response_bytes = 0;
+    state.streaming_assistant_idx = None;
     // Mint a fresh session id and wipe per-session state (tasks,
     // completion timers). v126 cli.js:271511 keys todos by sessionId
     // so a new session inherently has an empty list — match that.
-    app.switch_session(None);
+    state.switch_session(None);
 }
 
 pub(super) async fn cmd_continue(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -75,22 +75,22 @@ pub(super) async fn cmd_continue(
         jfc_session::most_recent_session_for_cwd(cwd_str.as_deref()).await
     };
     if let Some(session_id) = session_id {
-        if let Some(messages) = jfc_engine::session::load_session(&session_id).await {
-            app.engine.messages = messages;
+        if let Some(messages) = crate::session::load_session(&session_id).await {
+            state.messages = messages;
             let session_id_for_msg = session_id.clone();
-            app.switch_session(Some(session_id));
-            app.engine.streaming_text.clear();
-            app.engine.streaming_reasoning.clear();
-            app.engine.streaming_response_bytes = 0;
-            app.engine.streaming_assistant_idx = None;
-            app.scroll_to_bottom();
+            state.switch_session(Some(session_id));
+            state.streaming_text.clear();
+            state.streaming_reasoning.clear();
+            state.streaming_response_bytes = 0;
+            state.streaming_assistant_idx = None;
+            state.push_effect(crate::app::EngineEffect::ScrollToBottom);
             let scope = if want_global { "any cwd" } else { "this cwd" };
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            state.messages.push(ChatMessage::assistant(format!(
                 "**Resumed session `{session_id_for_msg}`** ({scope}) — {} message(s) loaded.",
-                app.engine.messages.len() - 1
+                state.messages.len() - 1
             )));
         } else {
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            state.messages.push(ChatMessage::assistant(format!(
                 "**Error:** Failed to load session `{session_id}`."
             )));
         }
@@ -100,12 +100,12 @@ pub(super) async fn cmd_continue(
         } else {
             "No previous sessions found in this cwd. Try `/continue all` for any session."
         };
-        app.engine.messages.push(ChatMessage::assistant(hint.into()));
+        state.messages.push(ChatMessage::assistant(hint.into()));
     }
 }
 
 pub(super) async fn cmd_resume(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -129,7 +129,7 @@ pub(super) async fn cmd_resume(
         // List available sessions
         let sessions = jfc_session::list_sessions().await;
         if sessions.is_empty() {
-            app.engine.messages.push(ChatMessage::assistant(
+            state.messages.push(ChatMessage::assistant(
                 "No sessions found. Usage: `/resume <session_id>`".into(),
             ));
         } else {
@@ -144,16 +144,16 @@ pub(super) async fn cmd_resume(
             } else {
                 String::new()
             };
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            state.messages.push(ChatMessage::assistant(format!(
                 "**Usage:** `/resume <session_id>`\n\n**Available sessions:**\n{list}{more}"
             )));
         }
     } else {
-        let typed_session_id = jfc_engine::ids::SessionId::new(session_id);
-        if let Some(messages) = jfc_engine::session::load_session(&typed_session_id).await {
+        let typed_session_id = crate::ids::SessionId::new(session_id);
+        if let Some(messages) = crate::session::load_session(&typed_session_id).await {
             let msg_count = messages.len();
             // Compare the loaded session's recorded cwd against the
-            // current process cwd before mutating app state. The
+            // current process cwd before mutating state state. The
             // resume still proceeds either way — the toast is just
             // informational so the user notices they may be
             // pointing at the wrong project.
@@ -167,24 +167,24 @@ pub(super) async fn cmd_resume(
                 if let Some(msg) =
                     jfc_session::cwd_mismatch_message(session_cwd.as_deref(), &current_cwd)
                 {
-                    jfc_engine::toast::push_with_cap(
-                        &mut app.engine.toasts,
-                        jfc_engine::toast::Toast::new(jfc_engine::toast::ToastKind::Warning, msg),
+                    crate::toast::push_with_cap(
+                        &mut state.toasts,
+                        crate::toast::Toast::new(crate::toast::ToastKind::Warning, msg),
                     );
                 }
             }
-            app.engine.messages = messages;
-            app.switch_session(Some(typed_session_id.clone()));
-            app.engine.streaming_text.clear();
-            app.engine.streaming_reasoning.clear();
-            app.engine.streaming_response_bytes = 0;
-            app.engine.streaming_assistant_idx = None;
-            app.scroll_to_bottom();
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            state.messages = messages;
+            state.switch_session(Some(typed_session_id.clone()));
+            state.streaming_text.clear();
+            state.streaming_reasoning.clear();
+            state.streaming_response_bytes = 0;
+            state.streaming_assistant_idx = None;
+            state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+            state.messages.push(ChatMessage::assistant(format!(
                 "**Resumed session `{typed_session_id}`** — {msg_count} message(s) loaded."
             )));
         } else {
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            state.messages.push(ChatMessage::assistant(format!(
                 "**Error:** Session `{typed_session_id}` not found."
             )));
         }
@@ -192,7 +192,7 @@ pub(super) async fn cmd_resume(
 }
 
 pub(super) async fn cmd_sessions(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -200,7 +200,7 @@ pub(super) async fn cmd_sessions(
     // List all sessions with metadata
     let sessions = jfc_session::list_sessions_with_metadata().await;
     if sessions.is_empty() {
-        app.engine.messages
+        state.messages
             .push(ChatMessage::assistant("No sessions found.".into()));
     } else {
         let mut body = format!("**{} session(s):**\n\n", sessions.len());
@@ -212,7 +212,7 @@ pub(super) async fn cmd_sessions(
             } else {
                 prompt.to_string()
             };
-            let current = app.engine.current_session_id.as_ref() == Some(&s.id);
+            let current = state.current_session_id.as_ref() == Some(&s.id);
             let marker = if current { " ← current" } else { "" };
             body.push_str(&format!(
                 "{}. `{}`{} — {} msg(s)\n   {}\n",
@@ -229,117 +229,63 @@ pub(super) async fn cmd_sessions(
                 sessions.len() - 20
             ));
         }
-        app.engine.messages.push(ChatMessage::user("/sessions".into()));
-        app.engine.messages.push(ChatMessage::assistant(body));
+        state.messages.push(ChatMessage::user("/sessions".into()));
+        state.messages.push(ChatMessage::assistant(body));
     }
 }
-
-pub(super) async fn cmd_copy(
-    app: &mut App,
-    parts: &[&str],
-    text: &str,
-    _tx: Option<&mpsc::Sender<EngineEvent>>,
-) {
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
-    let arg = parts
-        .get(1)
-        .copied()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let (payload, scope_label) = match arg {
-        None | Some("last") => {
-            let body = crate::runtime::last_assistant_text(app).unwrap_or_default();
-            (body, "last assistant message".to_owned())
-        }
-        Some("all") => {
-            let body = crate::runtime::full_transcript_text(app);
-            (body, "full transcript".to_owned())
-        }
-        Some(other) => {
-            // Numeric tail (`/copy 3` → last 3 messages). On parse
-            // failure, fall back to `last` so a typo still copies
-            // something useful rather than yielding an error.
-            match other.parse::<usize>() {
-                Ok(n) if n > 0 => {
-                    let body = crate::runtime::tail_transcript_text(app, n);
-                    (body, format!("last {n} message(s)"))
-                }
-                _ => {
-                    let body = crate::runtime::last_assistant_text(app).unwrap_or_default();
-                    (
-                        body,
-                        format!("last assistant message (unrecognized arg `{other}`)"),
-                    )
-                }
-            }
-        }
-    };
-    if payload.is_empty() {
-        app.engine.messages.push(ChatMessage::assistant(
-            "Nothing to copy — the requested scope contains no text.".to_owned(),
-        ));
-    } else {
-        crate::runtime::copy_to_clipboard(&payload, "/copy");
-        app.engine.messages.push(ChatMessage::assistant(format!(
-                    "Copied {scope_label} ({} chars) to clipboard. OSC 52 escape emitted for SSH/tmux clients.",
-                    payload.chars().count()
-                )));
-    }
-}
-
 pub(super) async fn cmd_fork(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
+    state.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts
         .get(1)
         .copied()
         .map(str::trim)
         .filter(|s| !s.is_empty());
     let upto = match arg {
-        None => app.engine.messages.len(),
+        None => state.messages.len(),
         Some(s) => match s.parse::<usize>() {
-            Ok(n) if n <= app.engine.messages.len() => n,
+            Ok(n) if n <= state.messages.len() => n,
             _ => {
-                app.engine.messages.push(ChatMessage::assistant(format!(
+                state.messages.push(ChatMessage::assistant(format!(
                             "Usage: `/fork [N]` — snapshot first N messages as a new session. \
                              Got `{s}`, which doesn't parse or exceeds the current message count ({}).",
-                            app.engine.messages.len()
+                            state.messages.len()
                         )));
                 return;
             }
         },
     };
     if upto == 0 {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Can't fork at message 0 — there's nothing to snapshot. Send a message first."
                 .to_owned(),
         ));
         return;
     }
-    // Snapshot to a brand-new session id. We keep `app.engine.messages`
+    // Snapshot to a brand-new session id. We keep `state.messages`
     // truncated to `upto` to mirror what `git checkout -b` does
     // visually, then mint a fresh id; the parent session JSON on
     // disk is untouched because `switch_session` only points at
     // the new id from here on out.
-    app.engine.messages.truncate(upto);
-    app.engine.streaming_text.clear();
-    app.engine.streaming_reasoning.clear();
-    app.engine.streaming_response_bytes = 0;
-    app.engine.streaming_assistant_idx = None;
+    state.messages.truncate(upto);
+    state.streaming_text.clear();
+    state.streaming_reasoning.clear();
+    state.streaming_response_bytes = 0;
+    state.streaming_assistant_idx = None;
     // Mint a fresh session id (same flow as /clear) — the next
-    // turn will save under the new id, and `app.engine.current_session_id`
+    // turn will save under the new id, and `state.current_session_id`
     // becomes the fork's anchor.
-    app.switch_session(None);
-    let new_id = app.engine
+    state.switch_session(None);
+    let new_id = state
         .current_session_id
         .as_ref()
         .map(|s| s.as_str().to_owned())
         .unwrap_or_else(|| "(unset)".to_owned());
-    app.engine.messages.push(ChatMessage::assistant(format!(
+    state.messages.push(ChatMessage::assistant(format!(
         "**Forked** at message {upto}/{total}. New session: `{new_id}`. \
                  The original is preserved — `/resume` it any time.",
         total = upto
@@ -347,7 +293,7 @@ pub(super) async fn cmd_fork(
 }
 
 pub(super) async fn cmd_undo(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -358,10 +304,10 @@ pub(super) async fn cmd_undo(
     // tool dispatcher populates by capturing pre-mutation
     // file content before the tool executes. Only undoes
     // ONE step; run /undo repeatedly to walk back further.
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
-    let entry = jfc_engine::tools::pop_undo_entry();
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    let entry = crate::tools::pop_undo_entry();
     let Some(entry) = entry else {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Nothing to undo — no recent file mutation captured this session.".into(),
         ));
         return;
@@ -370,7 +316,7 @@ pub(super) async fn cmd_undo(
     match entry.previous_content.clone() {
         Some(prev) => match std::fs::write(&path, &prev) {
             Ok(()) => {
-                app.engine.messages.push(ChatMessage::assistant(format!(
+                state.messages.push(ChatMessage::assistant(format!(
                     "Reverted `{}` to its pre-{} state ({} bytes restored).",
                     path.display(),
                     entry.op_label,
@@ -378,8 +324,8 @@ pub(super) async fn cmd_undo(
                 )));
             }
             Err(e) => {
-                jfc_engine::tools::restore_undo_entry(entry);
-                app.engine.messages.push(ChatMessage::assistant(format!(
+                crate::tools::restore_undo_entry(entry);
+                state.messages.push(ChatMessage::assistant(format!(
                     "Failed to write `{}`: {e} (kept the entry, run /undo again after fixing)",
                     path.display(),
                 )));
@@ -387,15 +333,15 @@ pub(super) async fn cmd_undo(
         },
         None => match std::fs::remove_file(&path) {
             Ok(()) => {
-                app.engine.messages.push(ChatMessage::assistant(format!(
+                state.messages.push(ChatMessage::assistant(format!(
                     "Reverted `{}` (deleted; was newly-created by `{}`).",
                     path.display(),
                     entry.op_label
                 )));
             }
             Err(e) => {
-                jfc_engine::tools::restore_undo_entry(entry);
-                app.engine.messages.push(ChatMessage::assistant(format!(
+                crate::tools::restore_undo_entry(entry);
+                state.messages.push(ChatMessage::assistant(format!(
                     "Failed to remove `{}`: {e}",
                     path.display(),
                 )));
@@ -405,14 +351,14 @@ pub(super) async fn cmd_undo(
 }
 
 pub(super) async fn cmd_export(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // /export <path>: write the transcript as markdown to the
     // given path (defaults to ./jfc-transcript.md).
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
+    state.messages.push(ChatMessage::user(text.to_owned()));
     let raw_path = parts.get(1).copied().unwrap_or("").trim();
     let path: std::path::PathBuf = if raw_path.is_empty() {
         std::path::PathBuf::from("jfc-transcript.md")
@@ -420,7 +366,7 @@ pub(super) async fn cmd_export(
         std::path::PathBuf::from(raw_path)
     };
     let mut body = String::from("# jfc transcript\n\n");
-    for msg in &app.engine.messages {
+    for msg in &state.messages {
         let role = match msg.role {
             jfc_core::Role::User => "User",
             jfc_core::Role::Assistant => "Assistant",
@@ -457,18 +403,18 @@ pub(super) async fn cmd_export(
                 body.len(),
                 path.display()
             );
-            app.engine.messages.push(ChatMessage::assistant(message.clone()));
-            jfc_engine::toast::push_with_cap(
-                &mut app.engine.toasts,
-                jfc_engine::toast::Toast::new(jfc_engine::toast::ToastKind::Success, message),
+            state.messages.push(ChatMessage::assistant(message.clone()));
+            crate::toast::push_with_cap(
+                &mut state.toasts,
+                crate::toast::Toast::new(crate::toast::ToastKind::Success, message),
             );
         }
         Err(e) => {
             let message = format!("Failed to write `{}`: {e}", path.display());
-            app.engine.messages.push(ChatMessage::assistant(message.clone()));
-            jfc_engine::toast::push_with_cap(
-                &mut app.engine.toasts,
-                jfc_engine::toast::Toast::new(jfc_engine::toast::ToastKind::Error, message),
+            state.messages.push(ChatMessage::assistant(message.clone()));
+            crate::toast::push_with_cap(
+                &mut state.toasts,
+                crate::toast::Toast::new(crate::toast::ToastKind::Error, message),
             );
         }
     }

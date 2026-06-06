@@ -1,10 +1,10 @@
 //! Slash handlers: inspection, diagnostics & VCS review.
 
-use super::*;
+use crate::commands::prelude::*;
 use crate::runtime::EngineEvent;
 
 pub(super) async fn cmd_diff(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -14,7 +14,7 @@ pub(super) async fn cmd_diff(
     // git repo. Surface in the transcript as an assistant
     // message (markdown code block) so the user — and the
     // model on the next turn — can see what's pending.
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
+    state.messages.push(ChatMessage::user(text.to_owned()));
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let in_repo = std::process::Command::new("git")
         .args(["rev-parse", "--is-inside-work-tree"])
@@ -23,7 +23,7 @@ pub(super) async fn cmd_diff(
         .map(|o| o.status.success())
         .unwrap_or(false);
     if !in_repo {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Not inside a git repository — `/diff` has nothing to show.".into(),
         ));
         return;
@@ -43,7 +43,7 @@ pub(super) async fn cmd_diff(
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .unwrap_or_default();
     if stat.trim().is_empty() && untracked.trim().is_empty() {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Working tree is clean — no pending changes.".into(),
         ));
     } else {
@@ -58,55 +58,28 @@ pub(super) async fn cmd_diff(
             body.push_str(&untracked);
         }
         body.push_str("```\n");
-        app.engine.messages.push(ChatMessage::assistant(body));
+        state.messages.push(ChatMessage::assistant(body));
     }
-}
-
-/// `/vim` — toggle modal (vim) editing of the prompt. On enable you start in
-/// Normal mode; Esc returns to Normal from Insert/Visual.
-pub(super) async fn cmd_vim(
-    app: &mut App,
-    _parts: &[&str],
-    _text: &str,
-    _tx: Option<&mpsc::Sender<EngineEvent>>,
-) {
-    let now_on = app.vim.is_none();
-    app.vim = if now_on {
-        Some(crate::input::vim::VimState::default())
-    } else {
-        None
-    };
-    jfc_engine::toast::push_with_cap(
-        &mut app.engine.toasts,
-        jfc_engine::toast::Toast::new(
-            jfc_engine::toast::ToastKind::Info,
-            if now_on {
-                "vim mode on — Normal mode (i to insert, Esc to return)".to_string()
-            } else {
-                "vim mode off".to_string()
-            },
-        ),
-    );
 }
 
 /// `/turn-diff` (`/td`) — show a `git diff` scoped to only the files the
 /// assistant edited during the current user turn, so a single agentic step
 /// can be reviewed without the noise of the whole working tree.
 pub(super) async fn cmd_turn_diff(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
-    if app.engine.turn_edited_files.is_empty() {
-        app.engine.messages.push(ChatMessage::assistant(
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    if state.turn_edited_files.is_empty() {
+        state.messages.push(ChatMessage::assistant(
             "No files edited this turn yet — `/turn-diff` has nothing to show.".into(),
         ));
         return;
     }
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let files: Vec<String> = app.engine.turn_edited_files.iter().cloned().collect();
+    let files: Vec<String> = state.turn_edited_files.iter().cloned().collect();
     // `git diff HEAD -- <files>` shows tracked-file changes; brand-new files
     // (created by Write) won't appear, so list those separately.
     let mut args: Vec<String> = vec!["diff".into(), "HEAD".into(), "--".into()];
@@ -159,11 +132,11 @@ pub(super) async fn cmd_turn_diff(
         );
         body.push('\n');
     }
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::assistant(body));
 }
 
 pub(super) async fn cmd_timeline(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -172,18 +145,18 @@ pub(super) async fn cmd_timeline(
     // recent assistant turn. For each Tool part, emit one row
     // with "kind │ summary │ Δms" so the user can spot slow
     // tools at a glance.
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
-    let last_assistant = app.engine
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    let last_assistant = state
         .messages
         .iter()
         .rposition(|m| matches!(m.role, jfc_core::Role::Assistant));
     let Some(idx) = last_assistant else {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "No assistant turn yet — nothing to timeline.".into(),
         ));
         return;
     };
-    let msg = &app.engine.messages[idx];
+    let msg = &state.messages[idx];
     let mut rows: Vec<String> = Vec::new();
     for part in &msg.parts {
         if let jfc_core::MessagePart::Tool(tc) = part {
@@ -207,11 +180,11 @@ pub(super) async fn cmd_timeline(
         }
     }
     if rows.is_empty() {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Most recent assistant turn ran no tools.".into(),
         ));
     } else {
-        app.engine.messages.push(ChatMessage::assistant(format!(
+        state.messages.push(ChatMessage::assistant(format!(
             "**Tool timeline (last assistant turn, {} tools):**\n{}",
             rows.len(),
             rows.join("\n"),
@@ -220,7 +193,7 @@ pub(super) async fn cmd_timeline(
 }
 
 pub(super) async fn cmd_doctor(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -230,7 +203,7 @@ pub(super) async fn cmd_doctor(
     // out-of-the-box jfc setup and surface a single status
     // block. Read-only; no fixes applied automatically — the
     // user opts in to remedies after seeing the report.
-    app.engine.messages.push(ChatMessage::user(text.to_owned()));
+    state.messages.push(ChatMessage::user(text.to_owned()));
 
     let check = |ok: bool| if ok { "✓" } else { "✗" };
 
@@ -238,7 +211,7 @@ pub(super) async fn cmd_doctor(
 
     // ── 1. Config file ────────────────────────────────────────────────
     {
-        let cfg_path = jfc_engine::config::config_path();
+        let cfg_path = crate::config::config_path();
         let cfg_display = cfg_path.display().to_string();
         // Tilde-shorten for readability
         let cfg_display = if let Some(home) = dirs::home_dir() {
@@ -250,7 +223,7 @@ pub(super) async fn cmd_doctor(
             // Try a parse round-trip to catch TOML errors
             std::fs::read_to_string(&cfg_path)
                 .ok()
-                .and_then(|s| toml::from_str::<jfc_engine::config::Config>(&s).ok())
+                .and_then(|s| toml::from_str::<crate::config::Config>(&s).ok())
                 .is_some()
         };
         report.push_str(&format!(
@@ -306,7 +279,7 @@ pub(super) async fn cmd_doctor(
 
     // ── 4. CLAUDE.md in project root ──────────────────────────────────
     {
-        let project_root = std::path::PathBuf::from(&app.engine.cwd);
+        let project_root = std::path::PathBuf::from(&state.cwd);
         let claude_md = project_root.join("CLAUDE.md");
         let md_ok = claude_md.exists();
         let md_display = format!(
@@ -330,7 +303,7 @@ pub(super) async fn cmd_doctor(
 
     // ── 5. MCP servers ────────────────────────────────────────────────
     {
-        let cfg = jfc_engine::config::load_arc();
+        let cfg = crate::config::load_arc();
         if cfg.mcp.is_empty() {
             report.push_str("  MCP: no servers configured\n");
         } else {
@@ -362,7 +335,7 @@ pub(super) async fn cmd_doctor(
 
     // ── 6. Working directory + git repo ───────────────────────────────
     {
-        let cwd = std::path::PathBuf::from(&app.engine.cwd);
+        let cwd = std::path::PathBuf::from(&state.cwd);
         let git_ok = std::process::Command::new("git")
             .args(["rev-parse", "--git-dir"])
             .current_dir(&cwd)
@@ -402,66 +375,20 @@ pub(super) async fn cmd_doctor(
     report.push_str(&format!("  Version: {}\n", env!("CARGO_PKG_VERSION")));
 
     // ── 8. Bonus: active provider + permission mode ───────────────────
-    report.push_str(&format!("  Provider: {}\n", app.engine.provider.name()));
-    report.push_str(&format!("  Permission mode: {:?}\n", app.engine.permission_mode));
+    report.push_str(&format!("  Provider: {}\n", state.provider.name()));
+    report.push_str(&format!("  Permission mode: {:?}\n", state.permission_mode));
 
     // ── 9. Session cost so far ────────────────────────────────────────
-    let total = jfc_engine::cost::total_cost(&app.engine.usage_by_model);
+    let total = crate::cost::total_cost(&state.usage_by_model);
     report.push_str(&format!(
         "  Session cost: {}\n",
-        jfc_engine::cost::fmt_cost(total)
+        crate::cost::fmt_cost(total)
     ));
 
-    app.engine.messages.push(ChatMessage::assistant(report));
+    state.messages.push(ChatMessage::assistant(report));
 }
-
-pub(super) async fn cmd_help(
-    app: &mut App,
-    _parts: &[&str],
-    _text: &str,
-    _tx: Option<&mpsc::Sender<EngineEvent>>,
-) {
-    // Also flip the visual overlay so users get the same
-    // keybindings table they'd see from `?`. The text dump
-    // below is kept for searchability + transcript export.
-    app.show_help = true;
-    app.engine.messages.push(ChatMessage::user("/help".into()));
-
-    // Command list is rendered from the unified CommandSpec metadata layer
-    // (`command_spec::slash_help_lines`), which reads the SLASH_COMMANDS
-    // registry — the same single source that drives dispatch and autocomplete —
-    // so /help can never list a command that doesn't exist (or miss one), and
-    // it stays in lock-step with `/commands`. Aliases collapse onto their
-    // canonical row's help text.
-    let mut body = String::from("**Available commands:**\n");
-    body.push_str(&jfc_engine::command_spec::slash_help_lines());
-    body.push_str(
-        "\n\
-         **Keys:**\n\
-         - Ctrl+B — Toggle sessions sidebar\n\
-         - Ctrl+M — Model picker\n\
-         - Ctrl+P — Command palette\n\
-         - Ctrl+O — Expand reasoning / open diagnostic panel\n\
-         - Alt+. / Alt+, — Raise / lower reasoning effort\n\
-         - Ctrl+Y — Yank last assistant message to clipboard\n\
-         - Ctrl+S — Toggle info sidebar\n\
-         - `@` — Autocomplete file paths from cwd\n\
-         - Up — Recall most recent queued prompt / cycle history (when input empty)\n\
-         - Esc — Dismiss popup / close diagnostic panel\n\
-         \n\
-         **Env knobs:**\n\
-         - `JFC_DISABLE_BELL=1` — silence terminal bell on tool completion\n\
-         - `JFC_DISABLE_AUTO_COMPACT=1` — disable auto-compaction\n\
-         - `JFC_DISABLE_CARGO_CHECK=1` — skip startup `cargo check`\n\
-         - `JFC_AUTOCOMPACT_PCT_OVERRIDE=N` — force compact threshold\n\
-         - `JFC_TOOL_TITLE_WIDTH=N` — cap tool title length (default 100)\n\
-         - `JFC_ADVISOR_ENABLED=1` — enable the `/advisor` parallel-advice slash command",
-    );
-    app.engine.messages.push(ChatMessage::assistant(body));
-}
-
 pub(super) async fn cmd_commit(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -471,8 +398,8 @@ pub(super) async fn cmd_commit(
     // 2. Capture `git diff --cached` (capped at 8000 chars).
     // 3. Inject a user prompt so the model generates the message
     //    on the next turn — the user can then copy/run `git commit`.
-    app.engine.messages.push(ChatMessage::user("/commit".into()));
-    let cwd = app.engine.cwd.clone();
+    state.messages.push(ChatMessage::user("/commit".into()));
+    let cwd = state.cwd.clone();
     let stat = tokio::process::Command::new("git")
         .args(["diff", "--cached", "--stat"])
         .current_dir(&cwd)
@@ -480,14 +407,14 @@ pub(super) async fn cmd_commit(
         .await;
     match stat {
         Err(e) => {
-            app.engine.messages.push(ChatMessage::assistant(format!(
+            state.messages.push(ChatMessage::assistant(format!(
                 "Could not run `git diff --cached --stat`: {e}"
             )));
         }
         Ok(out) => {
             let stat_str = String::from_utf8_lossy(&out.stdout);
             if stat_str.trim().is_empty() {
-                app.engine.messages.push(ChatMessage::assistant(
+                state.messages.push(ChatMessage::assistant(
                     "Nothing staged. Stage changes first with `git add <file>` or `git add -p`."
                         .into(),
                 ));
@@ -524,30 +451,30 @@ pub(super) async fn cmd_commit(
                              Output ONLY the commit message — no explanation, no markdown fences.\n\n\
                              ```\n{diff_str}\n```"
                 );
-                app.engine.messages
+                state.messages
                     .push(ChatMessage::assistant("Analyzing staged changes…".into()));
-                app.engine.queued_prompts.push(crate::app::QueuedPrompt {
+                state.queued_prompts.push(crate::runtime::QueuedPrompt {
                     text: prompt,
                     is_meta: false,
-                    priority: crate::app::QueuePriority::Later,
+                    priority: crate::runtime::QueuePriority::Later,
                     attachments: Vec::new(),
                 });
-                app.scroll_to_bottom();
+                state.push_effect(crate::app::EngineEffect::ScrollToBottom);
             }
         }
     }
 }
 
 pub(super) async fn cmd_review(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Ask the model to review current git changes for bugs, security
     // issues, and code quality problems with file:line specificity.
-    app.engine.messages.push(ChatMessage::user("/review".into()));
-    let cwd = app.engine.cwd.clone();
+    state.messages.push(ChatMessage::user("/review".into()));
+    let cwd = state.cwd.clone();
     // Prefer staged diff; fall back to HEAD diff; fall back to
     // working-tree diff so /review always finds something useful.
     let diff_output = {
@@ -575,7 +502,7 @@ pub(super) async fn cmd_review(
         }
     };
     if diff_output.is_empty() {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "No changes found (`git diff --cached` and `git diff HEAD` are both empty). \
                      Make some changes or stage files first."
                 .into(),
@@ -596,26 +523,26 @@ pub(super) async fn cmd_review(
                      If there are no issues worth calling out, say so briefly.\n\n\
                      ```diff\n{capped}\n```"
         );
-        app.engine.messages
+        state.messages
             .push(ChatMessage::assistant("Reviewing changes…".into()));
-        app.engine.queued_prompts.push(crate::app::QueuedPrompt {
+        state.queued_prompts.push(crate::runtime::QueuedPrompt {
             text: prompt,
             is_meta: false,
-            priority: crate::app::QueuePriority::Later,
+            priority: crate::runtime::QueuePriority::Later,
             attachments: Vec::new(),
         });
-        app.scroll_to_bottom();
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
     }
 }
 
 pub(super) async fn cmd_skills(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let skills =
-        jfc_engine::agents::load_skills(&std::env::current_dir().unwrap_or_else(|_| ".".into()));
+        crate::agents::load_skills(&std::env::current_dir().unwrap_or_else(|_| ".".into()));
     let body = if skills.is_empty() {
         "No skills defined. Add .claude/skills/<name>.md files.".to_owned()
     } else {
@@ -643,18 +570,18 @@ pub(super) async fn cmd_skills(
         }
         s
     };
-    app.engine.messages.push(ChatMessage::user("/skills".into()));
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::user("/skills".into()));
+    state.messages.push(ChatMessage::assistant(body));
 }
 
 pub(super) async fn cmd_agents(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let agents =
-        jfc_engine::agents::load_agents(&std::env::current_dir().unwrap_or_else(|_| ".".into()));
+        crate::agents::load_agents(&std::env::current_dir().unwrap_or_else(|_| ".".into()));
     let body = if agents.is_empty() {
         "No agent definitions found. Create `.claude/agents/<name>.md` files \
                  with YAML frontmatter (`name:` required, plus optional `model`, \
@@ -679,12 +606,12 @@ pub(super) async fn cmd_agents(
         }
         s
     };
-    app.engine.messages.push(ChatMessage::user("/agents".into()));
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::user("/agents".into()));
+    state.messages.push(ChatMessage::assistant(body));
 }
 
 pub(super) async fn cmd_market(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -692,16 +619,16 @@ pub(super) async fn cmd_market(
     // Surface the agent-economy snapshot — same data the
     // `market_status` tool returns, but framed for the user
     // rather than the model. No bounty_id filter for now.
-    let report_str = match jfc_engine::tools::market_report_string().await {
+    let report_str = match crate::tools::market_report_string().await {
         Ok(s) => s,
         Err(e) => format!("Market unavailable: {e}"),
     };
-    app.engine.messages.push(ChatMessage::user("/market".into()));
-    app.engine.messages.push(ChatMessage::assistant(report_str));
+    state.messages.push(ChatMessage::user("/market".into()));
+    state.messages.push(ChatMessage::assistant(report_str));
 }
 
 pub(super) async fn cmd_cascade(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -711,7 +638,7 @@ pub(super) async fn cmd_cascade(
     // metadata.kind="cascade" tag is the signal we emit when
     // queuing them. Group by file (one Task ≈ one file) and
     // show status + caller list per group.
-    let tasks = app.engine.task_store.list(jfc_session::DeletedFilter::Exclude);
+    let tasks = state.task_store.list(jfc_session::DeletedFilter::Exclude);
     let cascade: Vec<&jfc_session::Task> = tasks
         .iter()
         .filter(|t| {
@@ -760,17 +687,17 @@ pub(super) async fn cmd_cascade(
         }
         s
     };
-    app.engine.messages.push(ChatMessage::user("/cascade".into()));
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::user("/cascade".into()));
+    state.messages.push(ChatMessage::assistant(body));
 }
 
 pub(super) async fn cmd_graph_history(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    let records = jfc_engine::tools::graph_history_snapshot();
+    let records = crate::tools::graph_history_snapshot();
     let body = if records.is_empty() {
         "No graph queries recorded yet. Run `graph_query` (via the model) or \
                  ask the model to query the code graph, then re-invoke `/graph-history` \
@@ -812,7 +739,7 @@ pub(super) async fn cmd_graph_history(
         }
         s
     };
-    app.engine.messages
+    state.messages
         .push(ChatMessage::user("/graph-history".into()));
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::assistant(body));
 }

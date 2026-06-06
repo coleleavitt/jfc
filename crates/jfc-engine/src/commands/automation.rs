@@ -1,6 +1,6 @@
+use crate::app::EngineState;
 use tokio::sync::mpsc;
 
-use crate::app::App;
 use crate::runtime::EngineEvent;
 use jfc_core::ChatMessage;
 
@@ -13,7 +13,7 @@ use jfc_core::ChatMessage;
 /// With `nightly` as the argument, also instructs the model to schedule itself
 /// via `CronCreate` so consolidation runs automatically every night at 02:00.
 pub(super) async fn handle_dream_command(
-    app: &mut App,
+    state: &mut EngineState,
     arg: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
@@ -23,7 +23,7 @@ pub(super) async fn handle_dream_command(
     } else {
         "/dream".to_owned()
     };
-    app.engine.messages.push(ChatMessage::user(echo));
+    state.messages.push(ChatMessage::user(echo));
 
     let cron_instruction = if nightly {
         "\n\nAlso use the CronCreate tool to schedule this same /dream command to run \
@@ -44,75 +44,75 @@ Use the MemoryCreate tool for new memories and MemoryDelete for stale ones.{cron
     );
 
     let Some(tx) = tx else {
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Running memory consolidation…\n\n\
 *(no stream channel — submit `/dream` from the input bar to drive the model)*"
                 .into(),
         ));
-        app.scroll_to_bottom();
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
         return;
     };
 
-    let assistant_idx = app.engine.messages.len() + 1;
-    app.engine.messages.push(ChatMessage::user(prompt));
-    app.engine.tool_ctx.total_user_turns += 1;
-    app.engine.messages.push(ChatMessage::assistant(String::new()));
-    app.engine.streaming_text.clear();
-    app.engine.streaming_reasoning.clear();
-    app.engine.streaming_response_bytes = 0;
-    app.engine.network_recovery_status = None;
-    app.engine.network_recovery_attempts = 0;
-    app.engine.streaming_assistant_idx = Some(assistant_idx);
-    app.engine.is_streaming = true;
+    let assistant_idx = state.messages.len() + 1;
+    state.messages.push(ChatMessage::user(prompt));
+    state.tool_ctx.total_user_turns += 1;
+    state.messages.push(ChatMessage::assistant(String::new()));
+    state.streaming_text.clear();
+    state.streaming_reasoning.clear();
+    state.streaming_response_bytes = 0;
+    state.network_recovery_status = None;
+    state.network_recovery_attempts = 0;
+    state.streaming_assistant_idx = Some(assistant_idx);
+    state.is_streaming = true;
     let now = std::time::Instant::now();
-    app.engine.streaming_started_at = Some(now);
-    app.engine.last_stream_event_at = Some(now);
-    app.engine.streaming_last_token_at = Some(now);
-    app.engine.turn_started_at = Some(now);
-    app.engine.turn_start_cost = jfc_engine::cost::total_cost(&app.engine.usage_by_model);
-    app.engine.thinking_started_at = None;
-    app.engine.thinking_ended_at = None;
-    app.engine.last_usage_output = 0;
-    app.engine.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
+    state.streaming_started_at = Some(now);
+    state.last_stream_event_at = Some(now);
+    state.streaming_last_token_at = Some(now);
+    state.turn_started_at = Some(now);
+    state.turn_start_cost = crate::cost::total_cost(&state.usage_by_model);
+    state.thinking_started_at = None;
+    state.thinking_ended_at = None;
+    state.last_usage_output = 0;
+    state.usage_apply_baseline = (0, 0, 0, 0);
+    state.push_effect(crate::app::EngineEffect::ScrollToBottom);
 
-    let session_id = app.engine
+    let session_id = state
         .current_session_id
         .clone()
         .unwrap_or_else(jfc_session::generate_session_id);
     {
         let sid = session_id.clone();
-        let msgs = app.engine.messages.clone();
-        let model = app.engine.model.clone();
+        let msgs = state.messages.clone();
+        let model = state.model.clone();
         tokio::spawn(async move {
-            jfc_engine::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
+            crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
         });
     }
-    app.engine.current_session_id = Some(session_id);
+    state.current_session_id = Some(session_id);
 
-    let provider = app.engine.provider.clone();
-    let messages = jfc_engine::stream::build_provider_messages(&app.engine.messages[..assistant_idx]);
-    let model = app.engine.model.clone();
+    let provider = state.provider.clone();
+    let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
+    let model = state.model.clone();
     let tx_stream = tx.clone();
-    let interrupt = app.engine.interrupt_flag.clone();
+    let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
-    app.engine.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.engine.cancel_token.clone();
+    state.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = state.cancel_token.clone();
     let overrides = crate::runtime::StreamRequestOverrides {
-        background_reminders: app.engine.take_background_reminders(),
-        disallowed_tools: app.engine.effective_disallowed_tools(),
-        allowed_tools: app.engine.allowed_tools.clone(),
-        custom_betas: app.engine.custom_betas.clone(),
-        fine_grained_tool_streaming: app.engine.fine_grained_tool_streaming,
-        strict_tool_schemas: app.engine.strict_tool_schemas,
-        task_budget: app.engine.cli_task_budget,
-        max_thinking_tokens: app.engine.cli_max_thinking_tokens,
-        thinking_display: app.engine.cli_thinking_display.clone(),
-        brief_mode: app.engine.brief_mode,
+        background_reminders: state.take_background_reminders(),
+        disallowed_tools: state.effective_disallowed_tools(),
+        allowed_tools: state.allowed_tools.clone(),
+        custom_betas: state.custom_betas.clone(),
+        fine_grained_tool_streaming: state.fine_grained_tool_streaming,
+        strict_tool_schemas: state.strict_tool_schemas,
+        task_budget: state.cli_task_budget,
+        max_thinking_tokens: state.cli_max_thinking_tokens,
+        thinking_display: state.cli_thinking_display.clone(),
+        brief_mode: state.brief_mode,
         ..Default::default()
     };
     tokio::spawn(async move {
-        jfc_engine::stream::stream_response(
+        crate::stream::stream_response(
             provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
         )
         .await;
@@ -165,13 +165,13 @@ fn interval_to_cron(interval: &str) -> String {
 /// `/loop [interval] <prompt>` — set up a recurring cron job that fires
 /// `<prompt>` and immediately execute the prompt once now.
 pub(super) async fn handle_loop_command(
-    app: &mut App,
+    state: &mut EngineState,
     args: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     if args.trim().is_empty() {
-        app.engine.messages.push(ChatMessage::user("/loop".to_owned()));
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::user("/loop".to_owned()));
+        state.messages.push(ChatMessage::assistant(
             "Usage: `/loop [interval] <prompt>`\n\n\
 Examples:\n\
 - `/loop 5m check the deploy`\n\
@@ -180,25 +180,25 @@ Examples:\n\
 Supported intervals: `Xs` (seconds), `Xm` (minutes), `Xh` (hours), `Xd` (days)."
                 .into(),
         ));
-        app.scroll_to_bottom();
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
         return;
     }
 
     let (interval, user_prompt) = parse_loop_interval(args);
     if user_prompt.is_empty() {
-        app.engine.messages
+        state.messages
             .push(ChatMessage::user(format!("/loop {args}")));
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "No prompt found after the interval. Usage: `/loop [interval] <prompt>`".into(),
         ));
-        app.scroll_to_bottom();
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
         return;
     }
     let cron_expr = interval_to_cron(interval);
     let description_prefix: String = user_prompt.chars().take(40).collect();
 
     let echo = format!("/loop {args}");
-    app.engine.messages.push(ChatMessage::user(echo));
+    state.messages.push(ChatMessage::user(echo));
 
     let prompt = format!(
         "# /loop — Schedule recurring prompt\n\n\
@@ -213,74 +213,74 @@ Then immediately execute the prompt now (do not wait for the first cron fire)."
     );
 
     let Some(tx) = tx else {
-        app.engine.messages.push(ChatMessage::assistant(format!(
+        state.messages.push(ChatMessage::assistant(format!(
             "Setting up loop every {interval}: {user_prompt}\n\n\
 *(no stream channel — submit from the input bar to drive the model)*"
         )));
-        app.scroll_to_bottom();
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
         return;
     };
 
-    let assistant_idx = app.engine.messages.len() + 1;
-    app.engine.messages.push(ChatMessage::user(prompt));
-    app.engine.tool_ctx.total_user_turns += 1;
-    app.engine.messages.push(ChatMessage::assistant(String::new()));
-    app.engine.streaming_text.clear();
-    app.engine.streaming_reasoning.clear();
-    app.engine.streaming_response_bytes = 0;
-    app.engine.network_recovery_status = None;
-    app.engine.network_recovery_attempts = 0;
-    app.engine.streaming_assistant_idx = Some(assistant_idx);
-    app.engine.is_streaming = true;
+    let assistant_idx = state.messages.len() + 1;
+    state.messages.push(ChatMessage::user(prompt));
+    state.tool_ctx.total_user_turns += 1;
+    state.messages.push(ChatMessage::assistant(String::new()));
+    state.streaming_text.clear();
+    state.streaming_reasoning.clear();
+    state.streaming_response_bytes = 0;
+    state.network_recovery_status = None;
+    state.network_recovery_attempts = 0;
+    state.streaming_assistant_idx = Some(assistant_idx);
+    state.is_streaming = true;
     let now = std::time::Instant::now();
-    app.engine.streaming_started_at = Some(now);
-    app.engine.last_stream_event_at = Some(now);
-    app.engine.streaming_last_token_at = Some(now);
-    app.engine.turn_started_at = Some(now);
-    app.engine.turn_start_cost = jfc_engine::cost::total_cost(&app.engine.usage_by_model);
-    app.engine.thinking_started_at = None;
-    app.engine.thinking_ended_at = None;
-    app.engine.last_usage_output = 0;
-    app.engine.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
+    state.streaming_started_at = Some(now);
+    state.last_stream_event_at = Some(now);
+    state.streaming_last_token_at = Some(now);
+    state.turn_started_at = Some(now);
+    state.turn_start_cost = crate::cost::total_cost(&state.usage_by_model);
+    state.thinking_started_at = None;
+    state.thinking_ended_at = None;
+    state.last_usage_output = 0;
+    state.usage_apply_baseline = (0, 0, 0, 0);
+    state.push_effect(crate::app::EngineEffect::ScrollToBottom);
 
-    let session_id = app.engine
+    let session_id = state
         .current_session_id
         .clone()
         .unwrap_or_else(jfc_session::generate_session_id);
     {
         let sid = session_id.clone();
-        let msgs = app.engine.messages.clone();
-        let model = app.engine.model.clone();
+        let msgs = state.messages.clone();
+        let model = state.model.clone();
         tokio::spawn(async move {
-            jfc_engine::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
+            crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
         });
     }
-    app.engine.current_session_id = Some(session_id);
+    state.current_session_id = Some(session_id);
 
-    let provider = app.engine.provider.clone();
-    let messages = jfc_engine::stream::build_provider_messages(&app.engine.messages[..assistant_idx]);
-    let model = app.engine.model.clone();
+    let provider = state.provider.clone();
+    let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
+    let model = state.model.clone();
     let tx_stream = tx.clone();
-    let interrupt = app.engine.interrupt_flag.clone();
+    let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
-    app.engine.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.engine.cancel_token.clone();
+    state.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = state.cancel_token.clone();
     let overrides = crate::runtime::StreamRequestOverrides {
-        background_reminders: app.engine.take_background_reminders(),
-        disallowed_tools: app.engine.effective_disallowed_tools(),
-        allowed_tools: app.engine.allowed_tools.clone(),
-        custom_betas: app.engine.custom_betas.clone(),
-        fine_grained_tool_streaming: app.engine.fine_grained_tool_streaming,
-        strict_tool_schemas: app.engine.strict_tool_schemas,
-        task_budget: app.engine.cli_task_budget,
-        max_thinking_tokens: app.engine.cli_max_thinking_tokens,
-        thinking_display: app.engine.cli_thinking_display.clone(),
-        brief_mode: app.engine.brief_mode,
+        background_reminders: state.take_background_reminders(),
+        disallowed_tools: state.effective_disallowed_tools(),
+        allowed_tools: state.allowed_tools.clone(),
+        custom_betas: state.custom_betas.clone(),
+        fine_grained_tool_streaming: state.fine_grained_tool_streaming,
+        strict_tool_schemas: state.strict_tool_schemas,
+        task_budget: state.cli_task_budget,
+        max_thinking_tokens: state.cli_max_thinking_tokens,
+        thinking_display: state.cli_thinking_display.clone(),
+        brief_mode: state.brief_mode,
         ..Default::default()
     };
     tokio::spawn(async move {
-        jfc_engine::stream::stream_response(
+        crate::stream::stream_response(
             provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
         )
         .await;
@@ -296,7 +296,7 @@ Then immediately execute the prompt now (do not wait for the first cron fire)."
 /// - No arg / `list` → inject a message asking the model to call `CronList`
 /// - `cancel <id>` → inject a message asking the model to call `CronDelete`
 pub(super) async fn handle_schedule_command(
-    app: &mut App,
+    state: &mut EngineState,
     arg: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
@@ -325,88 +325,88 @@ and display the results in a readable table with columns: id, schedule, command,
         )
     } else {
         // Unknown subcommand — show help inline, no model turn needed.
-        app.engine.messages
+        state.messages
             .push(ChatMessage::user(format!("/schedule {arg}")));
-        app.engine.messages.push(ChatMessage::assistant(
+        state.messages.push(ChatMessage::assistant(
             "Usage:\n\
   `/schedule` or `/schedule list` — list all scheduled cron jobs\n\
   `/schedule cancel <id>` — cancel a cron job by id"
                 .into(),
         ));
-        app.scroll_to_bottom();
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
         return;
     };
 
-    app.engine.messages.push(ChatMessage::user(echo));
+    state.messages.push(ChatMessage::user(echo));
 
     let Some(tx) = tx else {
-        app.engine.messages.push(ChatMessage::assistant(format!(
+        state.messages.push(ChatMessage::assistant(format!(
             "{status_msg}\n\n*(no stream channel — submit from the input bar to drive the model)*"
         )));
-        app.scroll_to_bottom();
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
         return;
     };
 
-    let assistant_idx = app.engine.messages.len() + 1;
-    app.engine.messages.push(ChatMessage::user(prompt));
-    app.engine.tool_ctx.total_user_turns += 1;
-    app.engine.messages.push(ChatMessage::assistant(String::new()));
-    app.engine.streaming_text.clear();
-    app.engine.streaming_reasoning.clear();
-    app.engine.streaming_response_bytes = 0;
-    app.engine.network_recovery_status = None;
-    app.engine.network_recovery_attempts = 0;
-    app.engine.streaming_assistant_idx = Some(assistant_idx);
-    app.engine.is_streaming = true;
+    let assistant_idx = state.messages.len() + 1;
+    state.messages.push(ChatMessage::user(prompt));
+    state.tool_ctx.total_user_turns += 1;
+    state.messages.push(ChatMessage::assistant(String::new()));
+    state.streaming_text.clear();
+    state.streaming_reasoning.clear();
+    state.streaming_response_bytes = 0;
+    state.network_recovery_status = None;
+    state.network_recovery_attempts = 0;
+    state.streaming_assistant_idx = Some(assistant_idx);
+    state.is_streaming = true;
     let now = std::time::Instant::now();
-    app.engine.streaming_started_at = Some(now);
-    app.engine.last_stream_event_at = Some(now);
-    app.engine.streaming_last_token_at = Some(now);
-    app.engine.turn_started_at = Some(now);
-    app.engine.turn_start_cost = jfc_engine::cost::total_cost(&app.engine.usage_by_model);
-    app.engine.thinking_started_at = None;
-    app.engine.thinking_ended_at = None;
-    app.engine.last_usage_output = 0;
-    app.engine.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
+    state.streaming_started_at = Some(now);
+    state.last_stream_event_at = Some(now);
+    state.streaming_last_token_at = Some(now);
+    state.turn_started_at = Some(now);
+    state.turn_start_cost = crate::cost::total_cost(&state.usage_by_model);
+    state.thinking_started_at = None;
+    state.thinking_ended_at = None;
+    state.last_usage_output = 0;
+    state.usage_apply_baseline = (0, 0, 0, 0);
+    state.push_effect(crate::app::EngineEffect::ScrollToBottom);
 
-    let session_id = app.engine
+    let session_id = state
         .current_session_id
         .clone()
         .unwrap_or_else(jfc_session::generate_session_id);
     {
         let sid = session_id.clone();
-        let msgs = app.engine.messages.clone();
-        let model = app.engine.model.clone();
+        let msgs = state.messages.clone();
+        let model = state.model.clone();
         tokio::spawn(async move {
-            jfc_engine::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
+            crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
         });
     }
-    app.engine.current_session_id = Some(session_id);
+    state.current_session_id = Some(session_id);
 
-    let provider = app.engine.provider.clone();
-    let messages = jfc_engine::stream::build_provider_messages(&app.engine.messages[..assistant_idx]);
-    let model = app.engine.model.clone();
+    let provider = state.provider.clone();
+    let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
+    let model = state.model.clone();
     let tx_stream = tx.clone();
-    let interrupt = app.engine.interrupt_flag.clone();
+    let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
-    app.engine.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.engine.cancel_token.clone();
+    state.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = state.cancel_token.clone();
     let overrides = crate::runtime::StreamRequestOverrides {
-        background_reminders: app.engine.take_background_reminders(),
-        disallowed_tools: app.engine.effective_disallowed_tools(),
-        allowed_tools: app.engine.allowed_tools.clone(),
-        custom_betas: app.engine.custom_betas.clone(),
-        fine_grained_tool_streaming: app.engine.fine_grained_tool_streaming,
-        strict_tool_schemas: app.engine.strict_tool_schemas,
-        task_budget: app.engine.cli_task_budget,
-        max_thinking_tokens: app.engine.cli_max_thinking_tokens,
-        thinking_display: app.engine.cli_thinking_display.clone(),
-        brief_mode: app.engine.brief_mode,
+        background_reminders: state.take_background_reminders(),
+        disallowed_tools: state.effective_disallowed_tools(),
+        allowed_tools: state.allowed_tools.clone(),
+        custom_betas: state.custom_betas.clone(),
+        fine_grained_tool_streaming: state.fine_grained_tool_streaming,
+        strict_tool_schemas: state.strict_tool_schemas,
+        task_budget: state.cli_task_budget,
+        max_thinking_tokens: state.cli_max_thinking_tokens,
+        thinking_display: state.cli_thinking_display.clone(),
+        brief_mode: state.brief_mode,
         ..Default::default()
     };
     tokio::spawn(async move {
-        jfc_engine::stream::stream_response(
+        crate::stream::stream_response(
             provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
         )
         .await;

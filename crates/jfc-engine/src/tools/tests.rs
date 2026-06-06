@@ -1394,7 +1394,7 @@ async fn verify_bounty_solution_rejects_broken_zig_build_robust() {
         agent_id: AgentId::new("solver"),
         bounty_id: "zig_bounty".into(),
         patch: "===FILE: src/main.zig===\npub fn main() void {}\n===END===\n".into(),
-        explanation: "wrote zig state".into(),
+        explanation: "wrote zig app".into(),
         self_assessment: 0.5,
         tokens_consumed: 10,
         compiles: None,

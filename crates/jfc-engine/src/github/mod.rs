@@ -23,6 +23,7 @@
 
 pub mod actions;
 pub mod autofix;
+pub mod install;
 pub mod client;
 
 pub use client::GhClient;

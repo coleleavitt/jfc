@@ -67,7 +67,7 @@ pub async fn handle_done(
         target: "jfc::compact",
         pre_tokens, post_tokens, saved,
         new_message_count = messages.len(),
-        "applying compaction result to state state"
+        "applying compaction result to app state"
     );
     let was_streaming = state.is_streaming;
     if was_streaming {

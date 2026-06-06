@@ -1,129 +1,111 @@
 //! Slash handlers: thin adapters to the cohesive `*_commands` modules.
 
-use super::*;
+use crate::commands::prelude::*;
 use crate::runtime::EngineEvent;
+use super::{automation::*, github::*, local::*, mcp::*, worktree::*};
 
 pub(super) async fn cmd_worktree(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_worktree_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
+    handle_worktree_command(state, parts.get(1).copied().unwrap_or("").trim()).await;
 }
 
 pub(super) async fn cmd_mcp(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_mcp_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
+    handle_mcp_command(state, parts.get(1).copied().unwrap_or("").trim()).await;
 }
-
-pub(super) async fn cmd_theme(
-    app: &mut App,
-    parts: &[&str],
-    _text: &str,
-    _tx: Option<&mpsc::Sender<EngineEvent>>,
-) {
-    handle_theme_command(app, parts.get(1).copied().unwrap_or("").trim());
-}
-
-pub(super) async fn cmd_fleet(
-    app: &mut App,
-    _parts: &[&str],
-    _text: &str,
-    _tx: Option<&mpsc::Sender<EngineEvent>>,
-) {
-    handle_fleet_command(app);
-}
-
 pub(super) async fn cmd_teleport(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_teleport_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
+    handle_teleport_command(state, parts.get(1).copied().unwrap_or("").trim()).await;
 }
 
 pub(super) async fn cmd_init(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_init_command(app).await;
+    handle_init_command(state).await;
 }
 
 pub(super) async fn cmd_plan(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_doc_command(app, jfc_engine::document_formats::DocKind::Plan, tx).await;
+    handle_doc_command(state, crate::document_formats::DocKind::Plan, tx).await;
 }
 
 pub(super) async fn cmd_roadmap(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_doc_command(app, jfc_engine::document_formats::DocKind::Roadmap, tx).await;
+    handle_doc_command(state, crate::document_formats::DocKind::Roadmap, tx).await;
 }
 
 pub(super) async fn cmd_parity(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_doc_command(app, jfc_engine::document_formats::DocKind::Parity, tx).await;
+    handle_doc_command(state, crate::document_formats::DocKind::Parity, tx).await;
 }
 
 pub(super) async fn cmd_philosophy(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_doc_command(app, jfc_engine::document_formats::DocKind::Philosophy, tx).await;
+    handle_doc_command(state, crate::document_formats::DocKind::Philosophy, tx).await;
 }
 
 pub(super) async fn cmd_usage(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_doc_command(app, jfc_engine::document_formats::DocKind::Usage, tx).await;
+    handle_doc_command(state, crate::document_formats::DocKind::Usage, tx).await;
 }
 
 pub(super) async fn cmd_cost(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_cost_command(app);
+    handle_cost_command(state);
 }
 
 pub(super) async fn cmd_status(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_status_command(app);
+    handle_status_command(state);
 }
 
 /// `/audit [change <id>]` — show the runtime audit ledger (agent actions).
 /// With `change <id>`, scope to a single change-set's events.
 pub(super) async fn cmd_audit(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -132,15 +114,15 @@ pub(super) async fn cmd_audit(
     if let (Some(&"change"), Some(id)) = (parts.get(1), parts.get(2)) {
         filter.change_id = Some((*id).to_string());
     }
-    let root = std::path::PathBuf::from(&app.engine.cwd);
-    let events = jfc_engine::changeset::query_ledger_in(&root, &filter);
+    let root = std::path::PathBuf::from(&state.cwd);
+    let events = crate::changeset::query_ledger_in(&root, &filter);
     let body = format!(
         "Audit ledger ({} event{}):\n{}",
         events.len(),
         if events.len() == 1 { "" } else { "s" },
-        jfc_engine::changeset::render_ledger(&events)
+        crate::changeset::render_ledger(&events)
     );
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::assistant(body));
 }
 
 /// `/commands [manifest|completions]` — the unified command/tool list,
@@ -148,7 +130,7 @@ pub(super) async fn cmd_audit(
 /// tool surfaces. `manifest` emits the machine-readable JSON-lines manifest;
 /// `completions` emits the deduped completion words.
 pub(super) async fn cmd_commands(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -156,74 +138,74 @@ pub(super) async fn cmd_commands(
     let body = match parts.get(1) {
         Some(&"manifest") => format!(
             "Command manifest (single-source):\n{}",
-            jfc_engine::command_spec::render_manifest_all()
+            crate::command_spec::render_manifest_all()
         ),
         Some(&"completions") => {
-            let specs = jfc_engine::command_spec::all_specs();
-            let refs: Vec<&dyn jfc_engine::command_spec::CommandSpec> = specs
+            let specs = crate::command_spec::all_specs();
+            let refs: Vec<&dyn crate::command_spec::CommandSpec> = specs
                 .iter()
-                .map(|s| s as &dyn jfc_engine::command_spec::CommandSpec)
+                .map(|s| s as &dyn crate::command_spec::CommandSpec)
                 .collect();
             format!(
                 "Completion words:\n{}",
-                jfc_engine::command_spec::render_completions(&refs)
+                crate::command_spec::render_completions(&refs)
             )
         }
         _ => format!(
             "Commands across all surfaces:\n{}",
-            jfc_engine::command_spec::render_all()
+            crate::command_spec::render_all()
         ),
     };
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::assistant(body));
 }
 
 /// `/changes [show|test|apply|revert <id> [-- <cmd>]]` — review surface for
 /// agent change-sets. Bare `/changes` lists; subcommands operate on one id.
 pub(super) async fn cmd_changes(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    let root = std::path::PathBuf::from(&app.engine.cwd);
+    let root = std::path::PathBuf::from(&state.cwd);
     let body = match (parts.get(1), parts.get(2)) {
-        (Some(&"show"), Some(id)) => jfc_engine::changeset::show_change(&root, id),
-        (Some(&"apply"), Some(id)) => jfc_engine::changeset::apply_change(&root, id).await,
-        (Some(&"revert"), Some(id)) => jfc_engine::changeset::revert_change(&root, id).await,
+        (Some(&"show"), Some(id)) => crate::changeset::show_change(&root, id),
+        (Some(&"apply"), Some(id)) => crate::changeset::apply_change(&root, id).await,
+        (Some(&"revert"), Some(id)) => crate::changeset::revert_change(&root, id).await,
         (Some(&"test"), Some(id)) => {
             // Everything after `-- ` is the test command.
             let cmd = text.split_once(" -- ").map(|(_, c)| c.trim()).unwrap_or("");
             if cmd.is_empty() {
                 "usage: /changes test <id> -- <command>".to_string()
             } else {
-                jfc_engine::changeset::test_change(&root, id, cmd).await
+                crate::changeset::test_change(&root, id, cmd).await
             }
         }
-        _ => jfc_engine::changeset::list_changes(&root),
+        _ => crate::changeset::list_changes(&root),
     };
-    app.engine.messages.push(ChatMessage::assistant(body));
+    state.messages.push(ChatMessage::assistant(body));
 }
 
 pub(super) async fn cmd_bug(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_bug_command(app, parts.get(1..).map(|r| r.join(" ")).unwrap_or_default());
+    handle_bug_command(state, parts.get(1..).map(|r| r.join(" ")).unwrap_or_default());
 }
 
 pub(super) async fn cmd_rewind(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_rewind_command(app, parts.get(1).copied().unwrap_or("").trim());
+    handle_rewind_command(state, parts.get(1).copied().unwrap_or("").trim());
 }
 
 pub(super) async fn cmd_output_style(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
@@ -236,77 +218,89 @@ pub(super) async fn cmd_output_style(
     } else {
         parts.get(1).copied().unwrap_or("").trim().to_string()
     };
-    handle_output_style_command(app, &arg);
+    handle_output_style_command(state, &arg);
 }
 
 pub(super) async fn cmd_dump_context(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_dump_context_command(app).await;
+    handle_dump_context_command(state).await;
 }
 
 pub(super) async fn cmd_install_github_app(
-    app: &mut App,
+    state: &mut EngineState,
     _parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_install_github_app(app).await;
+    handle_install_github_app(state).await;
 }
 
 pub(super) async fn cmd_pr(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_pr_view(app, parts.get(1).copied().unwrap_or("").trim()).await;
+    handle_pr_view(state, parts.get(1).copied().unwrap_or("").trim()).await;
 }
 
 pub(super) async fn cmd_pr_autofix(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_pr_autofix(app, parts.get(1).copied().unwrap_or("").trim(), tx).await;
+    handle_pr_autofix(state, parts.get(1).copied().unwrap_or("").trim(), tx).await;
 }
 
 pub(super) async fn cmd_setup_github_actions(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_setup_github_actions(app, parts.get(1).copied().unwrap_or("").trim()).await;
+    handle_setup_github_actions(state, parts.get(1).copied().unwrap_or("").trim()).await;
 }
 
 pub(super) async fn cmd_dream(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_dream_command(app, parts.get(1).copied().unwrap_or("").trim(), tx).await;
+    handle_dream_command(state, parts.get(1).copied().unwrap_or("").trim(), tx).await;
 }
 
 pub(super) async fn cmd_loop(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_loop_command(app, parts.get(1).copied().unwrap_or("").trim(), tx).await;
+    handle_loop_command(state, parts.get(1).copied().unwrap_or("").trim(), tx).await;
 }
 
 pub(super) async fn cmd_schedule(
-    app: &mut App,
+    state: &mut EngineState,
     parts: &[&str],
     _text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_schedule_command(app, parts.get(1).copied().unwrap_or("").trim(), tx).await;
+    handle_schedule_command(state, parts.get(1).copied().unwrap_or("").trim(), tx).await;
 }
+
+
+
+pub(super) async fn cmd_fleet(
+    state: &mut EngineState,
+    _parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    handle_fleet_command(state);
+}
+

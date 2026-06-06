@@ -1,5 +1,5 @@
 use super::*;
-use crate::input::SLASH_COMMANDS;
+use crate::input::slash_commands_table;
 
 pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     use jfc_engine::toast::ToastKind;
@@ -212,7 +212,7 @@ pub(crate) fn current_slash_prefix(app: &App) -> Option<String> {
 }
 
 pub(crate) fn slash_matches(prefix: &str) -> Vec<&'static (&'static str, &'static str)> {
-    SLASH_COMMANDS
+    slash_commands_table()
         .iter()
         .filter(|(cmd, _)| cmd.starts_with(prefix))
         .collect()
