@@ -628,27 +628,21 @@ pub(super) fn handle_bug_command(state: &mut EngineState, description: String) {
         state.permission_mode,
         std::env::consts::OS,
     );
-    let _url = super::support::bug_report_url(&title, &body);
-    // TODO: re-enable browser launch when in interactive mode (not in tests).
-    // #[cfg(target_os = "linux")]
-    // let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-    // #[cfg(target_os = "macos")]
-    // let _ = std::process::Command::new("open").arg(&url).spawn();
-    // #[cfg(target_os = "windows")]
-    // let _ = std::process::Command::new("cmd")
-    //     .args(["/C", "start", &url])
-    //     .spawn();
+    let url = super::support::bug_report_url(&title, &body);
     state.messages.push(jfc_core::ChatMessage::user(
         format!("/bug {description}").trim_end().into(),
     ));
+    // No browser launch here: this code is engine-resident (headless and
+    // remote frontends run it too), so the honest contract is to hand the
+    // user the pre-filled URL rather than claim a browser opened.
     state.messages
         .push(jfc_core::ChatMessage::assistant(format!(
-            "Opened a pre-filled bug report at {}/issues/new in your browser.\n\
-             If nothing opened, copy the URL above. Context already attached:\n\
+            "Pre-filled bug report ready — open this in your browser:\n\n\
+             {url}\n\n\
+             Context already attached:\n\
              - **Session ID**: `{session_id}`\n\
              - **Provider/model**: `{}` / `{}`\n\
              - **Mode**: {:?}",
-            super::support::repo_url(),
             state.provider.name(),
             state.model.as_str(),
             state.permission_mode,

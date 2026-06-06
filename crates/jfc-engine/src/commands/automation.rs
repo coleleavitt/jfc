@@ -150,16 +150,39 @@ fn parse_loop_interval(args: &str) -> (&str, &str) {
 /// expression.  Seconds are rounded up to the nearest minute (minimum 1 min).
 fn interval_to_cron(interval: &str) -> String {
     let n: u64 = interval[..interval.len() - 1].parse().unwrap_or(10);
-    match interval.chars().last() {
-        Some('s') => {
-            let mins = n.div_ceil(60).max(1);
-            format!("*/{mins} * * * *")
+    // Each cron field has a hard range (minute 0-59, hour 0-23, day 1-31);
+    // a step beyond it either fires at the wrong cadence (the matcher only
+    // hits value 0) or never fires at all. Carry over-range values into the
+    // next-larger unit, the same normalization the seconds branch does.
+    let minutes_to_cron = |mins: u64| -> String {
+        if mins >= 60 {
+            hours_to_cron(mins.div_ceil(60))
+        } else {
+            format!("*/{} * * * *", mins.max(1))
         }
-        Some('m') => format!("*/{n} * * * *"),
-        Some('h') => format!("0 */{n} * * *"),
-        Some('d') => format!("0 0 */{n} * *"),
-        _ => format!("*/{n} * * * *"),
+    };
+    match interval.chars().last() {
+        Some('s') => minutes_to_cron(n.div_ceil(60).max(1)),
+        Some('m') => minutes_to_cron(n.max(1)),
+        Some('h') => hours_to_cron(n.max(1)),
+        Some('d') => days_to_cron(n.max(1)),
+        _ => minutes_to_cron(n.max(1)),
     }
+}
+
+fn hours_to_cron(hours: u64) -> String {
+    if hours >= 24 {
+        days_to_cron(hours.div_ceil(24))
+    } else {
+        format!("0 */{} * * *", hours.max(1))
+    }
+}
+
+fn days_to_cron(days: u64) -> String {
+    // Day-of-month caps at 31; clamp rather than emit a never-firing
+    // expression (cron has no native "every N>31 days" — monthly is the
+    // closest honest cadence).
+    format!("0 0 */{} * *", days.clamp(1, 28))
 }
 
 /// `/loop [interval] <prompt>` — set up a recurring cron job that fires

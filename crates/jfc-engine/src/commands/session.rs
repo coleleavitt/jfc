@@ -76,6 +76,7 @@ pub(super) async fn cmd_continue(
     };
     if let Some(session_id) = session_id {
         if let Some(messages) = crate::session::load_session(&session_id).await {
+            let msg_count = messages.len();
             state.messages = messages;
             let session_id_for_msg = session_id.clone();
             state.switch_session(Some(session_id));
@@ -86,8 +87,7 @@ pub(super) async fn cmd_continue(
             state.push_effect(crate::app::EngineEffect::ScrollToBottom);
             let scope = if want_global { "any cwd" } else { "this cwd" };
             state.messages.push(ChatMessage::assistant(format!(
-                "**Resumed session `{session_id_for_msg}`** ({scope}) — {} message(s) loaded.",
-                state.messages.len() - 1
+                "**Resumed session `{session_id_for_msg}`** ({scope}) — {msg_count} message(s) loaded."
             )));
         } else {
             state.messages.push(ChatMessage::assistant(format!(

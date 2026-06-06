@@ -1318,7 +1318,15 @@ impl EngineState {
             "switch_session"
         );
         self.current_session_id = Some(new_id.clone());
-        self.task_store = jfc_session::TaskStore::open(new_id.as_str());
+        // Mirror the constructor's store choice: inside a git repo the
+        // project-level store (<root>/.jfc/tasks.json) survives across ALL
+        // sessions; only fall back to the per-session file without one.
+        // Re-opening per-session unconditionally here silently dropped
+        // project tasks on every /clear // /continue // session load.
+        self.task_store = match self.git_root.as_ref().and_then(|r| r.as_ref()) {
+            Some(root) => jfc_session::TaskStore::open_project(Some(root.as_path())),
+            None => jfc_session::TaskStore::open(new_id.as_str()),
+        };
         self.task_completion_times.clear();
         self.task_activities.clear();
         self.deferred_tool_uses.clear();

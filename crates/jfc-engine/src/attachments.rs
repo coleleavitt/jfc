@@ -315,6 +315,7 @@ pub fn process_image(raw_bytes: Vec<u8>, _kind: AttachmentKind) -> Result<Attach
 
     // PNG too large — try JPEG at decreasing quality
     let rgb_img = img.to_rgb8();
+    let mut last_jpeg_size = 0usize;
     for &quality in JPEG_QUALITIES {
         let mut jpeg_buf = Vec::new();
         {
@@ -339,11 +340,11 @@ pub fn process_image(raw_bytes: Vec<u8>, _kind: AttachmentKind) -> Result<Attach
                 bytes: jpeg_buf,
             });
         }
+        last_jpeg_size = jpeg_buf.len();
     }
 
     Err(format!(
-        "image still {} bytes after JPEG q=20 — too large for the API",
-        png_buf.len()
+        "image still {last_jpeg_size} bytes after JPEG q=20 — too large for the API"
     ))
 }
 

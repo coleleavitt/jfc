@@ -466,6 +466,9 @@ pub(super) async fn cmd_pin(
     // drop it. /pin without an arg pins the most recent
     // message; /pin <n> pins index n; /pin list prints the
     // current pin set.
+    // Capture the index of the message the user means by "most recent"
+    // BEFORE pushing the /pin echo — otherwise the echo itself gets pinned.
+    let prior_idx = state.messages.len().checked_sub(1);
     state.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts.get(1).copied().unwrap_or("").trim();
     if arg == "list" {
@@ -486,10 +489,12 @@ pub(super) async fn cmd_pin(
             )));
         }
     } else if arg.is_empty() {
-        if state.messages.is_empty() {
+        let Some(idx) = prior_idx else {
+            state.messages.push(ChatMessage::assistant(
+                "Nothing to pin yet — the transcript is empty.".into(),
+            ));
             return;
-        }
-        let idx = state.messages.len() - 1;
+        };
         state.pinned_message_indices.insert(idx);
         state.messages.push(ChatMessage::assistant(format!(
             "Pinned message #{idx} (compaction will preserve it)."
@@ -1343,13 +1348,19 @@ pub(super) async fn cmd_stuck(
         .count();
     report.push_str(&format!("• Pending tool calls: {pending_tools}\n"));
 
-    // Last stream activity (engine-side signal; frontend input activity is
-    // the frontend's to report).
-    if let Some(at) = state.last_stream_event_at {
-        report.push_str(&format!(
+    // Time-since-activity is the highest-signal row for "is this session
+    // wedged?" — always render one. Stream activity is the engine's clock;
+    // before any stream has run, fall back to engine uptime so the idle case
+    // (the very case /stuck diagnoses) still gets an answer.
+    match state.last_stream_event_at {
+        Some(at) => report.push_str(&format!(
             "• Last stream activity: {:.1}s ago\n",
             at.elapsed().as_secs_f64()
-        ));
+        )),
+        None => report.push_str(&format!(
+            "• No stream activity yet (engine up {:.1}s)\n",
+            state.started_at.elapsed().as_secs_f64()
+        )),
     }
 
     // Token usage

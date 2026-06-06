@@ -26,8 +26,12 @@ jobs:
         # hit here is an architecture regression. Doc comments are allowed.
         run: |
           set -euo pipefail
+          # Strip comments (leading + trailing line comments, inline block
+          # comments) before matching, so prose citations of ratatui/crossterm
+          # never red the build — only code references do.
           hits=$(grep -rnE 'ratatui|crossterm' crates/jfc-engine/src --include='*.rs' \
-            | grep -vE '^\S+:[0-9]+:\s*(//|//!|///)' || true)
+            | sed -E 's://[!/]?.*$::; s:/\*([^*]|\*[^/])*\*/::g' \
+            | grep -E 'ratatui|crossterm' || true)
           if [ -n "$hits" ]; then
             echo "UI dependencies leaked into jfc-engine:" >&2
             echo "$hits" >&2
