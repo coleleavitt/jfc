@@ -45,7 +45,7 @@ pub(super) async fn run_print_mode(
     prompt: String,
     config: PrintModeConfig,
 ) -> anyhow::Result<()> {
-    use crate::app::{EngineState, PermissionMode};
+    use crate::app::PermissionMode;
     use crate::runtime::{
         ControlEvent, EngineEvent, FrontendDirective, StreamEvent as EngineStreamEvent, ToolEvent,
     };
@@ -54,13 +54,12 @@ pub(super) async fn run_print_mode(
     let prompt_text = parsed_input.prompt.clone();
     let mut recovered_permission_responses = parsed_input.permission_responses;
 
-    let (tx, mut rx) =
-        tokio::sync::mpsc::channel::<EngineEvent>(crate::runtime::APP_EVENT_BUFFER);
-    // Plan-mode tools / economy events reach the loop via the global sender,
-    // exactly as in the TUI (the old loop silently dropped them).
-    jfc_engine::tools::register_event_sender(tx.clone());
-
-    let mut state = EngineState::new(provider, model.clone());
+    let (tx, mut rx) = jfc_engine::channel();
+    // Engine::new registers the global tool-event sender, so plan-mode tools
+    // / economy events reach this loop exactly as in the TUI (the old
+    // duplicated loop silently dropped them).
+    let mut engine = jfc_engine::Engine::new(provider, model.clone(), tx.clone());
+    let state = &mut engine.state;
     // Print mode never persists sessions — the optional --session-mirror file
     // is its own wire-level persistence below.
     state.no_session_persistence = true;
@@ -137,10 +136,11 @@ pub(super) async fn run_print_mode(
     // stream-json input that carried its own messages resumes the seeded
     // transcript directly.
     if parsed_input.messages.is_empty() {
-        crate::runtime::ops::submit_prompt(&mut state, &tx, prompt_text.clone(), Vec::new(), None)
+        engine
+            .submit(prompt_text.clone(), Vec::new(), None)
             .await?;
     } else {
-        crate::runtime::ops::start_turn_from_transcript(&mut state, &tx, &prompt_text).await;
+        engine.start_turn_from_transcript(&prompt_text).await;
     }
 
     let mut accumulated = String::new();
@@ -353,11 +353,10 @@ pub(super) async fn run_print_mode(
         }
 
         // ── 2. Dispatch through the shared engine pump ──
-        match crate::runtime::handle_engine_event(&mut state, &tx, ev).await? {
+        match engine.handle_event(ev).await? {
             Some(FrontendDirective::SubmitPrompt(text)) => {
                 // Pre-submit compaction re-fired the prompt.
-                let _ = crate::runtime::ops::submit_prompt(&mut state, &tx, text, Vec::new(), None)
-                    .await?;
+                let _ = engine.submit(text, Vec::new(), None).await?;
             }
             Some(FrontendDirective::RunCommand(_)) => {
                 // Slash commands are not supported in print mode (stage 8 of
@@ -366,11 +365,16 @@ pub(super) async fn run_print_mode(
             None => {}
         }
         // Print mode has no viewport: view effects are meaningless here.
-        state.effects.clear();
+        let _ = engine.drain_effects();
 
         // ── 3. Approval pump: resolve every parked tool via the HTTP
         //       permission prompt (or recovered stream-json responses). ──
-        while let Some(pending_tool) = state.pending_approval.as_ref().map(|p| p.tool.clone()) {
+        while let Some(pending_tool) = engine
+            .state
+            .pending_approval
+            .as_ref()
+            .map(|p| p.tool.clone())
+        {
             let allowed = headless_permission_decision(
                 &pending_tool,
                 &config,
@@ -380,21 +384,11 @@ pub(super) async fn run_print_mode(
                 &mut mirror_events,
             )
             .await?;
-            crate::runtime::approvals::handle_remote_approval_response(
-                &mut state,
-                &tx,
-                pending_tool.id.as_str().to_owned(),
-                allowed,
-            );
+            engine.resolve_approval(pending_tool.id.as_str().to_owned(), allowed);
         }
 
         // ── 4. Termination: the turn settled and nothing is in flight. ──
-        if !state.has_interruptible_work()
-            && state.pending_approval.is_none()
-            && state.approval_queue.is_empty()
-            && state.queued_prompts.is_empty()
-            && state.compacting_started_at.is_none()
-        {
+        if engine.is_idle() {
             break;
         }
     }
@@ -442,7 +436,7 @@ pub(super) async fn run_print_mode(
     }
     let _ = stdout.flush();
     if let Some(path) = config.session_mirror {
-        let wire_messages = jfc_engine::stream::build_provider_messages(&state.messages);
+        let wire_messages = jfc_engine::stream::build_provider_messages(&engine.state.messages);
         let mirror = serde_json::json!({
             "session_id": &session_id,
             "messages": wire_messages.iter().map(provider_message_to_json).collect::<Vec<_>>(),

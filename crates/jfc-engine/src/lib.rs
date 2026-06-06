@@ -41,6 +41,7 @@ pub mod diagnostics_producer;
 pub mod document_formats;
 pub mod dreamer_scheduler;
 pub mod effort;
+pub mod engine;
 pub mod env_context;
 pub mod exploration;
 pub mod feature_gates;
@@ -142,6 +143,17 @@ pub mod web_cache;
 pub mod web_search;
 pub mod workflows;
 pub mod worktrees;
+
+// ── Curated top-level surface ────────────────────────────────────────────────
+// The blessed embedding API. Module internals are also public (stage-5
+// blanket publication for the extraction); prefer these names — internals
+// may re-privatize as the API settles.
+pub use app::{EngineEffect, EngineState, PendingApproval, PendingQuestion, PermissionMode};
+pub use engine::{Engine, channel};
+pub use runtime::{
+    ControlEvent, EngineEvent, EventReceiver, EventSender, FrontendDirective, FrontendEvent,
+    handle_engine_event, ops,
+};
 
 /// Domain-type facade mirroring the binary's historical `crate::types`
 /// surface (canonical definitions live in jfc-core).
