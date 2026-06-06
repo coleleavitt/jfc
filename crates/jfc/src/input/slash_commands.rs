@@ -24,6 +24,7 @@ use super::delegating_commands::*;
 use super::info_commands::*;
 use super::session_commands::*;
 use super::task_commands::*;
+use crate::runtime::EngineEvent;
 
 /// Generate the `SLASH_COMMANDS` metadata table and the `dispatch` match
 /// from a single declarative list. Each row is:
@@ -57,7 +58,7 @@ macro_rules! slash_commands {
             app: &mut App,
             parts: &[&str],
             text: &str,
-            tx: Option<&mpsc::Sender<AppEvent>>,
+            tx: Option<&mpsc::Sender<EngineEvent>>,
         ) {
             match parts[0] {
                 $(
@@ -76,7 +77,7 @@ pub async fn run_slash_command(app: &mut App, text: &str) {
 pub(super) async fn handle_slash_command(
     app: &mut App,
     text: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let parts: Vec<&str> = text.splitn(2, ' ').collect();
     dispatch(app, &parts, text, tx).await;
@@ -113,7 +114,7 @@ pub(super) async fn skill_fallthrough(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let name = parts[0].trim_start_matches('/');
     let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());

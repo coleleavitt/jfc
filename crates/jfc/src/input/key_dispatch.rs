@@ -25,7 +25,7 @@ use super::*;
 pub async fn handle_key(
     app: &mut App,
     key: event::KeyEvent,
-    tx: &mpsc::Sender<crate::runtime::AppEvent>,
+    tx: &mpsc::Sender<crate::runtime::EngineEvent>,
 ) -> anyhow::Result<bool> {
     if approval::handle_approval_key(app, key, tx) {
         return Ok(false);
@@ -203,7 +203,7 @@ fn last_reasoning_message_idx(app: &App) -> Option<usize> {
         .find(|&i| message_has_reasoning(app, i))
 }
 
-fn request_user_interrupt(app: &mut App, tx: &mpsc::Sender<crate::runtime::AppEvent>) {
+pub(crate) fn request_user_interrupt(app: &mut App, tx: &mpsc::Sender<crate::runtime::EngineEvent>) {
     let already_requested = app.cancel_token.is_cancelled()
         || app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst);
 
@@ -350,7 +350,7 @@ fn handle_chip_atomic_delete(app: &mut App, key: event::KeyEvent) -> Option<anyh
 async fn handle_command_keys(
     app: &mut App,
     key: event::KeyEvent,
-    tx: &mpsc::Sender<crate::runtime::AppEvent>,
+    tx: &mpsc::Sender<crate::runtime::EngineEvent>,
 ) -> Option<anyhow::Result<bool>> {
     match (key.modifiers, key.code) {
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
@@ -983,7 +983,7 @@ fn cmd_toggle_expand_recent(app: &mut App) -> Option<anyhow::Result<bool>> {
 fn cmd_handle_escape(
     app: &mut App,
     key: event::KeyEvent,
-    tx: &mpsc::Sender<crate::runtime::AppEvent>,
+    tx: &mpsc::Sender<crate::runtime::EngineEvent>,
 ) -> Option<anyhow::Result<bool>> {
     if app
         .vim
@@ -1102,7 +1102,7 @@ pub(crate) fn can_interrupt_on_submit(app: &App, compacting: bool) -> bool {
 async fn handle_enter_submit(
     app: &mut App,
     key: event::KeyEvent,
-    tx: &mpsc::Sender<crate::runtime::AppEvent>,
+    tx: &mpsc::Sender<crate::runtime::EngineEvent>,
 ) -> Option<anyhow::Result<bool>> {
     if key.code == KeyCode::Enter && !key.modifiers.contains(KeyModifiers::SHIFT) {
         let text = app.textarea.lines().join("\n");
@@ -1469,7 +1469,7 @@ fn handle_arrow_history_keys(app: &mut App, key: event::KeyEvent) -> Option<anyh
 fn handle_leader_key_keys(
     app: &mut App,
     key: event::KeyEvent,
-    tx: &mpsc::Sender<crate::runtime::AppEvent>,
+    tx: &mpsc::Sender<crate::runtime::EngineEvent>,
 ) -> Option<anyhow::Result<bool>> {
     if app.leader_key_active {
         app.leader_key_active = false;
@@ -1549,8 +1549,8 @@ fn handle_leader_key_keys(
                     let tx_clone = tx.clone();
                     tokio::spawn(async move {
                         let _ = tx_clone
-                            .send(crate::runtime::AppEvent::Ui(
-                                crate::runtime::UiEvent::Submit(prompt),
+                            .send(crate::runtime::EngineEvent::Control(
+                                crate::runtime::ControlEvent::SubmitPrompt(prompt),
                             ))
                             .await;
                     });

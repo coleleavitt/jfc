@@ -5,7 +5,7 @@ use crate::app::{self, App};
 use crate::runtime::EventSender;
 use crate::{input, toast};
 
-/// Handle `UiEvent::EnterPlanModeRequested { reason }`.
+/// Handle `FrontendEvent::PlanModeEntered { reason }`.
 pub(crate) fn handle_enter_plan_mode(app: &mut App, reason: String) {
     // Model-callable plan mode entry — the EnterPlanMode tool
     // emits this. Flip the leader's permission mode and toast
@@ -32,7 +32,7 @@ pub(crate) fn handle_enter_plan_mode(app: &mut App, reason: String) {
     );
 }
 
-/// Handle `UiEvent::Submit(text)`.
+/// Handle `ControlEvent::SubmitPrompt(text)`.
 pub(crate) async fn handle_submit(
     app: &mut App,
     text: String,
@@ -116,7 +116,7 @@ pub(crate) async fn handle_submit(
     tracing::debug!(
         target: "jfc::input",
         text_len = text.len(),
-        "UiEvent::Submit (re-queued after compaction)"
+        "ControlEvent::SubmitPrompt (re-queued after compaction)"
     );
     input::handle_submit_text(app, text, tx).await?;
     Ok(())
@@ -155,7 +155,7 @@ pub(crate) fn handle_stream_lifecycle(
     app.stream_lifecycle = Some(status);
 }
 
-/// Handle `UiEvent::Toast { kind, text }`.
+/// Handle `ControlEvent::Notice { kind, text }`.
 pub(crate) fn handle_toast(app: &mut App, kind: toast::ToastKind, text: impl Into<String>) {
     // Push onto the auto-expiring strip with the kind's
     // default TTL. Capped at `MAX_TOASTS` to bound memory
@@ -163,7 +163,7 @@ pub(crate) fn handle_toast(app: &mut App, kind: toast::ToastKind, text: impl Int
     toast::push_with_cap(&mut app.toasts, toast::Toast::new(kind, text));
 }
 
-/// Handle `UiEvent::LoadSession(session_id)`.
+/// Handle `ControlEvent::LoadSession(session_id)`.
 pub(crate) async fn handle_load_session(app: &mut App, session_id: crate::ids::SessionId) {
     // Session-picker selected. Reuse the same loader the
     // sidebar's Enter handler calls so we share the
@@ -205,7 +205,7 @@ pub(crate) async fn handle_load_session(app: &mut App, session_id: crate::ids::S
     }
 }
 
-/// Handle `UiEvent::ExitPlanModeRequested { plan }`.
+/// Handle `FrontendEvent::PlanReview { plan }`.
 pub(crate) fn handle_exit_plan_mode(app: &mut App, plan: String) {
     // Surface the plan as part of the existing assistant message
     // (NOT a new message — that would fool should_continue_loop

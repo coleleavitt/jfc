@@ -2,7 +2,7 @@
 //! registration.
 
 use crate::app::App;
-use crate::runtime::{AppEvent, EventSender, TaskEvent, TeamEvent};
+use crate::runtime::{EngineEvent, EventSender, TaskEvent, TeamEvent};
 use crate::types::*;
 use crate::{session, toast};
 
@@ -171,7 +171,7 @@ async fn handle_runner(
             // BackgroundTask.messages append) handles it
             // — same path as one-shot subagents.
             let _ = tx
-                .send(AppEvent::Task(TaskEvent::AgentChunk {
+                .send(EngineEvent::Task(TaskEvent::AgentChunk {
                     task_id: crate::ids::TaskId::from(task_id),
                     text: delta,
                 }))

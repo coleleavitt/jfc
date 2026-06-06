@@ -7,7 +7,8 @@ use tokio::sync::mpsc;
 
 use crate::app::{ANIM_TICK_MS, App, IDLE_TICK_MS};
 use crate::runtime::{
-    APP_EVENT_BUFFER, AppEvent, EventReceiver, EventSender, GoalEvent, ProviderEvent, StreamEvent,
+    APP_EVENT_BUFFER, AppEvent, ControlEvent, EngineEvent, EventReceiver, EventSender,
+    FrontendEvent, GoalEvent, ProviderEvent, StreamEvent,
     StreamRequestOverrides, TaskEvent, TeamEvent, ToolEvent, UiEvent, draw_synchronized,
     handle_goal_verdict, restore_persistent_background_agents, set_terminal_title,
 };
@@ -54,6 +55,9 @@ pub(crate) async fn run(
 ) -> anyhow::Result<()> {
     let (tx, mut rx): (EventSender, EventReceiver) = mpsc::channel(APP_EVENT_BUFFER);
     let (term_tx, mut term_rx) = mpsc::unbounded_channel::<event::Event>();
+    // Frontend-local tick channel. Frame ticks never enter the engine bus —
+    // capacity 2 + try_send preserves the old drop-when-busy coalescing.
+    let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(2);
     // Make the channel reachable from non-Task code paths (bounty
     // solver/validator agents, future cron-triggered work) so they
     // emit the same TaskStarted/AgentChunk/TaskCompleted events the
@@ -545,7 +549,7 @@ pub(crate) async fn run(
         tokio::spawn(async move {
             let models = p.fetch_models().await.unwrap_or_default();
             _ = tx
-                .send(AppEvent::Provider(ProviderEvent::ModelsLoaded {
+                .send(EngineEvent::Provider(ProviderEvent::ModelsLoaded {
                     provider: name,
                     models,
                 }))
@@ -562,7 +566,7 @@ pub(crate) async fn run(
         tokio::spawn(async move {
             if let Ok(profile) = oauth.fetch_profile().await {
                 _ = tx
-                    .send(AppEvent::Provider(ProviderEvent::ProfileLoaded {
+                    .send(EngineEvent::Provider(ProviderEvent::ProfileLoaded {
                         seat_tier: profile.seat_tier,
                         subscription_type: profile.subscription_type,
                         email: profile.email,
@@ -593,7 +597,7 @@ pub(crate) async fn run(
     }
 
     {
-        let tx = tx.clone();
+        let ui_tx = ui_tx.clone();
         let wants_anim = app.wants_animation_frame.clone();
         tokio::spawn(async move {
             loop {
@@ -603,7 +607,7 @@ pub(crate) async fn run(
                     IDLE_TICK_MS
                 };
                 tokio::time::sleep(Duration::from_millis(ms)).await;
-                _ = tx.try_send(AppEvent::Ui(UiEvent::Tick));
+                _ = ui_tx.try_send(UiEvent::Tick);
             }
         });
     }
@@ -614,7 +618,7 @@ pub(crate) async fn run(
         let mut teammate_rx = app.teammate_event_rx.take().unwrap();
         tokio::spawn(async move {
             while let Some(ev) = teammate_rx.recv().await {
-                _ = tx.send(AppEvent::Team(TeamEvent::Runner(ev))).await;
+                _ = tx.send(EngineEvent::Team(TeamEvent::Runner(ev))).await;
             }
         });
     }
@@ -674,7 +678,7 @@ pub(crate) async fn run(
                 })
                 .collect();
             _ = tx_mcp
-                .send(AppEvent::Provider(ProviderEvent::McpUpdated { servers }))
+                .send(EngineEvent::Provider(ProviderEvent::McpUpdated { servers }))
                 .await;
         });
     }
@@ -783,7 +787,7 @@ pub(crate) async fn run(
                     format!("stream task cancelled: {join_err}")
                 };
                 _ = tx_guard
-                    .send(AppEvent::Stream(StreamEvent::Error(msg)))
+                    .send(EngineEvent::Stream(StreamEvent::Error(msg)))
                     .await;
             }
         });
@@ -809,10 +813,19 @@ pub(crate) async fn run(
         // This collapses N rapid stream chunks into 1 frame instead of N frames.
         let first_event = loop {
             if !term_events_open {
-                break match rx.recv().await {
-                    Some(e) => e,
-                    None => break 'main_loop,
-                };
+                tokio::select! {
+                    biased;
+                    ui = ui_rx.recv() => {
+                        if let Some(u) = ui { break AppEvent::Ui(u); }
+                    }
+                    app_event = rx.recv() => {
+                        break match app_event {
+                            Some(e) => AppEvent::Engine(e),
+                            None => break 'main_loop,
+                        };
+                    }
+                }
+                continue;
             }
             tokio::select! {
                 biased;
@@ -822,9 +835,12 @@ pub(crate) async fn run(
                         None => term_events_open = false,
                     }
                 }
+                ui = ui_rx.recv() => {
+                    if let Some(u) = ui { break AppEvent::Ui(u); }
+                }
                 app_event = rx.recv() => {
                     break match app_event {
-                        Some(e) => e,
+                        Some(e) => AppEvent::Engine(e),
                         None => break 'main_loop,
                     };
                 }
@@ -847,8 +863,12 @@ pub(crate) async fn run(
                     }
                 }
             }
+            if let Ok(u) = ui_rx.try_recv() {
+                events.push(AppEvent::Ui(u));
+                continue;
+            }
             match rx.try_recv() {
-                Ok(extra) => events.push(extra),
+                Ok(extra) => events.push(AppEvent::Engine(extra)),
                 Err(_) => break,
             }
         }
@@ -862,10 +882,12 @@ pub(crate) async fn run(
         let mut force_draw = false;
 
         for ev in events {
-            // Mirror to remote-control clients. Non-blocking; returns early
-            // when remote control is inactive.
-            if let Some(ref rc) = app.remote_host
-                && let Some(envelope) = crate::remote_host::mirror_event(&ev)
+            // Mirror engine events to remote-control clients. Non-blocking;
+            // returns early when remote control is inactive. Frontend-local
+            // events (keys, ticks) are never mirrored.
+            if let AppEvent::Engine(ref engine_ev) = ev
+                && let Some(ref rc) = app.remote_host
+                && let Some(envelope) = crate::remote_host::mirror_event(engine_ev)
             {
                 rc.mirror(envelope);
             }
@@ -891,11 +913,6 @@ pub(crate) async fn run(
                     }
                 }
 
-                // ── Team events ─────────────────────────────────────────
-                AppEvent::Team(ev) => {
-                    handlers::team::handle_team_event(&mut app, &tx, ev).await;
-                }
-
                 // ── Tick ────────────────────────────────────────────────
                 AppEvent::Ui(UiEvent::Tick) => {
                     if handlers::tick::handle_tick(&mut app, &tx, oauth_for_snapshot.as_ref()).await
@@ -904,266 +921,8 @@ pub(crate) async fn run(
                     }
                 }
 
-                // ── Stream: chunk / tool-input / redacted / response-id ─
-                AppEvent::Stream(StreamEvent::Chunk { text, reasoning }) => {
-                    handlers::stream_chunk::handle_chunk(&mut app, text, reasoning);
-                }
-                AppEvent::Stream(StreamEvent::ToolInputDelta(byte_len)) => {
-                    handlers::stream_chunk::handle_tool_input_delta(&mut app, byte_len);
-                }
-                AppEvent::Stream(StreamEvent::ThinkingTokens(tokens)) => {
-                    handlers::stream_chunk::handle_thinking_tokens(&mut app, tokens);
-                }
-                AppEvent::Stream(StreamEvent::RedactedThinking(data)) => {
-                    handlers::stream_chunk::handle_redacted_thinking(&mut app, data);
-                }
-                AppEvent::Stream(StreamEvent::ResponseId(id)) => {
-                    handlers::stream_chunk::handle_response_id(&mut app, id);
-                }
-
-                // ── Stream: tool announcement ───────────────────────────
-                AppEvent::Stream(StreamEvent::Tool(tool)) => {
-                    handlers::stream_tool::handle_stream_tool(&mut app, &tx, tool).await;
-                }
-                AppEvent::Tool(ToolEvent::ClassifierDecision {
-                    tool,
-                    blocked,
-                    reason,
-                }) => {
-                    handlers::stream_tool::handle_classifier_decision(
-                        &mut app, &tx, tool, blocked, reason,
-                    )
-                    .await;
-                }
-                AppEvent::Tool(ToolEvent::SetInProgressToolUseIds { action, ids }) => {
-                    handlers::tools::handle_set_in_progress_tool_use_ids(&mut app, action, ids);
-                }
-                AppEvent::Tool(ToolEvent::DeferredToolUse {
-                    id,
-                    name,
-                    input_preview,
-                    reason,
-                }) => {
-                    handlers::tools::handle_deferred_tool_use(
-                        &mut app,
-                        id,
-                        name,
-                        input_preview,
-                        reason,
-                    );
-                }
-                AppEvent::Tool(ToolEvent::UseSummary {
-                    summary,
-                    preceding_tool_use_ids,
-                }) => {
-                    handlers::tools::handle_tool_use_summary(
-                        &mut app,
-                        summary,
-                        preceding_tool_use_ids,
-                    );
-                }
-                AppEvent::Stream(StreamEvent::ServerToolResult {
-                    tool_use_id,
-                    tool_kind,
-                    content,
-                }) => {
-                    handlers::stream_tool::handle_server_tool_result(
-                        &mut app,
-                        &tx,
-                        tool_use_id,
-                        tool_kind,
-                        content,
-                    );
-                }
-
-                // ── Stream: done ────────────────────────────────────────
-                AppEvent::Stream(StreamEvent::Done(stop_reason)) => {
-                    handlers::stream_done::handle_stream_done(&mut app, &tx, stop_reason).await;
-                }
-
-                // ── Stream: error ───────────────────────────────────────
-                AppEvent::Stream(StreamEvent::Error(e)) => {
-                    handlers::stream_error::handle_stream_error(&mut app, &tx, e).await;
-                }
-
-                // ── Stream: fallback ────────────────────────────────────
-                AppEvent::Stream(StreamEvent::FallbackTriggered {
-                    original_model,
-                    fallback_model,
-                    reason,
-                }) => {
-                    handlers::stream_error::handle_fallback_triggered(
-                        &mut app,
-                        &original_model,
-                        &fallback_model,
-                        &reason,
-                    );
-                }
-
-                // ── Stream: usage ───────────────────────────────────────
-                AppEvent::Stream(StreamEvent::Usage {
-                    input_tokens,
-                    output_tokens,
-                    cache_read_tokens,
-                    cache_write_tokens,
-                }) => {
-                    handlers::stream_usage::handle_stream_usage(
-                        &mut app,
-                        input_tokens,
-                        output_tokens,
-                        cache_read_tokens,
-                        cache_write_tokens,
-                    );
-                }
-
-                // ── Stream: metadata ────────────────────────────────────
-                AppEvent::Stream(StreamEvent::SystemPromptLen(len)) => {
-                    handlers::ui_actions::handle_system_prompt_len(&mut app, len);
-                }
-                AppEvent::Stream(StreamEvent::MemoryRecalled(chars)) => {
-                    // The recall block was injected this turn; show its size in
-                    // the same chars/4 token model the context gauge uses (no
-                    // `~` prefix — it's presented consistently with every other
-                    // token figure in the UI, not flagged as a guess).
-                    let tokens = chars / 4;
-                    crate::toast::push_with_cap(
-                        &mut app.toasts,
-                        crate::toast::Toast::new(
-                            crate::toast::ToastKind::Info,
-                            format!("↻ Recalled memory ({tokens} tokens of context)"),
-                        ),
-                    );
-                    needs_draw = true;
-                }
-                AppEvent::Stream(StreamEvent::RequestMetadata(meta)) => {
-                    handlers::ui_actions::handle_request_metadata(&mut app, meta);
-                }
-                AppEvent::Stream(StreamEvent::Lifecycle(status)) => {
-                    handlers::ui_actions::handle_stream_lifecycle(&mut app, status);
-                }
-
-                // ── Provider events ─────────────────────────────────────
-                AppEvent::Provider(ev) => {
-                    handlers::provider::handle_provider_event(&mut app, ev);
-                }
-
-                // ── Tool execution events ───────────────────────────────
-                AppEvent::Tool(ToolEvent::OutputChunk { tool_id, chunk }) => {
-                    handlers::tools::handle_output_chunk(&mut app, tool_id, chunk);
-                }
-                AppEvent::Tool(ToolEvent::Result { tool_id, result }) => {
-                    handlers::tools::handle_tool_result(&mut app, &tx, tool_id, result);
-                    if handlers::tools::should_recheck_completion_after_tool_result(&app) {
-                        tracing::warn!(
-                            target: "jfc::stream",
-                            "ToolResult completed a turn after its AllComplete signal — rechecking continuation"
-                        );
-                        handlers::tools::handle_all_complete(&mut app, &tx).await;
-                    }
-                }
-                AppEvent::Tool(ToolEvent::AllComplete) => {
-                    handlers::tools::handle_all_complete(&mut app, &tx).await;
-                }
-
-                // ── Goal evaluation ─────────────────────────────────────
-                AppEvent::Goal(GoalEvent::Verdict { ok, reason }) => {
-                    handle_goal_verdict(&mut app, &tx, ok, reason).await;
-                }
-
-                // ── Compaction events ───────────────────────────────────
-                AppEvent::Compaction(ev) => {
-                    handlers::compaction::handle_compaction_event(&mut app, &tx, ev).await;
-                }
-
-                // ── UI actions ──────────────────────────────────────────
-                AppEvent::Ui(UiEvent::EnterPlanModeRequested { reason }) => {
-                    handlers::ui_actions::handle_enter_plan_mode(&mut app, reason);
-                }
-                AppEvent::Ui(UiEvent::Submit(text)) => {
-                    handlers::ui_actions::handle_submit(&mut app, text, &tx).await?;
-                }
-                AppEvent::Ui(UiEvent::Toast { kind, text }) => {
-                    handlers::ui_actions::handle_toast(&mut app, kind, text);
-                }
-                AppEvent::Ui(UiEvent::LoadSession(session_id)) => {
-                    handlers::ui_actions::handle_load_session(&mut app, session_id).await;
-                }
-                AppEvent::Ui(UiEvent::WorktreeCountLoaded(count)) => {
-                    app.worktree_count = count;
-                }
-                AppEvent::Ui(UiEvent::RemoteApprovalResponse {
-                    tool_use_id,
-                    approved,
-                }) => {
-                    crate::input::handle_remote_approval_response(
-                        &mut app,
-                        &tx,
-                        tool_use_id,
-                        approved,
-                    );
-                }
-                AppEvent::Ui(UiEvent::ExitPlanModeRequested { plan }) => {
-                    handlers::ui_actions::handle_exit_plan_mode(&mut app, plan);
-                }
-                // ── Task (subagent) events ──────────────────────────────
-                AppEvent::Task(TaskEvent::AgentChunk { task_id, text }) => {
-                    handlers::task::handle_agent_chunk(&mut app, task_id, text);
-                }
-                AppEvent::Task(TaskEvent::Started {
-                    task_id,
-                    description,
-                    model_used,
-                    max_input_tokens,
-                    is_detached,
-                    parent_task_id,
-                }) => {
-                    handlers::task::handle_task_started(
-                        &mut app,
-                        task_id,
-                        description,
-                        model_used,
-                        max_input_tokens,
-                        is_detached,
-                        parent_task_id,
-                    );
-                }
-                AppEvent::Task(TaskEvent::Progress {
-                    task_id,
-                    last_tool,
-                    elapsed_ms,
-                    tool_use_count,
-                    input_tokens,
-                    cache_read_tokens,
-                    cache_write_tokens,
-                    output_tokens,
-                }) => {
-                    handlers::task::handle_task_progress(
-                        &mut app,
-                        task_id,
-                        last_tool,
-                        elapsed_ms,
-                        tool_use_count,
-                        input_tokens,
-                        cache_read_tokens,
-                        cache_write_tokens,
-                        output_tokens,
-                    );
-                }
-                AppEvent::Task(TaskEvent::Completed {
-                    task_id,
-                    summary,
-                    elapsed_ms,
-                }) => {
-                    handlers::task::handle_task_completed(
-                        &mut app, &tx, task_id, summary, elapsed_ms,
-                    )
-                    .await;
-                }
-                AppEvent::Task(TaskEvent::Failed { task_id, error }) => {
-                    handlers::task::handle_task_failed(&mut app, &tx, task_id, error).await;
-                }
-                AppEvent::WorkflowProgress(ev) => {
-                    handlers::workflow::handle_workflow_progress(&mut app, ev);
+                AppEvent::Engine(ev) => {
+                    handle_engine_event(&mut app, &tx, ev).await?;
                 }
             }
         }
@@ -1307,6 +1066,312 @@ fn resolve_effort_for_model(cfg: &crate::config::Config, model: &str) -> Option<
     cfg.default.reasoning_effort.clone()
 }
 
+
+/// Dispatch one engine event against the app state. This is the entire
+/// frontend-neutral event pump — the TUI loop, and eventually every other
+/// frontend, funnels engine events through here. Carved out of the main
+/// loop's match as part of the jfc-engine extraction; it must never touch
+/// view-only state (scroll, textarea, pickers) or terminal handles.
+pub(crate) async fn handle_engine_event(
+    app: &mut App,
+    tx: &EventSender,
+    ev: EngineEvent,
+) -> anyhow::Result<()> {
+    match ev {
+        // ── Team events ─────────────────────────────────────────
+        EngineEvent::Team(ev) => {
+            handlers::team::handle_team_event(app, &tx, ev).await;
+        }
+
+
+        // ── Stream: chunk / tool-input / redacted / response-id ─
+        EngineEvent::Stream(StreamEvent::Chunk { text, reasoning }) => {
+            handlers::stream_chunk::handle_chunk(app, text, reasoning);
+        }
+        EngineEvent::Stream(StreamEvent::ToolInputDelta(byte_len)) => {
+            handlers::stream_chunk::handle_tool_input_delta(app, byte_len);
+        }
+        EngineEvent::Stream(StreamEvent::ThinkingTokens(tokens)) => {
+            handlers::stream_chunk::handle_thinking_tokens(app, tokens);
+        }
+        EngineEvent::Stream(StreamEvent::RedactedThinking(data)) => {
+            handlers::stream_chunk::handle_redacted_thinking(app, data);
+        }
+        EngineEvent::Stream(StreamEvent::ResponseId(id)) => {
+            handlers::stream_chunk::handle_response_id(app, id);
+        }
+
+        // ── Stream: tool announcement ───────────────────────────
+        EngineEvent::Stream(StreamEvent::Tool(tool)) => {
+            handlers::stream_tool::handle_stream_tool(app, &tx, tool).await;
+        }
+        EngineEvent::Tool(ToolEvent::ClassifierDecision {
+            tool,
+            blocked,
+            reason,
+        }) => {
+            handlers::stream_tool::handle_classifier_decision(
+                app, &tx, tool, blocked, reason,
+            )
+            .await;
+        }
+        EngineEvent::Tool(ToolEvent::SetInProgressToolUseIds { action, ids }) => {
+            handlers::tools::handle_set_in_progress_tool_use_ids(app, action, ids);
+        }
+        EngineEvent::Tool(ToolEvent::DeferredToolUse {
+            id,
+            name,
+            input_preview,
+            reason,
+        }) => {
+            handlers::tools::handle_deferred_tool_use(
+                app,
+                id,
+                name,
+                input_preview,
+                reason,
+            );
+        }
+        EngineEvent::Tool(ToolEvent::UseSummary {
+            summary,
+            preceding_tool_use_ids,
+        }) => {
+            handlers::tools::handle_tool_use_summary(
+                app,
+                summary,
+                preceding_tool_use_ids,
+            );
+        }
+        EngineEvent::Stream(StreamEvent::ServerToolResult {
+            tool_use_id,
+            tool_kind,
+            content,
+        }) => {
+            handlers::stream_tool::handle_server_tool_result(
+                app,
+                &tx,
+                tool_use_id,
+                tool_kind,
+                content,
+            );
+        }
+
+        // ── Stream: done ────────────────────────────────────────
+        EngineEvent::Stream(StreamEvent::Done(stop_reason)) => {
+            handlers::stream_done::handle_stream_done(app, &tx, stop_reason).await;
+        }
+
+        // ── Stream: error ───────────────────────────────────────
+        EngineEvent::Stream(StreamEvent::Error(e)) => {
+            handlers::stream_error::handle_stream_error(app, &tx, e).await;
+        }
+
+        // ── Stream: fallback ────────────────────────────────────
+        EngineEvent::Stream(StreamEvent::FallbackTriggered {
+            original_model,
+            fallback_model,
+            reason,
+        }) => {
+            handlers::stream_error::handle_fallback_triggered(
+                app,
+                &original_model,
+                &fallback_model,
+                &reason,
+            );
+        }
+
+        // ── Stream: usage ───────────────────────────────────────
+        EngineEvent::Stream(StreamEvent::Usage {
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+        }) => {
+            handlers::stream_usage::handle_stream_usage(
+                app,
+                input_tokens,
+                output_tokens,
+                cache_read_tokens,
+                cache_write_tokens,
+            );
+        }
+
+        // ── Stream: metadata ────────────────────────────────────
+        EngineEvent::Stream(StreamEvent::SystemPromptLen(len)) => {
+            handlers::ui_actions::handle_system_prompt_len(app, len);
+        }
+        EngineEvent::Stream(StreamEvent::MemoryRecalled(chars)) => {
+            // The recall block was injected this turn; show its size in
+            // the same chars/4 token model the context gauge uses (no
+            // `~` prefix — it's presented consistently with every other
+            // token figure in the UI, not flagged as a guess).
+            let tokens = chars / 4;
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Info,
+                    format!("↻ Recalled memory ({tokens} tokens of context)"),
+                ),
+            );
+        }
+        EngineEvent::Stream(StreamEvent::RequestMetadata(meta)) => {
+            handlers::ui_actions::handle_request_metadata(app, meta);
+        }
+        EngineEvent::Stream(StreamEvent::Lifecycle(status)) => {
+            handlers::ui_actions::handle_stream_lifecycle(app, status);
+        }
+
+        // ── Provider events ─────────────────────────────────────
+        EngineEvent::Provider(ev) => {
+            handlers::provider::handle_provider_event(app, ev);
+        }
+
+        // ── Tool execution events ───────────────────────────────
+        EngineEvent::Tool(ToolEvent::OutputChunk { tool_id, chunk }) => {
+            handlers::tools::handle_output_chunk(app, tool_id, chunk);
+        }
+        EngineEvent::Tool(ToolEvent::Result { tool_id, result }) => {
+            handlers::tools::handle_tool_result(app, &tx, tool_id, result);
+            if handlers::tools::should_recheck_completion_after_tool_result(&app) {
+                tracing::warn!(
+            target: "jfc::stream",
+            "ToolResult completed a turn after its AllComplete signal — rechecking continuation"
+                );
+                handlers::tools::handle_all_complete(app, &tx).await;
+            }
+        }
+        EngineEvent::Tool(ToolEvent::AllComplete) => {
+            handlers::tools::handle_all_complete(app, &tx).await;
+        }
+
+        // ── Goal evaluation ─────────────────────────────────────
+        EngineEvent::Goal(GoalEvent::Verdict { ok, reason }) => {
+            handle_goal_verdict(app, &tx, ok, reason).await;
+        }
+
+        // ── Compaction events ───────────────────────────────────
+        EngineEvent::Compaction(ev) => {
+            handlers::compaction::handle_compaction_event(app, &tx, ev).await;
+        }
+
+        // ── UI actions ──────────────────────────────────────────
+        EngineEvent::Frontend(FrontendEvent::PlanModeEntered { reason }) => {
+            handlers::ui_actions::handle_enter_plan_mode(app, reason);
+        }
+        EngineEvent::Control(ControlEvent::SubmitPrompt(text)) => {
+            handlers::ui_actions::handle_submit(app, text, &tx).await?;
+        }
+        EngineEvent::Control(ControlEvent::Notice { kind, text }) => {
+            handlers::ui_actions::handle_toast(app, kind, text);
+        }
+        EngineEvent::Control(ControlEvent::LoadSession(session_id)) => {
+            handlers::ui_actions::handle_load_session(app, session_id).await;
+        }
+        EngineEvent::Control(ControlEvent::WorktreeCountLoaded(count)) => {
+            app.worktree_count = count;
+        }
+        EngineEvent::Control(ControlEvent::ResolveApproval {
+            tool_use_id,
+            approved,
+        }) => {
+            crate::input::handle_remote_approval_response(
+                app,
+                &tx,
+                tool_use_id,
+                approved,
+            );
+        }
+        EngineEvent::Frontend(FrontendEvent::PlanReview { plan }) => {
+            handlers::ui_actions::handle_exit_plan_mode(app, plan);
+        }
+        // ── Task (subagent) events ──────────────────────────────
+        EngineEvent::Task(TaskEvent::AgentChunk { task_id, text }) => {
+            handlers::task::handle_agent_chunk(app, task_id, text);
+        }
+        EngineEvent::Task(TaskEvent::Started {
+            task_id,
+            description,
+            model_used,
+            max_input_tokens,
+            is_detached,
+            parent_task_id,
+        }) => {
+            handlers::task::handle_task_started(
+                app,
+                task_id,
+                description,
+                model_used,
+                max_input_tokens,
+                is_detached,
+                parent_task_id,
+            );
+        }
+        EngineEvent::Task(TaskEvent::Progress {
+            task_id,
+            last_tool,
+            elapsed_ms,
+            tool_use_count,
+            input_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+            output_tokens,
+        }) => {
+            handlers::task::handle_task_progress(
+                app,
+                task_id,
+                last_tool,
+                elapsed_ms,
+                tool_use_count,
+                input_tokens,
+                cache_read_tokens,
+                cache_write_tokens,
+                output_tokens,
+            );
+        }
+        EngineEvent::Task(TaskEvent::Completed {
+            task_id,
+            summary,
+            elapsed_ms,
+        }) => {
+            handlers::task::handle_task_completed(
+                app, &tx, task_id, summary, elapsed_ms,
+            )
+            .await;
+        }
+        EngineEvent::Task(TaskEvent::Failed { task_id, error }) => {
+            handlers::task::handle_task_failed(app, &tx, task_id, error).await;
+        }
+        EngineEvent::WorkflowProgress(ev) => {
+            handlers::workflow::handle_workflow_progress(app, ev);
+        }
+        EngineEvent::Control(ControlEvent::Interrupt) => {
+            crate::input::request_user_interrupt(app, tx);
+        }
+        EngineEvent::Control(ControlEvent::ResolvePlan { approved }) => {
+            // Resolve the pending plan-gate approval (the ExitPlanMode tool
+            // parked in `pending_approval`). Replaces the remote host's
+            // synthetic 'y'/'n' keystrokes with an addressed resolution.
+            let target = app
+                .pending_approval
+                .as_ref()
+                .map(|p| p.tool.id.as_str().to_owned());
+            match target {
+                Some(tool_use_id) => {
+                    crate::input::handle_remote_approval_response(app, tx, tool_use_id, approved);
+                }
+                None => {
+                    tracing::warn!(
+                        target: "jfc::remote",
+                        approved,
+                        "ResolvePlan with no pending approval; dropping"
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod event_priority_tests {
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -1316,19 +1381,19 @@ mod event_priority_tests {
     #[test]
     fn terminal_events_are_prioritized_within_burst_robust() {
         let mut events = vec![
-            AppEvent::Stream(StreamEvent::Chunk {
+            AppEvent::Engine(EngineEvent::Stream(StreamEvent::Chunk {
                 text: Some("first".to_owned()),
                 reasoning: None,
-            }),
+            })),
             AppEvent::Ui(UiEvent::Tick),
             AppEvent::Ui(UiEvent::Term(Event::Key(KeyEvent::new(
                 KeyCode::Esc,
                 KeyModifiers::NONE,
             )))),
-            AppEvent::Stream(StreamEvent::Chunk {
+            AppEvent::Engine(EngineEvent::Stream(StreamEvent::Chunk {
                 text: Some("second".to_owned()),
                 reasoning: None,
-            }),
+            })),
         ];
 
         prioritize_terminal_events(&mut events);
@@ -1336,12 +1401,12 @@ mod event_priority_tests {
         assert!(matches!(&events[0], AppEvent::Ui(UiEvent::Term(_))));
         assert!(matches!(
             &events[1],
-            AppEvent::Stream(StreamEvent::Chunk { .. })
+            AppEvent::Engine(EngineEvent::Stream(StreamEvent::Chunk { .. }))
         ));
         assert!(matches!(&events[2], AppEvent::Ui(UiEvent::Tick)));
         assert!(matches!(
             &events[3],
-            AppEvent::Stream(StreamEvent::Chunk { .. })
+            AppEvent::Engine(EngineEvent::Stream(StreamEvent::Chunk { .. }))
         ));
     }
 }

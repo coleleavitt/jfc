@@ -314,7 +314,7 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             if info.name == crate::swarm::TEAM_LEAD_NAME {
                 continue;
             }
-            let dot_color = crate::swarm::types::teammate_color(info.color.as_deref());
+            let dot_color = crate::theme::teammate_color(info.color.as_deref());
             lines.push(Line::from(vec![
                 Span::styled("  ● ", Style::default().fg(dot_color)),
                 Span::styled(&info.name, Style::default().fg(t.text_secondary)),

@@ -4,13 +4,13 @@
 //! provides two integrations:
 //!
 //! 1. **Mirror**: the event loop calls [`RemoteHost::mirror`] for each
-//!    relevant `AppEvent`, translating it into a `RemoteEnvelope` and
+//!    relevant `EngineEvent`, translating it into a `RemoteEnvelope` and
 //!    broadcasting to all connected clients via a `tokio::broadcast`
 //!    channel. Non-blocking — a slow or disconnected client never stalls
 //!    the host, and multiple clients fan out from one send.
 //!
 //! 2. **Inject**: each client has a spawned task that reads inbound
-//!    envelopes and translates them into `AppEvent`s injected via the
+//!    envelopes and translates them into `EngineEvent`s injected via the
 //!    event-loop `tx: EventSender`.
 
 use std::net::SocketAddr;
@@ -25,7 +25,7 @@ use jfc_remote::protocol::{RemoteEnvelope, RemoteFrame, SessionState};
 use jfc_remote::transport::{TransportReceiver, TransportSender};
 use jfc_remote::ws::WsServer;
 
-use crate::runtime::{AppEvent, EventSender, UiEvent};
+use crate::runtime::{ControlEvent, EngineEvent, EventSender};
 
 /// Broadcast backlog. Frames buffer here until each client's forwarder
 /// drains them; a client that lags by more than this many frames drops the
@@ -266,33 +266,28 @@ async fn client_inbound_loop(rx: &mut TransportReceiver, event_tx: &EventSender,
     }
 }
 
-/// Translate an inbound client envelope into an AppEvent.
-fn translate_inbound(envelope: &RemoteEnvelope) -> Option<AppEvent> {
+/// Translate an inbound client envelope into an EngineEvent.
+fn translate_inbound(envelope: &RemoteEnvelope) -> Option<EngineEvent> {
     match envelope {
         RemoteEnvelope::UserPrompt { text } => {
             debug!(target: "jfc::remote", len = text.len(), "remote user prompt");
-            Some(AppEvent::Ui(UiEvent::Submit(text.clone())))
+            Some(EngineEvent::Control(ControlEvent::SubmitPrompt(text.clone())))
         }
         RemoteEnvelope::Interrupt => {
             debug!(target: "jfc::remote", "remote interrupt");
-            Some(AppEvent::Ui(UiEvent::Term(key_event(
-                crossterm::event::KeyCode::Esc,
-            ))))
+            Some(EngineEvent::Control(ControlEvent::Interrupt))
         }
         RemoteEnvelope::ApprovalResponse {
             tool_use_id,
             approved,
-        } => Some(AppEvent::Ui(UiEvent::RemoteApprovalResponse {
+        } => Some(EngineEvent::Control(ControlEvent::ResolveApproval {
             tool_use_id: tool_use_id.clone(),
             approved: *approved,
         })),
         RemoteEnvelope::PlanApprovalResponse { approve, .. } => {
-            let code = if *approve {
-                crossterm::event::KeyCode::Char('y')
-            } else {
-                crossterm::event::KeyCode::Char('n')
-            };
-            Some(AppEvent::Ui(UiEvent::Term(key_event(code))))
+            Some(EngineEvent::Control(ControlEvent::ResolvePlan {
+                approved: *approve,
+            }))
         }
         RemoteEnvelope::Ping => None,
         other => {
@@ -302,46 +297,38 @@ fn translate_inbound(envelope: &RemoteEnvelope) -> Option<AppEvent> {
     }
 }
 
-/// Build a `crossterm` key event with no modifiers.
-fn key_event(code: crossterm::event::KeyCode) -> crossterm::event::Event {
-    crossterm::event::Event::Key(crossterm::event::KeyEvent::new(
-        code,
-        crossterm::event::KeyModifiers::NONE,
-    ))
-}
+// ─── EngineEvent → RemoteEnvelope conversion ────────────────────────────────────
 
-// ─── AppEvent → RemoteEnvelope conversion ────────────────────────────────────
-
-/// Try to convert an `AppEvent` into a `RemoteEnvelope` for mirroring.
+/// Try to convert an `EngineEvent` into a `RemoteEnvelope` for mirroring.
 /// Returns `None` for events that aren't meaningful to remote clients
 /// (ticks, internal provider state, etc.).
-pub fn mirror_event(ev: &AppEvent) -> Option<RemoteEnvelope> {
+pub fn mirror_event(ev: &EngineEvent) -> Option<RemoteEnvelope> {
     use crate::runtime::*;
 
     match ev {
-        AppEvent::Stream(StreamEvent::Chunk { text, reasoning }) => {
+        EngineEvent::Stream(StreamEvent::Chunk { text, reasoning }) => {
             Some(RemoteEnvelope::AssistantDelta {
                 text: text.clone(),
                 reasoning: reasoning.clone(),
             })
         }
-        AppEvent::Stream(StreamEvent::Tool(tool)) => Some(RemoteEnvelope::ToolUse {
+        EngineEvent::Stream(StreamEvent::Tool(tool)) => Some(RemoteEnvelope::ToolUse {
             id: tool.id.to_string(),
             name: tool.kind.label().to_string(),
             input_preview: Some(tool.input.summary()),
         }),
-        AppEvent::Tool(ToolEvent::Result { tool_id, result }) => Some(RemoteEnvelope::ToolResult {
+        EngineEvent::Tool(ToolEvent::Result { tool_id, result }) => Some(RemoteEnvelope::ToolResult {
             id: tool_id.to_string(),
             output_preview: Some(result.output.chars().take(500).collect()),
             is_error: result.is_error(),
         }),
-        AppEvent::Tool(ToolEvent::SetInProgressToolUseIds { action, ids }) => {
+        EngineEvent::Tool(ToolEvent::SetInProgressToolUseIds { action, ids }) => {
             Some(RemoteEnvelope::SetInProgressToolUseIds {
                 action: action.clone(),
                 ids: ids.clone(),
             })
         }
-        AppEvent::Tool(ToolEvent::DeferredToolUse {
+        EngineEvent::Tool(ToolEvent::DeferredToolUse {
             id,
             name,
             input_preview,
@@ -352,7 +339,7 @@ pub fn mirror_event(ev: &AppEvent) -> Option<RemoteEnvelope> {
             input_preview: input_preview.clone(),
             reason: reason.clone(),
         }),
-        AppEvent::Tool(ToolEvent::UseSummary {
+        EngineEvent::Tool(ToolEvent::UseSummary {
             summary,
             preceding_tool_use_ids,
         }) => Some(RemoteEnvelope::ToolUseSummary {
@@ -363,15 +350,15 @@ pub fn mirror_event(ev: &AppEvent) -> Option<RemoteEnvelope> {
         // Done/Idle transitions are derived post-burst from `app.is_streaming`
         // in the event loop (see `mirror_status`). Errors carry a message, so
         // they're mirrored directly here.
-        AppEvent::Stream(StreamEvent::Error(e)) => Some(RemoteEnvelope::SessionStatus {
+        EngineEvent::Stream(StreamEvent::Error(e)) => Some(RemoteEnvelope::SessionStatus {
             status: SessionState::Error,
             message: Some(e.clone()),
         }),
-        AppEvent::Ui(UiEvent::Toast { kind, text }) => Some(RemoteEnvelope::Toast {
+        EngineEvent::Control(ControlEvent::Notice { kind, text }) => Some(RemoteEnvelope::Toast {
             kind: format!("{kind:?}").to_lowercase(),
             text: text.clone(),
         }),
-        AppEvent::Ui(UiEvent::ExitPlanModeRequested { plan }) => {
+        EngineEvent::Frontend(FrontendEvent::PlanReview { plan }) => {
             Some(RemoteEnvelope::PlanApprovalRequest { plan: plan.clone() })
         }
         _ => None,

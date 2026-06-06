@@ -33,7 +33,7 @@
 //! ```
 
 use crate::diagnostics::{DiagnosticEntry, Severity};
-use crate::runtime::{AppEvent, ProviderEvent};
+use crate::runtime::{EngineEvent, ProviderEvent};
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -46,7 +46,7 @@ use tokio::sync::mpsc::Sender;
 /// `ProviderEvent::DiagnosticsUpdated` carrying the accumulated set. Errors
 /// (cargo missing, non-cargo project) silently no-op — better to leave
 /// the row blank than spam the user.
-pub async fn run_once(cwd: PathBuf, tx: Sender<AppEvent>) {
+pub async fn run_once(cwd: PathBuf, tx: Sender<EngineEvent>) {
     tracing::info!(
         target: "jfc::diagnostics",
         ?cwd,
@@ -86,7 +86,7 @@ pub async fn run_once(cwd: PathBuf, tx: Sender<AppEvent>) {
         "cargo check complete"
     );
     let _ = tx
-        .send(AppEvent::Provider(ProviderEvent::DiagnosticsUpdated {
+        .send(EngineEvent::Provider(ProviderEvent::DiagnosticsUpdated {
             entries,
         }))
         .await;

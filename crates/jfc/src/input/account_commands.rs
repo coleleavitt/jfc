@@ -6,7 +6,7 @@ pub(super) async fn cmd_workflow(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // `/workflow` (or `/workflows`) lists available JS workflows + running
     // workflow tasks. `/workflow run <name>` injects a `Workflow({name})`
@@ -54,8 +54,8 @@ pub(super) async fn cmd_workflow(
                  Workflow({{ name: \"{rest}\" }}). Do not describe it — call the tool."
             );
             let _ = tx
-                .send(crate::runtime::AppEvent::Ui(
-                    crate::runtime::UiEvent::Submit(prompt),
+                .send(crate::runtime::EngineEvent::Control(
+                    crate::runtime::ControlEvent::SubmitPrompt(prompt),
                 ))
                 .await;
             app.messages.push(ChatMessage::assistant(format!(
@@ -305,7 +305,7 @@ pub(super) async fn cmd_login(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // v132 `/login` flow. With no arg, prints the chooser. With
     // a sub-target, the dispatcher returns a body string +
@@ -364,7 +364,7 @@ pub(super) async fn cmd_logout(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts
@@ -410,7 +410,7 @@ pub(super) async fn cmd_release_notes(
     app: &mut App,
     _parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     // Try to read the workspace CHANGELOG; fall back to a stub
@@ -441,7 +441,7 @@ pub(super) async fn cmd_feedback(
     app: &mut App,
     _parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     let session_id = app
@@ -483,7 +483,7 @@ pub(super) async fn cmd_upgrade(
     app: &mut App,
     _parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     app.messages.push(ChatMessage::assistant(format!(
@@ -500,7 +500,7 @@ pub(super) async fn cmd_batch(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // /batch <prompt-file>: read newline-delimited prompts and
     // submit them via Anthropic's Message Batches API for the

@@ -1,5 +1,5 @@
 use super::{drain_queued_prompts, maybe_continue_task_factory};
-use crate::runtime::{AppEvent, EventSender, GoalEvent};
+use crate::runtime::{EngineEvent, EventSender, GoalEvent};
 use crate::{app, stream, types};
 
 pub(crate) fn dispatch_goal_evaluator_if_active(app: &mut app::App, tx: &EventSender) -> bool {
@@ -41,7 +41,7 @@ pub(crate) fn dispatch_goal_evaluator_if_active(app: &mut app::App, tx: &EventSe
             verdict = crate::goal::evaluate(provider.as_ref(), model, &condition, &history) => verdict,
         };
         let event = match verdict {
-            Ok(verdict) => AppEvent::Goal(GoalEvent::Verdict {
+            Ok(verdict) => EngineEvent::Goal(GoalEvent::Verdict {
                 ok: verdict.ok,
                 reason: verdict.reason,
             }),
@@ -51,7 +51,7 @@ pub(crate) fn dispatch_goal_evaluator_if_active(app: &mut app::App, tx: &EventSe
                     error = %error,
                     "evaluator call failed; surfacing as unmet"
                 );
-                AppEvent::Goal(GoalEvent::Verdict {
+                EngineEvent::Goal(GoalEvent::Verdict {
                     ok: false,
                     reason: format!("evaluator error: {error}"),
                 })

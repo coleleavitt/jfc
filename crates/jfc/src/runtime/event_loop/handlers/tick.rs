@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::app::App;
 use crate::providers::AnthropicOAuthProvider;
 use crate::runtime::{
-    AppEvent, EventSender, ProviderEvent, TeamEvent, UiEvent, maybe_continue_task_factory,
+    ControlEvent, EngineEvent, EventSender, ProviderEvent, TeamEvent, maybe_continue_task_factory,
     read_git_branch_from_root, sync_detached_background_tasks_from_daemon,
 };
 use crate::toast;
@@ -103,7 +103,7 @@ pub(crate) async fn handle_tick(
 
     // Detached background workers update their progress in
     // `daemon-state.json` (they're a different process — no
-    // AppEvent channel back to the UI). Re-read once a
+    // EngineEvent channel back to the UI). Re-read once a
     // second so the fan row shows live tool/token counts
     // instead of frozen zeros.
     let detached_sync_due = app
@@ -125,9 +125,9 @@ pub(crate) async fn handle_tick(
         if sync_detached_background_tasks_from_daemon(app) {
             needs_draw = true;
             // A detached agent reaching a terminal state via daemon sync (not
-            // an AppEvent) must be able to wake a parked leader. The agentic
+            // an EngineEvent) must be able to wake a parked leader. The agentic
             // resume hook normally fires from the TaskCompleted/TaskFailed
-            // AppEvent handlers (handlers/task.rs), but detached agents never
+            // EngineEvent handlers (handlers/task.rs), but detached agents never
             // emit those events back to the UI — only the JSON-file sync sees
             // their completion. Without this call a leader that delegated all
             // its remaining work to detached agents would stay parked until
@@ -140,7 +140,7 @@ pub(crate) async fn handle_tick(
             // maybe_continue_task_factory's
             // `background_tasks.any(is_alive)` gate blocks
             // the queue while agents run, but their later
-            // completion (via daemon sync, not AppEvent)
+            // completion (via daemon sync, not EngineEvent)
             // never re-triggers the factory — the queue
             // stalls until the user sends another prompt.
             maybe_continue_task_factory(app, tx).await;
@@ -244,7 +244,7 @@ pub(crate) async fn handle_tick(
             if let Ok(mgr) = oauth.account_manager().await {
                 let snapshot = mgr.snapshot_for_ui().await;
                 let _ = tx
-                    .send(AppEvent::Provider(
+                    .send(EngineEvent::Provider(
                         ProviderEvent::AnthropicSnapshotUpdated { snapshot },
                     ))
                     .await;
@@ -437,7 +437,7 @@ pub(crate) async fn handle_tick(
                 }
             };
             let _ = tx
-                .send(AppEvent::Ui(UiEvent::WorktreeCountLoaded(count)))
+                .send(EngineEvent::Control(ControlEvent::WorktreeCountLoaded(count)))
                 .await;
         });
     }
@@ -551,7 +551,7 @@ pub(crate) async fn handle_tick(
                             req.worker_name, req.tool_name, req.id, req.id,
                         );
                         let _ = tx_swarm
-                            .send(AppEvent::Ui(UiEvent::Toast {
+                            .send(EngineEvent::Control(ControlEvent::Notice {
                                 kind: crate::toast::ToastKind::Warning,
                                 text: toast_text,
                             }))
@@ -579,7 +579,7 @@ pub(crate) async fn handle_tick(
                 // a toast in one place. Mirrors v126's
                 // `<teammate-message>` injection.
                 let _ = tx_inbox
-                    .send(AppEvent::Team(TeamEvent::Inbox {
+                    .send(EngineEvent::Team(TeamEvent::Inbox {
                         from: msg.from,
                         text: msg.text,
                         summary: msg.summary,

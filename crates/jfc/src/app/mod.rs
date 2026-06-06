@@ -6,7 +6,7 @@ pub mod shell_safety;
 mod state;
 
 pub use crate::runtime::{QueuePriority, QueuedPrompt};
-pub use events::AppEvent;
+pub use events::EngineEvent;
 pub use permissions::{
     ApprovalChoice, PendingApproval, PendingQuestion, PermissionDecision, PermissionMode,
     QuestionItem, QuestionOption,

@@ -7,7 +7,7 @@ use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::context::ReadDedupCache;
-use crate::runtime::{AppEvent, TaskEvent, ToolEvent, send_critical};
+use crate::runtime::{EngineEvent, TaskEvent, ToolEvent, send_critical};
 use crate::scheduler;
 use crate::types::{ChatMessage, ToolCall, ToolInput, ToolKind};
 use jfc_provider::{ModelId, Provider};
@@ -50,7 +50,7 @@ impl LocalAdvisorDispatchContext {
 }
 
 pub(crate) struct ToolBatchDispatch {
-    pub(crate) tx: mpsc::Sender<AppEvent>,
+    pub(crate) tx: mpsc::Sender<EngineEvent>,
     pub(crate) dedup: Arc<Mutex<ReadDedupCache>>,
     pub(crate) task_store: Option<Arc<jfc_session::TaskStore>>,
     pub(crate) active_team_name: Option<String>,
@@ -112,7 +112,7 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
         if pending.fetch_sub(1, Ordering::AcqRel) == 1 {
             // Critical continuation signal: a dropped AllComplete permanently
             // wedges the agentic loop, so never discard it on a full channel.
-            crate::runtime::send_critical(&tx_done, AppEvent::Tool(ToolEvent::AllComplete));
+            crate::runtime::send_critical(&tx_done, EngineEvent::Tool(ToolEvent::AllComplete));
         }
     };
 
@@ -151,7 +151,7 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
             };
             send_critical(
                 &tx_advisor,
-                AppEvent::Tool(ToolEvent::Result { tool_id, result }),
+                EngineEvent::Tool(ToolEvent::Result { tool_id, result }),
             );
             done();
         });
@@ -273,7 +273,7 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
                 Ok(pid) => {
                     send_critical(
                         &tx_task,
-                        AppEvent::Task(TaskEvent::Started {
+                        EngineEvent::Task(TaskEvent::Started {
                             task_id: crate::ids::TaskId::from(task_id.clone()),
                             description: description.clone(),
                             model_used: model_used.clone(),
@@ -297,7 +297,7 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
                     });
                     send_critical(
                         &tx_task,
-                        AppEvent::Tool(ToolEvent::Result {
+                        EngineEvent::Tool(ToolEvent::Result {
                             tool_id: crate::ids::ToolId::from(task_id.clone()),
                             result: crate::runtime::ExecutionResult::success(
                                 serde_json::to_string_pretty(&result_json).unwrap_or_default(),
@@ -309,14 +309,14 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
                     let error = format!("failed to spawn background worker: {e}");
                     send_critical(
                         &tx_task,
-                        AppEvent::Task(TaskEvent::Failed {
+                        EngineEvent::Task(TaskEvent::Failed {
                             task_id: crate::ids::TaskId::from(task_id.clone()),
                             error: error.clone(),
                         }),
                     );
                     send_critical(
                         &tx_task,
-                        AppEvent::Tool(ToolEvent::Result {
+                        EngineEvent::Tool(ToolEvent::Result {
                             tool_id: crate::ids::ToolId::from(task_id.clone()),
                             result: crate::runtime::ExecutionResult::failure(error),
                         }),
@@ -404,14 +404,14 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
                                     "task tool: worktree creation failed — failing closed"
                                 );
                                 let _ = tx_task
-                                    .send(AppEvent::Task(TaskEvent::Failed {
+                                    .send(EngineEvent::Task(TaskEvent::Failed {
                                         task_id: crate::ids::TaskId::from(task_id.clone()),
                                         error: msg.clone(),
                                     }))
                                     .await;
                                 if !task_input.run_in_background {
                                     let _ = tx_task
-                                        .send(AppEvent::Tool(ToolEvent::Result {
+                                        .send(EngineEvent::Tool(ToolEvent::Result {
                                             tool_id: crate::ids::ToolId::from(task_id.clone()),
                                             result: crate::runtime::ExecutionResult::failure(msg),
                                         }))
@@ -445,7 +445,7 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
                 "task tool: spawning execute_task"
             );
             let _ = tx_task
-                .send(AppEvent::Task(TaskEvent::Started {
+                .send(EngineEvent::Task(TaskEvent::Started {
                     task_id: crate::ids::TaskId::from(task_id.clone()),
                     description: description.clone(),
                     model_used: model_used.clone(),
@@ -460,7 +460,7 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
                 .await;
             let started = std::time::Instant::now();
             // Forward the subagent's streaming text into the main event
-            // loop (`AppEvent::Task(TaskEvent::AgentChunk)`) so the task view fills live
+            // loop (`EngineEvent::Task(TaskEvent::AgentChunk)`) so the task view fills live
             // rather than showing "No messages yet" until the agent
             // finishes. tx + task_id are passed through; the producer
             // (`execute_task`) emits one event per `TextDelta`.
@@ -516,7 +516,7 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
                     "task tool: execute_task failed"
                 );
                 let _ = tx_task
-                    .send(AppEvent::Task(TaskEvent::Failed {
+                    .send(EngineEvent::Task(TaskEvent::Failed {
                         task_id: crate::ids::TaskId::from(task_id.clone()),
                         error: result.output.clone(),
                     }))
@@ -530,7 +530,7 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
                     "task tool: execute_task succeeded"
                 );
                 let _ = tx_task
-                    .send(AppEvent::Task(TaskEvent::Completed {
+                    .send(EngineEvent::Task(TaskEvent::Completed {
                         task_id: crate::ids::TaskId::from(task_id.clone()),
                         summary: result.output.clone(),
                         elapsed_ms,
@@ -621,7 +621,7 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
 
             if !task_input.run_in_background {
                 let _ = tx_task
-                    .send(AppEvent::Tool(ToolEvent::Result {
+                    .send(EngineEvent::Tool(ToolEvent::Result {
                         tool_id: crate::ids::ToolId::from(task_id),
                         result: match &worktree_outcome {
                             Some((wt, true)) => crate::runtime::ExecutionResult::success(format!(
@@ -698,7 +698,7 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
 
 struct WorkflowSpawn<'a, F> {
     tc: ToolCall,
-    tx: &'a mpsc::Sender<AppEvent>,
+    tx: &'a mpsc::Sender<EngineEvent>,
     provider: Arc<dyn Provider>,
     model: ModelId,
     current_session_id: Option<String>,
@@ -813,7 +813,7 @@ where
         // ── register the workflow as a background task ──────────────────
         let bg_task_id = format!("bgwf_{run_id}");
         let _ = tx
-            .send(AppEvent::Task(crate::runtime::TaskEvent::Started {
+            .send(EngineEvent::Task(crate::runtime::TaskEvent::Started {
                 task_id: crate::ids::TaskId::from(bg_task_id.clone()),
                 description: format!("workflow: {}", meta.name),
                 model_used: Some(model.as_str().to_string()),
@@ -873,14 +873,14 @@ where
         let notification = build_task_notification(&bg_task_id, &meta.name, &outcome, elapsed_ms);
         if let Some(err) = &outcome.error {
             let _ = tx
-                .send(AppEvent::Task(crate::runtime::TaskEvent::Failed {
+                .send(EngineEvent::Task(crate::runtime::TaskEvent::Failed {
                     task_id: crate::ids::TaskId::from(bg_task_id.clone()),
                     error: err.clone(),
                 }))
                 .await;
         } else {
             let _ = tx
-                .send(AppEvent::Task(crate::runtime::TaskEvent::Completed {
+                .send(EngineEvent::Task(crate::runtime::TaskEvent::Completed {
                     task_id: crate::ids::TaskId::from(bg_task_id.clone()),
                     summary: notification,
                     elapsed_ms,
@@ -932,7 +932,7 @@ fn workflow_session_dir(session_id: Option<&str>, run_id: &str) -> std::path::Pa
 
 /// Send a ToolResult for a workflow call.
 fn send_workflow_result(
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &mpsc::Sender<EngineEvent>,
     tool_id: &crate::ids::ToolId,
     result: crate::runtime::ExecutionResult,
 ) {
@@ -940,7 +940,7 @@ fn send_workflow_result(
     let tool_id = tool_id.clone();
     tokio::spawn(async move {
         let _ = tx
-            .send(AppEvent::Tool(ToolEvent::Result { tool_id, result }))
+            .send(EngineEvent::Tool(ToolEvent::Result { tool_id, result }))
             .await;
     });
 }

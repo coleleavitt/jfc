@@ -332,29 +332,29 @@ pub(crate) fn snapshot_active_provider()
 }
 
 // ---------------------------------------------------------------------------
-// AppEvent sender
+// EngineEvent sender
 // ---------------------------------------------------------------------------
 
-/// Process-global handle to the AppEvent channel. Set by main.rs
+/// Process-global handle to the EngineEvent channel. Set by main.rs
 /// once at startup so bounty solver/validator subagents can emit
 /// the same `TaskStarted` / `AgentChunk` / `TaskCompleted` events
 /// the regular Task tool's swarm does — without that, the fan UI
 /// and ctrl+X subagent panel show nothing while a cycle is running.
 pub(super) fn active_event_sender_handle()
--> &'static std::sync::RwLock<Option<tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>> {
+-> &'static std::sync::RwLock<Option<tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>>> {
     static H: OnceLock<
-        std::sync::RwLock<Option<tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>>,
+        std::sync::RwLock<Option<tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>>>,
     > = OnceLock::new();
     H.get_or_init(|| std::sync::RwLock::new(None))
 }
 
-pub fn register_event_sender(tx: tokio::sync::mpsc::Sender<crate::runtime::AppEvent>) {
+pub fn register_event_sender(tx: tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>) {
     if let Ok(mut g) = active_event_sender_handle().write() {
         *g = Some(tx);
     }
 }
 
-pub(crate) fn snapshot_event_sender() -> Option<tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>
+pub(crate) fn snapshot_event_sender() -> Option<tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>>
 {
     active_event_sender_handle()
         .read()

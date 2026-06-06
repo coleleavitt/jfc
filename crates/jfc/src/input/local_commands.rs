@@ -2,7 +2,7 @@ use tokio::sync::mpsc;
 
 use super::theme_picker::{apply_theme, open_theme_picker};
 use crate::app::App;
-use crate::runtime::{AppEvent, UiEvent};
+use crate::runtime::{ControlEvent, EngineEvent};
 use crate::types::ChatMessage;
 
 /// `/dump-context` prints everything jfc would inject into the system prompt
@@ -299,7 +299,7 @@ fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {
 pub(super) async fn handle_doc_command(
     app: &mut App,
     kind: crate::document_formats::DocKind,
-    tx: Option<&mpsc::Sender<AppEvent>>,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let cwd = std::path::PathBuf::from(&app.cwd);
     let target = crate::document_formats::doc_target(&cwd, kind);
@@ -316,7 +316,7 @@ pub(super) async fn handle_doc_command(
     if let (true, Some(tx)) = (idle, tx) {
         app.messages.push(ChatMessage::user(echo));
         app.scroll_to_bottom();
-        let _ = tx.send(AppEvent::Ui(UiEvent::Submit(body))).await;
+        let _ = tx.send(EngineEvent::Control(ControlEvent::SubmitPrompt(body))).await;
         tracing::info!(
             target: "jfc::doc_command",
             kind = kind.file_name(),

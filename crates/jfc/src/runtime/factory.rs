@@ -1,6 +1,6 @@
 use crate::{
     app::App,
-    runtime::{AppEvent, EventSender, UiEvent},
+    runtime::{ControlEvent, EngineEvent, EventSender},
 };
 use jfc_session::{TaskPatch, TaskRisk, TaskStatus};
 
@@ -25,7 +25,7 @@ pub(crate) fn factory_mode_enabled() -> bool {
 /// It is cleared on the next genuine `stream_done`/failure like any other turn.
 async fn commit_factory_turn(app: &mut App, tx: &EventSender, prompt: String) {
     app.turn_started_at = Some(std::time::Instant::now());
-    let _ = tx.send(AppEvent::Ui(UiEvent::Submit(prompt))).await;
+    let _ = tx.send(EngineEvent::Control(ControlEvent::SubmitPrompt(prompt))).await;
 }
 
 pub(crate) async fn maybe_continue_task_factory(app: &mut App, tx: &EventSender) {
@@ -260,7 +260,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
-    use crate::runtime::AppEvent;
+    use crate::runtime::EngineEvent;
 
     struct TestProvider;
 
@@ -293,10 +293,10 @@ mod tests {
         app
     }
 
-    fn submit_count(rx: &mut mpsc::Receiver<AppEvent>) -> usize {
+    fn submit_count(rx: &mut mpsc::Receiver<EngineEvent>) -> usize {
         let mut n = 0;
         while let Ok(ev) = rx.try_recv() {
-            if matches!(ev, AppEvent::Ui(UiEvent::Submit(_))) {
+            if matches!(ev, EngineEvent::Control(ControlEvent::SubmitPrompt(_))) {
                 n += 1;
             }
         }
@@ -314,7 +314,7 @@ mod tests {
                 Vec::<String>::new(),
             )
             .unwrap();
-        let (tx, mut rx) = mpsc::channel::<AppEvent>(16);
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(16);
 
         // Even a single pending task (below the plan-verify threshold of 3)
         // must auto-continue rather than stall.
@@ -338,7 +338,7 @@ mod tests {
         app.task_store
             .create("b".into(), "y".into(), None, Vec::<String>::new())
             .unwrap();
-        let (tx, mut rx) = mpsc::channel::<AppEvent>(16);
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(16);
 
         // Two factory-triggering events in one burst: the first claims+commits,
         // the second must bail on the `turn_started_at.is_some()` guard instead
@@ -375,7 +375,7 @@ mod tests {
                 },
             )
             .unwrap();
-        let (tx, mut rx) = mpsc::channel::<AppEvent>(16);
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(16);
 
         maybe_continue_task_factory(&mut app, &tx).await;
 

@@ -1,12 +1,13 @@
 //! Slash handlers: inspection, diagnostics & VCS review.
 
 use super::*;
+use crate::runtime::EngineEvent;
 
 pub(super) async fn cmd_diff(
     app: &mut App,
     _parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Show pending uncommitted + unstaged changes via `git diff
     // HEAD --stat`. Read-only; doesn't run unless we're in a
@@ -67,7 +68,7 @@ pub(super) async fn cmd_vim(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let now_on = app.vim.is_none();
     app.vim = if now_on {
@@ -95,7 +96,7 @@ pub(super) async fn cmd_turn_diff(
     app: &mut App,
     _parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     if app.turn_edited_files.is_empty() {
@@ -165,7 +166,7 @@ pub(super) async fn cmd_timeline(
     app: &mut App,
     _parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Render a chronological tool-call timeline for the most
     // recent assistant turn. For each Tool part, emit one row
@@ -222,7 +223,7 @@ pub(super) async fn cmd_doctor(
     app: &mut App,
     _parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Mirrors Claude Code 2.1.139's /doctor command.
     // Health check: scan the most-likely failure modes for an
@@ -418,7 +419,7 @@ pub(super) async fn cmd_help(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Also flip the visual overlay so users get the same
     // keybindings table they'd see from `?`. The text dump
@@ -463,7 +464,7 @@ pub(super) async fn cmd_commit(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Generate a conventional commit message for staged changes.
     // 1. Check if anything is staged; bail early if not.
@@ -541,7 +542,7 @@ pub(super) async fn cmd_review(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Ask the model to review current git changes for bugs, security
     // issues, and code quality problems with file:line specificity.
@@ -611,7 +612,7 @@ pub(super) async fn cmd_skills(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let skills =
         crate::agents::load_skills(&std::env::current_dir().unwrap_or_else(|_| ".".into()));
@@ -650,7 +651,7 @@ pub(super) async fn cmd_agents(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let agents =
         crate::agents::load_agents(&std::env::current_dir().unwrap_or_else(|_| ".".into()));
@@ -686,7 +687,7 @@ pub(super) async fn cmd_market(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Surface the agent-economy snapshot — same data the
     // `market_status` tool returns, but framed for the user
@@ -703,7 +704,7 @@ pub(super) async fn cmd_cascade(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Filter the task store for cascade-tagged entries
     // produced by symbol_edit's `dispatch_cascade=true`. The
@@ -767,7 +768,7 @@ pub(super) async fn cmd_graph_history(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let records = crate::tools::graph_history_snapshot();
     let body = if records.is_empty() {

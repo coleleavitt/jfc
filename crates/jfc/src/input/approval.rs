@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crossterm::event::{self, KeyCode};
 use tokio::sync::mpsc;
 
-use crate::app::{App, AppEvent, ApprovalChoice};
+use crate::app::{App, EngineEvent, ApprovalChoice};
 use crate::runtime::ToolEvent;
 use crate::stream;
 use crate::types::{MessagePart, ToolCall, ToolOutput, ToolStatus};
@@ -16,11 +16,11 @@ fn insert_tool_into_message(_app: &mut App, _tool: &ToolCall) {
     // intentionally empty — the tool is already in `messages` from StreamTool.
 }
 
-fn send_set_in_progress(tx: &mpsc::Sender<AppEvent>, action: &str, ids: Vec<String>) {
+fn send_set_in_progress(tx: &mpsc::Sender<EngineEvent>, action: &str, ids: Vec<String>) {
     if ids.is_empty() {
         return;
     }
-    let _ = tx.try_send(AppEvent::Tool(ToolEvent::SetInProgressToolUseIds {
+    let _ = tx.try_send(EngineEvent::Tool(ToolEvent::SetInProgressToolUseIds {
         action: action.to_owned(),
         ids,
     }));
@@ -33,7 +33,7 @@ fn tool_ids(tools: &[ToolCall]) -> Vec<String> {
         .collect()
 }
 
-fn dispatch_approved_tools(app: &mut App, tools: Vec<ToolCall>, tx: &mpsc::Sender<AppEvent>) {
+fn dispatch_approved_tools(app: &mut App, tools: Vec<ToolCall>, tx: &mpsc::Sender<EngineEvent>) {
     if tools.is_empty() {
         return;
     }
@@ -74,7 +74,7 @@ fn dispatch_approved_tools(app: &mut App, tools: Vec<ToolCall>, tx: &mpsc::Sende
     );
 }
 
-pub(super) fn deny_pending_and_queued(app: &mut App, tx: &mpsc::Sender<AppEvent>) -> usize {
+pub(super) fn deny_pending_and_queued(app: &mut App, tx: &mpsc::Sender<EngineEvent>) -> usize {
     let mut denied = Vec::new();
     if let Some(pending) = app.pending_approval.take() {
         denied.push(pending.tool);
@@ -85,7 +85,7 @@ pub(super) fn deny_pending_and_queued(app: &mut App, tx: &mpsc::Sender<AppEvent>
         deny_tool(app, tool);
     }
     if denied_count > 0 {
-        crate::runtime::send_critical(tx, AppEvent::Tool(crate::runtime::ToolEvent::AllComplete));
+        crate::runtime::send_critical(tx, EngineEvent::Tool(crate::runtime::ToolEvent::AllComplete));
     }
     denied_count
 }
@@ -125,7 +125,7 @@ fn advance_approval_queue(app: &mut App) -> Vec<ToolCall> {
 
 fn finish_approval_decision(
     app: &mut App,
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &mpsc::Sender<EngineEvent>,
     mut dispatchable: Vec<ToolCall>,
 ) {
     dispatchable.extend(advance_approval_queue(app));
@@ -135,7 +135,7 @@ fn finish_approval_decision(
         // can re-invoke the model with the denial results. Without
         // this, a denial as the last tool leaves the loop stalled —
         // so use send_critical (never drop it on a full channel).
-        crate::runtime::send_critical(tx, AppEvent::Tool(crate::runtime::ToolEvent::AllComplete));
+        crate::runtime::send_critical(tx, EngineEvent::Tool(crate::runtime::ToolEvent::AllComplete));
     } else {
         dispatch_approved_tools(app, dispatchable, tx);
     }
@@ -206,7 +206,7 @@ fn find_unresolved_tool_call(app: &App, tool_use_id: &str) -> Option<ToolCall> {
 
 pub(crate) fn handle_remote_approval_response(
     app: &mut App,
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &mpsc::Sender<EngineEvent>,
     tool_use_id: String,
     approved: bool,
 ) {
@@ -242,7 +242,7 @@ pub(crate) fn handle_remote_approval_response(
             if app.pending_approval.is_none() && app.approval_queue.is_empty() {
                 crate::runtime::send_critical(
                     tx,
-                    AppEvent::Tool(crate::runtime::ToolEvent::AllComplete),
+                    EngineEvent::Tool(crate::runtime::ToolEvent::AllComplete),
                 );
             }
         }
@@ -272,7 +272,7 @@ pub(crate) fn handle_remote_approval_response(
         if app.pending_approval.is_none() && app.approval_queue.is_empty() {
             crate::runtime::send_critical(
                 tx,
-                AppEvent::Tool(crate::runtime::ToolEvent::AllComplete),
+                EngineEvent::Tool(crate::runtime::ToolEvent::AllComplete),
             );
         }
     }
@@ -281,7 +281,7 @@ pub(crate) fn handle_remote_approval_response(
 pub(super) fn handle_approval_key(
     app: &mut App,
     key: event::KeyEvent,
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &mpsc::Sender<EngineEvent>,
 ) -> bool {
     let Some(ref mut approval) = app.pending_approval else {
         return false;

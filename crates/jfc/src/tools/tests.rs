@@ -29,7 +29,7 @@ use super::tasks::{
 use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 use super::*;
 
-use crate::runtime::{AppEvent, DiagnosticLevel, ToolEvent, ToolOutcome};
+use crate::runtime::{EngineEvent, DiagnosticLevel, ToolEvent, ToolOutcome};
 use crate::types::{ReplacementMode, ToolInput, ToolKind};
 use jfc_provider::ToolDef;
 use jfc_session::{DeletedFilter, TaskStore};
@@ -1775,7 +1775,7 @@ async fn execute_bash_streaming_progress_delivers_bursty_lines_regression() {
     let receiver = tokio::spawn(async move {
         let mut chunks = Vec::new();
         while let Some(event) = rx.recv().await {
-            if let AppEvent::Tool(ToolEvent::OutputChunk { chunk, .. }) = event {
+            if let EngineEvent::Tool(ToolEvent::OutputChunk { chunk, .. }) = event {
                 chunks.push(chunk);
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
@@ -3288,18 +3288,18 @@ fn clear_event_sender_for_test() {
 async fn enter_plan_mode_dispatches_event_normal() {
     let _guard = EventSenderResetGuard;
     clear_event_sender_for_test();
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::runtime::AppEvent>(8);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::runtime::EngineEvent>(8);
     register_event_sender(tx);
     let r = execute_enter_plan_mode("safety check").await;
     assert!(!r.is_error(), "{}", r.output);
     let evt = rx.recv().await.expect("event");
     match evt {
-        crate::runtime::AppEvent::Ui(crate::runtime::UiEvent::EnterPlanModeRequested {
+        crate::runtime::EngineEvent::Frontend(crate::runtime::FrontendEvent::PlanModeEntered {
             reason,
         }) => {
             assert_eq!(reason, "safety check");
         }
-        _ => panic!("expected EnterPlanModeRequested AppEvent variant"),
+        _ => panic!("expected EnterPlanModeRequested EngineEvent variant"),
     }
 }
 

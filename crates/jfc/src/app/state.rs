@@ -270,7 +270,7 @@ pub struct BackgroundTask {
     pub parent_task_id: Option<String>,
     /// Live workflow progress snapshot. Populated only for background tasks
     /// launched by the Workflow tool (task_id starts with `bgwf_`). Updated
-    /// incrementally by `AppEvent::WorkflowProgress` handlers in the event
+    /// incrementally by `EngineEvent::WorkflowProgress` handlers in the event
     /// loop. `None` for regular subagent/swarm background tasks.
     pub workflow_progress: Option<crate::workflows::WorkflowTaskProgress>,
     /// Wall-clock of the agent's most recent observable activity — a
@@ -822,7 +822,7 @@ pub struct App {
     pub last_usage_input: u32,
     pub last_usage_output: u32,
     /// Auto-expiring toast queue. Pruned every `UiEvent::Tick`. Pushed via
-    /// `AppEvent::Ui(UiEvent::Toast)` from anywhere in the app (compaction milestones,
+    /// `EngineEvent::Control(ControlEvent::Notice)` from anywhere in the app (compaction milestones,
     /// session save success, classifier blocks). Mirrors v126's terminal
     /// `notification()` for non-blocking status surfacing.
     pub toasts: Vec<crate::toast::Toast>,
@@ -839,7 +839,7 @@ pub struct App {
     /// Active LSP diagnostics, keyed by file path. Rendered as a one-line
     /// `Found N new diagnostic issue(s) in M file(s) (ctrl+o to expand)`
     /// row above the spinner when non-empty. Updated by
-    /// `AppEvent::Provider(ProviderEvent::DiagnosticsUpdated)`. Mirrors v126 cli.js:338030-338040.
+    /// `EngineEvent::Provider(ProviderEvent::DiagnosticsUpdated)`. Mirrors v126 cli.js:338030-338040.
     pub diagnostics: Vec<crate::diagnostics::DiagnosticEntry>,
     /// Whether the Ctrl+O diagnostic-expansion panel is open. v126 cli.js
     /// :338038 advertises `(ctrl+o to expand)` on the summary row; this

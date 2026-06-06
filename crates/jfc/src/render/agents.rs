@@ -389,7 +389,8 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
 ///    └─ tester: Running tests… · 5 tool uses
 /// ```
 pub(crate) fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
-    use crate::swarm::{self, types::teammate_color};
+    use crate::swarm;
+    use crate::theme::teammate_color;
 
     if area.height == 0 || area.width < 20 {
         return;

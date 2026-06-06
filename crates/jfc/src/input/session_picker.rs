@@ -9,7 +9,8 @@ use tokio::sync::mpsc;
 
 use crate::app::App;
 use crate::render::session_picker::filtered_sessions;
-use crate::runtime::{AppEvent, UiEvent, send_critical};
+use crate::runtime::{EngineEvent, send_critical};
+use crate::runtime::ControlEvent;
 
 pub(super) fn open_session_picker(app: &mut App) {
     app.show_session_picker = true;
@@ -24,7 +25,7 @@ pub(super) fn open_session_picker(app: &mut App) {
 pub(super) fn handle_session_picker_key(
     app: &mut App,
     key: crossterm::event::KeyEvent,
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &mpsc::Sender<EngineEvent>,
 ) -> bool {
     if !app.show_session_picker {
         return false;
@@ -45,7 +46,7 @@ pub(super) fn handle_session_picker_key(
                     "session_picker selected, dispatching async load"
                 );
                 close_session_picker(app);
-                send_critical(tx, AppEvent::Ui(UiEvent::LoadSession(chosen)));
+                send_critical(tx, EngineEvent::Control(ControlEvent::LoadSession(chosen)));
             }
         }
         KeyCode::Up if current > 0 => {

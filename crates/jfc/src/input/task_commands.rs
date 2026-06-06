@@ -1,12 +1,13 @@
 //! Slash handlers: task-store CRUD.
 
 use super::*;
+use crate::runtime::EngineEvent;
 
 pub(super) async fn cmd_task_list(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let tasks = app.task_store.list(jfc_session::DeletedFilter::Exclude);
     let body = if tasks.is_empty() {
@@ -52,7 +53,7 @@ pub(super) async fn cmd_task_add(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let subject = parts.get(1).copied().unwrap_or("").trim();
     if subject.is_empty() {
@@ -86,7 +87,7 @@ pub(super) async fn cmd_task_done(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let id = parts.get(1).copied().unwrap_or("").trim();
     if id.is_empty() {
@@ -121,7 +122,7 @@ pub(super) async fn cmd_task_rm(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let id = parts.get(1).copied().unwrap_or("").trim();
     if id.is_empty() {

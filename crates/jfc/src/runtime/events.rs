@@ -10,8 +10,8 @@ use jfc_provider::{FallbackReason, ModelInfo, ProviderId, ServerToolResultKind, 
 /// result floods, while bounding memory at roughly 1024 runtime events.
 pub const APP_EVENT_BUFFER: usize = 1024;
 
-pub type EventSender = mpsc::Sender<AppEvent>;
-pub type EventReceiver = mpsc::Receiver<AppEvent>;
+pub type EventSender = mpsc::Sender<EngineEvent>;
+pub type EventReceiver = mpsc::Receiver<EngineEvent>;
 
 /// Send an event that must not be dropped — terminal/continuation signals
 /// such as [`ToolEvent::AllComplete`] whose loss permanently wedges the
@@ -20,7 +20,7 @@ pub type EventReceiver = mpsc::Receiver<AppEvent>;
 /// task that awaits capacity instead of discarding it. Only a *closed*
 /// channel (receiver gone — app shutting down) is a no-op. Must be called
 /// from within a Tokio runtime.
-pub fn send_critical(tx: &mpsc::Sender<AppEvent>, ev: AppEvent) {
+pub fn send_critical(tx: &mpsc::Sender<EngineEvent>, ev: EngineEvent) {
     match tx.try_send(ev) {
         Ok(()) => {}
         Err(mpsc::error::TrySendError::Full(ev)) => {
@@ -38,8 +38,11 @@ pub fn send_critical(tx: &mpsc::Sender<AppEvent>, ev: AppEvent) {
     }
 }
 
-pub enum AppEvent {
-    Ui(UiEvent),
+/// Every event the engine produces or consumes. This is the frontend-neutral
+/// event bus: nothing in here may reference ratatui/crossterm types. The TUI
+/// wraps it in [`AppEvent`] alongside its own terminal events; headless and
+/// remote frontends consume it directly.
+pub enum EngineEvent {
     Stream(StreamEvent),
     Tool(ToolEvent),
     Compaction(CompactionEvent),
@@ -49,6 +52,65 @@ pub enum AppEvent {
     Goal(GoalEvent),
     /// Live progress update from a running workflow background task.
     WorkflowProgress(WorkflowProgressEvent),
+    /// Inbound command for the engine — from detached producers (remote
+    /// control, schedulers, background tasks) or frontend code paths that
+    /// only hold an event sender.
+    Control(ControlEvent),
+    /// Outbound request/notification from the engine that a frontend must
+    /// surface to the user (plan review, plan-mode transitions).
+    Frontend(FrontendEvent),
+}
+
+/// Inbound engine commands that previously rode on `UiEvent` or were faked
+/// as synthetic terminal keystrokes by the remote-control host.
+pub enum ControlEvent {
+    /// Submit a user prompt as if the user typed it and pressed Enter. Used
+    /// by the pre-submit compaction gate (re-fires the original prompt once
+    /// compaction shrank the context), the task factory, and remote clients.
+    SubmitPrompt(String),
+    /// Interrupt the current turn: cancel streams, abort in-flight tools,
+    /// deny pending approvals. Replaces the remote host's synthetic Esc.
+    Interrupt,
+    /// Resolve a specific pending permission request. Carries the tool id so
+    /// late/orphaned responses can be matched to unresolved transcript
+    /// tool_use blocks instead of blindly answering whichever modal is
+    /// currently focused.
+    ResolveApproval { tool_use_id: String, approved: bool },
+    /// Resolve the pending plan-approval (ExitPlanMode) request. Replaces
+    /// the remote host's synthetic 'y'/'n' keystrokes.
+    ResolvePlan { approved: bool },
+    /// Load a session by id — async load via the same helper the sidebar's
+    /// Enter handler uses. Lives on the event bus because picker handlers
+    /// are sync; routing through here keeps the disk I/O on the event-loop
+    /// task.
+    LoadSession(crate::ids::SessionId),
+    /// Surface a non-blocking notice. The TUI renders it as a toast on the
+    /// auto-expiring strip; headless frontends map it to stderr/log lines.
+    Notice {
+        kind: crate::toast::ToastKind,
+        text: String,
+    },
+    /// Async result from the periodic `git worktree list` refresh, spawned
+    /// off-loop so a slow or locked git repo cannot stall the frontend.
+    WorktreeCountLoaded(usize),
+}
+
+/// Outbound engine→frontend requests that previously rode on `UiEvent`.
+pub enum FrontendEvent {
+    /// The model called `ExitPlanMode` and wants the user to review the
+    /// plan + transition out of plan mode.
+    PlanReview { plan: String },
+    /// Model-callable plan-mode entry. Dispatched by the `EnterPlanMode`
+    /// tool — flips the permission mode to `PermissionMode::Plan`.
+    PlanModeEntered { reason: String },
+}
+
+/// The TUI event-loop's merged event type: terminal input + frame ticks on
+/// the frontend side, engine events on the other. TUI-only — this never
+/// crosses into engine code.
+pub enum AppEvent {
+    Ui(UiEvent),
+    Engine(EngineEvent),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -146,47 +208,12 @@ impl AppEvent {
     }
 }
 
+/// TUI-local frontend events: raw terminal input and the frame tick. These
+/// never enter the engine — every other former `UiEvent` variant became a
+/// [`ControlEvent`] or [`FrontendEvent`].
 pub enum UiEvent {
     Term(Event),
     Tick,
-    /// Submit a user prompt as if the user typed it and pressed Enter. Used
-    /// internally by the pre-submit compaction gate to re-fire the user's
-    /// original prompt once compaction has shrunk the context.
-    Submit(String),
-    /// Push a non-blocking toast onto the auto-expiring strip. The pruner
-    /// in the `Tick` handler clears it once `ttl` elapses. Mirrors v126's
-    /// terminal `notification()` (cli.js around 26647).
-    Toast {
-        kind: crate::toast::ToastKind,
-        text: String,
-    },
-    /// The model called `ExitPlanMode` and wants the user to see the
-    /// plan + transition out of plan mode.
-    ExitPlanModeRequested {
-        plan: String,
-    },
-    /// Model-callable plan-mode entry. Dispatched by the `EnterPlanMode`
-    /// tool — flips `app.permission_mode` to `PermissionMode::Plan`.
-    EnterPlanModeRequested {
-        reason: String,
-    },
-    /// Session-picker selected a session — async load via the same
-    /// helper the sidebar's Enter handler uses. Lives on the event bus
-    /// because the picker handler is sync; routing through here keeps
-    /// the picker thin and the disk I/O on the event-loop thread.
-    LoadSession(crate::ids::SessionId),
-    /// Async result from the periodic `git worktree list` refresh. The Tick
-    /// handler spawns that subprocess off-loop so a slow or locked git repo
-    /// cannot stall redraw/input processing.
-    WorktreeCountLoaded(usize),
-    /// Remote-control response to a specific pending permission request. Carries
-    /// the tool id so late/orphaned responses can be matched to unresolved
-    /// transcript tool_use blocks instead of blindly pressing y/n on whichever
-    /// modal is currently focused.
-    RemoteApprovalResponse {
-        tool_use_id: String,
-        approved: bool,
-    },
 }
 
 pub enum StreamEvent {

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::app::App;
 use crate::runtime::{
-    AppEvent, CompactionEvent, EventSender, dispatch_goal_evaluator_if_active,
+    EngineEvent, CompactionEvent, EventSender, dispatch_goal_evaluator_if_active,
     drain_queued_prompts, maybe_continue_task_factory,
 };
 use crate::types::*;
@@ -67,7 +67,7 @@ pub(crate) fn handle_tool_result(
         "tool_result received"
     );
     app.exploration_state.record_tool_result(result.is_error());
-    let _ = tx.try_send(AppEvent::Tool(
+    let _ = tx.try_send(EngineEvent::Tool(
         crate::runtime::ToolEvent::SetInProgressToolUseIds {
             action: "remove".to_owned(),
             ids: vec![tool_id.as_str().to_owned()],
@@ -406,7 +406,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
         return;
     }
     if let Some((summary, preceding_tool_use_ids)) = completed_tool_batch_summary(app) {
-        let _ = tx.try_send(AppEvent::Tool(crate::runtime::ToolEvent::UseSummary {
+        let _ = tx.try_send(EngineEvent::Tool(crate::runtime::ToolEvent::UseSummary {
             summary,
             preceding_tool_use_ids,
         }));
@@ -528,7 +528,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
         app.compacting_attempt_baseline = 0;
         app.compacting_last_progress = 0;
         let _ = tx
-            .send(AppEvent::Compaction(CompactionEvent::Started))
+            .send(EngineEvent::Compaction(CompactionEvent::Started))
             .await;
         let messages = app.messages.clone();
         let provider = Arc::clone(&app.provider);
@@ -539,7 +539,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
         let progress_tx = tx_compact.clone();
         let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
             // CompactionProgress is non-critical; next progress update supersedes.
-            let _ = progress_tx.try_send(AppEvent::Compaction(CompactionEvent::Progress {
+            let _ = progress_tx.try_send(EngineEvent::Compaction(CompactionEvent::Progress {
                 output_chars: chars,
             }));
         });
@@ -573,7 +573,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                         "compaction cancelled via token"
                     );
                     let _ = tx_compact
-                        .send(AppEvent::Compaction(CompactionEvent::Failed {
+                        .send(EngineEvent::Compaction(CompactionEvent::Failed {
                             reason: "Compaction cancelled by user".into(),
                             calibrated_tokens: None,
                             transient: true,
@@ -603,7 +603,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                         "post-response compaction succeeded — sending CompactionDone"
                     );
                     let _ = tx_compact
-                        .send(AppEvent::Compaction(CompactionEvent::Done {
+                        .send(EngineEvent::Compaction(CompactionEvent::Done {
                             messages,
                             tool_ctx,
                             pre_tokens,
@@ -617,7 +617,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                         "post-response compaction skipped (provider unsupported)"
                     );
                     let _ = tx_compact
-                        .send(AppEvent::Compaction(CompactionEvent::Failed {
+                        .send(EngineEvent::Compaction(CompactionEvent::Failed {
                             reason: "Provider does not support compaction — \
                  try /clear or switch to a provider with non-streaming support."
                                 .into(),
@@ -638,7 +638,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                     // auto-compact dormant for the rest of the
                     // session until the user remembers /compact.
                     let _ = tx_compact
-                        .send(AppEvent::Compaction(CompactionEvent::Failed {
+                        .send(EngineEvent::Compaction(CompactionEvent::Failed {
                             reason: "Nothing to compact yet — only one conversation turn so far. \
                      Auto-compact will retry after your next message."
                                 .into(),
@@ -653,7 +653,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                         "post-response compaction: circuit breaker tripped"
                     );
                     let _ = tx_compact
-                        .send(AppEvent::Compaction(CompactionEvent::Failed {
+                        .send(EngineEvent::Compaction(CompactionEvent::Failed {
                             reason: "Circuit breaker tripped — compaction keeps refilling".into(),
                             calibrated_tokens: None,
                             transient: false,
@@ -667,7 +667,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                         "post-response compaction exhausted all attempts"
                     );
                     let _ = tx_compact
-                        .send(AppEvent::Compaction(CompactionEvent::Failed {
+                        .send(EngineEvent::Compaction(CompactionEvent::Failed {
                             reason: format!("Exhausted {attempts} compaction attempts"),
                             calibrated_tokens: None,
                             transient: false,

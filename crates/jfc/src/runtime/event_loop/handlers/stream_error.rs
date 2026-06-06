@@ -5,7 +5,8 @@ use jfc_provider::FallbackReason;
 
 use crate::app::{App, NetworkRecoveryProvider};
 use crate::runtime::{
-    AppEvent, EventSender, UiEvent, drain_queued_prompts, record_network_recovery,
+    ControlEvent,
+    EngineEvent, EventSender, drain_queued_prompts, record_network_recovery,
     restart_stream_in_place,
 };
 use crate::types::*;
@@ -195,7 +196,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
         // Join every non-empty text part rather than just the first, so a
         // structured multi-text user message isn't silently truncated to its
         // opening block. Binary attachments can't ride along
-        // `UiEvent::Submit(String)`, but they are not lost from context: the
+        // `ControlEvent::SubmitPrompt(String)`, but they are not lost from context: the
         // original user message (with its attachments) stays in `app.messages`
         // and survives into the preserved tail of the compacted transcript —
         // the re-queue only re-drives the turn, it does not re-upload.
@@ -216,7 +217,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
             let tx_compact = tx.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                let _ = tx_compact.send(AppEvent::Ui(UiEvent::Submit(text))).await;
+                let _ = tx_compact.send(EngineEvent::Control(ControlEvent::SubmitPrompt(text))).await;
             });
         }
     }
@@ -383,7 +384,7 @@ pub(crate) fn handle_fallback_triggered(
 }
 
 /// Join every non-empty text part of a user message into the single string the
-/// auto-compact re-queue replays via `UiEvent::Submit`. Returns `None` when the
+/// auto-compact re-queue replays via `ControlEvent::SubmitPrompt`. Returns `None` when the
 /// message carries no usable prompt text (e.g. an attachment-only turn), so the
 /// caller skips the re-queue rather than submitting an empty prompt.
 ///

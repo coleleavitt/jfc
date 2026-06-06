@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 
 use crate::runtime::{
-    AppEvent, StreamEvent, StreamLifecyclePhase, StreamLifecycleStatus, StreamRequestOverrides,
+    EngineEvent, StreamEvent, StreamLifecyclePhase, StreamLifecycleStatus, StreamRequestOverrides,
 };
 use jfc_provider::{ModelId, Provider, ProviderMessage, StopReason, StreamOptions};
 
@@ -35,7 +35,7 @@ pub async fn stream_response(
     provider: Arc<dyn Provider>,
     messages: Vec<ProviderMessage>,
     model: ModelId,
-    tx: mpsc::Sender<AppEvent>,
+    tx: mpsc::Sender<EngineEvent>,
     interrupt: std::sync::Arc<std::sync::atomic::AtomicBool>,
     // wg-async pattern: spawned tasks holding critical state need an
     // explicit cancellation handle, not just a polled flag. The token
@@ -45,7 +45,7 @@ pub async fn stream_response(
     previous_message_id: Option<String>,
     overrides: StreamRequestOverrides,
 ) {
-    let _ = tx.try_send(AppEvent::Stream(StreamEvent::Lifecycle(
+    let _ = tx.try_send(EngineEvent::Stream(StreamEvent::Lifecycle(
         StreamLifecycleStatus::new(
             StreamLifecyclePhase::PreparingContext,
             Some(format!("{} messages", messages.len())),
@@ -69,17 +69,17 @@ pub async fn stream_response(
     }
 
     // Report system prompt size back to App for post-compaction overhead estimate.
-    let _ = tx.try_send(AppEvent::Stream(StreamEvent::SystemPromptLen(
+    let _ = tx.try_send(EngineEvent::Stream(StreamEvent::SystemPromptLen(
         prepared.system_prompt_tokens,
     )));
     // Tell the user when this turn pulled in recalled memory.
     if prepared.recalled_memory_chars > 0 {
-        let _ = tx.try_send(AppEvent::Stream(StreamEvent::MemoryRecalled(
+        let _ = tx.try_send(EngineEvent::Stream(StreamEvent::MemoryRecalled(
             prepared.recalled_memory_chars,
         )));
     }
     if tx
-        .send(AppEvent::Stream(StreamEvent::RequestMetadata(
+        .send(EngineEvent::Stream(StreamEvent::RequestMetadata(
             prepared.metadata.clone(),
         )))
         .await
@@ -106,7 +106,7 @@ pub async fn stream_response(
     // Wrap in Arc so the retry loop and thinking-fallback path share the same
     // allocation instead of cloning the full Vec<ProviderMessage> on each attempt.
     let messages = Arc::new(messages);
-    let _ = tx.try_send(AppEvent::Stream(StreamEvent::Lifecycle(
+    let _ = tx.try_send(EngineEvent::Stream(StreamEvent::Lifecycle(
         StreamLifecycleStatus::new(
             StreamLifecyclePhase::WaitingForFirstByte,
             Some(format!("{} · {}", provider.name(), model)),
@@ -122,7 +122,7 @@ pub async fn stream_response(
     {
         Ok(s) => {
             tracing::debug!(target: "jfc::stream", "stream opened successfully");
-            let _ = tx.try_send(AppEvent::Stream(StreamEvent::Lifecycle(
+            let _ = tx.try_send(EngineEvent::Stream(StreamEvent::Lifecycle(
                 StreamLifecycleStatus::new(
                     StreamLifecyclePhase::StreamOpened,
                     Some("waiting for first event".to_string()),
@@ -145,7 +145,7 @@ pub async fn stream_response(
                 fallback_opts.adaptive_thinking = false;
                 fallback_opts.thinking_budget = None;
                 fallback_opts.thinking_display = None;
-                let _ = tx.try_send(AppEvent::Stream(StreamEvent::Lifecycle(
+                let _ = tx.try_send(EngineEvent::Stream(StreamEvent::Lifecycle(
                     StreamLifecycleStatus::new(
                         StreamLifecyclePhase::RetryingWithoutThinking,
                         Some(model.to_string()),
@@ -176,7 +176,7 @@ pub async fn stream_response(
                         }
                         tracing::error!(target: "jfc::stream", error = %e2, "stream open failed (fallback without thinking)");
                         let _ = tx
-                            .send(AppEvent::Stream(StreamEvent::Error(e2.to_string())))
+                            .send(EngineEvent::Stream(StreamEvent::Error(e2.to_string())))
                             .await;
                         return;
                     }
@@ -200,7 +200,7 @@ pub async fn stream_response(
                     "stream rejected: prompt too long — requesting auto-compact"
                 );
                 let _ = tx
-                    .send(AppEvent::Stream(StreamEvent::Error(format!(
+                    .send(EngineEvent::Stream(StreamEvent::Error(format!(
                         "auto-compact: {e}"
                     ))))
                     .await;
@@ -221,7 +221,7 @@ pub async fn stream_response(
                 }
                 tracing::error!(target: "jfc::stream", error = %e, "stream open failed");
                 let _ = tx
-                    .send(AppEvent::Stream(StreamEvent::Error(e.to_string())))
+                    .send(EngineEvent::Stream(StreamEvent::Error(e.to_string())))
                     .await;
                 return;
             }
@@ -231,7 +231,7 @@ pub async fn stream_response(
     let stop_reason = match live_events::drain_stream_events(stream, &tx, interrupt, cancel).await {
         live_events::DrainOutcome::Done(stop_reason) => stop_reason,
         live_events::DrainOutcome::Cancelled(message) => {
-            let _ = tx.send(AppEvent::Stream(StreamEvent::Error(message))).await;
+            let _ = tx.send(EngineEvent::Stream(StreamEvent::Error(message))).await;
             return;
         }
         live_events::DrainOutcome::Error {
@@ -259,7 +259,7 @@ pub async fn stream_response(
                     "stream failed after output was committed; skipping non-streaming fallback to avoid duplicate transcript text"
                 );
             }
-            let _ = tx.send(AppEvent::Stream(StreamEvent::Error(message))).await;
+            let _ = tx.send(EngineEvent::Stream(StreamEvent::Error(message))).await;
             return;
         }
     };
@@ -273,7 +273,7 @@ pub async fn stream_response(
     // the inject path — no state to clear.)
 
     // v132 AfterStream hook — fires after the model finished streaming
-    // but before the StreamDone AppEvent is sent. Handlers that want
+    // but before the StreamDone EngineEvent is sent. Handlers that want
     // to surface end-of-turn cost, run telemetry batching, or trigger
     // session auto-naming can land here.
     crate::hooks::fire(
@@ -283,7 +283,7 @@ pub async fn stream_response(
     );
 
     let _ = tx
-        .send(AppEvent::Stream(StreamEvent::Done(stop_reason)))
+        .send(EngineEvent::Stream(StreamEvent::Done(stop_reason)))
         .await;
 }
 
@@ -362,7 +362,7 @@ async fn try_nonstreaming_fallback(
     provider: &dyn Provider,
     messages: Arc<Vec<ProviderMessage>>,
     opts: &StreamOptions,
-    tx: &tokio::sync::mpsc::Sender<AppEvent>,
+    tx: &tokio::sync::mpsc::Sender<EngineEvent>,
     error: &str,
     advertised_tool_count: usize,
     action_expected: bool,
@@ -385,7 +385,7 @@ async fn try_nonstreaming_fallback(
         "stream failed; trying non-streaming completion fallback"
     );
     let _ = tx
-        .send(AppEvent::Stream(StreamEvent::Lifecycle(
+        .send(EngineEvent::Stream(StreamEvent::Lifecycle(
             StreamLifecycleStatus::new(
                 StreamLifecyclePhase::NonStreamingFallback,
                 Some(provider.name().to_string()),
@@ -406,14 +406,14 @@ async fn try_nonstreaming_fallback(
     };
     if !response.content.is_empty() {
         let _ = tx
-            .send(AppEvent::Stream(StreamEvent::Chunk {
+            .send(EngineEvent::Stream(StreamEvent::Chunk {
                 text: Some(response.content),
                 reasoning: None,
             }))
             .await;
     }
     let _ = tx
-        .send(AppEvent::Stream(StreamEvent::Usage {
+        .send(EngineEvent::Stream(StreamEvent::Usage {
             input_tokens: response.usage.input_tokens as u32,
             output_tokens: response.usage.output_tokens as u32,
             cache_read_tokens: response.usage.cache_read_tokens as u32,
@@ -426,7 +426,7 @@ async fn try_nonstreaming_fallback(
             .with_extra("stop_reason", "nonstreaming_fallback".to_owned()),
     );
     let _ = tx
-        .send(AppEvent::Stream(StreamEvent::Done(StopReason::EndTurn)))
+        .send(EngineEvent::Stream(StreamEvent::Done(StopReason::EndTurn)))
         .await;
     true
 }

@@ -6,7 +6,7 @@ pub(super) async fn cmd_check(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Re-run `cargo check --message-format=json` and refresh the
     // diagnostic row + transition toast. v126 has an analogous
@@ -33,7 +33,7 @@ pub(super) async fn cmd_compact(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Use the calibrated context size (same source as the gauge
     // and pre-submit gate). Previously this re-ran the raw
@@ -65,7 +65,7 @@ pub(super) async fn cmd_advisor(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Manual local advisor query (see `crate::advisor`). Doesn't touch the main
     // agent's stream — runs a separate `provider.complete()` against a
@@ -361,7 +361,7 @@ pub(super) async fn cmd_config(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // `/config` (no args) → dump the parsed config as TOML in a code block.
     // `/config path` → print the canonical file path so the user knows
@@ -395,7 +395,7 @@ pub(super) async fn cmd_verbose(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Toggle expanded-by-default tool blocks for the rest of
     // the session. Renderers read `app.verbose_mode` and lift
@@ -434,7 +434,7 @@ pub(super) async fn cmd_model(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // `/model <name>` immediately switches the active model for
     // subsequent turns without restarting the session or clearing history.
@@ -477,7 +477,7 @@ pub(super) async fn cmd_fast(
     app: &mut App,
     _parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Toggle fast mode (lower-latency inference via Anthropic's
     // `fast-mode-2026-02-01` beta header). Mirrors Claude Code
@@ -500,7 +500,7 @@ pub(super) async fn cmd_pin(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Pin a message by transcript index so compaction can't
     // drop it. /pin without an arg pins the most recent
@@ -560,7 +560,7 @@ pub(super) async fn cmd_unpin(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts.get(1).copied().unwrap_or("").trim();
@@ -594,7 +594,7 @@ pub(super) async fn cmd_effort(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // v132 reasoning-effort pin. `/effort low|medium|high|xhigh|max`
     // sets the pin; `/effort` alone shows the current state;
@@ -621,7 +621,7 @@ pub(super) async fn cmd_temp(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts.get(1).copied().unwrap_or("").trim();
@@ -667,7 +667,7 @@ pub(super) async fn cmd_explore(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts.get(1).copied().unwrap_or("").trim();
@@ -691,7 +691,7 @@ pub(super) async fn cmd_focus(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts.get(1).copied().unwrap_or("").trim();
@@ -710,7 +710,7 @@ pub(super) async fn cmd_feature(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // v132 feature-gate framework. `/feature` lists all gates and
     // their state; `/feature <codename> on|off` flips one.
@@ -792,7 +792,7 @@ pub(super) async fn cmd_goal(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // v137 session-scoped goal. `/goal <condition>` sets a stop
     // condition — the agent keeps working until the evaluator
@@ -878,7 +878,7 @@ pub(super) async fn cmd_goal(
                                  once the condition is met.",
                         crate::goal::MAX_ITERATIONS
                     );
-                    let _ = tx.send(AppEvent::Ui(UiEvent::Submit(kickoff))).await;
+                    let _ = tx.send(EngineEvent::Control(ControlEvent::SubmitPrompt(kickoff))).await;
                     tracing::info!(
                         target: "jfc::goal",
                         "/goal: dispatched kickoff meta-prompt"
@@ -896,7 +896,7 @@ pub(super) async fn cmd_memory(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // `/memory` (no args)            → list memory files
     // `/memory recall on|off|status` → toggle two-phase recall
@@ -978,7 +978,7 @@ pub(super) async fn cmd_claude_md(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let h = crate::context::ClaudeMdHierarchy::load(
         &std::env::current_dir().unwrap_or_else(|_| ".".into()),
@@ -1017,7 +1017,7 @@ pub(super) async fn cmd_mode(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let arg = parts.get(1).copied().unwrap_or("").trim().to_lowercase();
     let new_mode = match arg.as_str() {
@@ -1061,7 +1061,7 @@ pub(super) async fn cmd_auto_mode(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let arg = parts.get(1).copied().unwrap_or("status").trim();
     match arg {
@@ -1107,7 +1107,7 @@ pub(super) async fn cmd_swarm_approve(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Resolve a pending swarm permission request from the user's
     // input bar. Toasts surface the request id when it lands;
@@ -1172,7 +1172,7 @@ pub(super) async fn cmd_brief(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.brief_mode = !app.brief_mode;
     let msg = if app.brief_mode {
@@ -1189,7 +1189,7 @@ pub(super) async fn cmd_autoloop(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     use crate::autonomous_loop::{AutonomousLoopState, LoopPacing, read_loop_file};
 
@@ -1237,7 +1237,7 @@ pub(super) async fn cmd_sandbox(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.bash_sandbox.enabled = !app.bash_sandbox.enabled;
     // Mirror the toggle into the global static so the bash dispatch path
@@ -1261,7 +1261,7 @@ pub(super) async fn cmd_permissions(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user("/permissions".into()));
 
@@ -1340,7 +1340,7 @@ pub(super) async fn cmd_stuck(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user("/stuck".into()));
 
@@ -1408,7 +1408,7 @@ pub(super) async fn cmd_teleport_export(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages
         .push(ChatMessage::user("/teleport-export".into()));
@@ -1463,7 +1463,7 @@ pub(super) async fn cmd_team_onboarding(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let guide = crate::team_onboarding::generate_onboarding_guide(&root);
@@ -1474,7 +1474,7 @@ pub(super) async fn cmd_coach(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Build session stats from app.messages
     let mut stats = crate::coach::SessionStats {
@@ -1516,7 +1516,7 @@ pub(super) async fn cmd_remote(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let prompt = parts.get(1..).map(|p| p.join(" ")).unwrap_or_default();
     if prompt.trim().is_empty() {
@@ -1564,7 +1564,7 @@ pub(super) async fn cmd_remote_control(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let arg = parts.get(1).copied().unwrap_or("");
 
@@ -1665,7 +1665,7 @@ pub(super) async fn cmd_factory(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let m = app.task_store.factory_metrics();
     let success = m
@@ -1724,7 +1724,7 @@ pub(super) async fn cmd_oauth_login(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let cfg = crate::auth::device_flow::DeviceFlowConfig {
         client_id: std::env::var("JFC_OAUTH_CLIENT_ID").unwrap_or_else(|_| "jfc-cli".into()),
@@ -1895,7 +1895,7 @@ pub(super) async fn cmd_babysit_prs(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages
         .push(ChatMessage::user(parts.to_vec().join(" ")));
@@ -2017,7 +2017,7 @@ pub(super) async fn cmd_morning_checkin(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages
         .push(ChatMessage::user("/morning-checkin".to_string()));

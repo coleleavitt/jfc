@@ -1,7 +1,7 @@
 use crate::{
     app::App,
     input,
-    runtime::{AppEvent, EventSender, StreamEvent, StreamRequestOverrides},
+    runtime::{EngineEvent, EventSender, StreamEvent, StreamRequestOverrides},
     stream,
     types::{ChatMessage, MessagePart, Role},
 };
@@ -209,7 +209,7 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
                 format!("stream task cancelled: {join_err}")
             };
             let _ = tx_guard
-                .send(AppEvent::Stream(StreamEvent::Error(msg)))
+                .send(EngineEvent::Stream(StreamEvent::Error(msg)))
                 .await;
         }
     });

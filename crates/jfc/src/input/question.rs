@@ -15,7 +15,7 @@
 use crossterm::event::{self, KeyCode, KeyModifiers};
 use tokio::sync::mpsc;
 
-use crate::app::{App, AppEvent, PendingQuestion, QuestionItem, QuestionOption};
+use crate::app::{App, EngineEvent, PendingQuestion, QuestionItem, QuestionOption};
 use crate::runtime::{ExecutionResult, ToolEvent, send_critical};
 use crate::types::{ToolCall, ToolInput};
 
@@ -107,7 +107,7 @@ fn is_ctrl(key: &event::KeyEvent, c: char) -> bool {
 pub(super) fn handle_question_key(
     app: &mut App,
     key: event::KeyEvent,
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &mpsc::Sender<EngineEvent>,
 ) -> bool {
     if app.pending_question.is_none() {
         return false;
@@ -244,7 +244,7 @@ fn commit_current(pending: &mut PendingQuestion) -> bool {
     !pending.advance_to_next_unanswered()
 }
 
-fn submit_question(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
+fn submit_question(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
     let Some(pending) = app.pending_question.take() else {
         return;
     };
@@ -264,24 +264,24 @@ fn submit_question(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
         "User has answered your question(s): {answers}. \
          You can now continue with the user's answers in mind."
     );
-    let _ = tx.try_send(AppEvent::Tool(ToolEvent::Result {
+    let _ = tx.try_send(EngineEvent::Tool(ToolEvent::Result {
         tool_id,
         result: ExecutionResult::success(result_text),
     }));
-    send_critical(tx, AppEvent::Tool(ToolEvent::AllComplete));
+    send_critical(tx, EngineEvent::Tool(ToolEvent::AllComplete));
 }
 
-fn decline_question(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
+fn decline_question(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
     let Some(pending) = app.pending_question.take() else {
         return;
     };
     let tool_id = pending.tool_id;
     tracing::info!(target: "jfc::ui::question", tool_id = %tool_id, "AskUserQuestion declined");
-    let _ = tx.try_send(AppEvent::Tool(ToolEvent::Result {
+    let _ = tx.try_send(EngineEvent::Tool(ToolEvent::Result {
         tool_id,
         result: ExecutionResult::failure("User declined to answer the question(s)."),
     }));
-    send_critical(tx, AppEvent::Tool(ToolEvent::AllComplete));
+    send_critical(tx, EngineEvent::Tool(ToolEvent::AllComplete));
 }
 
 #[cfg(test)]

@@ -1,12 +1,13 @@
 //! Slash handlers: session & transcript lifecycle.
 
 use super::*;
+use crate::runtime::EngineEvent;
 
 pub(super) async fn cmd_rename(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Set a custom title on the current session. v126 cli.js:39786
     // calls this `customTitle` and it sits at the top of the title
@@ -39,7 +40,7 @@ pub(super) async fn cmd_clear(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.clear();
     app.streaming_text.clear();
@@ -56,7 +57,7 @@ pub(super) async fn cmd_continue(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // v126 / codex-rs parity: `/continue` is cwd-scoped by default.
     // `/continue all` (or `/c all`) shows the globally most recent
@@ -107,7 +108,7 @@ pub(super) async fn cmd_resume(
     app: &mut App,
     parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Resume a specific session by id. Accepts an optional
     // `--force` token to suppress the cwd-mismatch warning
@@ -194,7 +195,7 @@ pub(super) async fn cmd_sessions(
     app: &mut App,
     _parts: &[&str],
     _text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // List all sessions with metadata
     let sessions = jfc_session::list_sessions_with_metadata().await;
@@ -237,7 +238,7 @@ pub(super) async fn cmd_copy(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts
@@ -290,7 +291,7 @@ pub(super) async fn cmd_fork(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     app.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts
@@ -349,7 +350,7 @@ pub(super) async fn cmd_undo(
     app: &mut App,
     _parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // Revert the most recent Edit / Write / MultiEdit /
     // ApplyPatch tool's filesystem mutation. Pulls from
@@ -407,7 +408,7 @@ pub(super) async fn cmd_export(
     app: &mut App,
     parts: &[&str],
     text: &str,
-    _tx: Option<&mpsc::Sender<AppEvent>>,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     // /export <path>: write the transcript as markdown to the
     // given path (defaults to ./jfc-transcript.md).

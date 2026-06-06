@@ -13,7 +13,7 @@
 //! # Lifecycle
 //!
 //! 1. `connect(session_id)` returns an SSE stream of decoded events.
-//! 2. The caller forwards each event to the UI via the AppEvent channel.
+//! 2. The caller forwards each event to the UI via the EngineEvent channel.
 //! 3. User input becomes a `send_user_message` call instead of a local
 //!    `provider.stream`.
 

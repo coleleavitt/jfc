@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 
 use crate::agents::AgentDef;
 use crate::ids::{TaskId, ToolId};
-use crate::runtime::{AppEvent, ExecutionResult, TaskEvent, TeamEvent, ToolEvent, send_critical};
+use crate::runtime::{EngineEvent, ExecutionResult, TaskEvent, TeamEvent, ToolEvent, send_critical};
 use crate::swarm::runner::{
     TeammateEvent, TeammateRunnerConfig, assign_teammate_color, start_teammate, teammate_task_id,
 };
@@ -25,7 +25,7 @@ use jfc_provider::{ModelId, Provider};
 pub(crate) fn try_spawn_teammate(
     task_input: &TaskInput,
     task_id: &str,
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &mpsc::Sender<EngineEvent>,
     provider: Arc<dyn Provider>,
     model: ModelId,
     agents: &[AgentDef],
@@ -58,7 +58,7 @@ pub(crate) fn try_spawn_teammate(
         Err(error) => {
             send_critical(
                 &tx_task,
-                AppEvent::Tool(ToolEvent::Result {
+                EngineEvent::Tool(ToolEvent::Result {
                     tool_id: ToolId::from(task_id),
                     result: ExecutionResult::failure(error),
                 }),
@@ -136,7 +136,7 @@ pub(crate) fn try_spawn_teammate(
     // Notify the leader's main loop that a teammate exists
     send_critical(
         &tx_task,
-        AppEvent::Team(TeamEvent::Spawned {
+        EngineEvent::Team(TeamEvent::Spawned {
             name: name.clone(),
             team_name,
             agent_id,
@@ -151,7 +151,7 @@ pub(crate) fn try_spawn_teammate(
     );
     send_critical(
         &tx_task,
-        AppEvent::Task(TaskEvent::Started {
+        EngineEvent::Task(TaskEvent::Started {
             task_id: TaskId::from(runner_task_id),
             description: format!("spawn teammate: {name}"),
             model_used: Some(teammate_model_name),
@@ -163,7 +163,7 @@ pub(crate) fn try_spawn_teammate(
 
     send_critical(
         &tx_task,
-        AppEvent::Tool(ToolEvent::Result {
+        EngineEvent::Tool(ToolEvent::Result {
             tool_id: ToolId::from(task_id),
             result: ExecutionResult::success(
                 serde_json::to_string_pretty(&result_json).unwrap_or_default(),

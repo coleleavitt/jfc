@@ -2,7 +2,7 @@ use jfc_provider::ProviderMessage;
 use tokio::sync::mpsc;
 
 use crate::app::App;
-use crate::runtime::{AppEvent, StreamEvent, StreamRequestOverrides};
+use crate::runtime::{EngineEvent, StreamEvent, StreamRequestOverrides};
 use crate::types::*;
 
 use super::{
@@ -243,7 +243,7 @@ fn setup_new_substream_slot(app: &mut App, label: &'static str) -> usize {
 /// — including the cancel-token plumbing. A divergence here was how
 /// the legacy code accidentally let one path skip the token and miss
 /// ESCx2 unwinds.
-fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sender<AppEvent>) {
+fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sender<EngineEvent>) {
     let provider = app.provider.clone();
     let model = app.model.clone();
     let tx = tx.clone();
@@ -284,7 +284,7 @@ fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sen
                 format!("stream task cancelled: {join_err}")
             };
             let _ = tx_guard
-                .send(AppEvent::Stream(StreamEvent::Error(msg)))
+                .send(EngineEvent::Stream(StreamEvent::Error(msg)))
                 .await;
         }
     });
@@ -309,7 +309,7 @@ fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sen
 /// The synthetic-user-injection step is skipped specifically for the
 /// trailing-assistant case; consecutive same-role merging and
 /// empty-assistant stripping still apply.
-pub(crate) async fn continue_after_pause_turn(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
+pub(crate) async fn continue_after_pause_turn(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
     let assistant_idx = setup_new_substream_slot(app, "pause_turn_resume");
     let messages = build_provider_messages_for_pause_turn_resume(&app.messages[..assistant_idx]);
     spawn_substream(app, messages, tx);
@@ -344,7 +344,7 @@ fn cap_main_continuation_history(provider_name: &str, messages: &mut Vec<Provide
     capped
 }
 
-pub(crate) async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
+pub(crate) async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
     // Enforce max-turns safety limit. Without this a model stuck in a
     // retry loop (e.g. repeatedly failing Edit calls) runs indefinitely.
     app.agentic_turn_count += 1;

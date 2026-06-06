@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::{app::App, runtime::AppEvent, types::ChatMessage};
+use crate::{app::App, runtime::EngineEvent, types::ChatMessage};
 
 fn push_gh_unavailable(app: &mut App, cmd: &str) {
     let msg = "GitHub CLI not found on PATH. Install via <https://cli.github.com> \
@@ -149,7 +149,7 @@ pub(super) async fn handle_pr_view(app: &mut App, arg: &str) {
 pub(super) async fn handle_pr_autofix(
     app: &mut App,
     arg: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     if !crate::github::is_gh_installed() {
         push_gh_unavailable(app, &format!("/pr-autofix {arg}"));

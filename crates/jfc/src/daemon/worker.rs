@@ -183,19 +183,19 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
         launch.parent_session_id.clone(),
     );
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::runtime::AppEvent>(512);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::runtime::EngineEvent>(512);
     let event_task_id = launch.task_id.clone();
     let event_collector = tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
             match event {
-                crate::runtime::AppEvent::Task(crate::runtime::TaskEvent::AgentChunk {
+                crate::runtime::EngineEvent::Task(crate::runtime::TaskEvent::AgentChunk {
                     task_id,
                     text,
                 }) if task_id.as_str() == event_task_id => {
                     let _ =
                         record_background_agent_log_at_epoch(&event_task_id, worker_epoch, &text);
                 }
-                crate::runtime::AppEvent::Task(crate::runtime::TaskEvent::Progress {
+                crate::runtime::EngineEvent::Task(crate::runtime::TaskEvent::Progress {
                     task_id,
                     last_tool,
                     tool_use_count,

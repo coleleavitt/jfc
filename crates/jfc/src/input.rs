@@ -62,12 +62,13 @@ pub(crate) use theme_picker::filtered_theme_choices;
 use worktree_commands::handle_worktree_command;
 
 use crate::app::App;
-use crate::runtime::{AppEvent, UiEvent};
+use crate::runtime::{ControlEvent, EngineEvent};
 use crate::types::*;
 
 // Re-export the public functions from sub-modules
 pub(crate) use approval::handle_remote_approval_response;
 pub use key_dispatch::handle_key;
+pub(crate) use key_dispatch::request_user_interrupt;
 pub(crate) use question::build_pending_question;
 pub(crate) use slash_commands::SLASH_COMMANDS;
 pub use slash_commands::run_slash_command;

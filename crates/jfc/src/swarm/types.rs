@@ -361,29 +361,6 @@ pub fn sanitize_name(name: &str) -> String {
         .to_lowercase()
 }
 
-// ─── Color Utilities ─────────────────────────────────────────────────────────
-
-/// Parse a hex color string (e.g., "#4FC3F7") into a ratatui `Color::Rgb`.
-/// Returns `Color::White` if parsing fails.
-pub fn hex_to_color(hex: &str) -> ratatui::style::Color {
-    let hex = hex.trim_start_matches('#');
-    if hex.len() != 6 {
-        return ratatui::style::Color::White;
-    }
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(255);
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(255);
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(255);
-    ratatui::style::Color::Rgb(r, g, b)
-}
-
-/// Get a ratatui Color for a teammate, falling back to White if no color set.
-pub fn teammate_color(color: Option<&str>) -> ratatui::style::Color {
-    match color {
-        Some(hex) => hex_to_color(hex),
-        None => ratatui::style::Color::White,
-    }
-}
-
 // ─── Plan Approval ───────────────────────────────────────────────────────────
 
 /// Plan approval request sent by a teammate in plan mode.
@@ -431,7 +408,6 @@ impl PlanApprovalRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::style::Color;
 
     #[test]
     fn make_agent_id_combines_name_and_team_normal() {
@@ -471,27 +447,6 @@ mod tests {
         assert!(formatted.contains("color=\"#123abc\""));
         assert!(formatted.contains("summary=\"done\""));
         assert!(formatted.contains("report"));
-    }
-
-    #[test]
-    fn hex_to_color_parses_six_digit_hex_normal() {
-        assert_eq!(hex_to_color("#FF0000"), Color::Rgb(255, 0, 0));
-        assert_eq!(hex_to_color("00FF00"), Color::Rgb(0, 255, 0));
-        assert_eq!(hex_to_color("#0000ff"), Color::Rgb(0, 0, 255));
-    }
-
-    #[test]
-    fn hex_to_color_returns_white_on_bad_input_robust() {
-        // Wrong length / not hex → fall back to White instead of panicking.
-        assert_eq!(hex_to_color("abc"), Color::White);
-        assert_eq!(hex_to_color("#1234567"), Color::White);
-        assert_eq!(hex_to_color(""), Color::White);
-    }
-
-    #[test]
-    fn teammate_color_falls_back_to_white_normal() {
-        assert_eq!(teammate_color(None), Color::White);
-        assert_eq!(teammate_color(Some("#FFFFFF")), Color::Rgb(255, 255, 255));
     }
 
     #[test]

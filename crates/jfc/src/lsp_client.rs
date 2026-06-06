@@ -1,7 +1,7 @@
 //! Real LSP client: spawns a language-server process (rust-analyzer for
 //! `.rs` projects, zls for `.zig`) and routes inbound
 //! `textDocument/publishDiagnostics` notifications into the app's event
-//! loop as `AppEvent::Provider(ProviderEvent::DiagnosticsUpdated)`.
+//! loop as `EngineEvent::Provider(ProviderEvent::DiagnosticsUpdated)`.
 //!
 //! ## Architecture (Helix / rust-analyzer pattern, NOT tower-lsp)
 //!
@@ -57,7 +57,7 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio::sync::oneshot;
 
 use crate::lsp_rpc;
-use crate::runtime::{AppEvent, ProviderEvent};
+use crate::runtime::{EngineEvent, ProviderEvent};
 
 /// Re-export from jfc-graph for convenience.
 pub use jfc_graph::enrichment::LspLocation;
@@ -228,7 +228,7 @@ impl LspClient {
         args: &[&str],
         cwd: &std::path::Path,
         root_uri: &str,
-        app_tx: mpsc::Sender<AppEvent>,
+        app_tx: mpsc::Sender<EngineEvent>,
     ) -> Option<Self> {
         // Resolve the actual binary to exec. On rustup-managed setups the
         // `rust-analyzer` on PATH (`~/.cargo/bin/rust-analyzer`) is a symlink
@@ -472,7 +472,7 @@ impl LspClient {
 
 async fn handle_inbound(
     msg: &Value,
-    app_tx: &mpsc::Sender<AppEvent>,
+    app_tx: &mpsc::Sender<EngineEvent>,
     init_done_tx: &Arc<tokio::sync::Mutex<Option<oneshot::Sender<()>>>>,
     pending: &PendingRequests,
     diagnostics_by_uri: &mut std::collections::HashMap<
@@ -517,7 +517,7 @@ async fn handle_inbound(
         };
         let merged = apply_publish_diagnostics(diagnostics_by_uri, uri, entries);
         let _ = app_tx
-            .send(AppEvent::Provider(ProviderEvent::DiagnosticsUpdated {
+            .send(EngineEvent::Provider(ProviderEvent::DiagnosticsUpdated {
                 entries: merged,
             }))
             .await;
@@ -745,7 +745,7 @@ pub fn detect_lsp_for_cwd(cwd: &std::path::Path) -> Option<(&'static str, Vec<&'
 /// returned task handle is dropped (we don't keep the client alive
 /// across the UI loop yet; that's a follow-up integration). Wire it up
 /// from `main.rs` near the other startup spawns.
-pub fn maybe_spawn_lsp_clients(cwd: std::path::PathBuf, app_tx: mpsc::Sender<AppEvent>) {
+pub fn maybe_spawn_lsp_clients(cwd: std::path::PathBuf, app_tx: mpsc::Sender<EngineEvent>) {
     if matches!(
         std::env::var("JFC_DISABLE_LSP").as_deref(),
         Ok("1") | Ok("true")
@@ -770,7 +770,7 @@ pub fn maybe_spawn_lsp_clients(cwd: std::path::PathBuf, app_tx: mpsc::Sender<App
         if let Some(_client) = LspClient::spawn(cmd, &owned_args, &cwd, &root_uri, app_tx).await {
             // Notify the sidebar that this LSP is active.
             let _ = lsp_tx
-                .send(AppEvent::Provider(ProviderEvent::LspUpdated {
+                .send(EngineEvent::Provider(ProviderEvent::LspUpdated {
                     servers: vec![crate::types::LspServerInfo {
                         name: server_name,
                         status: crate::types::LspStatus::Active,

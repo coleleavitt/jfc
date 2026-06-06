@@ -1,4 +1,4 @@
-//! Handler for `AppEvent::WorkflowProgress` — applies incremental progress
+//! Handler for `EngineEvent::WorkflowProgress` — applies incremental progress
 //! updates from the workflow runner to the matching `BackgroundTask`.
 
 use crate::app::App;

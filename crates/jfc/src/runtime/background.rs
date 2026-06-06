@@ -129,7 +129,7 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
             entry.chat_messages = parse_agent_log_to_chat_messages(&messages);
             changed = true;
         }
-        // Detached/daemon-launched agents never see live `AppEvent`s, so
+        // Detached/daemon-launched agents never see live `EngineEvent`s, so
         // `chat_messages` stays empty unless we reconstruct it from the
         // persisted log. The parser is the sole writer for detached
         // agents (live events for attached ones are filtered out by the
@@ -141,7 +141,7 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
 
         // Any observable change from the poll counts as activity — keeps
         // the fan's `stalled Ns` flag honest for detached/daemon agents,
-        // which never emit live `AppEvent`s and so wouldn't otherwise
+        // which never emit live `EngineEvent`s and so wouldn't otherwise
         // refresh `last_activity_at` between polls. Done before the
         // status-parts call below (which re-borrows `app`) so `entry`'s
         // borrow doesn't span it.

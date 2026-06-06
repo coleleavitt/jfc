@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::app::{App, PendingApproval};
-use crate::runtime::{AppEvent, EventSender, ToolEvent};
+use crate::runtime::{EngineEvent, EventSender, ToolEvent};
 use crate::types::*;
 use crate::{toast, toast::ToastKind};
 
@@ -30,14 +30,14 @@ fn emit_in_progress(tx: &EventSender, action: &str, ids: Vec<String>) {
     if ids.is_empty() {
         return;
     }
-    let _ = tx.try_send(AppEvent::Tool(ToolEvent::SetInProgressToolUseIds {
+    let _ = tx.try_send(EngineEvent::Tool(ToolEvent::SetInProgressToolUseIds {
         action: action.to_owned(),
         ids,
     }));
 }
 
 fn emit_deferred_tool_use(tx: &EventSender, tool: &ToolCall, reason: &str) {
-    let _ = tx.try_send(AppEvent::Tool(ToolEvent::DeferredToolUse {
+    let _ = tx.try_send(EngineEvent::Tool(ToolEvent::DeferredToolUse {
         id: tool.id.as_str().to_owned(),
         name: tool.kind.label().to_owned(),
         input_preview: tool.input.summary(),
@@ -140,7 +140,7 @@ pub(crate) fn dispatch_pending_after_stream(app: &mut App, tx: &EventSender) -> 
         .filter(|tool| !app.pre_dispatched_tool_ids.contains(tool.id.as_str()))
         .collect();
     if calls.is_empty() {
-        crate::runtime::send_critical(tx, AppEvent::Tool(ToolEvent::AllComplete));
+        crate::runtime::send_critical(tx, EngineEvent::Tool(ToolEvent::AllComplete));
         return false;
     }
 
@@ -313,7 +313,7 @@ pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: Bo
                 ) => d,
             };
             let _ = tx_cls
-                .send(AppEvent::Tool(ToolEvent::ClassifierDecision {
+                .send(EngineEvent::Tool(ToolEvent::ClassifierDecision {
                     tool: tool_for_task,
                     blocked: decision.should_block(),
                     reason: decision.reason,
@@ -480,7 +480,7 @@ pub(crate) async fn handle_classifier_decision(
     } else {
         // Every tool was blocked — no batch to run, but the loop must still
         // continue so the model sees the blocked tool_results it produced.
-        crate::runtime::send_critical(tx, AppEvent::Tool(ToolEvent::AllComplete));
+        crate::runtime::send_critical(tx, EngineEvent::Tool(ToolEvent::AllComplete));
     }
 }
 
@@ -726,7 +726,7 @@ mod tests {
             .expect("classifier should emit deferred tool use");
         assert!(matches!(
             event,
-            AppEvent::Tool(ToolEvent::DeferredToolUse { reason, .. })
+            EngineEvent::Tool(ToolEvent::DeferredToolUse { reason, .. })
                 if reason == "queued_for_stream_done"
         ));
         assert!(rx.try_recv().is_err());

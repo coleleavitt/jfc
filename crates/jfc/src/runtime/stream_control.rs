@@ -1,6 +1,6 @@
 use crate::{
     app::App,
-    runtime::{AppEvent, EventSender, StreamEvent, StreamRequestOverrides},
+    runtime::{EngineEvent, EventSender, StreamEvent, StreamRequestOverrides},
     stream,
     types::{MessagePart, Role},
 };
@@ -134,7 +134,7 @@ pub(crate) fn restart_stream_in_place_with_overrides(
                 format!("stream task cancelled: {join_err}")
             };
             let _ = tx_guard
-                .send(AppEvent::Stream(StreamEvent::Error(msg)))
+                .send(EngineEvent::Stream(StreamEvent::Error(msg)))
                 .await;
         }
     });

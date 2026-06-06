@@ -4,7 +4,7 @@ use futures::StreamExt;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::runtime::{AppEvent, StreamEvent as RuntimeStreamEvent};
+use crate::runtime::{EngineEvent, StreamEvent as RuntimeStreamEvent};
 use crate::types::{ToolCall, ToolInput, ToolKind, ToolOutput};
 use jfc_provider::{EventStream, StopReason, StreamEvent};
 
@@ -36,7 +36,7 @@ fn cancel_reason(by_user: bool) -> String {
 
 pub(super) async fn drain_stream_events(
     mut stream: EventStream,
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &mpsc::Sender<EngineEvent>,
     interrupt: Arc<std::sync::atomic::AtomicBool>,
     cancel: CancellationToken,
 ) -> DrainOutcome {
@@ -124,7 +124,7 @@ pub(super) async fn drain_stream_events(
                 // reader instead (slows it down until the event loop catches
                 // up). TextDelta is the model's output — we cannot lose it.
                 let _ = tx
-                    .send(AppEvent::Stream(RuntimeStreamEvent::Chunk {
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::Chunk {
                         text: Some(delta),
                         reasoning: None,
                     }))
@@ -140,7 +140,7 @@ pub(super) async fn drain_stream_events(
                 // in the UI and losing chunks creates gaps in the reasoning
                 // trace.
                 let _ = tx
-                    .send(AppEvent::Stream(RuntimeStreamEvent::Chunk {
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::Chunk {
                         text: None,
                         reasoning: Some(delta),
                     }))
@@ -149,7 +149,7 @@ pub(super) async fn drain_stream_events(
                 // Matches cli.js pattern of separate "thinking_tokens" system events.
                 if let Some(tokens) = estimated_tokens
                     && tx
-                        .try_send(AppEvent::Stream(RuntimeStreamEvent::ThinkingTokens(tokens)))
+                        .try_send(EngineEvent::Stream(RuntimeStreamEvent::ThinkingTokens(tokens)))
                         .is_err()
                 {
                     tracing::trace!(target: "jfc::stream", "ThinkingTokens dropped (buffer full)");
@@ -162,7 +162,7 @@ pub(super) async fn drain_stream_events(
                 // Keep spinner byte estimate and stall timer live while
                 // providers stream input_json_delta fragments.
                 if tx
-                    .try_send(AppEvent::Stream(RuntimeStreamEvent::ToolInputDelta(
+                    .try_send(EngineEvent::Stream(RuntimeStreamEvent::ToolInputDelta(
                         byte_len,
                     )))
                     .is_err()
@@ -301,7 +301,7 @@ pub(super) async fn drain_stream_events(
                     tool
                 };
                 let _ = tx
-                    .send(AppEvent::Stream(RuntimeStreamEvent::Tool(Box::new(tool))))
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::Tool(Box::new(tool))))
                     .await;
             }
             StreamEvent::ServerToolResult {
@@ -323,7 +323,7 @@ pub(super) async fn drain_stream_events(
                     "stream server_tool_result received"
                 );
                 let _ = tx
-                    .send(AppEvent::Stream(RuntimeStreamEvent::ServerToolResult {
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::ServerToolResult {
                         tool_use_id: crate::ids::ToolId::from(tool_use_id),
                         tool_kind,
                         content,
@@ -355,7 +355,7 @@ pub(super) async fn drain_stream_events(
                 input_tokens,
             } => {
                 let _ = tx
-                    .send(AppEvent::Stream(RuntimeStreamEvent::ResponseId(
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::ResponseId(
                         response_id,
                     )))
                     .await;
@@ -363,7 +363,7 @@ pub(super) async fn drain_stream_events(
                 // available even if the stream aborts before message_delta.
                 if let Some(tokens) = input_tokens {
                     let _ = tx
-                        .send(AppEvent::Stream(RuntimeStreamEvent::Usage {
+                        .send(EngineEvent::Stream(RuntimeStreamEvent::Usage {
                             input_tokens: tokens as u32,
                             output_tokens: 0,
                             cache_read_tokens: 0,
@@ -375,7 +375,7 @@ pub(super) async fn drain_stream_events(
             StreamEvent::TextDone { .. } | StreamEvent::ThinkingDone { .. } => {}
             StreamEvent::RedactedThinkingDone { data, .. } => {
                 let _ = tx
-                    .send(AppEvent::Stream(RuntimeStreamEvent::RedactedThinking(data)))
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::RedactedThinking(data)))
                     .await;
             }
             StreamEvent::Usage {
@@ -391,7 +391,7 @@ pub(super) async fn drain_stream_events(
                     "stream usage report"
                 );
                 let _ = tx
-                    .send(AppEvent::Stream(RuntimeStreamEvent::Usage {
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::Usage {
                         input_tokens,
                         output_tokens,
                         cache_read_tokens,
@@ -415,7 +415,7 @@ pub(super) async fn drain_stream_events(
                     "model fallback triggered"
                 );
                 let _ = tx
-                    .send(AppEvent::Stream(RuntimeStreamEvent::FallbackTriggered {
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::FallbackTriggered {
                         original_model: info.original_model.to_string(),
                         fallback_model: info.fallback_model.to_string(),
                         reason: info.reason,
@@ -463,10 +463,10 @@ mod tests {
         }
 
         match rx.try_recv() {
-            Ok(AppEvent::Stream(RuntimeStreamEvent::Chunk {
+            Ok(EngineEvent::Stream(RuntimeStreamEvent::Chunk {
                 text: Some(text), ..
             })) => assert_eq!(text, "partial"),
-            Ok(_) => panic!("expected forwarded text chunk, got different AppEvent"),
+            Ok(_) => panic!("expected forwarded text chunk, got different EngineEvent"),
             Err(err) => panic!("expected forwarded text chunk, got receive error: {err}"),
         }
     }

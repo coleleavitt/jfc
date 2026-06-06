@@ -3,7 +3,7 @@ use super::*;
 pub async fn handle_submit_text(
     app: &mut App,
     text: String,
-    tx: &mpsc::Sender<crate::runtime::AppEvent>,
+    tx: &mpsc::Sender<crate::runtime::EngineEvent>,
 ) -> anyhow::Result<()> {
     handle_submit(app, text, tx).await
 }
@@ -11,7 +11,7 @@ pub async fn handle_submit_text(
 pub(super) async fn handle_submit(
     app: &mut App,
     text: String,
-    tx: &mpsc::Sender<crate::runtime::AppEvent>,
+    tx: &mpsc::Sender<crate::runtime::EngineEvent>,
 ) -> anyhow::Result<()> {
     // `# <fact>` quick-add: a prompt whose first non-space character is `#`
     // is a memory note, not a turn. Append it to project memory (so the
@@ -104,8 +104,8 @@ pub(super) async fn handle_submit(
     if let crate::hooks::HookAction::Abort(reason) = &hook_action {
         tracing::warn!(target: "jfc::hooks", %reason, "OnUserPromptSubmit aborted turn");
         let _ = tx
-            .send(crate::runtime::AppEvent::Ui(
-                crate::runtime::UiEvent::Toast {
+            .send(crate::runtime::EngineEvent::Control(
+                crate::runtime::ControlEvent::Notice {
                     kind: crate::toast::ToastKind::Error,
                     text: format!("Turn aborted by hook: {reason}"),
                 },
@@ -331,7 +331,7 @@ pub(super) async fn handle_submit(
         let user_text = text.clone();
         let is_blocked = matches!(level, crate::compact::CompactLevel::Blocked);
         let _ = tx_pre
-            .send(crate::runtime::AppEvent::Compaction(
+            .send(crate::runtime::EngineEvent::Compaction(
                 crate::runtime::CompactionEvent::Started,
             ))
             .await;
@@ -342,7 +342,7 @@ pub(super) async fn handle_submit(
         let progress_tx = tx_pre.clone();
         let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
             // CompactionProgress is non-critical; next progress update supersedes.
-            let _ = progress_tx.try_send(crate::runtime::AppEvent::Compaction(
+            let _ = progress_tx.try_send(crate::runtime::EngineEvent::Compaction(
                 crate::runtime::CompactionEvent::Progress {
                     output_chars: chars,
                 },
@@ -378,7 +378,7 @@ pub(super) async fn handle_submit(
                         "pre-submit compaction succeeded — re-queuing user message"
                     );
                     let _ = tx_pre
-                        .send(crate::runtime::AppEvent::Compaction(
+                        .send(crate::runtime::EngineEvent::Compaction(
                             crate::runtime::CompactionEvent::Done {
                                 messages,
                                 tool_ctx,
@@ -390,8 +390,8 @@ pub(super) async fn handle_submit(
                     // Re-queue the user's message — it didn't make it into
                     // the conversation before compaction ran.
                     let _ = tx_pre
-                        .send(crate::runtime::AppEvent::Ui(
-                            crate::runtime::UiEvent::Submit(user_text),
+                        .send(crate::runtime::EngineEvent::Control(
+                            crate::runtime::ControlEvent::SubmitPrompt(user_text),
                         ))
                         .await;
                 }
@@ -401,7 +401,7 @@ pub(super) async fn handle_submit(
                         "pre-submit compaction: circuit breaker tripped"
                     );
                     let _ = tx_pre
-                        .send(crate::runtime::AppEvent::Compaction(
+                        .send(crate::runtime::EngineEvent::Compaction(
                             crate::runtime::CompactionEvent::Failed {
                                 reason: "Circuit breaker tripped — submit again with `/compact` if needed"
                                     .into(),
@@ -418,7 +418,7 @@ pub(super) async fn handle_submit(
                         "pre-submit compaction exhausted all attempts"
                     );
                     let _ = tx_pre
-                        .send(crate::runtime::AppEvent::Compaction(
+                        .send(crate::runtime::EngineEvent::Compaction(
                             crate::runtime::CompactionEvent::Failed {
                                 reason: format!(
                                 "Exhausted {attempts} compaction attempts — request is too large"
@@ -440,7 +440,7 @@ pub(super) async fn handle_submit(
                             "pre-submit compaction unsupported and context is Blocked — cannot proceed"
                         );
                         let _ = tx_pre
-                            .send(crate::runtime::AppEvent::Compaction(
+                            .send(crate::runtime::EngineEvent::Compaction(
                                 crate::runtime::CompactionEvent::Failed {
                                     reason: "Context exceeds limit and provider cannot compact — \
                              try switching to a model/provider that supports compaction, \
@@ -457,8 +457,8 @@ pub(super) async fn handle_submit(
                             "pre-submit compaction skipped (unsupported/too few groups) — submitting anyway"
                         );
                         let _ = tx_pre
-                            .send(crate::runtime::AppEvent::Ui(
-                                crate::runtime::UiEvent::Submit(user_text),
+                            .send(crate::runtime::EngineEvent::Control(
+                                crate::runtime::ControlEvent::SubmitPrompt(user_text),
                             ))
                             .await;
                     }
@@ -819,7 +819,7 @@ pub(super) async fn handle_submit(
                 format!("stream task cancelled: {join_err}")
             };
             let _ = tx_guard
-                .send(crate::runtime::AppEvent::Stream(
+                .send(crate::runtime::EngineEvent::Stream(
                     crate::runtime::StreamEvent::Error(msg),
                 ))
                 .await;

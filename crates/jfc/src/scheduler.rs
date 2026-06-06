@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::context::ReadDedupCache;
-use crate::runtime::{AppEvent, ExecutionResult, ToolEvent};
+use crate::runtime::{EngineEvent, ExecutionResult, ToolEvent};
 use crate::tools;
 use crate::types::{ToolCall, ToolKind};
 use jfc_session::TaskStore;
@@ -127,13 +127,13 @@ fn cancelled_execution(tool_id: String) -> ToolExecution {
 }
 
 fn emit_cancelled_result(
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &mpsc::Sender<EngineEvent>,
     tool_id: crate::ids::ToolId,
 ) -> ToolExecution {
     let exec = cancelled_execution(tool_id.as_str().to_owned());
     crate::runtime::send_critical(
         tx,
-        AppEvent::Tool(ToolEvent::Result {
+        EngineEvent::Tool(ToolEvent::Result {
             tool_id,
             result: exec.result.clone(),
         }),
@@ -141,7 +141,7 @@ fn emit_cancelled_result(
     exec
 }
 
-fn emit_cancelled_batch(tx: &mpsc::Sender<AppEvent>, batch: ToolBatch) -> Vec<ToolExecution> {
+fn emit_cancelled_batch(tx: &mpsc::Sender<EngineEvent>, batch: ToolBatch) -> Vec<ToolExecution> {
     match batch {
         ToolBatch::Parallel(calls) => calls
             .into_iter()
@@ -157,7 +157,7 @@ fn emit_cancelled_batch(tx: &mpsc::Sender<AppEvent>, batch: ToolBatch) -> Vec<To
 /// as soon as that task finishes. Sequential batches run one at a time.
 pub async fn execute_batches(
     batches: Vec<ToolBatch>,
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &mpsc::Sender<EngineEvent>,
     cwd: PathBuf,
     dedup: Arc<Mutex<ReadDedupCache>>,
     task_store: Option<Arc<TaskStore>>,
@@ -245,7 +245,7 @@ pub async fn execute_batches(
                                         "tool completed",
                                     );
                                     if tx
-                                        .send(AppEvent::Tool(ToolEvent::Result {
+                                        .send(EngineEvent::Tool(ToolEvent::Result {
                                             tool_id: id.clone(),
                                             result: exec.result.clone(),
                                         }))
@@ -275,7 +275,7 @@ pub async fn execute_batches(
                                         ExecutionResult::failure(format!("Tool panicked: {err}"))
                                     };
                                     let _ = tx
-                                        .send(AppEvent::Tool(ToolEvent::Result {
+                                        .send(EngineEvent::Tool(ToolEvent::Result {
                                             tool_id: id.clone(),
                                             result: result.clone(),
                                         }))
@@ -335,7 +335,7 @@ pub async fn execute_batches(
                                     "tool completed",
                                 );
                                 if tx
-                                    .send(AppEvent::Tool(ToolEvent::Result {
+                                    .send(EngineEvent::Tool(ToolEvent::Result {
                                         tool_id: id.clone(),
                                         result: result.clone(),
                                     }))
@@ -368,7 +368,7 @@ pub async fn execute_batches(
                                     ExecutionResult::failure(format!("Tool panicked: {err}"))
                                 };
                                 let _ = tx
-                                    .send(AppEvent::Tool(ToolEvent::Result {
+                                    .send(EngineEvent::Tool(ToolEvent::Result {
                                         tool_id: id.clone(),
                                         result: result.clone(),
                                     }))
@@ -631,7 +631,7 @@ mod tests {
             read_call("r2", p2.to_str().unwrap()),
         ];
         let batches = schedule_tools(calls);
-        let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
         let results = execute_batches(
             batches,
@@ -648,7 +648,7 @@ mod tests {
         drop(tx);
         let mut got = 0usize;
         while let Some(ev) = rx.recv().await {
-            if matches!(ev, AppEvent::Tool(ToolEvent::Result { .. })) {
+            if matches!(ev, EngineEvent::Tool(ToolEvent::Result { .. })) {
                 got += 1;
             }
         }
@@ -691,7 +691,7 @@ mod tests {
             .expect("scheduler should send a result");
 
         match first {
-            AppEvent::Tool(ToolEvent::Result { tool_id, result }) => {
+            EngineEvent::Tool(ToolEvent::Result { tool_id, result }) => {
                 assert_eq!(tool_id, fast_id);
                 assert!(result.output.contains("fast"));
             }
@@ -730,7 +730,7 @@ mod tests {
         // One Sequential batch.
         assert_eq!(batches.len(), 1);
         assert!(matches!(&batches[0], ToolBatch::Sequential(_)));
-        let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
         let results = execute_batches(
             batches,
@@ -745,7 +745,7 @@ mod tests {
         assert_eq!(results.len(), 1);
         drop(tx);
         let ev = rx.recv().await.expect("event present");
-        assert!(matches!(ev, AppEvent::Tool(ToolEvent::Result { .. })));
+        assert!(matches!(ev, EngineEvent::Tool(ToolEvent::Result { .. })));
     }
 
     // Robust: empty batches list returns empty results without contacting
@@ -753,7 +753,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn execute_batches_empty_input_robust() {
         let dir = tempfile::TempDir::new().expect("tempdir");
-        let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
         let results = execute_batches(
             Vec::new(),
@@ -779,7 +779,7 @@ mod tests {
         let dir = tempfile::TempDir::new().expect("tempdir");
         let calls = vec![glob_call("g1", "**/*.nonexistent_pattern_zzz")];
         let batches = schedule_tools(calls);
-        let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
         let results = execute_batches(
             batches,
@@ -794,7 +794,7 @@ mod tests {
         assert_eq!(results.len(), 1);
         drop(tx);
         let ev = rx.recv().await.expect("got result");
-        assert!(matches!(ev, AppEvent::Tool(ToolEvent::Result { .. })));
+        assert!(matches!(ev, EngineEvent::Tool(ToolEvent::Result { .. })));
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -805,7 +805,7 @@ mod tests {
             read_call("r2", "will-not-run-either"),
         ];
         let batches = schedule_tools(calls);
-        let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
         let cancel = CancellationToken::new();
         cancel.cancel();
@@ -825,7 +825,7 @@ mod tests {
         drop(tx);
         let mut got = 0usize;
         while let Some(ev) = rx.recv().await {
-            if matches!(ev, AppEvent::Tool(ToolEvent::Result { .. })) {
+            if matches!(ev, EngineEvent::Tool(ToolEvent::Result { .. })) {
                 got += 1;
             }
         }

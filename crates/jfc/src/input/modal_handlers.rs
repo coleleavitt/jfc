@@ -1,7 +1,7 @@
 use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::app::App;
-use crate::runtime::AppEvent;
+use crate::runtime::EngineEvent;
 
 use super::palette::{execute_palette_action, palette_items};
 use super::theme_picker::{apply_theme, close_theme_picker, filtered_theme_choices, preview_theme};
@@ -9,7 +9,7 @@ use super::theme_picker::{apply_theme, close_theme_picker, filtered_theme_choice
 pub(super) async fn handle_modal_key(
     app: &mut App,
     key: event::KeyEvent,
-    _tx: &tokio::sync::mpsc::Sender<AppEvent>,
+    _tx: &tokio::sync::mpsc::Sender<EngineEvent>,
 ) -> bool {
     if handle_task_panel_key(app, key) {
         return true;

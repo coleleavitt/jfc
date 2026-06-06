@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use super::navigation::{scan_path_refs, user_prompts};
 use super::*;
 use crate::app::App;
-use crate::runtime::{AppEvent, ToolEvent};
+use crate::runtime::{EngineEvent, ToolEvent};
 use crate::types::*;
 use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 
@@ -70,8 +70,8 @@ fn test_app_with_input(input: &str, wrap_width: usize) -> App {
 }
 
 fn channel() -> (
-    tokio::sync::mpsc::Sender<AppEvent>,
-    tokio::sync::mpsc::Receiver<AppEvent>,
+    tokio::sync::mpsc::Sender<EngineEvent>,
+    tokio::sync::mpsc::Receiver<EngineEvent>,
 ) {
     tokio::sync::mpsc::channel(1024)
 }
@@ -404,7 +404,7 @@ async fn approval_y_does_not_emit_all_complete_before_tool_finishes_robust() {
 
     let event = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await;
     assert!(
-        !matches!(event, Ok(Some(AppEvent::Tool(ToolEvent::AllComplete)))),
+        !matches!(event, Ok(Some(EngineEvent::Tool(ToolEvent::AllComplete)))),
         "approval injected AllComplete before the dispatched tool completed"
     );
 }
@@ -433,7 +433,7 @@ async fn approval_n_last_tool_emits_all_complete_robust() {
     let event = rx.recv().await;
     assert!(matches!(
         event,
-        Some(AppEvent::Tool(ToolEvent::AllComplete))
+        Some(EngineEvent::Tool(ToolEvent::AllComplete))
     ));
 }
 
@@ -465,7 +465,7 @@ async fn approval_a_batches_following_auto_approved_tools_robust() {
 
     let event = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await;
     assert!(
-        !matches!(event, Ok(Some(AppEvent::Tool(ToolEvent::AllComplete)))),
+        !matches!(event, Ok(Some(EngineEvent::Tool(ToolEvent::AllComplete)))),
         "auto-approved queued tools were dispatched as a separate early-completing batch"
     );
 }
@@ -518,7 +518,7 @@ async fn approval_esc_clears_queue_robust() {
     let event = rx.recv().await;
     assert!(matches!(
         event,
-        Some(AppEvent::Tool(ToolEvent::AllComplete))
+        Some(EngineEvent::Tool(ToolEvent::AllComplete))
     ));
 }
 
@@ -552,7 +552,7 @@ async fn approval_ctrl_c_interrupts_instead_of_being_swallowed_robust() {
     );
     assert!(matches!(
         rx.recv().await,
-        Some(AppEvent::Tool(ToolEvent::AllComplete))
+        Some(EngineEvent::Tool(ToolEvent::AllComplete))
     ));
 }
 
@@ -571,7 +571,7 @@ async fn remote_approval_matches_current_tool_id_normal() {
     let event = rx.recv().await;
     assert!(matches!(
         event,
-        Some(AppEvent::Tool(ToolEvent::SetInProgressToolUseIds { action, ids }))
+        Some(EngineEvent::Tool(ToolEvent::SetInProgressToolUseIds { action, ids }))
             if action == "add" && ids == vec!["t1".to_owned()]
     ));
 }

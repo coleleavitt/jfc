@@ -186,8 +186,8 @@ pub enum CompactResult {
 /// argument is the *cumulative* summary length so far (in chars) — the
 /// renderer divides by 4 for a token estimate. Boxed because the
 /// compact path is async + `Send`. Using a callback rather than
-/// hard-coding `Sender<AppEvent>` keeps `compact.rs` free of
-/// `runtime::AppEvent` so the test build doesn't need the full app.
+/// hard-coding `Sender<EngineEvent>` keeps `compact.rs` free of
+/// `runtime::EngineEvent` so the test build doesn't need the full app.
 pub type CompactProgressCb = Box<dyn Fn(u64) + Send + Sync>;
 
 /// Whether an error string indicates the provider doesn't support the

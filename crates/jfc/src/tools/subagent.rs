@@ -189,7 +189,7 @@ pub async fn execute_task(
     task_input: &crate::types::TaskInput,
     provider: &dyn jfc_provider::Provider,
     model_id: jfc_provider::ModelId,
-    tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>,
+    tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>>,
     task_id: Option<&str>,
     agent_def: Option<&crate::agents::AgentDef>,
     cwd_override: Option<PathBuf>,
@@ -226,7 +226,7 @@ async fn execute_task_inner(
     task_input: &crate::types::TaskInput,
     provider: &dyn jfc_provider::Provider,
     model_id: jfc_provider::ModelId,
-    tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>,
+    tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>>,
     task_id: Option<&str>,
     agent_def: Option<&crate::agents::AgentDef>,
     cwd_override: Option<PathBuf>,
@@ -299,7 +299,7 @@ async fn execute_task_inner(
     // Claude Code's `toolUseCount` / `cumulativeOutputTokens` fields.
     let mut total_tool_uses: u32 = 0;
     let started_at = std::time::Instant::now();
-    let emit_progress = |tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>,
+    let emit_progress = |tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>>,
                          id: Option<&str>,
                          last_tool: Option<String>,
                          tool_use_count: Option<u32>,
@@ -309,7 +309,7 @@ async fn execute_task_inner(
                          output_tokens: Option<u64>| {
         if let (Some(tx), Some(id)) = (tx, id) {
             // TaskProgress is non-critical; the next progress update supersedes this one.
-            let _ = tx.try_send(crate::runtime::AppEvent::Task(
+            let _ = tx.try_send(crate::runtime::EngineEvent::Task(
                 crate::runtime::TaskEvent::Progress {
                     task_id: crate::ids::TaskId::from(id),
                     last_tool,
@@ -475,7 +475,7 @@ async fn execute_task_inner(
                         // sees the subagent's prose stream live.
                         if let (Some(tx), Some(id)) = (tx, task_id) {
                             let _ = tx
-                                .send(crate::runtime::AppEvent::Task(
+                                .send(crate::runtime::EngineEvent::Task(
                                     crate::runtime::TaskEvent::AgentChunk {
                                         task_id: crate::ids::TaskId::from(id),
                                         text: delta.clone(),

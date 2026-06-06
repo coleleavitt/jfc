@@ -1,7 +1,7 @@
 use tokio::sync::mpsc;
 
 use crate::app::App;
-use crate::runtime::AppEvent;
+use crate::runtime::EngineEvent;
 use crate::types::ChatMessage;
 
 // /dream — memory consolidation
@@ -15,7 +15,7 @@ use crate::types::ChatMessage;
 pub(super) async fn handle_dream_command(
     app: &mut App,
     arg: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let nightly = arg.trim().eq_ignore_ascii_case("nightly");
     let echo = if nightly {
@@ -167,7 +167,7 @@ fn interval_to_cron(interval: &str) -> String {
 pub(super) async fn handle_loop_command(
     app: &mut App,
     args: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     if args.trim().is_empty() {
         app.messages.push(ChatMessage::user("/loop".to_owned()));
@@ -298,7 +298,7 @@ Then immediately execute the prompt now (do not wait for the first cron fire)."
 pub(super) async fn handle_schedule_command(
     app: &mut App,
     arg: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let arg = arg.trim();
     let (echo, prompt, status_msg) = if arg.is_empty() || arg == "list" {

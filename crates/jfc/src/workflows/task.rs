@@ -2,7 +2,7 @@
 //!
 //! `WorkflowTaskState` is the canonical in-memory record for a running or
 //! completed workflow.  It is stored on `BackgroundTask.workflow_progress` and
-//! updated by `AppEvent::WorkflowProgress` handlers in the event loop.
+//! updated by `EngineEvent::WorkflowProgress` handlers in the event loop.
 //!
 //! The types here are fully implemented but some are not yet wired into the
 //! event loop (pending t154/t156). Suppress dead_code until the wiring lands.
@@ -78,7 +78,7 @@ impl std::fmt::Display for AgentStatus {
 /// Live progress snapshot for a workflow background task.
 ///
 /// Stored on `BackgroundTask::workflow_progress` and updated incrementally
-/// via `AppEvent::WorkflowProgress` events emitted by the runner.
+/// via `EngineEvent::WorkflowProgress` events emitted by the runner.
 #[derive(Debug, Clone)]
 pub struct WorkflowTaskProgress {
     pub run_id: String,

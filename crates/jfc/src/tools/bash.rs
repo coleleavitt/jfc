@@ -15,7 +15,7 @@ use super::safe_tools::{
 };
 use super::{ExecutionResult, ToolProvenance, ToolSource};
 
-type ProgressSink = Option<(String, tokio::sync::mpsc::Sender<crate::runtime::AppEvent>)>;
+type ProgressSink = Option<(String, tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>)>;
 
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_FOREGROUND_BUDGET_MS: u64 = 15_000;
@@ -522,7 +522,7 @@ async fn copy_pipe_to_output<R>(
         if let Some((tool_id, tx)) = &progress {
             for line in safe.lines() {
                 let _ = tx
-                    .send(crate::runtime::AppEvent::Tool(
+                    .send(crate::runtime::EngineEvent::Tool(
                         crate::runtime::ToolEvent::OutputChunk {
                             tool_id: crate::ids::ToolId::from(tool_id.clone()),
                             chunk: line.to_owned(),

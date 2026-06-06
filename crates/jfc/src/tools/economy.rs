@@ -115,7 +115,7 @@ pub(crate) struct EconomyAgentInvoker {
     /// each text delta, and TaskCompleted/Failed at the end. This is
     /// what makes bounty subagents show up in the same fan UI / ctrl+X
     /// panel as regular Task-tool subagents. None is fine for tests.
-    event_tx: Option<tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>,
+    event_tx: Option<tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>>,
 }
 
 impl EconomyAgentInvoker {
@@ -164,7 +164,7 @@ impl EconomyAgentInvoker {
             match ev {
                 Ok(StreamEvent::TextDelta { delta, .. }) => {
                     if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
-                        tx.send(crate::runtime::AppEvent::Task(
+                        tx.send(crate::runtime::EngineEvent::Task(
                             crate::runtime::TaskEvent::AgentChunk {
                                 task_id: crate::ids::TaskId::from(id),
                                 text: delta.clone(),
@@ -189,7 +189,7 @@ impl EconomyAgentInvoker {
                     output_tokens = o as u64;
                     if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
                         // TaskProgress is non-critical; next progress update supersedes.
-                        tx.try_send(crate::runtime::AppEvent::Task(
+                        tx.try_send(crate::runtime::EngineEvent::Task(
                             crate::runtime::TaskEvent::Progress {
                                 task_id: crate::ids::TaskId::from(id),
                                 last_tool: None,
@@ -228,7 +228,7 @@ impl EconomyAgentInvoker {
         if let Some(tx) = &self.event_tx {
             send_critical(
                 tx,
-                crate::runtime::AppEvent::Task(crate::runtime::TaskEvent::Started {
+                crate::runtime::EngineEvent::Task(crate::runtime::TaskEvent::Started {
                     task_id: crate::ids::TaskId::from(task_id),
                     description: description.to_owned(),
                     // Report the solver/validator model so the
@@ -255,7 +255,7 @@ impl EconomyAgentInvoker {
         if let Some(tx) = &self.event_tx {
             send_critical(
                 tx,
-                crate::runtime::AppEvent::Task(crate::runtime::TaskEvent::Completed {
+                crate::runtime::EngineEvent::Task(crate::runtime::TaskEvent::Completed {
                     task_id: crate::ids::TaskId::from(task_id),
                     summary: summary.to_owned(),
                     elapsed_ms,
@@ -268,7 +268,7 @@ impl EconomyAgentInvoker {
         if let Some(tx) = &self.event_tx {
             send_critical(
                 tx,
-                crate::runtime::AppEvent::Task(crate::runtime::TaskEvent::Failed {
+                crate::runtime::EngineEvent::Task(crate::runtime::TaskEvent::Failed {
                     task_id: crate::ids::TaskId::from(task_id),
                     error: error.to_owned(),
                 }),

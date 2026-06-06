@@ -934,11 +934,11 @@ pub async fn execute_tool(
             // Hand the plan off to the UI thread so all permission-mode
             // mutations stay on a single task. The model's tool result
             // is the success acknowledgment — the actual mode flip
-            // happens when the main loop drains `UiEvent::ExitPlanModeRequested`.
+            // happens when the main loop drains `FrontendEvent::PlanReview`.
             if let Some(tx) = snapshot_event_sender() {
                 _ = tx
-                    .send(crate::runtime::AppEvent::Ui(
-                        crate::runtime::UiEvent::ExitPlanModeRequested { plan: plan.clone() },
+                    .send(crate::runtime::EngineEvent::Frontend(
+                        crate::runtime::FrontendEvent::PlanReview { plan: plan.clone() },
                     ))
                     .await;
                 tracing::info!(
@@ -955,7 +955,7 @@ pub async fn execute_tool(
             } else {
                 tracing::warn!(
                     target: "jfc::tools::plan_mode",
-                    "ExitPlanMode called but no AppEvent sender registered"
+                    "ExitPlanMode called but no EngineEvent sender registered"
                 );
                 ExecutionResult::failure(
                     "ExitPlanMode failed: UI event channel unavailable.".to_string(),

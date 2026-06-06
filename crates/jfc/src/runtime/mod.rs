@@ -16,10 +16,10 @@ pub(crate) use background::{
     restore_persistent_background_agents, sync_detached_background_tasks_from_daemon,
 };
 pub use events::{
-    APP_EVENT_BUFFER, AppEvent, CompactionEvent, EventReceiver, EventSender, GoalEvent,
-    ProviderEvent, StreamEvent, StreamLifecyclePhase, StreamLifecycleStatus, StreamRequestMetadata,
-    StreamRequestOverrides, StreamToolChoice, TaskEvent, TeamEvent, ToolEvent, UiEvent,
-    WorkflowProgressEvent, send_critical,
+    APP_EVENT_BUFFER, AppEvent, CompactionEvent, ControlEvent, EngineEvent, EventReceiver,
+    EventSender, FrontendEvent, GoalEvent, ProviderEvent, StreamEvent, StreamLifecyclePhase,
+    StreamLifecycleStatus, StreamRequestMetadata, StreamRequestOverrides, StreamToolChoice,
+    TaskEvent, TeamEvent, ToolEvent, UiEvent, WorkflowProgressEvent, send_critical,
 };
 pub use execution::{ExecutionResult, ToolProvenance, ToolSource};
 pub(crate) use factory::{factory_mode_enabled, maybe_continue_task_factory};

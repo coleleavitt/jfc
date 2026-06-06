@@ -43,7 +43,7 @@ pub struct WorkflowRunConfig {
     /// Cancellation for the whole workflow (ESC×2 / TaskStop).
     pub cancel: CancellationToken,
     /// Event sender for live UI progress (subagent chunks, task lifecycle).
-    pub tx: Option<mpsc::Sender<crate::runtime::AppEvent>>,
+    pub tx: Option<mpsc::Sender<crate::runtime::EngineEvent>>,
     /// The workflow's own background task id (for progress routing).
     pub workflow_task_id: String,
     /// Nesting depth (0 = top-level). Max depth = 3.
@@ -77,7 +77,7 @@ struct Orchestrator {
     cache: Arc<Option<JournalCache>>,
     provider: Arc<dyn Provider>,
     model: ModelId,
-    tx: Option<mpsc::Sender<crate::runtime::AppEvent>>,
+    tx: Option<mpsc::Sender<crate::runtime::EngineEvent>>,
     workflow_task_id: String,
     cancel: CancellationToken,
     agent_tasks: tokio::task::JoinSet<()>,
@@ -99,7 +99,7 @@ impl Orchestrator {
             let tx = tx.clone();
             tokio::spawn(async move {
                 let _ = tx
-                    .send(crate::runtime::AppEvent::WorkflowProgress(ev))
+                    .send(crate::runtime::EngineEvent::WorkflowProgress(ev))
                     .await;
             });
         }
@@ -469,7 +469,7 @@ async fn run_one_agent(
     key: String,
     provider: Arc<dyn Provider>,
     model: ModelId,
-    tx: Option<mpsc::Sender<crate::runtime::AppEvent>>,
+    tx: Option<mpsc::Sender<crate::runtime::EngineEvent>>,
     journal_writer: Arc<JournalWriter>,
     workflow_task_id: String,
     cancel: CancellationToken,
@@ -548,7 +548,7 @@ async fn run_one_agent(
             let tx = tx.clone();
             tokio::spawn(async move {
                 let _ = tx
-                    .send(crate::runtime::AppEvent::WorkflowProgress(
+                    .send(crate::runtime::EngineEvent::WorkflowProgress(
                         crate::runtime::WorkflowProgressEvent::AgentFailed {
                             task_id,
                             index,
@@ -584,7 +584,7 @@ async fn run_one_agent(
         let tx = tx.clone();
         tokio::spawn(async move {
             let _ = tx
-                .send(crate::runtime::AppEvent::WorkflowProgress(
+                .send(crate::runtime::EngineEvent::WorkflowProgress(
                     crate::runtime::WorkflowProgressEvent::AgentDone { task_id, index },
                 ))
                 .await;

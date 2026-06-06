@@ -11,8 +11,8 @@ pub(super) async fn execute_enter_plan_mode(reason: &str) -> ExecutionResult {
     };
     let reason = reason.to_owned();
     if let Err(e) = tx
-        .send(crate::runtime::AppEvent::Ui(
-            crate::runtime::UiEvent::EnterPlanModeRequested {
+        .send(crate::runtime::EngineEvent::Frontend(
+            crate::runtime::FrontendEvent::PlanModeEntered {
                 reason: reason.clone(),
             },
         ))

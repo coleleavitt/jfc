@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
-use crate::runtime::{AppEvent, ProviderEvent};
+use crate::runtime::{EngineEvent, ProviderEvent};
 
 const SUMMARY_URL: &str = "https://status.claude.com/api/v2/summary.json";
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
@@ -107,7 +107,7 @@ impl ClaudeStatusSnapshot {
     }
 }
 
-pub fn spawn_status_poll(tx: mpsc::Sender<AppEvent>) {
+pub fn spawn_status_poll(tx: mpsc::Sender<EngineEvent>) {
     if matches!(
         std::env::var("JFC_DISABLE_CLAUDE_STATUS").as_deref(),
         Ok("1") | Ok("true")
@@ -124,7 +124,7 @@ pub fn spawn_status_poll(tx: mpsc::Sender<AppEvent>) {
             Ok(client) => client,
             Err(err) => {
                 let _ = tx
-                    .send(AppEvent::Provider(ProviderEvent::ClaudeStatusUpdated(
+                    .send(EngineEvent::Provider(ProviderEvent::ClaudeStatusUpdated(
                         ClaudeStatusUpdate {
                             snapshot: None,
                             error: Some(format!("status client: {err}")),
@@ -148,7 +148,7 @@ pub fn spawn_status_poll(tx: mpsc::Sender<AppEvent>) {
             };
 
             if tx
-                .send(AppEvent::Provider(ProviderEvent::ClaudeStatusUpdated(
+                .send(EngineEvent::Provider(ProviderEvent::ClaudeStatusUpdated(
                     update,
                 )))
                 .await
