@@ -4,7 +4,7 @@
 //!
 //! DSL queries today are pure functions of `(query_text, graph_state)` —
 //! `fn("foo") | callers | depth 3` re-runs from scratch on every call,
-//! even when the graph hasn't changed. For interactive use (jfc-ui
+//! even when the graph hasn't changed. For interactive use (jfc
 //! sidebars, repeated tool invocations) the same query is run hundreds
 //! of times against an unchanging graph.
 //!

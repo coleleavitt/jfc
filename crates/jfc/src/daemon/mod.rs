@@ -3,7 +3,7 @@
 //! Core daemon logic (cron, pid, state, logs, registry, reconcile, runtime,
 //! worker spawn) lives in the `jfc-daemon` crate. This module re-exports
 //! everything and adds the worker execution entry point that depends on
-//! the full jfc-ui runtime (providers, tools, worktrees).
+//! the full jfc runtime (providers, tools, worktrees).
 
 pub mod worker;
 

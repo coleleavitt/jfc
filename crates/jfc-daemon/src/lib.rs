@@ -2,7 +2,7 @@
 //!
 //! This crate handles daemon lifecycle, cron scheduling, PID management,
 //! background agent state persistence, and log management. The actual
-//! agent execution (providers, tools, worktrees) lives in `jfc-ui` which
+//! agent execution (providers, tools, worktrees) lives in `jfc` which
 //! spawns worker processes that call back into the runtime.
 
 pub mod control;

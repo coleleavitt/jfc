@@ -1,6 +1,6 @@
 //! Re-export from `jfc-config`. The config schema and loading logic now live
 //! in the standalone `jfc-config` crate; this module re-exports everything
-//! and adds the thin wrappers that depend on jfc-ui–specific types.
+//! and adds the thin wrappers that depend on jfc–specific types.
 
 pub use jfc_config::*;
 

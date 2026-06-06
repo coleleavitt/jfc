@@ -117,7 +117,7 @@ impl MarketReport {
 
 // ─── Tool Input/Output Types ─────────────────────────────────────────────────
 
-/// Tool input for `ToolKind::PostBounty` (consumed by jfc-ui).
+/// Tool input for `ToolKind::PostBounty` (consumed by jfc).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostBountyInput {
     pub description: String,
@@ -150,7 +150,7 @@ pub struct MarketStatusOutput {
 
 /// Trait for swarm/mailbox integration (dependency inversion).
 ///
-/// Defined in jfc-economy, implemented by jfc-ui. This allows the economy
+/// Defined in jfc-economy, implemented by jfc. This allows the economy
 /// layer to request infrastructure operations without depending on the UI crate.
 ///
 /// `create_worktree` / `remove_worktree` are async because the underlying
@@ -223,8 +223,8 @@ pub struct CycleOutcome {
 /// Trait that turns a solver / validator prompt into a real LLM call.
 ///
 /// Defined in jfc-economy so the orchestrator can drive a full bounty
-/// cycle without depending on jfc-ui's provider stack. Implemented in
-/// jfc-ui by `tools::EconomyAgentInvoker` which forwards to
+/// cycle without depending on jfc's provider stack. Implemented in
+/// jfc by `tools::EconomyAgentInvoker` which forwards to
 /// `provider::stream`. Async because every implementation will hit
 /// the network (LLM API or local proxy).
 #[async_trait::async_trait]

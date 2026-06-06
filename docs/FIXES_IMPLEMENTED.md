@@ -191,7 +191,7 @@ All crates compile successfully:
 
 ```
 ✓ jfc-core
-✓ jfc-ui
+✓ jfc
 ✓ jfc-provider
 ✓ jfc-providers
 ✓ jfc-tools
@@ -225,7 +225,7 @@ All crates compile successfully:
 
 ```bash
 ✓ cargo build -p jfc-core
-✓ cargo build -p jfc-ui
+✓ cargo build -p jfc
 ✓ cargo build (all crates)
 ```
 
@@ -236,8 +236,8 @@ All crates compile successfully:
 | File | Lines | Changes |
 |------|-------|---------|
 | `crates/jfc-core/src/tool_input.rs` | 1850 | +79 new lines (parser, serializer, test) |
-| `crates/jfc-ui/src/tools/dispatch.rs` | 1195 | +8 modified lines (logic) |
-| `crates/jfc-ui/src/tools/scratchpad.rs` | 130 | +74 new lines (timeout logic) |
+| `crates/jfc/src/tools/dispatch.rs` | 1195 | +8 modified lines (logic) |
+| `crates/jfc/src/tools/scratchpad.rs` | 130 | +74 new lines (timeout logic) |
 
 **Total LOC Added**: 161 lines  
 **Total LOC Modified**: 8 lines  

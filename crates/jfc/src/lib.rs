@@ -1,5 +1,5 @@
-//! Library facet of `jfc-ui` — exposes the small set of in-process modules
-//! that integration tests (under `crates/jfc-ui/tests/`) need to reach.
+//! Library facet of `jfc` — exposes the small set of in-process modules
+//! that integration tests (under `crates/jfc/tests/`) need to reach.
 //!
 //! The bulk of the crate is still the `jfc` binary (see `src/main.rs`); this
 //! library is intentionally minimal and re-uses the *same* source files via

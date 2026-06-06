@@ -16,7 +16,7 @@ pub struct ChangedFile {
 /// The result of running one attached test command against the branch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestRun {
-    /// The exact command line that was executed (e.g. `cargo test -p jfc-ui`).
+    /// The exact command line that was executed (e.g. `cargo test -p jfc`).
     pub command: String,
     /// Process exit code. `0` is the only passing value.
     pub exit_code: i32,

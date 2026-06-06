@@ -1998,11 +1998,11 @@ mod helper_tests {
 
     #[test]
     fn looks_like_difftastic_output_accepts_side_by_side_headers_robust() {
-        let dft = "crates/jfc-ui/src/agents.rs --- 1/5 --- Rust\n\
+        let dft = "crates/jfc/src/agents.rs --- 1/5 --- Rust\n\
                    182 pub fn load_skills(      185 pub fn load_skills(\n";
         assert!(looks_like_difftastic_output(dft));
 
-        let fallback = "crates/jfc-ui/src/providers/anthropic_accounts.rs --- Text (exceeded DFT_GRAPH_LIMIT)\n\
+        let fallback = "crates/jfc/src/providers/anthropic_accounts.rs --- Text (exceeded DFT_GRAPH_LIMIT)\n\
                         10 //! - Track per-account  10 //! - Track per-account\n";
         assert!(looks_like_difftastic_output(fallback));
         assert!(!looks_like_difftastic_output(
@@ -2012,10 +2012,10 @@ mod helper_tests {
 
     #[test]
     fn difftastic_git_diff_renders_as_preformatted_output_not_file_chunks_robust() {
-        let dft = "crates/jfc-ui/src/providers/anthropic_accounts.rs --- 1/7 --- Text (exceeded DFT_GRAPH_LIMIT)\n\
+        let dft = "crates/jfc/src/providers/anthropic_accounts.rs --- 1/7 --- Text (exceeded DFT_GRAPH_LIMIT)\n\
 10 //! - Track per-account runtime st  10 //! - Track per-account runtime st\n\
 .. ate in memory: rate-limit cooldo  .. ate in memory: rate-limit cooldo\n\
-fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
+fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
         let lines = produce_git_diff_output_lines(
             dft,
             "",
@@ -2087,10 +2087,10 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
     /// trailing reset. Reproduces the bytes that landed in the chunked
     /// renderer in the bug screenshots.
     const ANSI_GIT_DIFF: &str = concat!(
-        "\u{1b}[1mdiff --git a/crates/jfc-ui/src/render.rs b/crates/jfc-ui/src/render.rs\u{1b}[m\n",
+        "\u{1b}[1mdiff --git a/crates/jfc/src/render.rs b/crates/jfc/src/render.rs\u{1b}[m\n",
         "\u{1b}[1mindex 1111111..2222222 100644\u{1b}[m\n",
-        "\u{1b}[1m--- a/crates/jfc-ui/src/render.rs\u{1b}[m\n",
-        "\u{1b}[1m+++ b/crates/jfc-ui/src/render.rs\u{1b}[m\n",
+        "\u{1b}[1m--- a/crates/jfc/src/render.rs\u{1b}[m\n",
+        "\u{1b}[1m+++ b/crates/jfc/src/render.rs\u{1b}[m\n",
         "\u{1b}[36m@@ -4624,4 +4624,4 @@\u{1b}[m fn render_choice_list(\n",
         "\u{1b}[31m-    let theme = Theme::dark();\u{1b}[m\n",
         "\u{1b}[31m-    let t = &theme;\u{1b}[m\n",
@@ -2104,7 +2104,7 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
     fn render_bash_git_diff(stdout: &str, expanded: bool) -> Vec<ratatui::text::Line<'static>> {
         let mut tool = dummy_tool(
             ToolInput::Bash {
-                command: "git diff crates/jfc-ui/src/render.rs".into(),
+                command: "git diff crates/jfc/src/render.rs".into(),
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
@@ -2185,7 +2185,7 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
         let rendered = lines_to_plain(&lines);
 
         for must_have in [
-            "diff --git a/crates/jfc-ui/src/render.rs",
+            "diff --git a/crates/jfc/src/render.rs",
             "@@ -4624,4 +4624,4 @@",
         ] {
             assert!(
@@ -2252,8 +2252,8 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
 
     #[test]
     fn git_diff_stat_colours_plus_and_minus_graph() {
-        let stat = " crates/jfc-ui/src/daemon.rs | 1076 ++++++++++++++++++++++++----\n\
-                    crates/jfc-ui/src/main.rs   |   88 ++-\n\
+        let stat = " crates/jfc/src/daemon.rs | 1076 ++++++++++++++++++++++++----\n\
+                    crates/jfc/src/main.rs   |   88 ++-\n\
                     2 files changed, 1100 insertions(+), 64 deletions(-)\n";
         let lines = render_bash_git_stat(stat, true);
         let rendered = lines_to_plain(&lines);

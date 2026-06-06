@@ -24,9 +24,9 @@ User Input
 [Tracing span: `stream{model=..., messages=N, tools=M}`]
 ```
 
-**Key Entry**: `jfc::stream::stream_response()` in `crates/jfc-ui/src/stream/mod.rs`
+**Key Entry**: `jfc::stream::stream_response()` in `crates/jfc/src/stream/mod.rs`
 
-**System Prompt Composition** (`crates/jfc-ui/src/stream/mod.rs`):
+**System Prompt Composition** (`crates/jfc/src/stream/mod.rs`):
 - Skills index (loaded from `.claude/skills/`)
 - Agent catalog (Explore, Plan, general-purpose, orchestrator, verification)
 - CLAUDE.md hierarchy (project conventions)
@@ -53,7 +53,7 @@ User Input
 
 ### 2. SSE Event Reception & Parsing
 
-**Provider**: `crates/jfc-ui/src/provider/anthropic_sse.rs`
+**Provider**: `crates/jfc/src/provider/anthropic_sse.rs`
 
 Events received:
 - `message_start` → message_id, model metadata
@@ -77,7 +77,7 @@ message_delta stop_reason=Some("tool_use") input_tokens=3 output_tokens=191 ...
 
 ### 3. Tool Call Discovery
 
-**Location**: `crates/jfc-ui/src/stream/live_events.rs`
+**Location**: `crates/jfc/src/stream/live_events.rs`
 
 As tool calls arrive during streaming:
 
@@ -97,7 +97,7 @@ Tool calls are **not executed immediately**. Instead they are queued pending app
 
 ### 4. Tool Validation & Approval Gate
 
-**Location**: `crates/jfc-ui/src/ui/tool.rs`
+**Location**: `crates/jfc/src/ui/tool.rs`
 
 When a tool arrives during streaming:
 
@@ -123,7 +123,7 @@ pending_total=2
 
 ### 5. Stream Completion & Tool Dispatch
 
-**Location**: `crates/jfc-ui/src/stream/mod.rs` (`stream_done()`)
+**Location**: `crates/jfc/src/stream/mod.rs` (`stream_done()`)
 
 When message_stop or tool_use stop_reason received:
 
@@ -150,7 +150,7 @@ scheduled tool calls into batches total_calls=2 batch_count=2 parallel_count=1 s
 
 ### 6. Tool Execution
 
-**Location**: `crates/jfc-ui/src/tools/dispatch.rs` (`execute_tool()`)
+**Location**: `crates/jfc/src/tools/dispatch.rs` (`execute_tool()`)
 
 ```rust
 pub async fn execute_tool(
@@ -480,10 +480,10 @@ INFO jfc::scheduler: tool completed tool_id=... kind=Bash outcome=Failed output_
 
 ## References
 
-- **Streaming entry**: `crates/jfc-ui/src/stream/mod.rs`
-- **Tool execution**: `crates/jfc-ui/src/tools/dispatch.rs`
+- **Streaming entry**: `crates/jfc/src/stream/mod.rs`
+- **Tool execution**: `crates/jfc/src/tools/dispatch.rs`
 - **Tool input parsing**: `crates/jfc-core/src/tool_input.rs`
 - **Tool kind resolution**: `crates/jfc-core/src/tool_kind.rs`
-- **SSE events**: `crates/jfc-ui/src/provider/anthropic_sse.rs`
-- **Event routing**: `crates/jfc-ui/src/stream/live_events.rs`
-- **Session persistence**: `crates/jfc-ui/src/session/mod.rs`
+- **SSE events**: `crates/jfc/src/provider/anthropic_sse.rs`
+- **Event routing**: `crates/jfc/src/stream/live_events.rs`
+- **Session persistence**: `crates/jfc/src/session/mod.rs`

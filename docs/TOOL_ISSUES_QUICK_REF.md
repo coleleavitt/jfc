@@ -12,14 +12,14 @@
 ## Medium Priority
 
 ### 2. SendUserFile Fails on Partial Results
-- **File**: `crates/jfc-ui/src/tools/dispatch.rs` (SendUserFile handler)
+- **File**: `crates/jfc/src/tools/dispatch.rs` (SendUserFile handler)
 - **Issue**: Returns failure if ANY file missing, should allow partial success
 - **Observed**: Session 04:32:29, tool ID `toolu_0126k2JDprAJGRbi7MPopmjY`
 - **Effort**: 1 hour
 - **Status**: OBSERVED IN LOGS
 
 ### 3. Scratchpad Lock No Timeout
-- **File**: `crates/jfc-ui/src/tools/scratchpad.rs:14-47`
+- **File**: `crates/jfc/src/tools/scratchpad.rs:14-47`
 - **Issue**: `libc::flock(LOCK_EX)` blocks forever, no timeout
 - **Risk**: Agent deadlock if another agent freezes with lock
 - **Effort**: 1 hour

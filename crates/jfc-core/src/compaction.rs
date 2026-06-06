@@ -15,7 +15,7 @@
 //!
 //! Both are pure: token costs and the summary text come from the caller, the
 //! retention decision is computed here and tested exactly. This is the policy
-//! layer; the jfc-ui runtime compaction wiring consumes it.
+//! layer; the jfc runtime compaction wiring consumes it.
 
 /// One turn's identity + token cost, newest-last (the natural transcript
 /// order). `id` is opaque (a message index, hash, …) so the caller can map the

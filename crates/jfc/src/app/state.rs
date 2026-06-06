@@ -16,7 +16,10 @@ use crate::auto_mode::AutoModeConfig;
 use crate::context::{ReadDedupCache, ToolContext};
 use crate::query::QueryCache;
 use crate::render_cache::RenderCache;
-use crate::runtime::{StreamLifecycleStatus, StreamRequestMetadata};
+use crate::runtime::{
+    DEFERRED_TOOL_USES_CAP, DeferredToolUse, MessageQueue, StreamLifecycleStatus,
+    StreamRequestMetadata, TOOL_USE_SUMMARIES_CAP, ToolUseSummary,
+};
 use crate::slate::SlateRouter;
 use crate::theme::Theme;
 use crate::types::*;
@@ -81,166 +84,6 @@ impl PromptSearch {
         if self.selected >= self.results.len() {
             self.selected = self.results.len().saturating_sub(1);
         }
-    }
-}
-
-/// Priority levels for the message queue. Higher priority messages
-/// are drained first. Mirrors CC 2.1.144's `getCommandsByMaxPriority`
-/// which supports "now" (jump the queue), "next" (drain between tool
-/// batches), and implicit "later" (drain at turn end).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum QueuePriority {
-    /// Drain at end of turn (default for normal user submissions).
-    Later = 0,
-    /// Drain between tool batches (mid-loop steering).
-    Next = 1,
-    /// Immediate — jump the queue, used by interrupt-on-submit.
-    Now = 2,
-}
-
-#[derive(Debug, Clone)]
-pub struct QueuedPrompt {
-    pub text: String,
-    pub is_meta: bool,
-    /// Priority level controlling when this prompt is drained.
-    pub priority: QueuePriority,
-    /// Image/PDF attachments captured at queue time. If the user pasted
-    /// an image and then typed a prompt while another turn was already
-    /// streaming, the referenced `[Image #N]` attachments are extracted
-    /// from `app.pasted_images` and pinned to THIS prompt so they
-    /// attach atomically when `drain_queued_prompts` promotes the entry.
-    pub attachments: Vec<crate::attachments::Attachment>,
-}
-
-#[derive(Debug, Clone)]
-pub struct DeferredToolUse {
-    pub id: String,
-    pub name: String,
-    pub input_preview: String,
-    pub reason: String,
-    pub queued_at: Instant,
-}
-
-#[derive(Debug, Clone)]
-pub struct ToolUseSummary {
-    pub summary: String,
-    pub preceding_tool_use_ids: Vec<String>,
-    pub created_at: Instant,
-}
-
-/// Priority-based message queue wrapping a VecDeque with priority semantics.
-/// Provides CC 2.1.144-style operations: enqueue with priority, dequeue by
-/// max priority, filter, pop editable, etc.
-#[derive(Debug, Clone, Default)]
-pub struct MessageQueue {
-    entries: std::collections::VecDeque<QueuedPrompt>,
-}
-
-impl MessageQueue {
-    pub fn new() -> Self {
-        Self {
-            entries: std::collections::VecDeque::new(),
-        }
-    }
-
-    /// Enqueue a prompt with the given priority.
-    pub fn push(&mut self, prompt: QueuedPrompt) {
-        self.entries.push_back(prompt);
-    }
-
-    /// Convenience: push with Later priority (default for user submissions).
-    pub fn push_later(
-        &mut self,
-        text: String,
-        is_meta: bool,
-        attachments: Vec<crate::attachments::Attachment>,
-    ) {
-        self.entries.push_back(QueuedPrompt {
-            text,
-            is_meta,
-            priority: QueuePriority::Later,
-            attachments,
-        });
-    }
-
-    /// Dequeue the highest-priority entry. Among same-priority entries,
-    /// FIFO order is preserved (front of the deque wins).
-    pub fn pop_max_priority(&mut self) -> Option<QueuedPrompt> {
-        if self.entries.is_empty() {
-            return None;
-        }
-        let max_idx = self
-            .entries
-            .iter()
-            .enumerate()
-            .max_by_key(|(_, e)| e.priority)
-            .map(|(i, _)| i)?;
-        self.entries.remove(max_idx)
-    }
-
-    /// Dequeue entries matching a minimum priority level (inclusive).
-    /// Returns entries sorted highest-priority-first, FIFO within same level.
-    pub fn drain_at_least(&mut self, min_priority: QueuePriority) -> Vec<QueuedPrompt> {
-        let mut drained = Vec::new();
-        let mut remaining = std::collections::VecDeque::new();
-        for entry in self.entries.drain(..) {
-            if entry.priority >= min_priority {
-                drained.push(entry);
-            } else {
-                remaining.push_back(entry);
-            }
-        }
-        self.entries = remaining;
-        // Stable sort: highest priority first, FIFO within same level
-        drained.sort_by_key(|b| std::cmp::Reverse(b.priority));
-        drained
-    }
-
-    /// Drain ALL entries (turn-end full drain), ordered highest-priority
-    /// first with FIFO preserved within a level. The previous implementation
-    /// drained in raw insertion order, which silently ignored the
-    /// `QueuePriority` of each entry — so a `Now`/`Next` steering prompt
-    /// queued behind older `Later` prompts would not jump ahead. With every
-    /// current caller enqueuing `Later`, the stable sort is a no-op; it makes
-    /// the priority levels actually take effect once callers start using them.
-    pub fn drain_all(&mut self) -> Vec<QueuedPrompt> {
-        let mut drained: Vec<QueuedPrompt> = self.entries.drain(..).collect();
-        drained.sort_by_key(|p| std::cmp::Reverse(p.priority));
-        drained
-    }
-
-    /// Pop the last entry (for Up-arrow "edit queued" feature).
-    pub fn pop_back(&mut self) -> Option<QueuedPrompt> {
-        self.entries.pop_back()
-    }
-
-    /// Pop the first entry (FIFO drain for legacy compat).
-    pub fn pop_front(&mut self) -> Option<QueuedPrompt> {
-        self.entries.pop_front()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-    pub fn get(&self, index: usize) -> Option<&QueuedPrompt> {
-        self.entries.get(index)
-    }
-
-    /// Iterate (for rendering, contains checks, etc.).
-    pub fn iter(&self) -> impl Iterator<Item = &QueuedPrompt> {
-        self.entries.iter()
-    }
-}
-
-// Support indexing for backward compat with tests that do `app.queued_prompts[0]`
-impl std::ops::Index<usize> for MessageQueue {
-    type Output = QueuedPrompt;
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.entries[index]
     }
 }
 
@@ -354,8 +197,6 @@ pub const STREAM_WATCHDOG_TIMEOUT_SECS: u64 = 360;
 /// sparkline. 32 datapoints fit comfortably in a 30-col-wide sidebar
 /// while still showing a meaningful trend.
 pub const TOKEN_HISTORY_CAP: usize = 32;
-pub const DEFERRED_TOOL_USES_CAP: usize = 64;
-pub const TOOL_USE_SUMMARIES_CAP: usize = 32;
 
 /// Maximum number of pending `<system-reminder>` bodies retained between
 /// user turns. Reminders come from filesystem events, MCP changes, and
@@ -1217,7 +1058,7 @@ pub struct App {
     /// Slate dynamic model router. `None` when `slate_enabled = false` in the
     /// loaded config (the common case). When `Some`, callers consult it on
     /// every user submission to pick a per-turn model — see
-    /// `slate::SlateRouter::route` and `crates/jfc-ui/src/slate.rs`.
+    /// `slate::SlateRouter::route` and `crates/jfc/src/slate.rs`.
     pub slate: Option<SlateRouter>,
     /// Advisor session for `/advisor <query>` (see `crate::advisor`).
     /// `None` until the user invokes `/advisor` for the first time —

@@ -63,14 +63,14 @@ fn build_worker_exe_from_workspace() -> std::io::Result<Option<PathBuf>> {
     let status = std::process::Command::new("cargo")
         .arg("build")
         .arg("-p")
-        .arg("jfc-ui")
+        .arg("jfc")
         .arg("--bin")
         .arg("jfc")
         .current_dir(&root)
         .status()?;
     if !status.success() {
         return Err(std::io::Error::other(format!(
-            "failed to rebuild background worker with `cargo build -p jfc-ui --bin jfc` from {} (exit {:?})",
+            "failed to rebuild background worker with `cargo build -p jfc --bin jfc` from {} (exit {:?})",
             root.display(),
             status.code()
         )));

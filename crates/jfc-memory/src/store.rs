@@ -756,7 +756,7 @@ fn conflict_path_for(local_dir: &Path, file_name: &str) -> PathBuf {
     }
 }
 
-// ─── Atomic write (inlined from jfc-ui/atomic_write.rs) ─────────────────────
+// ─── Atomic write (inlined from jfc/atomic_write.rs) ─────────────────────
 
 fn write_atomic_sync(path: &Path, content: &[u8]) -> std::io::Result<()> {
     use std::fs::{File, remove_file, rename};

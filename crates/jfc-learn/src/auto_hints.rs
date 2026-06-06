@@ -330,10 +330,10 @@ mod tests {
 
     #[test]
     fn extract_mentions_finds_path_and_symbol_normal() {
-        let q = "Please update crates/jfc-ui/src/main.rs and the StreamHandler module::Foo.";
+        let q = "Please update crates/jfc/src/main.rs and the StreamHandler module::Foo.";
         let mentions = extract_mentions(q);
         assert!(
-            mentions.iter().any(|m| m == "crates/jfc-ui/src/main.rs"),
+            mentions.iter().any(|m| m == "crates/jfc/src/main.rs"),
             "expected file path mention, got {:?}",
             mentions
         );
@@ -366,12 +366,12 @@ mod tests {
         fs::write(
             mem_dir.join("note.md"),
             "---\ntype: project\nscope: private\n---\n\
-             The streaming pipeline lives in crates/jfc-ui/src/stream/request.rs and \
+             The streaming pipeline lives in crates/jfc/src/stream/request.rs and \
              enforces tool_choice=auto.",
         )
         .unwrap();
 
-        let q = "what does crates/jfc-ui/src/stream/request.rs do for tool choice";
+        let q = "what does crates/jfc/src/stream/request.rs do for tool choice";
         let block = run_pre_turn_hint(q, tmp.path()).expect("expected a hint block");
         assert!(block.contains("<!-- recall:"));
         assert!(block.contains("note.md"));

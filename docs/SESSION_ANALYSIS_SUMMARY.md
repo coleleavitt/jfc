@@ -68,13 +68,13 @@ Session.save() with final message state
 
 | Layer | File | Purpose |
 |-------|------|---------|
-| **Entry** | `crates/jfc-ui/src/stream/mod.rs` | `stream_response()` orchestration |
-| **SSE** | `crates/jfc-ui/src/provider/anthropic_sse.rs` | Event parsing, chunking |
-| **Events** | `crates/jfc-ui/src/stream/live_events.rs` | Tool event buffering |
-| **Dispatch** | `crates/jfc-ui/src/tools/dispatch.rs` | Tool execution router (1195 lines) |
+| **Entry** | `crates/jfc/src/stream/mod.rs` | `stream_response()` orchestration |
+| **SSE** | `crates/jfc/src/provider/anthropic_sse.rs` | Event parsing, chunking |
+| **Events** | `crates/jfc/src/stream/live_events.rs` | Tool event buffering |
+| **Dispatch** | `crates/jfc/src/tools/dispatch.rs` | Tool execution router (1195 lines) |
 | **Input** | `crates/jfc-core/src/tool_input.rs` | Parameter parsing, validation |
-| **Session** | `crates/jfc-ui/src/session/mod.rs` | Message persistence |
-| **Scheduler** | `crates/jfc-ui/src/stream/orchestrator.rs` | Tool batching logic |
+| **Session** | `crates/jfc/src/session/mod.rs` | Message persistence |
+| **Scheduler** | `crates/jfc/src/stream/orchestrator.rs` | Tool batching logic |
 
 ---
 
@@ -376,7 +376,7 @@ Adaptive mode: NOT supported (Haiku < Sonnet)
 ### Core Files
 
 ```
-crates/jfc-ui/src/
+crates/jfc/src/
   ├── stream/
   │   ├── mod.rs (stream_response, main orchestration)
   │   ├── live_events.rs (tool event buffering)

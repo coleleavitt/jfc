@@ -73,7 +73,7 @@ Persistent memory system with:
 
 **Entry point:** `crates/jfc-learn/src/dreamer.rs`
 
-### 7. TUI Runtime (`jfc-ui`)
+### 7. TUI Runtime (`jfc`)
 Full async event loop with:
 - Character-boundary-safe cursor navigation
 - Streaming response rendering
@@ -81,7 +81,7 @@ Full async event loop with:
 - Agent delegation panel
 - State machine for handler lifecycle
 
-**Entry point:** `crates/jfc-ui/src/runtime/event_loop/mod.rs`
+**Entry point:** `crates/jfc/src/runtime/event_loop/mod.rs`
 
 ### 8. Agent Economy (`jfc-economy`)
 **Experimental multi-agent market:**
@@ -132,7 +132,7 @@ Enables extensibility without recompilation.
 - `jfc-provider` — abstract interface
 - `jfc-providers` — concrete implementations
 - `jfc-graph` — standalone, works offline
-- `jfc-ui` — runtime, async, TUI
+- `jfc` — runtime, async, TUI
 
 Allows library usage without the full runtime.
 
@@ -141,7 +141,7 @@ Allows library usage without the full runtime.
 ```
 User → TUI → Prompt + Context
         ↓
-    Runtime (jfc-ui)
+    Runtime (jfc)
         ↓
     Select Agent (Explore, Plan, Build, etc.)
         ↓
@@ -171,7 +171,7 @@ User → TUI → Prompt + Context
 ## Crate Dependency Graph (High Level)
 
 ```
-jfc-ui (TUI Runtime)
+jfc (TUI Runtime)
   ├→ jfc-core (types)
   ├→ jfc-provider (LLM abstraction)
   ├→ jfc-providers (impl: Anthropic, Bedrock, etc.)

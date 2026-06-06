@@ -19,7 +19,7 @@
 //! - [`autofix`] — `/pr-autofix <num>` prompt construction
 //! - [`actions`] — `/setup-github-actions` workflow scaffolding
 //!
-//! See `crates/jfc-ui/src/input.rs` for the slash-command dispatch arms.
+//! See `crates/jfc/src/input.rs` for the slash-command dispatch arms.
 
 pub mod actions;
 pub mod autofix;

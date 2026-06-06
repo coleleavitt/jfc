@@ -92,7 +92,7 @@ ToolKind::TaskUpdate => {
                              is_error=true output_len=166
 ```
 
-**Location**: `crates/jfc-ui/src/tools/dispatch.rs:xxx` (SendUserFile handler)
+**Location**: `crates/jfc/src/tools/dispatch.rs:xxx` (SendUserFile handler)
 
 **Problem**:
 ```rust
@@ -149,7 +149,7 @@ Errors:
 
 **Status**: POTENTIAL ISSUE (not observed but design concern)
 
-**Location**: `crates/jfc-ui/src/tools/scratchpad.rs:14-47`
+**Location**: `crates/jfc/src/tools/scratchpad.rs:14-47`
 
 **Problem**:
 ```rust
@@ -490,7 +490,7 @@ fn tool_name_eq(candidate: &str, alias: &str) -> bool {
 ## References
 
 - **Streaming flow**: `/docs/STREAMING_TOOL_CALLS.md`
-- **Tool dispatch**: `crates/jfc-ui/src/tools/dispatch.rs`
+- **Tool dispatch**: `crates/jfc/src/tools/dispatch.rs`
 - **Parameter parsing**: `crates/jfc-core/src/tool_input.rs`
 - **Session logs**: `~/.config/jfc/logs/latest.log`
 - **Session file**: `~/.config/jfc/sessions/ses_20260601_042950.json`

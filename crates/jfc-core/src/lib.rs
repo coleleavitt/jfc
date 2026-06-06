@@ -2,7 +2,7 @@
 //!
 //! This crate intentionally stays free of terminal UI, HTTP providers, and
 //! runtime orchestration. Types move here only after their ownership is stable
-//! enough to be shared without dragging `jfc-ui` dependencies with them.
+//! enough to be shared without dragging `jfc` dependencies with them.
 
 mod agent_def;
 mod assertions;
@@ -16,6 +16,7 @@ mod fanout;
 mod ids;
 mod paging;
 mod plan_cache;
+mod prompt_queue;
 mod routing;
 mod task;
 mod task_store;
@@ -42,6 +43,10 @@ pub use fanout::{FanoutDecision, FanoutPlan, FanoutPredictor, PlannedAgent};
 pub use ids::{AgentId, SessionId, TaskId, ToolId};
 pub use paging::{PageStore, Pressure, estimate_tokens};
 pub use plan_cache::{CachedPlan, PlanCache, normalize_signature};
+pub use prompt_queue::{
+    DEFERRED_TOOL_USES_CAP, DeferredToolUse, MessageQueue, QueuePriority, QueuedPrompt,
+    TOOL_USE_SUMMARIES_CAP, ToolUseSummary,
+};
 pub use routing::{cascade_pick, knapsack_select};
 pub use task::{TaskInput, TaskStatusPart};
 pub use task_store::{

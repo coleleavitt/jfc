@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn test_handoff_summary_to_markdown() {
         let summary = HandoffSummary {
-            files_modified: vec!["crates/jfc-ui/src/background.rs".to_string()],
+            files_modified: vec!["crates/jfc/src/background.rs".to_string()],
             decisions_made: vec!["Keep tmux support type-only for now".to_string()],
             todos_remaining: vec!["Wire handoff into slash command".to_string()],
             key_context: "Phase 4 primitives are additive.".to_string(),
@@ -451,7 +451,7 @@ mod tests {
         let markdown = summary.to_markdown();
 
         assert!(markdown.starts_with("# Session Handoff\n\n"));
-        assert!(markdown.contains("- crates/jfc-ui/src/background.rs\n"));
+        assert!(markdown.contains("- crates/jfc/src/background.rs\n"));
         assert!(markdown.contains("- Keep tmux support type-only for now\n"));
         assert!(markdown.contains("- [ ] Wire handoff into slash command\n"));
         assert!(markdown.contains("## Key Context\nPhase 4 primitives are additive.\n"));

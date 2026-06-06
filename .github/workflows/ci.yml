@@ -5,9 +5,9 @@ permissions:
 
 on:
   push:
-    branches: [master]
+    branches: [main, master]
   pull_request:
-    branches: [master]
+    branches: [main, master]
 
 env:
   CARGO_TERM_COLOR: always
@@ -86,7 +86,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.8.1
       - name: Build without anthropic-oauth-sensitive
-        run: cargo build -p jfc-ui --bin jfc --no-default-features --features hooks,permission-automation
+        run: cargo build -p jfc --bin jfc --no-default-features --features hooks,permission-automation
 
   integration:
     name: integration (CLI/daemon e2e)
@@ -111,7 +111,7 @@ jobs:
       # temp repos (changes_cli_e2e) and exercise the cross-process plan
       # store (plan_e2e). Hermetic — no network, temp dirs only.
       - name: CLI + cross-session integration tests
-        run: cargo test -p jfc-ui --test changes_cli_e2e --test plan_e2e
+        run: cargo test -p jfc --test changes_cli_e2e --test plan_e2e
 
   perf:
     name: performance baseline gate

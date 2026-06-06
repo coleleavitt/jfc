@@ -288,7 +288,7 @@ pub fn built_in_agents() -> Vec<AgentDef> {
     // Includes the native graph + code-index tools so subagents can use
     // the pre-built code graph instead of grep-looping through the tree
     // (without these, the subagent's tool filter in
-    // `jfc-ui/src/tools/subagent.rs::filter_tools_for_agent` drops the
+    // `jfc/src/tools/subagent.rs::filter_tools_for_agent` drops the
     // graph tools from the advertised catalogue and the model gets
     // "unknown tool" if it tries to call them).
     let read_only_tools = strs(&[

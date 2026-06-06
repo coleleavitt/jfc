@@ -118,7 +118,7 @@ pub fn spawn_status_poll(tx: mpsc::Sender<AppEvent>) {
     tokio::spawn(async move {
         let client = match reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
-            .user_agent("jfc-ui claude-status heartbeat")
+            .user_agent("jfc claude-status heartbeat")
             .build()
         {
             Ok(client) => client,

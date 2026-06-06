@@ -1,6 +1,6 @@
 //! Session catalog and path helpers.
 //!
-//! Full transcript serialization still lives in `jfc-ui` while message/tool
+//! Full transcript serialization still lives in `jfc` while message/tool
 //! types are being untangled. This crate owns the provider-neutral session
 //! index surface: paths, IDs, metadata listing, and picker helpers.
 

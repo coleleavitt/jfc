@@ -95,7 +95,7 @@ impl WorkflowVariant {
     }
 
     /// Compile this variant into a runnable workflow script for the live
-    /// `jfc-ui` workflow engine (`workflows/engine.rs`).
+    /// `jfc` workflow engine (`workflows/engine.rs`).
     ///
     /// This closes the AFlow loop: optimise a variant offline, then compile the
     /// winner into the same `export const meta = {…}` + `phase()/agent()/parallel()`

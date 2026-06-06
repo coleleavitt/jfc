@@ -8,7 +8,7 @@
 //! long middle of tool churn can be folded into one summary turn.
 //!
 //! This is deliberately **distinct from runtime compaction**
-//! ([`jfc_core::compaction`] / the jfc-ui live loop): that one runs *during* a
+//! ([`jfc_core::compaction`] / the jfc live loop): that one runs *during* a
 //! session under a live window and must preserve the reasoning trace for the
 //! next model call. This one runs *after* a session is complete, optimising a
 //! stored trajectory for size while protecting a head and tail span the caller

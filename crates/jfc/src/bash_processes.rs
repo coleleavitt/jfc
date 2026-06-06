@@ -5,10 +5,11 @@
 //! script after they've already given up on the result. jfc previously let
 //! bash children continue in the background — wasteful and surprising.
 //!
-//! Each `execute_bash` call registers its PID before the process runs and
-//! deregisters when it exits (success, failure, or timeout). On user abort,
-//! `terminate_all()` walks the registry and signals each PID with SIGTERM,
-//! followed by SIGKILL after a grace period if the child hasn't exited.
+//! Foreground `execute_bash` calls register their PID before the process runs
+//! and deregister when they exit (success, failure, timeout, or after being
+//! auto-backgrounded). Explicit `run_in_background=true` calls are not generic
+//! abort targets; their own timeout path still terminates the process tree.
+//! On user abort, `terminate_all()` walks the registry and signals each PID.
 
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -47,6 +48,43 @@ pub fn snapshot() -> Vec<u32> {
         .unwrap_or_default()
 }
 
+/// Signal a bash subprocess and, on Unix, the process group/session it leads.
+///
+/// Tool commands are spawned after `setsid()`, so the bash child is also the
+/// process-group leader. Signalling `-pid` catches grandchildren that inherited
+/// stdout/stderr or ignored the top-level shell's death.
+#[cfg(unix)]
+pub fn signal_process_tree(pid: u32, signal: libc::c_int) -> bool {
+    let target = match libc::pid_t::try_from(pid) {
+        Ok(t) => t,
+        Err(_) => {
+            tracing::warn!(target: "jfc::bash::pids", pid, "skipping out-of-range pid");
+            return false;
+        }
+    };
+    if target <= 0 {
+        tracing::warn!(target: "jfc::bash::pids", pid, "refusing to signal pid <= 0");
+        return false;
+    }
+
+    // SAFETY: kill(2) is async-signal-safe. Negative target means process
+    // group; because commands run under setsid(), the child pid is the pgid.
+    let group_result = unsafe { libc::kill(-target, signal) };
+    if group_result == 0 {
+        return true;
+    }
+
+    // Fallback for platforms/setups where the group no longer exists but the
+    // child PID is still signalable.
+    let pid_result = unsafe { libc::kill(target, signal) };
+    pid_result == 0
+}
+
+#[cfg(not(unix))]
+pub fn signal_process_tree(_pid: u32, _signal: i32) -> bool {
+    false
+}
+
 /// SIGTERM every tracked bash subprocess. Returns the count of signals
 /// dispatched. Best-effort: if a PID has already exited the kill is a
 /// no-op. Linux/Unix only — on other platforms this is a no-op.
@@ -55,27 +93,7 @@ pub fn terminate_all() -> usize {
     let pids = snapshot();
     let mut count = 0;
     for pid in pids {
-        // Checked conversion: a u32 PID larger than pid_t::MAX would wrap
-        // to a negative/garbage value under `as`, and a negative target
-        // makes kill(2) signal a process *group* (or every process for -1).
-        let target = match libc::pid_t::try_from(pid) {
-            Ok(t) => t,
-            Err(_) => {
-                tracing::warn!(target: "jfc::bash::pids", pid, "skipping out-of-range pid");
-                continue;
-            }
-        };
-        // Guard: pid 0 signals the process group, pid -1 signals ALL user
-        // processes. Never allow either — they'd nuke the session.
-        if target <= 0 {
-            tracing::warn!(target: "jfc::bash::pids", pid, "refusing to signal pid <= 0");
-            continue;
-        }
-        // SAFETY: kill(2) is async-signal-safe. SIGTERM gives the child a
-        // chance to clean up; we don't escalate to SIGKILL here because the
-        // tool's own timeout path already handles hard-kill on hang.
-        let r = unsafe { libc::kill(target, libc::SIGTERM) };
-        if r == 0 {
+        if signal_process_tree(pid, libc::SIGTERM) {
             count += 1;
             tracing::info!(target: "jfc::bash::pids", pid, "SIGTERM dispatched (user abort)");
         }

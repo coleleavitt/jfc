@@ -14,7 +14,7 @@
 - The thinking-token estimate reached ~150 early, then the server emitted bare pings with no further `estimated_tokens`, so the chip froze at 150.
 - No `ThinkingTokens dropped (buffer full)` lines — the events were delivered, the number simply stopped climbing.
 
-**Hypothesis** — Three compounding issues in `crates/jfc-ui/src/spinner.rs::status_segments`:
+**Hypothesis** — Three compounding issues in `crates/jfc/src/spinner.rs::status_segments`:
 1. `↓ N tokens` is gated on `output_tokens > 0`, which is 0 during thinking → the count vanishes for the whole phase.
 2. The thinking-token chip prints a raw `⟳ {n} thinking` with no live element; when the server stops incrementing `estimated_tokens` the number freezes and reads as a hang (the elapsed clock is the only moving thing, and it's in a different segment).
 3. The thinking-token chip AND the `thinking {glyph} {phase}` verb both render the word "thinking" → doubled. The `planning/considering/drafting` phases are derived from `elapsed.as_secs()`, not anything real.

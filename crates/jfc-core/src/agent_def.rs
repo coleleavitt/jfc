@@ -1,7 +1,7 @@
 //! Agent definition types shared across crates.
 //!
 //! These are pure data types (serde-derivable, no behavior beyond Display)
-//! that multiple crates need: jfc-daemon for persistence, jfc-ui for dispatch.
+//! that multiple crates need: jfc-daemon for persistence, jfc for dispatch.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

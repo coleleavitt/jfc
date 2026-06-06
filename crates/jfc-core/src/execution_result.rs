@@ -1,6 +1,6 @@
 //! Tool execution result types.
 //!
-//! These live in `jfc-core` so both `jfc-tools` and `jfc-ui` can produce
+//! These live in `jfc-core` so both `jfc-tools` and `jfc` can produce
 //! and consume them without circular dependencies.
 
 use std::path::PathBuf;

@@ -14,10 +14,10 @@ Thank you for your interest in contributing! This document covers the build proc
 cargo build --workspace
 
 # Public build (no sensitive OAuth features)
-cargo build -p jfc-ui --bin jfc --no-default-features --features hooks,permission-automation
+cargo build -p jfc --bin jfc --no-default-features --features hooks,permission-automation
 
 # Release build
-cargo build --release -p jfc-ui --bin jfc
+cargo build --release -p jfc --bin jfc
 ```
 
 ## Testing
@@ -29,11 +29,11 @@ cargo test --workspace
 # Test a specific crate
 cargo test -p jfc-graph
 cargo test -p jfc-economy
-cargo test -p jfc-ui
+cargo test -p jfc
 
 # Test a specific module
-cargo test -p jfc-ui app::tests::
-cargo test -p jfc-ui daemon::tests::
+cargo test -p jfc app::tests::
+cargo test -p jfc daemon::tests::
 ```
 
 ## Code Quality
@@ -73,7 +73,7 @@ The workspace has 20 crates under `crates/`. See the [README](README.md) archite
 
 | Crate | Responsibility |
 | --- | --- |
-| `jfc-ui` | Main binary: TUI, event loop, tools, providers |
+| `jfc` | Main binary: TUI, event loop, tools, providers |
 | `jfc-graph` | Code graph, tree-sitter adapters, DSL engine |
 | `jfc-economy` | Bounty market, solvers, validators |
 | `jfc-core` | Shared types used across crates |
@@ -82,7 +82,7 @@ The workspace has 20 crates under `crates/`. See the [README](README.md) archite
 
 ## Feature Flags
 
-`jfc-ui` has several feature gates:
+`jfc` has several feature gates:
 
 - `anthropic-oauth-sensitive` — Anthropic OAuth with billing/CCH (default on, excluded from public builds)
 - `hooks` — Pre/post tool hooks

@@ -1,7 +1,7 @@
 //! Pure filesystem tool operations: read, write, edit.
 //!
 //! These are the core file manipulation primitives that don't depend on
-//! app state (no undo stack, no dedup cache, no slop guard). The jfc-ui
+//! app state (no undo stack, no dedup cache, no slop guard). The jfc
 //! dispatch layer wraps these with caching, permissions, and side-effects.
 
 use std::path::Path;

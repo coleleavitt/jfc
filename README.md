@@ -15,7 +15,7 @@ A high-performance AI coding agent for the terminal. Built in Rust with a ratatu
 # Install
 git clone https://github.com/coleleavitt/jfc.git
 cd jfc
-cargo install --path crates/jfc-ui
+cargo install --path crates/jfc
 
 # Run
 jfc                           # Interactive TUI
@@ -39,7 +39,7 @@ jfc daemon start              # Run background daemon
 
 | Crate | Purpose |
 | --- | --- |
-| **jfc-ui** | Main binary: TUI event loop, streaming tool calls, approval modes, session persistence |
+| **jfc** | Main binary: TUI event loop, streaming tool calls, approval modes, session persistence |
 | **jfc-graph** | Code graph builder + DSL query engine (tree-sitter, SCC, dataflow, taint, preconditions) |
 | **jfc-economy** | Bounty lifecycle: solvers, validators, trust, ledger, settlement |
 | **jfc-anthropic-sdk** | Anthropic managed-session SDK foundations and model streaming |
@@ -71,7 +71,7 @@ jfc daemon start              # Run background daemon
 
 ```
 ┌─────────────────────────────────────┐
-│        jfc-ui (Main Binary)         │
+│        jfc (Main Binary)         │
 │  TUI + Event Loop + Tool Dispatch   │
 └──┬──────────────────────────────────┘
    │
@@ -355,7 +355,7 @@ You explore codebases and report concise, cited findings.
 ```bash
 cargo fmt --all --check
 cargo check --workspace
-cargo test -p jfc-ui app::tests::
+cargo test -p jfc app::tests::
 cargo test -p jfc-graph
 cargo test -p jfc-economy
 cargo clippy --workspace

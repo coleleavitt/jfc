@@ -18,7 +18,7 @@
 //! `.jfc/changes/`, using the same flock discipline as `jfc-audit`'s finding
 //! store, so the history is queryable across processes and survives restarts.
 //!
-//! This crate is intentionally dependency-light (no `jfc-ui`, `jfc-graph`, or
+//! This crate is intentionally dependency-light (no `jfc`, `jfc-graph`, or
 //! `jfc-economy`) so the lifecycle model can be reused by the UI, the daemon,
 //! and economy mode without a dependency cycle.
 

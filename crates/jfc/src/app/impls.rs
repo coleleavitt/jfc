@@ -1,11 +1,11 @@
 use std::time::Instant;
 
+use crate::runtime::{
+    DEFERRED_TOOL_USES_CAP, DeferredToolUse, TOOL_USE_SUMMARIES_CAP, ToolUseSummary,
+};
 use crate::types::{MessagePart, Role, ToolCall, ToolKind};
 use jfc_provider::ModelInfo;
 
-use super::state::{
-    DEFERRED_TOOL_USES_CAP, DeferredToolUse, TOOL_USE_SUMMARIES_CAP, ToolUseSummary,
-};
 use super::{App, PermissionDecision, STREAM_WATCHDOG_TIMEOUT_SECS};
 
 impl App {

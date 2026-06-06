@@ -1,7 +1,7 @@
 //! Typed per-kind metadata accessors (Phase 6).
 //!
 //! Instead of breaking the public `NodeData` shape (which is
-//! serialised, fingerprinted, and consumed by jfc-ui), this module
+//! serialised, fingerprinted, and consumed by jfc), this module
 //! provides a **typed view** over `NodeData.metadata` so that callers
 //! who want compile-time-checked access to well-known fields like
 //! `coverage_count`, `param_count`, `is_async`, `field_count`, etc.,

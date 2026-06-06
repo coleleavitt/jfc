@@ -194,7 +194,7 @@ fn colorize_inline_colors(text: &str, base_style: Style) -> Option<Vec<Span<'sta
 static SYNTAX_SET: std::sync::LazyLock<SyntaxSet> =
     std::sync::LazyLock::new(two_face::syntax::extra_newlines);
 
-/// Build-time side-loaded syntaxes from `crates/jfc-ui/syntaxes/` —
+/// Build-time side-loaded syntaxes from `crates/jfc/syntaxes/` —
 /// kept as the third lookup tier behind the two-face bundle so a project
 /// can drop in a custom `.sublime-syntax` for an obscure DSL without
 /// touching the upstream grammars.
@@ -1085,7 +1085,7 @@ struct MdWriter<'a, I> {
     /// some grammars that reference contexts the foreign set doesn't have).
     /// Pre-fix this was hardcoded to `&SYNTAX_SET` at every call site, so any
     /// syntax pulled from `EXTRA_SYNTAX_SET` (the 57 grammars under
-    /// `crates/jfc-ui/syntaxes/`, e.g. Zig / Nix / Fish / TypeScript) was
+    /// `crates/jfc/syntaxes/`, e.g. Zig / Nix / Fish / TypeScript) was
     /// tokenized against the wrong set.
     code_highlighter_set: Option<&'static syntect::parsing::SyntaxSet>,
     link: Option<CowStr<'a>>,

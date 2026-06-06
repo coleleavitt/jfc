@@ -39,8 +39,17 @@ const DIRECT_EDIT_OVERRIDES_PATH: &str = "__om-edit-overrides.json";
 const DIRECT_EDIT_LOG_PATH: &str = "__om-direct-edits.json";
 const CHAT_HISTORY_PATH: &str = "chat.json";
 const PUBLIC_SHARES_PATH: &str = "__jfc-public-shares.json";
+const PUBLIC_SHARE_SECRET_ENV: &str = "JFC_DESIGN_SHARE_SECRET";
 const TWEAKS_PATH: &str = "tweaks.json";
 const PUBLIC_TOKEN_TTL_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+const PUBLIC_ROOT_ASSET_EXTENSIONS: &[&str] = &[
+    "avif", "css", "eot", "gif", "ico", "jpeg", "jpg", "js", "m4a", "mjs", "mov", "mp3", "mp4",
+    "ogg", "otf", "png", "svg", "ttf", "wasm", "wav", "webm", "webp", "woff", "woff2",
+];
+const PUBLIC_ROOT_ASSET_DIRS: &[&str] = &[
+    "asset", "assets", "build", "css", "dist", "font", "fonts", "image", "images", "img", "js",
+    "media", "public", "static",
+];
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone)]
@@ -1735,12 +1744,33 @@ fn verify_public_token(token: &str) -> std::result::Result<PublicTokenPayload, A
 }
 
 fn public_signature(payload: &[u8]) -> std::result::Result<Vec<u8>, ApiError> {
-    let secret = std::env::var("JFC_DESIGN_SHARE_SECRET")
-        .unwrap_or_else(|_| "jfc-design-local-dev-share-secret".to_owned());
+    let secret = public_share_secret()?;
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
         .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     mac.update(payload);
     Ok(mac.finalize().into_bytes().to_vec())
+}
+
+fn public_share_secret() -> std::result::Result<String, ApiError> {
+    let configured = std::env::var(PUBLIC_SHARE_SECRET_ENV).ok();
+    match configured_public_share_secret(configured) {
+        Ok(secret) => Ok(secret),
+        #[cfg(test)]
+        Err(_) => Ok("jfc-design-test-share-secret".to_owned()),
+        #[cfg(not(test))]
+        Err(err) => Err(err),
+    }
+}
+
+fn configured_public_share_secret(secret: Option<String>) -> std::result::Result<String, ApiError> {
+    secret
+        .filter(|secret| !secret.trim().is_empty())
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("{PUBLIC_SHARE_SECRET_ENV} must be set to enable public sharing"),
+            )
+        })
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -1772,10 +1802,59 @@ fn scoped_public_path(
         return Err(ApiError::bad_request("public path escapes share scope"));
     }
     if payload.scope_dir.is_empty() {
-        Ok(clean.to_owned())
+        if root_public_share_path_allowed(payload, clean) {
+            Ok(clean.to_owned())
+        } else {
+            Err(ApiError::bad_request("public path is outside share scope"))
+        }
     } else {
         Ok(format!("{}/{}", payload.scope_dir, clean))
     }
+}
+
+fn root_public_share_path_allowed(payload: &PublicTokenPayload, clean: &str) -> bool {
+    if clean == payload.path.trim_start_matches('/') {
+        return true;
+    }
+    if public_path_has_private_component(clean) {
+        return false;
+    }
+    if !public_root_asset_location_allowed(clean) {
+        return false;
+    }
+    let Some((_, ext)) = clean.rsplit_once('.') else {
+        return false;
+    };
+    PUBLIC_ROOT_ASSET_EXTENSIONS
+        .iter()
+        .any(|allowed| ext.eq_ignore_ascii_case(allowed))
+}
+
+fn public_root_asset_location_allowed(path: &str) -> bool {
+    let Some((first, _)) = path.split_once('/') else {
+        return true;
+    };
+    PUBLIC_ROOT_ASSET_DIRS
+        .iter()
+        .any(|allowed| first.eq_ignore_ascii_case(allowed))
+}
+
+fn public_path_has_private_component(path: &str) -> bool {
+    path.split('/').any(|part| {
+        part.is_empty()
+            || part == "."
+            || part.starts_with('.')
+            || part.starts_with("__")
+            || matches!(
+                part,
+                "project.json"
+                    | CHAT_HISTORY_PATH
+                    | DIRECT_EDIT_LOG_PATH
+                    | DIRECT_EDIT_OVERRIDES_PATH
+                    | PUBLIC_SHARES_PATH
+                    | TWEAKS_PATH
+            )
+    })
 }
 
 fn public_url_for(token: &str) -> String {
@@ -3204,6 +3283,45 @@ mod tests {
         assert_eq!(decoded.project_id, "project-a");
         assert_eq!(decoded.path, "index.html");
         assert!(verify_public_token(&(token + "x")).is_err());
+    }
+
+    #[test]
+    fn public_share_secret_requires_explicit_config_robust() {
+        let err = configured_public_share_secret(None).unwrap_err();
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(configured_public_share_secret(Some("  ".to_owned())).is_err());
+        assert_eq!(
+            configured_public_share_secret(Some("secret-a".to_owned())).unwrap(),
+            "secret-a"
+        );
+    }
+
+    #[test]
+    fn root_public_share_scope_rejects_private_project_files_robust() {
+        let payload = PublicTokenPayload {
+            project_id: "project-a".to_owned(),
+            path: "index.html".to_owned(),
+            issued_at_ms: now_ms(),
+            expires_at_ms: now_ms() + 60_000,
+            scope_dir: String::new(),
+        };
+
+        assert_eq!(scoped_public_path(&payload, "").unwrap(), "index.html");
+        assert_eq!(
+            scoped_public_path(&payload, "index.html").unwrap(),
+            "index.html"
+        );
+        assert_eq!(
+            scoped_public_path(&payload, "assets/app.css").unwrap(),
+            "assets/app.css"
+        );
+        assert_eq!(scoped_public_path(&payload, "app.js").unwrap(), "app.js");
+        assert!(scoped_public_path(&payload, CHAT_HISTORY_PATH).is_err());
+        assert!(scoped_public_path(&payload, PUBLIC_SHARES_PATH).is_err());
+        assert!(scoped_public_path(&payload, "project.json").is_err());
+        assert!(scoped_public_path(&payload, "src/App.jsx").is_err());
+        assert!(scoped_public_path(&payload, "src/App.js").is_err());
+        assert!(scoped_public_path(&payload, "dist/app.js.map").is_err());
     }
 
     #[test]

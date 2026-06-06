@@ -1,4 +1,4 @@
-//! High-level session facade — the single entry point for jfc-ui.
+//! High-level session facade — the single entry point for jfc.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};

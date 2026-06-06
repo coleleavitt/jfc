@@ -28,11 +28,11 @@ The following areas are in scope for security reports:
 
 | Area | Crate | Notes |
 | --- | --- | --- |
-| **Sandbox escape** | `jfc-ui` (sandbox module) | bubblewrap + Landlock bypasses |
-| **Shell injection** | `jfc-ui` (shell_safety) | Bash tool command parsing |
+| **Sandbox escape** | `jfc` (sandbox module) | bubblewrap + Landlock bypasses |
+| **Shell injection** | `jfc` (shell_safety) | Bash tool command parsing |
 | **OAuth credential leaks** | `jfc-auth`, `jfc-providers` | Token storage, credential vault |
 | **Arbitrary code execution** | `jfc-economy` | Solver/validator agent isolation |
-| **Path traversal** | `jfc-ui` (tools) | Read/Write/Edit tool path handling |
+| **Path traversal** | `jfc` (tools) | Read/Write/Edit tool path handling |
 | **Taint bypass** | `jfc-graph`, `jfc-audit` | False negatives in taint analysis |
 | **MCP injection** | `jfc-mcp` | Tool dispatch, protocol parsing |
 

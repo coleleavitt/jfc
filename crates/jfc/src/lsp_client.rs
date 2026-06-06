@@ -226,6 +226,7 @@ impl LspClient {
     pub async fn spawn(
         server_cmd: &str,
         args: &[&str],
+        cwd: &std::path::Path,
         root_uri: &str,
         app_tx: mpsc::Sender<AppEvent>,
     ) -> Option<Self> {
@@ -237,6 +238,7 @@ impl LspClient {
         let resolved = resolve_server_binary(server_cmd);
         let mut child: Child = match Command::new(&resolved)
             .args(args)
+            .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -765,7 +767,7 @@ pub fn maybe_spawn_lsp_clients(cwd: std::path::PathBuf, app_tx: mpsc::Sender<App
         let owned_args: Vec<&str> = args.to_vec();
         let lsp_tx = app_tx.clone();
         let server_name = cmd.to_owned();
-        if let Some(_client) = LspClient::spawn(cmd, &owned_args, &root_uri, app_tx).await {
+        if let Some(_client) = LspClient::spawn(cmd, &owned_args, &cwd, &root_uri, app_tx).await {
             // Notify the sidebar that this LSP is active.
             let _ = lsp_tx
                 .send(AppEvent::Provider(ProviderEvent::LspUpdated {

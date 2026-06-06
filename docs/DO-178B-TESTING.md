@@ -57,8 +57,8 @@ The following crates use the DO-178B test split systematically:
 - `crates/jfc-providers/src/anthropic*.rs` — OAuth, model config, HTTP retries
 - `crates/jfc-memory/src/recall.rs` — memory storage and recall
 - `crates/jfc-markdown/src/lib.rs` — markdown rendering
-- `crates/jfc-ui/src/inline_tools.rs` — inline tool execution
-- `crates/jfc-ui/src/tools/tests.rs` — tool dispatch and monitoring
+- `crates/jfc/src/inline_tools.rs` — inline tool execution
+- `crates/jfc/src/tools/tests.rs` — tool dispatch and monitoring
 
 ## Example Test Block Structure
 

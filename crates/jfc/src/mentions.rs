@@ -155,7 +155,7 @@ pub fn filter_candidates(all: &[String], query: &str) -> Vec<String> {
         let lower = c.to_lowercase();
         // Match against the full path AND the basename. v126 surfaces
         // `Cargo.toml` when you type `@cargo` even though the full
-        // string is `crates/jfc-ui/Cargo.toml`.
+        // string is `crates/jfc/Cargo.toml`.
         let basename = Path::new(c)
             .file_name()
             .and_then(|s| s.to_str())
@@ -255,8 +255,8 @@ mod tests {
     #[test]
     fn filter_basename_match_robust() {
         // Typing `@cargo` should surface `Cargo.toml` even when the path
-        // is `crates/jfc-ui/Cargo.toml`.
-        let all = ss(&["crates/jfc-ui/Cargo.toml", "src/main.rs", "Cargo.lock"]);
+        // is `crates/jfc/Cargo.toml`.
+        let all = ss(&["crates/jfc/Cargo.toml", "src/main.rs", "Cargo.lock"]);
         let r = filter_candidates(&all, "cargo");
         assert!(
             r.iter().any(|s| s == "Cargo.lock"),

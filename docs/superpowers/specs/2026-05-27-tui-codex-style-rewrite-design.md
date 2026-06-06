@@ -2,17 +2,17 @@
 
 **Status:** Approved 2026-05-27
 **Owner:** cole@unwrap.rs
-**Scope:** `crates/jfc-ui`
+**Scope:** `crates/jfc`
 **Estimated effort:** ~7 working days across 4 phases
 
 ## Motivation
 
-The current `jfc-ui` TUI has two compounding problems:
+The current `jfc` TUI has two compounding problems:
 
 1. **A failed inline-scrollback feature in the working tree** that used ratatui's stock `Terminal::insert_before` with a full-height `Viewport::Inline(rows)`. This routes into ratatui's "borrowed top line" branch (one-row-at-a-time scroll), has no Zellij fallback, no pre-wrap, no sanitization, and tracks flushed messages by index. Result: visible duplication on session load/compaction, character corruption from embedded `\r` and ANSI escapes, and the dock rendering on top of scrollback content.
 2. **Slop in the composition.** `messages.rs` is 1621 lines, `frame.rs` is 362 lines, and the render pipeline includes sidebars, session pickers, model pickers, theme pickers, task panels, teammates panels, and an "agents" panel — all conflicting for screen real estate and all explicitly out of scope per the project's "minimal & honest, no sidebar, animate only on real activity" stance.
 
-The fix is to **adopt the architecture patterns from `research/openai-codex/codex-rs/tui/`** (which solved these problems years ago) applied to `jfc-ui`'s data model, with a much smaller code footprint tailored to what `jfc-ui` actually needs.
+The fix is to **adopt the architecture patterns from `research/openai-codex/codex-rs/tui/`** (which solved these problems years ago) applied to `jfc`'s data model, with a much smaller code footprint tailored to what `jfc` actually needs.
 
 Codex was rolled back in this session (working tree restored to commit `13285e7`); their non-UI work — `jfc-auth/workload_identity.rs`, `jfc-graph/adapter/*`, `jfc-providers/anthropic_oauth.rs`, `jfc-graph/dataflow.rs` — was preserved in the working tree. The pre-rollback bundle lives in `stash@{0}` for reference.
 
@@ -51,7 +51,7 @@ Codex was rolled back in this session (working tree restored to commit `13285e7`
 ### Module layout
 
 ```
-crates/jfc-ui/src/
+crates/jfc/src/
 ├── tui/                              # NEW: terminal foundation, ~1500 LOC target
 │   ├── mod.rs                        # Tui struct: new / init / draw / restore / enter_alt_screen
 │   ├── terminal.rs                   # CustomTerminal — forked ratatui::Terminal
@@ -183,7 +183,7 @@ pub enum TuiEvent {
 }
 ```
 
-`AppEvent` (the existing jfc-ui event enum) continues to drive business logic. The event loop owns the unification: it `select!`s on `TuiEvent` and `AppEvent`, dispatches each accordingly.
+`AppEvent` (the existing jfc event enum) continues to drive business logic. The event loop owns the unification: it `select!`s on `TuiEvent` and `AppEvent`, dispatches each accordingly.
 
 `FrameRequester` provides `schedule_frame()`. Every code path that mutates rendered state calls it (stream chunk arrived, tool finished, toast pushed, key handled). The frame rate limiter coalesces bursts so the actual draw rate stays at ~30fps even if 100 `schedule_frame()` calls fire in a millisecond.
 
@@ -285,7 +285,7 @@ Each phase is an independent PR. The TUI remains usable after each merge.
 **Goal:** Replace the broken inline-scrollback work with codex's terminal/insert pattern, behind a small inline viewport. Existing `render::frame` keeps working as a temporary shim.
 
 **Adds:**
-- `crates/jfc-ui/src/tui/` — all modules listed in the architecture (custom_terminal, insert_history, frame_requester, frame_rate_limiter, event_stream, keyboard_modes, terminal_probe, multiplexer)
+- `crates/jfc/src/tui/` — all modules listed in the architecture (custom_terminal, insert_history, frame_requester, frame_rate_limiter, event_stream, keyboard_modes, terminal_probe, multiplexer)
 - `Tui` struct exposed from `tui/mod.rs`
 - Bounded cursor-position probe (Unix path via `/dev/tty`, with timeout)
 - Multiplexer detection: env-var sniffing for `ZELLIJ`, `TMUX`, `VSCODE_INJECTION`, `KITTY_WINDOW_ID`, `WT_SESSION`
@@ -296,7 +296,7 @@ Each phase is an independent PR. The TUI remains usable after each merge.
 - `runtime/terminal.rs` — collapsed to `pub use crate::tui::Tui;` and a small set_terminal_title helper
 - `cli/mod.rs` — initialization swaps to `Tui::new()`; alternate-screen flag preserved as opt-in
 - `cli/terminal.rs` — `TerminalRestoreGuard` rewritten to delegate to `Tui::restore`
-- `Cargo.toml` (`jfc-ui`) — adds `derive_more` for `IsVariant` if not already present
+- `Cargo.toml` (`jfc`) — adds `derive_more` for `IsVariant` if not already present
 
 **Existing `render::frame` is unchanged** in this phase. It draws into the new viewport. Sidebars/panels still render but get squeezed into ~15 rows — accepted as a temporary state.
 
@@ -307,8 +307,8 @@ Each phase is an independent PR. The TUI remains usable after each merge.
 **Goal:** Push finalized cells into native scrollback. Live cell renders in viewport.
 
 **Adds:**
-- `crates/jfc-ui/src/chat/history.rs` — `History` struct holding finalized cell renderings; `flush_to_scrollback()`
-- `crates/jfc-ui/src/chat/live_cell.rs` — `LiveCell` renderer that takes one `ChatMessage` and produces wrapped Lines
+- `crates/jfc/src/chat/history.rs` — `History` struct holding finalized cell renderings; `flush_to_scrollback()`
+- `crates/jfc/src/chat/live_cell.rs` — `LiveCell` renderer that takes one `ChatMessage` and produces wrapped Lines
 - `CellState` enum and tracking on `ChatMessage` (or alongside it in a parallel map keyed by message id)
 - `pending_history_lines: Vec<Line<'static>>` on `Tui` (already there in Phase 1 if we mirror codex)
 - `LIVE_CELL_MAX_ROWS = 40` and the proactive flush rule
@@ -327,14 +327,14 @@ Each phase is an independent PR. The TUI remains usable after each merge.
 **Goal:** Delete the slop. Flat dock. No sidebars.
 
 **Adds:**
-- `crates/jfc-ui/src/chat/mod.rs` — `ChatWidget` top-level composer (replaces `render::frame`)
-- `crates/jfc-ui/src/chat/bottom_pane.rs` — layout: spinner row + dock + input
-- `crates/jfc-ui/src/chat/dock.rs` — flat one-line dock
-- `crates/jfc-ui/src/chat/input.rs` — wraps existing `ratatui-textarea` usage
-- `crates/jfc-ui/src/chat/approval.rs` (moved + simplified from `render/approval.rs`)
-- `crates/jfc-ui/src/chat/toast.rs` (carved out of `render/overlays.rs`)
-- `crates/jfc-ui/src/chat/palette.rs` (moved + simplified from `render/palette.rs`)
-- `crates/jfc-ui/src/chat/help.rs` (carved out of `render/overlays.rs`)
+- `crates/jfc/src/chat/mod.rs` — `ChatWidget` top-level composer (replaces `render::frame`)
+- `crates/jfc/src/chat/bottom_pane.rs` — layout: spinner row + dock + input
+- `crates/jfc/src/chat/dock.rs` — flat one-line dock
+- `crates/jfc/src/chat/input.rs` — wraps existing `ratatui-textarea` usage
+- `crates/jfc/src/chat/approval.rs` (moved + simplified from `render/approval.rs`)
+- `crates/jfc/src/chat/toast.rs` (carved out of `render/overlays.rs`)
+- `crates/jfc/src/chat/palette.rs` (moved + simplified from `render/palette.rs`)
+- `crates/jfc/src/chat/help.rs` (carved out of `render/overlays.rs`)
 
 **Deletes:**
 - `render/sidebar.rs`, `render/session_sidebar.rs`, `render/session_picker.rs`

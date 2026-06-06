@@ -286,16 +286,16 @@ mod tests {
 
     #[test]
     fn directory_proximity_caps_at_80() {
-        let a = std::path::Path::new("crates/jfc-ui/src/tools/dispatch.rs");
-        let b = std::path::Path::new("crates/jfc-ui/src/tools/dispatch_heavy.rs");
-        // 4 shared segments (`crates`, `jfc-ui`, `src`, `tools`) — score
+        let a = std::path::Path::new("crates/jfc/src/tools/dispatch.rs");
+        let b = std::path::Path::new("crates/jfc/src/tools/dispatch_heavy.rs");
+        // 4 shared segments (`crates`, `jfc`, `src`, `tools`) — score
         // 60, under the cap.
         assert_eq!(directory_proximity(a, b), 60);
     }
 
     #[test]
     fn directory_proximity_zero_for_different_roots() {
-        let a = std::path::Path::new("crates/jfc-ui/src/x.rs");
+        let a = std::path::Path::new("crates/jfc/src/x.rs");
         let b = std::path::Path::new("other/y.rs");
         assert_eq!(directory_proximity(a, b), 0);
     }

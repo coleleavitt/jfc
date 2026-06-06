@@ -830,7 +830,7 @@ fn is_readonly_bash_recognises_examples_robust() {
         "# Check endpoints are available\n\
          grep -r \"client\\|account\\|portfolio\" /tmp/report.md 2>/dev/null | head -50",
         "find /tmp/project/src -name \"*.rs\" | sort",
-        "RUST_BACKTRACE=1 cargo test -p jfc-ui",
+        "RUST_BACKTRACE=1 cargo test -p jfc",
         "cd /home/cole/RustProjects/active/unlace && grep -n \"pub struct Lvar\" crates/unlace-ir/src/lvar.rs",
         "cd /home/cole/RustProjects/active/unlace && cat crates/unlace-ir/src/lvar.rs",
         "cd /home/cole/RustProjects/active/unlace && wc -l crates/unlace-passes/src/variable_merge.rs",

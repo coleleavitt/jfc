@@ -360,8 +360,8 @@ fn capitalize_first(s: &str) -> String {
 /// Resolve where the doc should live. All five docs live at the
 /// **repo root** by convention — not the current working directory.
 ///
-/// Without the git-root walk, launching jfc from `crates/jfc-ui/` and
-/// running `/plan` would write `crates/jfc-ui/PLAN.md` instead of the
+/// Without the git-root walk, launching jfc from `crates/jfc/` and
+/// running `/plan` would write `crates/jfc/PLAN.md` instead of the
 /// repo-root `PLAN.md` the user expects. We walk up from `cwd` looking
 /// for a `.git` entry (file *or* dir — `.git` is a file in worktrees
 /// and submodules); if none is found we fall back to `cwd` so the
@@ -549,8 +549,8 @@ mod tests {
 
     // Normal: when launched from a subdirectory of a git repo, doc_target
     // walks UP to the repo root rather than writing in the subdirectory.
-    // Without this, `jfc` launched from `crates/jfc-ui/` would write
-    // `crates/jfc-ui/PLAN.md` instead of the repo-root `PLAN.md`.
+    // Without this, `jfc` launched from `crates/jfc/` would write
+    // `crates/jfc/PLAN.md` instead of the repo-root `PLAN.md`.
     #[test]
     fn doc_target_walks_up_to_repo_root_normal() {
         let dir = tempfile::tempdir().unwrap();

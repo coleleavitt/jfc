@@ -298,7 +298,7 @@ macro_rules! for_each_regular_tool_input {
             MemoryDelete => { path: req_str @ "path" }
             TeamCreate => { team_name: req_str @ "team_name", description: opt_str @ "description" }
             TeamMemberMode => { member_name: req_str @ "member_name", mode: req_str @ "mode" }
-            BashOutput => { task_id: req_str @ "task_id", offset: opt_u64 @ "offset", limit: opt_u64 @ "limit" }
+            BashOutput => { task_id: req_str @ "task_id", offset: opt_u64 @ "offset", limit: opt_u64 @ "limit", block: raw_bool_opt @ "block", timeout: opt_u64_loose @ "timeout", wait_up_to: opt_u64_loose @ "wait_up_to" }
             CodeIndex => { path: opt_str @ "path", query: opt_str @ "query", kind: opt_str @ "kind", max_entries: opt_u64_as_usize @ "max_entries" }
             GraphQuery => { query: req_str @ "query", max_tokens: opt_u64_as_usize @ "max_tokens", include_handles: raw_bool_opt @ "include_handles", format: opt_str @ "format" }
             GraphContext => { task: req_str @ "task", max_nodes: opt_u64_as_usize @ "max_nodes", include_code: raw_bool_opt @ "include_code", format: opt_str @ "format" }
@@ -507,6 +507,9 @@ pub enum ToolInput {
         task_id: String,
         offset: Option<u64>,
         limit: Option<u64>,
+        block: Option<bool>,
+        timeout: Option<u64>,
+        wait_up_to: Option<u64>,
     },
     Glob {
         pattern: String,

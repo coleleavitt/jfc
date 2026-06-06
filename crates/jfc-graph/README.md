@@ -77,7 +77,7 @@ The graph wraps petgraph's `StableDiGraph`. The public API exclusively uses `Nod
 | `formatting` | Token-budgeted output rendering for query results |
 | `capabilities` | Feature toggles with dependency cascading |
 | `partial` | Partial struct views — field-level granularity for context windows |
-| `session` | High-level facade (`GraphSession`) that jfc-ui consumes |
+| `session` | High-level facade (`GraphSession`) that jfc consumes |
 | `pass` | Multi-pass analysis pipeline |
 | `history` | Graph history tracking |
 | `predicates` | Predicate extraction for preconditions analysis |

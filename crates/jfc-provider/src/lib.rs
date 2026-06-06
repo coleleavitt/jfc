@@ -968,14 +968,14 @@ pub enum StreamConvention {
 /// `Arc<dyn Provider>` — but cannot add their own impls, because
 /// `seal::Sealed` is only implementable from within this crate.
 ///
-/// Even though jfc-ui isn't a published library today, sealing protects
+/// Even though jfc isn't a published library today, sealing protects
 /// future evolution: if the crate ever splits or is re-exported, downstream
 /// callers cannot lock us out of adding new required methods.
 pub mod seal {
     pub trait Sealed {}
 }
 
-/// Sealed: implementations live inside the jfc-ui crate's `providers/`
+/// Sealed: implementations live inside the jfc crate's `providers/`
 /// module. External crates cannot implement `Provider` directly — extend by
 /// adding a new module under `providers/` and registering it in the
 /// dispatch table in `main.rs`.

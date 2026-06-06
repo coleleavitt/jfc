@@ -91,7 +91,7 @@ grader harness.
 ## Gap 4 — Stale onboarding docs (cheap, high-signal)
 
 - **`AGENTS.md` is wrong:** says "Rust workspace: 4 crates (jfc-anthropic-sdk,
-  jfc-economy, jfc-graph, jfc-ui)". There are **23 crates**. The crate overview
+  jfc-economy, jfc-graph, jfc)". There are **23 crates**. The crate overview
   lists only those 4. An agent reading this onboards to a false map — directly
   contradicts the talks' "codebase/CLAUDE.md is the source of truth, keep it
   current" principle.

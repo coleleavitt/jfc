@@ -30,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Graph content index (persistent cache for all body-read paths)**: new `content_index.rs` — a `DashMap`-backed, mtime-validated line cache + revision-gated per-file symbol-span index. Eliminates the perf gaps across **every** graph read path: (1) `graph_grep`, `graph_node`, `graph_search include_code`, and `graph_explore` now share one mtime-validated line cache instead of each re-reading files from disk on every call; (2) enclosing-symbol lookup is a binary search over a cached, start-sorted span list instead of an O(M×N) scan of every graph node per match. Invalidated per-file on `file_changed`. Measured: `graph_grep` 54ms→10ms (5.5×) on warm repeat; `graph_node` on a second symbol in an already-warm file 1.28ms→451µs (2.8×). `graph_status` reports warm-file count. +3 tests
 - **Graph engine ergonomics — closing the search→sed loop**: derived from analyzing ~35k tool calls across 264 jfc + 45 codex sessions (where the model ran 6,014 `sed -n` line-reads, 1,603 `nl` calls, and 2,145 literal greps the symbol index couldn't answer). Six fixes: (1) `graph_search include_code=true` inlines each hit's full source body, collapsing the `search → sed` round-trip into one call; (2) new **`graph_outline(file)`** tool returns every symbol + `:start-end` range, replacing `nl -ba`; (3) new **`graph_grep(pattern, glob?)`** does regex content search enriched with the enclosing symbol — serves the log/error/string-literal searches the graph couldn't; (4) search results now show full `:start-end` line ranges (not just start) so callers `Read offset` / `symbol_edit` precisely; (5) `lang_for` covers all 12 adapter languages in code fences; (6) function search/node results append a `graph_callers`/`graph_callees` hint to shift the grep-for-callsites reflex. +7 graph tests
 - **Wired remaining stubs into runtime**: `/learn dream` runs the real Dreamer cycle (lease + 5 tasks over loaded memories); `/learn status` + `/learn user-profile show` use the live `UserMemoryPipeline` (observation counts, promotion check, profile rendering); `/learn historize` reports staged-transcript readiness (LLM extraction runs from the daemon scheduler). PlanDreamer `verify`/`improve`/`maintain_docs` now do deterministic maintenance (flag empty Active plans, normalize whitespace bodies, backfill `last_advanced` baselines) instead of `Ok(0)`. Graph `Stub{ResolveSymbols,InferTypes}Pass` renamed to `Demo*` with genuine read-only traversals. MCP `Transport::request()` returns an actionable unsupported-method error instead of a silent 30s timeout
-- **Remote control** (`jfc-remote` crate + `jfc-ui` integration): drive a jfc session from another device over WebSocket. Wire protocol (`RemoteEnvelope`, 13 variants) with HMAC-SHA256 frame attestation, monotonic sequence replay rejection, and bearer-token pairing. `WsServer` binds `127.0.0.1:4242`; expose via Tailscale/SSH tunnel/cloudflared. Multi-client broadcast fan-out (N devices, same stream). Host mirrors streaming events, tool calls, results, toasts, plan approvals, and **permission requests with diff preview** (Edit/Write/MultiEdit/Bash). Status tracking: transition-only `Running`/`WaitingApproval`/`Idle` derived post-burst. 20s heartbeat keepalive. Client interactive approval: `y`/`n` responses mapped to `ApprovalResponse`/`PlanApprovalResponse`. CLI: `jfc rc connect` and `jfc rc status`; launch flag: `--remote-control`/`--rc`; config: `[remote_control]` section; slash: `/remote-control` (`/rc`) toggle. See `docs/remote-control.md`
+- **Remote control** (`jfc-remote` crate + `jfc` integration): drive a jfc session from another device over WebSocket. Wire protocol (`RemoteEnvelope`, 13 variants) with HMAC-SHA256 frame attestation, monotonic sequence replay rejection, and bearer-token pairing. `WsServer` binds `127.0.0.1:4242`; expose via Tailscale/SSH tunnel/cloudflared. Multi-client broadcast fan-out (N devices, same stream). Host mirrors streaming events, tool calls, results, toasts, plan approvals, and **permission requests with diff preview** (Edit/Write/MultiEdit/Bash). Status tracking: transition-only `Running`/`WaitingApproval`/`Idle` derived post-burst. 20s heartbeat keepalive. Client interactive approval: `y`/`n` responses mapped to `ApprovalResponse`/`PlanApprovalResponse`. CLI: `jfc rc connect` and `jfc rc status`; launch flag: `--remote-control`/`--rc`; config: `[remote_control]` section; slash: `/remote-control` (`/rc`) toggle. See `docs/remote-control.md`
 - **Scaffold detector — third-pass vocabulary**: added doc-comment `/// Stub:` prefix (High), `not yet wired` (High), `intentionally stubbed` (Medium), `tech debt` (Low), and corroborated `first/initial pass` (Low) patterns, derived from a third audit pass over the session corpus + the live codebase. 30 detector tests
 - **Weighted scaffold/stub detector** (`scaffold_detector.rs`): replaces the binary `STUB_PATTERNS` list with a regex-based, severity-weighted detector (Critical 100 → Info 15) and category tags (unimplemented/placeholder/scaffold/hedge/shim). Vocabulary + weights derived from an audit of the session corpus. Context-aware: code-vs-comment distinction, test-file downgrade, `shim` requires corroboration, and bare `let _ =` is no longer flagged. Task-completion gate now blocks only on a `Critical` finding or cumulative weight ≥ 160, and also scans untracked new files
 - **Slop guard**: 11 new quality checks from academic literature (duplication ratio, dead-code injection, churn detection, coherence scoring, complexity gates, test quality heuristics)
@@ -146,8 +146,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Replace hand-rolled MCP protocol with the `rmcp` SDK
 - Harden event delivery and fix approval queue batching
 - Remove narration-retry mechanism in favor of prompt-level discipline
-- Extract jfc-agents, jfc-tools crates from jfc-ui monolith
-- Wire jfc-core ExecutionResult + DiffView into jfc-ui
+- Extract jfc-agents, jfc-tools crates from jfc monolith
+- Wire jfc-core ExecutionResult + DiffView into jfc
 - Deduplicate notebook tool + shrink `built_in_agents()`
 
 ---
@@ -331,7 +331,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Expand jfc-graph engine and jfc-ui integration
+- Expand jfc-graph engine and jfc integration
 - Split app state into modules
 - Decompose message_view into modular subfiles
 - Expand daemon, SDK APIs, and swarm infrastructure
@@ -474,7 +474,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Initial release**: jfc-ui binary with GPUI-based rendering
+- **Initial release**: jfc binary with GPUI-based rendering
 - Port from GPUI to **ratatui TUI** (same day)
 - v126 baseline: agents, skills, tasks, CLAUDE.md hierarchy, tool-name normalization
 - Typed tool rendering harness

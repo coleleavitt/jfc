@@ -91,7 +91,7 @@ fn task_update_depends_on_alias() {
 ### Fix #2: SendUserFile Partial Success ✅
 
 **Status**: IMPLEMENTED & VERIFIED  
-**File**: `crates/jfc-ui/src/tools/dispatch.rs`  
+**File**: `crates/jfc/src/tools/dispatch.rs`  
 **Changes**: +7 lines (logic rewrite)
 
 **Before**:
@@ -118,7 +118,7 @@ Errors: file2.txt: No such file
 ### Fix #3: Scratchpad Lock Timeout ✅
 
 **Status**: IMPLEMENTED & VERIFIED  
-**File**: `crates/jfc-ui/src/tools/scratchpad.rs`  
+**File**: `crates/jfc/src/tools/scratchpad.rs`  
 **Changes**: +74 lines (timeout + retry logic)
 
 **Configuration**:
@@ -187,7 +187,7 @@ Error: "Scratchpad lock timeout (5s): another agent may hold the lock"
 
 ```
 ✓ cargo build -p jfc-core       (1.23s)
-✓ cargo build -p jfc-ui        (25.88s)
+✓ cargo build -p jfc        (25.88s)
 ✓ cargo build (all crates)     (40.70s)
 ✓ No warnings related to fixes
 ✓ No compilation errors
@@ -333,8 +333,8 @@ f58c480 fix: implement tool call parameter aliasing and robustness improvements
 
 **Implementation Files**:
 - `crates/jfc-core/src/tool_input.rs` — Parameter parsing
-- `crates/jfc-ui/src/tools/dispatch.rs` — Tool execution
-- `crates/jfc-ui/src/tools/scratchpad.rs` — Concurrency
+- `crates/jfc/src/tools/dispatch.rs` — Tool execution
+- `crates/jfc/src/tools/scratchpad.rs` — Concurrency
 
 **Session Data**:
 - `~/.config/jfc/sessions/ses_20260601_042950.json` — Session messages

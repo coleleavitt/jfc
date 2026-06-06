@@ -207,6 +207,9 @@ impl DesignProject {
     /// Delete a project-relative file or directory, and unregister any matching
     /// deliverable asset. The path is sandboxed before removal.
     pub fn delete_path(&mut self, rel: &str) -> Result<()> {
+        if targets_project_root(rel) {
+            return Err(DesignError::PathEscape(rel.to_owned()));
+        }
         let p = self.resolve(rel)?;
         if p.is_dir() {
             std::fs::remove_dir_all(&p).map_err(|e| io_err(&p, e))?;
@@ -280,6 +283,13 @@ impl DesignProject {
         let json = serde_json::to_string_pretty(&self.meta)?;
         std::fs::write(&p, json).map_err(|e| io_err(&p, e))
     }
+}
+
+fn targets_project_root(rel: &str) -> bool {
+    let rel = rel.trim_start_matches('/');
+    Path::new(rel)
+        .components()
+        .all(|comp| matches!(comp, Component::CurDir))
 }
 
 /// Generate a short, filesystem-safe project id from a title plus a time-derived
@@ -395,6 +405,25 @@ mod tests {
         let abs = p.resolve("/etc/passwd").unwrap();
         assert!(abs.starts_with(p.root()));
         assert!(p.resolve("a/b/c.html").is_ok());
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn delete_path_rejects_project_root_robust() {
+        let base = tmp();
+        let store = ProjectStore::new(&base).unwrap();
+        let mut p = store.create("x").unwrap();
+        p.write_file("index.html", b"<h1>hi</h1>", None).unwrap();
+
+        for rel in ["", "/", ".", "./", "/."] {
+            assert!(matches!(
+                p.delete_path(rel),
+                Err(DesignError::PathEscape(_))
+            ));
+            assert!(p.root().exists());
+            assert!(p.resolve("index.html").unwrap().exists());
+        }
+
         std::fs::remove_dir_all(&base).ok();
     }
 }

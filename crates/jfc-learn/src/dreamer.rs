@@ -69,7 +69,7 @@ pub struct DreamerReport {
     pub circuit_breaker_fired: bool,
 }
 
-/// A simplified memory record for dreamer scanning (avoids coupling to jfc-ui).
+/// A simplified memory record for dreamer scanning (avoids coupling to jfc).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryRecord {
     pub path: String,

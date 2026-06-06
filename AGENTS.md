@@ -20,7 +20,7 @@
   - `jfc-session` — session and task persistence
   - `jfc-theme` — terminal theme support
   - `jfc-tools` — shared tool helpers
-  - `jfc-ui` — terminal UI (ratatui-based)
+  - `jfc` — terminal UI (ratatui-based)
   - `jfc-web` — web support
 - Edition 2024, resolver 2.
 - Run `cargo build` from workspace root. Run `cargo test` from workspace root.
