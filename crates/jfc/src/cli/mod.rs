@@ -483,6 +483,14 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
     // registered handlers (Logger only, by default — user-defined
     // hooks land via .claude/settings.json in a future pass). Idempotent.
     crate::hooks::init_global(crate::hooks::default_registry());
+    // TUI render-cache persistence rides on the session-save hook so the
+    // engine-side session layer never links the markdown/render stack.
+    crate::session::set_post_save_hook(|| {
+        let hl_cache_path = std::env::current_dir()
+            .unwrap_or_default()
+            .join(".jfc/highlight-heights.json");
+        jfc_markdown::persist_highlight_line_counts(&hl_cache_path);
+    });
 
     // Clean up tool-result spill files older than 24h to prevent unbounded /tmp growth.
     crate::stream::cleanup_tool_result_spills(std::time::Duration::from_secs(24 * 3600));

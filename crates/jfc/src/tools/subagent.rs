@@ -196,31 +196,35 @@ pub async fn execute_task(
     task_store: Option<std::sync::Arc<jfc_session::TaskStore>>,
     active_team_name: Option<&str>,
 ) -> ExecutionResult {
-    // StructuredOutput schema: when the parent provides a schema, install
-    // it so the subagent's StructuredOutput tool call validates against it.
-    if let Some(ref schema) = task_input.schema
-        && let Err(e) = crate::tools::structured_output::set_active_schema(Some(schema))
-    {
-        return ExecutionResult::failure(format!("Task: invalid schema rejected: {e}"));
-    }
-    let result = execute_task_inner(
-        task_input,
-        provider,
-        model_id,
-        tx,
-        task_id,
-        agent_def,
-        cwd_override,
-        task_store,
-        active_team_name.map(str::to_owned),
-        0,
+    // StructuredOutput schema: when the parent provides a schema, install it
+    // as a task-local for the subagent's whole run so its StructuredOutput
+    // tool call validates against it (work-stealing-safe; see
+    // structured_output::with_schema).
+    let validator = match task_input.schema {
+        Some(ref schema) => match crate::tools::structured_output::compile_schema(schema) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                return ExecutionResult::failure(format!("Task: invalid schema rejected: {e}"));
+            }
+        },
+        None => None,
+    };
+    crate::tools::structured_output::with_schema(
+        validator,
+        execute_task_inner(
+            task_input,
+            provider,
+            model_id,
+            tx,
+            task_id,
+            agent_def,
+            cwd_override,
+            task_store,
+            active_team_name.map(str::to_owned),
+            0,
+        ),
     )
-    .await;
-    // Clear schema regardless of success/failure.
-    if task_input.schema.is_some() {
-        crate::tools::structured_output::clear_active_schema();
-    }
-    result
+    .await
 }
 async fn execute_task_inner(
     task_input: &crate::types::TaskInput,

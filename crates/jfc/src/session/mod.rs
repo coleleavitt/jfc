@@ -17,4 +17,4 @@ mod serialize;
 #[cfg(test)]
 mod serialization_tests;
 
-pub use core::{load_session, load_session_with_model, save_session, set_session_title};
+pub use core::{load_session, load_session_with_model, save_session, set_session_title, set_post_save_hook};

@@ -164,13 +164,21 @@ pub async fn save_session(
         warn!(target: "jfc::session", session_id = session_id_str, "failed to serialize session");
     }
 
-    // Persist theme-independent highlight line counts alongside the session so
-    // future startups can resolve highlighted tool heights without running
-    // syntect for known code blocks.
-    let hl_cache_path = std::env::current_dir()
-        .unwrap_or_default()
-        .join(".jfc/highlight-heights.json");
-    jfc_markdown::persist_highlight_line_counts(&hl_cache_path);
+    // Frontend post-save hook (e.g. the TUI persists its highlight-height
+    // cache alongside the session). Lives behind a registration so the
+    // session layer stays free of render-stack dependencies.
+    if let Some(hook) = POST_SAVE_HOOK.get() {
+        hook();
+    }
+}
+
+/// Optional frontend callback fired after every successful session save.
+static POST_SAVE_HOOK: std::sync::OnceLock<fn()> = std::sync::OnceLock::new();
+
+/// Register a frontend post-save hook (first registration wins; called on
+/// every save). The TUI uses this to persist its highlight-height cache.
+pub fn set_post_save_hook(hook: fn()) {
+    let _ = POST_SAVE_HOOK.set(hook);
 }
 
 pub async fn load_session(session_id: &SessionId) -> Option<Vec<ChatMessage>> {

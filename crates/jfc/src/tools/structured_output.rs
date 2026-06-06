@@ -1,7 +1,7 @@
 //! StructuredOutput validation — JSON Schema validation for subagent outputs.
 //!
 //! Mirrors Claude Code's `StructuredOutput` tool. When a subagent is spawned
-//! with a `schema` parameter, the schema is stored in thread-local state so
+//! with a `schema` parameter, the schema is installed as a tokio task-local so
 //! the subagent's `StructuredOutput` tool call can validate against it.
 //!
 //! # DSPy Assertions on the retry path
@@ -19,67 +19,65 @@
 use jfc_core::AssertionOutcome;
 use jsonschema::Validator;
 use serde_json::Value;
-use std::cell::RefCell;
 use std::sync::Arc;
 
-thread_local! {
-    /// Active schema validator for the current task/subagent.
-    /// Set by `set_active_schema` before subagent execution, cleared after.
-    static ACTIVE_SCHEMA: RefCell<Option<Arc<Validator>>> = const { RefCell::new(None) };
+tokio::task_local! {
+    /// Active schema validator for the current task/subagent. Installed via
+    /// [`with_schema`]'s task-local scope. This used to be a `thread_local!`
+    /// with imperative set/clear around an `.await` — broken under tokio's
+    /// work-stealing scheduler (the task can resume on a different worker
+    /// thread, and the stale value leaks to unrelated tasks on the original
+    /// thread). A task-local scope travels with the task.
+    static ACTIVE_SCHEMA: Option<Arc<Validator>>;
 }
 
-/// Install a schema for the current thread. Subsequent calls to
-/// `validate_output` will check against it. Pass `None` to clear.
-///
-/// Returns an error if the provided schema is malformed.
-pub fn set_active_schema(schema: Option<&Value>) -> Result<(), String> {
-    let validator = match schema {
-        Some(s) => {
-            let v = Validator::new(s).map_err(|e| format!("invalid JSON Schema: {e}"))?;
-            Some(Arc::new(v))
-        }
-        None => None,
-    };
-    ACTIVE_SCHEMA.with(|cell| {
-        *cell.borrow_mut() = validator;
-    });
-    Ok(())
+/// Compile a JSON Schema into a reusable validator, rejecting malformed
+/// schemas up front (before any subagent work runs).
+pub fn compile_schema(schema: &Value) -> Result<Arc<Validator>, String> {
+    Validator::new(schema)
+        .map(Arc::new)
+        .map_err(|e| format!("invalid JSON Schema: {e}"))
+}
+
+/// Run `fut` with `validator` installed as the task-local active schema.
+/// `validate_output` calls anywhere inside the future (including after
+/// `.await` migrations across worker threads) see this schema; tasks outside
+/// the scope see none.
+pub async fn with_schema<F>(validator: Option<Arc<Validator>>, fut: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    ACTIVE_SCHEMA.scope(validator, fut).await
 }
 
 /// Validate a StructuredOutput payload against the active schema (if any).
 /// Returns `Ok(())` when no schema is active OR the data matches.
 /// Returns `Err(messages)` listing every validation error.
 pub fn validate_output(data: &Value) -> Result<(), String> {
-    ACTIVE_SCHEMA.with(|cell| {
-        let guard = cell.borrow();
-        let Some(validator) = guard.as_ref() else {
-            return Ok(());
-        };
-        let errors: Vec<String> = validator
-            .iter_errors(data)
-            .map(|e| {
-                let path = e.instance_path().to_string();
-                let loc = if path.is_empty() {
-                    "root".to_string()
-                } else {
-                    path
-                };
-                format!("{loc}: {e}")
-            })
-            .collect();
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors.join("; "))
-        }
-    })
-}
-
-/// Clear the active schema for this thread.
-pub fn clear_active_schema() {
-    ACTIVE_SCHEMA.with(|cell| {
-        *cell.borrow_mut() = None;
-    });
+    let validator = ACTIVE_SCHEMA
+        .try_with(|v| v.clone())
+        .ok()
+        .flatten();
+    let Some(validator) = validator else {
+        return Ok(());
+    };
+    let errors: Vec<String> = validator
+        .iter_errors(data)
+        .map(|e| {
+            let path = e.instance_path().to_string();
+            let loc = if path.is_empty() {
+                "root".to_string()
+            } else {
+                path
+            };
+            format!("{loc}: {e}")
+        })
+        .collect();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 /// Classify a `StructuredOutput` payload as a [`jfc_core::AssertionOutcome`].
@@ -129,7 +127,7 @@ mod tests {
 
     #[test]
     fn no_schema_means_pass_normal() {
-        clear_active_schema();
+        // Outside any with_schema scope there is no active schema.
         assert!(validate_output(&json!({"x": 1})).is_ok());
     }
 
@@ -140,9 +138,10 @@ mod tests {
             "properties": {"name": {"type": "string"}},
             "required": ["name"]
         });
-        set_active_schema(Some(&schema)).unwrap();
-        assert!(validate_output(&json!({"name": "x"})).is_ok());
-        clear_active_schema();
+        let v = compile_schema(&schema).unwrap();
+        ACTIVE_SCHEMA.sync_scope(Some(v), || {
+            assert!(validate_output(&json!({"name": "x"})).is_ok());
+        });
     }
 
     #[test]
@@ -152,10 +151,11 @@ mod tests {
             "properties": {"name": {"type": "string"}},
             "required": ["name"]
         });
-        set_active_schema(Some(&schema)).unwrap();
-        let err = validate_output(&json!({"other": 1})).expect_err("should fail");
-        assert!(err.contains("name") || err.contains("required"));
-        clear_active_schema();
+        let v = compile_schema(&schema).unwrap();
+        ACTIVE_SCHEMA.sync_scope(Some(v), || {
+            let err = validate_output(&json!({"other": 1})).expect_err("should fail");
+            assert!(err.contains("name") || err.contains("required"));
+        });
     }
 
     #[test]
@@ -165,21 +165,21 @@ mod tests {
             "properties": {"n": {"type": "integer"}},
             "required": ["n"]
         });
-        set_active_schema(Some(&schema)).unwrap();
-        assert!(validate_output(&json!({"n": "not an integer"})).is_err());
-        clear_active_schema();
+        let v = compile_schema(&schema).unwrap();
+        ACTIVE_SCHEMA.sync_scope(Some(v), || {
+            assert!(validate_output(&json!({"n": "not an integer"})).is_err());
+        });
     }
 
     #[test]
     fn malformed_schema_returns_error_robust() {
         let bad = json!({"type": "not-a-real-type"});
-        assert!(set_active_schema(Some(&bad)).is_err());
+        assert!(compile_schema(&bad).is_err());
     }
 
     // DSPy: a non-object payload is a hard assertion violation.
     #[test]
     fn schema_outcome_non_object_is_hard_normal() {
-        clear_active_schema();
         let outcome = schema_outcome(&json!("just a string"));
         assert!(matches!(outcome, AssertionOutcome::Hard { .. }));
     }
@@ -193,13 +193,14 @@ mod tests {
             "properties": {"name": {"type": "string"}},
             "required": ["name"]
         });
-        set_active_schema(Some(&schema)).unwrap();
-        let outcome = schema_outcome(&json!({"other": 1}));
-        assert!(matches!(outcome, AssertionOutcome::Hard { .. }));
-        let feedback = format_retry_feedback(&outcome).expect("hard → feedback");
-        assert!(feedback.contains("name") || feedback.contains("required"));
-        assert!(feedback.contains("StructuredOutput again")); // actionable retry instruction
-        clear_active_schema();
+        let v = compile_schema(&schema).unwrap();
+        ACTIVE_SCHEMA.sync_scope(Some(v), || {
+            let outcome = schema_outcome(&json!({"other": 1}));
+            assert!(matches!(outcome, AssertionOutcome::Hard { .. }));
+            let feedback = format_retry_feedback(&outcome).expect("hard → feedback");
+            assert!(feedback.contains("name") || feedback.contains("required"));
+            assert!(feedback.contains("StructuredOutput again")); // actionable retry instruction
+        });
     }
 
     // DSPy: a matching payload passes and produces no retry feedback.
@@ -210,10 +211,11 @@ mod tests {
             "properties": {"name": {"type": "string"}},
             "required": ["name"]
         });
-        set_active_schema(Some(&schema)).unwrap();
-        let outcome = schema_outcome(&json!({"name": "ok"}));
-        assert!(matches!(outcome, AssertionOutcome::Pass));
-        assert!(format_retry_feedback(&outcome).is_none());
-        clear_active_schema();
+        let v = compile_schema(&schema).unwrap();
+        ACTIVE_SCHEMA.sync_scope(Some(v), || {
+            let outcome = schema_outcome(&json!({"name": "ok"}));
+            assert!(matches!(outcome, AssertionOutcome::Pass));
+            assert!(format_retry_feedback(&outcome).is_none());
+        });
     }
 }

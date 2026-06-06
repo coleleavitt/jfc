@@ -94,6 +94,52 @@ pub mod daemon;
 pub mod hashline;
 #[cfg(feature = "hooks")]
 pub mod hooks;
+/// No-op hooks facade for `--no-default-features` builds: `fire`/`fire_async`
+/// short-circuit to `Continue` so call sites need no cfg-gating. (The gated
+/// real module is API-identical; this keeps every feature combination
+/// compiling — the ungated `hooks::fire` calls in stream/ops previously broke
+/// feature-off builds.)
+#[cfg(not(feature = "hooks"))]
+pub mod hooks {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum HookPoint {
+        OnUserPromptSubmit,
+        BeforeStream,
+        AfterStream,
+        OnHeartbeat,
+    }
+
+    pub struct HookContext;
+
+    impl HookContext {
+        pub fn for_session(_session_id: &str) -> Self {
+            Self
+        }
+        #[must_use]
+        pub fn with_extra(self, _key: &str, _value: String) -> Self {
+            self
+        }
+    }
+
+    pub enum HookAction {
+        Continue,
+        Abort(String),
+    }
+
+    pub fn fire(_point: HookPoint, _ctx: &HookContext) -> HookAction {
+        HookAction::Continue
+    }
+
+    pub fn fire_async(_point: HookPoint, _ctx: &HookContext) {}
+
+    pub struct HookRegistry;
+
+    pub fn default_registry() -> HookRegistry {
+        HookRegistry
+    }
+
+    pub fn init_global(_registry: HookRegistry) {}
+}
 #[cfg(feature = "intent-gate")]
 pub mod intent;
 #[cfg(feature = "permission-automation")]
