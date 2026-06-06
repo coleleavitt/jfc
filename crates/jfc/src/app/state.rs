@@ -17,7 +17,6 @@ use jfc_provider::{ModelId, ModelInfo, Provider};
 
 use super::EngineState;
 
-pub const DEFAULT_CONTEXT_WINDOW_TOKENS: usize = 200_000;
 
 /// The expanded panel state cycled by Ctrl+T — mirrors Claude Code's
 /// `expandedView: "none" | "tasks" | "teammates"` state machine.
@@ -129,29 +128,7 @@ pub struct SelectRequest {
 pub const SPINNER: &[&str] = crate::glyphs::TASK_FRAMES;
 pub const IDLE_TICK_MS: u64 = 80;
 pub const ANIM_TICK_MS: u64 = 33;
-/// Hard idle limit for a provider stream. This must stay longer than the
-/// provider HTTP read timeout (default 300s) so the HTTP layer, not the UI
-/// watchdog, reports real network failures. Anthropic/Bedrock streams can
-/// legitimately go quiet for minutes while the model is thinking or an upstream
-/// proxy is queueing, so we keep ~1 minute of slack above the read timeout.
-/// Users who raise `JFC_STREAM_IDLE_TIMEOUT_MS` past this should raise the
-/// watchdog too, or the watchdog will fire first.
-pub const STREAM_WATCHDOG_TIMEOUT_SECS: u64 = 360;
-/// Cap on how many turns of token usage we retain for the info-sidebar
-/// sparkline. 32 datapoints fit comfortably in a 30-col-wide sidebar
-/// while still showing a meaningful trend.
-pub const TOKEN_HISTORY_CAP: usize = 32;
 
-/// Maximum number of pending `<system-reminder>` bodies retained between
-/// user turns. Reminders come from filesystem events, MCP changes, and
-/// watcher notifications — during long idle sessions a stream of unique
-/// log lines would otherwise grow `pending_background_reminders`
-/// unbounded. Once the queue is full, the oldest reminder is dropped
-/// before a new one is pushed; on the next turn the survivors get
-/// flushed via `take_background_reminders`. 20 is enough to never lose
-/// signal in normal use, small enough that the per-turn injection stays
-/// bounded.
-pub const BACKGROUND_REMINDERS_CAP: usize = 20;
 
 pub struct App {
     /// The frontend-neutral engine state: conversation, streaming,

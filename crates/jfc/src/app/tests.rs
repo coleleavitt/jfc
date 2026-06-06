@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Instant};
 
 use super::shell_safety::is_readonly_bash;
 use super::*;
-use crate::app::recent_models::save_recent_models;
+use jfc_engine::app::recent_models::save_recent_models;
 use crate::types::{
     ChatMessage, MessagePart, ModelUsage, ReplacementMode, ToolCall, ToolInput, ToolKind,
     ToolOutput, ToolStatus,
@@ -1085,3 +1085,78 @@ fn take_background_reminders_empty_is_empty_robust() {
     let drained = app.engine.take_background_reminders();
     assert!(drained.is_empty());
 }
+
+
+// ── Compaction view-effect regressions (moved from the engine handler when
+//    it crossed the crate boundary — the scroll/follow assertions are the
+//    frontend's interpretation of the TranscriptReplaced/ScrollToBottom
+//    effects, applied via apply_engine_effects). ─────────────────────────────
+
+use crate::types::ChatMessage as CompactChatMessage;
+
+#[tokio::test]
+async fn compaction_done_repins_scroll_to_bottom_robust() {
+        let mut app = new_app();
+        // Simulate a user who scrolled up before compaction.
+        app.total_lines = 500;
+        app.viewport_height = 20;
+        app.scroll_offset = 5;
+        app.follow_bottom = false;
+        app.engine.is_streaming = false;
+
+        let compacted = vec![
+            CompactChatMessage::compact_boundary("summary of the session so far", 120_000),
+            CompactChatMessage::assistant("resumed reply".into()),
+        ];
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        jfc_engine::runtime::event_loop::handlers::compaction::handle_done(
+            &mut app.engine,
+            &tx,
+            compacted,
+            jfc_engine::context::ToolContext::new(),
+            120_000,
+            20_000,
+        )
+        .await;
+        // The handler queues an effect; the frontend's drain applies it.
+        crate::runtime::event_loop::apply_engine_effects(&mut app);
+
+        assert!(
+            app.follow_bottom,
+            "compaction is a hard transcript reset — follow_bottom must re-arm"
+        );
+        // scroll_to_bottom() pins to max_scroll() = total_lines - viewport_height
+        // (500 - 20 = 480), clearing the stale offset of 5.
+        assert_eq!(
+            app.scroll_offset, 480,
+            "scroll_offset must be repinned to the bottom of the new transcript"
+        );
+    }
+
+
+#[tokio::test]
+async fn compaction_done_while_streaming_does_not_repin_edge() {
+        let mut app = new_app();
+        app.engine.is_streaming = true;
+        app.follow_bottom = false;
+        app.scroll_offset = 5;
+        let before = app.engine.messages.len();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        jfc_engine::runtime::event_loop::handlers::compaction::handle_done(
+            &mut app.engine,
+            &tx,
+            vec![CompactChatMessage::assistant("ignored".into())],
+            jfc_engine::context::ToolContext::new(),
+            120_000,
+            20_000,
+        )
+        .await;
+
+        crate::runtime::event_loop::apply_engine_effects(&mut app);
+        assert_eq!(app.engine.messages.len(), before, "result must be discarded");
+        assert!(!app.follow_bottom, "discard path must not repin");
+        assert_eq!(app.scroll_offset, 5);
+    }
+

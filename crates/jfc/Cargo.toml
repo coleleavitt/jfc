@@ -71,6 +71,7 @@ itertools = "0.14"
 clap = { version = "4", features = ["derive"] }
 rand = "0.10.1"
 libc = "0.2.186"
+jfc-engine = { path = "../jfc-engine" }
 jfc-config = { path = "../jfc-config" }
 jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
 jfc-auth = { path = "../jfc-auth" }
@@ -131,13 +132,14 @@ default = ["hooks", "permission-automation", "anthropic-oauth-sensitive", "inten
 # Feature-gated Anthropic OAuth sensitive implementation (CCH, billing attestation,
 # OAuth PKCE client id, etc.). Public builds can disable this via
 # `--no-default-features --features hooks,permission-automation` or similar.
-anthropic-oauth-sensitive = []
-hashline = []
-permission-automation = []
-hooks = []
-background-agents = []
-intent-gate = []
-landlock-sandbox = []
+# Every gate forwards to the engine crate, which carries the gated code.
+anthropic-oauth-sensitive = ["jfc-engine/anthropic-oauth-sensitive"]
+hashline = ["jfc-engine/hashline"]
+permission-automation = ["jfc-engine/permission-automation"]
+hooks = ["jfc-engine/hooks"]
+background-agents = ["jfc-engine/background-agents"]
+intent-gate = ["jfc-engine/intent-gate"]
+landlock-sandbox = ["jfc-engine/landlock-sandbox"]
 dhat-heap = ["dhat"]
 profiling = ["pprof", "console-subscriber"]
 

@@ -28,7 +28,7 @@ mod terminal;
 // Provider bootstrap moved to the engine side (runtime/bootstrap.rs) so the
 // daemon worker and headless drivers share it without a cli dependency.
 pub(crate) use crate::runtime::bootstrap::{
-    build_providers, provider_for_model, qualified_model_id, resolve_provider_model,
+    build_providers, qualified_model_id, resolve_provider_model,
 };
 
 use auth::{AuthSubcommand, run_auth_subcommand};

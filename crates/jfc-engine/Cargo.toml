@@ -1,0 +1,84 @@
+[package]
+name = "jfc-engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { workspace = true, features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tokio-stream = "0.1"
+futures = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { package = "serde_norway", version = "0.9" }
+toml = "0.8"
+dirs = "5"
+chrono = { workspace = true }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+regex = "1"
+ignore = "0.4"
+indexmap = "2"
+boa_engine = { workspace = true }
+num_cpus = { workspace = true }
+parking_lot = { workspace = true }
+rand = "0.10.1"
+libc = "0.2.186"
+async-trait = "0.1"
+hex = "0.4"
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+url = "2"
+urlencoding = "2"
+serde_urlencoded = "0.7"
+unicode-segmentation = { workspace = true }
+jsonschema = { version = "0.46.5", default-features = false }
+# OS-level desktop notifications (engine handlers fire turn-complete /
+# tool-failed bubbles; disabled via JFC_DISABLE_NOTIFICATIONS=1).
+notify-rust = { version = "4", default-features = false, features = ["d"] }
+notify = "8"
+
+jfc-config = { path = "../jfc-config" }
+jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
+jfc-auth = { path = "../jfc-auth" }
+jfc-bridge = { path = "../jfc-bridge" }
+jfc-agents = { path = "../jfc-agents" }
+jfc-core = { path = "../jfc-core" }
+jfc-changeset = { path = "../jfc-changeset" }
+jfc-provider = { path = "../jfc-provider" }
+jfc-providers = { path = "../jfc-providers" }
+jfc-session = { path = "../jfc-session" }
+jfc-tools = { path = "../jfc-tools" }
+jfc-graph = { path = "../jfc-graph" }
+jfc-economy = { path = "../jfc-economy" }
+jfc-mcp = { path = "../jfc-mcp" }
+jfc-daemon = { path = "../jfc-daemon" }
+jfc-learn = { path = "../jfc-learn" }
+jfc-memory = { path = "../jfc-memory" }
+jfc-web = { path = "../jfc-web" }
+jfc-design = { path = "../jfc-design" }
+jfc-remote = { path = "../jfc-remote" }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+proptest = "1"
+serial_test = "3"
+
+[features]
+# The engine ships every feature off; the jfc bin selects and forwards.
+default = []
+anthropic-oauth-sensitive = []
+hashline = []
+permission-automation = []
+hooks = []
+background-agents = []
+intent-gate = []
+landlock-sandbox = []
+
+[lints]
+workspace = true

@@ -1,6 +1,3 @@
-//! Web search — delegated to the `jfc-web` crate.
-//!
-//! This module re-exports the public API so existing `crate::web_search::search`
-//! call sites continue to compile without modification.
+//! Re-export shim: moved to jfc-engine (stage 5). Deleted in stage 6.
 
-pub use jfc_web::search;
+pub use jfc_engine::web_search::*;

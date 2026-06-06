@@ -1,45 +1,26 @@
-mod agent_log_parser;
-pub(crate) mod approvals;
-mod background;
-pub(crate) mod bootstrap;
 pub(crate) mod event_loop;
-mod events;
-mod execution;
-mod factory;
-mod goal_loop;
-mod dispatch;
-pub(crate) mod durations;
-mod network;
-pub(crate) mod ops;
-mod queue;
-mod stream_control;
-mod task_activity;
 mod terminal;
 mod yank;
 
-pub(crate) use background::{
-    restore_persistent_background_agents, sync_detached_background_tasks_from_daemon,
+// Engine-side runtime surface re-exported so historical `crate::runtime::X`
+// paths keep working until the stage-6 shim removal. Explicit (not a glob)
+// because the bin keeps its own `event_loop` module for the pump.
+pub use jfc_engine::runtime::{
+    APP_EVENT_BUFFER, CompactionEvent, ControlEvent, DEFERRED_TOOL_USES_CAP, DeferredToolUse,
+    EngineEvent, EventReceiver, EventSender, ExecutionResult, FrontendDirective, FrontendEvent,
+    GoalEvent, MessageQueue, ProviderEvent, QueuePriority, QueuedPrompt, StreamEvent,
+    StreamLifecyclePhase, StreamLifecycleStatus, StreamRequestMetadata, StreamRequestOverrides,
+    StreamToolChoice, TOOL_USE_SUMMARIES_CAP, TaskEvent, TeamEvent, ToolEvent, ToolProvenance,
+    ToolSource, ToolUseSummary, WorkflowProgressEvent, approvals, bootstrap,
+    dispatch_goal_evaluator_if_active, drain_queued_prompts, durations, factory_mode_enabled,
+    handle_engine_event, handle_goal_verdict, maybe_continue_task_factory, ops,
+    record_network_recovery, restart_stream_in_place, restore_persistent_background_agents,
+    send_critical, sync_detached_background_tasks_from_daemon, task_drift_reminder,
+    update_task_activities,
 };
-pub use events::{
-    APP_EVENT_BUFFER, AppEvent, CompactionEvent, ControlEvent, EngineEvent, EventReceiver,
-    EventSender, FrontendEvent, GoalEvent, ProviderEvent, StreamEvent, StreamLifecyclePhase,
-    StreamLifecycleStatus, StreamRequestMetadata, StreamRequestOverrides, StreamToolChoice,
-    TaskEvent, TeamEvent, ToolEvent, UiEvent, WorkflowProgressEvent, send_critical,
-};
-pub use execution::{ExecutionResult, ToolProvenance, ToolSource};
-pub(crate) use factory::{factory_mode_enabled, maybe_continue_task_factory};
-pub(crate) use goal_loop::{dispatch_goal_evaluator_if_active, handle_goal_verdict};
-pub use jfc_core::{
-    DEFERRED_TOOL_USES_CAP, DeferredToolUse, MessageQueue, QueuePriority, QueuedPrompt,
-    TOOL_USE_SUMMARIES_CAP, ToolUseSummary,
-};
-#[cfg(test)]
-pub use jfc_core::{DiagnosticLevel, ToolOutcome};
-pub(crate) use dispatch::{FrontendDirective, handle_engine_event};
-pub(crate) use network::record_network_recovery;
-pub(crate) use queue::drain_queued_prompts;
-pub(crate) use stream_control::restart_stream_in_place;
-pub(crate) use task_activity::{task_drift_reminder, update_task_activities};
+
+pub use event_loop::{AppEvent, UiEvent};
+
 pub(crate) use terminal::{draw_synchronized, read_git_branch_from_root, set_terminal_title};
 pub(crate) use yank::{
     copy_to_clipboard, full_transcript_text, last_assistant_text, tail_transcript_text,

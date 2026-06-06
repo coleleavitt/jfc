@@ -1,6 +1,3 @@
-//! Two-phase LLM-driven memory recall — delegated to the `jfc-memory` crate.
-//!
-//! Re-exports the public API so existing `crate::memory_recall::*` call sites
-//! continue to compile without modification.
+//! Re-export shim: moved to jfc-engine (stage 5). Deleted in stage 6.
 
-pub use jfc_memory::recall::{cached_recall, is_enabled, run_recall, set_runtime_override};
+pub use jfc_engine::memory_recall::*;

@@ -1,6 +1,3 @@
-//! Re-export shim: `ToolContext`, `ReadDedupCache`, and the CLAUDE.md/context
-//! loaders moved to `jfc_core::context` during the engine extraction. This
-//! file preserves the historical `crate::context::*` paths and is deleted in
-//! the final shim-removal stage.
+//! Re-export shim: moved to jfc-engine (stage 5). Deleted in stage 6.
 
-pub use jfc_core::context::*;
+pub use jfc_engine::context::*;

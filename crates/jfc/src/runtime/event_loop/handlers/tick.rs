@@ -16,7 +16,7 @@ use crate::runtime::{
 };
 use crate::toast;
 
-use super::super::guards::{CONFIG_RELOAD_REMINDER, MCP_REFRESH_REMINDER};
+use jfc_engine::runtime::event_loop::guards::{CONFIG_RELOAD_REMINDER, MCP_REFRESH_REMINDER};
 
 pub(crate) async fn handle_tick(
     app: &mut App,

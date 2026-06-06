@@ -1,14 +1,7 @@
-pub(crate) mod compaction;
 pub(crate) mod input;
-pub(crate) mod provider;
-pub(crate) mod stream_chunk;
-pub(crate) mod stream_done;
-pub(crate) mod stream_error;
-pub(crate) mod stream_tool;
-pub(crate) mod stream_usage;
-pub(crate) mod task;
-pub(crate) mod team;
 pub(crate) mod tick;
-pub(crate) mod tools;
 pub(crate) mod ui_actions;
-pub(crate) mod workflow;
+
+// Engine handlers (stream/tool/task/team/compaction/workflow/provider) are
+// re-exported so the pump's `handlers::x::y` call paths survive stage 5.
+pub use jfc_engine::runtime::event_loop::handlers::*;

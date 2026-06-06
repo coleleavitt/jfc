@@ -7,16 +7,39 @@ use tokio::sync::mpsc;
 
 use crate::app::{ANIM_TICK_MS, App, IDLE_TICK_MS};
 use crate::runtime::{
-    APP_EVENT_BUFFER, AppEvent, EngineEvent, EventReceiver, EventSender, ProviderEvent, StreamEvent,
-    StreamRequestOverrides, TeamEvent, UiEvent, draw_synchronized, restore_persistent_background_agents, set_terminal_title,
+    APP_EVENT_BUFFER, EngineEvent, EventReceiver, EventSender, ProviderEvent, StreamEvent,
+    StreamRequestOverrides, TeamEvent, draw_synchronized, restore_persistent_background_agents,
+    set_terminal_title,
 };
 use crate::types::*;
 use crate::{config, diagnostics_producer, lsp_client, session, slate, stream};
 use jfc_provider::{ModelId, Provider, ProviderId};
 
-mod guards;
+use crossterm::event::Event as TermEvent;
+
+/// TUI-local frontend events: raw terminal input and the frame tick. These
+/// never enter the engine — every other former `UiEvent` variant became a
+/// [`ControlEvent`] or [`FrontendEvent`].
+pub enum UiEvent {
+    Term(TermEvent),
+    Tick,
+}
+
+/// The TUI event-loop's merged event type: terminal input + frame ticks on
+/// the frontend side, engine events on the other. TUI-only — this never
+/// crosses into engine code.
+pub enum AppEvent {
+    Ui(UiEvent),
+    Engine(EngineEvent),
+}
+
+impl AppEvent {
+    pub fn is_tick(&self) -> bool {
+        matches!(self, Self::Ui(UiEvent::Tick))
+    }
+}
+
 pub(crate) mod handlers;
-mod narration_retry;
 
 fn prioritize_terminal_events(events: &mut Vec<AppEvent>) {
     if events.len() < 2
