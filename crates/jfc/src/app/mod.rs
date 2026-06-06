@@ -14,7 +14,7 @@ pub use permissions::{
 };
 pub use recent_models::{load_recent_models, push_recent_model};
 pub use engine_state::{
-    BackgroundTask, EngineState, NetworkRecoveryProvider, NetworkRecoveryReason,
+    BackgroundTask, EngineEffect, EngineState, NetworkRecoveryProvider, NetworkRecoveryReason,
     NetworkRecoveryStatus,
 };
 pub use state::{

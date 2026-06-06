@@ -48,7 +48,7 @@ pub(super) fn handle_model_picker_key(app: &mut App, key: crossterm::event::KeyE
                 app.engine.model = chosen_id.clone();
                 let recent_model = crate::qualified_model_id(app.engine.provider.as_ref(), &chosen_id);
                 crate::app::push_recent_model(&mut app.engine.recent_models, &recent_model);
-                app.sync_selected_context_window();
+                app.engine.sync_selected_context_window();
                 close_model_picker(app);
             }
         }

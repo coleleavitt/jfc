@@ -1,7 +1,7 @@
 //! `TaskEvent::*` handlers — subagent streaming, background task
 //! registration, progress, completion, and failure.
 
-use crate::app::{self, App};
+use crate::app::{self, EngineState};
 use crate::runtime::{EventSender, factory_mode_enabled, maybe_continue_task_factory};
 use crate::types::*;
 use crate::{stream, types};
@@ -9,15 +9,15 @@ use crate::{stream, types};
 use super::super::guards::streaming_assistant_mut;
 
 /// Handle `TaskEvent::AgentChunk { task_id, text }`.
-pub(crate) fn handle_agent_chunk(app: &mut App, task_id: crate::ids::TaskId, text: String) {
+pub(crate) fn handle_agent_chunk(state: &mut EngineState, task_id: crate::ids::TaskId, text: String) {
     // Subagent emitted a streaming text chunk — append to its
     // task's message log so the task view shows live output
     // rather than the "No messages yet" empty state. v126
     // pipes nested-stream chunks the same way so the user
     // can drill into a running agent and see what it's doing.
-    app.last_active_agent_task = Some(task_id.as_str().to_owned());
+    state.last_active_agent_task = Some(task_id.as_str().to_owned());
     crate::daemon::record_background_agent_log(task_id.as_str(), &text);
-    if let Some(bt) = app.engine.background_tasks.get_mut(task_id.as_str()) {
+    if let Some(bt) = state.background_tasks.get_mut(task_id.as_str()) {
         // Coalesce with the previous chunk when both came in
         // rapid succession AND the previous entry doesn't end
         // with a newline — so a single conceptual paragraph
@@ -59,7 +59,7 @@ pub(crate) fn handle_agent_chunk(app: &mut App, task_id: crate::ids::TaskId, tex
 
 /// Handle `TaskEvent::Started { ... }`.
 pub(crate) fn handle_task_started(
-    app: &mut App,
+    state: &mut EngineState,
     task_id: crate::ids::TaskId,
     description: String,
     model_used: Option<String>,
@@ -80,8 +80,8 @@ pub(crate) fn handle_task_started(
     if let Some(ref ptid) = parent_task_id {
         let linked_model = model_used
             .clone()
-            .or_else(|| Some(app.engine.model.as_str().to_owned()));
-        if let Err(e) = app.engine.task_store.update(
+            .or_else(|| Some(state.model.as_str().to_owned()));
+        if let Err(e) = state.task_store.update(
             ptid,
             jfc_session::TaskPatch {
                 status: Some(jfc_session::TaskStatus::InProgress),
@@ -100,7 +100,7 @@ pub(crate) fn handle_task_started(
             );
         }
     }
-    app.engine.background_tasks.insert(
+    state.background_tasks.insert(
         task_id.as_str().to_owned(),
         app::BackgroundTask {
             task_id: task_id.clone(),
@@ -120,7 +120,7 @@ pub(crate) fn handle_task_started(
             cumulative_output_tokens: 0,
             model_used: model_used
                 .clone()
-                .or_else(|| Some(app.engine.model.as_str().to_owned())),
+                .or_else(|| Some(state.model.as_str().to_owned())),
             agent_messages: Vec::new(),
             max_input_tokens,
             budget_killed: false,
@@ -139,18 +139,18 @@ pub(crate) fn handle_task_started(
     // prevents the UI's own PID from clobbering the
     // worker's. Foreground teammates / in-process
     // subagents are tracked exclusively via
-    // `app.engine.background_tasks` — registering them in the
+    // `state.background_tasks` — registering them in the
     // daemon would make the reconciler mark them stale
     // when the UI exits (the user-visible "Done" /
     // "Failed" labels in the screenshots).
     let model_for_part = model_used
         .clone()
-        .or_else(|| Some(app.engine.model.as_str().to_owned()));
+        .or_else(|| Some(state.model.as_str().to_owned()));
     if is_detached {
         crate::daemon::record_background_agent_started(
             task_id.as_str(),
             &description,
-            model_used.or_else(|| Some(app.engine.model.as_str().to_owned())),
+            model_used.or_else(|| Some(state.model.as_str().to_owned())),
             None,
         );
     }
@@ -163,16 +163,16 @@ pub(crate) fn handle_task_started(
         elapsed_ms: None,
         model: model_for_part,
     });
-    if let Some(msg) = streaming_assistant_mut(app) {
+    if let Some(msg) = streaming_assistant_mut(state) {
         msg.parts.push(part);
-    } else if let Some(msg) = app.engine.messages.last_mut() {
+    } else if let Some(msg) = state.messages.last_mut() {
         msg.parts.push(part);
     }
 }
 
 /// Handle `TaskEvent::Progress { ... }`.
 pub(crate) fn handle_task_progress(
-    app: &mut App,
+    state: &mut EngineState,
     task_id: crate::ids::TaskId,
     last_tool: Option<String>,
     elapsed_ms: u64,
@@ -183,7 +183,7 @@ pub(crate) fn handle_task_progress(
     output_tokens: Option<u64>,
 ) {
     let mut usage_update: Option<(String, u32, u32, u32, u32)> = None;
-    if let Some(bt) = app.engine.background_tasks.get_mut(task_id.as_str()) {
+    if let Some(bt) = state.background_tasks.get_mut(task_id.as_str()) {
         if let Some(ref tool) = last_tool {
             let elapsed_s = elapsed_ms / 1000;
             let entry = format!("[{elapsed_s}s] {tool}");
@@ -238,14 +238,14 @@ pub(crate) fn handle_task_progress(
         output_tokens,
     );
     if let Some((model, input, output, cache_read, cache_write)) = usage_update {
-        app.engine.usage_by_model.entry(model).or_default().add_delta(
+        state.usage_by_model.entry(model).or_default().add_delta(
             input,
             output,
             cache_read,
             cache_write,
         );
     }
-    for msg in &mut app.engine.messages {
+    for msg in &mut state.messages {
         for part in &mut msg.parts {
             if let MessagePart::TaskStatus(ts) = part
                 && ts.task_id == task_id
@@ -258,7 +258,7 @@ pub(crate) fn handle_task_progress(
 
 /// Handle `TaskEvent::Completed { task_id, summary, elapsed_ms }`.
 pub(crate) async fn handle_task_completed(
-    app: &mut App,
+    state: &mut EngineState,
     tx: &EventSender,
     task_id: crate::ids::TaskId,
     summary: String,
@@ -272,10 +272,10 @@ pub(crate) async fn handle_task_completed(
     );
     use types::TaskLifecycle;
     let mut linked_task_id: Option<String> = None;
-    if let Some(bt) = app.engine.background_tasks.get_mut(task_id.as_str()) {
+    if let Some(bt) = state.background_tasks.get_mut(task_id.as_str()) {
         // A real terminal transition observed in this process — unblocks the
         // Case-2 auto-wake (restored prior-session agents never reach here).
-        app.engine.observed_bg_terminal_transition_this_process = true;
+        state.observed_bg_terminal_transition_this_process = true;
         bt.status = TaskLifecycle::Completed;
         bt.completed_at = Some(std::time::Instant::now());
         bt.summary = Some(summary.clone());
@@ -292,7 +292,7 @@ pub(crate) async fn handle_task_completed(
     // `in_progress` — the Task tool result and the
     // persistent todo were never connected.
     if let Some(ref ptid) = linked_task_id {
-        if let Err(e) = app.engine.task_store.update(
+        if let Err(e) = state.task_store.update(
             ptid,
             jfc_session::TaskPatch {
                 status: Some(jfc_session::TaskStatus::Completed),
@@ -310,7 +310,7 @@ pub(crate) async fn handle_task_completed(
             // subagent finishing its parent_task_id-linked todo must also
             // advance any plan that linked the task, otherwise plans stall
             // whenever work is delegated instead of done inline.
-            crate::tools::advance_linked_plans(&app.engine.task_store, ptid);
+            crate::tools::advance_linked_plans(&state.task_store, ptid);
         }
     }
     crate::daemon::record_background_agent_finished(
@@ -318,7 +318,7 @@ pub(crate) async fn handle_task_completed(
         crate::daemon::BackgroundAgentStatus::Completed,
         &summary,
     );
-    for msg in &mut app.engine.messages {
+    for msg in &mut state.messages {
         for part in &mut msg.parts {
             if let MessagePart::TaskStatus(ts) = part
                 && ts.task_id == task_id
@@ -331,12 +331,12 @@ pub(crate) async fn handle_task_completed(
     }
     // Resume the leader when this was the last in-flight background agent —
     // a successful completion must re-engage the loop just like a failure does.
-    maybe_resume_after_background(app, tx).await;
+    maybe_resume_after_background(state, tx).await;
 }
 
 /// Handle `TaskEvent::Failed { task_id, error }`.
 pub(crate) async fn handle_task_failed(
-    app: &mut App,
+    state: &mut EngineState,
     tx: &EventSender,
     task_id: crate::ids::TaskId,
     error: String,
@@ -353,8 +353,8 @@ pub(crate) async fn handle_task_failed(
         .to_ascii_lowercase()
         .starts_with("cancelled:");
     let mut linked_task_id: Option<String> = None;
-    if let Some(bt) = app.engine.background_tasks.get_mut(task_id.as_str()) {
-        app.engine.observed_bg_terminal_transition_this_process = true;
+    if let Some(bt) = state.background_tasks.get_mut(task_id.as_str()) {
+        state.observed_bg_terminal_transition_this_process = true;
         bt.status = if was_cancelled {
             TaskLifecycle::Cancelled
         } else {
@@ -378,7 +378,7 @@ pub(crate) async fn handle_task_failed(
         } else {
             jfc_session::TaskStatus::Failed
         };
-        if let Err(e) = app.engine.task_store.update(
+        if let Err(e) = state.task_store.update(
             ptid,
             jfc_session::TaskPatch {
                 status: Some(next_status),
@@ -402,7 +402,7 @@ pub(crate) async fn handle_task_failed(
         },
         &error,
     );
-    for msg in &mut app.engine.messages {
+    for msg in &mut state.messages {
         for part in &mut msg.parts {
             if let MessagePart::TaskStatus(ts) = part
                 && ts.task_id == task_id
@@ -424,13 +424,13 @@ pub(crate) async fn handle_task_failed(
     if !was_cancelled && factory_mode_enabled() {
         // Use the linked task id (the queued todo); fall back to the agent id.
         let recover_id = linked_task_id.as_deref().unwrap_or(task_id.as_str());
-        let subject = app.engine
+        let subject = state
             .task_store
             .get(recover_id)
             .map(|t| t.subject)
             .unwrap_or_default();
 
-        let recovery = app.engine.task_store.recover_from_failure(recover_id, &error);
+        let recovery = state.task_store.recover_from_failure(recover_id, &error);
         let reminder = match &recovery {
             jfc_session::FailureRecovery::Retried {
                 task_id: rid,
@@ -468,10 +468,10 @@ pub(crate) async fn handle_task_failed(
                 "Task failed: {error}. (Task {recover_id} not found in the store for recovery.)"
             ),
         };
-        crate::system_reminder::append_to_last_user(&mut app.engine.messages, &reminder);
-        maybe_continue_task_factory(app, tx).await;
+        crate::system_reminder::append_to_last_user(&mut state.messages, &reminder);
+        maybe_continue_task_factory(state, tx).await;
     }
-    maybe_resume_after_background(app, tx).await;
+    maybe_resume_after_background(state, tx).await;
 }
 
 /// After a background agent reaches a terminal state, resume the leader if
@@ -482,8 +482,8 @@ pub(crate) async fn handle_task_failed(
 /// manual prompt (no `AllToolsComplete` fires after the last `TaskCompleted`).
 /// Sharing it across both terminal paths fixes the "last task stays green,
 /// leader never resumes" bug.
-pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSender) {
-    let all_bg_done = app.engine
+pub(crate) async fn maybe_resume_after_background(state: &mut EngineState, tx: &EventSender) {
+    let all_bg_done = state
         .background_tasks
         .values()
         .all(|bt| bt.status.is_terminal());
@@ -494,31 +494,31 @@ pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSende
     // Case 1: The leader is still inside a turn — apply the existing
     // continuation policy. Respect compaction-in-flight and queued user
     // prompts the same way the post-tool AllComplete path does.
-    if app.engine.turn_started_at.is_some() {
-        if app.engine.pending_tool_calls.is_empty()
-            && app.engine.pending_approval.is_none()
-            && app.engine.approval_queue.is_empty()
-            && !app.engine.is_streaming
-            && app.engine.compacting_started_at.is_none()
-            && stream::should_continue_loop(&app.engine.messages)
+    if state.turn_started_at.is_some() {
+        if state.pending_tool_calls.is_empty()
+            && state.pending_approval.is_none()
+            && state.approval_queue.is_empty()
+            && !state.is_streaming
+            && state.compacting_started_at.is_none()
+            && stream::should_continue_loop(&state.messages)
         {
-            if app.engine.queued_prompts.iter().any(|queued| !queued.is_meta) {
+            if state.queued_prompts.iter().any(|queued| !queued.is_meta) {
                 tracing::info!(
                     target: "jfc::task",
-                    queued = app.engine.queued_prompts.len(),
+                    queued = state.queued_prompts.len(),
                     "all background tasks terminal — yielding to queued user prompt"
                 );
-                crate::runtime::drain_queued_prompts(app, tx).await;
+                crate::runtime::drain_queued_prompts(state, tx).await;
             } else {
                 tracing::info!(
                     target: "jfc::task",
                     "all background tasks terminal — triggering agentic continuation"
                 );
-                stream::continue_agentic_loop(app, tx).await;
+                stream::continue_agentic_loop(state, tx).await;
             }
-        } else if app.engine.pending_tool_calls.is_empty()
-            && !app.engine.is_streaming
-            && !stream::should_continue_loop(&app.engine.messages)
+        } else if state.pending_tool_calls.is_empty()
+            && !state.is_streaming
+            && !stream::should_continue_loop(&state.messages)
         {
             // All done and the model already emitted EndTurn — just clear the
             // turn timer so the spinner stops.
@@ -526,7 +526,7 @@ pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSende
                 target: "jfc::task",
                 "all background tasks terminal, turn complete — clearing turn_started_at"
             );
-            app.engine.turn_started_at = None;
+            state.turn_started_at = None;
         }
         return;
     }
@@ -548,10 +548,10 @@ pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSende
     // (billed) summary turn at startup before the user typed anything. The
     // restored agents never hit a live transition site, so this flag stays
     // false until a real completion happens this process.
-    if !app.engine.observed_bg_terminal_transition_this_process {
+    if !state.observed_bg_terminal_transition_this_process {
         tracing::debug!(
             target: "jfc::task::autowake",
-            bg_count = app.engine.background_tasks.len(),
+            bg_count = state.background_tasks.len(),
             "skipping auto-wake: no background-agent terminal transition observed \
              this process (likely restored-from-continue agents)"
         );
@@ -562,17 +562,17 @@ pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSende
     // before producing a summary), if a stream is already active, or if a
     // compaction is in flight. Any pending approval / pending tool also
     // means the leader is mid-flight and should not be force-woken.
-    if app.engine.is_streaming
-        || app.engine.compacting_started_at.is_some()
-        || app.engine.pending_approval.is_some()
-        || !app.engine.approval_queue.is_empty()
-        || !app.engine.pending_tool_calls.is_empty()
+    if state.is_streaming
+        || state.compacting_started_at.is_some()
+        || state.pending_approval.is_some()
+        || !state.approval_queue.is_empty()
+        || !state.pending_tool_calls.is_empty()
     {
         return;
     }
 
     let mut completed_summaries: Vec<String> = Vec::new();
-    for bt in app.engine.background_tasks.values() {
+    for bt in state.background_tasks.values() {
         if let Some(ref summary) = bt.summary {
             completed_summaries.push(format!("- {}: {}", bt.description, summary));
         } else if let Some(ref err) = bt.error {
@@ -586,13 +586,13 @@ pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSende
 
     // If a queued user prompt is sitting in the buffer, prefer draining it —
     // the user's words are higher priority than an auto-summary turn.
-    if app.engine.queued_prompts.iter().any(|queued| !queued.is_meta) {
+    if state.queued_prompts.iter().any(|queued| !queued.is_meta) {
         tracing::info!(
             target: "jfc::task::autowake",
-            queued = app.engine.queued_prompts.len(),
+            queued = state.queued_prompts.len(),
             "all background tasks complete — yielding to queued user prompt instead of autowake"
         );
-        crate::runtime::drain_queued_prompts(app, tx).await;
+        crate::runtime::drain_queued_prompts(state, tx).await;
         return;
     }
 
@@ -610,22 +610,23 @@ pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSende
         completed_summaries.join("\n")
     );
 
-    crate::system_reminder::append_to_last_user(&mut app.engine.messages, &reminder);
-    app.engine.agentic_turn_count = 0;
-    app.engine.turn_started_at = Some(std::time::Instant::now());
+    crate::system_reminder::append_to_last_user(&mut state.messages, &reminder);
+    state.agentic_turn_count = 0;
+    state.turn_started_at = Some(std::time::Instant::now());
     // Consume the transition signal: this auto-wake has now reported every
     // currently-terminal agent. Without clearing it, a Tick landing in the
     // window between here and the stream actually starting could re-enter and
     // fire a *second* digest for the same completions. The flag re-arms the
     // moment a fresh agent reaches terminal (the three live transition sites),
     // so genuinely-later completions still wake the leader.
-    app.engine.observed_bg_terminal_transition_this_process = false;
-    stream::continue_agentic_loop(app, tx).await;
+    state.observed_bg_terminal_transition_this_process = false;
+    stream::continue_agentic_loop(state, tx).await;
 }
 
 #[cfg(test)]
 mod autowake_tests {
     use std::sync::Arc;
+    use crate::app::App;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
     use tokio::sync::mpsc;
@@ -702,7 +703,7 @@ mod autowake_tests {
         let msgs_before = app.engine.messages.len();
         let (tx, _rx) = mpsc::channel(8);
 
-        maybe_resume_after_background(&mut app, &tx).await;
+        maybe_resume_after_background(&mut app.engine, &tx).await;
 
         // No synthetic system-reminder turn was opened.
         assert_eq!(
@@ -727,7 +728,7 @@ mod autowake_tests {
         app.engine.observed_bg_terminal_transition_this_process = true;
         let (tx, _rx) = mpsc::channel(8);
 
-        maybe_resume_after_background(&mut app, &tx).await;
+        maybe_resume_after_background(&mut app.engine, &tx).await;
 
         // Auto-wake injected the summary reminder and opened a turn.
         assert!(
@@ -751,7 +752,7 @@ mod autowake_tests {
         let (tx, _rx) = mpsc::channel(8);
 
         // First call: auto-wake fires and consumes the flag.
-        maybe_resume_after_background(&mut app, &tx).await;
+        maybe_resume_after_background(&mut app.engine, &tx).await;
         assert!(
             !app.engine.observed_bg_terminal_transition_this_process,
             "auto-wake must consume the transition flag"
@@ -761,7 +762,7 @@ mod autowake_tests {
         // flag is false, so Case 2 short-circuits — no second summary turn.
         app.engine.turn_started_at = None;
         let msgs_before = app.engine.messages.len();
-        maybe_resume_after_background(&mut app, &tx).await;
+        maybe_resume_after_background(&mut app.engine, &tx).await;
         assert_eq!(
             app.engine.messages.len(),
             msgs_before,

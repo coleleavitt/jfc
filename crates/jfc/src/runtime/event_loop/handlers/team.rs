@@ -1,20 +1,20 @@
 //! `TeamEvent::*` handlers — teammate lifecycle, inbox messages, and spawn
 //! registration.
 
-use crate::app::App;
+use crate::app::EngineState;
 use crate::runtime::{EngineEvent, EventSender, TaskEvent, TeamEvent};
 use crate::types::*;
 use crate::{session, toast};
 
 /// Dispatch a single `TeamEvent` variant.
-pub(crate) async fn handle_team_event(app: &mut App, tx: &EventSender, ev: TeamEvent) {
+pub(crate) async fn handle_team_event(state: &mut EngineState, tx: &EventSender, ev: TeamEvent) {
     match ev {
-        TeamEvent::Runner(teammate_ev) => handle_runner(app, tx, teammate_ev).await,
+        TeamEvent::Runner(teammate_ev) => handle_runner(state, tx, teammate_ev).await,
         TeamEvent::Inbox {
             from,
             text,
             summary,
-        } => handle_inbox(app, tx, from, text, summary).await,
+        } => handle_inbox(state, tx, from, text, summary).await,
         TeamEvent::Spawned {
             name,
             team_name,
@@ -24,13 +24,13 @@ pub(crate) async fn handle_team_event(app: &mut App, tx: &EventSender, ev: TeamE
             cwd,
             abort_tx,
         } => handle_spawned(
-            app, name, team_name, agent_id, color, agent_type, cwd, abort_tx,
+            state, name, team_name, agent_id, color, agent_type, cwd, abort_tx,
         ),
     }
 }
 
 async fn handle_runner(
-    app: &mut App,
+    state: &mut EngineState,
     tx: &EventSender,
     teammate_ev: crate::swarm::runner::TeammateEvent,
 ) {
@@ -51,7 +51,7 @@ async fn handle_runner(
             // pinned to the bottom looking alive even
             // though the teammate had already sent its
             // message and stopped producing chunks.
-            if let Some(bt) = app.engine.background_tasks.get_mut(&task_id) {
+            if let Some(bt) = state.background_tasks.get_mut(&task_id) {
                 if matches!(bt.status, crate::types::TaskLifecycle::Running) {
                     bt.status = crate::types::TaskLifecycle::Idle;
                 }
@@ -72,7 +72,7 @@ async fn handle_runner(
                 _ => format!("⏸ {agent_name} is idle"),
             };
             toast::push_with_cap(
-                &mut app.engine.toasts,
+                &mut state.toasts,
                 toast::Toast::new(toast::ToastKind::Info, msg),
             );
         }
@@ -88,7 +88,7 @@ async fn handle_runner(
             // Aggregate teammate cost into the parent's usage map so
             // the status bar reflects actual spend across all agents.
             if let (Some(model), Some(cost)) = (&model_id, cost_usd) {
-                let entry = app.engine.usage_by_model.entry(model.clone()).or_default();
+                let entry = state.usage_by_model.entry(model.clone()).or_default();
                 entry.cost_usd = entry.cost_usd.map_or(Some(cost), |c| Some(c + cost));
             }
 
@@ -96,7 +96,7 @@ async fn handle_runner(
             // Revive an Idle task back to Running — the agent
             // is producing tool-progress events again, so it
             // is no longer idle.
-            if let Some(bt) = app.engine.background_tasks.get_mut(&task_id) {
+            if let Some(bt) = state.background_tasks.get_mut(&task_id) {
                 if matches!(bt.status, crate::types::TaskLifecycle::Idle) {
                     bt.status = crate::types::TaskLifecycle::Running;
                 }
@@ -138,7 +138,7 @@ async fn handle_runner(
                             .to_owned();
                         let total_for_msg = total;
                         toast::push_with_cap(
-                            &mut app.engine.toasts,
+                            &mut state.toasts,
                             toast::Toast::new(
                                 toast::ToastKind::Error,
                                 format!(
@@ -151,7 +151,7 @@ async fn handle_runner(
             }
             // Mark this teammate as the live one for the
             // spinner-area tree highlight.
-            app.last_active_agent_task = Some(task_id);
+            state.last_active_agent_task = Some(task_id);
         }
         TeammateEvent::TextDelta {
             task_id,
@@ -161,7 +161,7 @@ async fn handle_runner(
             // A new text delta means the teammate is producing
             // output again — revive Idle → Running so the
             // task panel resumes its "Receiving output…" spinner.
-            if let Some(bt) = app.engine.background_tasks.get_mut(&task_id)
+            if let Some(bt) = state.background_tasks.get_mut(&task_id)
                 && matches!(bt.status, crate::types::TaskLifecycle::Idle)
             {
                 bt.status = crate::types::TaskLifecycle::Running;
@@ -179,7 +179,7 @@ async fn handle_runner(
         }
         TeammateEvent::Completed { task_id, agent_id } => {
             tracing::info!("[Swarm] Teammate {agent_id} completed");
-            if let Some(bt) = app.engine.background_tasks.get_mut(&task_id) {
+            if let Some(bt) = state.background_tasks.get_mut(&task_id) {
                 bt.status = crate::types::TaskLifecycle::Completed;
                 bt.completed_at = Some(std::time::Instant::now());
             }
@@ -188,7 +188,7 @@ async fn handle_runner(
             // that gets re-spawned) can observe the prior
             // state and the roster reflects who's currently
             // running.
-            if let Some(team_name) = app.engine.team_context.team_name.clone() {
+            if let Some(team_name) = state.team_context.team_name.clone() {
                 // agent_id is "name@team" — `set_member_active`
                 // matches on the bare name field.
                 let member_name = agent_id
@@ -211,12 +211,12 @@ async fn handle_runner(
             error,
         } => {
             tracing::warn!("[Swarm] Teammate {agent_id} failed: {error}");
-            if let Some(bt) = app.engine.background_tasks.get_mut(&task_id) {
+            if let Some(bt) = state.background_tasks.get_mut(&task_id) {
                 bt.status = crate::types::TaskLifecycle::Failed;
                 bt.completed_at = Some(std::time::Instant::now());
                 bt.error = Some(error);
             }
-            if let Some(team_name) = app.engine.team_context.team_name.clone() {
+            if let Some(team_name) = state.team_context.team_name.clone() {
                 let member_name = agent_id
                     .split_once('@')
                     .map(|(n, _)| n.to_owned())
@@ -233,11 +233,11 @@ async fn handle_runner(
         }
         TeammateEvent::Cancelled { task_id, agent_id } => {
             tracing::info!("[Swarm] Teammate {agent_id} cancelled");
-            if let Some(bt) = app.engine.background_tasks.get_mut(&task_id) {
+            if let Some(bt) = state.background_tasks.get_mut(&task_id) {
                 bt.status = crate::types::TaskLifecycle::Cancelled;
                 bt.completed_at = Some(std::time::Instant::now());
             }
-            if let Some(team_name) = app.engine.team_context.team_name.clone() {
+            if let Some(team_name) = state.team_context.team_name.clone() {
                 let member_name = agent_id
                     .split_once('@')
                     .map(|(n, _)| n.to_owned())
@@ -266,7 +266,7 @@ async fn handle_runner(
             // recipient consumes via `read_mailbox`. Without
             // this, the SendMessage tool was a no-op past
             // logging.
-            let team_name = app.engine.team_context.team_name.clone().unwrap_or_default();
+            let team_name = state.team_context.team_name.clone().unwrap_or_default();
             if team_name.is_empty() {
                 tracing::warn!("[Swarm] MessageSent dropped — no active team_context");
             } else {
@@ -292,7 +292,7 @@ async fn handle_runner(
 }
 
 async fn handle_inbox(
-    app: &mut App,
+    state: &mut EngineState,
     tx: &EventSender,
     from: String,
     text: String,
@@ -312,7 +312,7 @@ async fn handle_inbox(
     );
     let mut msg = ChatMessage::user(body);
     msg.agent_name = Some(from.clone());
-    app.engine.messages.push(msg);
+    state.messages.push(msg);
     // Also surface a brief toast so the user notices the
     // arrival without needing to scroll the transcript.
     let preview = summary
@@ -329,15 +329,15 @@ async fn handle_inbox(
             text[..cap].to_owned()
         });
     toast::push_with_cap(
-        &mut app.engine.toasts,
+        &mut state.toasts,
         toast::Toast::new(toast::ToastKind::Info, format!("{from}: {preview}")),
     );
     // Persist so a session reload doesn't lose the message.
-    if let Some(ref session_id) = app.engine.current_session_id {
+    if let Some(ref session_id) = state.current_session_id {
         let sid = session_id.clone();
-        let msgs = app.engine.messages.clone();
-        let cwd = app.engine.cwd.clone();
-        let model = app.engine.model.clone();
+        let msgs = state.messages.clone();
+        let cwd = state.cwd.clone();
+        let model = state.model.clone();
         tokio::spawn(async move {
             session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
         });
@@ -346,27 +346,27 @@ async fn handle_inbox(
     // Wake the leader so it actually processes the teammate's message instead
     // of leaving it to sit until the next manual user prompt. Only when idle:
     // if a turn is already streaming (or tools/approvals are pending) the
-    // message is already in `app.engine.messages` and the in-flight turn picks it up
+    // message is already in `state.messages` and the in-flight turn picks it up
     // on its next request — and the `is_streaming` gate means concurrent
     // arrivals don't each spawn a duplicate stream. Treat this as a fresh
     // turn (reset the agentic-turn counter) since it's a new external input.
-    let leader_idle = !app.engine.is_streaming
-        && app.engine.pending_approval.is_none()
-        && app.engine.pending_tool_calls.is_empty()
-        && app.engine.approval_queue.is_empty();
+    let leader_idle = !state.is_streaming
+        && state.pending_approval.is_none()
+        && state.pending_tool_calls.is_empty()
+        && state.approval_queue.is_empty();
     if leader_idle {
         tracing::info!(
             target: "jfc::swarm",
             from = %from,
             "leader idle — waking to process inbound teammate message"
         );
-        app.engine.agentic_turn_count = 0;
-        crate::stream::continue_agentic_loop(app, tx).await;
+        state.agentic_turn_count = 0;
+        crate::stream::continue_agentic_loop(state, tx).await;
     }
 }
 
 fn handle_spawned(
-    app: &mut App,
+    state: &mut EngineState,
     name: String,
     team_name: String,
     agent_id: String,
@@ -379,11 +379,11 @@ fn handle_spawned(
     // join — switches the leader from "no team" to "running
     // a team" so the teammate tree, send-message routing,
     // and per-team context all light up.
-    if app.engine.team_context.team_name.is_none() {
-        app.engine.team_context.team_name = Some(team_name.clone());
-        app.engine.team_context.team_file_path =
+    if state.team_context.team_name.is_none() {
+        state.team_context.team_name = Some(team_name.clone());
+        state.team_context.team_file_path =
             Some(crate::swarm::team_helpers::team_file_path(&team_name));
-        app.engine.team_context.lead_agent_id = Some(crate::swarm::types::make_agent_id(
+        state.team_context.lead_agent_id = Some(crate::swarm::types::make_agent_id(
             crate::swarm::TEAM_LEAD_NAME,
             &team_name,
         ));
@@ -394,8 +394,8 @@ fn handle_spawned(
         // those IDs would otherwise vanish at team
         // activation. See `TaskStore::migrate_from`.
         let team_store = jfc_session::TaskStore::open_team(&team_name);
-        let _ = team_store.migrate_from(&app.engine.task_store);
-        app.engine.task_store = team_store;
+        let _ = team_store.migrate_from(&state.task_store);
+        state.task_store = team_store;
     }
     // Register the teammate in the in-memory roster. The
     // render code reads this to draw the teammate tree and
@@ -405,7 +405,7 @@ fn handle_spawned(
     // watch channel alive for the teammate's lifetime.
     // Without storing it here, every teammate was marked
     // "Done" on its first poll.
-    app.engine.team_context.teammates.insert(
+    state.team_context.teammates.insert(
         agent_id,
         crate::swarm::types::TeammateInfo {
             name,

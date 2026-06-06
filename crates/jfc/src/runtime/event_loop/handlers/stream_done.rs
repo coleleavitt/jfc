@@ -1,27 +1,27 @@
 //! `StreamEvent::Done(stop_reason)` handler — end-of-stream lifecycle,
 //! session save, continuation logic.
 
-use crate::app::{self, App};
+use crate::app::{self, EngineState};
 use crate::runtime::{EventSender, drain_queued_prompts};
 use crate::types::*;
 use crate::{config, session, stream, types};
 
 /// Handle `StreamEvent::Done(stop_reason)`.
 pub(crate) async fn handle_stream_done(
-    app: &mut App,
+    state: &mut EngineState,
     tx: &EventSender,
     stop_reason: jfc_provider::StopReason,
 ) {
-    app.record_stream_activity();
-    app.engine.network_recovery_status = None;
-    app.engine.network_recovery_attempts = 0;
-    app.engine.stream_lifecycle = None;
+    state.record_stream_activity();
+    state.network_recovery_status = None;
+    state.network_recovery_attempts = 0;
+    state.stream_lifecycle = None;
     tracing::info!(
         target: "jfc::stream",
         ?stop_reason,
-        pending_tool_count = app.engine.pending_tool_calls.len(),
-        pending_approval = app.engine.pending_approval.is_some(),
-        approval_queue = app.engine.approval_queue.len(),
+        pending_tool_count = state.pending_tool_calls.len(),
+        pending_approval = state.pending_approval.is_some(),
+        approval_queue = state.approval_queue.len(),
         "StreamEvent::Done received"
     );
 
@@ -32,8 +32,8 @@ pub(crate) async fn handle_stream_done(
     // trips the `empty_message` turn-invariant on the next save. A
     // discard-and-resend (below) both clears the blank bubble and prevents the
     // invariant violation — one fix, both symptoms.
-    if let Some(idx) = app.engine.streaming_assistant_idx
-        && let Some(msg) = app.engine.messages.get(idx)
+    if let Some(idx) = state.streaming_assistant_idx
+        && let Some(msg) = state.messages.get(idx)
     {
         let text_chars: usize = msg
             .parts
@@ -76,7 +76,7 @@ pub(crate) async fn handle_stream_done(
             out_tokens,
             thinking_only,
             safe_to_discard,
-            streaming_response_bytes = app.engine.streaming_response_bytes,
+            streaming_response_bytes = state.streaming_response_bytes,
             "stream turn finalized"
         );
         // Refusal fallback (adapts Claude Code 2.1.160's "switch models when a
@@ -84,42 +84,43 @@ pub(crate) async fn handle_stream_done(
         // configured a fallback model, switch to it and resend once. INERT by
         // default — `refusal_fallback_model` is `None` unless the user opts in
         // — and loop-guarded by `refusal_fallback_attempted` (one swap/turn).
-        if !app.engine.refusal_fallback_attempted && stop_reason_is_refusal(&stop_reason) {
+        if !state.refusal_fallback_attempted && stop_reason_is_refusal(&stop_reason) {
             let cfg = crate::config::load_arc();
             if cfg.refusal_fallback_enabled
                 && let Some(fb) = cfg.refusal_fallback_model.clone()
                 && !fb.is_empty()
-                && fb != app.engine.model.as_str()
+                && fb != state.model.as_str()
             {
-                app.engine.refusal_fallback_attempted = true;
-                let from = app.engine.model.to_string();
+                state.refusal_fallback_attempted = true;
+                let from = state.model.to_string();
                 tracing::warn!(
                     target: "jfc::stream::lifecycle",
                     %from, fallback = %fb, ?stop_reason,
                     "refusal — switching to fallback model and resending"
                 );
                 crate::toast::push_with_cap(
-                    &mut app.engine.toasts,
+                    &mut state.toasts,
                     crate::toast::Toast::new(
                         crate::toast::ToastKind::Warning,
                         format!("{from} refused — retrying on {fb}"),
                     ),
                 );
-                app.engine.model = jfc_provider::ModelId::new(&fb);
+                state.model = jfc_provider::ModelId::new(&fb);
                 // Teardown mirrors the empty-billed DiscardAndResend path below.
-                app.engine.is_streaming = false;
-                app.engine.active_stream_handle = None;
-                app.engine.last_stream_event_at = None;
-                app.render_cache.borrow_mut().clear_streaming();
-                app.engine.streaming_text = String::new();
-                app.engine.streaming_reasoning = String::new();
-                app.engine.streaming_assistant_idx = None;
-                app.engine.current_stream_request = None;
-                app.engine.stream_lifecycle = None;
-                if idx < app.engine.messages.len() {
-                    app.engine.messages.remove(idx);
+                state.is_streaming = false;
+                state.active_stream_handle = None;
+                state.last_stream_event_at = None;
+                state
+        .push_effect(crate::app::EngineEffect::StreamingFinalized);
+                state.streaming_text = String::new();
+                state.streaming_reasoning = String::new();
+                state.streaming_assistant_idx = None;
+                state.current_stream_request = None;
+                state.stream_lifecycle = None;
+                if idx < state.messages.len() {
+                    state.messages.remove(idx);
                 }
-                stream::continue_agentic_loop(app, tx).await;
+                stream::continue_agentic_loop(state, tx).await;
                 return;
             }
         }
@@ -128,19 +129,19 @@ pub(crate) async fn handle_stream_done(
             out_tokens,
             resend_eligible_stop_reason: empty_billed_resend_eligible(&stop_reason),
             auto_continue: stream::auto_continue_enabled(),
-            plan_mode: matches!(app.engine.permission_mode, app::PermissionMode::Plan),
-            resend_count: app.engine.empty_billed_resend_count,
+            plan_mode: matches!(state.permission_mode, app::PermissionMode::Plan),
+            resend_count: state.empty_billed_resend_count,
             resend_cap: empty_billed_resend_cap(),
         };
         match decide_empty_billed(&inputs) {
             EmptyBilledAction::DiscardAndResend => {
-                app.engine.empty_billed_resend_count += 1;
+                state.empty_billed_resend_count += 1;
                 tracing::warn!(
                     target: "jfc::stream::lifecycle",
                     assistant_idx = idx,
                     ?stop_reason,
                     out_tokens,
-                    resend = app.engine.empty_billed_resend_count,
+                    resend = state.empty_billed_resend_count,
                     max = inputs.resend_cap,
                     "EMPTY-BUT-BILLED assistant turn (no text/tools/reasoning, but usage \
                      recorded) — discarding the blank message and re-streaming. This also \
@@ -152,19 +153,20 @@ pub(crate) async fn handle_stream_done(
                 // empty_message invariant on the resend's save), THEN
                 // re-stream. `continue_agentic_loop` stages a fresh slot and
                 // re-sends the (now-clean) conversation.
-                app.engine.is_streaming = false;
-                app.engine.active_stream_handle = None;
-                app.engine.last_stream_event_at = None;
-                app.render_cache.borrow_mut().clear_streaming();
-                app.engine.streaming_text = String::new();
-                app.engine.streaming_reasoning = String::new();
-                app.engine.streaming_assistant_idx = None;
-                app.engine.current_stream_request = None;
-                app.engine.stream_lifecycle = None;
-                if idx < app.engine.messages.len() {
-                    app.engine.messages.remove(idx);
+                state.is_streaming = false;
+                state.active_stream_handle = None;
+                state.last_stream_event_at = None;
+                state
+        .push_effect(crate::app::EngineEffect::StreamingFinalized);
+                state.streaming_text = String::new();
+                state.streaming_reasoning = String::new();
+                state.streaming_assistant_idx = None;
+                state.current_stream_request = None;
+                state.stream_lifecycle = None;
+                if idx < state.messages.len() {
+                    state.messages.remove(idx);
                 }
-                stream::continue_agentic_loop(app, tx).await;
+                stream::continue_agentic_loop(state, tx).await;
                 return;
             }
             EmptyBilledAction::CapReached => {
@@ -173,7 +175,7 @@ pub(crate) async fn handle_stream_done(
                     assistant_idx = idx,
                     ?stop_reason,
                     out_tokens,
-                    resend = app.engine.empty_billed_resend_count,
+                    resend = state.empty_billed_resend_count,
                     max = inputs.resend_cap,
                     "EMPTY-BUT-BILLED assistant turn: resend cap reached — leaving the turn \
                      and waiting for the user (provider appears persistently degraded)."
@@ -195,16 +197,17 @@ pub(crate) async fn handle_stream_done(
                 // The turn produced real content (text, tools, reasoning, …) →
                 // reset the resend budget so a later genuinely-empty turn gets
                 // its full retries rather than inheriting a stale count.
-                app.engine.empty_billed_resend_count = 0;
+                state.empty_billed_resend_count = 0;
             }
             EmptyBilledAction::None => {}
         }
     }
 
-    app.engine.is_streaming = false;
-    app.engine.active_stream_handle = None;
-    app.engine.last_stream_event_at = None;
-    app.render_cache.borrow_mut().clear_streaming();
+    state.is_streaming = false;
+    state.active_stream_handle = None;
+    state.last_stream_event_at = None;
+    state
+        .push_effect(crate::app::EngineEffect::StreamingFinalized);
 
     // OpenWebUI / LiteLLM / some third-party gateways
     // leak `<tool_call>` XML into the assistant text
@@ -214,7 +217,7 @@ pub(crate) async fn handle_stream_done(
     // jfc's renderer can't currently dispatch from
     // inline markup. Mirrors the pattern v132 uses
     // for `tengu_streaming_*` warnings.
-    if let Some(last) = app.engine.messages.last() {
+    if let Some(last) = state.messages.last() {
         let text: String = last
             .parts
             .iter()
@@ -242,7 +245,7 @@ pub(crate) async fn handle_stream_done(
                  dispatch."
             );
             crate::toast::push_with_cap(
-                &mut app.engine.toasts,
+                &mut state.toasts,
                 crate::toast::Toast::new(
                     crate::toast::ToastKind::Warning,
                     format!(
@@ -272,12 +275,12 @@ pub(crate) async fn handle_stream_done(
     // clear it in the next block once the EndTurn condition
     // is verified) so it covers tools + thinking + final text.
     let turn_done = stop_reason == jfc_provider::StopReason::EndTurn
-        && app.engine.pending_approval.is_none()
-        && app.engine.approval_queue.is_empty()
-        && app.engine.pending_tool_calls.is_empty()
-        && app.engine.pending_classifications == 0
-        && app.engine.in_flight_eager_dispatches == 0
-        && app.engine.in_flight_tool_batches == 0;
+        && state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty()
+        && state.pending_classifications == 0
+        && state.in_flight_eager_dispatches == 0
+        && state.in_flight_tool_batches == 0;
     if turn_done {
         // v132 session auto-naming — fire on the first
         // assistant-turn completion if no title is set
@@ -286,13 +289,13 @@ pub(crate) async fn handle_stream_done(
         // call. Best-effort: failures are logged but
         // don't surface to the user (the fallback title
         // is still readable).
-        let user_turn_count = app.engine
+        let user_turn_count = state
             .messages
             .iter()
             .filter(|m| matches!(m.role, types::Role::User))
             .count();
         if user_turn_count == 1 {
-            let first_user = app.engine
+            let first_user = state
                 .messages
                 .iter()
                 .find(|m| matches!(m.role, types::Role::User))
@@ -302,7 +305,7 @@ pub(crate) async fn handle_stream_done(
                         _ => None,
                     })
                 });
-            let first_assistant = app.engine
+            let first_assistant = state
                 .messages
                 .iter()
                 .find(|m| matches!(m.role, types::Role::Assistant))
@@ -313,7 +316,7 @@ pub(crate) async fn handle_stream_done(
                     })
                 });
             if let (Some(sid), Some(u), Some(a)) =
-                (app.engine.current_session_id.clone(), first_user, first_assistant)
+                (state.current_session_id.clone(), first_user, first_assistant)
                 && let Some((p, m)) = crate::tools::snapshot_active_provider()
             {
                 tokio::spawn(async move {
@@ -321,7 +324,7 @@ pub(crate) async fn handle_stream_done(
                 });
             }
         }
-        if let (Some(start), Some(idx)) = (app.engine.turn_started_at, app.engine.streaming_assistant_idx) {
+        if let (Some(start), Some(idx)) = (state.turn_started_at, state.streaming_assistant_idx) {
             let elapsed = std::time::Instant::now().duration_since(start);
             // Honest, minimal footer: just how long the turn took (no
             // decorative past-tense verb), plus the turn's incremental
@@ -332,7 +335,7 @@ pub(crate) async fn handle_stream_done(
             // session's running spend, not the turn's. saturating at 0 guards
             // the rare case where usage_by_model is reset mid-turn.
             let turn_cost =
-                (crate::cost::total_cost(&app.engine.usage_by_model) - app.engine.turn_start_cost).max(0.0);
+                (crate::cost::total_cost(&state.usage_by_model) - state.turn_start_cost).max(0.0);
             let label = if turn_cost > 0.0 {
                 format!("{label} · {}", crate::cost::fmt_cost(turn_cost))
             } else {
@@ -341,7 +344,7 @@ pub(crate) async fn handle_stream_done(
             // Pull the assistant's text body for the
             // notification preview before re-borrowing
             // mutably to stamp the elapsed footer.
-            let preview = app.engine
+            let preview = state
                 .messages
                 .get(idx)
                 .and_then(|m| {
@@ -351,7 +354,7 @@ pub(crate) async fn handle_stream_done(
                     })
                 })
                 .unwrap_or_default();
-            if let Some(msg) = app.engine.messages.get_mut(idx) {
+            if let Some(msg) = state.messages.get_mut(idx) {
                 msg.elapsed = Some(label);
             }
             crate::notifications::notify_turn_complete(elapsed, &preview);
@@ -362,12 +365,12 @@ pub(crate) async fn handle_stream_done(
         // the turn) and `last_usage_output` is the model's
         // generated count. Together they give a per-turn
         // sense of "how much work did this take."
-        let turn_total = (app.engine.last_usage_input as u64).saturating_add(app.engine.last_usage_output as u64);
+        let turn_total = (state.last_usage_input as u64).saturating_add(state.last_usage_output as u64);
         if turn_total > 0 {
-            if app.token_history.len() >= app::TOKEN_HISTORY_CAP {
-                app.token_history.pop_front();
+            if state.token_history.len() >= crate::app::TOKEN_HISTORY_CAP {
+                state.token_history.pop_front();
             }
-            app.token_history.push_back(turn_total);
+            state.token_history.push_back(turn_total);
         }
 
         // OpenWebUI outlet-filter notification — fire-and-forget POST to
@@ -378,13 +381,13 @@ pub(crate) async fn handle_stream_done(
         // chat.ai2s.org `rate_limit_inlet_filter` is globally active
         // and its outlet half wouldn't fire for us. Spawned as a
         // detached task so a slow OWUI ack never blocks the UI.
-        if app.engine.provider.name() == "openwebui"
-            && let Some(sid) = app.engine
+        if state.provider.name() == "openwebui"
+            && let Some(sid) = state
                 .current_session_id
                 .as_ref()
                 .map(|s| s.as_str().to_string())
         {
-            let model = app.engine.model.to_string();
+            let model = state.model.to_string();
             let msg_id = uuid::Uuid::new_v4().to_string();
             // The provider holds its own auth-resolution code path;
             // we need to extract base_url + token. Use the store
@@ -407,8 +410,8 @@ pub(crate) async fn handle_stream_done(
             });
         }
     }
-    app.engine.streaming_started_at = None;
-    app.engine.streaming_last_token_at = None;
+    state.streaming_started_at = None;
+    state.streaming_last_token_at = None;
 
     // v132 cost-budget surfacing. When the user has set a
     // session budget and we cross 80% / 100%, post a toast
@@ -419,13 +422,13 @@ pub(crate) async fn handle_stream_done(
     if let Some(budget_usd) = config::load_arc().session_cost_budget_usd
         && budget_usd > 0.0
     {
-        let spent = crate::cost::total_cost(&app.engine.usage_by_model);
+        let spent = crate::cost::total_cost(&state.usage_by_model);
         let pct = ((spent / budget_usd) * 100.0).round() as u8;
-        let cross = |th: u8| pct >= th && app.engine.cost_budget_warned_at < th;
+        let cross = |th: u8| pct >= th && state.cost_budget_warned_at < th;
         if cross(100) {
-            app.engine.cost_budget_warned_at = 100;
+            state.cost_budget_warned_at = 100;
             crate::toast::push_with_cap(
-                &mut app.engine.toasts,
+                &mut state.toasts,
                 crate::toast::Toast::new(
                     crate::toast::ToastKind::Error,
                     format!(
@@ -436,9 +439,9 @@ pub(crate) async fn handle_stream_done(
                 ),
             );
         } else if cross(80) {
-            app.engine.cost_budget_warned_at = 80;
+            state.cost_budget_warned_at = 80;
             crate::toast::push_with_cap(
-                &mut app.engine.toasts,
+                &mut state.toasts,
                 crate::toast::Toast::new(
                     crate::toast::ToastKind::Warning,
                     format!(
@@ -456,55 +459,55 @@ pub(crate) async fn handle_stream_done(
     // and no visible text), stamp the end now so the spinner
     // shows `thought for Ns` next iteration instead of a
     // stuck `thinking…` from the last reasoning chunk.
-    if app.engine.thinking_started_at.is_some() && app.engine.thinking_ended_at.is_none() {
-        app.engine.thinking_ended_at = Some(std::time::Instant::now());
+    if state.thinking_started_at.is_some() && state.thinking_ended_at.is_none() {
+        state.thinking_ended_at = Some(std::time::Instant::now());
     }
-    app.engine.streaming_text = String::new();
-    app.engine.streaming_reasoning = String::new();
+    state.streaming_text = String::new();
+    state.streaming_reasoning = String::new();
     // Only reset the cumulative token counter when the turn is
     // truly done. During agentic loops (ToolUse stop_reason), the
     // counter should keep accumulating so the spinner shows the
     // full turn's token estimate.
     if turn_done {
-        app.engine.streaming_response_bytes = 0;
-        app.engine.streaming_thinking_tokens = 0;
+        state.streaming_response_bytes = 0;
+        state.streaming_thinking_tokens = 0;
     }
     // Clear the user-turn clock only when the loop has
     // genuinely concluded — EndTurn stop reason AND no
     // tools pending. ToolUse means an agentic continuation
     // is about to fire and the turn timer must keep running.
     let turn_genuinely_done = stop_reason == jfc_provider::StopReason::EndTurn
-        && app.engine.pending_approval.is_none()
-        && app.engine.approval_queue.is_empty()
-        && app.engine.pending_tool_calls.is_empty()
-        && app.engine.pending_classifications == 0
-        && app.engine.in_flight_eager_dispatches == 0
-        && app.engine.in_flight_tool_batches == 0;
-    let needs_dynamic_loop_keepalive = turn_genuinely_done && dynamic_loop_keepalive_needed(app);
+        && state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty()
+        && state.pending_classifications == 0
+        && state.in_flight_eager_dispatches == 0
+        && state.in_flight_tool_batches == 0;
+    let needs_dynamic_loop_keepalive = turn_genuinely_done && dynamic_loop_keepalive_needed(state);
     if turn_genuinely_done {
-        app.engine.turn_started_at = None;
+        state.turn_started_at = None;
     }
 
     // Auto-save session after each assistant turn completes
-    if let Some(ref session_id) = app.engine.current_session_id {
+    if let Some(ref session_id) = state.current_session_id {
         let sid = session_id.clone();
-        let msgs = app.engine.messages.clone();
-        let cwd = app.engine.cwd.clone();
-        let model = app.engine.model.clone();
+        let msgs = state.messages.clone();
+        let cwd = state.cwd.clone();
+        let model = state.model.clone();
         tokio::spawn(async move {
             session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
         });
-        app.engine.last_session_save_at = Some(std::time::Instant::now());
+        state.last_session_save_at = Some(std::time::Instant::now());
     }
     // v126 queued-prompt drain on plain end_turn: model finished
     // without tools to call → if anything's queued, fire it now.
     if stop_reason == jfc_provider::StopReason::EndTurn
-        && app.engine.pending_approval.is_none()
-        && app.engine.approval_queue.is_empty()
-        && app.engine.pending_tool_calls.is_empty()
-        && !app.engine.queued_prompts.is_empty()
+        && state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty()
+        && !state.queued_prompts.is_empty()
     {
-        drain_queued_prompts(app, tx).await;
+        drain_queued_prompts(state, tx).await;
         // If the drain staged a fresh turn (non-meta prompt → new assistant
         // slot + live `streaming_assistant_idx`), bail out now. The cleanup
         // ladder below — specifically the EndTurn `else` arm — would otherwise
@@ -512,7 +515,7 @@ pub(crate) async fn handle_stream_done(
         // newly-spawned stream's chunks would then arrive with no slot to
         // attach to (stream alive but no visible output). A meta-only drain
         // leaves `is_streaming` false and falls through to the normal cleanup.
-        if app.engine.is_streaming {
+        if state.is_streaming {
             return;
         }
     }
@@ -530,14 +533,14 @@ pub(crate) async fn handle_stream_done(
     // leaving the model's "I'll write the file now" claim
     // unbacked — the "hallucinated Done" symptom.
     let has_pending_tools =
-        !app.engine.pending_tool_calls.is_empty() || app.engine.in_flight_eager_dispatches > 0;
-    let waiting_on_approval = app.engine.pending_approval.is_some() || !app.engine.approval_queue.is_empty();
+        !state.pending_tool_calls.is_empty() || state.in_flight_eager_dispatches > 0;
+    let waiting_on_approval = state.pending_approval.is_some() || !state.approval_queue.is_empty();
     // Auto-mode: one or more tool calls are still awaiting an async classifier
     // verdict. We must NOT finalize the turn (which clears the streaming slot)
     // until every verdict lands — otherwise the late ClassifierDecision finds
     // no slot and the tool is silently dropped. The final verdict
     // (handle_classifier_decision) dispatches the approved batch / continues.
-    let awaiting_classifier = app.engine.pending_classifications > 0;
+    let awaiting_classifier = state.pending_classifications > 0;
     // Mixed-mode pause_turn handling. When a response
     // carries BOTH local tool_use AND stop_reason=pause_turn,
     // the `has_pending_tools` branch below shadows the
@@ -554,11 +557,11 @@ pub(crate) async fn handle_stream_done(
     {
         tracing::info!(
             target: "jfc::stream",
-            n = app.engine.pending_tool_calls.len(),
+            n = state.pending_tool_calls.len(),
             approval_pending = waiting_on_approval,
             "mixed-mode pause_turn detected — latching pending_pause_turn_resume for AllComplete"
         );
-        app.engine.pending_pause_turn_resume = true;
+        state.pending_pause_turn_resume = true;
     }
     if awaiting_classifier {
         // Hold the turn open: keep streaming_assistant_idx alive so the
@@ -568,28 +571,28 @@ pub(crate) async fn handle_stream_done(
         // dispatched early (leaving later-approved tools stranded).
         tracing::info!(
             target: "jfc::stream",
-            in_flight = app.engine.pending_classifications,
-            already_approved = app.engine.pending_tool_calls.len(),
+            in_flight = state.pending_classifications,
+            already_approved = state.pending_tool_calls.len(),
             "stream_done holding turn open for in-flight auto-mode classifier verdicts"
         );
     } else if has_pending_tools {
-        if app.engine.in_flight_eager_dispatches > 0 || app.engine.in_flight_tool_batches > 0 {
+        if state.in_flight_eager_dispatches > 0 || state.in_flight_tool_batches > 0 {
             tracing::info!(
                 target: "jfc::stream",
-                pending = app.engine.pending_tool_calls.len(),
-                in_flight_eager = app.engine.in_flight_eager_dispatches,
-                in_flight_batches = app.engine.in_flight_tool_batches,
+                pending = state.pending_tool_calls.len(),
+                in_flight_eager = state.in_flight_eager_dispatches,
+                in_flight_batches = state.in_flight_tool_batches,
                 ?stop_reason,
                 "stream_done waiting for in-flight eager tool prefix before dispatching remaining tools"
             );
         } else {
-            super::stream_tool::dispatch_pending_after_stream(app, tx);
+            super::stream_tool::dispatch_pending_after_stream(state, tx);
         }
     } else if waiting_on_approval {
         tracing::info!(
             target: "jfc::stream",
-            pending_modal = app.engine.pending_approval.is_some(),
-            queue_depth = app.engine.approval_queue.len(),
+            pending_modal = state.pending_approval.is_some(),
+            queue_depth = state.approval_queue.len(),
             ?stop_reason,
             "stream_done waiting on approval pipeline"
         );
@@ -610,10 +613,10 @@ pub(crate) async fn handle_stream_done(
         // "Continue from where you left off." filler.
         tracing::info!(
             target: "jfc::stream",
-            streaming_idx = ?app.engine.streaming_assistant_idx,
+            streaming_idx = ?state.streaming_assistant_idx,
             "stream_done PauseTurn — resuming server-side sampling loop"
         );
-        stream::continue_after_pause_turn(app, tx).await;
+        stream::continue_after_pause_turn(state, tx).await;
     } else if stop_reason == jfc_provider::StopReason::ToolUse {
         // Upstream returned finish_reason="tool_calls" but sent
         // zero tool_call delta chunks (transient LiteLLM/Bedrock
@@ -622,21 +625,21 @@ pub(crate) async fn handle_stream_done(
         // next user turn doesn't send a broken conversation turn.
         tracing::warn!(
             target: "jfc::stream",
-            streaming_idx = ?app.engine.streaming_assistant_idx,
+            streaming_idx = ?state.streaming_assistant_idx,
             "stream_done ToolUse with no tools — stripping dangling assistant turn"
         );
-        if let Some(idx) = app.engine.streaming_assistant_idx
-            && idx < app.engine.messages.len()
+        if let Some(idx) = state.streaming_assistant_idx
+            && idx < state.messages.len()
         {
-            let msg = &app.engine.messages[idx];
+            let msg = &state.messages[idx];
             let is_empty = msg.parts.is_empty()
                 || msg
                     .parts
                     .iter()
                     .all(|p| matches!(p, MessagePart::Text(t) if t.trim().is_empty()));
             if is_empty {
-                app.engine.messages.remove(idx);
-            } else if stream::should_continue_loop(&app.engine.messages) {
+                state.messages.remove(idx);
+            } else if stream::should_continue_loop(&state.messages) {
                 // The assistant DID emit tool_use blocks, but every one was
                 // recorded terminal *before* dispatch — denied by the active
                 // permission mode, or malformed provider input (handle_stream_tool's
@@ -650,18 +653,18 @@ pub(crate) async fn handle_stream_done(
                 // all-terminal tools, so resuming is safe (no dangling Pending).
                 tracing::info!(
                     target: "jfc::stream",
-                    streaming_idx = ?app.engine.streaming_assistant_idx,
+                    streaming_idx = ?state.streaming_assistant_idx,
                     "stream_done ToolUse with only pre-resolved (denied/malformed) tools — continuing agentic loop"
                 );
-                stream::continue_agentic_loop(app, tx).await;
+                stream::continue_agentic_loop(state, tx).await;
                 return;
             }
         }
-        app.engine.streaming_assistant_idx = None;
-        app.engine.current_stream_request = None;
-        app.engine.stream_lifecycle = None;
-        app.scroll_to_bottom();
-    } else if stream::should_continue_loop(&app.engine.messages) {
+        state.streaming_assistant_idx = None;
+        state.current_stream_request = None;
+        state.stream_lifecycle = None;
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+    } else if stream::should_continue_loop(&state.messages) {
         // The assistant emitted tool_use blocks that were all recorded
         // terminal *before* dispatch — denied by the active permission mode,
         // or malformed provider input (handle_stream_tool's denied-by-mode /
@@ -681,10 +684,10 @@ pub(crate) async fn handle_stream_done(
         tracing::info!(
             target: "jfc::stream",
             ?stop_reason,
-            streaming_idx = ?app.engine.streaming_assistant_idx,
+            streaming_idx = ?state.streaming_assistant_idx,
             "stream_done with only pre-resolved (denied/malformed) tools — continuing agentic loop"
         );
-        stream::continue_agentic_loop(app, tx).await;
+        stream::continue_agentic_loop(state, tx).await;
         return;
     } else {
         // Non-standard stop reasons (MaxTokens, StopSequence, Other)
@@ -713,14 +716,14 @@ pub(crate) async fn handle_stream_done(
                 _ => format!("Stream ended: {reason_label}"),
             };
             crate::toast::push_with_cap(
-                &mut app.engine.toasts,
+                &mut state.toasts,
                 crate::toast::Toast::new(crate::toast::ToastKind::Warning, msg),
             );
         }
-        app.engine.streaming_assistant_idx = None;
-        app.engine.current_stream_request = None;
-        app.engine.stream_lifecycle = None;
-        app.scroll_to_bottom();
+        state.streaming_assistant_idx = None;
+        state.current_stream_request = None;
+        state.stream_lifecycle = None;
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
     }
 
     // ── Self-continuation guard ──────────────────────────────────────────
@@ -732,20 +735,20 @@ pub(crate) async fn handle_stream_done(
     // stopping condition is *scope exhausted*, not *finished a sub-step*.
     if should_self_continue_after_stop_reason(&stop_reason) {
         if turn_genuinely_done {
-            let stalled = stream::assistant_text_stalls(&app.engine.messages);
+            let stalled = stream::assistant_text_stalls(&state.messages);
             if stalled {
-                app.engine.exploration_state
+                state.exploration_state
                     .bump_for_signal(crate::exploration::ExplorationSignal::AssistantStall);
             } else {
-                let counts = app.engine.task_store.counts();
+                let counts = state.task_store.counts();
                 if counts.pending == 0 && counts.in_progress == 0 {
-                    app.engine.exploration_state.decay_after_progress();
+                    state.exploration_state.decay_after_progress();
                 }
             }
         }
-        maybe_self_continue(app, tx).await;
+        maybe_self_continue(state, tx).await;
     }
-    if needs_dynamic_loop_keepalive && !app.engine.is_streaming {
+    if needs_dynamic_loop_keepalive && !state.is_streaming {
         schedule_dynamic_loop_keepalive();
     }
 }
@@ -876,20 +879,20 @@ fn stop_reason_is_refusal(sr: &jfc_provider::StopReason) -> bool {
         || matches!(sr, jfc_provider::StopReason::Other(s) if looks_like_refusal_stop_reason(s))
 }
 
-fn dynamic_loop_keepalive_needed(app: &App) -> bool {
+fn dynamic_loop_keepalive_needed(state: &EngineState) -> bool {
     if !crate::autonomous_loop::loop_keepalive_enabled() {
         return false;
     }
-    let Some(loop_state) = app.engine.autonomous_loop.as_ref() else {
+    let Some(loop_state) = state.autonomous_loop.as_ref() else {
         return false;
     };
     if loop_state.pacing != crate::autonomous_loop::LoopPacing::Dynamic {
         return false;
     }
-    let Some(idx) = app.engine.streaming_assistant_idx else {
+    let Some(idx) = state.streaming_assistant_idx else {
         return false;
     };
-    let Some(message) = app.engine.messages.get(idx) else {
+    let Some(message) = state.messages.get(idx) else {
         return false;
     };
     !message_scheduled_dynamic_loop_wakeup(message)
@@ -933,6 +936,7 @@ fn schedule_dynamic_loop_keepalive() {
 #[cfg(test)]
 mod stream_done_lifecycle_tests {
     use std::{sync::Arc, time::Instant};
+    use crate::app::App;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 
@@ -985,7 +989,7 @@ mod stream_done_lifecycle_tests {
         app.engine.pending_classifications = 1;
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        handle_stream_done(&mut app, &tx, jfc_provider::StopReason::EndTurn).await;
+        handle_stream_done(&mut app.engine, &tx, jfc_provider::StopReason::EndTurn).await;
 
         assert!(
             app.engine.turn_started_at.is_some(),
@@ -1005,10 +1009,10 @@ mod stream_done_lifecycle_tests {
         app.engine.active_stream_handle = Some(handle.abort_handle());
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        handle_stream_done(&mut app, &tx, jfc_provider::StopReason::EndTurn).await;
+        handle_stream_done(&mut app.engine, &tx, jfc_provider::StopReason::EndTurn).await;
 
         assert!(app.engine.active_stream_handle.is_none());
-        assert!(!app.has_interruptible_work());
+        assert!(!app.engine.has_interruptible_work());
         handle.abort();
     }
 
@@ -1041,7 +1045,7 @@ mod stream_done_lifecycle_tests {
         let mut app = app_with_empty_billed_turn();
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        handle_stream_done(&mut app, &tx, jfc_provider::StopReason::EndTurn).await;
+        handle_stream_done(&mut app.engine, &tx, jfc_provider::StopReason::EndTurn).await;
 
         // The blank assistant turn was removed and a fresh slot staged by
         // continue_agentic_loop. The user turn survives, and the *billed*
@@ -1073,8 +1077,7 @@ mod stream_done_lifecycle_tests {
         let mut app = app_with_empty_billed_turn();
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        handle_stream_done(
-            &mut app,
+        handle_stream_done(&mut app.engine,
             &tx,
             jfc_provider::StopReason::Other("stream_error".into()),
         )
@@ -1101,7 +1104,7 @@ mod stream_done_lifecycle_tests {
         let mut app = app_with_empty_billed_turn();
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        handle_stream_done(&mut app, &tx, jfc_provider::StopReason::Refusal).await;
+        handle_stream_done(&mut app.engine, &tx, jfc_provider::StopReason::Refusal).await;
 
         assert_eq!(
             app.engine.empty_billed_resend_count, 1,
@@ -1125,7 +1128,7 @@ mod stream_done_lifecycle_tests {
         let mut app = app_with_empty_billed_turn();
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        handle_stream_done(&mut app, &tx, jfc_provider::StopReason::EndTurn).await;
+        handle_stream_done(&mut app.engine, &tx, jfc_provider::StopReason::EndTurn).await;
 
         assert_eq!(
             app.engine.empty_billed_resend_count, 0,
@@ -1140,7 +1143,7 @@ mod stream_done_lifecycle_tests {
 /// queued, instead of forcing a manual "continue". Gated on `auto_continue`
 /// (env/config/factory), disabled in plan mode, and capped by
 /// `max_self_continuations` to prevent runaway loops.
-async fn maybe_self_continue(app: &mut App, tx: &EventSender) {
+async fn maybe_self_continue(state: &mut EngineState, tx: &EventSender) {
     // Only fire when the turn is fully settled and idle. The
     // `in_flight_*` guards are load-bearing: when StreamDone arrives
     // with `stop_reason=ToolUse` and pending tools, the `has_pending_tools`
@@ -1153,20 +1156,20 @@ async fn maybe_self_continue(app: &mut App, tx: &EventSender) {
     // `turn_truly_complete` predicate in tools.rs so continuation is driven by
     // `handle_all_complete` *after* the tool results land, not by this race.
     let idle = TurnIdleness {
-        is_streaming: app.engine.is_streaming,
-        pending_approval: app.engine.pending_approval.is_some(),
-        approval_queue_len: app.engine.approval_queue.len(),
-        pending_tool_calls_len: app.engine.pending_tool_calls.len(),
-        queued_prompts_len: app.engine.queued_prompts.len(),
-        pending_classifications: app.engine.pending_classifications,
-        in_flight_eager_dispatches: app.engine.in_flight_eager_dispatches,
-        in_flight_tool_batches: app.engine.in_flight_tool_batches,
+        is_streaming: state.is_streaming,
+        pending_approval: state.pending_approval.is_some(),
+        approval_queue_len: state.approval_queue.len(),
+        pending_tool_calls_len: state.pending_tool_calls.len(),
+        queued_prompts_len: state.queued_prompts.len(),
+        pending_classifications: state.pending_classifications,
+        in_flight_eager_dispatches: state.in_flight_eager_dispatches,
+        in_flight_tool_batches: state.in_flight_tool_batches,
     };
     if !turn_is_idle_for_self_continue(&idle) {
         return;
     }
     // Plan mode is read-only by contract — never auto-act.
-    if matches!(app.engine.permission_mode, app::PermissionMode::Plan) {
+    if matches!(state.permission_mode, crate::app::PermissionMode::Plan) {
         return;
     }
     if !stream::auto_continue_enabled() {
@@ -1175,29 +1178,29 @@ async fn maybe_self_continue(app: &mut App, tx: &EventSender) {
 
     // Is there a reason to continue? Either unfinished queued tasks, or the
     // model ended on a permission-asking stall.
-    let counts = app.engine.task_store.counts();
+    let counts = state.task_store.counts();
     let tasks_remain = counts.pending > 0 || counts.in_progress > 0;
-    let stalled = stream::assistant_text_stalls(&app.engine.messages);
+    let stalled = stream::assistant_text_stalls(&state.messages);
     if !tasks_remain && !stalled {
         return;
     }
 
     // Cap consecutive self-continuations.
     let max = stream::max_self_continuations();
-    if app.engine.self_continuation_count >= max {
+    if state.self_continuation_count >= max {
         tracing::info!(
             target: "jfc::stream",
-            count = app.engine.self_continuation_count,
+            count = state.self_continuation_count,
             max,
             "self-continuation cap reached — waiting for user"
         );
         return;
     }
-    app.engine.self_continuation_count += 1;
+    state.self_continuation_count += 1;
 
     tracing::info!(
         target: "jfc::stream",
-        count = app.engine.self_continuation_count,
+        count = state.self_continuation_count,
         tasks_remain,
         stalled,
         pending_tasks = counts.pending,
@@ -1224,8 +1227,8 @@ async fn maybe_self_continue(app: &mut App, tx: &EventSender) {
             .to_string()
     };
     let body = crate::system_reminder::format(&reason);
-    app.engine.messages.push(types::ChatMessage::user(body));
-    stream::continue_agentic_loop(app, tx).await;
+    state.messages.push(types::ChatMessage::user(body));
+    stream::continue_agentic_loop(state, tx).await;
 }
 
 /// Snapshot of the runtime fields `maybe_self_continue` inspects to decide

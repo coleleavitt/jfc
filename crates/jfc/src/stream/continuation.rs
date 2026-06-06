@@ -1,7 +1,7 @@
 use jfc_provider::ProviderMessage;
 use tokio::sync::mpsc;
 
-use crate::app::App;
+use crate::app::EngineState;
 use crate::runtime::{EngineEvent, StreamEvent, StreamRequestOverrides};
 use crate::types::*;
 
@@ -172,7 +172,7 @@ pub(crate) fn max_self_continuations() -> u32 {
 /// server-side sampling loop resumption).
 ///
 /// Returns the index of the newly-pushed assistant message so callers
-/// can slice `&app.engine.messages[..assistant_idx]` to build the resend
+/// can slice `&state.messages[..assistant_idx]` to build the resend
 /// request without including the empty placeholder slot.
 ///
 /// What this resets:
@@ -191,13 +191,13 @@ pub(crate) fn max_self_continuations() -> u32 {
 ///     token estimate depends on it persisting (v126:responseLengthRef).
 ///   * `turn_started_at` — wall clock for "Cooked for Nm Ns" footer,
 ///     owned by `handle_submit_text` and cleared only at turn end.
-fn setup_new_substream_slot(app: &mut App, label: &'static str) -> usize {
-    let assistant_idx = app.engine.messages.len();
+fn setup_new_substream_slot(state: &mut EngineState, label: &'static str) -> usize {
+    let assistant_idx = state.messages.len();
     tracing::info!(
         target: "jfc::stream",
         assistant_idx,
-        model = %app.engine.model,
-        total_messages = app.engine.messages.len(),
+        model = %state.model,
+        total_messages = state.messages.len(),
         sub_stream = label,
         "setup_new_substream_slot: staging new assistant slot"
     );
@@ -208,7 +208,7 @@ fn setup_new_substream_slot(app: &mut App, label: &'static str) -> usize {
     // release builds skip the walk.
     #[cfg(debug_assertions)]
     if let Err(err) = crate::types::validate_turn_invariants_inner(
-        &app.engine.messages,
+        &state.messages,
         /* allow_streaming_tail = */ true,
     ) {
         tracing::warn!(
@@ -219,19 +219,19 @@ fn setup_new_substream_slot(app: &mut App, label: &'static str) -> usize {
             "setup_new_substream_slot: turn-invariant violation BEFORE staging new assistant slot"
         );
     }
-    app.engine.messages.push(ChatMessage::assistant(String::new()));
-    app.engine.streaming_text.clear();
-    app.engine.streaming_reasoning.clear();
-    app.engine.streaming_assistant_idx = Some(assistant_idx);
-    app.engine.is_streaming = true;
+    state.messages.push(ChatMessage::assistant(String::new()));
+    state.streaming_text.clear();
+    state.streaming_reasoning.clear();
+    state.streaming_assistant_idx = Some(assistant_idx);
+    state.is_streaming = true;
     let now = std::time::Instant::now();
-    app.engine.streaming_started_at = Some(now);
-    app.engine.last_stream_event_at = Some(now);
-    app.engine.streaming_last_token_at = Some(now);
-    app.engine.last_usage_output = 0;
-    app.engine.usage_apply_baseline = (0, 0, 0, 0);
-    app.engine.thinking_started_at = None;
-    app.engine.thinking_ended_at = None;
+    state.streaming_started_at = Some(now);
+    state.last_stream_event_at = Some(now);
+    state.streaming_last_token_at = Some(now);
+    state.last_usage_output = 0;
+    state.usage_apply_baseline = (0, 0, 0, 0);
+    state.thinking_started_at = None;
+    state.thinking_ended_at = None;
     assistant_idx
 }
 
@@ -243,24 +243,24 @@ fn setup_new_substream_slot(app: &mut App, label: &'static str) -> usize {
 /// — including the cancel-token plumbing. A divergence here was how
 /// the legacy code accidentally let one path skip the token and miss
 /// ESCx2 unwinds.
-fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sender<EngineEvent>) {
-    let provider = app.engine.provider.clone();
-    let model = app.engine.model.clone();
+fn spawn_substream(state: &mut EngineState, messages: Vec<ProviderMessage>, tx: &mpsc::Sender<EngineEvent>) {
+    let provider = state.provider.clone();
+    let model = state.model.clone();
     let tx = tx.clone();
-    let interrupt = app.engine.interrupt_flag.clone();
-    let cancel = app.engine.cancel_token.clone();
+    let interrupt = state.interrupt_flag.clone();
+    let cancel = state.cancel_token.clone();
     let overrides = StreamRequestOverrides {
-        background_reminders: app.engine.take_background_reminders(),
-        disallowed_tools: app.engine.effective_disallowed_tools(),
-        allowed_tools: app.engine.allowed_tools.clone(),
-        custom_betas: app.engine.custom_betas.clone(),
-        fine_grained_tool_streaming: app.engine.fine_grained_tool_streaming,
-        strict_tool_schemas: app.engine.strict_tool_schemas,
-        task_budget: app.engine.cli_task_budget,
-        max_thinking_tokens: app.engine.cli_max_thinking_tokens,
-        thinking_display: app.engine.cli_thinking_display.clone(),
-        brief_mode: app.engine.brief_mode,
-        context_hint_tokens_saved: app.engine.take_context_hint_tokens_saved(),
+        background_reminders: state.take_background_reminders(),
+        disallowed_tools: state.effective_disallowed_tools(),
+        allowed_tools: state.allowed_tools.clone(),
+        custom_betas: state.custom_betas.clone(),
+        fine_grained_tool_streaming: state.fine_grained_tool_streaming,
+        strict_tool_schemas: state.strict_tool_schemas,
+        task_budget: state.cli_task_budget,
+        max_thinking_tokens: state.cli_max_thinking_tokens,
+        thinking_display: state.cli_thinking_display.clone(),
+        brief_mode: state.brief_mode,
+        context_hint_tokens_saved: state.take_context_hint_tokens_saved(),
         ..Default::default()
     };
     let tx_guard = tx.clone();
@@ -275,7 +275,7 @@ fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sen
         )
         .await;
     });
-    app.engine.active_stream_handle = Some(inner.abort_handle());
+    state.active_stream_handle = Some(inner.abort_handle());
     tokio::spawn(async move {
         if let Err(join_err) = inner.await {
             let msg = if join_err.is_panic() {
@@ -309,10 +309,10 @@ fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sen
 /// The synthetic-user-injection step is skipped specifically for the
 /// trailing-assistant case; consecutive same-role merging and
 /// empty-assistant stripping still apply.
-pub(crate) async fn continue_after_pause_turn(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
-    let assistant_idx = setup_new_substream_slot(app, "pause_turn_resume");
-    let messages = build_provider_messages_for_pause_turn_resume(&app.engine.messages[..assistant_idx]);
-    spawn_substream(app, messages, tx);
+pub(crate) async fn continue_after_pause_turn(state: &mut EngineState, tx: &mpsc::Sender<EngineEvent>) {
+    let assistant_idx = setup_new_substream_slot(state, "pause_turn_resume");
+    let messages = build_provider_messages_for_pause_turn_resume(&state.messages[..assistant_idx]);
+    spawn_substream(state, messages, tx);
 }
 
 /// Maximum API round-trips per user turn before hard-stop.
@@ -344,23 +344,23 @@ fn cap_main_continuation_history(provider_name: &str, messages: &mut Vec<Provide
     capped
 }
 
-pub(crate) async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
+pub(crate) async fn continue_agentic_loop(state: &mut EngineState, tx: &mpsc::Sender<EngineEvent>) {
     // Enforce max-turns safety limit. Without this a model stuck in a
     // retry loop (e.g. repeatedly failing Edit calls) runs indefinitely.
-    app.engine.agentic_turn_count += 1;
+    state.agentic_turn_count += 1;
     let max = std::env::var("JFC_MAX_AGENTIC_TURNS")
         .ok()
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(MAX_AGENTIC_TURNS);
-    if app.engine.agentic_turn_count >= max {
+    if state.agentic_turn_count >= max {
         tracing::error!(
             target: "jfc::stream",
-            turn_count = app.engine.agentic_turn_count,
+            turn_count = state.agentic_turn_count,
             max,
             "max agentic turns exceeded — hard-stopping loop"
         );
         crate::toast::push_with_cap(
-            &mut app.engine.toasts,
+            &mut state.toasts,
             crate::toast::Toast::new(
                 crate::toast::ToastKind::Error,
                 format!(
@@ -370,23 +370,23 @@ pub(crate) async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<Engin
         );
         return;
     }
-    if app.engine.agentic_turn_count == max.saturating_sub(10) {
+    if state.agentic_turn_count == max.saturating_sub(10) {
         crate::toast::push_with_cap(
-            &mut app.engine.toasts,
+            &mut state.toasts,
             crate::toast::Toast::new(
                 crate::toast::ToastKind::Warning,
                 format!(
                     "Approaching turn limit ({}/{max}). The loop will stop at {max}.",
-                    app.engine.agentic_turn_count
+                    state.agentic_turn_count
                 ),
             ),
         );
     }
 
-    let assistant_idx = setup_new_substream_slot(app, "agentic_loop");
-    let mut messages = build_provider_messages_with_tool_results(&app.engine.messages[..assistant_idx]);
-    cap_main_continuation_history(app.engine.provider.name(), &mut messages);
-    spawn_substream(app, messages, tx);
+    let assistant_idx = setup_new_substream_slot(state, "agentic_loop");
+    let mut messages = build_provider_messages_with_tool_results(&state.messages[..assistant_idx]);
+    cap_main_continuation_history(state.provider.name(), &mut messages);
+    spawn_substream(state, messages, tx);
 }
 
 #[cfg(test)]
@@ -685,6 +685,7 @@ mod setup_new_substream_slot_tests {
     //! `streaming_response_bytes` counter SURVIVES across sub-streams
     //! so the spinner shows turn-total tokens, not per-sub-stream
     //! tokens (matches v126 responseLengthRef).
+    use crate::app::App;
     use super::*;
     use std::sync::Arc;
 
@@ -723,7 +724,7 @@ mod setup_new_substream_slot_tests {
     #[test]
     fn setup_pushes_empty_assistant_slot_and_returns_index_normal() {
         let mut app = fresh_app_with(vec![ChatMessage::user("hi".into())]);
-        let idx = setup_new_substream_slot(&mut app, "test");
+        let idx = setup_new_substream_slot(&mut app.engine, "test");
         assert_eq!(idx, 1, "assistant_idx must be the post-push index");
         assert_eq!(app.engine.messages.len(), 2);
         assert_eq!(app.engine.messages[idx].role, Role::Assistant);
@@ -751,7 +752,7 @@ mod setup_new_substream_slot_tests {
         app.engine.thinking_started_at = Some(std::time::Instant::now());
         app.engine.thinking_ended_at = Some(std::time::Instant::now());
 
-        let _ = setup_new_substream_slot(&mut app, "test");
+        let _ = setup_new_substream_slot(&mut app.engine, "test");
 
         assert!(
             app.engine.streaming_text.is_empty(),
@@ -778,7 +779,7 @@ mod setup_new_substream_slot_tests {
     fn setup_preserves_cumulative_response_bytes_robust() {
         let mut app = fresh_app_with(vec![ChatMessage::user("hi".into())]);
         app.engine.streaming_response_bytes = 12_345;
-        let _ = setup_new_substream_slot(&mut app, "test");
+        let _ = setup_new_substream_slot(&mut app.engine, "test");
         assert_eq!(
             app.engine.streaming_response_bytes, 12_345,
             "streaming_response_bytes must persist across sub-streams (v126 responseLengthRef)"
@@ -811,6 +812,7 @@ mod pause_turn_end_to_end_tests {
     //! regression in setup_new_substream_slot (e.g. it stops pushing
     //! the empty trailing assistant) immediately surfaces a wrong
     //! wire shape.
+    use crate::app::App;
     use super::*;
     use crate::ids::ToolId;
     use crate::types::{
@@ -891,7 +893,7 @@ mod pause_turn_end_to_end_tests {
         // continue_after_pause_turn). After this call, app.engine.messages
         // has a trailing empty assistant placeholder; the resend
         // builder must slice it off.
-        let assistant_idx = setup_new_substream_slot(&mut app, "pause_turn_resume");
+        let assistant_idx = setup_new_substream_slot(&mut app.engine, "pause_turn_resume");
         assert_eq!(
             assistant_idx, 2,
             "fresh slot index must be the post-push position"
@@ -986,7 +988,7 @@ mod pause_turn_end_to_end_tests {
             ]),
         ];
 
-        let assistant_idx = setup_new_substream_slot(&mut app, "pause_turn_resume");
+        let assistant_idx = setup_new_substream_slot(&mut app.engine, "pause_turn_resume");
         let payload = build_provider_messages_for_pause_turn_resume(&app.engine.messages[..assistant_idx]);
 
         // Trailing assistant carries BOTH the server_tool_use AND
@@ -1053,7 +1055,7 @@ mod pause_turn_end_to_end_tests {
             ))]),
         ];
 
-        let assistant_idx = setup_new_substream_slot(&mut app, "pause_turn_resume");
+        let assistant_idx = setup_new_substream_slot(&mut app.engine, "pause_turn_resume");
         let payload = build_provider_messages_for_pause_turn_resume(&app.engine.messages[..assistant_idx]);
 
         // The resume-mode builder's merge step collapses the two
@@ -1148,7 +1150,7 @@ mod pause_turn_end_to_end_tests {
             ]),
         ];
 
-        let assistant_idx = setup_new_substream_slot(&mut app, "pause_turn_mixed_resume");
+        let assistant_idx = setup_new_substream_slot(&mut app.engine, "pause_turn_mixed_resume");
         let payload = build_provider_messages_for_pause_turn_resume(&app.engine.messages[..assistant_idx]);
 
         // The assistant turn carries text + server_tool_use + local tool_use,

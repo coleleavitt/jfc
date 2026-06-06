@@ -2,17 +2,16 @@
 //! assignments (no `tx.send` fan-out, no spawned tasks), so they read
 //! best as one file rather than scattered match arms.
 
-use crate::app::App;
-use crate::input;
+use crate::app::{EngineEffect, EngineState};
 use crate::runtime::ProviderEvent;
 
-pub(crate) fn handle_provider_event(app: &mut App, ev: ProviderEvent) {
+pub(crate) fn handle_provider_event(state: &mut EngineState, ev: ProviderEvent) {
     match ev {
         ProviderEvent::McpUpdated { servers } => {
-            app.engine.mcp_servers = servers;
+            state.mcp_servers = servers;
         }
         ProviderEvent::LspUpdated { servers } => {
-            app.engine.lsp_servers = servers;
+            state.lsp_servers = servers;
         }
         ProviderEvent::DiagnosticsUpdated { entries } => {
             // Mirror the snapshot into the global so `stream_response`
@@ -20,7 +19,7 @@ pub(crate) fn handle_provider_event(app: &mut App, ev: ProviderEvent) {
             // having to touch every call site to thread through an
             // `&[DiagnosticEntry]` parameter.
             crate::diagnostics::set_global_snapshot(entries.clone());
-            app.engine.diagnostics = entries;
+            state.diagnostics = entries;
             // Toast-on-transition was disabled by user request — the
             // dim summary row above the spinner already surfaces the
             // count, and Ctrl+O opens the full panel. Spawning a
@@ -29,39 +28,36 @@ pub(crate) fn handle_provider_event(app: &mut App, ev: ProviderEvent) {
             // toast is intentionally left commented out rather than
             // deleted so it can be reinstated behind a setting if
             // wanted later.
-            // let was_empty = app.engine.diagnostics.is_empty();
+            // let was_empty = state.diagnostics.is_empty();
             // let is_empty = entries.is_empty();
             // ...
         }
         ProviderEvent::ModelsLoaded { provider, models } => {
-            app.model_picker_query_cache.clear();
-            app.engine.provider_models.insert(provider, models);
-            app.sync_selected_context_window();
-            if app.show_model_picker {
-                app.model_picker_models = input::collect_all_models(app);
-            }
+            state.provider_models.insert(provider, models);
+            state.sync_selected_context_window();
+            // The model-picker refresh (query cache, open-picker reload) is
+            // view state — the frontend applies it when draining this effect.
+            state.push_effect(EngineEffect::ModelsRefreshed);
         }
         ProviderEvent::ProfileLoaded {
             seat_tier,
             subscription_type,
             email,
         } => {
-            app.engine.seat_tier = seat_tier;
-            app.engine.subscription_type = subscription_type;
-            app.engine.account_email = email;
-            if app.show_model_picker {
-                app.model_picker_models = input::collect_all_models(app);
-            }
+            state.seat_tier = seat_tier;
+            state.subscription_type = subscription_type;
+            state.account_email = email;
+            state.push_effect(EngineEffect::ModelsRefreshed);
         }
         ProviderEvent::AnthropicSnapshotUpdated { snapshot } => {
-            app.engine.anthropic_account_snapshot = snapshot;
+            state.anthropic_account_snapshot = snapshot;
         }
         ProviderEvent::ClaudeStatusUpdated(update) => {
             if let Some(snapshot) = update.snapshot {
-                app.engine.claude_status = Some(snapshot);
-                app.engine.claude_status_error = None;
+                state.claude_status = Some(snapshot);
+                state.claude_status_error = None;
             } else if let Some(error) = update.error {
-                app.engine.claude_status_error = Some(error);
+                state.claude_status_error = Some(error);
             }
         }
     }

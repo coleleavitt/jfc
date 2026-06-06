@@ -1,4 +1,4 @@
-use crate::app::{App, NetworkRecoveryProvider, NetworkRecoveryReason, NetworkRecoveryStatus};
+use crate::app::{NetworkRecoveryProvider, NetworkRecoveryReason, NetworkRecoveryStatus, EngineState};
 
 fn parse_retry_status_code(message: &str) -> Option<u16> {
     message
@@ -32,18 +32,18 @@ fn classify_network_recovery(status_code: Option<u16>, message: &str) -> Network
 }
 
 pub(crate) fn record_network_recovery(
-    app: &mut App,
+    state: &mut EngineState,
     provider: NetworkRecoveryProvider,
     message: &str,
 ) {
     let status_code = parse_retry_status_code(message);
     let reason = classify_network_recovery(status_code, message);
-    app.engine.network_recovery_attempts = app.engine.network_recovery_attempts.saturating_add(1);
-    app.engine.network_recovery_status = Some(NetworkRecoveryStatus {
+    state.network_recovery_attempts = state.network_recovery_attempts.saturating_add(1);
+    state.network_recovery_status = Some(NetworkRecoveryStatus {
         provider,
         reason,
         status_code,
-        attempts: app.engine.network_recovery_attempts,
+        attempts: state.network_recovery_attempts,
         updated_at: std::time::Instant::now(),
     });
 }

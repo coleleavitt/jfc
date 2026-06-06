@@ -2,7 +2,7 @@
 //! match so the lifecycle (Started → Progress → Done | Failed) reads as a
 //! single coherent file instead of four scattered match arms.
 
-use crate::app::App;
+use crate::app::EngineState;
 use crate::context::ToolContext;
 use crate::runtime::{
     CompactionEvent, EventSender, drain_queued_prompts, maybe_continue_task_factory,
@@ -10,7 +10,7 @@ use crate::runtime::{
 use crate::types::ChatMessage;
 use crate::{stream, toast};
 
-pub(super) fn handle_started(app: &mut App) {
+pub(super) fn handle_started(state: &mut EngineState) {
     // The compacting_started_at guard is now set synchronously
     // at the decision site to prevent the agentic-loop race.
     // This event still fires for logging/observability but the
@@ -18,15 +18,15 @@ pub(super) fn handle_started(app: &mut App) {
     // weren't (handles the edge case of manual /compact which
     // may not go through the AllToolsComplete path).
     tracing::debug!(target: "jfc::compact", "CompactionStarted event received — showing spinner");
-    if app.engine.compacting_started_at.is_none() {
-        app.engine.compacting_started_at = Some(std::time::Instant::now());
-        app.engine.compacting_output_chars = 0;
-        app.engine.compacting_attempt_baseline = 0;
-        app.engine.compacting_last_progress = 0;
+    if state.compacting_started_at.is_none() {
+        state.compacting_started_at = Some(std::time::Instant::now());
+        state.compacting_output_chars = 0;
+        state.compacting_attempt_baseline = 0;
+        state.compacting_last_progress = 0;
     }
 }
 
-pub(super) fn handle_progress(app: &mut App, output_chars: u64) {
+pub(super) fn handle_progress(state: &mut EngineState, output_chars: u64) {
     // Live token feedback during compact streaming. Mirrors
     // v126's PB7 addResponseLength → spinner refresh
     // (cli.js:396989).
@@ -39,15 +39,15 @@ pub(super) fn handle_progress(app: &mut App, output_chars: u64) {
     // spinner shows a monotonically-increasing total — the
     // user sees the true work-done across attempts instead
     // of a flickering counter that jumps `↓3k → ↓92 → ↓1k`.
-    if output_chars < app.engine.compacting_last_progress {
-        app.engine.compacting_attempt_baseline += app.engine.compacting_last_progress;
+    if output_chars < state.compacting_last_progress {
+        state.compacting_attempt_baseline += state.compacting_last_progress;
     }
-    app.engine.compacting_last_progress = output_chars;
-    app.engine.compacting_output_chars = app.engine.compacting_attempt_baseline + output_chars;
+    state.compacting_last_progress = output_chars;
+    state.compacting_output_chars = state.compacting_attempt_baseline + output_chars;
 }
 
 pub(super) async fn handle_done(
-    app: &mut App,
+    state: &mut EngineState,
     tx: &EventSender,
     messages: Vec<ChatMessage>,
     tool_ctx: ToolContext,
@@ -55,21 +55,21 @@ pub(super) async fn handle_done(
     post_tokens: usize,
 ) {
     // Reset post-compact read tracker so we can detect re-reads.
-    app.engine.post_compact_reads.clear();
+    state.post_compact_reads.clear();
     let saved = pre_tokens.saturating_sub(post_tokens);
     // Stash the savings so the next outbound request forwards it as the
     // context-hint (context-hint-2026-04-09). Drained after one send. Only
     // worth hinting when non-trivial; the body builder enforces the 20k floor.
     if saved > 0 {
-        app.engine.pending_context_hint_tokens_saved = Some(saved as u64);
+        state.pending_context_hint_tokens_saved = Some(saved as u64);
     }
     tracing::info!(
         target: "jfc::compact",
         pre_tokens, post_tokens, saved,
         new_message_count = messages.len(),
-        "applying compaction result to app state"
+        "applying compaction result to state state"
     );
-    let was_streaming = app.engine.is_streaming;
+    let was_streaming = state.is_streaming;
     if was_streaming {
         // Defensive: should be unreachable with the synchronous
         // compacting_started_at guard, but if a stream somehow
@@ -80,11 +80,11 @@ pub(super) async fn handle_done(
              discarding compaction result to avoid data corruption"
         );
     } else {
-        app.engine.messages = messages;
+        state.messages = messages;
         // Migrate cleanup flags (rapid_refill_count,
         // last_compact_turn, etc.) from the compact
         // worker's local tool_ctx, but preserve the
-        // calibrated `approx_tokens` already on app —
+        // calibrated `approx_tokens` already on state —
         // either the wire-reported value from the most
         // recent `StreamUsage` or the resume-time anchor
         // from `recompute_token_estimate`. Overwriting
@@ -99,29 +99,29 @@ pub(super) async fn handle_done(
         // reflects what's actually about to be sent on
         // the next turn — both compaction and the
         // pre-submit gate now use the same source.
-        let preserved = app.engine.tool_ctx.approx_tokens;
-        app.engine.tool_ctx = tool_ctx;
+        let preserved = state.tool_ctx.approx_tokens;
+        state.tool_ctx = tool_ctx;
         // Use the smaller of (preserved calibrated value)
         // and post_tokens — preserved is wire-truth from
         // before compact, post_tokens is a local
         // estimate. After compaction the real prompt is
         // ≤ pre-compact; clamping to min protects against
         // showing the user a count larger than reality.
-        app.engine.tool_ctx.approx_tokens = preserved.min(post_tokens);
+        state.tool_ctx.approx_tokens = preserved.min(post_tokens);
         // Add a fixed overhead estimate for system prompt, tool defs,
         // memories, etc. that the local message estimate doesn't include.
         // Without this, the gauge shows "safe" immediately post-compact
         // while the next request actually sends system+messages which can
         // be 50-100k+ of overhead.
-        let overhead = app.engine.last_system_prompt_len.unwrap_or(30_000);
-        app.engine.tool_ctx.approx_tokens = app.engine.tool_ctx.approx_tokens.saturating_add(overhead);
-        app.engine.last_usage_input = 0;
+        let overhead = state.last_system_prompt_len.unwrap_or(30_000);
+        state.tool_ctx.approx_tokens = state.tool_ctx.approx_tokens.saturating_add(overhead);
+        state.last_usage_input = 0;
         // Reset the per-turn baseline so the next
         // `StreamUsage` cumulative delta builds from 0,
         // not from pre-compact totals — without this,
         // `apply_cumulative` would treat the post-compact
         // input as a negative delta and stall.
-        app.engine.usage_apply_baseline = (0, 0, 0, 0);
+        state.usage_apply_baseline = (0, 0, 0, 0);
         // Repin to the bottom of the freshly-compacted transcript. The whole
         // message vec was just replaced, so any prior `scroll_offset` indexes
         // into a buffer that no longer exists; leaving `follow_bottom` false
@@ -130,18 +130,18 @@ pub(super) async fn handle_done(
         // likewise repin on this transition — compaction is a hard transcript
         // reset, not an ordinary append. The content-addressed render cache
         // self-invalidates by text hash, so no explicit clear is needed.
-        app.scroll_to_bottom();
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
     }
-    app.engine.compacting_started_at = None;
-    app.engine.compacting_output_chars = 0;
-    app.engine.compacting_attempt_baseline = 0;
-    app.engine.compacting_last_progress = 0;
-    app.engine.compact_suppressed = false;
+    state.compacting_started_at = None;
+    state.compacting_output_chars = 0;
+    state.compacting_attempt_baseline = 0;
+    state.compacting_last_progress = 0;
+    state.compact_suppressed = false;
     // Surface the compaction outcome to the user via a toast
     // — they don't have to scroll to see the boundary marker.
     let saved_k = saved / 1000;
     toast::push_with_cap(
-        &mut app.engine.toasts,
+        &mut state.toasts,
         toast::Toast::new(
             toast::ToastKind::Success,
             format!("Compacted — saved ~{saved_k}k tokens"),
@@ -159,12 +159,12 @@ pub(super) async fn handle_done(
     // tool_results (should_continue_loop=true) and
     // there's no other reason to pause.
     if !was_streaming
-        && app.engine.pending_approval.is_none()
-        && app.engine.approval_queue.is_empty()
-        && app.engine.pending_tool_calls.is_empty()
-        && !app.engine.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
-        && !app.engine.cancel_token.is_cancelled()
-        && stream::should_continue_loop(&app.engine.messages)
+        && state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty()
+        && !state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+        && !state.cancel_token.is_cancelled()
+        && stream::should_continue_loop(&state.messages)
     {
         // Same mixed-mode gate as in AllToolsComplete:
         // if the original Done event flagged
@@ -174,36 +174,36 @@ pub(super) async fn handle_done(
         // Single-shot semantics: clear the flag here so
         // a subsequent non-pause turn doesn't inherit
         // the routing.
-        if app.engine.pending_pause_turn_resume {
-            app.engine.pending_pause_turn_resume = false;
+        if state.pending_pause_turn_resume {
+            state.pending_pause_turn_resume = false;
             tracing::info!(
                 target: "jfc::stream",
                 "agentic loop resuming after CompactionDone — pause_turn mixed mode, routing through continue_after_pause_turn"
             );
-            stream::continue_after_pause_turn(app, tx).await;
+            stream::continue_after_pause_turn(state, tx).await;
         } else {
             tracing::info!(
                 target: "jfc::stream",
                 "agentic loop resuming after CompactionDone — tool results pending"
             );
-            stream::continue_agentic_loop(app, tx).await;
+            stream::continue_agentic_loop(state, tx).await;
         }
     } else if !was_streaming
-        && app.engine.pending_approval.is_none()
-        && app.engine.approval_queue.is_empty()
-        && app.engine.pending_tool_calls.is_empty()
+        && state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty()
     {
         // Compaction landed at end of turn (no pending
         // tool results). Drain queued prompts so they
         // start now that the context is clean.
-        app.engine.turn_started_at = None;
-        drain_queued_prompts(app, tx).await;
-        maybe_continue_task_factory(app, tx).await;
+        state.turn_started_at = None;
+        drain_queued_prompts(state, tx).await;
+        maybe_continue_task_factory(state, tx).await;
     }
 }
 
 pub(super) async fn handle_failed(
-    app: &mut App,
+    state: &mut EngineState,
     tx: &EventSender,
     reason: String,
     calibrated_tokens: Option<usize>,
@@ -217,12 +217,12 @@ pub(super) async fn handle_failed(
         "compaction failed — surfacing toast to user"
     );
     if let Some(real_count) = calibrated_tokens {
-        app.engine.tool_ctx.approx_tokens = real_count;
+        state.tool_ctx.approx_tokens = real_count;
     }
-    app.engine.compacting_started_at = None;
-    app.engine.compacting_output_chars = 0;
-    app.engine.compacting_attempt_baseline = 0;
-    app.engine.compacting_last_progress = 0;
+    state.compacting_started_at = None;
+    state.compacting_output_chars = 0;
+    state.compacting_attempt_baseline = 0;
+    state.compacting_last_progress = 0;
     // Permanent failures (provider unsupported, exhausted retries,
     // breaker tripped) latch suppression so we stop spamming
     // compact attempts on every AllToolsComplete; the user clears
@@ -231,7 +231,7 @@ pub(super) async fn handle_failed(
     // suppressing them would silently disable auto-compact for
     // the rest of the session.
     if !transient {
-        app.engine.compact_suppressed = true;
+        state.compact_suppressed = true;
         crate::notifications::notify_compact_failed(&reason);
     }
     let toast_kind = if transient {
@@ -244,48 +244,49 @@ pub(super) async fn handle_failed(
     } else {
         format!("Compaction failed: {reason}")
     };
-    toast::push_with_cap(&mut app.engine.toasts, toast::Toast::new(toast_kind, toast_msg));
+    toast::push_with_cap(&mut state.toasts, toast::Toast::new(toast_kind, toast_msg));
 
     // Re-check agentic loop continuation after failed compaction —
     // without this, tool results that triggered the compaction attempt
     // sit unreplied-to and the loop stalls permanently.
-    if app.engine.pending_approval.is_none()
-        && app.engine.approval_queue.is_empty()
-        && app.engine.pending_tool_calls.is_empty()
-        && !app.engine.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
-        && !app.engine.cancel_token.is_cancelled()
-        && stream::should_continue_loop(&app.engine.messages)
+    if state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty()
+        && !state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+        && !state.cancel_token.is_cancelled()
+        && stream::should_continue_loop(&state.messages)
     {
         tracing::info!(
             target: "jfc::compact",
             "agentic loop resuming after CompactionFailed — tool results pending"
         );
-        stream::continue_agentic_loop(app, tx).await;
+        stream::continue_agentic_loop(state, tx).await;
     }
 }
 
 // Glue: dispatch a `CompactionEvent` to the matching handler.
-pub(crate) async fn handle_compaction_event(app: &mut App, tx: &EventSender, ev: CompactionEvent) {
+pub(crate) async fn handle_compaction_event(state: &mut EngineState, tx: &EventSender, ev: CompactionEvent) {
     match ev {
-        CompactionEvent::Started => handle_started(app),
-        CompactionEvent::Progress { output_chars } => handle_progress(app, output_chars),
+        CompactionEvent::Started => handle_started(state),
+        CompactionEvent::Progress { output_chars } => handle_progress(state, output_chars),
         CompactionEvent::Done {
             messages,
             tool_ctx,
             pre_tokens,
             post_tokens,
-        } => handle_done(app, tx, messages, tool_ctx, pre_tokens, post_tokens).await,
+        } => handle_done(state, tx, messages, tool_ctx, pre_tokens, post_tokens).await,
         CompactionEvent::Failed {
             reason,
             calibrated_tokens,
             transient,
-        } => handle_failed(app, tx, reason, calibrated_tokens, transient).await,
+        } => handle_failed(state, tx, reason, calibrated_tokens, transient).await,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use crate::app::App;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 
@@ -340,7 +341,7 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
         handle_done(
-            &mut app,
+            &mut app.engine,
             &tx,
             compacted,
             ToolContext::new(),
@@ -348,6 +349,8 @@ mod tests {
             20_000,
         )
         .await;
+        // The handler queues an effect; the frontend's drain applies it.
+        crate::runtime::event_loop::apply_engine_effects(&mut app);
 
         assert!(
             app.follow_bottom,
@@ -373,7 +376,7 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
         handle_done(
-            &mut app,
+            &mut app.engine,
             &tx,
             vec![ChatMessage::assistant("ignored".into())],
             ToolContext::new(),
@@ -382,6 +385,7 @@ mod tests {
         )
         .await;
 
+        crate::runtime::event_loop::apply_engine_effects(&mut app);
         assert_eq!(app.engine.messages.len(), before, "result must be discarded");
         assert!(!app.follow_bottom, "discard path must not repin");
         assert_eq!(app.scroll_offset, 5);

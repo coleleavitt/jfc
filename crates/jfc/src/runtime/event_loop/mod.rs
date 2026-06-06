@@ -497,7 +497,7 @@ pub(crate) async fn run(
             }
         }
     }
-    restore_persistent_background_agents(&mut app);
+    restore_persistent_background_agents(&mut app.engine);
 
     // Check for pending historian transcripts from previous sessions.
     crate::learn_lifecycle::on_session_start(&app.engine.cwd);
@@ -683,7 +683,7 @@ pub(crate) async fn run(
         });
     }
 
-    app.sync_task_completions();
+    app.engine.sync_task_completions();
     draw_synchronized(terminal, &mut app)?;
     // Initial terminal title — updates whenever the model or session
     // changes.
@@ -927,6 +927,10 @@ pub(crate) async fn run(
             }
         }
 
+        // Apply view-facing effects queued by engine handlers in this burst
+        // (scroll pinning, render-cache invalidation).
+        apply_engine_effects(&mut app);
+
         // After processing all events in this burst, mirror derived state
         // to remote-control clients.
         if let Some(ref rc) = app.remote_host {
@@ -981,7 +985,7 @@ pub(crate) async fn run(
             // tells the multi-threaded runtime to migrate other tasks off this
             // worker so they keep running while we hold the I/O.
             tokio::task::block_in_place(|| -> io::Result<()> {
-                app.sync_task_completions();
+                app.engine.sync_task_completions();
                 draw_synchronized(terminal, &mut app)?;
                 set_terminal_title(&app);
                 _ = execute!(
@@ -1067,6 +1071,43 @@ fn resolve_effort_for_model(cfg: &crate::config::Config, model: &str) -> Option<
 }
 
 
+/// Drain and apply the view-facing effects queued by engine handlers during
+/// this burst. The engine never touches scroll/render state directly — it
+/// queues `EngineEffect`s and this is the TUI's interpretation of them.
+/// Headless frontends have their own (mostly no-op) interpretation.
+pub(crate) fn apply_engine_effects(app: &mut App) {
+    let effects = std::mem::take(&mut app.engine.effects);
+    for effect in effects {
+        match effect {
+            crate::app::EngineEffect::TranscriptAppended => {
+                // Follow content as it streams *only when the user is already
+                // pinned to the bottom* — and freeze the viewport while a
+                // mid-drag selection is active (autoscrolling would slide the
+                // transcript out from under the highlight).
+                let selecting = app.text_selection.is_some_and(|s| s.dragged);
+                if app.follow_bottom && !selecting {
+                    app.scroll_to_bottom();
+                }
+            }
+            crate::app::EngineEffect::StreamingFinalized => {
+                app.render_cache.borrow_mut().clear_streaming();
+            }
+            crate::app::EngineEffect::ScrollToBottom => {
+                app.scroll_to_bottom();
+            }
+            crate::app::EngineEffect::ToolOutputArrived => {
+                app.path_yank_cursor = 0;
+            }
+            crate::app::EngineEffect::ModelsRefreshed => {
+                app.model_picker_query_cache.clear();
+                if app.show_model_picker {
+                    app.model_picker_models = crate::input::collect_all_models(app);
+                }
+            }
+        }
+    }
+}
+
 /// Dispatch one engine event against the app state. This is the entire
 /// frontend-neutral event pump — the TUI loop, and eventually every other
 /// frontend, funnels engine events through here. Carved out of the main
@@ -1080,43 +1121,42 @@ pub(crate) async fn handle_engine_event(
     match ev {
         // ── Team events ─────────────────────────────────────────
         EngineEvent::Team(ev) => {
-            handlers::team::handle_team_event(app, &tx, ev).await;
+            handlers::team::handle_team_event(&mut app.engine, &tx, ev).await;
         }
 
 
         // ── Stream: chunk / tool-input / redacted / response-id ─
         EngineEvent::Stream(StreamEvent::Chunk { text, reasoning }) => {
-            handlers::stream_chunk::handle_chunk(app, text, reasoning);
+            handlers::stream_chunk::handle_chunk(&mut app.engine, text, reasoning);
         }
         EngineEvent::Stream(StreamEvent::ToolInputDelta(byte_len)) => {
-            handlers::stream_chunk::handle_tool_input_delta(app, byte_len);
+            handlers::stream_chunk::handle_tool_input_delta(&mut app.engine, byte_len);
         }
         EngineEvent::Stream(StreamEvent::ThinkingTokens(tokens)) => {
-            handlers::stream_chunk::handle_thinking_tokens(app, tokens);
+            handlers::stream_chunk::handle_thinking_tokens(&mut app.engine, tokens);
         }
         EngineEvent::Stream(StreamEvent::RedactedThinking(data)) => {
-            handlers::stream_chunk::handle_redacted_thinking(app, data);
+            handlers::stream_chunk::handle_redacted_thinking(&mut app.engine, data);
         }
         EngineEvent::Stream(StreamEvent::ResponseId(id)) => {
-            handlers::stream_chunk::handle_response_id(app, id);
+            handlers::stream_chunk::handle_response_id(&mut app.engine, id);
         }
 
         // ── Stream: tool announcement ───────────────────────────
         EngineEvent::Stream(StreamEvent::Tool(tool)) => {
-            handlers::stream_tool::handle_stream_tool(app, &tx, tool).await;
+            handlers::stream_tool::handle_stream_tool(&mut app.engine, &tx, tool).await;
         }
         EngineEvent::Tool(ToolEvent::ClassifierDecision {
             tool,
             blocked,
             reason,
         }) => {
-            handlers::stream_tool::handle_classifier_decision(
-                app, &tx, tool, blocked, reason,
+            handlers::stream_tool::handle_classifier_decision(&mut app.engine, &tx, tool, blocked, reason,
             )
             .await;
         }
         EngineEvent::Tool(ToolEvent::SetInProgressToolUseIds { action, ids }) => {
-            handlers::tools::handle_set_in_progress_tool_use_ids(app, action, ids);
+            handlers::tools::handle_set_in_progress_tool_use_ids(&mut app.engine, action, ids);
         }
         EngineEvent::Tool(ToolEvent::DeferredToolUse {
             id,
@@ -1124,8 +1164,7 @@ pub(crate) async fn handle_engine_event(
             input_preview,
             reason,
         }) => {
-            handlers::tools::handle_deferred_tool_use(
-                app,
+            handlers::tools::handle_deferred_tool_use(&mut app.engine,
                 id,
                 name,
                 input_preview,
@@ -1136,8 +1175,7 @@ pub(crate) async fn handle_engine_event(
             summary,
             preceding_tool_use_ids,
         }) => {
-            handlers::tools::handle_tool_use_summary(
-                app,
+            handlers::tools::handle_tool_use_summary(&mut app.engine,
                 summary,
                 preceding_tool_use_ids,
             );
@@ -1147,8 +1185,7 @@ pub(crate) async fn handle_engine_event(
             tool_kind,
             content,
         }) => {
-            handlers::stream_tool::handle_server_tool_result(
-                app,
+            handlers::stream_tool::handle_server_tool_result(&mut app.engine,
                 &tx,
                 tool_use_id,
                 tool_kind,
@@ -1158,12 +1195,12 @@ pub(crate) async fn handle_engine_event(
 
         // ── Stream: done ────────────────────────────────────────
         EngineEvent::Stream(StreamEvent::Done(stop_reason)) => {
-            handlers::stream_done::handle_stream_done(app, &tx, stop_reason).await;
+            handlers::stream_done::handle_stream_done(&mut app.engine, &tx, stop_reason).await;
         }
 
         // ── Stream: error ───────────────────────────────────────
         EngineEvent::Stream(StreamEvent::Error(e)) => {
-            handlers::stream_error::handle_stream_error(app, &tx, e).await;
+            handlers::stream_error::handle_stream_error(&mut app.engine, &tx, e).await;
         }
 
         // ── Stream: fallback ────────────────────────────────────
@@ -1172,8 +1209,7 @@ pub(crate) async fn handle_engine_event(
             fallback_model,
             reason,
         }) => {
-            handlers::stream_error::handle_fallback_triggered(
-                app,
+            handlers::stream_error::handle_fallback_triggered(&mut app.engine,
                 &original_model,
                 &fallback_model,
                 &reason,
@@ -1187,8 +1223,7 @@ pub(crate) async fn handle_engine_event(
             cache_read_tokens,
             cache_write_tokens,
         }) => {
-            handlers::stream_usage::handle_stream_usage(
-                app,
+            handlers::stream_usage::handle_stream_usage(&mut app.engine,
                 input_tokens,
                 output_tokens,
                 cache_read_tokens,
@@ -1198,7 +1233,7 @@ pub(crate) async fn handle_engine_event(
 
         // ── Stream: metadata ────────────────────────────────────
         EngineEvent::Stream(StreamEvent::SystemPromptLen(len)) => {
-            handlers::ui_actions::handle_system_prompt_len(app, len);
+            handlers::ui_actions::handle_system_prompt_len(&mut app.engine, len);
         }
         EngineEvent::Stream(StreamEvent::MemoryRecalled(chars)) => {
             // The recall block was injected this turn; show its size in
@@ -1215,54 +1250,54 @@ pub(crate) async fn handle_engine_event(
             );
         }
         EngineEvent::Stream(StreamEvent::RequestMetadata(meta)) => {
-            handlers::ui_actions::handle_request_metadata(app, meta);
+            handlers::ui_actions::handle_request_metadata(&mut app.engine, meta);
         }
         EngineEvent::Stream(StreamEvent::Lifecycle(status)) => {
-            handlers::ui_actions::handle_stream_lifecycle(app, status);
+            handlers::ui_actions::handle_stream_lifecycle(&mut app.engine, status);
         }
 
         // ── Provider events ─────────────────────────────────────
         EngineEvent::Provider(ev) => {
-            handlers::provider::handle_provider_event(app, ev);
+            handlers::provider::handle_provider_event(&mut app.engine, ev);
         }
 
         // ── Tool execution events ───────────────────────────────
         EngineEvent::Tool(ToolEvent::OutputChunk { tool_id, chunk }) => {
-            handlers::tools::handle_output_chunk(app, tool_id, chunk);
+            handlers::tools::handle_output_chunk(&mut app.engine, tool_id, chunk);
         }
         EngineEvent::Tool(ToolEvent::Result { tool_id, result }) => {
-            handlers::tools::handle_tool_result(app, &tx, tool_id, result);
-            if handlers::tools::should_recheck_completion_after_tool_result(&app) {
+            handlers::tools::handle_tool_result(&mut app.engine, &tx, tool_id, result);
+            if handlers::tools::should_recheck_completion_after_tool_result(&app.engine) {
                 tracing::warn!(
             target: "jfc::stream",
             "ToolResult completed a turn after its AllComplete signal — rechecking continuation"
                 );
-                handlers::tools::handle_all_complete(app, &tx).await;
+                handlers::tools::handle_all_complete(&mut app.engine, &tx).await;
             }
         }
         EngineEvent::Tool(ToolEvent::AllComplete) => {
-            handlers::tools::handle_all_complete(app, &tx).await;
+            handlers::tools::handle_all_complete(&mut app.engine, &tx).await;
         }
 
         // ── Goal evaluation ─────────────────────────────────────
         EngineEvent::Goal(GoalEvent::Verdict { ok, reason }) => {
-            handle_goal_verdict(app, &tx, ok, reason).await;
+            handle_goal_verdict(&mut app.engine, &tx, ok, reason).await;
         }
 
         // ── Compaction events ───────────────────────────────────
         EngineEvent::Compaction(ev) => {
-            handlers::compaction::handle_compaction_event(app, &tx, ev).await;
+            handlers::compaction::handle_compaction_event(&mut app.engine, &tx, ev).await;
         }
 
         // ── UI actions ──────────────────────────────────────────
         EngineEvent::Frontend(FrontendEvent::PlanModeEntered { reason }) => {
-            handlers::ui_actions::handle_enter_plan_mode(app, reason);
+            handlers::ui_actions::handle_enter_plan_mode(&mut app.engine, reason);
         }
         EngineEvent::Control(ControlEvent::SubmitPrompt(text)) => {
             handlers::ui_actions::handle_submit(app, text, &tx).await?;
         }
         EngineEvent::Control(ControlEvent::Notice { kind, text }) => {
-            handlers::ui_actions::handle_toast(app, kind, text);
+            handlers::ui_actions::handle_toast(&mut app.engine, kind, text);
         }
         EngineEvent::Control(ControlEvent::LoadSession(session_id)) => {
             handlers::ui_actions::handle_load_session(app, session_id).await;
@@ -1275,18 +1310,18 @@ pub(crate) async fn handle_engine_event(
             approved,
         }) => {
             crate::input::handle_remote_approval_response(
-                app,
+                &mut app.engine,
                 &tx,
                 tool_use_id,
                 approved,
             );
         }
         EngineEvent::Frontend(FrontendEvent::PlanReview { plan }) => {
-            handlers::ui_actions::handle_exit_plan_mode(app, plan);
+            handlers::ui_actions::handle_exit_plan_mode(&mut app.engine, plan);
         }
         // ── Task (subagent) events ──────────────────────────────
         EngineEvent::Task(TaskEvent::AgentChunk { task_id, text }) => {
-            handlers::task::handle_agent_chunk(app, task_id, text);
+            handlers::task::handle_agent_chunk(&mut app.engine, task_id, text);
         }
         EngineEvent::Task(TaskEvent::Started {
             task_id,
@@ -1296,8 +1331,7 @@ pub(crate) async fn handle_engine_event(
             is_detached,
             parent_task_id,
         }) => {
-            handlers::task::handle_task_started(
-                app,
+            handlers::task::handle_task_started(&mut app.engine,
                 task_id,
                 description,
                 model_used,
@@ -1316,8 +1350,7 @@ pub(crate) async fn handle_engine_event(
             cache_write_tokens,
             output_tokens,
         }) => {
-            handlers::task::handle_task_progress(
-                app,
+            handlers::task::handle_task_progress(&mut app.engine,
                 task_id,
                 last_tool,
                 elapsed_ms,
@@ -1333,16 +1366,18 @@ pub(crate) async fn handle_engine_event(
             summary,
             elapsed_ms,
         }) => {
-            handlers::task::handle_task_completed(
-                app, &tx, task_id, summary, elapsed_ms,
+            handlers::task::handle_task_completed(&mut app.engine, &tx, task_id, summary, elapsed_ms,
             )
             .await;
         }
         EngineEvent::Task(TaskEvent::Failed { task_id, error }) => {
-            handlers::task::handle_task_failed(app, &tx, task_id, error).await;
+            handlers::task::handle_task_failed(&mut app.engine, &tx, task_id, error).await;
         }
         EngineEvent::WorkflowProgress(ev) => {
-            handlers::workflow::handle_workflow_progress(app, ev);
+            handlers::workflow::handle_workflow_progress(&mut app.engine, ev);
+        }
+        EngineEvent::Control(ControlEvent::RunCommand(text)) => {
+            crate::input::run_slash_command(app, &text).await;
         }
         EngineEvent::Control(ControlEvent::Interrupt) => {
             crate::input::request_user_interrupt(app, tx);
@@ -1357,7 +1392,7 @@ pub(crate) async fn handle_engine_event(
                 .map(|p| p.tool.id.as_str().to_owned());
             match target {
                 Some(tool_use_id) => {
-                    crate::input::handle_remote_approval_response(app, tx, tool_use_id, approved);
+                    crate::input::handle_remote_approval_response(&mut app.engine, tx, tool_use_id, approved);
                 }
                 None => {
                     tracing::warn!(

@@ -1,16 +1,16 @@
 //! UI-action handlers — plan mode entry/exit, submit, toast, load session,
 //! and stream metadata.
 
-use crate::app::{self, App};
+use crate::app::{App, EngineState};
 use crate::runtime::EventSender;
 use crate::{input, toast};
 
 /// Handle `FrontendEvent::PlanModeEntered { reason }`.
-pub(crate) fn handle_enter_plan_mode(app: &mut App, reason: String) {
+pub(crate) fn handle_enter_plan_mode(state: &mut EngineState, reason: String) {
     // Model-callable plan mode entry — the EnterPlanMode tool
     // emits this. Flip the leader's permission mode and toast
     // the reason so the user knows what triggered it.
-    app.engine.permission_mode = crate::app::PermissionMode::Plan;
+    state.permission_mode = crate::app::PermissionMode::Plan;
     let preview: String = reason.chars().take(120).collect();
     let body = if preview.is_empty() {
         "Entered plan mode (model request)".to_owned()
@@ -18,7 +18,7 @@ pub(crate) fn handle_enter_plan_mode(app: &mut App, reason: String) {
         format!("Plan mode: {preview}")
     };
     toast::push_with_cap(
-        &mut app.engine.toasts,
+        &mut state.toasts,
         toast::Toast::new(toast::ToastKind::Info, body),
     );
     // v132 mid-stream system-reminder so the next turn
@@ -26,7 +26,7 @@ pub(crate) fn handle_enter_plan_mode(app: &mut App, reason: String) {
     // model only learns about the new permissions when
     // a tool call gets denied — too late.
     crate::system_reminder::append_to_last_user(
-        &mut app.engine.messages,
+        &mut state.messages,
         "Permission mode is now `Plan` (read-only). Use ExitPlanMode \
          with a finalized plan to proceed with edits.",
     );
@@ -123,13 +123,13 @@ pub(crate) async fn handle_submit(
 }
 
 /// Handle `StreamEvent::SystemPromptLen(len)`.
-pub(crate) fn handle_system_prompt_len(app: &mut App, len: usize) {
-    app.engine.last_system_prompt_len = Some(len);
+pub(crate) fn handle_system_prompt_len(state: &mut EngineState, len: usize) {
+    state.last_system_prompt_len = Some(len);
 }
 
 /// Handle `StreamEvent::RequestMetadata(meta)`.
-pub(crate) fn handle_request_metadata(app: &mut App, meta: crate::runtime::StreamRequestMetadata) {
-    app.record_stream_activity();
+pub(crate) fn handle_request_metadata(state: &mut EngineState, meta: crate::runtime::StreamRequestMetadata) {
+    state.record_stream_activity();
     tracing::debug!(
         target: "jfc::stream",
         advertised_tool_count = meta.advertised_tool_count,
@@ -137,30 +137,30 @@ pub(crate) fn handle_request_metadata(app: &mut App, meta: crate::runtime::Strea
         tool_choice = ?meta.tool_choice,
         "stream request metadata"
     );
-    app.engine.current_stream_request = Some(meta);
+    state.current_stream_request = Some(meta);
 }
 
 /// Handle `StreamEvent::Lifecycle(status)`.
 pub(crate) fn handle_stream_lifecycle(
-    app: &mut App,
+    state: &mut EngineState,
     status: crate::runtime::StreamLifecycleStatus,
 ) {
-    app.record_stream_activity();
+    state.record_stream_activity();
     tracing::debug!(
         target: "jfc::stream::lifecycle",
         phase = ?status.phase,
         detail = ?status.detail,
         "stream lifecycle status"
     );
-    app.engine.stream_lifecycle = Some(status);
+    state.stream_lifecycle = Some(status);
 }
 
 /// Handle `ControlEvent::Notice { kind, text }`.
-pub(crate) fn handle_toast(app: &mut App, kind: toast::ToastKind, text: impl Into<String>) {
+pub(crate) fn handle_toast(state: &mut EngineState, kind: toast::ToastKind, text: impl Into<String>) {
     // Push onto the auto-expiring strip with the kind's
     // default TTL. Capped at `MAX_TOASTS` to bound memory
     // when a long-running compaction or classifier spams.
-    toast::push_with_cap(&mut app.engine.toasts, toast::Toast::new(kind, text));
+    toast::push_with_cap(&mut state.toasts, toast::Toast::new(kind, text));
 }
 
 /// Handle `ControlEvent::LoadSession(session_id)`.
@@ -184,7 +184,7 @@ pub(crate) async fn handle_load_session(app: &mut App, session_id: crate::ids::S
             app.engine.streaming_reasoning.clear();
             app.engine.streaming_response_bytes = 0;
             app.engine.streaming_assistant_idx = None;
-            app.scroll_to_bottom();
+            app.engine.push_effect(crate::app::EngineEffect::ScrollToBottom);
             toast::push_with_cap(
                 &mut app.engine.toasts,
                 toast::Toast::new(
@@ -206,7 +206,7 @@ pub(crate) async fn handle_load_session(app: &mut App, session_id: crate::ids::S
 }
 
 /// Handle `FrontendEvent::PlanReview { plan }`.
-pub(crate) fn handle_exit_plan_mode(app: &mut App, plan: String) {
+pub(crate) fn handle_exit_plan_mode(state: &mut EngineState, plan: String) {
     // Surface the plan as part of the existing assistant message
     // (NOT a new message — that would fool should_continue_loop
     // into thinking the last assistant has no tools, blocking
@@ -216,7 +216,7 @@ pub(crate) fn handle_exit_plan_mode(app: &mut App, plan: String) {
     tracing::info!(
         target: "jfc::ui::plan_mode",
         plan_bytes = plan.len(),
-        from_mode = ?app.engine.permission_mode,
+        from_mode = ?state.permission_mode,
         "ExitPlanMode: surfacing plan + transitioning out of Plan"
     );
     let body = format!("\n\n**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}");
@@ -227,39 +227,39 @@ pub(crate) fn handle_exit_plan_mode(app: &mut App, plan: String) {
     // rposition scan. Prevents a stale index (Up-recall
     // shifted the slot left onto a user placeholder) from
     // gluing the plan body onto a User message.
-    let streaming_assistant = app.engine.streaming_assistant_idx.filter(|&idx| {
+    let streaming_assistant = state.streaming_assistant_idx.filter(|&idx| {
         matches!(
-            app.engine.messages.get(idx).map(|m| m.role),
+            state.messages.get(idx).map(|m| m.role),
             Some(crate::types::Role::Assistant),
         )
     });
     let target_idx = streaming_assistant.or_else(|| {
-        app.engine.messages
+        state.messages
             .iter()
             .rposition(|m| m.role == crate::types::Role::Assistant)
     });
     if let Some(idx) = target_idx {
         // Append as a new Text part to the existing assistant msg.
-        app.engine.messages[idx]
+        state.messages[idx]
             .parts
             .push(crate::types::MessagePart::Text(body));
     } else {
         // Fallback: no assistant message found (shouldn't happen
         // but defensive). Push as a new message.
-        app.engine.messages
+        state.messages
             .push(crate::types::ChatMessage::assistant(body));
     }
-    if matches!(app.engine.permission_mode, app::PermissionMode::Plan) {
-        app.engine.permission_mode = app::PermissionMode::AcceptEdits;
+    if matches!(state.permission_mode, crate::app::PermissionMode::Plan) {
+        state.permission_mode = crate::app::PermissionMode::AcceptEdits;
         crate::toast::push_with_cap(
-            &mut app.engine.toasts,
+            &mut state.toasts,
             crate::toast::Toast::new(
                 crate::toast::ToastKind::Success,
                 "Plan approved — mode: Accept Edits",
             ),
         );
         crate::system_reminder::append_to_last_user(
-            &mut app.engine.messages,
+            &mut state.messages,
             "Permission mode flipped from `Plan` to `AcceptEdits`. \
              Edit/Write/Bash now auto-approve. Continue executing the plan.",
         );

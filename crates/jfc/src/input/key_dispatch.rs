@@ -218,7 +218,7 @@ pub(crate) fn request_user_interrupt(app: &mut App, tx: &mpsc::Sender<crate::run
         handle.abort();
     }
 
-    let denied_approvals = approval::deny_pending_and_queued(app, tx);
+    let denied_approvals = approval::deny_pending_and_queued(&mut app.engine, tx);
 
     if app.engine.goal_evaluator_in_flight {
         tracing::info!(
@@ -254,7 +254,7 @@ pub(crate) fn request_user_interrupt(app: &mut App, tx: &mpsc::Sender<crate::run
         );
     }
 
-    if !app.has_interruptible_work() {
+    if !app.engine.has_interruptible_work() {
         app.engine.interrupt_flag
             .store(false, std::sync::atomic::Ordering::SeqCst);
     }
@@ -361,7 +361,7 @@ async fn handle_command_keys(
                 app.image_counter = 0;
                 return Some(Ok(false));
             }
-            if app.has_interruptible_work() {
+            if app.engine.has_interruptible_work() {
                 request_user_interrupt(app, tx);
                 return Some(Ok(false));
             }
@@ -1027,7 +1027,7 @@ fn cmd_handle_escape(
     // Double-tap ESC to instantly kill active work: 1st arms a 600ms timer +
     // hint, 2nd (within the window) fires the interrupt.
     const DOUBLE_TAP_MS: u128 = 600;
-    let active = app.has_interruptible_work();
+    let active = app.engine.has_interruptible_work();
     if active {
         if key.kind == event::KeyEventKind::Repeat {
             return Some(Ok(false));
@@ -1137,7 +1137,7 @@ async fn handle_enter_submit(
             // The prompt renders in the transcript right away so the user
             // knows it landed, and drains via `drain_queued_prompts` in
             // main.rs once the approval pipeline empties.
-            let pipeline_busy = app.pipeline_busy_for_submit();
+            let pipeline_busy = app.engine.pipeline_busy_for_submit();
             let compacting = app.engine.compacting_started_at.is_some();
             if app.engine.is_streaming || pipeline_busy || compacting {
                 // Check if we can interrupt: if streaming with only

@@ -79,7 +79,7 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     // different ways, leaving a maintenance footgun where one could
     // drift from the other.
     let total_tokens = app.engine.tool_ctx.approx_tokens as u64;
-    let ctx_max = app.selected_context_window_tokens().max(1) as u64;
+    let ctx_max = app.engine.selected_context_window_tokens().max(1) as u64;
     let pct = (total_tokens as f64 / ctx_max as f64 * 100.0).min(100.0);
 
     lines.push(Line::from(vec![
@@ -119,14 +119,14 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     // disconnected widget glued to the bottom of the panel. Uses
     // the unicode block-element scale `▁▂▃▄▅▆▇█` so we can render
     // it as a styled span rather than a separate Sparkline widget.
-    if app.token_history.len() >= 2 {
+    if app.engine.token_history.len() >= 2 {
         const BARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-        let max_val = app.token_history.iter().copied().max().unwrap_or(1).max(1);
-        let bar_width = (inner.width as usize).min(app.token_history.len());
+        let max_val = app.engine.token_history.iter().copied().max().unwrap_or(1).max(1);
+        let bar_width = (inner.width as usize).min(app.engine.token_history.len());
         // Take the most recent N values so a long history doesn't
         // squish the recent samples into single-cell averages.
-        let start = app.token_history.len().saturating_sub(bar_width);
-        let bars: String = app
+        let start = app.engine.token_history.len().saturating_sub(bar_width);
+        let bars: String = app.engine
             .token_history
             .iter()
             .skip(start)

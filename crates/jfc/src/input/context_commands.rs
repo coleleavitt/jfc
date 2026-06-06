@@ -459,7 +459,7 @@ pub(super) async fn cmd_model(
         app.engine.model = jfc_provider::ModelId::new(requested_model);
     }
     crate::app::push_recent_model(&mut app.engine.recent_models, &recent_model);
-    app.sync_selected_context_window();
+    app.engine.sync_selected_context_window();
     tracing::info!(
         target: "jfc::input",
         old_model = %old_model,

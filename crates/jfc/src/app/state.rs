@@ -177,7 +177,6 @@ pub struct App {
     /// `spinner::TOKEN_RATE_WINDOW`. A windowed Δtokens/Δt is self-smoothing
     /// and reflects *current* throughput, unlike a lifetime average that lags
     /// after a fast opening burst tapers. Cleared at end-of-turn.
-    pub token_rate_samples: std::collections::VecDeque<(std::time::Duration, u64)>,
     pub scroll_offset: usize,
     pub total_lines: usize,
     /// Cache key for `total_lines`: (message_count, streaming_text_len, last_width).
@@ -285,13 +284,11 @@ pub struct App {
     /// `StreamUsage` event lands at end-of-turn. Capped at the last
     /// `TOKEN_HISTORY_CAP` turns so a long session doesn't grow it
     /// unbounded.
-    pub token_history: std::collections::VecDeque<u64>,
     /// task_id of whichever subagent / teammate emitted activity most
     /// recently (AgentChunk or Progress event). Render that row bold +
     /// accent in the spinner-area tree so the user can tell which
     /// agent is currently moving vs. idle. None means nothing has
     /// reported activity this turn.
-    pub last_active_agent_task: Option<String>,
     /// Timestamp of the most recent ESC press in the main shortcut
     /// handler. The next ESC within `INTERRUPT_DOUBLE_TAP_MS` triggers
     /// an interrupt instead of just clearing the input.
@@ -492,7 +489,6 @@ impl App {
         let mut app = Self {
             engine: EngineState::new(provider, model),
             theme: Theme::dark(),
-            token_rate_samples: std::collections::VecDeque::new(),
             esc_saved_text: None,
             history_cursor: None,
             scroll_offset: 0,
@@ -528,8 +524,6 @@ impl App {
             last_click: None,
             pending_select_request: None,
             last_focus_hint_at: None,
-            token_history: std::collections::VecDeque::with_capacity(TOKEN_HISTORY_CAP),
-            last_active_agent_task: None,
             last_esc_at: None,
             follow_bottom: true,
             viewport_height: 0,
@@ -584,7 +578,7 @@ impl App {
             idle_return_shown: false,
             json_mode: false,
         };
-        app.sync_selected_context_window();
+        app.engine.sync_selected_context_window();
         tracing::info!(
             target: "jfc::app",
             model = %app.engine.model,

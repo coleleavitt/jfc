@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::EngineState;
 use crate::types::*;
 
 pub(super) const CONFIG_RELOAD_REMINDER: &str = "CLAUDE.md / agent / settings file changed since last \
@@ -25,10 +25,10 @@ pub(super) const MCP_REFRESH_REMINDER: &str = "An MCP server announced `tools/li
 /// drops the part with a `warn!` instead of silently corrupting the wire
 /// shape (the API then rejects the next request with "tool_use blocks can
 /// only appear in assistant messages").
-pub(super) fn streaming_assistant_mut(app: &mut App) -> Option<&mut ChatMessage> {
-    let idx = app.engine.streaming_assistant_idx?;
-    let len = app.engine.messages.len();
-    let msg = app.engine.messages.get_mut(idx)?;
+pub(super) fn streaming_assistant_mut(state: &mut EngineState) -> Option<&mut ChatMessage> {
+    let idx = state.streaming_assistant_idx?;
+    let len = state.messages.len();
+    let msg = state.messages.get_mut(idx)?;
     if msg.role != Role::Assistant {
         tracing::warn!(
             target: "jfc::stream::guard",

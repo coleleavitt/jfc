@@ -93,6 +93,12 @@ pub enum ControlEvent {
     /// Async result from the periodic `git worktree list` refresh, spawned
     /// off-loop so a slow or locked git repo cannot stall the frontend.
     WorktreeCountLoaded(usize),
+    /// Run a slash command. Queued-prompt draining inside the engine cannot
+    /// call the frontend's command dispatch directly; it routes the command
+    /// back over the bus and the frontend executes it. Stage 8 of the
+    /// extraction moves engine-pure command semantics into the engine and
+    /// shrinks this to view commands only.
+    RunCommand(String),
 }
 
 /// Outbound engine→frontend requests that previously rode on `UiEvent`.

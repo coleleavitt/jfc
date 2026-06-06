@@ -2,20 +2,20 @@ use super::{drain_queued_prompts, maybe_continue_task_factory};
 use crate::runtime::{EngineEvent, EventSender, GoalEvent};
 use crate::{app, stream, types};
 
-pub(crate) fn dispatch_goal_evaluator_if_active(app: &mut app::App, tx: &EventSender) -> bool {
-    let Some(goal) = app.engine.goal.as_ref() else {
+pub(crate) fn dispatch_goal_evaluator_if_active(state: &mut app::EngineState, tx: &EventSender) -> bool {
+    let Some(goal) = state.goal.as_ref() else {
         return false;
     };
-    if app.engine.goal_evaluator_in_flight {
+    if state.goal_evaluator_in_flight {
         tracing::debug!(target: "jfc::goal", "evaluator already in flight, skipping");
         return true;
     }
     if goal.is_exhausted() {
         let banner = crate::goal::format_exhaustion_banner(goal);
-        app.engine.messages.push(types::ChatMessage::assistant(banner));
-        app.engine.goal = None;
+        state.messages.push(types::ChatMessage::assistant(banner));
+        state.goal = None;
         crate::toast::push_with_cap(
-            &mut app.engine.toasts,
+            &mut state.toasts,
             crate::toast::Toast::new(
                 crate::toast::ToastKind::Error,
                 "Goal abandoned — iteration cap reached".to_owned(),
@@ -24,12 +24,12 @@ pub(crate) fn dispatch_goal_evaluator_if_active(app: &mut app::App, tx: &EventSe
         return false;
     }
 
-    app.engine.goal_evaluator_in_flight = true;
+    state.goal_evaluator_in_flight = true;
     let condition = goal.condition.clone();
-    let history = app.engine.messages.clone();
-    let provider = std::sync::Arc::clone(&app.engine.provider);
-    let model = app.engine.model.clone();
-    let cancel = app.engine.cancel_token.clone();
+    let history = state.messages.clone();
+    let provider = std::sync::Arc::clone(&state.provider);
+    let model = state.model.clone();
+    let cancel = state.cancel_token.clone();
     let tx_eval = tx.clone();
     tokio::spawn(async move {
         let verdict = tokio::select! {
@@ -63,29 +63,29 @@ pub(crate) fn dispatch_goal_evaluator_if_active(app: &mut app::App, tx: &EventSe
 }
 
 pub(crate) async fn handle_goal_verdict(
-    app: &mut app::App,
+    state: &mut app::EngineState,
     tx: &EventSender,
     ok: bool,
     reason: String,
 ) {
-    app.engine.goal_evaluator_in_flight = false;
-    let Some(mut goal) = app.engine.goal.take() else {
-        persist_goal_for_session(app);
-        drain_queued_prompts(app, tx).await;
-        maybe_continue_task_factory(app, tx).await;
+    state.goal_evaluator_in_flight = false;
+    let Some(mut goal) = state.goal.take() else {
+        persist_goal_for_session(state);
+        drain_queued_prompts(state, tx).await;
+        maybe_continue_task_factory(state, tx).await;
         return;
     };
 
     if ok {
         let banner = crate::goal::format_success_banner(&goal, &reason);
-        append_to_last_assistant_or_push(&mut app.engine.messages, &banner);
+        append_to_last_assistant_or_push(&mut state.messages, &banner);
         crate::toast::push_with_cap(
-            &mut app.engine.toasts,
+            &mut state.toasts,
             crate::toast::Toast::new(crate::toast::ToastKind::Success, "Goal achieved".to_owned()),
         );
-        persist_goal_for_session(app);
-        drain_queued_prompts(app, tx).await;
-        maybe_continue_task_factory(app, tx).await;
+        persist_goal_for_session(state);
+        drain_queued_prompts(state, tx).await;
+        maybe_continue_task_factory(state, tx).await;
         return;
     }
 
@@ -93,33 +93,33 @@ pub(crate) async fn handle_goal_verdict(
     goal.last_unmet_reason = Some(reason.clone());
     if goal.is_exhausted() {
         let banner = crate::goal::format_exhaustion_banner(&goal);
-        append_to_last_assistant_or_push(&mut app.engine.messages, &banner);
+        append_to_last_assistant_or_push(&mut state.messages, &banner);
         crate::toast::push_with_cap(
-            &mut app.engine.toasts,
+            &mut state.toasts,
             crate::toast::Toast::new(
                 crate::toast::ToastKind::Error,
                 "Goal abandoned — iteration cap reached".to_owned(),
             ),
         );
-        persist_goal_for_session(app);
-        drain_queued_prompts(app, tx).await;
-        maybe_continue_task_factory(app, tx).await;
+        persist_goal_for_session(state);
+        drain_queued_prompts(state, tx).await;
+        maybe_continue_task_factory(state, tx).await;
         return;
     }
 
     let iteration = goal.iterations;
     let condition = goal.condition.clone();
-    app.engine.goal = Some(goal);
-    persist_goal_for_session(app);
+    state.goal = Some(goal);
+    persist_goal_for_session(state);
     let reminder = crate::goal::format_unmet_reminder(&condition, &reason, iteration);
     let body = crate::system_reminder::format(&reminder);
-    app.engine.messages.push(types::ChatMessage::user(body));
+    state.messages.push(types::ChatMessage::user(body));
     tracing::info!(
         target: "jfc::goal",
         iteration,
         "goal unmet; pushed fresh user turn and continuing agentic loop"
     );
-    stream::continue_agentic_loop(app, tx).await;
+    stream::continue_agentic_loop(state, tx).await;
 }
 
 fn append_to_last_assistant_or_push(messages: &mut Vec<types::ChatMessage>, body: &str) {
@@ -136,9 +136,9 @@ fn append_to_last_assistant_or_push(messages: &mut Vec<types::ChatMessage>, body
     messages.push(types::ChatMessage::assistant(body.to_owned()));
 }
 
-fn persist_goal_for_session(app: &app::App) {
-    let Some(session_id) = app.engine.current_session_id.as_ref() else {
+fn persist_goal_for_session(state: &app::EngineState) {
+    let Some(session_id) = state.current_session_id.as_ref() else {
         return;
     };
-    crate::goal::save_sidecar(session_id.as_str(), app.engine.goal.as_ref());
+    crate::goal::save_sidecar(session_id.as_str(), state.goal.as_ref());
 }

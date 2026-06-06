@@ -957,7 +957,7 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // over TOKEN_RATE_WINDOW, so it reflects *current* throughput, not
         // a lifetime average. We render with `&App`, so we can only read.
         let token_rate = if stream_is_live {
-            crate::spinner::windowed_token_rate(&app.token_rate_samples)
+            crate::spinner::windowed_token_rate(&app.engine.token_rate_samples)
         } else {
             None
         };
@@ -1163,7 +1163,7 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     // Link through the active agent's `parent_task_id` so that one task
     // reads as the live focus (bright + animated) while the rest of the
     // in-progress set dims — instead of N identical bold rows.
-    let active_todo_id: Option<String> = app
+    let active_todo_id: Option<String> = app.engine
         .last_active_agent_task
         .as_deref()
         .and_then(|aid| app.engine.background_tasks.get(aid))

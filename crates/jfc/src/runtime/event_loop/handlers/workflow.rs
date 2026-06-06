@@ -1,16 +1,16 @@
 //! Handler for `EngineEvent::WorkflowProgress` — applies incremental progress
 //! updates from the workflow runner to the matching `BackgroundTask`.
 
-use crate::app::App;
+use crate::app::EngineState;
 use crate::runtime::WorkflowProgressEvent;
 use crate::workflows::meta::WorkflowMeta;
 use crate::workflows::{AgentProgress, AgentStatus, WorkflowTaskProgress};
 
 /// Apply a single `WorkflowProgressEvent` to the matching `BackgroundTask`.
-pub(crate) fn handle_workflow_progress(app: &mut App, ev: WorkflowProgressEvent) {
+pub(crate) fn handle_workflow_progress(state: &mut EngineState, ev: WorkflowProgressEvent) {
     match ev {
         WorkflowProgressEvent::Phase { task_id, title } => {
-            apply_phase(app, task_id.as_str(), title);
+            apply_phase(state, task_id.as_str(), title);
         }
         WorkflowProgressEvent::AgentStarted {
             task_id,
@@ -18,7 +18,7 @@ pub(crate) fn handle_workflow_progress(app: &mut App, ev: WorkflowProgressEvent)
             label,
             phase,
         } => {
-            apply_agent_started(app, task_id.as_str(), index, label, phase);
+            apply_agent_started(state, task_id.as_str(), index, label, phase);
         }
         WorkflowProgressEvent::AgentCacheHit {
             task_id,
@@ -26,26 +26,26 @@ pub(crate) fn handle_workflow_progress(app: &mut App, ev: WorkflowProgressEvent)
             label,
             phase,
         } => {
-            apply_agent_cache_hit(app, task_id.as_str(), index, label, phase);
+            apply_agent_cache_hit(state, task_id.as_str(), index, label, phase);
         }
         WorkflowProgressEvent::AgentDone { task_id, index } => {
-            apply_agent_done(app, task_id.as_str(), index);
+            apply_agent_done(state, task_id.as_str(), index);
         }
         WorkflowProgressEvent::AgentFailed {
             task_id,
             index,
             error,
         } => {
-            apply_agent_failed(app, task_id.as_str(), index, error);
+            apply_agent_failed(state, task_id.as_str(), index, error);
         }
         WorkflowProgressEvent::Log { task_id, message } => {
-            apply_log(app, task_id.as_str(), message);
+            apply_log(state, task_id.as_str(), message);
         }
     }
 }
 
-fn apply_phase(app: &mut App, task_id: &str, title: String) {
-    let Some(bt) = app.engine.background_tasks.get_mut(task_id) else {
+fn apply_phase(state: &mut EngineState, task_id: &str, title: String) {
+    let Some(bt) = state.background_tasks.get_mut(task_id) else {
         return;
     };
     let wfp = ensure_progress(bt, task_id);
@@ -54,13 +54,13 @@ fn apply_phase(app: &mut App, task_id: &str, title: String) {
 }
 
 fn apply_agent_started(
-    app: &mut App,
+    state: &mut EngineState,
     task_id: &str,
     index: u32,
     label: String,
     phase: Option<String>,
 ) {
-    let Some(bt) = app.engine.background_tasks.get_mut(task_id) else {
+    let Some(bt) = state.background_tasks.get_mut(task_id) else {
         return;
     };
     let wfp = ensure_progress(bt, task_id);
@@ -75,13 +75,13 @@ fn apply_agent_started(
 }
 
 fn apply_agent_cache_hit(
-    app: &mut App,
+    state: &mut EngineState,
     task_id: &str,
     index: u32,
     label: String,
     phase: Option<String>,
 ) {
-    let Some(bt) = app.engine.background_tasks.get_mut(task_id) else {
+    let Some(bt) = state.background_tasks.get_mut(task_id) else {
         return;
     };
     let wfp = ensure_progress(bt, task_id);
@@ -96,8 +96,8 @@ fn apply_agent_cache_hit(
     wfp.cache_hits += 1;
 }
 
-fn apply_agent_done(app: &mut App, task_id: &str, index: u32) {
-    let Some(bt) = app.engine.background_tasks.get_mut(task_id) else {
+fn apply_agent_done(state: &mut EngineState, task_id: &str, index: u32) {
+    let Some(bt) = state.background_tasks.get_mut(task_id) else {
         return;
     };
     if let Some(ref mut wfp) = bt.workflow_progress
@@ -107,8 +107,8 @@ fn apply_agent_done(app: &mut App, task_id: &str, index: u32) {
     }
 }
 
-fn apply_agent_failed(app: &mut App, task_id: &str, index: u32, error: String) {
-    let Some(bt) = app.engine.background_tasks.get_mut(task_id) else {
+fn apply_agent_failed(state: &mut EngineState, task_id: &str, index: u32, error: String) {
+    let Some(bt) = state.background_tasks.get_mut(task_id) else {
         return;
     };
     if let Some(ref mut wfp) = bt.workflow_progress {
@@ -119,8 +119,8 @@ fn apply_agent_failed(app: &mut App, task_id: &str, index: u32, error: String) {
     }
 }
 
-fn apply_log(app: &mut App, task_id: &str, message: String) {
-    let Some(bt) = app.engine.background_tasks.get_mut(task_id) else {
+fn apply_log(state: &mut EngineState, task_id: &str, message: String) {
+    let Some(bt) = state.background_tasks.get_mut(task_id) else {
         return;
     };
     let wfp = ensure_progress(bt, task_id);

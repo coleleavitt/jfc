@@ -73,7 +73,7 @@ pub(crate) fn fleet_ordered_task_ids(app: &App) -> Vec<String> {
         .map(|bt| {
             let is_active = !matches!(bt.status, TaskLifecycle::Idle)
                 && !bt.status.is_terminal()
-                && app.last_active_agent_task.as_deref() == Some(bt.task_id.as_str());
+                && app.engine.last_active_agent_task.as_deref() == Some(bt.task_id.as_str());
             (bt.task_id.as_str(), fleet_rank(bt.status, is_active))
         })
         .collect();
@@ -147,7 +147,7 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     let is_active_of = |bt: &crate::app::BackgroundTask| {
         !matches!(bt.status, TaskLifecycle::Idle)
             && !bt.status.is_terminal()
-            && app
+            && app.engine
                 .last_active_agent_task
                 .as_deref()
                 .map(|id| id == bt.task_id.as_str())

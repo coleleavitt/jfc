@@ -562,7 +562,7 @@ pub(super) async fn handle_submit(
     // the task list in sync — instead of the user having to ask "update the
     // tasks". Surfaces state back to the agent (SWE-agent ACI principle)
     // rather than silently mutating task semantics the model owns.
-    if let Some(body) = crate::runtime::task_drift_reminder(app) {
+    if let Some(body) = crate::runtime::task_drift_reminder(&mut app.engine) {
         crate::system_reminder::append_to_last_user(&mut app.engine.messages, &body);
         tracing::info!(
             target: "jfc::tasks",

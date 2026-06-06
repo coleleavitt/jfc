@@ -1,14 +1,13 @@
 use crate::{
-    app::App,
-    input,
     runtime::{EngineEvent, EventSender, StreamEvent, StreamRequestOverrides},
     stream,
     types::{ChatMessage, MessagePart, Role},
 };
 use jfc_core::QueuedPrompt;
+use crate::app::EngineState;
 
-pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
-    let drained: Vec<QueuedPrompt> = app.engine.queued_prompts.drain_all();
+pub(crate) async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
+    let drained: Vec<QueuedPrompt> = state.queued_prompts.drain_all();
     if drained.is_empty() {
         return;
     }
@@ -34,7 +33,7 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
         } = queued;
         let glyph = if is_meta { "⚙" } else { "⏳" };
         let placeholder = format!("{glyph} {text}");
-        for msg in app.engine.messages.iter_mut() {
+        for msg in state.messages.iter_mut() {
             if msg.role == Role::User {
                 let mut replaced = false;
                 for part in msg.parts.iter_mut() {
@@ -64,7 +63,10 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
         }
 
         if is_meta {
-            input::run_slash_command(app, &text).await;
+            crate::runtime::send_critical(
+                tx,
+                EngineEvent::Control(crate::runtime::ControlEvent::RunCommand(text.clone())),
+            );
         } else {
             if first_non_meta_text.is_none() {
                 first_non_meta_text = Some(text.clone());
@@ -83,16 +85,16 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
     // stream into the same conversation buffer, clobbering
     // `streaming_assistant_idx` so the live stream's chunks can't attach.
     if non_meta_texts.is_empty() {
-        if !app.engine.queued_prompts.is_empty() {
-            Box::pin(drain_queued_prompts(app, tx)).await;
+        if !state.queued_prompts.is_empty() {
+            Box::pin(drain_queued_prompts(state, tx)).await;
         }
         return;
     }
 
-    let assistant_idx = app.engine.messages.len();
+    let assistant_idx = state.messages.len();
     #[cfg(debug_assertions)]
     if let Err(error) = crate::types::validate_turn_invariants_inner(
-        &app.engine.messages,
+        &state.messages,
         /* allow_streaming_tail = */ true,
     ) {
         tracing::warn!(
@@ -102,15 +104,15 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
             "drain_queued_prompts: turn-invariant violation before staging assistant slot"
         );
     }
-    app.engine.tool_ctx.total_user_turns += 1;
+    state.tool_ctx.total_user_turns += 1;
 
     #[cfg(feature = "intent-gate")]
     if let Some(intent_text) = first_non_meta_text.as_deref() {
         let intent_for_inject = crate::intent::classify(intent_text).intent;
         if crate::intent::is_graph_intent(intent_for_inject) {
-            let cwd = std::path::PathBuf::from(&app.engine.cwd);
+            let cwd = std::path::PathBuf::from(&state.cwd);
             let injected = crate::intent::auto_inject_graph_context(
-                &mut app.engine.messages,
+                &mut state.messages,
                 intent_for_inject,
                 intent_text,
                 &cwd,
@@ -127,66 +129,66 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
     #[cfg(not(feature = "intent-gate"))]
     let _ = first_non_meta_text;
 
-    app.engine.messages.push(ChatMessage::assistant(String::new()));
-    app.engine.streaming_text = String::new();
-    app.engine.streaming_reasoning = String::new();
-    app.engine.streaming_response_bytes = 0;
-    app.engine.turn_output_tokens = 0;
-    app.engine.refusal_fallback_attempted = false;
-    app.engine.network_recovery_status = None;
-    app.engine.network_recovery_attempts = 0;
-    app.engine.stream_lifecycle = None;
-    app.engine.streaming_assistant_idx = Some(assistant_idx);
-    app.engine.is_streaming = true;
+    state.messages.push(ChatMessage::assistant(String::new()));
+    state.streaming_text = String::new();
+    state.streaming_reasoning = String::new();
+    state.streaming_response_bytes = 0;
+    state.turn_output_tokens = 0;
+    state.refusal_fallback_attempted = false;
+    state.network_recovery_status = None;
+    state.network_recovery_attempts = 0;
+    state.stream_lifecycle = None;
+    state.streaming_assistant_idx = Some(assistant_idx);
+    state.is_streaming = true;
     let now = std::time::Instant::now();
-    app.engine.streaming_started_at = Some(now);
-    app.engine.last_stream_event_at = Some(now);
-    app.engine.streaming_last_token_at = Some(now);
-    app.engine.turn_started_at = Some(now);
-    app.engine.turn_start_cost = crate::cost::total_cost(&app.engine.usage_by_model);
-    app.engine.pending_classifications = 0;
-    app.engine.agentic_turn_count = 0;
+    state.streaming_started_at = Some(now);
+    state.last_stream_event_at = Some(now);
+    state.streaming_last_token_at = Some(now);
+    state.turn_started_at = Some(now);
+    state.turn_start_cost = crate::cost::total_cost(&state.usage_by_model);
+    state.pending_classifications = 0;
+    state.agentic_turn_count = 0;
     // Reset cancel token + interrupt flag for the drained turn. Same
     // rationale as handle_submit — a stale cancel from the previous
     // turn would otherwise fire immediately on this freshly-drained
     // submission and emit "Interrupted by user".
-    app.engine.cancel_token = tokio_util::sync::CancellationToken::new();
-    app.engine.interrupt_flag
+    state.cancel_token = tokio_util::sync::CancellationToken::new();
+    state.interrupt_flag
         .store(false, std::sync::atomic::Ordering::SeqCst);
-    app.engine.last_usage_output = 0;
-    app.engine.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
+    state.last_usage_output = 0;
+    state.usage_apply_baseline = (0, 0, 0, 0);
+    state.push_effect(crate::app::EngineEffect::ScrollToBottom);
 
-    let provider = app.engine.provider.clone();
-    let messages = stream::build_provider_messages(&app.engine.messages[..assistant_idx]);
+    let provider = state.provider.clone();
+    let messages = stream::build_provider_messages(&state.messages[..assistant_idx]);
     let route_text = non_meta_texts.first().cloned().unwrap_or_default();
-    let model = if let Some(ref router) = app.engine.slate {
-        router.route(&route_text, app.engine.model.clone())
+    let model = if let Some(ref router) = state.slate {
+        router.route(&route_text, state.model.clone())
     } else {
-        app.engine.model.clone()
+        state.model.clone()
     };
     let tx_spawn = tx.clone();
-    let interrupt = app.engine.interrupt_flag.clone();
-    app.engine.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.engine.cancel_token.clone();
+    let interrupt = state.interrupt_flag.clone();
+    state.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = state.cancel_token.clone();
     let tx_guard = tx.clone();
     // Refresh CLAUDE.md frontmatter disallowed tools before each turn.
     if let Ok(cwd_path) = std::env::current_dir() {
         let hierarchy = crate::context::ClaudeMdHierarchy::load(&cwd_path);
-        app.engine.claudemd_disallowed_tools = hierarchy.collect_disallowed_tools();
+        state.claudemd_disallowed_tools = hierarchy.collect_disallowed_tools();
     }
     let overrides = StreamRequestOverrides {
-        background_reminders: app.engine.take_background_reminders(),
-        disallowed_tools: app.engine.effective_disallowed_tools(),
-        allowed_tools: app.engine.allowed_tools.clone(),
-        custom_betas: app.engine.custom_betas.clone(),
-        fine_grained_tool_streaming: app.engine.fine_grained_tool_streaming,
-        strict_tool_schemas: app.engine.strict_tool_schemas,
-        task_budget: app.engine.cli_task_budget,
-        max_thinking_tokens: app.engine.cli_max_thinking_tokens,
-        thinking_display: app.engine.cli_thinking_display.clone(),
-        brief_mode: app.engine.brief_mode,
-        context_hint_tokens_saved: app.engine.take_context_hint_tokens_saved(),
+        background_reminders: state.take_background_reminders(),
+        disallowed_tools: state.effective_disallowed_tools(),
+        allowed_tools: state.allowed_tools.clone(),
+        custom_betas: state.custom_betas.clone(),
+        fine_grained_tool_streaming: state.fine_grained_tool_streaming,
+        strict_tool_schemas: state.strict_tool_schemas,
+        task_budget: state.cli_task_budget,
+        max_thinking_tokens: state.cli_max_thinking_tokens,
+        thinking_display: state.cli_thinking_display.clone(),
+        brief_mode: state.brief_mode,
+        context_hint_tokens_saved: state.take_context_hint_tokens_saved(),
         ..Default::default()
     };
     // Park the *inner* task's abort handle on App so the watchdog can
@@ -200,7 +202,7 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
         )
         .await;
     });
-    app.engine.active_stream_handle = Some(inner.abort_handle());
+    state.active_stream_handle = Some(inner.abort_handle());
     tokio::spawn(async move {
         if let Err(join_err) = inner.await {
             let msg = if join_err.is_panic() {

@@ -475,11 +475,11 @@ fn tool_needs_approval_default_mode_normal() {
     let write = make_tool(ToolKind::Write, "w");
     let patch = make_tool(ToolKind::ApplyPatch, "p");
     let read = make_tool(ToolKind::Read, "r");
-    assert!(app.tool_needs_approval(&bash));
-    assert!(app.tool_needs_approval(&edit));
-    assert!(app.tool_needs_approval(&write));
-    assert!(app.tool_needs_approval(&patch));
-    assert!(!app.tool_needs_approval(&read));
+    assert!(app.engine.tool_needs_approval(&bash));
+    assert!(app.engine.tool_needs_approval(&edit));
+    assert!(app.engine.tool_needs_approval(&write));
+    assert!(app.engine.tool_needs_approval(&patch));
+    assert!(!app.engine.tool_needs_approval(&read));
 }
 
 // Normal: a tool kind in `always_approved` is auto-approved even in
@@ -489,7 +489,7 @@ fn tool_needs_approval_respects_always_approved_normal() {
     let mut app = new_app();
     let bash = make_tool(ToolKind::Bash, "b");
     app.engine.always_approved.push(bash.kind.label().to_owned());
-    assert!(!app.tool_needs_approval(&bash));
+    assert!(!app.engine.tool_needs_approval(&bash));
 }
 
 // Normal: session_approved similarly auto-approves.
@@ -498,7 +498,7 @@ fn tool_needs_approval_respects_session_approved_normal() {
     let mut app = new_app();
     let edit = make_tool(ToolKind::Edit, "e");
     app.engine.session_approved.push(edit.kind.label().to_owned());
-    assert!(!app.tool_needs_approval(&edit));
+    assert!(!app.engine.tool_needs_approval(&edit));
 }
 
 // Normal: tool_denied_by_mode returns Some(reason) only for Plan mode
@@ -510,10 +510,10 @@ fn tool_denied_by_mode_plan_blocks_writes_normal() {
     let edit = make_tool(ToolKind::Edit, "e");
     let read = make_tool(ToolKind::Read, "r");
     let advisor = make_tool(ToolKind::Advisor, "a");
-    assert!(app.tool_denied_by_mode(&edit).is_some());
-    assert!(app.tool_denied_by_mode(&read).is_none());
-    assert!(app.tool_denied_by_mode(&advisor).is_none());
-    assert!(!app.tool_needs_approval(&advisor));
+    assert!(app.engine.tool_denied_by_mode(&edit).is_some());
+    assert!(app.engine.tool_denied_by_mode(&read).is_none());
+    assert!(app.engine.tool_denied_by_mode(&advisor).is_none());
+    assert!(!app.engine.tool_needs_approval(&advisor));
 }
 
 // Robust: in Default mode, no tool is denied by mode (it's the prompt
@@ -522,7 +522,7 @@ fn tool_denied_by_mode_plan_blocks_writes_normal() {
 fn tool_denied_by_mode_default_never_denies_robust() {
     let app = new_app();
     let bash = make_tool(ToolKind::Bash, "b");
-    assert!(app.tool_denied_by_mode(&bash).is_none());
+    assert!(app.engine.tool_denied_by_mode(&bash).is_none());
 }
 
 // ─────── selected_context_window_tokens / sync ────────────────────
@@ -533,7 +533,7 @@ fn tool_denied_by_mode_default_never_denies_robust() {
 #[test]
 fn selected_context_window_tokens_falls_back_normal() {
     let app = new_app();
-    let result = app.selected_context_window_tokens();
+    let result = app.engine.selected_context_window_tokens();
     assert!(result > 0);
 }
 
@@ -544,8 +544,8 @@ fn sync_selected_context_window_updates_max_normal() {
     let mut app = new_app();
     app.engine.messages
         .push(ChatMessage::user("0123456789abcdef".into()));
-    app.sync_selected_context_window();
-    assert_eq!(app.engine.max_context_tokens, app.selected_context_window_tokens());
+    app.engine.sync_selected_context_window();
+    assert_eq!(app.engine.max_context_tokens, app.engine.selected_context_window_tokens());
     // 16 chars / 4 * 1.5 = 6 tokens.
     assert_eq!(app.engine.tool_ctx.approx_tokens, 6);
 }
@@ -571,7 +571,7 @@ fn sync_preserves_usage_based_estimate_robust() {
     // After sync, the usage-based estimate is preserved (not
     // clobbered by the heuristic over message text).
     let preserved = app.engine.tool_ctx.approx_tokens;
-    app.sync_selected_context_window();
+    app.engine.sync_selected_context_window();
     assert_eq!(app.engine.tool_ctx.approx_tokens, preserved);
 }
 
@@ -694,7 +694,7 @@ fn sync_task_completions_tracks_and_prunes_normal() {
         )
         .expect("update");
 
-    app.sync_task_completions();
+    app.engine.sync_task_completions();
     assert!(app.engine.task_completion_times.contains_key(&t1.id));
 
     // Re-open: sync should prune the entry.
@@ -707,7 +707,7 @@ fn sync_task_completions_tracks_and_prunes_normal() {
             },
         )
         .expect("reopen");
-    app.sync_task_completions();
+    app.engine.sync_task_completions();
     assert!(!app.engine.task_completion_times.contains_key(&t1.id));
 }
 
@@ -976,7 +976,7 @@ fn selected_model_info_none_when_no_match_robust() {
     let app = new_app();
     // TestProvider returns empty available_models; the model id
     // "test-model" never appears anywhere. So None.
-    assert!(app.selected_model_info().is_none());
+    assert!(app.engine.selected_model_info().is_none());
 }
 
 // Normal: when provider_models has a match, selected_model_info
@@ -988,11 +988,11 @@ fn selected_model_info_finds_in_cache_normal() {
         ModelInfo::new("test-model", "Test", "test").with_context_window_tokens(Some(50_000));
     app.engine.provider_models
         .insert(jfc_provider::ProviderId::from("test"), vec![info]);
-    let got = app.selected_model_info().expect("found");
+    let got = app.engine.selected_model_info().expect("found");
     assert_eq!(got.id.as_str(), "test-model");
     assert_eq!(got.context_window_tokens, Some(50_000));
     // selected_context_window_tokens uses this value.
-    assert_eq!(app.selected_context_window_tokens(), 50_000);
+    assert_eq!(app.engine.selected_context_window_tokens(), 50_000);
 }
 
 // ─────── round-trip MessagePart variants for sanity ───────────────

@@ -26,7 +26,7 @@ pub(crate) async fn handle_tick(
     let mut needs_draw = false;
 
     app.spinner_frame = (app.spinner_frame + 1) % crate::app::SPINNER.len();
-    app.check_stream_watchdog();
+    app.engine.check_stream_watchdog();
 
     // Advance the spinner phase machine here, on the throttled tick, so the
     // status label can only change as fast as the dwell allows (anti-flicker).
@@ -90,15 +90,15 @@ pub(crate) async fn handle_tick(
             // events, which the windowed rate handles fine.
             app.engine.turn_output_tokens
         };
-        if app
+        if app.engine
             .token_rate_samples
             .back()
             .is_some_and(|&(_, last)| count < last)
         {
-            app.token_rate_samples.clear();
+            app.engine.token_rate_samples.clear();
         }
-        app.token_rate_samples.push_back((elapsed, count));
-        crate::spinner::trim_token_samples(&mut app.token_rate_samples);
+        app.engine.token_rate_samples.push_back((elapsed, count));
+        crate::spinner::trim_token_samples(&mut app.engine.token_rate_samples);
     }
 
     // Detached background workers update their progress in
@@ -122,7 +122,7 @@ pub(crate) async fn handle_tick(
         if app.engine.task_store.reload_if_changed() {
             needs_draw = true;
         }
-        if sync_detached_background_tasks_from_daemon(app) {
+        if sync_detached_background_tasks_from_daemon(&mut app.engine) {
             needs_draw = true;
             // A detached agent reaching a terminal state via daemon sync (not
             // an EngineEvent) must be able to wake a parked leader. The agentic
@@ -134,7 +134,7 @@ pub(crate) async fn handle_tick(
             // the user sends another prompt. Resume first so a still-active
             // turn picks up its continuation before the factory considers new
             // queue work.
-            super::task::maybe_resume_after_background(app, tx).await;
+            super::task::maybe_resume_after_background(&mut app.engine, tx).await;
             // Re-evaluate the task factory after detached
             // agents transition. Without this,
             // maybe_continue_task_factory's
@@ -143,7 +143,7 @@ pub(crate) async fn handle_tick(
             // completion (via daemon sync, not EngineEvent)
             // never re-triggers the factory — the queue
             // stalls until the user sends another prompt.
-            maybe_continue_task_factory(app, tx).await;
+            maybe_continue_task_factory(&mut app.engine, tx).await;
         }
     }
     // Auto-clear expired toasts every tick. Cheap (O(N) over
@@ -190,14 +190,14 @@ pub(crate) async fn handle_tick(
         && !app.engine.is_streaming
         && app.engine.turn_started_at.is_none()
         && app.engine.pending_question.is_none()
-        && !app.pipeline_busy_for_submit()
+        && !app.engine.pipeline_busy_for_submit()
     {
         tracing::warn!(
             target: "jfc::ui::queue",
             depth = app.engine.queued_prompts.len(),
             "idle-drain safety net: draining queued prompts the event path missed"
         );
-        crate::runtime::drain_queued_prompts(app, tx).await;
+        crate::runtime::drain_queued_prompts(&mut app.engine, tx).await;
         needs_draw = true;
     }
 
@@ -401,7 +401,7 @@ pub(crate) async fn handle_tick(
     // Refresh the worktree count at most once per 10s,
     // only if we're inside a git repo.
     let now = std::time::Instant::now();
-    app.resolve_git_root();
+    app.engine.resolve_git_root();
     let is_git = matches!(app.engine.git_root, Some(Some(_)));
     let due = is_git
         && app.engine
