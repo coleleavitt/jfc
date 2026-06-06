@@ -65,9 +65,7 @@ use crate::runtime::{ControlEvent, EngineEvent};
 use crate::types::*;
 
 // Re-export the public functions from sub-modules
-pub(crate) use approval::{deny_pending_and_queued, handle_remote_approval_response};
 pub use key_dispatch::handle_key;
-pub(crate) use question::build_pending_question;
 pub(crate) use slash_commands::SLASH_COMMANDS;
 pub use slash_commands::run_slash_command;
 pub use slash_commands::url_encode;

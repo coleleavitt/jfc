@@ -229,7 +229,7 @@ pub(crate) async fn handle_stream_tool(state: &mut EngineState, tx: &EventSender
             if let Some(msg) = streaming_assistant_mut(state) {
                 msg.parts.push(MessagePart::tool_boxed(tool));
             }
-        } else if let Some(pending) = crate::input::build_pending_question(&tool) {
+        } else if let Some(pending) = crate::runtime::approvals::build_pending_question(&tool) {
             if let Some(msg) = streaming_assistant_mut(state) {
                 msg.parts
                     .push(MessagePart::tool_boxed(Box::new((*tool).clone())));

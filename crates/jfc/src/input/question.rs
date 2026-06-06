@@ -15,87 +15,8 @@
 use crossterm::event::{self, KeyCode, KeyModifiers};
 use tokio::sync::mpsc;
 
-use crate::app::{App, EngineEvent, PendingQuestion, QuestionItem, QuestionOption};
+use crate::app::{App, EngineEvent, PendingQuestion};
 use crate::runtime::{ExecutionResult, ToolEvent, send_critical};
-use crate::types::{ToolCall, ToolInput};
-
-/// Parse an option object `{label, description?, preview?}`.
-fn parse_option(o: &serde_json::Value) -> Option<QuestionOption> {
-    let label = o.get("label").and_then(|v| v.as_str())?.to_owned();
-    let description = o
-        .get("description")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_owned();
-    let preview = o.get("preview").and_then(|v| v.as_str()).map(str::to_owned);
-    Some(QuestionOption {
-        label,
-        description,
-        preview,
-    })
-}
-
-/// Parse one question object into a [`QuestionItem`]. Returns `None` when it
-/// has no usable options.
-fn parse_question(q: &serde_json::Value) -> Option<QuestionItem> {
-    let question = q
-        .get("question")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_owned();
-    let header = q
-        .get("header")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_owned();
-    let multi_select = q
-        .get("multiSelect")
-        .or_else(|| q.get("multi_select"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let options: Vec<QuestionOption> = q
-        .get("options")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(parse_option).collect())
-        .unwrap_or_default();
-    if options.is_empty() {
-        return None;
-    }
-    Some(QuestionItem {
-        question,
-        header,
-        options,
-        multi_select,
-        selected: 0,
-        chosen: std::collections::BTreeSet::new(),
-        other_text: String::new(),
-        answer: None,
-    })
-}
-
-/// Build a [`PendingQuestion`] from an `AskUserQuestion` tool call. Returns
-/// `None` when the input isn't an `AskUserQuestion` or has no usable questions
-/// — the caller falls back to recording a failed tool_result so the tool_use
-/// stays paired. The `questions` value is already normalized to an array by
-/// the jfc-core parser (legacy single-question form lifted to 1 element).
-pub(crate) fn build_pending_question(tool: &ToolCall) -> Option<PendingQuestion> {
-    let ToolInput::AskUserQuestion { questions } = &tool.input else {
-        return None;
-    };
-    let items: Vec<QuestionItem> = questions
-        .as_array()
-        .map(|arr| arr.iter().filter_map(parse_question).collect())
-        .unwrap_or_default();
-    if items.is_empty() {
-        return None;
-    }
-    Some(PendingQuestion {
-        tool_id: tool.id.clone(),
-        items,
-        current: 0,
-        editing_other: false,
-    })
-}
 
 /// Whether a key event is a Ctrl-modified character `c`.
 fn is_ctrl(key: &event::KeyEvent, c: char) -> bool {
@@ -286,9 +207,9 @@ fn decline_question(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::ids::ToolId;
-    use crate::types::{ToolCall, ToolDisplayState, ToolKind, ToolOutput, ToolStatus};
+    use crate::runtime::approvals::build_pending_question;
+    use crate::types::{ToolCall, ToolDisplayState, ToolInput, ToolKind, ToolOutput, ToolStatus};
 
     fn ask_tool(input: serde_json::Value) -> ToolCall {
         ToolCall {

@@ -565,7 +565,7 @@ async fn remote_approval_matches_current_tool_id_normal() {
     });
     let (tx, mut rx) = channel();
 
-    handle_remote_approval_response(&mut app.engine, &tx, "t1".into(), true);
+    crate::runtime::approvals::handle_remote_approval_response(&mut app.engine, &tx, "t1".into(), true);
 
     assert!(app.engine.pending_approval.is_none());
     let event = rx.recv().await;
@@ -585,7 +585,7 @@ async fn remote_orphaned_permission_response_recovers_unresolved_tool_robust() {
         .push(ChatMessage::assistant_parts(vec![MessagePart::tool(tool)]));
     let (tx, _rx) = channel();
 
-    handle_remote_approval_response(&mut app.engine, &tx, "t_orphan".into(), false);
+    crate::runtime::approvals::handle_remote_approval_response(&mut app.engine, &tx, "t_orphan".into(), false);
 
     let status = app.engine
         .messages

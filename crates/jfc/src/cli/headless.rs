@@ -380,7 +380,7 @@ pub(super) async fn run_print_mode(
                 &mut mirror_events,
             )
             .await?;
-            crate::input::handle_remote_approval_response(
+            crate::runtime::approvals::handle_remote_approval_response(
                 &mut state,
                 &tx,
                 pending_tool.id.as_str().to_owned(),

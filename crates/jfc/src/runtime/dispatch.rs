@@ -224,7 +224,7 @@ pub(crate) async fn handle_engine_event(
             tool_use_id,
             approved,
         }) => {
-            crate::input::handle_remote_approval_response(
+            crate::runtime::approvals::handle_remote_approval_response(
                 state,
                 &tx,
                 tool_use_id,
@@ -307,7 +307,7 @@ pub(crate) async fn handle_engine_event(
                 .map(|p| p.tool.id.as_str().to_owned());
             match target {
                 Some(tool_use_id) => {
-                    crate::input::handle_remote_approval_response(state, tx, tool_use_id, approved);
+                    crate::runtime::approvals::handle_remote_approval_response(state, tx, tool_use_id, approved);
                 }
                 None => {
                     tracing::warn!(

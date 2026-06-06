@@ -43,7 +43,7 @@ pub(crate) fn interrupt(state: &mut EngineState, tx: &EventSender) {
         handle.abort();
     }
 
-    let denied_approvals = crate::input::deny_pending_and_queued(state, tx);
+    let denied_approvals = crate::runtime::approvals::deny_pending_and_queued(state, tx);
 
     if state.goal_evaluator_in_flight {
         tracing::info!(

@@ -194,6 +194,26 @@ pub(crate) fn tool_is_mutating(kind: crate::types::ToolKind) -> bool {
     tool_spec(kind).permission() == Permission::Mutating
 }
 
+/// The frontend's slash-command registry table, installed at startup via
+/// [`register_slash_commands`]. Engine-resident metadata (help text, the
+/// unified spec list) reads through this indirection so the engine never
+/// depends on the frontend's key-dispatch module. Until stage 8 of the
+/// extraction moves command semantics into the engine, the table itself
+/// still lives next to the TUI dispatcher.
+static SLASH_COMMANDS_TABLE: std::sync::OnceLock<&'static [(&'static str, &'static str)]> =
+    std::sync::OnceLock::new();
+
+/// Install the slash-command (name, help) table. First registration wins;
+/// frontends call this once at startup. Headless modes that never register
+/// simply render an empty slash surface.
+pub(crate) fn register_slash_commands(table: &'static [(&'static str, &'static str)]) {
+    let _ = SLASH_COMMANDS_TABLE.set(table);
+}
+
+fn slash_commands() -> &'static [(&'static str, &'static str)] {
+    SLASH_COMMANDS_TABLE.get().copied().unwrap_or(&[])
+}
+
 /// The `/help` command list, rendered from the slash rows of the unified
 /// metadata — deduped by description so aliases collapse onto one line. `/help`
 /// reads THIS instead of iterating `SLASH_COMMANDS` itself, so the help text
@@ -201,7 +221,7 @@ pub(crate) fn tool_is_mutating(kind: crate::types::ToolKind) -> bool {
 pub(crate) fn slash_help_lines() -> String {
     let mut out = String::new();
     let mut seen: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
-    for (name, help) in crate::input::SLASH_COMMANDS {
+    for (name, help) in slash_commands() {
         if seen.insert(help) {
             out.push_str(&format!("- `{name}` — {help}\n"));
         }
@@ -217,7 +237,7 @@ pub(crate) fn all_specs() -> Vec<StaticSpec> {
     let mut specs = Vec::new();
 
     // Slash surface — straight from the registry table.
-    for (name, help) in crate::input::SLASH_COMMANDS {
+    for (name, help) in slash_commands() {
         specs.push(slash_spec(name, help));
     }
 
@@ -462,9 +482,10 @@ mod tests {
     // hand-maintained list.
     #[test]
     fn slash_help_lines_cover_every_unique_description_robust() {
+        register_slash_commands(crate::input::SLASH_COMMANDS);
         let rendered = slash_help_lines();
         // One line per UNIQUE help string in the registry (aliases dedup).
-        let unique_helps: std::collections::HashSet<&str> = crate::input::SLASH_COMMANDS
+        let unique_helps: std::collections::HashSet<&str> = slash_commands()
             .iter()
             .map(|(_, h)| *h)
             .collect();

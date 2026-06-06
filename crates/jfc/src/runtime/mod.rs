@@ -1,4 +1,5 @@
 mod agent_log_parser;
+pub(crate) mod approvals;
 mod background;
 pub(crate) mod bootstrap;
 pub(crate) mod event_loop;
@@ -7,6 +8,7 @@ mod execution;
 mod factory;
 mod goal_loop;
 mod dispatch;
+pub(crate) mod durations;
 mod network;
 pub(crate) mod ops;
 mod queue;

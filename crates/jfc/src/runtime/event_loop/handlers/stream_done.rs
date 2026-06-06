@@ -329,7 +329,7 @@ pub(crate) async fn handle_stream_done(
             // Honest, minimal footer: just how long the turn took (no
             // decorative past-tense verb), plus the turn's incremental
             // cost when we can price it — e.g. `took 2m04s · $0.04`.
-            let label = format!("took {}", crate::spinner::format_finished(elapsed));
+            let label = format!("took {}", crate::runtime::durations::format_finished(elapsed));
             // Per-turn cost = cumulative-now minus the snapshot taken when
             // this user turn began. Without the baseline this showed the whole
             // session's running spend, not the turn's. saturating at 0 guards

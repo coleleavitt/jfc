@@ -482,6 +482,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
     // any `crate::hooks::fire(point, ctx)` call short-circuits to the
     // registered handlers (Logger only, by default — user-defined
     // hooks land via .claude/settings.json in a future pass). Idempotent.
+    crate::command_spec::register_slash_commands(crate::input::SLASH_COMMANDS);
     crate::hooks::init_global(crate::hooks::default_registry());
     // TUI render-cache persistence rides on the session-save hook so the
     // engine-side session layer never links the markdown/render stack.

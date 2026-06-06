@@ -80,14 +80,7 @@ pub fn frame_for(tick: usize) -> &'static str {
 /// Format an elapsed duration compactly: `4s`, `47s`, `1m04s`, `61m01s`.
 /// Seconds are zero-padded in the minutes case so the clock doesn't jump
 /// width as it ticks (`1m09s` → `1m10s`, not `1m9s` → `1m10s`).
-pub fn fmt_elapsed(elapsed: Duration) -> String {
-    let secs = elapsed.as_secs();
-    if secs >= 60 {
-        format!("{}m{:02}s", secs / 60, secs % 60)
-    } else {
-        format!("{secs}s")
-    }
-}
+pub use crate::runtime::durations::fmt_elapsed;
 
 /// Format a token count compactly: `234`, `1.4k`, `15k`, `2.0M`. Below
 /// 1000 the exact count is useful mid-stream; above that we clamp to one
@@ -395,9 +388,7 @@ pub fn status_segments(
 /// Post-turn footer shown dim under each completed assistant message:
 /// just the honest elapsed time. The caller may append the turn's cost
 /// (`2m04s · $0.04`). No decorative past-tense verb.
-pub fn format_finished(elapsed: Duration) -> String {
-    fmt_elapsed(elapsed)
-}
+pub use crate::runtime::durations::format_finished;
 
 /// Compact-mode status body. Same honest, paren-free shape as the
 /// streaming row: glyph + `Compacting` + elapsed + input magnitude +
