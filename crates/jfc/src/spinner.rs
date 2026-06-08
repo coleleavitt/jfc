@@ -46,10 +46,18 @@ pub struct StatusSegments {
 pub fn reduced_motion() -> bool {
     static REDUCED_MOTION: OnceLock<bool> = OnceLock::new();
     *REDUCED_MOTION.get_or_init(|| {
-        matches!(
+        // Env var takes priority (fast, zero-I/O path for CI/tests).
+        if matches!(
             std::env::var("JFC_REDUCED_MOTION").as_deref(),
             Ok("1") | Ok("true") | Ok("yes")
-        )
+        ) {
+            return true;
+        }
+        // CC 2.1.167 `prefersReducedMotion` settings key.
+        jfc_engine::config::load_arc()
+            .claude
+            .prefers_reduced_motion
+            .unwrap_or(false)
     })
 }
 

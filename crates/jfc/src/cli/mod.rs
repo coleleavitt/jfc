@@ -480,10 +480,14 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
 
     // Initialize the process-global hook registry once. From here on
     // any `jfc_engine::hooks::fire(point, ctx)` call short-circuits to the
-    // registered handlers (Logger only, by default — user-defined
-    // hooks land via .claude/settings.json in a future pass). Idempotent.
+    // registered handlers. User-defined shell hooks come from config.toml
+    // plus Claude-compatible .claude/settings*.json overlays.
     jfc_engine::command_spec::register_slash_commands(crate::input::slash_commands_table());
-    jfc_engine::hooks::init_global(jfc_engine::hooks::default_registry());
+    let cwd_for_config = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let startup_config = jfc_engine::config::load_with_project(&cwd_for_config);
+    let mut hook_registry = jfc_engine::hooks::default_registry();
+    hook_registry.register_from_config(&startup_config);
+    jfc_engine::hooks::init_global(hook_registry);
     // TUI render-cache persistence rides on the session-save hook so the
     // engine-side session layer never links the markdown/render stack.
     jfc_engine::session::set_post_save_hook(|| {

@@ -54,10 +54,10 @@ pub async fn execute_enter_worktree(
 
     // If a branch override was supplied we route through `git worktree
     // add <path> <branch>` directly — `create_worktree_async` always
-    // creates a new `jfc/<name>` branch, which would clobber the
+    // creates a new `worktree-<slug>` branch, which would clobber the
     // caller's intent.
     if let Some(branch) = branch.filter(|s| !s.is_empty()) {
-        let rel_path = format!(".jfc-worktrees/{name}");
+        let rel_path = crate::worktrees::worktree_rel_path(name);
         let output = tokio::process::Command::new("git")
             .arg("-C")
             .arg(&repo_root)
@@ -104,7 +104,7 @@ pub async fn execute_enter_worktree(
             // is already registered. That's the idempotent case — return
             // success and tell the caller where it landed.
             if e.contains("already exists") || e.contains("already checked out") {
-                let abs = repo_root.join(format!(".jfc-worktrees/{name}"));
+                let abs = repo_root.join(crate::worktrees::worktree_rel_path(name));
                 ExecutionResult::success(format!(
                     "Worktree '{name}' already exists at {}",
                     abs.display()

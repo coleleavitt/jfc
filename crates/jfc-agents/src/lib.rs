@@ -4,6 +4,7 @@
 //! by tooling, daemon workers, and test harnesses without pulling in
 //! the full TUI dependency tree.
 
+mod builtins;
 pub mod evals;
 mod lifecycle;
 mod registry;
@@ -14,7 +15,9 @@ pub use lifecycle::{
     build_agent_system_prompt, build_agent_system_prompt_with_context, render_dispatch_section,
     render_skills_section,
 };
-pub use registry::{built_in_agents, find_skill_by_name, load_agents, load_skills};
+pub use registry::{
+    built_in_agents, built_in_skills, find_skill_by_name, load_agents, load_skills,
+};
 pub use state::{
     Skill, SkillContext, SkillFile, SkillRenderContext, parse_agent, parse_skill,
     render_skill_invocation, split_frontmatter,

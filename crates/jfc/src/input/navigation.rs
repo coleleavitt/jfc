@@ -114,9 +114,7 @@ pub(super) fn refresh_search_matches(app: &mut App, query: &str) {
                 jfc_core::MessagePart::Tool(tool) => {
                     tool.input.summary().to_lowercase().contains(&q)
                         || match &tool.output {
-                            jfc_core::ToolOutput::Text(text) => {
-                                text.to_lowercase().contains(&q)
-                            }
+                            jfc_core::ToolOutput::Text(text) => text.to_lowercase().contains(&q),
                             jfc_core::ToolOutput::LargeText(large_text) => {
                                 large_text.content.to_lowercase().contains(&q)
                             }
@@ -182,14 +180,20 @@ pub(super) fn scroll_to_message(app: &mut App, target_idx: usize) {
 pub(super) fn jump_to_last_error(app: &mut App) {
     use jfc_core::ToolStatus;
 
-    let target = app.engine.messages.iter().enumerate().rev().find(|(_, message)| {
-        message.parts.iter().any(|part| {
-            matches!(
-                part,
-                MessagePart::Tool(tool) if tool.status == ToolStatus::Failed
-            )
-        })
-    });
+    let target = app
+        .engine
+        .messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, message)| {
+            message.parts.iter().any(|part| {
+                matches!(
+                    part,
+                    MessagePart::Tool(tool) if tool.status == ToolStatus::Failed
+                )
+            })
+        });
     match target {
         Some((idx, _)) => scroll_to_message(app, idx),
         None => jfc_engine::toast::push_with_cap(
@@ -203,12 +207,18 @@ pub(super) fn jump_to_last_error(app: &mut App) {
 }
 
 pub(super) fn jump_to_last_tool(app: &mut App) {
-    let target = app.engine.messages.iter().enumerate().rev().find(|(_, message)| {
-        message
-            .parts
-            .iter()
-            .any(|part| matches!(part, MessagePart::Tool(_)))
-    });
+    let target = app
+        .engine
+        .messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, message)| {
+            message
+                .parts
+                .iter()
+                .any(|part| matches!(part, MessagePart::Tool(_)))
+        });
     match target {
         Some((idx, _)) => scroll_to_message(app, idx),
         None => jfc_engine::toast::push_with_cap(
@@ -222,7 +232,8 @@ pub(super) fn jump_to_last_tool(app: &mut App) {
 }
 
 pub(super) fn jump_to_last_user(app: &mut App) {
-    let target = app.engine
+    let target = app
+        .engine
         .messages
         .iter()
         .enumerate()
@@ -241,7 +252,8 @@ pub(super) fn jump_to_last_user(app: &mut App) {
 }
 
 pub(super) fn jump_to_last_assistant(app: &mut App) {
-    let target = app.engine
+    let target = app
+        .engine
         .messages
         .iter()
         .enumerate()
@@ -260,7 +272,8 @@ pub(super) fn jump_to_last_assistant(app: &mut App) {
 }
 
 pub(super) fn user_prompts(app: &App) -> Vec<String> {
-    app.engine.messages
+    app.engine
+        .messages
         .iter()
         .filter(|message| message.role == Role::User)
         .filter_map(|message| {

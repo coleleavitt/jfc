@@ -13,6 +13,7 @@ pub use recall::{
 pub use store::{
     MemoryEntry, MemoryFrontmatter, MemoryLevel, MemoryScope, MemoryType, TeamMemoryConflict,
     TeamMemorySyncReport, create_memory, delete_memory, format_existing_memories, is_memory_path,
+    create_memory_checked, CreateMemoryResult,
     load_all_memories, project_memory_dir, render_memories_section, sync_team_memory,
     team_memory_dir, user_memory_dir,
 };

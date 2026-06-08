@@ -270,10 +270,7 @@ pub fn estimate_provider_message_bytes(msg: &ProviderMessage) -> usize {
 }
 
 /// Drop oldest assistant/tool-result pairs until the byte estimate fits.
-pub fn cap_messages_for_budget(
-    messages: &mut Vec<ProviderMessage>,
-    max_bytes: usize,
-) -> bool {
+pub fn cap_messages_for_budget(messages: &mut Vec<ProviderMessage>, max_bytes: usize) -> bool {
     let total: usize = messages.iter().map(estimate_provider_message_bytes).sum();
     if total <= max_bytes || messages.len() <= 1 {
         return false;

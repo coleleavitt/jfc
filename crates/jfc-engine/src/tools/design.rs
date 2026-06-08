@@ -79,11 +79,7 @@ pub fn execute_design_list_files(cwd: &Path, project_id: &str) -> ExecutionResul
     result.map_or_else(ExecutionResult::failure, ExecutionResult::success)
 }
 
-pub fn execute_design_read_file(
-    cwd: &Path,
-    project_id: &str,
-    path: &str,
-) -> ExecutionResult {
+pub fn execute_design_read_file(cwd: &Path, project_id: &str, path: &str) -> ExecutionResult {
     let result: std::result::Result<String, String> = (|| {
         let store = store(cwd)?;
         let project = store.open(project_id).map_err(|e| e.to_string())?;
@@ -122,11 +118,7 @@ pub fn execute_design_write_file(
     result.map_or_else(ExecutionResult::failure, ExecutionResult::success)
 }
 
-pub fn execute_design_delete_file(
-    cwd: &Path,
-    project_id: &str,
-    path: &str,
-) -> ExecutionResult {
+pub fn execute_design_delete_file(cwd: &Path, project_id: &str, path: &str) -> ExecutionResult {
     let result: std::result::Result<String, String> = (|| {
         let store = store(cwd)?;
         let mut project = store.open(project_id).map_err(|e| e.to_string())?;

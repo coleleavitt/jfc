@@ -7,8 +7,8 @@ pub use jfc_engine::app::{
     ApprovalChoice, BACKGROUND_REMINDERS_CAP, BackgroundTask, DEFAULT_CONTEXT_WINDOW_TOKENS,
     EngineEffect, EngineEvent, EngineState, NetworkRecoveryProvider, NetworkRecoveryReason,
     NetworkRecoveryStatus, PendingApproval, PendingQuestion, PermissionDecision, PermissionMode,
-    QuestionItem, QuestionOption, STREAM_WATCHDOG_TIMEOUT_SECS, TOKEN_HISTORY_CAP, shell_safety,
-    load_recent_models, push_recent_model,
+    QuestionItem, QuestionOption, STREAM_WATCHDOG_TIMEOUT_SECS, TOKEN_HISTORY_CAP,
+    load_recent_models, push_recent_model, shell_safety,
 };
 pub use jfc_engine::runtime::{QueuePriority, QueuedPrompt};
 pub use state::{

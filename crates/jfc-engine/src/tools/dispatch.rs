@@ -767,6 +767,42 @@ pub async fn execute_tool(
             // mutations stay on a single task. The model's tool result
             // is the success acknowledgment — the actual mode flip
             // happens when the main loop drains `FrontendEvent::PlanReview`.
+            // Persist the plan to the configured plans directory (CC 2.1.167
+            // `plansDirectory` setting). Uses jfc_config::paths::plans_dir().
+            {
+                let cfg = crate::config::load_arc();
+                let cwd_buf = std::env::current_dir().unwrap_or_else(|_| ".".into());
+                let cwd = cwd_buf.as_path();
+                let dir = jfc_config::paths::plans_dir(cwd, &cfg.claude);
+                if let Err(err) = std::fs::create_dir_all(&dir) {
+                    tracing::warn!(
+                        target: "jfc::tools::plan_mode",
+                        error = %err,
+                        "failed to create plans directory"
+                    );
+                } else {
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let ts = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let filename = format!("plan-{ts}.md");
+                    if let Err(err) = std::fs::write(dir.join(&filename), plan.as_bytes()) {
+                        tracing::warn!(
+                            target: "jfc::tools::plan_mode",
+                            error = %err,
+                            "failed to write plan file"
+                        );
+                    } else {
+                        tracing::debug!(
+                            target: "jfc::tools::plan_mode",
+                            file = %filename,
+                            "plan saved to plans directory"
+                        );
+                    }
+                }
+            }
+
             if let Some(tx) = snapshot_event_sender() {
                 _ = tx
                     .send(crate::runtime::EngineEvent::Frontend(

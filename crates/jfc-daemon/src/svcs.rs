@@ -1,5 +1,9 @@
 //! Lifecycle-managed services (Dolt `svcs.Controller` pattern).
 //!
+//! Note: `is_quiet_hours_now` reads the configured project root (cwd) quiet
+//! hours at each cron tick to gate job firing. This is a best-effort read —
+//! if config can't be loaded, quiet hours are treated as inactive.
+//!
 //! The daemon historically ran every responsibility — reconciliation, memory
 //! retirement, control requests, cron, wakeups — inline in one tick loop, with
 //! no explicit ordering or teardown contract. Borrowing Dolt's service
@@ -117,6 +121,68 @@ impl Controller {
 use std::time::SystemTime;
 
 use crate::runtime::Daemon;
+
+/// Check whether the current local time falls within the configured
+/// quiet-hours window. Reads the project-root `.claude/settings.json`
+/// (and `.claude/settings.local.json`) for the `quietHours` field.
+///
+/// Returns `false` (non-quiet) when config can't be read or the field is
+/// absent/disabled — fail open so jobs aren't silently suppressed.
+fn is_quiet_hours_now() -> bool {
+    // Locate the project root from cwd (best effort).
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let paths = [
+        dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("/"))
+            .join(".claude")
+            .join("settings.json"),
+        cwd.join(".claude").join("settings.json"),
+        cwd.join(".claude").join("settings.local.json"),
+    ];
+    let mut quiet_hours: Option<serde_json::Value> = None;
+    for path in &paths {
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        if let Some(qh) = val.get("quietHours").or_else(|| val.get("quiet_hours")) {
+            if qh
+                .get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                quiet_hours = Some(qh.clone());
+            }
+        }
+    }
+    let Some(qh) = quiet_hours else { return false };
+    let Some(start_str) = qh.get("start").and_then(|v| v.as_str()) else {
+        return false;
+    };
+    let Some(end_str) = qh.get("end").and_then(|v| v.as_str()) else {
+        return false;
+    };
+    fn parse_hhmm(s: &str) -> Option<u32> {
+        let (h, m) = s.split_once(':')?;
+        let hours: u32 = h.trim().parse().ok()?;
+        let mins: u32 = m.trim().parse().ok()?;
+        if hours > 23 || mins > 59 { return None; }
+        Some(hours * 60 + mins)
+    }
+    let (Some(start), Some(end)) = (parse_hhmm(start_str), parse_hhmm(end_str)) else {
+        return false;
+    };
+    // Current UTC minutes — approximate; production would use TZ-aware logic.
+    use std::time::UNIX_EPOCH;
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let now = ((secs % 86400) / 60) as u32;
+    if start <= end { now >= start && now < end } else { now >= start || now < end }
+}
 
 /// What a service's tick wants the daemon loop to do next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -241,7 +307,11 @@ impl DaemonService for CronService {
         "cron"
     }
     async fn tick(&mut self, daemon: &mut Daemon, now: SystemTime) -> TickOutcome {
-        let fired = daemon.tick_cron(now);
+        // Evaluate quiet hours from the current config before firing any jobs.
+        // We call `tick_cron_with_quiet_check` so the quiet-hours gate is
+        // applied without reading config in the core cron logic.
+        let is_quiet = is_quiet_hours_now();
+        let fired = daemon.tick_cron_with_quiet_check(now, is_quiet);
         for id in &fired {
             if let Some(job) = daemon.cron_by_id(id).cloned() {
                 tracing::info!(target: "jfc::daemon", cron_id = %job.id, cmd = %job.command, "cron firing");

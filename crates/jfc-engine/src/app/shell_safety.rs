@@ -1698,11 +1698,13 @@ mod catastrophic_tests {
             "rm -rf node_modules",
             "rm -rf /tmp/whatever",
             "rm -rf .jfc-worktrees/t1",
+            "rm -rf .claude/worktrees/t1",
             "rm -rf /home/cole/RustProjects/active/jfc/target", // deep targeted
             "git reset --hard HEAD",
             "git reset --hard origin/master",
             "git branch -D feature/old",
             "git worktree remove --force .jfc-worktrees/x",
+            "git worktree remove --force .claude/worktrees/x",
             "git push --force-with-lease origin master", // SAFE variant
             "git stash drop",
             "git clean -fd",

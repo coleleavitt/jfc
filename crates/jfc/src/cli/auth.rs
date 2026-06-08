@@ -213,7 +213,8 @@ async fn run_openwebui_auth_subcommand(sub: OpenWebUIAuthSubcommand) -> anyhow::
                 let token = result.token.clone();
                 tokio::spawn(async move {
                     let tz = jfc_engine::providers::openwebui::detect_iana_timezone();
-                    jfc_engine::providers::openwebui::update_user_timezone(&base, &token, &tz).await;
+                    jfc_engine::providers::openwebui::update_user_timezone(&base, &token, &tz)
+                        .await;
                 });
             }
 
@@ -358,8 +359,8 @@ async fn run_openwebui_auth_subcommand(sub: OpenWebUIAuthSubcommand) -> anyhow::
 }
 
 async fn run_codex_auth_subcommand(sub: CodexAuthSubcommand) -> anyhow::Result<()> {
-    use jfc_engine::providers::codex_oauth::CodexOAuthProvider;
     use jfc_auth::oauth_core::TokenStore;
+    use jfc_engine::providers::codex_oauth::CodexOAuthProvider;
 
     let provider = CodexOAuthProvider::new();
     match sub {

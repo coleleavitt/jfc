@@ -1,4 +1,5 @@
 use super::approval::approval;
+use super::elicitation::elicitation;
 use super::input_box::{input, input_visual_line_count};
 use super::messages::messages;
 use super::messages::{agent_fan_below_input, subagent_footer};
@@ -86,7 +87,11 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // for the *whole* turn (set at submit, cleared at the
     // turn-complete event). Background tasks count too so a fan of
     // subagents keeps the spinner alive even if the leader finished.
-    let any_alive_subagent = app.engine.background_tasks.values().any(|bt| bt.status.is_alive());
+    let any_alive_subagent = app
+        .engine
+        .background_tasks
+        .values()
+        .any(|bt| bt.status.is_alive());
     let show_spinner = app.engine.is_streaming
         || app.engine.compacting_started_at.is_some()
         || !app.engine.pending_tool_calls.is_empty()
@@ -105,7 +110,8 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         // Count both Running and Idle teammates: Idle ones still belong
         // on the fan (the user can SendMessage to wake them) so the
         // tree row needs to be reserved for them.
-        app.engine.background_tasks
+        app.engine
+            .background_tasks
             .values()
             .filter(|bt| bt.status.is_alive())
             .count()
@@ -123,7 +129,10 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // ("Tasks (k/n done)") + up to task_pin_visible rows + an optional
     // "+N more" footer. Height collapses to 0 when no tasks exist so
     // first-run UI stays clean.
-    let tp_all = app.engine.task_store.list(jfc_session::DeletedFilter::Exclude);
+    let tp_all = app
+        .engine
+        .task_store
+        .list(jfc_session::DeletedFilter::Exclude);
     let tp_open: usize = tp_all
         .iter()
         .filter(|t| {
@@ -138,7 +147,8 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         .iter()
         .filter(|t| matches!(t.status, jfc_session::TaskStatus::Completed))
         .filter(|t| {
-            app.engine.task_completion_times
+            app.engine
+                .task_completion_times
                 .get(&t.id)
                 .is_some_and(|ts| now_tp.duration_since(*ts).as_secs() < 30)
         })
@@ -204,8 +214,11 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // (Ctrl+O) shows the *full* current state regardless. This makes
     // the row a notification (transient), not a status display
     // (persistent) — what was wrong before this change.
-    let unack_count =
-        jfc_engine::diagnostics::unacknowledged(&app.engine.diagnostics, &app.delivered_diagnostics).len();
+    let unack_count = jfc_engine::diagnostics::unacknowledged(
+        &app.engine.diagnostics,
+        &app.delivered_diagnostics,
+    )
+    .len();
     let diag_row_height: u16 = if unack_count == 0 { 0 } else { 1 };
 
     // In task view the agent tab strip sits at the TOP (browser-style),
@@ -382,6 +395,12 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // but rendered last so it wins if both were somehow set.
     if app.engine.pending_question.is_some() {
         question(f, app);
+    }
+
+    // MCP elicitation modal — rendered on top of everything else when an
+    // MCP server requests interactive user input.
+    if !app.engine.pending_elicitations.is_empty() {
+        elicitation(f, app);
     }
 }
 

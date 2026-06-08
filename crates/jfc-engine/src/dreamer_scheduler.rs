@@ -232,8 +232,20 @@ pub fn spawn<C: DreamerCycle>(cycle: C, interval: Duration) -> SchedulerHandle {
 
 /// Convenience wrapper: read the interval from the environment and spawn
 /// a `RealDreamers` cycle. Returns `None` when the scheduler is disabled
-/// (interval == 0) or `RealDreamers::open` fails.
+/// (interval == 0, `autoDreamEnabled: false`, or `RealDreamers::open` fails).
 pub fn spawn_from_env(project_root: PathBuf) -> Option<SchedulerHandle> {
+    // CC 2.1.167 `autoDreamEnabled` — when explicitly false, skip the dreamer.
+    if crate::config::load_arc()
+        .claude
+        .auto_dream_enabled
+        == Some(false)
+    {
+        tracing::debug!(
+            target: "jfc::dreamer_scheduler",
+            "autoDreamEnabled=false — dreamer scheduler disabled"
+        );
+        return None;
+    }
     let interval = read_interval_from_env()?;
     let dreamers = match RealDreamers::open(project_root) {
         Ok(d) => d,

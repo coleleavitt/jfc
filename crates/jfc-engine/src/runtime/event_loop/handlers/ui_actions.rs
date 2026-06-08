@@ -31,15 +31,16 @@ pub fn handle_enter_plan_mode(state: &mut EngineState, reason: String) {
     );
 }
 
-
 /// Handle `StreamEvent::SystemPromptLen(len)`.
 pub fn handle_system_prompt_len(state: &mut EngineState, len: usize) {
     state.last_system_prompt_len = Some(len);
 }
 
-
 /// Handle `StreamEvent::RequestMetadata(meta)`.
-pub fn handle_request_metadata(state: &mut EngineState, meta: crate::runtime::StreamRequestMetadata) {
+pub fn handle_request_metadata(
+    state: &mut EngineState,
+    meta: crate::runtime::StreamRequestMetadata,
+) {
     state.record_stream_activity();
     tracing::debug!(
         target: "jfc::stream",
@@ -50,7 +51,6 @@ pub fn handle_request_metadata(state: &mut EngineState, meta: crate::runtime::St
     );
     state.current_stream_request = Some(meta);
 }
-
 
 /// Handle `StreamEvent::Lifecycle(status)`.
 pub fn handle_stream_lifecycle(
@@ -67,7 +67,6 @@ pub fn handle_stream_lifecycle(
     state.stream_lifecycle = Some(status);
 }
 
-
 /// Handle `ControlEvent::Notice { kind, text }`.
 pub fn handle_toast(state: &mut EngineState, kind: toast::ToastKind, text: impl Into<String>) {
     // Push onto the auto-expiring strip with the kind's
@@ -75,7 +74,6 @@ pub fn handle_toast(state: &mut EngineState, kind: toast::ToastKind, text: impl 
     // when a long-running compaction or classifier spams.
     toast::push_with_cap(&mut state.toasts, toast::Toast::new(kind, text));
 }
-
 
 /// Handle `FrontendEvent::PlanReview { plan }`.
 pub fn handle_exit_plan_mode(state: &mut EngineState, plan: String) {
@@ -106,7 +104,8 @@ pub fn handle_exit_plan_mode(state: &mut EngineState, plan: String) {
         )
     });
     let target_idx = streaming_assistant.or_else(|| {
-        state.messages
+        state
+            .messages
             .iter()
             .rposition(|m| m.role == crate::types::Role::Assistant)
     });
@@ -118,7 +117,8 @@ pub fn handle_exit_plan_mode(state: &mut EngineState, plan: String) {
     } else {
         // Fallback: no assistant message found (shouldn't happen
         // but defensive). Push as a new message.
-        state.messages
+        state
+            .messages
             .push(crate::types::ChatMessage::assistant(body));
     }
     if matches!(state.permission_mode, crate::app::PermissionMode::Plan) {
@@ -137,4 +137,3 @@ pub fn handle_exit_plan_mode(state: &mut EngineState, plan: String) {
         );
     }
 }
-

@@ -222,6 +222,24 @@ impl Daemon {
     /// Tick the cron scheduler. Returns the IDs of jobs whose schedules
     /// fired in this tick (their `last_run` has been advanced).
     pub fn tick_cron(&mut self, now: SystemTime) -> Vec<String> {
+        self.tick_cron_with_quiet_check(now, false)
+    }
+
+    /// Like `tick_cron` but skips all jobs when `is_quiet_hours` is true.
+    /// The caller (engine / daemon loop) is responsible for evaluating quiet
+    /// hours from the loaded config via `jfc_config::quiet_hours::is_quiet_hours`.
+    pub fn tick_cron_with_quiet_check(
+        &mut self,
+        now: SystemTime,
+        is_quiet_hours: bool,
+    ) -> Vec<String> {
+        if is_quiet_hours {
+            tracing::debug!(
+                target: "jfc::daemon::cron",
+                "quiet hours active — skipping cron tick"
+            );
+            return Vec::new();
+        }
         let mut fired = Vec::new();
         for job in &mut self.state.cron_jobs {
             if !job.enabled {

@@ -177,6 +177,23 @@ pub async fn submit_prompt(
         .as_ref()
         .map(|s| s.as_str().to_owned())
         .unwrap_or_else(|| "<no-session>".to_owned());
+
+    // CC 2.1.167 Setup hook — fires once, before the very first model turn.
+    // Any shell hook registered on "Setup" can inject additional context into
+    // the session. We fire it here (fire-and-forget) so it runs before the
+    // OnUserPromptSubmit gate that can abort the turn.
+    if state.messages.is_empty() {
+        crate::hooks::fire_async(
+            crate::hooks::HookPoint::OnSetup,
+            &crate::hooks::HookContext::for_session(&session_id_for_hook),
+        );
+        tracing::debug!(
+            target: "jfc::hooks",
+            session_id = %session_id_for_hook,
+            "fired OnSetup hook (first turn)"
+        );
+    }
+
     let hook_action = crate::hooks::fire(
         crate::hooks::HookPoint::OnUserPromptSubmit,
         &crate::hooks::HookContext::for_session(&session_id_for_hook)
@@ -578,10 +595,7 @@ pub async fn submit_prompt(
         reminder.push_str(
             "\nIncorporate or acknowledge these results where they matter to the user's request.",
         );
-        crate::system_reminder::append_to_last_user(
-            &mut state.messages,
-            &reminder,
-        );
+        crate::system_reminder::append_to_last_user(&mut state.messages, &reminder);
         tracing::info!(
             target: "jfc::background",
             count = bg_completed,

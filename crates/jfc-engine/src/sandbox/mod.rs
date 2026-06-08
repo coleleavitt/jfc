@@ -55,6 +55,8 @@ pub struct BashSandboxConfig {
     pub fail_if_unavailable: bool,
     /// Auto-approve all Bash tool calls when sandboxed.
     pub auto_allow_bash_if_sandboxed: bool,
+    /// Optional explicit path to the bwrap binary.
+    pub bwrap_path: Option<String>,
     /// Network isolation settings.
     pub network: NetworkSandboxConfig,
     /// Filesystem isolation settings.
@@ -75,6 +77,8 @@ pub struct NetworkSandboxConfig {
 /// Filesystem isolation for sandboxed Bash commands.
 #[derive(Debug, Clone, Default)]
 pub struct FilesystemSandboxConfig {
+    /// Paths explicitly allowed for writing in addition to the current cwd.
+    pub allow_write: Vec<String>,
     /// Paths denied for reading.
     pub deny_read: Vec<String>,
     /// Paths denied for writing.
@@ -148,7 +152,7 @@ pub fn build_bwrap_argv(cfg: &BashSandboxConfig, cwd: &std::path::Path) -> Optio
     if !cfg.enabled {
         return None;
     }
-    let bwrap_path = find_bwrap()?;
+    let bwrap_path = cfg.bwrap_path.clone().or_else(find_bwrap)?;
     let mut argv = vec![
         bwrap_path,
         // Read-only bind the entire root so most commands can run normally.
@@ -181,6 +185,21 @@ pub fn build_bwrap_argv(cfg: &BashSandboxConfig, cwd: &std::path::Path) -> Optio
         "--chdir".into(),
         cwd.display().to_string(),
     ];
+    for path in &cfg.filesystem.allow_read {
+        argv.push("--ro-bind-try".into());
+        argv.push(path.clone());
+        argv.push(path.clone());
+    }
+    for path in &cfg.filesystem.allow_write {
+        argv.push("--bind-try".into());
+        argv.push(path.clone());
+        argv.push(path.clone());
+    }
+    for path in &cfg.filesystem.deny_write {
+        argv.push("--ro-bind-try".into());
+        argv.push(path.clone());
+        argv.push(path.clone());
+    }
     // Network: by default, sandboxed commands have no network. To allow
     // it, the user must explicitly add allowed_domains (not implemented
     // at the bwrap level — needs a proxy). For now, sandbox = no network.
@@ -193,4 +212,35 @@ pub fn build_bwrap_argv(cfg: &BashSandboxConfig, cwd: &std::path::Path) -> Optio
         argv.push(path.clone());
     }
     Some(argv)
+}
+
+/// Convert Claude/JFC persisted sandbox settings into the runtime Bash
+/// sandbox config used by command execution.
+pub fn bash_sandbox_config_from_settings(
+    settings: &crate::config::SandboxConfig,
+) -> BashSandboxConfig {
+    BashSandboxConfig {
+        enabled: settings.enabled.unwrap_or(true),
+        fail_if_unavailable: settings.fail_if_unavailable.unwrap_or(false),
+        auto_allow_bash_if_sandboxed: settings.auto_allow_bash_if_sandboxed.unwrap_or(true),
+        bwrap_path: settings.bwrap_path.clone(),
+        network: NetworkSandboxConfig {
+            allowed_domains: settings.network.allowed_domains.clone(),
+            denied_domains: settings.network.denied_domains.clone(),
+            allow_managed_domains_only: settings
+                .network
+                .allow_managed_domains_only
+                .unwrap_or(false),
+        },
+        filesystem: FilesystemSandboxConfig {
+            allow_write: settings.filesystem.allow_write.clone(),
+            deny_read: settings.filesystem.deny_read.clone(),
+            deny_write: settings.filesystem.deny_write.clone(),
+            allow_read: settings.filesystem.allow_read.clone(),
+            allow_managed_read_paths_only: settings
+                .filesystem
+                .allow_managed_read_paths_only
+                .unwrap_or(false),
+        },
+    }
 }

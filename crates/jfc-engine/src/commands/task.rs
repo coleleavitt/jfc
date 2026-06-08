@@ -68,7 +68,8 @@ pub(super) async fn cmd_task_add(
             Vec::<jfc_session::TaskId>::new(),
         ) {
             Ok(t) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::user(format!("/task-add {subject}")));
                 state.messages.push(ChatMessage::assistant(format!(
                     "Created task `{}`: {}",
@@ -76,7 +77,8 @@ pub(super) async fn cmd_task_add(
                 )));
             }
             Err(e) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant(format!("**Error:** {e}")));
             }
         }
@@ -103,7 +105,8 @@ pub(super) async fn cmd_task_done(
             },
         ) {
             Ok(t) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::user(format!("/task-done {id}")));
                 state.messages.push(ChatMessage::assistant(format!(
                     "✓ Completed `{}`: {}",
@@ -111,7 +114,8 @@ pub(super) async fn cmd_task_done(
                 )));
             }
             Err(e) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant(format!("**Error:** {e}")));
             }
         }
@@ -126,18 +130,22 @@ pub(super) async fn cmd_task_rm(
 ) {
     let id = parts.get(1).copied().unwrap_or("").trim();
     if id.is_empty() {
-        state.messages
+        state
+            .messages
             .push(ChatMessage::assistant("Usage: `/task-rm <id>`".into()));
     } else {
         match state.task_store.delete(id) {
             Ok(()) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::user(format!("/task-rm {id}")));
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant(format!("Deleted task `{id}`.")));
             }
             Err(e) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant(format!("**Error:** {e}")));
             }
         }

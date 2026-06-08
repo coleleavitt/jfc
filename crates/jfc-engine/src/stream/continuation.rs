@@ -243,7 +243,11 @@ fn setup_new_substream_slot(state: &mut EngineState, label: &'static str) -> usi
 /// — including the cancel-token plumbing. A divergence here was how
 /// the legacy code accidentally let one path skip the token and miss
 /// ESCx2 unwinds.
-fn spawn_substream(state: &mut EngineState, messages: Vec<ProviderMessage>, tx: &mpsc::Sender<EngineEvent>) {
+fn spawn_substream(
+    state: &mut EngineState,
+    messages: Vec<ProviderMessage>,
+    tx: &mpsc::Sender<EngineEvent>,
+) {
     let provider = state.provider.clone();
     let model = state.model.clone();
     let tx = tx.clone();
@@ -685,8 +689,8 @@ mod setup_new_substream_slot_tests {
     //! `streaming_response_bytes` counter SURVIVES across sub-streams
     //! so the spinner shows turn-total tokens, not per-sub-stream
     //! tokens (matches v126 responseLengthRef).
-    use crate::app::EngineState;
     use super::*;
+    use crate::app::EngineState;
     use std::sync::Arc;
 
     /// Tiny no-op provider — needed because `EngineState::new` requires a
@@ -812,8 +816,8 @@ mod pause_turn_end_to_end_tests {
     //! regression in setup_new_substream_slot (e.g. it stops pushing
     //! the empty trailing assistant) immediately surfaces a wrong
     //! wire shape.
-    use crate::app::EngineState;
     use super::*;
+    use crate::app::EngineState;
     use crate::ids::ToolId;
     use crate::types::{
         ChatMessage, MessagePart, ToolCall, ToolDisplayState, ToolInput, ToolKind, ToolOutput,
@@ -906,7 +910,8 @@ mod pause_turn_end_to_end_tests {
 
         // Build the resend payload — this is what stream_response
         // will hand to the provider.
-        let payload = build_provider_messages_for_pause_turn_resume(&state.messages[..assistant_idx]);
+        let payload =
+            build_provider_messages_for_pause_turn_resume(&state.messages[..assistant_idx]);
 
         // Hard pins on the wire shape:
         //
@@ -989,7 +994,8 @@ mod pause_turn_end_to_end_tests {
         ];
 
         let assistant_idx = setup_new_substream_slot(&mut state, "pause_turn_resume");
-        let payload = build_provider_messages_for_pause_turn_resume(&state.messages[..assistant_idx]);
+        let payload =
+            build_provider_messages_for_pause_turn_resume(&state.messages[..assistant_idx]);
 
         // Trailing assistant carries BOTH the server_tool_use AND
         // the server_tool_result, in that order. Same wire shape
@@ -1056,7 +1062,8 @@ mod pause_turn_end_to_end_tests {
         ];
 
         let assistant_idx = setup_new_substream_slot(&mut state, "pause_turn_resume");
-        let payload = build_provider_messages_for_pause_turn_resume(&state.messages[..assistant_idx]);
+        let payload =
+            build_provider_messages_for_pause_turn_resume(&state.messages[..assistant_idx]);
 
         // The resume-mode builder's merge step collapses the two
         // adjacent assistants into one provider message, so the
@@ -1151,7 +1158,8 @@ mod pause_turn_end_to_end_tests {
         ];
 
         let assistant_idx = setup_new_substream_slot(&mut state, "pause_turn_mixed_resume");
-        let payload = build_provider_messages_for_pause_turn_resume(&state.messages[..assistant_idx]);
+        let payload =
+            build_provider_messages_for_pause_turn_resume(&state.messages[..assistant_idx]);
 
         // The assistant turn carries text + server_tool_use + local tool_use,
         // and the local tool's tool_result follows as a trailing user

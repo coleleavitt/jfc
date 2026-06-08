@@ -100,10 +100,7 @@ pub fn record_event(event: LedgerEvent) {
 /// Extract a concise, non-sensitive detail string for a mutating tool call —
 /// the command for Bash, the target path for Edit/Write/MultiEdit. Long
 /// commands are truncated so the ledger stays scannable.
-pub fn ledger_detail_for(
-    kind: &crate::types::ToolKind,
-    input: &crate::types::ToolInput,
-) -> String {
+pub fn ledger_detail_for(kind: &crate::types::ToolKind, input: &crate::types::ToolInput) -> String {
     use crate::types::{ToolInput, ToolKind};
     match (kind, input) {
         (ToolKind::Bash, ToolInput::Bash { command, .. }) => {

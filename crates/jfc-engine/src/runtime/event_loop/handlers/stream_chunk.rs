@@ -70,7 +70,8 @@ pub fn handle_chunk(state: &mut EngineState, text: Option<String>, reasoning: Op
                 if crate::idle_prefetch::get(&path, None, None).is_some() {
                     continue;
                 }
-                state.prefetch_in_flight
+                state
+                    .prefetch_in_flight
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let counter = state.prefetch_in_flight.clone();
                 tokio::spawn(async move {
@@ -87,6 +88,24 @@ pub fn handle_chunk(state: &mut EngineState, text: Option<String>, reasoning: Op
         }
 
         state.streaming_text.push_str(&chunk);
+
+        // CC 2.1.167 MessageDisplay hook — fires on each text chunk when a
+        // registered handler wants to intercept/rewrite displayed content.
+        // Fast path: no-op when no MessageDisplay hooks are registered.
+        // Fire-and-forget (async, non-blocking) — display hooks must not
+        // stall the stream.
+        crate::hooks::fire_async(
+            crate::hooks::HookPoint::OnMessageDisplay,
+            &crate::hooks::HookContext::for_session(
+                state
+                    .current_session_id
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or("<no-session>"),
+            )
+            .with_extra("chunk_len", chunk.len().to_string()),
+        );
+
         if let Some(msg) = streaming_assistant_mut(state) {
             // Append to the *last* part if it's still a Text
             // segment; otherwise start a new Text part. The
@@ -130,8 +149,7 @@ pub fn handle_chunk(state: &mut EngineState, text: Option<String>, reasoning: Op
     // The "stick when at bottom" follow policy (and its freeze-during-drag
     // exception) is view logic — the frontend applies it when draining this
     // effect (see `apply_engine_effects`).
-    state
-        .push_effect(crate::app::EngineEffect::TranscriptAppended);
+    state.push_effect(crate::app::EngineEffect::TranscriptAppended);
 }
 
 pub fn handle_tool_input_delta(state: &mut EngineState, byte_len: usize) {
@@ -180,7 +198,9 @@ pub fn handle_thinking_tokens(state: &mut EngineState, tokens: u32) {
     if state.thinking_started_at.is_none() && state.thinking_ended_at.is_none() {
         state.thinking_started_at = Some(now);
     }
-    state.streaming_thinking_tokens = state.streaming_thinking_tokens.saturating_add(tokens as u64);
+    state.streaming_thinking_tokens = state
+        .streaming_thinking_tokens
+        .saturating_add(tokens as u64);
 }
 
 pub fn handle_response_id(state: &mut EngineState, id: String) {
@@ -191,8 +211,8 @@ pub fn handle_response_id(state: &mut EngineState, id: String) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use crate::app::EngineState;
+    use std::sync::Arc;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 

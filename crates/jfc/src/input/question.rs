@@ -207,9 +207,9 @@ fn decline_question(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
 
 #[cfg(test)]
 mod tests {
-    use jfc_engine::ids::ToolId;
     use crate::runtime::approvals::build_pending_question;
     use jfc_core::{ToolCall, ToolDisplayState, ToolInput, ToolKind, ToolOutput, ToolStatus};
+    use jfc_engine::ids::ToolId;
 
     fn ask_tool(input: serde_json::Value) -> ToolCall {
         ToolCall {

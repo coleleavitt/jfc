@@ -136,9 +136,7 @@ pub(super) async fn run_print_mode(
     // stream-json input that carried its own messages resumes the seeded
     // transcript directly.
     if parsed_input.messages.is_empty() {
-        engine
-            .submit(prompt_text.clone(), Vec::new(), None)
-            .await?;
+        engine.submit(prompt_text.clone(), Vec::new(), None).await?;
     } else {
         engine.start_turn_from_transcript(&prompt_text).await;
     }
@@ -188,9 +186,7 @@ pub(super) async fn run_print_mode(
                         }
                     }
                 }
-                if reasoning.is_some()
-                    && config.output_format == HeadlessOutputFormat::StreamJson
-                {
+                if reasoning.is_some() && config.output_format == HeadlessOutputFormat::StreamJson {
                     emit_stream_json(
                         &mut stdout,
                         &mut mirror_events,
@@ -361,8 +357,8 @@ pub(super) async fn run_print_mode(
             Some(FrontendDirective::RunCommand(text)) => {
                 // Engine command semantics are shared since stage 8 — print
                 // mode runs /compact, /model, /task-* etc. like any frontend.
-                let _ = jfc_engine::commands::run_command(&mut engine.state, &text, Some(&tx))
-                    .await;
+                let _ =
+                    jfc_engine::commands::run_command(&mut engine.state, &text, Some(&tx)).await;
             }
             None => {}
         }
@@ -531,13 +527,11 @@ fn chat_messages_from_provider(
                             let kind = jfc_core::ToolKind::from_name(name);
                             match jfc_core::ToolInput::from_value(name, input.clone()) {
                                 Ok(tool_input) => {
-                                    parts.push(MessagePart::tool(
-                                        jfc_core::ToolCall::new_pending(
-                                            jfc_engine::ids::ToolId::from(id.clone()),
-                                            kind,
-                                            tool_input,
-                                        ),
-                                    ));
+                                    parts.push(MessagePart::tool(jfc_core::ToolCall::new_pending(
+                                        jfc_engine::ids::ToolId::from(id.clone()),
+                                        kind,
+                                        tool_input,
+                                    )));
                                 }
                                 Err(err) => {
                                     tracing::warn!(

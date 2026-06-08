@@ -231,7 +231,9 @@ pub async fn stream_response(
     let stop_reason = match live_events::drain_stream_events(stream, &tx, interrupt, cancel).await {
         live_events::DrainOutcome::Done(stop_reason) => stop_reason,
         live_events::DrainOutcome::Cancelled(message) => {
-            let _ = tx.send(EngineEvent::Stream(StreamEvent::Error(message))).await;
+            let _ = tx
+                .send(EngineEvent::Stream(StreamEvent::Error(message)))
+                .await;
             return;
         }
         live_events::DrainOutcome::Error {
@@ -259,7 +261,9 @@ pub async fn stream_response(
                     "stream failed after output was committed; skipping non-streaming fallback to avoid duplicate transcript text"
                 );
             }
-            let _ = tx.send(EngineEvent::Stream(StreamEvent::Error(message))).await;
+            let _ = tx
+                .send(EngineEvent::Stream(StreamEvent::Error(message)))
+                .await;
             return;
         }
     };

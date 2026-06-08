@@ -626,8 +626,8 @@ pub async fn maybe_resume_after_background(state: &mut EngineState, tx: &EventSe
 
 #[cfg(test)]
 mod autowake_tests {
-    use std::sync::Arc;
     use crate::app::EngineState;
+    use std::sync::Arc;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
     use tokio::sync::mpsc;
@@ -693,9 +693,11 @@ mod autowake_tests {
     #[tokio::test]
     async fn continue_with_restored_terminal_agents_does_not_autowake_regression() {
         let mut state = test_app();
-        state.background_tasks
+        state
+            .background_tasks
             .insert("a".into(), terminal_bg("a", "did a thing"));
-        state.background_tasks
+        state
+            .background_tasks
             .insert("b".into(), terminal_bg("b", "did another"));
         // Mirror the `--continue` startup state: idle leader, no live
         // transition observed, restored agents already terminal.
@@ -723,7 +725,8 @@ mod autowake_tests {
     #[tokio::test]
     async fn live_terminal_transition_does_autowake_normal() {
         let mut state = test_app();
-        state.background_tasks
+        state
+            .background_tasks
             .insert("a".into(), terminal_bg("a", "did a thing"));
         state.turn_started_at = None;
         state.observed_bg_terminal_transition_this_process = true;
@@ -746,7 +749,8 @@ mod autowake_tests {
     #[tokio::test]
     async fn autowake_clears_flag_and_second_call_noops_robust() {
         let mut state = test_app();
-        state.background_tasks
+        state
+            .background_tasks
             .insert("a".into(), terminal_bg("a", "did a thing"));
         state.turn_started_at = None;
         state.observed_bg_terminal_transition_this_process = true;
@@ -769,6 +773,9 @@ mod autowake_tests {
             msgs_before,
             "a second resume call with the flag cleared must not open another turn"
         );
-        assert!(state.turn_started_at.is_none(), "no second turn should start");
+        assert!(
+            state.turn_started_at.is_none(),
+            "no second turn should start"
+        );
     }
 }

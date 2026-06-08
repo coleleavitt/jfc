@@ -17,7 +17,8 @@ use jfc_core::{MessagePart, Role};
 /// Pull the rendered text of the last assistant message. Pure helper —
 /// no side effects, exposed at crate-vis for the `/copy last` path.
 pub(crate) fn last_assistant_text(app: &App) -> Option<String> {
-    app.engine.messages
+    app.engine
+        .messages
         .iter()
         .rev()
         .find(|m| m.role == Role::Assistant)

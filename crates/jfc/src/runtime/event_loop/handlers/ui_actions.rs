@@ -2,8 +2,8 @@
 //! and stream metadata.
 
 use crate::app::App;
-use crate::runtime::EventSender;
 use crate::input;
+use crate::runtime::EventSender;
 
 /// Handle `ControlEvent::SubmitPrompt(text)`.
 pub(crate) async fn handle_submit(
@@ -23,54 +23,55 @@ pub(crate) async fn handle_submit(
     if away >= jfc_engine::session_recap::AWAY_THRESHOLD && !app.idle_return_shown {
         use jfc_core::{MessagePart, Role, ToolInput};
         let start_idx = app.interaction_message_idx.min(app.engine.messages.len());
-        let since: Vec<jfc_engine::session_recap::RecapMessage> =
-            app.engine.messages[start_idx..]
-                .iter()
-                .map(|m| {
-                    let text_preview = m
-                        .parts
-                        .iter()
-                        .find_map(|p| match p {
-                            MessagePart::Text(t) if !t.is_empty() => {
-                                Some(t.chars().take(160).collect::<String>())
-                            }
+        let since: Vec<jfc_engine::session_recap::RecapMessage> = app.engine.messages[start_idx..]
+            .iter()
+            .map(|m| {
+                let text_preview = m
+                    .parts
+                    .iter()
+                    .find_map(|p| match p {
+                        MessagePart::Text(t) if !t.is_empty() => {
+                            Some(t.chars().take(160).collect::<String>())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                let tool_calls: Vec<String> = m
+                    .parts
+                    .iter()
+                    .filter_map(|p| match p {
+                        MessagePart::Tool(t) => Some(t.kind.label().to_string()),
+                        _ => None,
+                    })
+                    .collect();
+                // Surface which files the agent actually touched (Edit/Write/
+                // MultiEdit/NotebookEdit carry a `file_path`).
+                let files_changed: Vec<String> = m
+                    .parts
+                    .iter()
+                    .filter_map(|p| match p {
+                        MessagePart::Tool(t) => match &t.input {
+                            ToolInput::Edit { file_path, .. }
+                            | ToolInput::Write { file_path, .. } => Some(file_path.clone()),
                             _ => None,
-                        })
-                        .unwrap_or_default();
-                    let tool_calls: Vec<String> = m
-                        .parts
-                        .iter()
-                        .filter_map(|p| match p {
-                            MessagePart::Tool(t) => Some(t.kind.label().to_string()),
-                            _ => None,
-                        })
-                        .collect();
-                    // Surface which files the agent actually touched (Edit/Write/
-                    // MultiEdit/NotebookEdit carry a `file_path`).
-                    let files_changed: Vec<String> = m
-                        .parts
-                        .iter()
-                        .filter_map(|p| match p {
-                            MessagePart::Tool(t) => match &t.input {
-                                ToolInput::Edit { file_path, .. }
-                                | ToolInput::Write { file_path, .. } => Some(file_path.clone()),
-                                _ => None,
-                            },
-                            _ => None,
-                        })
-                        .collect();
-                    let had_error = m.parts.iter().any(|p| matches!(p,
-                    MessagePart::Tool(t) if t.status == jfc_core::ExecutionStatus::Failed
-                ));
-                    jfc_engine::session_recap::RecapMessage {
-                        is_assistant: m.role == Role::Assistant,
-                        tool_calls,
-                        had_error,
-                        files_changed,
-                        text_preview,
-                    }
-                })
-                .collect();
+                        },
+                        _ => None,
+                    })
+                    .collect();
+                let had_error = m.parts.iter().any(|p| {
+                    matches!(p,
+                        MessagePart::Tool(t) if t.status == jfc_core::ExecutionStatus::Failed
+                    )
+                });
+                jfc_engine::session_recap::RecapMessage {
+                    is_assistant: m.role == Role::Assistant,
+                    tool_calls,
+                    had_error,
+                    files_changed,
+                    text_preview,
+                }
+            })
+            .collect();
         if let Some(recap) = jfc_engine::session_recap::generate_recap(&since) {
             app.away_recap = Some(format!(
                 "{recap}\n(away {}m · Esc to dismiss)",
@@ -94,4 +95,3 @@ pub(crate) async fn handle_submit(
     input::handle_submit_text(app, text, tx).await?;
     Ok(())
 }
-

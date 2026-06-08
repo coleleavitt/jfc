@@ -494,7 +494,10 @@ Do not use a colon before tool calls.";
     // so live edits to CLAUDE.md take effect on the next turn (matching CC).
     let mut overrides = overrides;
     if let Ok(cwd_path) = std::env::current_dir() {
-        let hierarchy = crate::context::ClaudeMdHierarchy::load(&cwd_path);
+        let hierarchy = crate::context::ClaudeMdHierarchy::load_with_extra_roots(
+            &cwd_path,
+            &overrides.extra_dirs,
+        );
         if let Some(layered) = hierarchy.render() {
             system_prompt.push_str("\n\n");
             system_prompt.push_str(&layered);

@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::builtins;
 use crate::state::{Skill, SkillFile, parse_agent, parse_skill};
 pub use jfc_core::{AgentCost, AgentDef};
 
@@ -18,7 +19,19 @@ struct PluginRoot {
 fn plugin_roots(project_root: &Path) -> Vec<PluginRoot> {
     let mut roots = Vec::new();
     let mut seen = HashSet::new();
+    let settings = jfc_config::claude_settings::load_merged(project_root);
     let mut push_root = |path: PathBuf, namespace: Option<String>| {
+        if let Some(plugin) = namespace.as_deref()
+            && !settings.plugin_enabled(plugin)
+        {
+            tracing::debug!(
+                target: "jfc::agents",
+                plugin,
+                path = %path.display(),
+                "plugin disabled by enabledPlugins setting"
+            );
+            return;
+        }
         if seen.insert((path.clone(), namespace.clone())) {
             roots.push(PluginRoot { path, namespace });
         }
@@ -39,10 +52,7 @@ fn plugin_roots(project_root: &Path) -> Vec<PluginRoot> {
     roots
 }
 
-fn push_plugin_roots_in(
-    plugins_dir: &Path,
-    push_root: &mut impl FnMut(PathBuf, Option<String>),
-) {
+fn push_plugin_roots_in(plugins_dir: &Path, push_root: &mut impl FnMut(PathBuf, Option<String>)) {
     let Ok(entries) = std::fs::read_dir(plugins_dir) else {
         return;
     };
@@ -69,7 +79,7 @@ fn push_plugin_roots_in(
 /// override user skills with the same name.
 pub fn load_skills(project_root: &Path) -> Vec<Skill> {
     tracing::info!(target: "jfc::agents", project_root = %project_root.display(), "loading skills");
-    let mut out: Vec<Skill> = Vec::new();
+    let mut out: Vec<Skill> = built_in_skills();
     for root in skill_roots(project_root) {
         for candidate in skill_candidates(&root.path) {
             let SkillCandidate {
@@ -112,6 +122,11 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
         "skills loaded"
     );
     out
+}
+
+/// Returns the built-in skill definitions that ship with jfc.
+pub fn built_in_skills() -> Vec<Skill> {
+    builtins::built_in_skills()
 }
 
 #[derive(Debug)]
@@ -673,6 +688,59 @@ mod tests {
     }
 
     #[test]
+    fn load_skills_includes_built_in_167_pack_normal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_builtin_skill_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let skills = load_skills(&tmp);
+        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+        for needed in [
+            "catch-up",
+            "dream",
+            "morning-checkin",
+            "pre-meeting-checkin",
+            "run",
+            "verify",
+            "run-skill-generator",
+            "cowork-plugin",
+            "design-sync",
+            "simplify",
+        ] {
+            assert!(names.contains(&needed), "missing {needed} from {names:?}");
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn project_skill_overrides_built_in_normal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_builtin_override_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let verify_dir = tmp.join(".claude/skills/verify");
+        std::fs::create_dir_all(&verify_dir).unwrap();
+        std::fs::write(
+            verify_dir.join("SKILL.md"),
+            "---\nname: verify\ndescription: project verify\n---\nproject-specific verify body",
+        )
+        .unwrap();
+
+        let skills = load_skills(&tmp);
+        let verify = skills.iter().find(|s| s.name == "verify").unwrap();
+        assert_eq!(verify.description.as_deref(), Some("project verify"));
+        assert!(verify.body.contains("project-specific"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn load_skills_finds_directory_based_skill_robust() {
         let tmp = std::env::temp_dir().join(format!(
             "jfc_skill_dir_test_{}",
@@ -750,6 +818,39 @@ mod tests {
         let agents = load_agents(&tmp);
         assert!(skills.iter().any(|skill| skill.name == "sec:audit"));
         assert!(agents.iter().any(|agent| agent.name == "sec:reviewer"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn enabled_plugins_false_disables_plugin_roots_normal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_plugin_disabled_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let plugin_skill = tmp.join("plugins/sec/skills/audit");
+        let plugin_agent = tmp.join("plugins/sec/agents");
+        std::fs::create_dir_all(&plugin_skill).unwrap();
+        std::fs::create_dir_all(&plugin_agent).unwrap();
+        std::fs::create_dir_all(tmp.join(".claude")).unwrap();
+        std::fs::write(plugin_skill.join("SKILL.md"), "---\nname: audit\n---\nbody").unwrap();
+        std::fs::write(
+            plugin_agent.join("reviewer.md"),
+            "---\nname: reviewer\n---\nReview things.",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.join(".claude/settings.json"),
+            r#"{ "enabledPlugins": { "sec@local": false } }"#,
+        )
+        .unwrap();
+
+        let skills = load_skills(&tmp);
+        let agents = load_agents(&tmp);
+        assert!(!skills.iter().any(|skill| skill.name == "sec:audit"));
+        assert!(!agents.iter().any(|agent| agent.name == "sec:reviewer"));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

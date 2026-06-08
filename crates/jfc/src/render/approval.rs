@@ -262,7 +262,9 @@ fn render_choice_list(f: &mut Frame, pending: &PendingApproval, area: Rect, t: &
 /// Check whether a tool call represents a destructive bash command AND the
 /// `DestructiveWarn` feature gate is enabled.
 fn is_tool_destructive(tool: &ToolCall) -> bool {
-    if !jfc_engine::feature_gates::is_enabled(jfc_engine::feature_gates::FeatureGate::DestructiveWarn) {
+    if !jfc_engine::feature_gates::is_enabled(
+        jfc_engine::feature_gates::FeatureGate::DestructiveWarn,
+    ) {
         return false;
     }
     let ToolInput::Bash { command, .. } = &tool.input else {

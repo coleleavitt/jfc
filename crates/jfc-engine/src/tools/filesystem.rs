@@ -382,11 +382,7 @@ pub async fn execute_edit(
 /// localized old_string→new_string replacement. Mirrors what unified
 /// diff renders look like, fed straight into the existing
 /// `ToolOutput::Diff` renderer.
-pub fn build_edit_diff_view(
-    file_path: &str,
-    old: &str,
-    new: &str,
-) -> crate::types::DiffView {
+pub fn build_edit_diff_view(file_path: &str, old: &str, new: &str) -> crate::types::DiffView {
     use crate::types::{DiffHunk, DiffLine, DiffLineKind, DiffView};
     const CONTEXT: usize = 3;
     let old_lines: Vec<&str> = old.lines().collect();

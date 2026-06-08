@@ -25,7 +25,8 @@ pub(super) async fn handle_install_github_app(state: &mut EngineState) {
         return;
     }
     let Some(ctx) = crate::github::current_repo().await else {
-        state.messages
+        state
+            .messages
             .push(ChatMessage::user("/install-github-app".into()));
         state.messages.push(ChatMessage::assistant(
             "Could not determine GitHub repo from `git remote get-url origin`. \
@@ -51,7 +52,8 @@ pub(super) async fn handle_install_github_app(state: &mut EngineState) {
         }
         Err(error) => format!("**Error checking install state:** {error}"),
     };
-    state.messages
+    state
+        .messages
         .push(ChatMessage::user("/install-github-app".into()));
     state.messages.push(ChatMessage::assistant(body));
 }
@@ -185,7 +187,8 @@ pub(super) async fn handle_pr_autofix(
         }
         Err(error) => {
             state.messages.push(ChatMessage::user(cmd));
-            state.messages
+            state
+                .messages
                 .push(ChatMessage::assistant(format!("**Error:** {error}")));
             return;
         }

@@ -4,7 +4,13 @@
 //! the fields jfc currently understands.
 
 pub mod atomic_write;
+pub mod catch_up_state;
+pub mod claude_settings;
 pub mod feature_config;
+pub mod keybindings;
+pub mod paths;
+pub mod quiet_hours;
+pub mod scheduled_tasks;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -14,6 +20,7 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
+pub use claude_settings::ClaudeCompatibilityConfig;
 /// Re-export from jfc-mcp so existing callsites keep working.
 pub use jfc_mcp::McpServerConfig;
 
@@ -90,6 +97,14 @@ pub struct Config {
     pub managed_settings: Option<ManagedSettingsConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isolation: Option<IsolationConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<WorktreeConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<SandboxConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_shell: Option<String>,
+    #[serde(default, skip_serializing_if = "ClaudeCompatibilityConfig::is_empty")]
+    pub claude: ClaudeCompatibilityConfig,
     /// Auto-copy the transcript selection to the clipboard on mouse-up
     /// (drag-to-select). Default on; set `copy_on_select = false` to disable
     /// the gesture entirely so clicks/drags never touch the clipboard.
@@ -124,6 +139,111 @@ impl Default for IsolationConfig {
     fn default() -> Self {
         Self { fail_closed: true }
     }
+}
+
+/// Claude-compatible worktree settings. JFC consumes `base_ref` when creating
+/// new worktrees; sparse checkout and symlink-directory policy are preserved so
+/// callers can inspect them even before every behavior is implemented.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct WorktreeConfig {
+    #[serde(rename = "baseRef", alias = "base_ref")]
+    pub base_ref: Option<String>,
+    #[serde(rename = "sparsePaths", alias = "sparse_paths")]
+    pub sparse_paths: Vec<String>,
+    #[serde(rename = "symlinkDirectories", alias = "symlink_directories")]
+    pub symlink_directories: Vec<String>,
+}
+
+/// Claude-compatible Bash sandbox settings as loaded from JSON/TOML config.
+/// Enforcement lives in `jfc-engine`; this type deliberately mirrors the
+/// settings shape without depending on engine internals.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SandboxConfig {
+    pub enabled: Option<bool>,
+    #[serde(rename = "failIfUnavailable", alias = "fail_if_unavailable")]
+    pub fail_if_unavailable: Option<bool>,
+    #[serde(
+        rename = "autoAllowBashIfSandboxed",
+        alias = "auto_allow_bash_if_sandboxed"
+    )]
+    pub auto_allow_bash_if_sandboxed: Option<bool>,
+    #[serde(
+        rename = "allowUnsandboxedCommands",
+        alias = "allow_unsandboxed_commands"
+    )]
+    pub allow_unsandboxed_commands: Vec<String>,
+    #[serde(rename = "ignoreViolations", alias = "ignore_violations")]
+    pub ignore_violations: Option<bool>,
+    #[serde(
+        rename = "enableWeakerNestedSandbox",
+        alias = "enable_weaker_nested_sandbox"
+    )]
+    pub enable_weaker_nested_sandbox: Option<bool>,
+    #[serde(
+        rename = "enableWeakerNetworkIsolation",
+        alias = "enable_weaker_network_isolation"
+    )]
+    pub enable_weaker_network_isolation: Option<bool>,
+    #[serde(rename = "excludedCommands", alias = "excluded_commands")]
+    pub excluded_commands: Vec<String>,
+    #[serde(rename = "bwrapPath", alias = "bwrap_path")]
+    pub bwrap_path: Option<String>,
+    #[serde(rename = "socatPath", alias = "socat_path")]
+    pub socat_path: Option<String>,
+    pub network: SandboxNetworkConfig,
+    pub filesystem: SandboxFilesystemConfig,
+    pub ripgrep: SandboxRipgrepConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SandboxNetworkConfig {
+    #[serde(rename = "allowedDomains", alias = "allowed_domains")]
+    pub allowed_domains: Vec<String>,
+    #[serde(rename = "deniedDomains", alias = "denied_domains")]
+    pub denied_domains: Vec<String>,
+    #[serde(
+        rename = "allowManagedDomainsOnly",
+        alias = "allow_managed_domains_only"
+    )]
+    pub allow_managed_domains_only: Option<bool>,
+    #[serde(rename = "allowUnixSockets", alias = "allow_unix_sockets")]
+    pub allow_unix_sockets: Option<bool>,
+    #[serde(rename = "allowLocalBinding", alias = "allow_local_binding")]
+    pub allow_local_binding: Option<bool>,
+    #[serde(rename = "httpProxyPort", alias = "http_proxy_port")]
+    pub http_proxy_port: Option<u16>,
+    #[serde(rename = "socksProxyPort", alias = "socks_proxy_port")]
+    pub socks_proxy_port: Option<u16>,
+    #[serde(rename = "tlsTermination", alias = "tls_termination")]
+    pub tls_termination: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SandboxFilesystemConfig {
+    #[serde(rename = "allowWrite", alias = "allow_write")]
+    pub allow_write: Vec<String>,
+    #[serde(rename = "denyWrite", alias = "deny_write")]
+    pub deny_write: Vec<String>,
+    #[serde(rename = "allowRead", alias = "allow_read")]
+    pub allow_read: Vec<String>,
+    #[serde(rename = "denyRead", alias = "deny_read")]
+    pub deny_read: Vec<String>,
+    #[serde(
+        rename = "allowManagedReadPathsOnly",
+        alias = "allow_managed_read_paths_only"
+    )]
+    pub allow_managed_read_paths_only: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SandboxRipgrepConfig {
+    pub command: Option<String>,
+    pub args: Vec<String>,
 }
 
 /// Admin/managed settings. These may be embedded in `config.toml` or loaded
@@ -256,6 +376,10 @@ impl Default for Config {
             exploration: None,
             managed_settings: None,
             isolation: None,
+            worktree: None,
+            sandbox: None,
+            default_shell: None,
+            claude: ClaudeCompatibilityConfig::default(),
             copy_on_select: default_true(),
             refusal_fallback_enabled: default_true(),
             refusal_fallback_model: None,
@@ -312,6 +436,66 @@ pub struct ShellHooksConfig {
     pub stop: Vec<ShellHookEntry>,
     #[serde(rename = "SubagentStop", default)]
     pub subagent_stop: Vec<ShellHookEntry>,
+    /// Fires before the first model turn; hook output injected as context.
+    #[serde(rename = "Setup", default)]
+    pub setup: Vec<ShellHookEntry>,
+    /// Fires when a slash-command expands before prompt submission.
+    #[serde(rename = "UserPromptExpansion", default)]
+    pub user_prompt_expansion: Vec<ShellHookEntry>,
+    /// Fires as assistant text streams; hook can rewrite displayed content.
+    #[serde(rename = "MessageDisplay", default)]
+    pub message_display: Vec<ShellHookEntry>,
+    /// Fires when an MCP server requests structured user input.
+    #[serde(rename = "Elicitation", default)]
+    pub elicitation: Vec<ShellHookEntry>,
+    /// Fires after the user responds to an elicitation.
+    #[serde(rename = "ElicitationResult", default)]
+    pub elicitation_result: Vec<ShellHookEntry>,
+    /// Fires after a batch of tools completes (PostToolBatch).
+    #[serde(rename = "PostToolBatch", default)]
+    pub post_tool_batch: Vec<ShellHookEntry>,
+    /// Fires after context compaction completes.
+    #[serde(rename = "PostCompact", default)]
+    pub post_compact: Vec<ShellHookEntry>,
+    /// Fires when a subagent starts.
+    #[serde(rename = "SubagentStart", default)]
+    pub subagent_start: Vec<ShellHookEntry>,
+    /// Fires when a permission is requested.
+    #[serde(rename = "PermissionRequest", default)]
+    pub permission_request: Vec<ShellHookEntry>,
+    /// Fires when a permission is denied.
+    #[serde(rename = "PermissionDenied", default)]
+    pub permission_denied: Vec<ShellHookEntry>,
+    /// Fires after a task is created (TaskCreated).
+    #[serde(rename = "TaskCreated", default)]
+    pub task_created: Vec<ShellHookEntry>,
+    /// Fires after a task is completed (TaskCompleted).
+    #[serde(rename = "TaskCompleted", default)]
+    pub task_completed: Vec<ShellHookEntry>,
+    /// Fires when a worktree is created.
+    #[serde(rename = "WorktreeCreate", default)]
+    pub worktree_create: Vec<ShellHookEntry>,
+    /// Fires when a worktree is removed.
+    #[serde(rename = "WorktreeRemove", default)]
+    pub worktree_remove: Vec<ShellHookEntry>,
+    /// Fires when configuration changes.
+    #[serde(rename = "ConfigChange", default)]
+    pub config_change: Vec<ShellHookEntry>,
+    /// Fires when instructions/system prompt is loaded.
+    #[serde(rename = "InstructionsLoaded", default)]
+    pub instructions_loaded: Vec<ShellHookEntry>,
+    /// Fires when the working directory changes.
+    #[serde(rename = "CwdChanged", default)]
+    pub cwd_changed: Vec<ShellHookEntry>,
+    /// Fires when a file is changed.
+    #[serde(rename = "FileChanged", default)]
+    pub file_changed: Vec<ShellHookEntry>,
+    /// Fires when a teammate goes idle.
+    #[serde(rename = "TeammateIdle", default)]
+    pub teammate_idle: Vec<ShellHookEntry>,
+    /// Fires when a stop fails.
+    #[serde(rename = "StopFailure", default)]
+    pub stop_failure: Vec<ShellHookEntry>,
 }
 
 /// A single user-defined shell hook entry.
@@ -555,6 +739,16 @@ pub fn mark_config_changed() {
 
 /// Read + parse config from disk, no caching.
 fn load_from(path: &Path) -> Config {
+    let mut cfg = load_toml_from(path);
+    if path == config_path().as_path()
+        && let Ok(project_root) = std::env::current_dir()
+    {
+        claude_settings::apply_to_config(&mut cfg, &project_root);
+    }
+    cfg
+}
+
+fn load_toml_from(path: &Path) -> Config {
     #[cfg(test)]
     READ_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -590,6 +784,15 @@ fn load_from(path: &Path) -> Config {
             Config::default()
         }
     }
+}
+
+/// Load the canonical TOML config plus Claude-compatible JSON settings for a
+/// specific project root. This bypasses the hot cache so tests and daemon
+/// workers can resolve project-local `.claude/settings*.json` deterministically.
+pub fn load_with_project(project_root: &Path) -> Config {
+    let mut cfg = load_toml_from(&config_path());
+    claude_settings::apply_to_config(&mut cfg, project_root);
+    cfg
 }
 
 /// Load config with caching.

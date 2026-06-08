@@ -263,11 +263,19 @@ pub struct ClaudeMdHierarchy {
     pub memory: Option<(PathBuf, String)>,
     /// `<project>/CLAUDE.local.md` — gitignored personal overrides.
     pub local: Option<(PathBuf, String)>,
+    /// Extra roots supplied by CLI/config (`--add-dir`,
+    /// `permissions.additionalDirectories`).
+    pub extra_roots: Vec<(PathBuf, String)>,
 }
 
 impl ClaudeMdHierarchy {
     /// Load every CLAUDE.md layer that exists for the given project root.
     pub fn load(project_root: &Path) -> Self {
+        Self::load_with_extra_roots(project_root, &[])
+    }
+
+    /// Load the project hierarchy plus CLAUDE.md layers from extra roots.
+    pub fn load_with_extra_roots(project_root: &Path, extra_roots: &[PathBuf]) -> Self {
         tracing::info!(target: "jfc::context", project_root = %project_root.display(), "loading CLAUDE.md hierarchy");
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         let cfg = dirs::config_dir().unwrap_or_else(|| home.join(".config"));
@@ -279,6 +287,7 @@ impl ClaudeMdHierarchy {
             rules: read_markdown_dir(&project_root.join(".claude/rules")),
             memory: read_if_exists(&project_root.join("MEMORY.md")),
             local: read_if_exists(&project_root.join("CLAUDE.local.md")),
+            extra_roots: read_extra_root_layers(project_root, extra_roots),
         };
         tracing::debug!(
             target: "jfc::context",
@@ -289,6 +298,7 @@ impl ClaudeMdHierarchy {
             rules = result.rules.len(),
             has_memory = result.memory.is_some(),
             has_local = result.local.is_some(),
+            extra_roots = result.extra_roots.len(),
             "CLAUDE.md hierarchy loaded"
         );
         result
@@ -335,6 +345,9 @@ impl ClaudeMdHierarchy {
                 append_layer(&mut out, label, path, content);
             }
         }
+        for (path, content) in &self.extra_roots {
+            append_layer(&mut out, "Additional directory instructions", path, content);
+        }
         let result = if out.is_empty() { None } else { Some(out) };
         tracing::trace!(
             target: "jfc::context",
@@ -365,6 +378,10 @@ impl ClaudeMdHierarchy {
             let (fm, _body) = parse_claudemd_frontmatter(content);
             tools.extend(fm.disallowed_tools);
         }
+        for (_path, content) in &self.extra_roots {
+            let (fm, _body) = parse_claudemd_frontmatter(content);
+            tools.extend(fm.disallowed_tools);
+        }
         // Deduplicate while preserving order
         let mut seen = std::collections::HashSet::new();
         tools.retain(|t| seen.insert(t.clone()));
@@ -388,6 +405,7 @@ impl ClaudeMdHierarchy {
             || !self.rules.is_empty()
             || self.memory.is_some()
             || self.local.is_some()
+            || !self.extra_roots.is_empty()
     }
 }
 
@@ -414,6 +432,31 @@ fn read_markdown_dir(dir: &Path) -> Vec<(PathBuf, String)> {
         }
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+fn read_extra_root_layers(project_root: &Path, roots: &[PathBuf]) -> Vec<(PathBuf, String)> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for root in roots {
+        let root = if root.is_absolute() {
+            root.clone()
+        } else {
+            project_root.join(root)
+        };
+        for path in [root.join("CLAUDE.md"), root.join(".claude/CLAUDE.md")] {
+            if seen.insert(path.clone())
+                && let Some(layer) = read_if_exists(&path)
+            {
+                out.push(layer);
+            }
+        }
+        for layer in read_markdown_dir(&root.join(".claude/rules")) {
+            if seen.insert(layer.0.clone()) {
+                out.push(layer);
+            }
+        }
+    }
     out
 }
 pub fn build_system_prompt(claude_md: Option<&str>) -> Option<String> {
@@ -668,6 +711,31 @@ mod tests {
         assert!(rendered.contains("SECURITY_RULES"));
         assert!(rendered.contains("MEMORY_INDEX"));
         assert!(rendered.contains("LOCAL_RULES"));
+    }
+
+    #[test]
+    fn hierarchy_load_with_extra_roots_reads_context_and_frontmatter_normal() {
+        let dir = TempDir::new().expect("tempdir");
+        let root = dir.path();
+        let extra = root.join("shared");
+        fs::create_dir_all(extra.join(".claude/rules")).expect("extra rules");
+        fs::write(
+            extra.join("CLAUDE.md"),
+            "---\ndisallowed-tools: Bash\n---\nSHARED_RULES",
+        )
+        .expect("extra claude");
+        fs::write(extra.join(".claude/rules/api.md"), "API_RULES").expect("extra rule");
+
+        let h = ClaudeMdHierarchy::load_with_extra_roots(root, &[PathBuf::from("shared")]);
+        assert_eq!(h.extra_roots.len(), 2);
+        let rendered = h.render().expect("renders");
+        assert!(rendered.contains("SHARED_RULES"));
+        assert!(rendered.contains("API_RULES"));
+        assert!(
+            h.collect_disallowed_tools()
+                .iter()
+                .any(|tool| tool == "Bash")
+        );
     }
 
     // Normal: build_system_prompt returns the trimmed input when non-empty.

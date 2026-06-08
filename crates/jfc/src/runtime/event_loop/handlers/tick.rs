@@ -9,11 +9,11 @@
 use std::sync::Arc;
 
 use crate::app::App;
-use jfc_engine::providers::AnthropicOAuthProvider;
 use crate::runtime::{
     ControlEvent, EngineEvent, EventSender, ProviderEvent, TeamEvent, maybe_continue_task_factory,
     read_git_branch_from_root, sync_detached_background_tasks_from_daemon,
 };
+use jfc_engine::providers::AnthropicOAuthProvider;
 use jfc_engine::toast;
 
 use jfc_engine::runtime::event_loop::guards::{CONFIG_RELOAD_REMINDER, MCP_REFRESH_REMINDER};
@@ -35,7 +35,8 @@ pub(crate) async fn handle_tick(
     {
         let now = std::time::Instant::now();
         let turn_active = app.engine.turn_started_at.is_some() || app.engine.is_streaming;
-        let thinking_live = app.engine.thinking_started_at.is_some() && app.engine.thinking_ended_at.is_none();
+        let thinking_live =
+            app.engine.thinking_started_at.is_some() && app.engine.thinking_ended_at.is_none();
         if !turn_active {
             // Turn fully ended — reset the per-turn thinking clock so the next
             // turn re-measures its own minimum-thinking-display window.
@@ -121,7 +122,8 @@ pub(crate) async fn handle_tick(
         && let Some(started) = app.engine.streaming_started_at
     {
         let elapsed = started.elapsed();
-        let thinking_live = app.engine.thinking_started_at.is_some() && app.engine.thinking_ended_at.is_none();
+        let thinking_live =
+            app.engine.thinking_started_at.is_some() && app.engine.thinking_ended_at.is_none();
         let count = if thinking_live {
             app.engine.streaming_thinking_tokens
         } else {
@@ -130,7 +132,8 @@ pub(crate) async fn handle_tick(
             // events, which the windowed rate handles fine.
             app.engine.turn_output_tokens
         };
-        if app.engine
+        if app
+            .engine
             .token_rate_samples
             .back()
             .is_some_and(|&(_, last)| count < last)
@@ -146,7 +149,8 @@ pub(crate) async fn handle_tick(
     // EngineEvent channel back to the UI). Re-read once a
     // second so the fan row shows live tool/token counts
     // instead of frozen zeros.
-    let detached_sync_due = app.engine
+    let detached_sync_due = app
+        .engine
         .last_detached_sync_at
         .map(|t| t.elapsed() >= std::time::Duration::from_secs(1))
         .unwrap_or(true);
@@ -272,7 +276,8 @@ pub(crate) async fn handle_tick(
     // so the ribbon shows up-to-date 5h/7d utilization and the
     // active rate-limit claim. The manager call locks a mutex,
     // so we throttle and run it on a background task.
-    let needs_refresh = app.engine
+    let needs_refresh = app
+        .engine
         .anthropic_snapshot_refreshed_at
         .map(|t| t.elapsed().as_secs() >= 10)
         .unwrap_or(true);
@@ -334,13 +339,15 @@ pub(crate) async fn handle_tick(
     // don't care about the result — short-circuit logic
     // would block the UI thread.
     let now = std::time::Instant::now();
-    let heartbeat_due = app.engine
+    let heartbeat_due = app
+        .engine
         .last_heartbeat_at
         .map(|t| now.duration_since(t).as_secs() >= 30)
         .unwrap_or(true);
     if heartbeat_due {
         app.engine.last_heartbeat_at = Some(now);
-        let session_id = app.engine
+        let session_id = app
+            .engine
             .current_session_id
             .as_ref()
             .map(|s| s.as_str().to_owned())
@@ -403,7 +410,8 @@ pub(crate) async fn handle_tick(
     let cur_fw = crate::file_watcher::change_counter();
     if cur_fw > app.engine.last_file_watcher_seen {
         app.engine.last_file_watcher_seen = cur_fw;
-        let already_queued = app.engine
+        let already_queued = app
+            .engine
             .pending_background_reminders
             .iter()
             .any(|body| body == CONFIG_RELOAD_REMINDER);
@@ -444,7 +452,8 @@ pub(crate) async fn handle_tick(
     app.engine.resolve_git_root();
     let is_git = matches!(app.engine.git_root, Some(Some(_)));
     let due = is_git
-        && app.engine
+        && app
+            .engine
             .worktree_count_last_refresh
             .map(|t| now.duration_since(t).as_millis() >= 10_000)
             .unwrap_or(true);
@@ -477,14 +486,17 @@ pub(crate) async fn handle_tick(
                 }
             };
             let _ = tx
-                .send(EngineEvent::Control(ControlEvent::WorktreeCountLoaded(count)))
+                .send(EngineEvent::Control(ControlEvent::WorktreeCountLoaded(
+                    count,
+                )))
                 .await;
         });
     }
 
     // Git branch refresh — every 5s from cached git root.
     let git_due = is_git
-        && app.engine
+        && app
+            .engine
             .git_branch_last_refresh
             .map(|t| now.duration_since(t).as_millis() >= 5_000)
             .unwrap_or(true);
@@ -510,7 +522,8 @@ pub(crate) async fn handle_tick(
         let mode = app.engine.permission_mode;
         let tx_swarm = tx.clone();
         tokio::spawn(async move {
-            let pending = jfc_engine::swarm::permission_sync::read_pending_permissions(&team_name).await;
+            let pending =
+                jfc_engine::swarm::permission_sync::read_pending_permissions(&team_name).await;
             for req in pending {
                 if !matches!(
                     req.status,

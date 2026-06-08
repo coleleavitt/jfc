@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 
 mod approval;
 mod editing;
+mod elicitation;
 mod key_dispatch;
 mod mentions;
 mod modal_handlers;
@@ -14,9 +15,9 @@ mod palette;
 mod question;
 mod session_picker;
 mod slash_commands;
-mod view_commands;
 mod submit;
 mod theme_picker;
+mod view_commands;
 pub(crate) mod vim;
 
 #[cfg(test)]
@@ -43,7 +44,7 @@ use jfc_core::*;
 
 // Re-export the public functions from sub-modules
 pub use key_dispatch::handle_key;
-pub(crate) use slash_commands::slash_commands_table;
 pub use slash_commands::run_slash_command;
+pub(crate) use slash_commands::slash_commands_table;
 pub use slash_commands::url_encode;
 pub use submit::handle_submit_text;

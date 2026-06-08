@@ -55,26 +55,45 @@ impl fmt::Display for MemoryLevel {
     }
 }
 
-/// Semantic type of a memory (mirrors v126 memory taxonomy).
+/// Semantic type of a memory — mirrors CC 2.1.167's four-type taxonomy.
+///
+/// | Type       | Scope default | When to save |
+/// |------------|---------------|--------------|
+/// | `user`     | always private | Role, expertise, preferences |
+/// | `feedback` | private (team if project-wide convention) | Corrections AND confirmed approaches |
+/// | `project`  | strongly team | Ongoing work, deadlines, decisions not in code/git |
+/// | `reference` | usually team | Pointers to external systems |
+///
+/// Legacy types `preference` and `context` are preserved as aliases for
+/// backward-compatibility with existing memory files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MemoryType {
+    /// User's role, expertise, working preferences. Always private.
+    User,
     /// Corrections and confirmations of approach.
+    /// Body: lead with rule, then **Why:** + **How to apply:** lines.
     Feedback,
-    /// Stylistic / workflow preferences.
-    Preference,
-    /// Project-specific facts, goals, initiatives.
+    /// Ongoing work, goals, decisions not derivable from code/git.
+    /// Body: lead with fact/decision, then **Why:** + **How to apply:** lines.
+    /// Always convert relative dates to absolute ISO dates ("Thursday" → "2026-06-08").
     Project,
-    /// General context or learned facts.
+    /// Pointers to external systems (issue tracker, Grafana, Slack channel).
+    Reference,
+    /// Legacy: stylistic / workflow preferences (alias for `user`).
+    Preference,
+    /// Legacy: general context or learned facts (alias for `project`).
     Context,
 }
 
 impl fmt::Display for MemoryType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::User => write!(f, "user"),
             Self::Feedback => write!(f, "feedback"),
-            Self::Preference => write!(f, "preference"),
             Self::Project => write!(f, "project"),
+            Self::Reference => write!(f, "reference"),
+            Self::Preference => write!(f, "preference"),
             Self::Context => write!(f, "context"),
         }
     }
@@ -84,11 +103,13 @@ impl std::str::FromStr for MemoryType {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
+            "user" => Ok(Self::User),
             "feedback" => Ok(Self::Feedback),
-            "preference" => Ok(Self::Preference),
             "project" => Ok(Self::Project),
-            "context" => Ok(Self::Context),
-            other => Err(format!("unknown memory type: {other}")),
+            "reference" | "ref" => Ok(Self::Reference),
+            "preference" | "pref" => Ok(Self::Preference),
+            "context" | "ctx" => Ok(Self::Context),
+            other => Err(format!("unknown memory type: {other}. Use: user, feedback, project, reference")),
         }
     }
 }
@@ -407,6 +428,43 @@ fn parse_frontmatter_and_body(content: &str) -> Result<(MemoryFrontmatter, Strin
     Ok((frontmatter, body))
 }
 
+/// Result of attempting to create a memory, including optional conflict info.
+#[derive(Debug, Clone)]
+pub struct CreateMemoryResult {
+    /// Path of the newly-created memory file.
+    pub path: PathBuf,
+    /// A conflicting (near-duplicate) memory file found before saving, if any.
+    /// Mirrors CC 2.1.167's `conflicting_memory_id` field.
+    pub conflicting_memory_id: Option<PathBuf>,
+}
+
+/// Create a memory and return conflict info alongside the new path.
+///
+/// Checks existing memories in the same directory for near-duplicate content
+/// (>50% word overlap) before writing. Returns `conflicting_memory_id` so the
+/// caller can decide whether to delete the old file or merge content.
+pub fn create_memory_checked(
+    level: MemoryLevel,
+    memory_type: MemoryType,
+    scope: MemoryScope,
+    body: &str,
+    project_root: &Path,
+) -> Result<CreateMemoryResult, String> {
+    let dir = memory_dir_for(level, project_root);
+    let conflicting = find_conflicting_memory(&dir, body);
+    let path = write_memory_file(&dir, memory_type, scope, body)?;
+    tracing::info!(
+        target: "jfc::memory",
+        path = %path.display(),
+        conflicting = ?conflicting.as_ref().map(|p: &PathBuf| p.display().to_string()),
+        level = %level,
+        memory_type = %memory_type,
+        scope = %scope,
+        "created memory (with conflict check)"
+    );
+    Ok(CreateMemoryResult { path, conflicting_memory_id: conflicting })
+}
+
 /// Create a new memory file. Returns the path of the created file.
 pub fn create_memory(
     level: MemoryLevel,
@@ -415,17 +473,40 @@ pub fn create_memory(
     body: &str,
     project_root: &Path,
 ) -> Result<PathBuf, String> {
-    let dir = match level {
+    let dir = memory_dir_for(level, project_root);
+    let path = write_memory_file(&dir, memory_type, scope, body)?;
+    tracing::info!(
+        target: "jfc::memory",
+        path = %path.display(),
+        level = %level,
+        memory_type = %memory_type,
+        scope = %scope,
+        "created memory"
+    );
+    Ok(path)
+}
+
+/// Resolve the memory directory for a given level.
+fn memory_dir_for(level: MemoryLevel, project_root: &Path) -> PathBuf {
+    match level {
         MemoryLevel::User => user_memory_dir(),
         MemoryLevel::Project => project_memory_dir(project_root),
         MemoryLevel::Team => team_memory_dir(project_root),
         MemoryLevel::External => project_memory_dir(project_root),
-    };
+    }
+}
 
+/// Write a single memory `.md` file into `dir`. Returns the path.
+fn write_memory_file(
+    dir: &Path,
+    memory_type: MemoryType,
+    scope: MemoryScope,
+    body: &str,
+) -> Result<PathBuf, String> {
     // Ensure directory exists
-    std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create memory directory: {e}"))?;
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("failed to create memory directory: {e}"))?;
 
-    // Generate a filename based on timestamp + a slug from the body
     let now: DateTime<Utc> = SystemTime::now().into();
     let slug = slugify(body, 40);
     let timestamp = now.format("%Y%m%d-%H%M%S");
@@ -435,7 +516,7 @@ pub fn create_memory(
     // Render frontmatter + body
     let content = format!(
         "---\ntype: {memory_type}\nscope: {scope}\ncreated: {}\n---\n{body}\n",
-        now.to_rfc3339()
+        now.format("%Y-%m-%d")
     );
 
     // Atomic write — a power loss while saving the memory file would
@@ -445,16 +526,68 @@ pub fn create_memory(
     write_atomic_sync(&path, content.as_bytes())
         .map_err(|e| format!("failed to write memory file: {e}"))?;
 
-    tracing::info!(
-        target: "jfc::memory",
-        path = %path.display(),
-        level = %level,
-        memory_type = %memory_type,
-        scope = %scope,
-        "created memory"
-    );
-
     Ok(path)
+}
+
+/// Find an existing memory in `dir` whose content significantly overlaps
+/// with `new_body`. Returns the path of the conflicting file if found.
+///
+/// Uses simple word-overlap: if >50% of the words in `new_body` appear in
+/// the existing memory's body, it's considered a near-duplicate.
+/// This is the same heuristic CC uses via `conflicting_memory_id`.
+fn find_conflicting_memory(dir: &Path, new_body: &str) -> Option<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return None };
+    let new_words = word_set(new_body);
+    if new_words.is_empty() {
+        return None;
+    }
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        let body = strip_frontmatter(&content);
+        let existing_words = word_set(body);
+        // Count how many of the new body's words appear in the existing memory
+        let overlap = new_words
+            .iter()
+            .filter(|w| existing_words.contains(*w))
+            .count();
+        let overlap_ratio = overlap as f64 / new_words.len() as f64;
+        if overlap_ratio > 0.5 {
+            tracing::debug!(
+                target: "jfc::memory",
+                path = %path.display(),
+                overlap_ratio,
+                "found near-duplicate memory"
+            );
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Extract the body portion of a memory file (after the `---` front-matter block).
+fn strip_frontmatter(content: &str) -> &str {
+    // Skip the opening `---`
+    let after_first = content.strip_prefix("---").map(|s| s.trim_start_matches('\n'));
+    let Some(rest) = after_first else { return content };
+    // Find the closing `---`
+    if let Some(pos) = rest.find("\n---") {
+        rest[pos + 4..].trim_start_matches('\n')
+    } else {
+        content
+    }
+}
+
+/// Build a set of normalized words for overlap comparison.
+fn word_set(text: &str) -> std::collections::HashSet<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 4) // skip short stop words
+        .map(|w| w.to_lowercase())
+        .collect()
 }
 
 /// Delete a memory file by path.
@@ -622,10 +755,80 @@ pub fn render_memories_section(memories: &[MemoryEntry]) -> Option<String> {
     Some(out)
 }
 
-/// v132-mirrored guidance on when/how to use memory. Appended to the
-/// memories section so the model has the same usage rules whether or
-/// not the memory file lives in user/project/team scope.
+/// CC 2.1.167-mirrored guidance on when/how to use and save memory.
+/// Appended to the memories section so the model has the same rules
+/// regardless of which scope a memory lives in.
 const MEMORY_USAGE_SECTIONS: &str = "\n\
+## Types of memory\n\n\
+There are four types of memory, each with a default scope:\n\n\
+<types>\n\
+<type>\n\
+    <name>user</name>\n\
+    <scope>always private</scope>\n\
+    <description>The user's role, goals, expertise, and working preferences. \
+Helps you tailor future responses to who the user is. Avoid judgmental observations; \
+focus on what makes you more helpful to them specifically.</description>\n\
+    <when_to_save>When you learn details about the user's role, domain expertise, or preferences.</when_to_save>\n\
+    <how_to_use>When your answer should be tailored to the user's background — \
+e.g., frame a frontend explanation in terms of their backend expertise.</how_to_use>\n\
+</type>\n\
+<type>\n\
+    <name>feedback</name>\n\
+    <scope>default private; team only when the guidance is a project-wide convention \
+every contributor should follow (a testing policy, a build invariant) — not a personal style preference.</scope>\n\
+    <description>Guidance the user has given about how to approach work — corrections \
+AND confirmations. Record both: if you only save corrections you avoid past mistakes but \
+drift away from validated approaches and grow overly cautious.</description>\n\
+    <when_to_save>Any time the user corrects your approach (\"no not that\", \"don't\", \
+\"stop doing X\") OR confirms a non-obvious approach worked (\"yes exactly\", \"perfect, keep doing that\", \
+accepting an unusual choice without pushback). Confirmations are quieter than corrections — watch for them. \
+Include *why* so future sessions can judge edge cases.</when_to_save>\n\
+    <how_to_use>Let these memories guide behavior so the user does not need to repeat the same guidance.</how_to_use>\n\
+    <body_structure>Lead with the rule itself, then a **Why:** line (the reason given — often a past incident \
+or strong preference) and a **How to apply:** line (when/where this kicks in).</body_structure>\n\
+</type>\n\
+<type>\n\
+    <name>project</name>\n\
+    <scope>strongly bias toward team</scope>\n\
+    <description>Ongoing work, goals, initiatives, decisions, and incidents not derivable \
+from the code or git history. Helps understand the broader context behind the user's requests.</description>\n\
+    <when_to_save>When you learn who is doing what, why, or by when. These states change quickly — \
+keep your understanding up to date. **Always convert relative dates to absolute ISO dates** \
+(e.g., \"Thursday\" → \"2026-06-08\") so memories remain interpretable after time passes.</when_to_save>\n\
+    <how_to_use>Use to understand nuance and motivation, anticipate coordination issues, make better suggestions.</how_to_use>\n\
+    <body_structure>Lead with the fact or decision, then a **Why:** line (motivation — constraint, \
+deadline, or stakeholder ask) and a **How to apply:** line. Project memories decay fast, so the why \
+helps judge whether the memory is still load-bearing.</body_structure>\n\
+</type>\n\
+<type>\n\
+    <name>reference</name>\n\
+    <scope>usually team</scope>\n\
+    <description>Pointers to where information can be found in external systems — \
+issue trackers, dashboards, Slack channels, runbooks.</description>\n\
+    <when_to_save>When you learn about a resource in an external system and its purpose.</when_to_save>\n\
+    <how_to_use>When the user references an external system or information that may live there.</how_to_use>\n\
+</type>\n\
+</types>\n\n\
+## How to save memories\n\n\
+Write each memory to its own file. Use a 3–4 word filename that describes what the memory is about \
+(e.g., `prefers-bun-over-npm.md`, `compliance-driven-rewrite.md`). Don't prefix the filename with the \
+memory type — that's already in the frontmatter. Use this frontmatter format:\n\n\
+```\n\
+---\n\
+type: feedback      # user | feedback | project | reference\n\
+scope: private      # private | team\n\
+created: 2026-06-08\n\
+---\n\
+Lead with rule/fact. **Why:** reason. **How to apply:** when this kicks in.\n\
+```\n\n\
+- **One fact per file.** Each memory file contains one paragraph about a single fact. \
+Multiple facts → separate files. A very long paragraph is a sign you should split it.\n\
+- **Immutable.** Never edit a memory file in place. Delete the stale file and create a fresh one. \
+Preserve any information that is still accurate.\n\
+- **No duplicates.** Before saving, check existing memories. Update the existing file rather than \
+creating a duplicate; delete memories that turn out to be wrong.\n\
+- **After writing**, add a one-line pointer to `MEMORY.md`: `- [Title](file.md) — one-line hook`. \
+`MEMORY.md` is the index loaded into context — never put memory content directly in it.\n\n\
 ## Memory scope\n\
 - **User** — global to this user across all projects.\n\
 - **Project** — scoped to this working tree (`.jfc/memory/project/`).\n\
@@ -642,11 +845,12 @@ A memory that names a specific function, file, or flag is a claim that it existe
 - If the user is about to act on your recommendation (not just asking about history), verify first.\n\n\
 \"The memory says X exists\" is not the same as \"X exists now.\"\n\n\
 ## What NOT to save\n\
-- Code patterns, conventions, architecture, file paths, or project structure — these can be derived by reading the current project state.\n\
+- Code patterns, conventions, architecture, file paths, or project structure — derivable from reading the current codebase.\n\
 - Git history, recent changes, or who-changed-what — `git log` / `git blame` are authoritative.\n\
 - Debugging solutions or fix recipes — the fix is in the code; the commit message has the context.\n\
 - Anything already documented in CLAUDE.md files.\n\
-- Ephemeral task details: in-progress work, temporary state, current conversation context.\n";
+- Ephemeral task details: in-progress work, temporary state, current conversation context.\n\
+- These exclusions apply even when the user asks you to save them. If they ask you to save a PR list or activity summary, ask what was *surprising* or *non-obvious* about it — that is the part worth keeping.\n";
 
 fn render_memory_entry(mem: &MemoryEntry, out: &mut String) {
     let filename = mem
@@ -897,6 +1101,95 @@ mod tests {
         assert!(rendered.contains("User memories"));
         assert!(rendered.contains("Prefer concise responses"));
         assert!(rendered.contains("[preference|private]"));
+    }
+
+    #[test]
+    #[test]
+    fn new_memory_types_parse_normal() {
+        assert_eq!("user".parse::<MemoryType>().unwrap(), MemoryType::User);
+        assert_eq!("reference".parse::<MemoryType>().unwrap(), MemoryType::Reference);
+        assert_eq!("ref".parse::<MemoryType>().unwrap(), MemoryType::Reference);
+        assert_eq!("feedback".parse::<MemoryType>().unwrap(), MemoryType::Feedback);
+    }
+
+    #[test]
+    fn memory_type_display_normal() {
+        assert_eq!(MemoryType::User.to_string(), "user");
+        assert_eq!(MemoryType::Reference.to_string(), "reference");
+    }
+
+    #[test]
+    fn memory_types_section_in_guidance_normal() {
+        // All four CC types must appear in the memory usage guidance
+        assert!(MEMORY_USAGE_SECTIONS.contains("user"));
+        assert!(MEMORY_USAGE_SECTIONS.contains("feedback"));
+        assert!(MEMORY_USAGE_SECTIONS.contains("project"));
+        assert!(MEMORY_USAGE_SECTIONS.contains("reference"));
+    }
+
+    #[test]
+    fn date_absolutization_guidance_present_normal() {
+        assert!(MEMORY_USAGE_SECTIONS.contains("absolute ISO dates"));
+        assert!(MEMORY_USAGE_SECTIONS.contains("Thursday"));
+    }
+
+    #[test]
+    fn confirmations_guidance_present_normal() {
+        // CC: record confirmations too, not just corrections
+        assert!(MEMORY_USAGE_SECTIONS.contains("confirmations"));
+        assert!(MEMORY_USAGE_SECTIONS.contains("corrections AND confirmations"));
+    }
+
+    #[test]
+    fn immutability_and_granularity_present_normal() {
+        assert!(MEMORY_USAGE_SECTIONS.contains("Immutable"));
+        assert!(MEMORY_USAGE_SECTIONS.contains("One fact per file"));
+    }
+
+    #[test]
+    fn memory_md_index_guidance_present_normal() {
+        assert!(MEMORY_USAGE_SECTIONS.contains("MEMORY.md"));
+        assert!(MEMORY_USAGE_SECTIONS.contains("one-line pointer"));
+    }
+
+    #[test]
+    fn no_duplicates_guidance_present_normal() {
+        assert!(MEMORY_USAGE_SECTIONS.contains("No duplicates"));
+    }
+
+    #[test]
+    fn body_structure_guidance_present_normal() {
+        assert!(MEMORY_USAGE_SECTIONS.contains("Why:"));
+        assert!(MEMORY_USAGE_SECTIONS.contains("How to apply:"));
+    }
+
+    #[test]
+    fn find_conflicting_memory_detects_duplicate_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        // Write an existing memory
+        let existing = dir.path().join("existing.md");
+        std::fs::write(
+            &existing,
+            "---\ntype: feedback\nscope: private\ncreated: 2026-01-01\n---\nintegration tests must use a real database not mocks\n",
+        ).unwrap();
+        // A body with >50% word overlap
+        let similar = "integration tests must hit a real database and not use mocks";
+        let conflict = find_conflicting_memory(dir.path(), similar);
+        assert!(conflict.is_some(), "should detect near-duplicate");
+    }
+
+    #[test]
+    fn find_conflicting_memory_no_false_positive_robust() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("existing.md");
+        std::fs::write(
+            &existing,
+            "---\ntype: project\nscope: team\ncreated: 2026-01-01\n---\nauth middleware rewrite is driven by compliance\n",
+        ).unwrap();
+        // Unrelated body
+        let unrelated = "prefer bun over npm for javascript package management";
+        let conflict = find_conflicting_memory(dir.path(), unrelated);
+        assert!(conflict.is_none(), "should not flag unrelated memory");
     }
 
     #[test]

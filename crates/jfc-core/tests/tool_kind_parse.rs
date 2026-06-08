@@ -1,6 +1,4 @@
-
 use jfc_core::ToolKind;
-
 
 mod tests {
     use super::*;
@@ -40,6 +38,37 @@ mod tests {
         assert!(matches!(
             ToolKind::from_name("toolsuggest"),
             ToolKind::ToolSuggest
+        ));
+    }
+
+    #[test]
+    fn from_name_resolves_claude_task_output_aliases_regression() {
+        for name in [
+            "TaskOutput",
+            "TaskOutputTool",
+            "AgentOutput",
+            "AgentOutputTool",
+            "BashOutput",
+            "BashOutputTool",
+            "bash_output",
+        ] {
+            assert!(
+                matches!(ToolKind::from_name(name), ToolKind::BashOutput),
+                "expected BashOutput for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_name_resolves_claude_tool_suffix_aliases_normal() {
+        assert!(matches!(ToolKind::from_name("LSPTool"), ToolKind::Lsp));
+        assert!(matches!(
+            ToolKind::from_name("ListMcpResourcesTool"),
+            ToolKind::ListMcpResources
+        ));
+        assert!(matches!(
+            ToolKind::from_name("ReadMcpResourceTool"),
+            ToolKind::ReadMcpResource
         ));
     }
 

@@ -9,8 +9,8 @@ use tokio::sync::mpsc;
 
 use crate::app::App;
 use crate::render::session_picker::filtered_sessions;
-use crate::runtime::{EngineEvent, send_critical};
 use crate::runtime::ControlEvent;
+use crate::runtime::{EngineEvent, send_critical};
 
 pub(super) fn open_session_picker(app: &mut App) {
     app.show_session_picker = true;

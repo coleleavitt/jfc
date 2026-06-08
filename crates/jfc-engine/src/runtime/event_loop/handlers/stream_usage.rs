@@ -151,8 +151,8 @@ pub fn handle_stream_usage(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use crate::app::EngineState;
+    use std::sync::Arc;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 

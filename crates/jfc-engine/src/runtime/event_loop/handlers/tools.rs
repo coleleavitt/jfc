@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::app::EngineState;
 use crate::runtime::{
-    EngineEvent, CompactionEvent, EventSender, dispatch_goal_evaluator_if_active,
+    CompactionEvent, EngineEvent, EventSender, dispatch_goal_evaluator_if_active,
     drain_queued_prompts, maybe_continue_task_factory,
 };
 use crate::types::*;
@@ -66,7 +66,9 @@ pub fn handle_tool_result(
         output_len = result.output.len(),
         "tool_result received"
     );
-    state.exploration_state.record_tool_result(result.is_error());
+    state
+        .exploration_state
+        .record_tool_result(result.is_error());
     let _ = tx.try_send(EngineEvent::Tool(
         crate::runtime::ToolEvent::SetInProgressToolUseIds {
             action: "remove".to_owned(),
@@ -205,7 +207,11 @@ pub fn handle_tool_result(
     // the 650+ disk writes per agentic run observed in profiling.
 }
 
-pub fn handle_set_in_progress_tool_use_ids(state: &mut EngineState, action: String, ids: Vec<String>) {
+pub fn handle_set_in_progress_tool_use_ids(
+    state: &mut EngineState,
+    action: String,
+    ids: Vec<String>,
+) {
     tracing::debug!(
         target: "jfc::tool_state",
         action = %action,
@@ -247,7 +253,8 @@ pub fn handle_tool_use_summary(
 }
 
 fn last_assistant_has_unresolved_tool(state: &EngineState) -> bool {
-    state.messages
+    state
+        .messages
         .iter()
         .rev()
         .find(|msg| msg.role == Role::Assistant)
@@ -689,7 +696,9 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
     // visibly stalls. From the v126 log: 5 bash tools synthesized
     // then conversation died after first approval. Holding the
     // continuation here lets the user finish all approvals first.
-    if state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+    if state
+        .interrupt_flag
+        .load(std::sync::atomic::Ordering::SeqCst)
         || state.cancel_token.is_cancelled()
     {
         tracing::info!(
@@ -699,7 +708,8 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
         // Clear so the next user submission starts fresh —
         // both the legacy flag and the (possibly cancelled)
         // token need refreshing for the next spawn cycle.
-        state.interrupt_flag
+        state
+            .interrupt_flag
             .store(false, std::sync::atomic::Ordering::SeqCst);
         state.cancel_token = tokio_util::sync::CancellationToken::new();
         state.is_streaming = false;
@@ -843,8 +853,8 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Instant};
     use crate::app::EngineState;
+    use std::{sync::Arc, time::Instant};
 
     use super::*;
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
@@ -886,7 +896,8 @@ mod tests {
         let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
         state.task_store = jfc_session::TaskStore::in_memory();
         state.messages.push(ChatMessage::user("run tool".into()));
-        state.messages
+        state
+            .messages
             .push(ChatMessage::assistant_parts(vec![MessagePart::tool(tool)]));
         state.turn_started_at = Some(Instant::now());
         state.is_streaming = false;
@@ -911,7 +922,8 @@ mod tests {
         let (mut state, tool_id) = test_app_with_tool(ToolStatus::Pending);
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        handle_tool_result(&mut state,
+        handle_tool_result(
+            &mut state,
             &tx,
             tool_id,
             crate::runtime::ExecutionResult::success("ok"),
@@ -928,7 +940,8 @@ mod tests {
             tool.output = ToolOutput::Text("Denied by permission mode".to_owned());
         }
 
-        handle_tool_result(&mut state,
+        handle_tool_result(
+            &mut state,
             &tx,
             tool_id,
             crate::runtime::ExecutionResult::success("late stale result"),
@@ -947,7 +960,8 @@ mod tests {
     #[test]
     fn set_in_progress_tool_use_ids_updates_state_normal() {
         let (mut state, _tool_id) = test_app_with_tool(ToolStatus::Pending);
-        handle_deferred_tool_use(&mut state,
+        handle_deferred_tool_use(
+            &mut state,
             "tool-1".into(),
             "Bash".into(),
             "ls".into(),

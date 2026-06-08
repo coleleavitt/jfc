@@ -1,5 +1,3 @@
-
-
 use super::App;
 
 impl App {
@@ -7,7 +5,8 @@ impl App {
     /// Called once per tick so the tick task can adjust its sleep interval.
     pub fn update_wants_animation_frame(&self) {
         use std::sync::atomic::Ordering;
-        let any_alive_background = self.engine
+        let any_alive_background = self
+            .engine
             .background_tasks
             .values()
             .any(|bt| bt.status.is_alive());
@@ -29,7 +28,8 @@ impl App {
             || turn_active
             || any_alive_background
             || self.scroll_velocity.abs() > 0.5
-            || self.engine
+            || self
+                .engine
                 .toasts
                 .iter()
                 .any(|t| !t.is_expired_at(std::time::Instant::now()));
@@ -59,7 +59,8 @@ impl App {
         // then rough-estimate any messages added AFTER it (user prompts, tool
         // results). This prevents the gap between API calls where the gauge
         // reads 0 or stale for newly-added messages.
-        let last_usage_idx = self.engine
+        let last_usage_idx = self
+            .engine
             .messages
             .iter()
             .enumerate()
@@ -87,7 +88,8 @@ impl App {
             // long prompt during a streaming turn would visibly bump
             // the context gauge even though that text isn't part of
             // the current prompt.
-            let unqueued: Vec<jfc_core::ChatMessage> = self.engine
+            let unqueued: Vec<jfc_core::ChatMessage> = self
+                .engine
                 .messages
                 .iter()
                 .filter(|m| !m.queued)
@@ -177,7 +179,4 @@ impl App {
     fn half_page(&self) -> usize {
         (self.viewport_height / 2).max(1)
     }
-
 }
-
-

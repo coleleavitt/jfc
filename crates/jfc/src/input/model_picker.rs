@@ -38,7 +38,8 @@ pub(super) fn handle_model_picker_key(app: &mut App, key: crossterm::event::KeyE
                     old_max_context_tokens = old_max_ctx,
                     "model switch initiated from picker"
                 );
-                if let Some(p) = app.engine
+                if let Some(p) = app
+                    .engine
                     .providers
                     .iter()
                     .find(|p| chosen_provider_name == p.name())
@@ -46,7 +47,8 @@ pub(super) fn handle_model_picker_key(app: &mut App, key: crossterm::event::KeyE
                     app.engine.provider = Arc::clone(p);
                 }
                 app.engine.model = chosen_id.clone();
-                let recent_model = crate::qualified_model_id(app.engine.provider.as_ref(), &chosen_id);
+                let recent_model =
+                    crate::qualified_model_id(app.engine.provider.as_ref(), &chosen_id);
                 crate::app::push_recent_model(&mut app.engine.recent_models, &recent_model);
                 app.engine.sync_selected_context_window();
                 close_model_picker(app);

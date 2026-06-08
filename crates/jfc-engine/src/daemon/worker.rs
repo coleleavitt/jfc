@@ -113,7 +113,12 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
                 .find(|provider| provider.name() == name)
                 .cloned()
         })
-        .or_else(|| crate::runtime::bootstrap::provider_for_model(&provider_init.providers, launch.model.as_str()))
+        .or_else(|| {
+            crate::runtime::bootstrap::provider_for_model(
+                &provider_init.providers,
+                launch.model.as_str(),
+            )
+        })
         .unwrap_or_else(|| provider_init.providers[provider_init.active_idx].clone());
 
     record_background_agent_started_at(

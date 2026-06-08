@@ -20,7 +20,8 @@ pub(super) async fn cmd_workflow(
     let rest: String = sub.collect::<Vec<_>>().join(" ");
     match verb {
         "" | "list" => {
-            state.messages
+            state
+                .messages
                 .push(ChatMessage::assistant(render_workflow_listing(state, &cwd)));
         }
         "run" => {
@@ -150,7 +151,8 @@ pub(super) async fn cmd_workflow(
                 .collect();
 
             if tasks.is_empty() {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant("No active workflow tasks.".into()));
                 return;
             }

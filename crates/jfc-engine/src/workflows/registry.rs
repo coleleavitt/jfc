@@ -74,30 +74,59 @@ fn workflow_dir_for_plugin_root(path: &Path) -> PathBuf {
     }
 }
 
+fn plugin_name_for_root(path: &Path) -> Option<String> {
+    let manifest_path = path.join(".jfc-plugin.toml");
+    if let Ok(text) = std::fs::read_to_string(&manifest_path)
+        && let Ok(manifest) = toml::from_str::<PluginManifest>(&text)
+    {
+        return Some(manifest.plugin.name);
+    }
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.starts_with('.'))
+        .map(str::to_owned)
+}
+
 pub fn plugin_workflow_dirs_for(project_root: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
+    let settings = crate::config::claude_settings::load_merged(project_root);
     if let Some(home) = dirs::home_dir() {
-        push_plugin_workflow_dirs_in(&home.join(".claude/plugins"), &mut dirs);
+        push_plugin_workflow_dirs_in(&home.join(".claude/plugins"), &settings, &mut dirs);
     }
     if let Some(config) = dirs::config_dir() {
-        push_plugin_workflow_dirs_in(&config.join("jfc/plugins"), &mut dirs);
+        push_plugin_workflow_dirs_in(&config.join("jfc/plugins"), &settings, &mut dirs);
     }
-    push_plugin_workflow_dirs_in(&project_root.join("plugins"), &mut dirs);
-    push_plugin_workflow_dirs_in(&project_root.join(".claude/plugins"), &mut dirs);
+    push_plugin_workflow_dirs_in(&project_root.join("plugins"), &settings, &mut dirs);
+    push_plugin_workflow_dirs_in(&project_root.join(".claude/plugins"), &settings, &mut dirs);
     for path in extra_plugin_dirs() {
-        dirs.push(workflow_dir_for_plugin_root(&path));
+        if plugin_name_for_root(&path)
+            .as_deref()
+            .is_none_or(|plugin| settings.plugin_enabled(plugin))
+        {
+            dirs.push(workflow_dir_for_plugin_root(&path));
+        }
     }
     dirs.sort();
     dirs.dedup();
     dirs
 }
 
-fn push_plugin_workflow_dirs_in(plugins_root: &Path, dirs: &mut Vec<PathBuf>) {
+fn push_plugin_workflow_dirs_in(
+    plugins_root: &Path,
+    settings: &crate::config::ClaudeCompatibilityConfig,
+    dirs: &mut Vec<PathBuf>,
+) {
     let Ok(entries) = std::fs::read_dir(plugins_root) else {
         return;
     };
     for entry in entries.flatten() {
-        dirs.push(workflow_dir_for_plugin_root(&entry.path()));
+        let path = entry.path();
+        if plugin_name_for_root(&path)
+            .as_deref()
+            .is_none_or(|plugin| settings.plugin_enabled(plugin))
+        {
+            dirs.push(workflow_dir_for_plugin_root(&path));
+        }
     }
 }
 
@@ -701,5 +730,31 @@ mod tests {
         assert_eq!(wf.description, "Plugin demo workflow");
         assert_eq!(wf.source, WorkflowSource::Plugin);
         assert!(wf.script.contains("return 42"));
+    }
+
+    #[test]
+    fn enabled_plugins_false_disables_plugin_workflows_normal() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("plugins").join("my-plugin");
+        let workflows_dir = plugin_dir.join("workflows");
+        std::fs::create_dir_all(&workflows_dir).unwrap();
+        std::fs::create_dir_all(tmp.path().join(".claude")).unwrap();
+        std::fs::write(
+            plugin_dir.join(".jfc-plugin.toml"),
+            "[plugin]\nname = \"my-plugin\"\nworkflows_dir = \"workflows\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workflows_dir.join("plugin-demo.js"),
+            "export const meta = { name: 'plugin-demo', description: 'Plugin demo workflow' }\nreturn 42",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join(".claude/settings.json"),
+            r#"{ "enabledPlugins": { "my-plugin@local": false } }"#,
+        )
+        .unwrap();
+
+        assert!(resolve(tmp.path(), "plugin-demo").is_none());
     }
 }

@@ -1,6 +1,6 @@
+use crate::app::EngineState;
 use crate::runtime::{ControlEvent, EngineEvent, EventSender};
 use jfc_session::{TaskPatch, TaskRisk, TaskStatus};
-use crate::app::EngineState;
 
 pub fn factory_mode_enabled() -> bool {
     !matches!(
@@ -23,7 +23,9 @@ pub fn factory_mode_enabled() -> bool {
 /// It is cleared on the next genuine `stream_done`/failure like any other turn.
 async fn commit_factory_turn(state: &mut EngineState, tx: &EventSender, prompt: String) {
     state.turn_started_at = Some(std::time::Instant::now());
-    let _ = tx.send(EngineEvent::Control(ControlEvent::SubmitPrompt(prompt))).await;
+    let _ = tx
+        .send(EngineEvent::Control(ControlEvent::SubmitPrompt(prompt)))
+        .await;
 }
 
 pub async fn maybe_continue_task_factory(state: &mut EngineState, tx: &EventSender) {
@@ -164,7 +166,9 @@ pub async fn maybe_continue_task_factory(state: &mut EngineState, tx: &EventSend
                 )
             })
             .unwrap_or_default();
-        state.plan_cache.insert(&subjects.join(" "), subjects.clone());
+        state
+            .plan_cache
+            .insert(&subjects.join(" "), subjects.clone());
 
         let prompt = format!(
             "Before executing the task queue, verify this plan is sound:\n\n{task_list}\n{findings}{prior_note}\n\
@@ -252,8 +256,8 @@ pub async fn maybe_continue_task_factory(state: &mut EngineState, tx: &EventSend
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use crate::app::EngineState;
+    use std::sync::Arc;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
     use tokio::sync::mpsc;
@@ -305,7 +309,8 @@ mod tests {
     #[tokio::test]
     async fn single_pending_task_auto_continues_and_commits_turn() {
         let mut state = factory_app();
-        state.task_store
+        state
+            .task_store
             .create(
                 "only task".into(),
                 "do it".into(),
@@ -331,10 +336,12 @@ mod tests {
     #[tokio::test]
     async fn same_burst_reentry_is_noop_no_double_submit() {
         let mut state = factory_app();
-        state.task_store
+        state
+            .task_store
             .create("a".into(), "x".into(), None, Vec::<String>::new())
             .unwrap();
-        state.task_store
+        state
+            .task_store
             .create("b".into(), "y".into(), None, Vec::<String>::new())
             .unwrap();
         let (tx, mut rx) = mpsc::channel::<EngineEvent>(16);
@@ -358,13 +365,15 @@ mod tests {
     #[tokio::test]
     async fn reaper_requeues_stuck_then_reclaims_when_idle() {
         let mut state = factory_app();
-        state.task_store
+        state
+            .task_store
             .create("stuck".into(), "x".into(), None, Vec::<String>::new())
             .unwrap();
         // Simulate a prior factory turn that claimed t1 but ended without
         // completing it: in_progress + owned by jfc-factory, yet the leader is
         // now idle (turn_started_at None, no live agents).
-        state.task_store
+        state
+            .task_store
             .update(
                 "t1",
                 jfc_session::TaskPatch {

@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 jfc-core = { path = "../jfc-core" }
+jfc-config = { path = "../jfc-config" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { package = "serde_norway", version = "0.9" }

@@ -110,8 +110,7 @@ pub async fn handle_stream_done(
                 state.is_streaming = false;
                 state.active_stream_handle = None;
                 state.last_stream_event_at = None;
-                state
-        .push_effect(crate::app::EngineEffect::StreamingFinalized);
+                state.push_effect(crate::app::EngineEffect::StreamingFinalized);
                 state.streaming_text = String::new();
                 state.streaming_reasoning = String::new();
                 state.streaming_assistant_idx = None;
@@ -156,8 +155,7 @@ pub async fn handle_stream_done(
                 state.is_streaming = false;
                 state.active_stream_handle = None;
                 state.last_stream_event_at = None;
-                state
-        .push_effect(crate::app::EngineEffect::StreamingFinalized);
+                state.push_effect(crate::app::EngineEffect::StreamingFinalized);
                 state.streaming_text = String::new();
                 state.streaming_reasoning = String::new();
                 state.streaming_assistant_idx = None;
@@ -206,8 +204,7 @@ pub async fn handle_stream_done(
     state.is_streaming = false;
     state.active_stream_handle = None;
     state.last_stream_event_at = None;
-    state
-        .push_effect(crate::app::EngineEffect::StreamingFinalized);
+    state.push_effect(crate::app::EngineEffect::StreamingFinalized);
 
     // OpenWebUI / LiteLLM / some third-party gateways
     // leak `<tool_call>` XML into the assistant text
@@ -315,9 +312,11 @@ pub async fn handle_stream_done(
                         _ => None,
                     })
                 });
-            if let (Some(sid), Some(u), Some(a)) =
-                (state.current_session_id.clone(), first_user, first_assistant)
-                && let Some((p, m)) = crate::tools::snapshot_active_provider()
+            if let (Some(sid), Some(u), Some(a)) = (
+                state.current_session_id.clone(),
+                first_user,
+                first_assistant,
+            ) && let Some((p, m)) = crate::tools::snapshot_active_provider()
             {
                 tokio::spawn(async move {
                     let _ = crate::session_naming::generate_and_save(sid, p, m, u, a).await;
@@ -329,7 +328,10 @@ pub async fn handle_stream_done(
             // Honest, minimal footer: just how long the turn took (no
             // decorative past-tense verb), plus the turn's incremental
             // cost when we can price it — e.g. `took 2m04s · $0.04`.
-            let label = format!("took {}", crate::runtime::durations::format_finished(elapsed));
+            let label = format!(
+                "took {}",
+                crate::runtime::durations::format_finished(elapsed)
+            );
             // Per-turn cost = cumulative-now minus the snapshot taken when
             // this user turn began. Without the baseline this showed the whole
             // session's running spend, not the turn's. saturating at 0 guards
@@ -365,7 +367,8 @@ pub async fn handle_stream_done(
         // the turn) and `last_usage_output` is the model's
         // generated count. Together they give a per-turn
         // sense of "how much work did this take."
-        let turn_total = (state.last_usage_input as u64).saturating_add(state.last_usage_output as u64);
+        let turn_total =
+            (state.last_usage_input as u64).saturating_add(state.last_usage_output as u64);
         if turn_total > 0 {
             if state.token_history.len() >= crate::app::TOKEN_HISTORY_CAP {
                 state.token_history.pop_front();
@@ -737,7 +740,8 @@ pub async fn handle_stream_done(
         if turn_genuinely_done {
             let stalled = stream::assistant_text_stalls(&state.messages);
             if stalled {
-                state.exploration_state
+                state
+                    .exploration_state
                     .bump_for_signal(crate::exploration::ExplorationSignal::AssistantStall);
             } else {
                 let counts = state.task_store.counts();
@@ -935,8 +939,8 @@ fn schedule_dynamic_loop_keepalive() {
 
 #[cfg(test)]
 mod stream_done_lifecycle_tests {
-    use std::{sync::Arc, time::Instant};
     use crate::app::EngineState;
+    use std::{sync::Arc, time::Instant};
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 
@@ -1054,12 +1058,17 @@ mod stream_done_lifecycle_tests {
         // can fire on the next save.
         assert_eq!(state.empty_billed_resend_count, 1, "resend budget consumed");
         assert_eq!(
-            state.messages.iter().filter(|m| m.role == Role::User).count(),
+            state
+                .messages
+                .iter()
+                .filter(|m| m.role == Role::User)
+                .count(),
             1,
             "user turn preserved"
         );
         assert!(
-            !state.messages
+            !state
+                .messages
                 .iter()
                 .any(|m| m.usage.as_ref().is_some_and(|u| u.output_tokens == 64)),
             "the billed empty assistant message must have been removed"
@@ -1077,7 +1086,8 @@ mod stream_done_lifecycle_tests {
         let mut state = app_with_empty_billed_turn();
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        handle_stream_done(&mut state,
+        handle_stream_done(
+            &mut state,
             &tx,
             jfc_provider::StopReason::Other("stream_error".into()),
         )
@@ -1085,7 +1095,8 @@ mod stream_done_lifecycle_tests {
 
         assert_eq!(state.empty_billed_resend_count, 1, "Other(_) must resend");
         assert!(
-            !state.messages
+            !state
+                .messages
                 .iter()
                 .any(|m| m.usage.as_ref().is_some_and(|u| u.output_tokens == 64)),
             "the billed empty assistant message must have been removed"
@@ -1111,7 +1122,8 @@ mod stream_done_lifecycle_tests {
             "empty-billed refusal should trigger one capped resend"
         );
         assert!(
-            !state.messages
+            !state
+                .messages
                 .iter()
                 .any(|m| m.usage.as_ref().is_some_and(|u| u.output_tokens == 64)),
             "the billed empty assistant message must have been removed"

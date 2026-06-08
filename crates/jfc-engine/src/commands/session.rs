@@ -14,7 +14,8 @@ pub(super) async fn cmd_rename(
     // precedence chain (custom → ai → firstPrompt → id-slice).
     // Persisted to the session JSON so it survives restarts.
     let new_title = parts.get(1).copied().unwrap_or("").trim().to_owned();
-    state.messages
+    state
+        .messages
         .push(ChatMessage::user(format!("/rename {new_title}")));
     match (&state.current_session_id, new_title.is_empty()) {
         (None, _) => {
@@ -200,7 +201,8 @@ pub(super) async fn cmd_sessions(
     // List all sessions with metadata
     let sessions = jfc_session::list_sessions_with_metadata().await;
     if sessions.is_empty() {
-        state.messages
+        state
+            .messages
             .push(ChatMessage::assistant("No sessions found.".into()));
     } else {
         let mut body = format!("**{} session(s):**\n\n", sessions.len());

@@ -2910,7 +2910,7 @@ async fn enter_worktree_creates_fresh_normal() {
     .await;
     let r = execute_enter_worktree("featx", None, repo).await;
     assert!(!r.is_error(), "{}", r.output);
-    assert!(repo.join(".jfc-worktrees/featx").exists());
+    assert!(repo.join(".claude/worktrees/featx").exists());
     // Idempotent: second invocation succeeds with "already exists".
     let r2 = execute_enter_worktree("featx", None, repo).await;
     assert!(!r2.is_error(), "{}", r2.output);
@@ -2922,9 +2922,9 @@ async fn enter_worktree_creates_fresh_normal() {
 #[tokio::test]
 async fn enter_worktree_invalid_name_fails_robust() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let r = execute_enter_worktree("bad/name", None, dir.path()).await;
+    let r = execute_enter_worktree("bad.name", None, dir.path()).await;
     assert!(r.is_error());
-    assert!(r.output.contains("[A-Za-z0-9_-]"), "{}", r.output);
+    assert!(r.output.contains("[A-Za-z0-9_/-]"), "{}", r.output);
 }
 
 /// Robust: outside a git repo we surface the missing-repo error rather

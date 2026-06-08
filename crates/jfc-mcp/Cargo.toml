@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+jfc-core = { path = "../jfc-core" }
 jfc-provider = { path = "../jfc-provider" }
 rmcp = { version = "1.7", default-features = false, features = [
     "client",

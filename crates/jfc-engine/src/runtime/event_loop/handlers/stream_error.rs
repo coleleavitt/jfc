@@ -3,10 +3,9 @@
 
 use jfc_provider::FallbackReason;
 
-use crate::app::{NetworkRecoveryProvider, EngineState};
+use crate::app::{EngineState, NetworkRecoveryProvider};
 use crate::runtime::{
-    ControlEvent,
-    EngineEvent, EventSender, drain_queued_prompts, record_network_recovery,
+    ControlEvent, EngineEvent, EventSender, drain_queued_prompts, record_network_recovery,
     restart_stream_in_place,
 };
 use crate::types::*;
@@ -28,7 +27,9 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     );
     if e == "Interrupted by user"
         && !state.cancel_token.is_cancelled()
-        && !state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+        && !state
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst)
     {
         tracing::info!(
             target: "jfc::stream",
@@ -65,7 +66,9 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     if is_superseded_stream_lifecycle_error
         && state.is_streaming
         && !state.cancel_token.is_cancelled()
-        && !state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+        && !state
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst)
     {
         tracing::info!(
             target: "jfc::stream",
@@ -78,7 +81,9 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     let interrupted_by_user = e.contains("Interrupted by user")
         || (e.starts_with("stream task cancelled")
             && (state.cancel_token.is_cancelled()
-                || state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)));
+                || state
+                    .interrupt_flag
+                    .load(std::sync::atomic::Ordering::SeqCst)));
 
     // ─── Synthetic tool_result injection on interrupt ────────
     // When a stream is interrupted with pending/running tool_use
@@ -217,7 +222,9 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
             let tx_compact = tx.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                let _ = tx_compact.send(EngineEvent::Control(ControlEvent::SubmitPrompt(text))).await;
+                let _ = tx_compact
+                    .send(EngineEvent::Control(ControlEvent::SubmitPrompt(text)))
+                    .await;
             });
         }
     }
@@ -256,8 +263,7 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     state.thinking_ended_at = None;
     state.streaming_text = String::new();
     state.streaming_reasoning = String::new();
-    state
-        .push_effect(crate::app::EngineEffect::StreamingFinalized);
+    state.push_effect(crate::app::EngineEffect::StreamingFinalized);
     state.streaming_response_bytes = 0;
     state.streaming_assistant_idx = None;
     state.active_stream_handle = None;
@@ -288,12 +294,14 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     // a fresh cancel token — the previous one may already
     // be cancelled, and we don't want to poison the next
     // spawn.
-    state.interrupt_flag
+    state
+        .interrupt_flag
         .store(false, std::sync::atomic::Ordering::SeqCst);
     state.cancel_token = tokio_util::sync::CancellationToken::new();
     let mut auto_retry_restarted = false;
     if auto_retry_signal {
-        state.exploration_state
+        state
+            .exploration_state
             .bump_for_signal(crate::exploration::ExplorationSignal::StreamRetry);
         if let Some(idx) = retry_assistant_idx {
             restart_stream_in_place(state, tx, idx, retry_turn_started_at);
@@ -408,8 +416,8 @@ fn recoverable_requeue_text(m: &ChatMessage) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use crate::app::EngineState;
+    use std::sync::Arc;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
     use tokio::sync::mpsc;
@@ -478,11 +486,13 @@ mod tests {
         state.streaming_assistant_idx = Some(1);
         // Fresh turn's token is healthy; interrupt flag clear (submit, not ESC).
         state.cancel_token = tokio_util::sync::CancellationToken::new();
-        state.interrupt_flag
+        state
+            .interrupt_flag
             .store(false, std::sync::atomic::Ordering::SeqCst);
         let (tx, _rx) = mpsc::channel(8);
 
-        handle_stream_error(&mut state,
+        handle_stream_error(
+            &mut state,
             &tx,
             "Stream cancelled before connection opened".to_owned(),
         )
@@ -507,7 +517,8 @@ mod tests {
         state.streaming_assistant_idx = Some(1);
         let (tx, _rx) = mpsc::channel(8);
 
-        handle_stream_error(&mut state,
+        handle_stream_error(
+            &mut state,
             &tx,
             "Stream open timed out after 45s before first provider response".to_owned(),
         )
@@ -525,11 +536,13 @@ mod tests {
         state.is_streaming = true;
         state.streaming_assistant_idx = Some(1);
         state.cancel_token = tokio_util::sync::CancellationToken::new();
-        state.interrupt_flag
+        state
+            .interrupt_flag
             .store(false, std::sync::atomic::Ordering::SeqCst);
         let (tx, _rx) = mpsc::channel(8);
 
-        handle_stream_error(&mut state,
+        handle_stream_error(
+            &mut state,
             &tx,
             "stream task cancelled: task 17 was cancelled".to_owned(),
         )
@@ -548,11 +561,13 @@ mod tests {
         state.is_streaming = true;
         state.streaming_assistant_idx = Some(1);
         state.cancel_token.cancel();
-        state.interrupt_flag
+        state
+            .interrupt_flag
             .store(true, std::sync::atomic::Ordering::SeqCst);
         let (tx, _rx) = mpsc::channel(8);
 
-        handle_stream_error(&mut state,
+        handle_stream_error(
+            &mut state,
             &tx,
             "stream task cancelled: task 17 was cancelled".to_owned(),
         )
@@ -569,7 +584,9 @@ mod tests {
             "next turn gets a fresh token"
         );
         assert!(
-            !state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
+            !state
+                .interrupt_flag
+                .load(std::sync::atomic::Ordering::SeqCst),
             "interrupt flag should be cleared after cleanup"
         );
     }
@@ -608,7 +625,8 @@ mod tests {
         state.streaming_assistant_idx = Some(1);
         let (tx, _rx) = mpsc::channel(8);
 
-        handle_stream_error(&mut state,
+        handle_stream_error(
+            &mut state,
             &tx,
             "Stream cancelled before connection opened".to_owned(),
         )

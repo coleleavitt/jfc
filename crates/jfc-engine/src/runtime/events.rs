@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use tokio::sync::mpsc;
 
 use super::ExecutionResult;
@@ -49,6 +51,7 @@ pub enum EngineEvent {
     Task(TaskEvent),
     Team(TeamEvent),
     Goal(GoalEvent),
+    Voice(VoiceEvent),
     /// Live progress update from a running workflow background task.
     WorkflowProgress(WorkflowProgressEvent),
     /// Inbound command for the engine — from detached producers (remote
@@ -98,6 +101,14 @@ pub enum ControlEvent {
     /// extraction moves engine-pure command semantics into the engine and
     /// shrinks this to view commands only.
     RunCommand(String),
+    /// User responded to an MCP elicitation. The `id` must match a pending
+    /// `FrontendEvent::ElicitationRequest`. The engine routes this to
+    /// `mcp_elicitation::resolve(id, response)` which unblocks the waiting
+    /// `JfcClientHandler::create_elicitation` future.
+    ResolveElicitation {
+        id: String,
+        response: crate::mcp_elicitation::ElicitationResponse,
+    },
 }
 
 /// Outbound engine→frontend requests that previously rode on `UiEvent`.
@@ -108,8 +119,19 @@ pub enum FrontendEvent {
     /// Model-callable plan-mode entry. Dispatched by the `EnterPlanMode`
     /// tool — flips the permission mode to `PermissionMode::Plan`.
     PlanModeEntered { reason: String },
+    /// An MCP server is requesting interactive user input (elicitation/create).
+    /// The frontend must present the form or URL to the user, collect their
+    /// response, and dispatch `ControlEvent::ResolveElicitation` with the
+    /// matching `id`.
+    ElicitationRequest {
+        /// Unique ID — pass back in `ControlEvent::ResolveElicitation`.
+        id: String,
+        /// Which MCP server sent this.
+        server_name: String,
+        /// What's being requested (form fields or URL).
+        kind: crate::mcp_elicitation::ElicitationKind,
+    },
 }
-
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum StreamToolChoice {
@@ -129,6 +151,8 @@ pub struct StreamRequestOverrides {
     /// CLAUDE.md frontmatter. These tools are removed from the
     /// advertised tool catalog before sending to the model.
     pub disallowed_tools: Vec<String>,
+    /// Additional roots whose CLAUDE.md layers should be loaded into context.
+    pub extra_dirs: Vec<PathBuf>,
     /// Optional allowlist from CLI/managed settings. When non-empty, only
     /// matching tool names are advertised to the model.
     pub allowed_tools: Vec<String>,
@@ -200,8 +224,6 @@ impl StreamLifecycleStatus {
     }
 }
 
-
-
 pub enum StreamEvent {
     Chunk {
         text: Option<String>,
@@ -211,7 +233,10 @@ pub enum StreamEvent {
     /// arguments. Carries the provider block index and the delta text so
     /// frontends can both keep token estimates live (TUI spinner) and emit
     /// faithful wire events (headless stream-json).
-    ToolInputDelta { index: usize, delta: String },
+    ToolInputDelta {
+        index: usize,
+        delta: String,
+    },
     /// Server-authoritative thinking token estimate delta. Emitted on each
     /// `thinking_delta` event with `estimated_tokens` set. Accumulates across
     /// the thinking block for display (matching cli.js's thinking_tokens system
@@ -494,6 +519,18 @@ pub enum GoalEvent {
     /// The event_loop handler decides whether to inject a continuation
     /// reminder (`ok=false`) or stamp a success banner (`ok=true`).
     Verdict { ok: bool, reason: String },
+}
+
+/// Voice mode events from the jfc-voice STT pipeline.
+pub enum VoiceEvent {
+    /// Interim partial transcript — show in the status bar / input box preview.
+    Interim(String),
+    /// Final transcript — inject into the textarea and optionally auto-submit.
+    Final(String),
+    /// Voice state changed (idle / recording / processing).
+    StateChanged(u8), // 0=idle, 1=recording, 2=processing
+    /// Error from the voice pipeline.
+    Error(String),
 }
 
 /// A progress update from a running workflow, routed to the matching

@@ -1,7 +1,7 @@
 //! Lifecycle hook system with enum dispatch.
 //!
-//! Hooks fire at 29 defined points in the agent lifecycle, matching
-//! Claude Code's hook surface area. All dispatch is via enum match —
+//! Hooks fire at 45+ defined points in the agent lifecycle, matching
+//! Claude Code 2.1.167's hook surface area. All dispatch is via enum match —
 //! no trait objects, no dynamic dispatch.
 //!
 //! Hook points are grouped into categories:
@@ -106,6 +106,44 @@ pub enum HookPoint {
     Stop,
     /// When a tool execution fails with an error.
     PostToolUseFailure,
+
+    // ── CC 2.1.167 additions ────────────────────────────────────────────
+    /// Fires before the first model turn; output injected as additional context.
+    /// Maps to CC's `Setup` hook event.
+    OnSetup,
+    /// Fires when a slash-command expands before prompt submission.
+    /// Maps to CC's `UserPromptExpansion` hook event.
+    OnUserPromptExpansion,
+    /// Fires as assistant text streams; hook can rewrite displayed content.
+    /// Maps to CC's `MessageDisplay` hook event.
+    OnMessageDisplay,
+    /// Fires when an MCP server requests structured user input (elicitation/create).
+    /// Maps to CC's `Elicitation` hook event.
+    OnElicitation,
+    /// Fires after the user responds to an elicitation.
+    /// Maps to CC's `ElicitationResult` hook event.
+    OnElicitationResult,
+    /// Fires after a batch of tools completes.
+    /// Maps to CC's `PostToolBatch` hook event.
+    PostToolBatch,
+    /// Fires after context compaction completes.
+    /// Maps to CC's `PostCompact` hook event.
+    PostCompact,
+    /// Fires when a subagent starts.
+    /// Maps to CC's `SubagentStart` hook event.
+    SubagentStart,
+    /// Fires when a worktree is created.
+    /// Maps to CC's `WorktreeCreate` hook event.
+    WorktreeCreate,
+    /// Fires when a worktree is removed.
+    /// Maps to CC's `WorktreeRemove` hook event.
+    WorktreeRemove,
+    /// Fires when configuration changes.
+    /// Maps to CC's `ConfigChange` hook event.
+    ConfigChange,
+    /// Fires when a stop operation fails.
+    /// Maps to CC's `StopFailure` hook event.
+    StopFailure,
 }
 
 /// Action a hook can take.
@@ -566,6 +604,206 @@ impl HookRegistry {
         for entry in &hooks_cfg.subagent_stop {
             self.register(
                 HookPoint::SubagentStop,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.setup {
+            self.register(
+                HookPoint::OnSetup,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.user_prompt_expansion {
+            self.register(
+                HookPoint::OnUserPromptExpansion,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.message_display {
+            self.register(
+                HookPoint::OnMessageDisplay,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.elicitation {
+            self.register(
+                HookPoint::OnElicitation,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.elicitation_result {
+            self.register(
+                HookPoint::OnElicitationResult,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.post_tool_batch {
+            self.register(
+                HookPoint::PostToolBatch,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.post_compact {
+            self.register(
+                HookPoint::PostCompact,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.subagent_start {
+            self.register(
+                HookPoint::SubagentStart,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.permission_request {
+            self.register(
+                HookPoint::OnPermissionRequest,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.permission_denied {
+            self.register(
+                HookPoint::OnPermissionDenied,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.task_created {
+            self.register(
+                HookPoint::OnTaskCreated,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.task_completed {
+            self.register(
+                HookPoint::OnTaskCompleted,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.worktree_create {
+            self.register(
+                HookPoint::WorktreeCreate,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.worktree_remove {
+            self.register(
+                HookPoint::WorktreeRemove,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.config_change {
+            self.register(
+                HookPoint::ConfigChange,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.instructions_loaded {
+            self.register(
+                HookPoint::OnInstructionsLoaded,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.cwd_changed {
+            self.register(
+                HookPoint::OnCwdChanged,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.file_changed {
+            self.register(
+                HookPoint::OnFileChanged,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.teammate_idle {
+            self.register(
+                HookPoint::OnTeammateIdle,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.stop_failure {
+            self.register(
+                HookPoint::StopFailure,
                 HookHandler::Shell {
                     command: entry.command.clone(),
                     async_mode: entry.async_mode,

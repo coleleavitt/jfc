@@ -121,12 +121,20 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     // it as a styled span rather than a separate Sparkline widget.
     if app.engine.token_history.len() >= 2 {
         const BARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-        let max_val = app.engine.token_history.iter().copied().max().unwrap_or(1).max(1);
+        let max_val = app
+            .engine
+            .token_history
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(1)
+            .max(1);
         let bar_width = (inner.width as usize).min(app.engine.token_history.len());
         // Take the most recent N values so a long history doesn't
         // squish the recent samples into single-cell averages.
         let start = app.engine.token_history.len().saturating_sub(bar_width);
-        let bars: String = app.engine
+        let bars: String = app
+            .engine
             .token_history
             .iter()
             .skip(start)
@@ -142,12 +150,18 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         ]));
     }
 
-    let total_cache_read: u64 = app.engine
+    let total_cache_read: u64 = app
+        .engine
         .usage_by_model
         .values()
         .map(|u| u.cache_read_tokens)
         .sum();
-    let total_input: u64 = app.engine.usage_by_model.values().map(|u| u.input_tokens).sum();
+    let total_input: u64 = app
+        .engine
+        .usage_by_model
+        .values()
+        .map(|u| u.input_tokens)
+        .sum();
     if total_cache_read > 0 && total_input > 0 {
         let global_hit_pct = (total_cache_read as f64 / total_input as f64 * 100.0).min(100.0);
         lines.push(Line::from(vec![

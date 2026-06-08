@@ -56,7 +56,9 @@ pub fn find_markdown_command<'a>(
     commands: &'a [MarkdownCommand],
     name: &str,
 ) -> Option<&'a MarkdownCommand> {
-    commands.iter().find(|command| command.name.eq_ignore_ascii_case(name))
+    commands
+        .iter()
+        .find(|command| command.name.eq_ignore_ascii_case(name))
 }
 
 pub fn render_markdown_command(command: &MarkdownCommand, args: Option<&str>) -> String {
@@ -75,7 +77,10 @@ pub fn render_markdown_command(command: &MarkdownCommand, args: Option<&str>) ->
 
 fn parse_markdown_command(path: &Path, raw: &str) -> Option<MarkdownCommand> {
     let (front, body) = split_frontmatter(raw);
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("unnamed");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unnamed");
     let mut name = stem.to_owned();
     let mut description = None;
     if let Some(yaml) = front
@@ -99,7 +104,9 @@ fn parse_markdown_command(path: &Path, raw: &str) -> Option<MarkdownCommand> {
 }
 
 fn split_frontmatter(raw: &str) -> (Option<&str>, &str) {
-    let trimmed = raw.strip_prefix("---\n").or_else(|| raw.strip_prefix("---\r\n"));
+    let trimmed = raw
+        .strip_prefix("---\n")
+        .or_else(|| raw.strip_prefix("---\r\n"));
     let Some(rest) = trimmed else {
         return (None, raw);
     };
@@ -119,6 +126,7 @@ fn split_frontmatter(raw: &str) -> (Option<&str>, &str) {
 fn command_roots(project_root: &Path) -> Vec<CommandRoot> {
     let mut roots = Vec::new();
     let mut seen = HashSet::new();
+    let settings = crate::config::claude_settings::load_merged(project_root);
     let mut push_root = |path: PathBuf, namespace: Option<String>| {
         if seen.insert((path.clone(), namespace.clone())) {
             roots.push(CommandRoot { path, namespace });
@@ -127,15 +135,31 @@ fn command_roots(project_root: &Path) -> Vec<CommandRoot> {
 
     if let Some(home) = dirs::home_dir() {
         push_root(home.join(".claude/commands"), None);
-        push_plugin_roots_in(&home.join(".claude/plugins"), "commands", &mut push_root);
+        push_plugin_roots_in(
+            &home.join(".claude/plugins"),
+            "commands",
+            &settings,
+            &mut push_root,
+        );
     }
     if let Some(config) = dirs::config_dir() {
-        push_plugin_roots_in(&config.join("jfc/plugins"), "commands", &mut push_root);
+        push_plugin_roots_in(
+            &config.join("jfc/plugins"),
+            "commands",
+            &settings,
+            &mut push_root,
+        );
     }
-    push_plugin_roots_in(&project_root.join("plugins"), "commands", &mut push_root);
+    push_plugin_roots_in(
+        &project_root.join("plugins"),
+        "commands",
+        &settings,
+        &mut push_root,
+    );
     push_plugin_roots_in(
         &project_root.join(".claude/plugins"),
         "commands",
+        &settings,
         &mut push_root,
     );
     push_root(project_root.join(".claude/commands"), None);
@@ -146,6 +170,7 @@ fn command_roots(project_root: &Path) -> Vec<CommandRoot> {
 fn push_plugin_roots_in(
     plugins_dir: &Path,
     child: &str,
+    settings: &crate::config::ClaudeCompatibilityConfig,
     push_root: &mut impl FnMut(PathBuf, Option<String>),
 ) {
     let Ok(entries) = std::fs::read_dir(plugins_dir) else {
@@ -163,6 +188,9 @@ fn push_plugin_roots_in(
         else {
             continue;
         };
+        if !settings.plugin_enabled(plugin) {
+            continue;
+        }
         push_root(path.join(child), Some(plugin.to_owned()));
     }
 }
@@ -198,5 +226,23 @@ mod tests {
         let commands = load_markdown_commands(tmp.path());
         assert!(find_markdown_command(&commands, "sec:audit").is_some());
         assert!(find_markdown_command(&commands, "audit").is_none());
+    }
+
+    #[test]
+    fn enabled_plugins_false_disables_plugin_markdown_commands_normal() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join(".claude/plugins/sec/commands");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("audit.md"), "audit body").unwrap();
+        let settings_dir = tmp.path().join(".claude");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        std::fs::write(
+            settings_dir.join("settings.local.json"),
+            r#"{"enabledPlugins":{"sec":false}}"#,
+        )
+        .unwrap();
+
+        let commands = load_markdown_commands(tmp.path());
+        assert!(find_markdown_command(&commands, "sec:audit").is_none());
     }
 }

@@ -17,8 +17,8 @@
 //! hasn't logged in to `gh`, we still emit the install URL — they can
 //! click through and authorize the app, then run `gh auth login` later.
 
-use crate::github::GhContext;
 use super::client::{GhClient, GhError};
+use crate::github::GhContext;
 
 /// The Anthropic GitHub App slug. Hard-coded because that's what v2.1.132
 /// installs — flip this constant for forks of jfc that ship their own app.

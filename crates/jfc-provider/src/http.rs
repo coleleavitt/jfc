@@ -28,6 +28,12 @@ pub fn streaming_client() -> reqwest::Client {
         // catches stalled reads without imposing a hard deadline on the body.
         .read_timeout(byte_stream_idle_timeout())
         .pool_idle_timeout(HTTP_POOL_IDLE_TIMEOUT)
+        // CC 2.1.167 uses maxSockets:50 per host. reqwest defaults to no
+        // hard per-host cap (unlimited) but having an explicit value makes
+        // the connection budget visible and matches CC's tuning for the
+        // Anthropic endpoint. Parallel tool calls and streaming can open
+        // several connections simultaneously.
+        .pool_max_idle_per_host(50)
         // TCP-level keepalive helps the kernel notice half-open
         // sockets through NAT/LB rewrites. Keep the interval/retry
         // values explicit so upgrades don't silently change long-stream

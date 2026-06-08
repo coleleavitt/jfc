@@ -271,7 +271,9 @@ fn translate_inbound(envelope: &RemoteEnvelope) -> Option<EngineEvent> {
     match envelope {
         RemoteEnvelope::UserPrompt { text } => {
             debug!(target: "jfc::remote", len = text.len(), "remote user prompt");
-            Some(EngineEvent::Control(ControlEvent::SubmitPrompt(text.clone())))
+            Some(EngineEvent::Control(ControlEvent::SubmitPrompt(
+                text.clone(),
+            )))
         }
         RemoteEnvelope::Interrupt => {
             debug!(target: "jfc::remote", "remote interrupt");
@@ -317,11 +319,13 @@ pub fn mirror_event(ev: &EngineEvent) -> Option<RemoteEnvelope> {
             name: tool.kind.label().to_string(),
             input_preview: Some(tool.input.summary()),
         }),
-        EngineEvent::Tool(ToolEvent::Result { tool_id, result }) => Some(RemoteEnvelope::ToolResult {
-            id: tool_id.to_string(),
-            output_preview: Some(result.output.chars().take(500).collect()),
-            is_error: result.is_error(),
-        }),
+        EngineEvent::Tool(ToolEvent::Result { tool_id, result }) => {
+            Some(RemoteEnvelope::ToolResult {
+                id: tool_id.to_string(),
+                output_preview: Some(result.output.chars().take(500).collect()),
+                is_error: result.is_error(),
+            })
+        }
         EngineEvent::Tool(ToolEvent::SetInProgressToolUseIds { action, ids }) => {
             Some(RemoteEnvelope::SetInProgressToolUseIds {
                 action: action.clone(),

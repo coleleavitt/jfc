@@ -107,7 +107,11 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     // *after* the if/else with an explicit `drop(items)`.
     let totals_to_commit = (
         total_lines,
-        (app.engine.messages.len(), app.engine.streaming_text.len(), inner_width),
+        (
+            app.engine.messages.len(),
+            app.engine.streaming_text.len(),
+            inner_width,
+        ),
         visible,
         new_scroll_offset,
     );
@@ -436,7 +440,8 @@ pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_
     let visible = inner.height as usize;
 
     // Workflow tasks get a dedicated progress panel.
-    let has_workflow = app.engine
+    let has_workflow = app
+        .engine
         .background_tasks
         .get(task_id)
         .map(|bt| bt.workflow_progress.is_some())
@@ -454,7 +459,8 @@ pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_
         use crate::message_view::{MessageView, PrebuiltItems, RenderCtx, build_render_items_ctx};
         use ratatui::widgets::Widget;
 
-        let chat_msgs = app.engine
+        let chat_msgs = app
+            .engine
             .background_tasks
             .get(task_id)
             .map(|bt| bt.chat_messages.as_slice())
@@ -462,7 +468,8 @@ pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_
 
         // Compute scroll BEFORE borrowing app through items, then assign after.
         let total_lines_est = {
-            let msgs = app.engine
+            let msgs = app
+                .engine
                 .background_tasks
                 .get(task_id)
                 .map(|bt| bt.chat_messages.as_slice())
@@ -670,7 +677,8 @@ pub(super) fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
     let descs: Vec<&str> = task_ids
         .iter()
         .map(|id| {
-            app.engine.background_tasks
+            app.engine
+                .background_tasks
                 .get(id)
                 .map(|b| b.description.as_str())
                 .unwrap_or(id.as_str())
@@ -904,14 +912,16 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // cumulative time, not just the current sub-stream's age. Fall back
         // to `streaming_started_at` for the brief first frame after submit
         // before the agentic gate updates the turn clock.
-        let elapsed = app.engine
+        let elapsed = app
+            .engine
             .turn_started_at
             .or(app.engine.streaming_started_at)
             .map(|t| now.duration_since(t))
             .unwrap_or_default();
         let stream_is_live = app.engine.is_streaming;
         let stall = if stream_is_live {
-            app.engine.streaming_last_token_at
+            app.engine
+                .streaming_last_token_at
                 .map(|t| now.duration_since(t))
                 .unwrap_or_default()
         } else {
@@ -977,7 +987,10 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // it wins. No random decorative verb, no shimmer sweep.
         let lifecycle = app.engine.stream_lifecycle.as_ref();
         let label: std::borrow::Cow<'_, str> = {
-            let tasks = app.engine.task_store.list(jfc_session::DeletedFilter::Exclude);
+            let tasks = app
+                .engine
+                .task_store
+                .list(jfc_session::DeletedFilter::Exclude);
             tasks
                 .iter()
                 .find(|t| t.status == jfc_session::TaskStatus::InProgress)
@@ -1101,7 +1114,10 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
     let t = app.theme;
-    let all = app.engine.task_store.list(jfc_session::DeletedFilter::Exclude);
+    let all = app
+        .engine
+        .task_store
+        .list(jfc_session::DeletedFilter::Exclude);
     if all.is_empty() {
         return;
     }
@@ -1121,7 +1137,8 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .filter(|t| matches!(t.status, jfc_session::TaskStatus::Completed))
         .any(|t| {
-            app.engine.task_completion_times
+            app.engine
+                .task_completion_times
                 .get(&t.id)
                 .is_some_and(|ts| now.duration_since(*ts).as_secs() < 30)
         });
@@ -1163,7 +1180,8 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     // Link through the active agent's `parent_task_id` so that one task
     // reads as the live focus (bright + animated) while the rest of the
     // in-progress set dims — instead of N identical bold rows.
-    let active_todo_id: Option<String> = app.engine
+    let active_todo_id: Option<String> = app
+        .engine
         .last_active_agent_task
         .as_deref()
         .and_then(|aid| app.engine.background_tasks.get(aid))
@@ -1206,7 +1224,8 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     let recent_done = completed
         .iter()
         .filter(|task| {
-            app.engine.task_completion_times
+            app.engine
+                .task_completion_times
                 .get(&task.id)
                 .is_some_and(|t| now_sort.duration_since(*t).as_secs() < 30)
         })
@@ -1256,7 +1275,11 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     // tick, so the braille advances smoothly. With no live work the frame
     // wouldn't redraw on its own, so a "spinning" glyph would freeze until
     // the next keypress (the jank we're fixing); show a static `◐` then.
-    let any_alive_agent = app.engine.background_tasks.values().any(|bt| bt.status.is_alive());
+    let any_alive_agent = app
+        .engine
+        .background_tasks
+        .values()
+        .any(|bt| bt.status.is_alive());
     let animate = !crate::spinner::reduced_motion() && (app.engine.is_streaming || any_alive_agent);
     let spin_frame = (app.launched_at.elapsed().as_millis() / 100) as usize;
     let spinner = crate::app::SPINNER[spin_frame % crate::app::SPINNER.len()];

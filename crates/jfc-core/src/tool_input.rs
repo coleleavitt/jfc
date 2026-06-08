@@ -1057,7 +1057,7 @@ impl ToolInput {
                     "workflow (inline script)".into()
                 }
             }
-            Self::Generic { summary } => summary.clone(),
+            Self::Generic { summary } => generic_summary_display(summary),
             Self::SendUserMessage { message, .. } => {
                 let preview = if message.len() > 60 {
                     &message[..message.floor_char_boundary(60)]
@@ -1176,6 +1176,11 @@ impl ToolInput {
         let raw_bool_opt_field = |key: &str| -> Option<bool> {
             obj.and_then(|map| map.get(key))
                 .and_then(|value| value.as_bool())
+        };
+        let opt_u32_field = |key: &str| -> Option<u32> {
+            obj.and_then(|map| map.get(key))
+                .and_then(|value| value.as_u64())
+                .map(|value| value as u32)
         };
         let opt_u64_loose_field = |key: &str| -> Option<u64> {
             obj.and_then(|map| map.get(key)).and_then(|value| {
@@ -1371,6 +1376,28 @@ impl ToolInput {
                 name,
                 arguments: value.clone(),
             },
+            ToolKind::Lsp => {
+                let operation = opt_str_field("kind")
+                    .or_else(|| opt_str_field("operation"))
+                    .ok_or_else(|| ToolInputError::MissingField {
+                        tool: tool(),
+                        field: "kind",
+                    })?;
+                Self::Lsp {
+                    kind: normalize_lsp_operation(&operation).to_owned(),
+                    file: opt_str_field("file")
+                        .or_else(|| opt_str_field("filePath"))
+                        .or_else(|| opt_str_field("path"))
+                        .ok_or_else(|| ToolInputError::MissingField {
+                            tool: tool(),
+                            field: "file",
+                        })?,
+                    line: opt_u32_field("line").unwrap_or(0),
+                    column: opt_u32_field("column")
+                        .or_else(|| opt_u32_field("character"))
+                        .unwrap_or(0),
+                }
+            }
             ToolKind::CronList => Self::CronList,
             ToolKind::ExitWorktree => Self::ExitWorktree,
             ToolKind::ServerWebSearch => Self::Generic {
@@ -1398,7 +1425,10 @@ impl ToolInput {
                     value.to_string()
                 },
             },
-            ToolKind::Generic(_) | ToolKind::UnknownTool { .. } => Self::Generic {
+            ToolKind::Generic(_) => Self::Generic {
+                summary: value.to_string(),
+            },
+            ToolKind::UnknownTool { .. } => Self::Generic {
                 summary: value.to_string(),
             },
             ToolKind::SendUserMessage => Self::SendUserMessage {
@@ -1647,6 +1677,49 @@ fn split_advertised_mcp(name: &str) -> Option<(&str, &str)> {
     } else {
         Some((server, tool))
     }
+}
+
+fn normalize_lsp_operation(operation: &str) -> &str {
+    match operation {
+        "goToDefinition" | "gotoDefinition" | "definition" => "definition",
+        "findReferences" | "references" => "references",
+        "goToImplementation" | "implementation" => "implementation",
+        "goToTypeDefinition" | "typeDefinition" | "type_definition" => "type_definition",
+        "documentSymbol" | "documentSymbols" | "document_symbols" => "document_symbols",
+        "workspaceSymbol" | "workspaceSymbols" | "workspace_symbols" => "workspace_symbols",
+        "incomingCalls" | "incoming_calls" => "incoming_calls",
+        "outgoingCalls" | "outgoing_calls" => "outgoing_calls",
+        "prepareCallHierarchy" | "prepare_call_hierarchy" => "incoming_calls",
+        "hover" => "hover",
+        other => other,
+    }
+}
+
+fn generic_summary_display(summary: &str) -> String {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(summary) else {
+        return summary.to_owned();
+    };
+    if let (Some(kind), Some(query), Some(path)) = (
+        value.get("kind").and_then(|v| v.as_str()),
+        value.get("query").and_then(|v| v.as_str()),
+        value.get("path").and_then(|v| v.as_str()),
+    ) {
+        return format!("code index (kind={kind}, query={query}, path={path})");
+    }
+    if let Some(query) = value.get("query").and_then(|v| v.as_str())
+        && value.get("max_tokens").is_some()
+    {
+        return query.to_owned();
+    }
+    if let Some(path) = value.get("lcov_path").and_then(|v| v.as_str()) {
+        return format!("coverage({path})");
+    }
+    if let Some(handle) = value.get("handle").and_then(|v| v.as_str())
+        && value.get("new_content").is_some()
+    {
+        return format!("edit: {handle}");
+    }
+    summary.to_owned()
 }
 
 #[cfg(test)]

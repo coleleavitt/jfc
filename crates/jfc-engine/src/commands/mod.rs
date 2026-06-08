@@ -232,6 +232,23 @@ pub async fn skill_fallthrough(
         };
         let args = parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty());
         let body = markdown::render_markdown_command(command, args);
+
+        // CC 2.1.167 UserPromptExpansion hook for markdown commands.
+        {
+            let session_id = state
+                .current_session_id
+                .as_ref()
+                .map(|s| s.as_str().to_owned())
+                .unwrap_or_default();
+            crate::hooks::fire_async(
+                crate::hooks::HookPoint::OnUserPromptExpansion,
+                &crate::hooks::HookContext::for_session(&session_id)
+                    .with_extra("expansion_type", "markdown_command")
+                    .with_extra("command_name", name.to_owned())
+                    .with_extra("command_source", "markdown"),
+            );
+        }
+
         state.messages.push(ChatMessage::user(echo));
         start_synthetic_user_turn(state, body, tx);
         return;
@@ -267,6 +284,24 @@ pub async fn skill_fallthrough(
         let render_context = crate::agents::SkillRenderContext::new(Some(&cwd), Some(&memory_root));
         let args = parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty());
         let body = crate::agents::render_skill_invocation(skill, render_context, args);
+
+        // CC 2.1.167 UserPromptExpansion hook — fires after the skill body is
+        // rendered but before it is submitted to the model. Fire-and-forget;
+        // hooks cannot currently veto a skill expansion (non-blocking path).
+        {
+            let session_id = state
+                .current_session_id
+                .as_ref()
+                .map(|s| s.as_str().to_owned())
+                .unwrap_or_default();
+            crate::hooks::fire_async(
+                crate::hooks::HookPoint::OnUserPromptExpansion,
+                &crate::hooks::HookContext::for_session(&session_id)
+                    .with_extra("expansion_type", "skill")
+                    .with_extra("command_name", name.to_owned())
+                    .with_extra("command_source", "skill_registry"),
+            );
+        }
 
         if skill.context.is_fork() {
             let Some(tx) = tx else {

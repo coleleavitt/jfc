@@ -1,4 +1,6 @@
-use crate::app::{NetworkRecoveryProvider, NetworkRecoveryReason, NetworkRecoveryStatus, EngineState};
+use crate::app::{
+    EngineState, NetworkRecoveryProvider, NetworkRecoveryReason, NetworkRecoveryStatus,
+};
 
 fn parse_retry_status_code(message: &str) -> Option<u16> {
     message

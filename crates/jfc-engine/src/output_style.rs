@@ -100,7 +100,11 @@ pub struct OutputStyleDefinition {
 impl OutputStyleDefinition {
     pub fn suffix(&self) -> Option<String> {
         if let Some(body) = &self.body {
-            return Some(format!("\n\nOutput style: {}.\n{}", self.name.to_ascii_uppercase(), body.trim()));
+            return Some(format!(
+                "\n\nOutput style: {}.\n{}",
+                self.name.to_ascii_uppercase(),
+                body.trim()
+            ));
         }
         self.built_in
             .and_then(OutputStyle::system_prompt_suffix)
@@ -228,7 +232,10 @@ pub fn find_definition(project_root: &Path, name: &str) -> Option<OutputStyleDef
 
 fn parse_style_file(path: &Path, raw: &str) -> Option<OutputStyleDefinition> {
     let (front, body) = split_frontmatter(raw);
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("unnamed");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unnamed");
     let mut name = stem.to_owned();
     if let Some(yaml) = front
         && let Ok(parsed) = serde_yaml::from_str::<StyleFrontmatter>(yaml)
@@ -249,7 +256,9 @@ fn parse_style_file(path: &Path, raw: &str) -> Option<OutputStyleDefinition> {
 }
 
 fn split_frontmatter(raw: &str) -> (Option<&str>, &str) {
-    let trimmed = raw.strip_prefix("---\n").or_else(|| raw.strip_prefix("---\r\n"));
+    let trimmed = raw
+        .strip_prefix("---\n")
+        .or_else(|| raw.strip_prefix("---\r\n"));
     let Some(rest) = trimmed else {
         return (None, raw);
     };
@@ -271,6 +280,7 @@ struct StyleRoot {
 fn style_roots(project_root: &Path) -> Vec<StyleRoot> {
     let mut roots = Vec::new();
     let mut seen = HashSet::new();
+    let settings = crate::config::claude_settings::load_merged(project_root);
     let mut push_root = |path: PathBuf, namespace: Option<String>| {
         if seen.insert((path.clone(), namespace.clone())) {
             roots.push(StyleRoot { path, namespace });
@@ -279,15 +289,31 @@ fn style_roots(project_root: &Path) -> Vec<StyleRoot> {
 
     if let Some(home) = dirs::home_dir() {
         push_root(home.join(".claude/output-styles"), None);
-        push_plugin_roots_in(&home.join(".claude/plugins"), "output-styles", &mut push_root);
+        push_plugin_roots_in(
+            &home.join(".claude/plugins"),
+            "output-styles",
+            &settings,
+            &mut push_root,
+        );
     }
     if let Some(config) = dirs::config_dir() {
-        push_plugin_roots_in(&config.join("jfc/plugins"), "output-styles", &mut push_root);
+        push_plugin_roots_in(
+            &config.join("jfc/plugins"),
+            "output-styles",
+            &settings,
+            &mut push_root,
+        );
     }
-    push_plugin_roots_in(&project_root.join("plugins"), "output-styles", &mut push_root);
+    push_plugin_roots_in(
+        &project_root.join("plugins"),
+        "output-styles",
+        &settings,
+        &mut push_root,
+    );
     push_plugin_roots_in(
         &project_root.join(".claude/plugins"),
         "output-styles",
+        &settings,
         &mut push_root,
     );
     push_root(project_root.join(".claude/output-styles"), None);
@@ -298,6 +324,7 @@ fn style_roots(project_root: &Path) -> Vec<StyleRoot> {
 fn push_plugin_roots_in(
     plugins_dir: &Path,
     child: &str,
+    settings: &crate::config::ClaudeCompatibilityConfig,
     push_root: &mut impl FnMut(PathBuf, Option<String>),
 ) {
     let Ok(entries) = std::fs::read_dir(plugins_dir) else {
@@ -315,6 +342,9 @@ fn push_plugin_roots_in(
         else {
             continue;
         };
+        if !settings.plugin_enabled(plugin) {
+            continue;
+        }
         push_root(path.join(child), Some(plugin.to_owned()));
     }
 }
@@ -334,7 +364,10 @@ mod tests {
     fn unknown_string_falls_back_to_default_robust() {
         assert_eq!(OutputStyle::from_str_loose(""), OutputStyle::Default);
         assert_eq!(OutputStyle::from_str_loose("XYZ"), OutputStyle::Default);
-        assert_eq!(OutputStyle::from_str_loose("not-a-style"), OutputStyle::Default);
+        assert_eq!(
+            OutputStyle::from_str_loose("not-a-style"),
+            OutputStyle::Default
+        );
     }
 
     #[test]
@@ -346,7 +379,12 @@ mod tests {
 
         let definition = find_definition(tmp.path(), "pirate").unwrap();
         assert_eq!(definition.name, "pirate");
-        assert!(definition.suffix().unwrap().contains("Speak like a pirate."));
+        assert!(
+            definition
+                .suffix()
+                .unwrap()
+                .contains("Speak like a pirate.")
+        );
     }
 
     #[test]
@@ -359,5 +397,22 @@ mod tests {
         assert!(find_definition(tmp.path(), "theme:brief").is_some());
         let built_in = find_definition(tmp.path(), "brief").unwrap();
         assert_eq!(built_in.built_in, Some(OutputStyle::Brief));
+    }
+
+    #[test]
+    fn enabled_plugins_false_disables_plugin_output_styles_normal() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join(".claude/plugins/theme/output-styles");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("loud.md"), "Speak loudly.").unwrap();
+        let settings_dir = tmp.path().join(".claude");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        std::fs::write(
+            settings_dir.join("settings.local.json"),
+            r#"{"enabledPlugins":{"theme":false}}"#,
+        )
+        .unwrap();
+
+        assert!(find_definition(tmp.path(), "theme:loud").is_none());
     }
 }

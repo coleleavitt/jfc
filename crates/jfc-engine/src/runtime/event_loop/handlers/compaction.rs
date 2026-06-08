@@ -162,7 +162,9 @@ pub async fn handle_done(
         && state.pending_approval.is_none()
         && state.approval_queue.is_empty()
         && state.pending_tool_calls.is_empty()
-        && !state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+        && !state
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst)
         && !state.cancel_token.is_cancelled()
         && stream::should_continue_loop(&state.messages)
     {
@@ -252,7 +254,9 @@ pub async fn handle_failed(
     if state.pending_approval.is_none()
         && state.approval_queue.is_empty()
         && state.pending_tool_calls.is_empty()
-        && !state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+        && !state
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst)
         && !state.cancel_token.is_cancelled()
         && stream::should_continue_loop(&state.messages)
     {
@@ -265,7 +269,11 @@ pub async fn handle_failed(
 }
 
 // Glue: dispatch a `CompactionEvent` to the matching handler.
-pub async fn handle_compaction_event(state: &mut EngineState, tx: &EventSender, ev: CompactionEvent) {
+pub async fn handle_compaction_event(
+    state: &mut EngineState,
+    tx: &EventSender,
+    ev: CompactionEvent,
+) {
     match ev {
         CompactionEvent::Started => handle_started(state),
         CompactionEvent::Progress { output_chars } => handle_progress(state, output_chars),
@@ -285,10 +293,6 @@ pub async fn handle_compaction_event(state: &mut EngineState, tx: &EventSender, 
 
 #[cfg(test)]
 mod tests {
-    
-    
-
-    
 
     use super::*;
     use crate::types::Role;

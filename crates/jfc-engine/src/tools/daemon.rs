@@ -62,11 +62,7 @@ pub fn execute_cron_delete(id: &str) -> ExecutionResult {
     }
 }
 
-pub fn execute_schedule_wakeup(
-    delay_seconds: u32,
-    prompt: &str,
-    reason: &str,
-) -> ExecutionResult {
+pub fn execute_schedule_wakeup(delay_seconds: u32, prompt: &str, reason: &str) -> ExecutionResult {
     use crate::daemon::{Daemon, DaemonPaths};
     if prompt.is_empty() {
         return ExecutionResult::failure("ScheduleWakeup: prompt must not be empty");

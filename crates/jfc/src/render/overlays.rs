@@ -27,7 +27,8 @@ pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     let slide_offset: u16 = if crate::spinner::reduced_motion() {
         0
     } else {
-        let freshest_age = app.engine
+        let freshest_age = app
+            .engine
             .toasts
             .iter()
             .map(|tt| tt.created_at.elapsed())
@@ -72,7 +73,8 @@ pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     // an Error toast pulls a red border even when surrounded by Info
     // entries. The user's eye finds the strip faster than reading
     // each row.
-    let border_color = app.engine
+    let border_color = app
+        .engine
         .toasts
         .iter()
         .map(|tt| match tt.kind {
@@ -97,7 +99,8 @@ pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     let mut lines: Vec<Line> = Vec::new();
-    for toast in app.engine
+    for toast in app
+        .engine
         .toasts
         .iter()
         .rev()
@@ -148,7 +151,10 @@ pub(super) fn diagnostic_row(f: &mut Frame, app: &App, area: Rect) {
     // cli.js:231036 surfaces the same delta-only count: `Found N new
     // diagnostic issue(s)` — the word "new" is load-bearing.
     let new_entries: Vec<&jfc_engine::diagnostics::DiagnosticEntry> =
-        jfc_engine::diagnostics::unacknowledged(&app.engine.diagnostics, &app.delivered_diagnostics);
+        jfc_engine::diagnostics::unacknowledged(
+            &app.engine.diagnostics,
+            &app.delivered_diagnostics,
+        );
     let issues = new_entries.len();
     let files = {
         let mut s: std::collections::HashSet<&str> = std::collections::HashSet::new();

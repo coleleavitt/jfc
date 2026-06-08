@@ -22,7 +22,8 @@ pub(super) async fn handle_submit(
         let trimmed = text.trim_start();
         let fact = trimmed.trim_start_matches('#').trim();
         if trimmed.starts_with('#') && !fact.is_empty() {
-            let root = app.engine
+            let root = app
+                .engine
                 .git_root
                 .clone()
                 .flatten()

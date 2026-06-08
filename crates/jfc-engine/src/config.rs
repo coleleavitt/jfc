@@ -115,5 +115,4 @@ model = "garbage"
         assert!(cfg.slate_rules.is_none());
         assert!(slate_rules_from_config(&cfg).is_empty());
     }
-
 }

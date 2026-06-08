@@ -2,9 +2,9 @@ mod agent_log_parser;
 pub mod approvals;
 mod background;
 pub mod bootstrap;
+mod dispatch;
 pub mod durations;
 pub mod event_loop;
-mod dispatch;
 mod events;
 mod execution;
 mod factory;
@@ -23,7 +23,7 @@ pub use events::{
     APP_EVENT_BUFFER, CompactionEvent, ControlEvent, EngineEvent, EventReceiver, EventSender,
     FrontendEvent, GoalEvent, ProviderEvent, StreamEvent, StreamLifecyclePhase,
     StreamLifecycleStatus, StreamRequestMetadata, StreamRequestOverrides, StreamToolChoice,
-    TaskEvent, TeamEvent, ToolEvent, WorkflowProgressEvent, send_critical,
+    TaskEvent, TeamEvent, ToolEvent, VoiceEvent, WorkflowProgressEvent, send_critical,
 };
 pub use execution::{ExecutionResult, ToolProvenance, ToolSource};
 pub use factory::{factory_mode_enabled, maybe_continue_task_factory};

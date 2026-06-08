@@ -214,9 +214,11 @@ pub(super) async fn run_daemon_subcommand(sub: DaemonSubcommand) -> anyhow::Resu
             println!("binary takeover queued: {id}");
             Ok(())
         }
-        DaemonSubcommand::Worker { launch } => jfc_engine::daemon::run_background_agent_worker(launch)
-            .await
-            .map_err(|e| anyhow::anyhow!("worker failed: {e}")),
+        DaemonSubcommand::Worker { launch } => {
+            jfc_engine::daemon::run_background_agent_worker(launch)
+                .await
+                .map_err(|e| anyhow::anyhow!("worker failed: {e}"))
+        }
     }
 }
 

@@ -66,16 +66,60 @@ pub mod hooks {
         BeforeStream,
         AfterStream,
         OnHeartbeat,
+        // CC 2.1.167 additions
+        OnSetup,
+        OnUserPromptExpansion,
+        OnMessageDisplay,
+        OnElicitation,
+        OnElicitationResult,
+        PostToolBatch,
+        PostCompact,
+        SubagentStart,
+        WorktreeCreate,
+        WorktreeRemove,
+        ConfigChange,
+        StopFailure,
+        // pre-existing additional points kept for no-op parity
+        BeforeToolDispatch,
+        AfterToolDispatch,
+        PostToolUseFailure,
+        SubagentStop,
+        Stop,
+        OnSessionStart,
+        OnSessionEnd,
+        BeforeCompact,
+        AfterCompact,
+        OnPermissionRequest,
+        OnPermissionGranted,
+        OnPermissionDenied,
+        OnFileChanged,
+        OnCwdChanged,
+        OnAgentSpawned,
+        OnAgentTerminated,
+        OnTeammateIdle,
+        OnMessageSent,
+        OnMessageReceived,
+        OnConfigChanged,
+        OnInstructionsLoaded,
+        OnMemoryCreated,
+        OnMemoryDeleted,
+        OnTaskCreated,
+        OnTaskCompleted,
+        OnToolError,
+        OnToolApproval,
+        BeforeToolBatch,
+        AfterToolBatch,
+        OnModelResponse,
     }
 
     pub struct HookContext;
 
     impl HookContext {
-        pub fn for_session(_session_id: &str) -> Self {
+        pub fn for_session(_session_id: impl AsRef<str>) -> Self {
             Self
         }
         #[must_use]
-        pub fn with_extra(self, _key: &str, _value: String) -> Self {
+        pub fn with_extra(self, _key: impl Into<String>, _value: impl Into<String>) -> Self {
             self
         }
     }
@@ -99,8 +143,8 @@ pub mod hooks {
 
     pub fn init_global(_registry: HookRegistry) {}
 }
-pub mod ids;
 pub mod idle_prefetch;
+pub mod ids;
 pub mod inline_tools;
 #[cfg(feature = "intent-gate")]
 pub mod intent;
@@ -110,6 +154,7 @@ pub mod lsp_client;
 pub mod lsp_rpc;
 pub mod managed_session;
 pub mod mcp;
+pub mod mcp_elicitation;
 pub mod memory;
 pub mod memory_recall;
 pub mod notifications;
@@ -160,20 +205,20 @@ pub use runtime::{
 /// Domain-type facade mirroring the binary's historical `crate::types`
 /// surface (canonical definitions live in jfc-core).
 pub mod types {
-pub use jfc_core::ToolInputError;
+    pub use jfc_core::ToolInputError;
     pub use jfc_core::{
         ExecutionStatus, ModelUsage, ReplacementMode, TaskInput, TaskLifecycle, TaskStatusPart,
         ToolInput, ToolKind, ToolStatus,
     };
-    
+
     // Module paths preserved for `crate::types::tool_call::X`-style imports.
     pub use jfc_core::{diff, tool_call, tool_display, tool_output};
-    
+
     pub use jfc_core::diff::*;
     pub use jfc_core::tool_call::{InvalidToolTransition, ToolCall, ToolUndoEntry};
     pub use jfc_core::tool_display::ToolDisplayState;
     pub use jfc_core::tool_output::{LargeText, ToolOutput, format_server_tool_result_text_public};
-    
+
     // Former `message.rs` / `status.rs` / `tool.rs` glob surfaces.
     pub use jfc_core::{
         ChatMessage, LspServerInfo, LspStatus, McpServerInfo, McpStatus, MessagePart, Role,

@@ -27,18 +27,14 @@ pub fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
 /// once the loop resumes.
 ///
 /// See `StopReason::PauseTurn` docs and cli.js v142:622686, :623776.
-pub fn build_provider_messages_for_pause_turn_resume(
-    msgs: &[ChatMessage],
-) -> Vec<ProviderMessage> {
+pub fn build_provider_messages_for_pause_turn_resume(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
     let out = build_assistant_and_tool_result_messages(msgs);
     let out = prepare_for_pause_turn_resume(out);
     validate_provider_messages(&out);
     out
 }
 
-pub fn build_provider_messages_with_tool_results(
-    msgs: &[ChatMessage],
-) -> Vec<ProviderMessage> {
+pub fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
     let out = build_assistant_and_tool_result_messages(msgs);
     let out = repair_tool_result_pairing(out);
     let out = ensure_user_last(out);

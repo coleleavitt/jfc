@@ -883,7 +883,9 @@ mod pure_helper_tests {
     #[test]
     fn effort_status_badge_shows_pinned_level_normal() {
         let mut app = fake_app();
-        app.engine.effort_state.set(jfc_engine::effort::ReasoningEffort::XHigh);
+        app.engine
+            .effort_state
+            .set(jfc_engine::effort::ReasoningEffort::XHigh);
         assert_eq!(effort_status_badge(&app), "effort xhigh".to_string());
     }
 

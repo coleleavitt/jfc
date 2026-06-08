@@ -149,7 +149,9 @@ pub async fn drain_stream_events(
                 // Matches cli.js pattern of separate "thinking_tokens" system events.
                 if let Some(tokens) = estimated_tokens
                     && tx
-                        .try_send(EngineEvent::Stream(RuntimeStreamEvent::ThinkingTokens(tokens)))
+                        .try_send(EngineEvent::Stream(RuntimeStreamEvent::ThinkingTokens(
+                            tokens,
+                        )))
                         .is_err()
                 {
                     tracing::trace!(target: "jfc::stream", "ThinkingTokens dropped (buffer full)");
@@ -302,7 +304,9 @@ pub async fn drain_stream_events(
                     tool
                 };
                 let _ = tx
-                    .send(EngineEvent::Stream(RuntimeStreamEvent::Tool(Box::new(tool))))
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::Tool(Box::new(
+                        tool,
+                    ))))
                     .await;
             }
             StreamEvent::ServerToolResult {
@@ -377,7 +381,9 @@ pub async fn drain_stream_events(
             StreamEvent::TextDone { .. } | StreamEvent::ThinkingDone { .. } => {}
             StreamEvent::RedactedThinkingDone { data, .. } => {
                 let _ = tx
-                    .send(EngineEvent::Stream(RuntimeStreamEvent::RedactedThinking(data)))
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::RedactedThinking(
+                        data,
+                    )))
                     .await;
             }
             StreamEvent::Usage {

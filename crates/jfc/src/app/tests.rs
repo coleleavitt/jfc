@@ -2,11 +2,11 @@ use std::{sync::Arc, time::Instant};
 
 use super::shell_safety::is_readonly_bash;
 use super::*;
-use jfc_engine::app::recent_models::save_recent_models;
 use jfc_core::{
     ChatMessage, MessagePart, ModelUsage, ReplacementMode, ToolCall, ToolInput, ToolKind,
     ToolOutput, ToolStatus,
 };
+use jfc_engine::app::recent_models::save_recent_models;
 use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 
 /// Minimal Provider implementation for App-construction tests. The
@@ -276,7 +276,9 @@ fn bypass_still_approves_safe_destructive_robust() {
         "rm -rf target",                                    // build artifact
         "rm -rf /tmp/scratch-build",                        // tmp
         "git worktree remove --force .jfc-worktrees/t1",    // worktree cleanup
+        "git worktree remove --force .claude/worktrees/t1", // Claude-layout worktree cleanup
         "git branch -D jfc/old-agent-branch",               // merged branch
+        "git branch -D worktree-old-agent-branch",          // Claude-layout worktree branch
         "git reset --hard HEAD",                            // merge-abort idiom
         "git push --force-with-lease origin master",        // the SAFE force variant
         "rm -rf /home/cole/RustProjects/active/jfc/target", // deep targeted path
@@ -457,7 +459,8 @@ fn pending_approval_and_queue_independent_normal() {
         tool: make_tool(ToolKind::Edit, "e1"),
         selected: 0,
     });
-    app.engine.approval_queue
+    app.engine
+        .approval_queue
         .push_back(make_tool(ToolKind::Bash, "b1"));
     assert!(app.engine.pending_approval.is_some());
     assert_eq!(app.engine.approval_queue.len(), 1);
@@ -488,7 +491,9 @@ fn tool_needs_approval_default_mode_normal() {
 fn tool_needs_approval_respects_always_approved_normal() {
     let mut app = new_app();
     let bash = make_tool(ToolKind::Bash, "b");
-    app.engine.always_approved.push(bash.kind.label().to_owned());
+    app.engine
+        .always_approved
+        .push(bash.kind.label().to_owned());
     assert!(!app.engine.tool_needs_approval(&bash));
 }
 
@@ -497,7 +502,9 @@ fn tool_needs_approval_respects_always_approved_normal() {
 fn tool_needs_approval_respects_session_approved_normal() {
     let mut app = new_app();
     let edit = make_tool(ToolKind::Edit, "e");
-    app.engine.session_approved.push(edit.kind.label().to_owned());
+    app.engine
+        .session_approved
+        .push(edit.kind.label().to_owned());
     assert!(!app.engine.tool_needs_approval(&edit));
 }
 
@@ -542,10 +549,14 @@ fn selected_context_window_tokens_falls_back_normal() {
 #[test]
 fn sync_selected_context_window_updates_max_normal() {
     let mut app = new_app();
-    app.engine.messages
+    app.engine
+        .messages
         .push(ChatMessage::user("0123456789abcdef".into()));
     app.engine.sync_selected_context_window();
-    assert_eq!(app.engine.max_context_tokens, app.engine.selected_context_window_tokens());
+    assert_eq!(
+        app.engine.max_context_tokens,
+        app.engine.selected_context_window_tokens()
+    );
     // 16 chars / 4 * 1.5 = 6 tokens.
     assert_eq!(app.engine.tool_ctx.approx_tokens, 6);
 }
@@ -582,7 +593,8 @@ fn sync_preserves_usage_based_estimate_robust() {
 #[test]
 fn recompute_no_usage_uses_estimator_normal() {
     let mut app = new_app();
-    app.engine.messages
+    app.engine
+        .messages
         .push(ChatMessage::user("0123456789abcdef".into()));
     app.engine.last_usage_input = 999;
     app.engine.last_usage_output = 999;
@@ -607,7 +619,8 @@ fn recompute_with_usage_plus_tail_normal() {
     });
     app.engine.messages.push(anchor);
     // 16-char user message after the anchor → 6 tail tokens.
-    app.engine.messages
+    app.engine
+        .messages
         .push(ChatMessage::user("0123456789abcdef".into()));
     app.recompute_token_estimate();
     assert_eq!(app.engine.tool_ctx.approx_tokens, 1_500 + 6);
@@ -637,7 +650,8 @@ fn switch_session_resets_state_normal() {
     app.viewing_task_id = Some("t1".into());
     app.viewing_task_expanded
         .insert("t1".into(), std::collections::HashSet::new());
-    app.engine.task_completion_times
+    app.engine
+        .task_completion_times
         .insert(jfc_session::TaskId::from("t1"), Instant::now());
 
     app.switch_session(Some(jfc_engine::ids::SessionId::new("ses_test_switch")));
@@ -679,12 +693,14 @@ fn sync_task_completions_tracks_and_prunes_normal() {
     let mut app = new_app();
     // Create a task in the in-memory fixture store so tests never mutate
     // the project-level `.jfc/tasks.json`.
-    let t1 = app.engine
+    let t1 = app
+        .engine
         .task_store
         .create::<jfc_session::TaskId>("subj".into(), "desc".into(), None, Vec::new())
         .expect("created");
     // Mark it completed.
-    app.engine.task_store
+    app.engine
+        .task_store
         .update(
             t1.id.as_str(),
             TaskPatch {
@@ -698,7 +714,8 @@ fn sync_task_completions_tracks_and_prunes_normal() {
     assert!(app.engine.task_completion_times.contains_key(&t1.id));
 
     // Re-open: sync should prune the entry.
-    app.engine.task_store
+    app.engine
+        .task_store
         .update(
             t1.id.as_str(),
             TaskPatch {
@@ -986,7 +1003,8 @@ fn selected_model_info_finds_in_cache_normal() {
     let mut app = new_app();
     let info =
         ModelInfo::new("test-model", "Test", "test").with_context_window_tokens(Some(50_000));
-    app.engine.provider_models
+    app.engine
+        .provider_models
         .insert(jfc_provider::ProviderId::from("test"), vec![info]);
     let got = app.engine.selected_model_info().expect("found");
     assert_eq!(got.id.as_str(), "test-model");
@@ -1037,7 +1055,10 @@ fn queue_background_reminder_appends_normal() {
     let mut app = new_app();
     app.engine.queue_background_reminder("CLAUDE.md changed");
     assert_eq!(app.engine.pending_background_reminders.len(), 1);
-    assert_eq!(app.engine.pending_background_reminders[0], "CLAUDE.md changed");
+    assert_eq!(
+        app.engine.pending_background_reminders[0],
+        "CLAUDE.md changed"
+    );
 }
 
 // Robust: pushing the same body twice does NOT duplicate. This is
@@ -1086,7 +1107,6 @@ fn take_background_reminders_empty_is_empty_robust() {
     assert!(drained.is_empty());
 }
 
-
 // ── Compaction view-effect regressions (moved from the engine handler when
 //    it crossed the crate boundary — the scroll/follow assertions are the
 //    frontend's interpretation of the TranscriptReplaced/ScrollToBottom
@@ -1096,67 +1116,69 @@ use jfc_core::ChatMessage as CompactChatMessage;
 
 #[tokio::test]
 async fn compaction_done_repins_scroll_to_bottom_robust() {
-        let mut app = new_app();
-        // Simulate a user who scrolled up before compaction.
-        app.total_lines = 500;
-        app.viewport_height = 20;
-        app.scroll_offset = 5;
-        app.follow_bottom = false;
-        app.engine.is_streaming = false;
+    let mut app = new_app();
+    // Simulate a user who scrolled up before compaction.
+    app.total_lines = 500;
+    app.viewport_height = 20;
+    app.scroll_offset = 5;
+    app.follow_bottom = false;
+    app.engine.is_streaming = false;
 
-        let compacted = vec![
-            CompactChatMessage::compact_boundary("summary of the session so far", 120_000),
-            CompactChatMessage::assistant("resumed reply".into()),
-        ];
-        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+    let compacted = vec![
+        CompactChatMessage::compact_boundary("summary of the session so far", 120_000),
+        CompactChatMessage::assistant("resumed reply".into()),
+    ];
+    let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        jfc_engine::runtime::event_loop::handlers::compaction::handle_done(
-            &mut app.engine,
-            &tx,
-            compacted,
-            jfc_engine::context::ToolContext::new(),
-            120_000,
-            20_000,
-        )
-        .await;
-        // The handler queues an effect; the frontend's drain applies it.
-        crate::runtime::event_loop::apply_engine_effects(&mut app);
+    jfc_engine::runtime::event_loop::handlers::compaction::handle_done(
+        &mut app.engine,
+        &tx,
+        compacted,
+        jfc_engine::context::ToolContext::new(),
+        120_000,
+        20_000,
+    )
+    .await;
+    // The handler queues an effect; the frontend's drain applies it.
+    crate::runtime::event_loop::apply_engine_effects(&mut app);
 
-        assert!(
-            app.follow_bottom,
-            "compaction is a hard transcript reset — follow_bottom must re-arm"
-        );
-        // scroll_to_bottom() pins to max_scroll() = total_lines - viewport_height
-        // (500 - 20 = 480), clearing the stale offset of 5.
-        assert_eq!(
-            app.scroll_offset, 480,
-            "scroll_offset must be repinned to the bottom of the new transcript"
-        );
-    }
-
+    assert!(
+        app.follow_bottom,
+        "compaction is a hard transcript reset — follow_bottom must re-arm"
+    );
+    // scroll_to_bottom() pins to max_scroll() = total_lines - viewport_height
+    // (500 - 20 = 480), clearing the stale offset of 5.
+    assert_eq!(
+        app.scroll_offset, 480,
+        "scroll_offset must be repinned to the bottom of the new transcript"
+    );
+}
 
 #[tokio::test]
 async fn compaction_done_while_streaming_does_not_repin_edge() {
-        let mut app = new_app();
-        app.engine.is_streaming = true;
-        app.follow_bottom = false;
-        app.scroll_offset = 5;
-        let before = app.engine.messages.len();
-        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+    let mut app = new_app();
+    app.engine.is_streaming = true;
+    app.follow_bottom = false;
+    app.scroll_offset = 5;
+    let before = app.engine.messages.len();
+    let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        jfc_engine::runtime::event_loop::handlers::compaction::handle_done(
-            &mut app.engine,
-            &tx,
-            vec![CompactChatMessage::assistant("ignored".into())],
-            jfc_engine::context::ToolContext::new(),
-            120_000,
-            20_000,
-        )
-        .await;
+    jfc_engine::runtime::event_loop::handlers::compaction::handle_done(
+        &mut app.engine,
+        &tx,
+        vec![CompactChatMessage::assistant("ignored".into())],
+        jfc_engine::context::ToolContext::new(),
+        120_000,
+        20_000,
+    )
+    .await;
 
-        crate::runtime::event_loop::apply_engine_effects(&mut app);
-        assert_eq!(app.engine.messages.len(), before, "result must be discarded");
-        assert!(!app.follow_bottom, "discard path must not repin");
-        assert_eq!(app.scroll_offset, 5);
-    }
-
+    crate::runtime::event_loop::apply_engine_effects(&mut app);
+    assert_eq!(
+        app.engine.messages.len(),
+        before,
+        "result must be discarded"
+    );
+    assert!(!app.follow_bottom, "discard path must not repin");
+    assert_eq!(app.scroll_offset, 5);
+}

@@ -148,12 +148,14 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     let tx_guard = tx.clone();
     // Refresh CLAUDE.md frontmatter disallowed tools before each turn.
     if let Ok(cwd_path) = std::env::current_dir() {
-        let hierarchy = crate::context::ClaudeMdHierarchy::load(&cwd_path);
+        let hierarchy =
+            crate::context::ClaudeMdHierarchy::load_with_extra_roots(&cwd_path, &state.extra_dirs);
         state.claudemd_disallowed_tools = hierarchy.collect_disallowed_tools();
     }
     let overrides = StreamRequestOverrides {
         background_reminders: state.take_background_reminders(),
         disallowed_tools: state.effective_disallowed_tools(),
+        extra_dirs: state.extra_dirs.clone(),
         allowed_tools: state.allowed_tools.clone(),
         custom_betas: state.custom_betas.clone(),
         fine_grained_tool_streaming: state.fine_grained_tool_streaming,

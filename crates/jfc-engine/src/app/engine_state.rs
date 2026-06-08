@@ -27,8 +27,10 @@ use crate::types::*;
 use jfc_provider::{ModelId, ModelInfo, Provider, ProviderId};
 use jfc_session::TaskId;
 
+use super::{
+    BACKGROUND_REMINDERS_CAP, DEFAULT_CONTEXT_WINDOW_TOKENS, STREAM_WATCHDOG_TIMEOUT_SECS,
+};
 use super::{PendingApproval, PermissionDecision, PermissionMode, load_recent_models};
-use super::{BACKGROUND_REMINDERS_CAP, DEFAULT_CONTEXT_WINDOW_TOKENS, STREAM_WATCHDOG_TIMEOUT_SECS};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkRecoveryProvider {
@@ -74,7 +76,6 @@ pub struct NetworkRecoveryStatus {
     pub attempts: u32,
     pub updated_at: Instant,
 }
-
 
 pub struct BackgroundTask {
     pub task_id: crate::ids::TaskId,
@@ -365,6 +366,10 @@ pub struct EngineState {
     /// or Esc (declined). Unlike `approval_queue`, questions don't queue —
     /// `AskUserQuestion` is a turn-ending tool, so at most one is ever pending.
     pub pending_question: Option<crate::app::PendingQuestion>,
+    /// Active MCP elicitation requests waiting for user input.
+    /// Multiple elicitations can queue up (one per in-flight MCP tool call).
+    /// The TUI renders the first one as a modal; subsequent ones wait.
+    pub pending_elicitations: std::collections::VecDeque<jfc_core::mcp_elicitation::ElicitationSnapshot>,
     /// Tool calls that have been yielded to the host but are not executing yet:
     /// waiting for approval, classifier judgment, or stream_done batch
     /// dispatch. This is the TUI/remote equivalent of upstream's
@@ -868,9 +873,7 @@ impl EngineState {
             streaming_started_at: None,
             streaming_last_token_at: None,
             token_rate_samples: std::collections::VecDeque::new(),
-            token_history: std::collections::VecDeque::with_capacity(
-                super::TOKEN_HISTORY_CAP,
-            ),
+            token_history: std::collections::VecDeque::with_capacity(super::TOKEN_HISTORY_CAP),
             last_active_agent_task: None,
             thinking_started_at: None,
             thinking_ended_at: None,
@@ -890,6 +893,7 @@ impl EngineState {
             pending_approval: None,
             approval_queue: std::collections::VecDeque::new(),
             pending_question: None,
+            pending_elicitations: std::collections::VecDeque::new(),
             deferred_tool_uses: VecDeque::with_capacity(DEFERRED_TOOL_USES_CAP),
             in_progress_tool_use_ids: HashSet::new(),
             tool_use_summaries: VecDeque::with_capacity(TOOL_USE_SUMMARIES_CAP),
@@ -1086,10 +1090,10 @@ impl EngineState {
             }
             self.pending_background_agent_completions.push(completion);
         }
-        self.background_tasks_completed_since_last_turn = self
-            .pending_background_agent_completions
-            .len()
-            .min(u32::MAX as usize) as u32;
+        self.background_tasks_completed_since_last_turn =
+            self.pending_background_agent_completions
+                .len()
+                .min(u32::MAX as usize) as u32;
     }
 
     pub fn take_background_agent_completions(&mut self) -> Vec<BackgroundAgentCompletion> {

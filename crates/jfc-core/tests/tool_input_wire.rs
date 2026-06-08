@@ -1,6 +1,4 @@
-
 use jfc_core::{ReplacementMode, TaskInput, ToolInput, ToolInputError};
-
 
 mod tests {
     use super::*;
@@ -829,6 +827,60 @@ mod tests {
                 assert_eq!(wait_up_to, Some(1000));
             }
             other => panic!("expected BashOutput input, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tool_input_task_output_alias_parses_as_bash_output_regression() {
+        let input = ToolInput::from_value(
+            "AgentOutputTool",
+            serde_json::json!({
+                "task_id": "bash_abc",
+                "block": true,
+                "timeout": "2500"
+            }),
+        )
+        .expect("parse Claude output alias");
+        match input {
+            ToolInput::BashOutput {
+                task_id,
+                block,
+                timeout,
+                ..
+            } => {
+                assert_eq!(task_id, "bash_abc");
+                assert_eq!(block, Some(true));
+                assert_eq!(timeout, Some(2500));
+            }
+            other => panic!("expected BashOutput input, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tool_input_lsp_accepts_claude_wire_shape_regression() {
+        let input = ToolInput::from_value(
+            "LSPTool",
+            serde_json::json!({
+                "operation": "goToDefinition",
+                "filePath": "/tmp/x.rs",
+                "line": 12,
+                "character": 4
+            }),
+        )
+        .expect("parse Claude LSP input");
+        match input {
+            ToolInput::Lsp {
+                kind,
+                file,
+                line,
+                column,
+            } => {
+                assert_eq!(kind, "definition");
+                assert_eq!(file, "/tmp/x.rs");
+                assert_eq!(line, 12);
+                assert_eq!(column, 4);
+            }
+            other => panic!("expected LSP input, got {other:?}"),
         }
     }
 

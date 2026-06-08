@@ -14,7 +14,10 @@ pub(super) async fn handle_dump_context_command(state: &mut EngineState) {
     report.push_str(&format!("- Model: `{}`\n", state.model));
     report.push_str(&format!("- Cwd: `{}`\n", state.cwd));
     report.push_str(&format!("- Provider: `{}`\n", state.provider.name()));
-    report.push_str(&format!("- Permission mode: `{:?}`\n", state.permission_mode));
+    report.push_str(&format!(
+        "- Permission mode: `{:?}`\n",
+        state.permission_mode
+    ));
     if let Some(ref branch) = state.git_branch {
         report.push_str(&format!("- Git branch: `{branch}`\n"));
     }
@@ -84,9 +87,11 @@ pub(super) async fn handle_dump_context_command(state: &mut EngineState) {
     }
     report.push('\n');
 
-    state.messages
+    state
+        .messages
         .push(jfc_core::ChatMessage::user("/dump-context".to_string()));
-    state.messages
+    state
+        .messages
         .push(jfc_core::ChatMessage::assistant(report));
 }
 
@@ -122,9 +127,11 @@ pub(super) fn handle_fleet_command(state: &mut EngineState) {
             ));
         }
     }
-    state.messages
+    state
+        .messages
         .push(jfc_core::ChatMessage::user("/fleet".into()));
-    state.messages
+    state
+        .messages
         .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
     tracing::info!(
         target: "jfc::ui::fleet",
@@ -158,10 +165,10 @@ pub(super) async fn handle_teleport_command(state: &mut EngineState, target: &st
             s.push_str("\nRun `/teleport <branch>` to jump.");
             s
         };
-        state.messages
+        state
+            .messages
             .push(jfc_core::ChatMessage::user("/teleport".into()));
-        state.messages
-            .push(jfc_core::ChatMessage::assistant(body));
+        state.messages.push(jfc_core::ChatMessage::assistant(body));
         return;
     }
 
@@ -171,10 +178,11 @@ pub(super) async fn handle_teleport_command(state: &mut EngineState, target: &st
         format!("jfc/{target}")
     };
     let result = crate::swarm::teleport::teleport_to_session(repo_root, &target_branch, None);
-    state.messages.push(jfc_core::ChatMessage::user(format!(
-        "/teleport {target}"
-    )));
-    state.messages
+    state
+        .messages
+        .push(jfc_core::ChatMessage::user(format!("/teleport {target}")));
+    state
+        .messages
         .push(jfc_core::ChatMessage::assistant(result.message.clone()));
     tracing::info!(
         target: "jfc::ui::teleport",
@@ -206,9 +214,11 @@ pub(super) fn handle_output_style_command(state: &mut EngineState, args: &str) {
         }
         lines.push("".into());
         lines.push("Use `/output-style <name>` to switch.".into());
-        state.messages
+        state
+            .messages
             .push(jfc_core::ChatMessage::user("/output-style".into()));
-        state.messages
+        state
+            .messages
             .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
         return;
     }
@@ -296,7 +306,9 @@ pub(super) async fn handle_doc_command(
     if let (true, Some(tx)) = (idle, tx) {
         state.messages.push(ChatMessage::user(echo));
         state.push_effect(crate::app::EngineEffect::ScrollToBottom);
-        let _ = tx.send(EngineEvent::Control(ControlEvent::SubmitPrompt(body))).await;
+        let _ = tx
+            .send(EngineEvent::Control(ControlEvent::SubmitPrompt(body)))
+            .await;
         tracing::info!(
             target: "jfc::doc_command",
             kind = kind.file_name(),
@@ -328,7 +340,8 @@ pub(super) async fn handle_init_command(state: &mut EngineState) {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let target = cwd.join("CLAUDE.md");
 
-    state.messages
+    state
+        .messages
         .push(jfc_core::ChatMessage::user("/init".into()));
 
     let overwrite_note = if target.exists() {
@@ -504,8 +517,7 @@ pub(super) async fn handle_init_command(state: &mut EngineState) {
         Err(e) => format!("**Error:** Failed to write `{}`: {e}", target.display()),
     };
 
-    state.messages
-        .push(jfc_core::ChatMessage::assistant(body));
+    state.messages.push(jfc_core::ChatMessage::assistant(body));
 }
 
 /// `/cost` reports running session cost.
@@ -531,16 +543,19 @@ pub(super) fn handle_cost_command(state: &mut EngineState) {
     }
     lines.push("".into());
     lines.push(format!("**Total: {}**", crate::cost::fmt_cost(total)));
-    state.messages
+    state
+        .messages
         .push(jfc_core::ChatMessage::user("/cost".into()));
-    state.messages
+    state
+        .messages
         .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
 }
 
 /// `/status` reports rich session status.
 pub(super) fn handle_status_command(state: &mut EngineState) {
     let (total_in, total_out, total_cr, total_cw) =
-        state.usage_by_model
+        state
+            .usage_by_model
             .values()
             .fold((0u64, 0u64, 0u64, 0u64), |(i, o, cr, cw), u| {
                 (
@@ -587,9 +602,11 @@ pub(super) fn handle_status_command(state: &mut EngineState) {
         format!("**Temperature:** {temperature_label}"),
         format!("**Exploration:** {exploration_label}"),
     ];
-    state.messages
+    state
+        .messages
         .push(jfc_core::ChatMessage::user("/status".into()));
-    state.messages
+    state
+        .messages
         .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
 }
 
@@ -640,7 +657,8 @@ pub(super) fn handle_bug_command(state: &mut EngineState, description: String) {
     // No browser launch here: this code is engine-resident (headless and
     // remote frontends run it too), so the honest contract is to hand the
     // user the pre-filled URL rather than claim a browser opened.
-    state.messages
+    state
+        .messages
         .push(jfc_core::ChatMessage::assistant(format!(
             "Pre-filled bug report ready — open this in your browser:\n\n\
              {url}\n\n\
@@ -692,6 +710,5 @@ pub(super) fn handle_rewind_command(state: &mut EngineState, n_str: &str) {
         &mut state.toasts,
         crate::toast::Toast::new(crate::toast::ToastKind::Info, body.clone()),
     );
-    state.messages
-        .push(jfc_core::ChatMessage::assistant(body));
+    state.messages.push(jfc_core::ChatMessage::assistant(body));
 }

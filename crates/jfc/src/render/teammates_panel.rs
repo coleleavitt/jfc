@@ -24,12 +24,14 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
 
     f.render_widget(Clear, popup);
 
-    let alive: Vec<_> = app.engine
+    let alive: Vec<_> = app
+        .engine
         .background_tasks
         .values()
         .filter(|bt| bt.status.is_alive())
         .collect();
-    let terminal: Vec<_> = app.engine
+    let terminal: Vec<_> = app
+        .engine
         .background_tasks
         .values()
         .filter(|bt| bt.status.is_terminal())

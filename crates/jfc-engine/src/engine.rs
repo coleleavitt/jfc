@@ -59,6 +59,53 @@ impl Engine {
         tx: EventSender,
     ) -> Self {
         crate::tools::register_event_sender(tx.clone());
+        // Register the elicitation event channel so jfc-mcp transports can
+        // notify the engine when elicitation/create arrives from an MCP server.
+        let engine_tx_for_elicit = tx.clone();
+        let (elicit_tx, mut elicit_rx) =
+            tokio::sync::mpsc::channel::<jfc_core::mcp_elicitation::ElicitationEvent>(64);
+        jfc_core::mcp_elicitation::register_elicitation_event_sender(elicit_tx);
+        tokio::spawn(async move {
+            while let Some(ev) = elicit_rx.recv().await {
+                match ev {
+                    jfc_core::mcp_elicitation::ElicitationEvent::Arrived(snapshot) => {
+                        let fe = crate::runtime::EngineEvent::Frontend(
+                            crate::runtime::FrontendEvent::ElicitationRequest {
+                                id: snapshot.id.clone(),
+                                server_name: snapshot.server_name.clone(),
+                                kind: snapshot.kind,
+                            },
+                        );
+                        if engine_tx_for_elicit.send(fe).await.is_err() {
+                            break; // engine shut down
+                        }
+                        // Fire OnElicitation hook
+                        crate::hooks::fire_async(
+                            crate::hooks::HookPoint::OnElicitation,
+                            &crate::hooks::HookContext::for_session("<mcp-elicitation>")
+                                .with_extra("server_name", snapshot.server_name)
+                                .with_extra("elicitation_id", snapshot.id),
+                        );
+                    }
+                    jfc_core::mcp_elicitation::ElicitationEvent::Resolved {
+                        id,
+                        server_name,
+                        mode,
+                        action,
+                    } => {
+                        // Fire OnElicitationResult hook
+                        crate::hooks::fire_async(
+                            crate::hooks::HookPoint::OnElicitationResult,
+                            &crate::hooks::HookContext::for_session("<mcp-elicitation>")
+                                .with_extra("server_name", server_name)
+                                .with_extra("elicitation_id", id)
+                                .with_extra("mode", mode)
+                                .with_extra("action", action),
+                        );
+                    }
+                }
+            }
+        });
         Self {
             state: EngineState::new(provider, model),
             tx,

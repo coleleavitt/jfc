@@ -54,10 +54,7 @@ where
 /// Returns `Ok(())` when no schema is active OR the data matches.
 /// Returns `Err(messages)` listing every validation error.
 pub fn validate_output(data: &Value) -> Result<(), String> {
-    let validator = ACTIVE_SCHEMA
-        .try_with(|v| v.clone())
-        .ok()
-        .flatten();
+    let validator = ACTIVE_SCHEMA.try_with(|v| v.clone()).ok().flatten();
     let Some(validator) = validator else {
         return Ok(());
     };

@@ -209,7 +209,8 @@ Supported intervals: `Xs` (seconds), `Xm` (minutes), `Xh` (hours), `Xd` (days)."
 
     let (interval, user_prompt) = parse_loop_interval(args);
     if user_prompt.is_empty() {
-        state.messages
+        state
+            .messages
             .push(ChatMessage::user(format!("/loop {args}")));
         state.messages.push(ChatMessage::assistant(
             "No prompt found after the interval. Usage: `/loop [interval] <prompt>`".into(),
@@ -348,7 +349,8 @@ and display the results in a readable table with columns: id, schedule, command,
         )
     } else {
         // Unknown subcommand — show help inline, no model turn needed.
-        state.messages
+        state
+            .messages
             .push(ChatMessage::user(format!("/schedule {arg}")));
         state.messages.push(ChatMessage::assistant(
             "Usage:\n\

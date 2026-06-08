@@ -38,7 +38,11 @@ fn tool_ids(tools: &[ToolCall]) -> Vec<String> {
         .collect()
 }
 
-pub fn dispatch_approved_tools(state: &mut EngineState, tools: Vec<ToolCall>, tx: &mpsc::Sender<EngineEvent>) {
+pub fn dispatch_approved_tools(
+    state: &mut EngineState,
+    tools: Vec<ToolCall>,
+    tx: &mpsc::Sender<EngineEvent>,
+) {
     if tools.is_empty() {
         return;
     }
@@ -90,7 +94,10 @@ pub fn deny_pending_and_queued(state: &mut EngineState, tx: &mpsc::Sender<Engine
         deny_tool(state, tool);
     }
     if denied_count > 0 {
-        crate::runtime::send_critical(tx, EngineEvent::Tool(crate::runtime::ToolEvent::AllComplete));
+        crate::runtime::send_critical(
+            tx,
+            EngineEvent::Tool(crate::runtime::ToolEvent::AllComplete),
+        );
     }
     denied_count
 }
@@ -140,7 +147,10 @@ pub fn finish_approval_decision(
         // can re-invoke the model with the denial results. Without
         // this, a denial as the last tool leaves the loop stalled —
         // so use send_critical (never drop it on a full channel).
-        crate::runtime::send_critical(tx, EngineEvent::Tool(crate::runtime::ToolEvent::AllComplete));
+        crate::runtime::send_critical(
+            tx,
+            EngineEvent::Tool(crate::runtime::ToolEvent::AllComplete),
+        );
     } else {
         dispatch_approved_tools(state, dispatchable, tx);
     }
@@ -156,7 +166,8 @@ pub fn deny_tool(state: &mut EngineState, tool: ToolCall) {
     crate::changeset::record_approval(
         tool.kind.label(),
         false,
-        state.current_session_id
+        state
+            .current_session_id
             .as_ref()
             .map(|sid| sid.as_str().to_owned()),
     );
@@ -282,7 +293,6 @@ pub fn handle_remote_approval_response(
         }
     }
 }
-
 
 /// Build a [`PendingQuestion`] from an `AskUserQuestion` tool call. Returns
 /// `None` when the input isn't an `AskUserQuestion` or has no usable questions

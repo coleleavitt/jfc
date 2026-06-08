@@ -37,7 +37,8 @@ fn handle_task_panel_key(app: &mut App, key: event::KeyEvent) -> bool {
         cycle_expanded_view(app);
         return true;
     }
-    let total = app.engine
+    let total = app
+        .engine
         .task_store
         .list(jfc_session::DeletedFilter::Exclude)
         .len();
@@ -108,7 +109,11 @@ fn is_ctrl_t(key: event::KeyEvent) -> bool {
 fn cycle_expanded_view(app: &mut App) {
     use crate::app::ExpandedView;
     let has_teammates = app.engine.team_context.is_active()
-        || app.engine.background_tasks.values().any(|bt| bt.status.is_alive());
+        || app
+            .engine
+            .background_tasks
+            .values()
+            .any(|bt| bt.status.is_alive());
     app.expanded_view = match app.expanded_view {
         ExpandedView::None => ExpandedView::Tasks,
         ExpandedView::Tasks if has_teammates => ExpandedView::Teammates,

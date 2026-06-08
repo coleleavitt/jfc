@@ -86,8 +86,8 @@ impl<'a> RenderCtx<'a> {
             reasoning_expanded: &app.reasoning_expanded,
             active_reasoning_idx: {
                 // Only the live, still-thinking block defaults expanded.
-                let thinking_live =
-                    app.engine.thinking_started_at.is_some() && app.engine.thinking_ended_at.is_none();
+                let thinking_live = app.engine.thinking_started_at.is_some()
+                    && app.engine.thinking_ended_at.is_none();
                 if thinking_live {
                     app.engine.streaming_assistant_idx
                 } else {
@@ -98,7 +98,10 @@ impl<'a> RenderCtx<'a> {
             render_cache: &app.render_cache,
             theme: app.theme,
             brief_mode: app.engine.brief_mode
-                || jfc_engine::feature_gates::pewter_owl_brief_enabled(app.engine.model.as_str(), false),
+                || jfc_engine::feature_gates::pewter_owl_brief_enabled(
+                    app.engine.model.as_str(),
+                    false,
+                ),
             // The pacer is advanced in the tick handler; here we only read the
             // current revealed count. Off the streaming path there's nothing to
             // pace, so leave it `None` (full render).
@@ -638,6 +641,36 @@ pub(super) fn is_groupable(kind: &ToolKind) -> bool {
     )
 }
 
+/// Tool kinds that produce NO visible widget in the transcript.
+///
+/// Mirrors CC 2.1.167's `renderToolUseMessage() { return null; }` pattern.
+/// These tools are structural/meta — task management, scheduling, internal
+/// search — and showing their call widgets drowns the real work. The model
+/// still sees the `tool_result` text; only the TUI widget is suppressed.
+///
+/// Users can override by setting `JFC_SHOW_ALL_TOOLS=1`.
+pub(super) fn is_invisible_in_transcript(kind: &ToolKind) -> bool {
+    if std::env::var("JFC_SHOW_ALL_TOOLS").is_ok() {
+        return false;
+    }
+    matches!(
+        kind,
+        // Task management — CC hides all of these
+        ToolKind::TaskCreate
+            | ToolKind::TaskUpdate
+            | ToolKind::TaskList
+            | ToolKind::TaskGet
+            | ToolKind::TaskDone
+            | ToolKind::TaskStop
+            | ToolKind::TaskValidate
+            // Scheduling / cron
+            | ToolKind::ScheduleWakeup
+            | ToolKind::CronCreate
+            | ToolKind::CronList
+            | ToolKind::CronDelete
+    )
+}
+
 /// Remove every `<system-reminder>…</system-reminder>` block from `s`. Used to
 /// tell whether a user turn has any real (user-authored) content left.
 fn strip_system_reminders(s: &str) -> String {
@@ -803,7 +836,10 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
         while p < msg.parts.len() {
             let part = &msg.parts[p];
             match part {
-                MessagePart::Tool(first_tool) if is_groupable(&first_tool.kind) => {
+                MessagePart::Tool(first_tool)
+                    if is_groupable(&first_tool.kind)
+                        && !is_invisible_in_transcript(&first_tool.kind) =>
+                {
                     // Probe forward for consecutive same-kind tools.
                     let mut run_end = p + 1;
                     while run_end < msg.parts.len() {
@@ -834,7 +870,9 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
                     // individually.
                     for tool_part in &msg.parts[p..run_end] {
                         if let MessagePart::Tool(tool) = tool_part {
-                            items.push(RenderItem::ToolBlock(tool));
+                            if !is_invisible_in_transcript(&tool.kind) {
+                                items.push(RenderItem::ToolBlock(tool));
+                            }
                         }
                     }
                     p = run_end;
@@ -847,10 +885,7 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
                     // Brief mode: suppress plain assistant text — the user only
                     // sees `SendUserMessage` tool output. User-role messages
                     // (the prompts the user typed) stay visible regardless.
-                    if ctx.brief_mode
-                        && msg.role == jfc_core::Role::Assistant
-                        && !text.is_empty()
-                    {
+                    if ctx.brief_mode && msg.role == jfc_core::Role::Assistant && !text.is_empty() {
                         p += 1;
                         continue;
                     }
@@ -932,7 +967,9 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
                     push_reasoning_lines(&mut items, text, reasoning_expanded, &t);
                 }
                 MessagePart::Tool(tool) => {
-                    items.push(RenderItem::ToolBlock(tool));
+                    if !is_invisible_in_transcript(&tool.kind) {
+                        items.push(RenderItem::ToolBlock(tool));
+                    }
                 }
                 MessagePart::TaskStatus(ts) => {
                     push_task_status_lines(&mut items, ts, &t, inner_w);

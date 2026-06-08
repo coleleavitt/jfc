@@ -1,8 +1,8 @@
 //! Slash handlers: thin adapters to the cohesive `*_commands` modules.
 
+use super::{automation::*, github::*, local::*, mcp::*, worktree::*};
 use crate::commands::prelude::*;
 use crate::runtime::EngineEvent;
-use super::{automation::*, github::*, local::*, mcp::*, worktree::*};
 
 pub(super) async fn cmd_worktree(
     state: &mut EngineState,
@@ -192,7 +192,10 @@ pub(super) async fn cmd_bug(
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    handle_bug_command(state, parts.get(1..).map(|r| r.join(" ")).unwrap_or_default());
+    handle_bug_command(
+        state,
+        parts.get(1..).map(|r| r.join(" ")).unwrap_or_default(),
+    );
 }
 
 pub(super) async fn cmd_rewind(
@@ -293,8 +296,6 @@ pub(super) async fn cmd_schedule(
     handle_schedule_command(state, parts.get(1).copied().unwrap_or("").trim(), tx).await;
 }
 
-
-
 pub(super) async fn cmd_fleet(
     state: &mut EngineState,
     _parts: &[&str],
@@ -303,4 +304,3 @@ pub(super) async fn cmd_fleet(
 ) {
     handle_fleet_command(state);
 }
-

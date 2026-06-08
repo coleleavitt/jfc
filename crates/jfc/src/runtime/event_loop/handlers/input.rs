@@ -6,8 +6,8 @@ use crossterm::event::{Event, KeyEventKind};
 
 use crate::app::{App, SelectKind, SelectRequest, TextSelection};
 use crate::runtime::EventSender;
-use jfc_core::*;
 use crate::{attachments, input, message_view};
+use jfc_core::*;
 use jfc_engine::toast;
 
 /// Max gap between clicks to count as a multi-click (word/line select).

@@ -1,5 +1,5 @@
-//! Watch CLAUDE.md / `.claude/agents/*.md` / `~/.config/jfc/settings.toml` /
-//! `~/.config/jfc/keybindings.toml` for changes and emit a
+//! Watch CLAUDE.md / `.claude/agents/*.md` / `~/.config/jfc/config.toml` /
+//! `.claude/settings*.json` / `~/.config/jfc/keybindings.toml` for changes and emit a
 //! `<system-reminder>` so the model picks up the new content on the next turn.
 //!
 //! The watcher runs once at startup. It collects path candidates from
@@ -227,7 +227,13 @@ fn candidate_paths(keybindings_path: &Path) -> (Vec<PathBuf>, Option<PathBuf>) {
                 out.push(dir);
             }
         }
-        for rel in [".claude/CLAUDE.md", "CLAUDE.local.md", "MEMORY.md"] {
+        for rel in [
+            ".claude/CLAUDE.md",
+            ".claude/settings.json",
+            ".claude/settings.local.json",
+            "CLAUDE.local.md",
+            "MEMORY.md",
+        ] {
             let file = c.join(rel);
             if file.exists() {
                 out.push(file);
@@ -239,6 +245,10 @@ fn candidate_paths(keybindings_path: &Path) -> (Vec<PathBuf>, Option<PathBuf>) {
         let user_md = home.join(".claude").join("CLAUDE.md");
         if user_md.exists() {
             out.push(user_md);
+        }
+        let user_claude_settings = home.join(".claude").join("settings.json");
+        if user_claude_settings.exists() {
+            out.push(user_claude_settings);
         }
         for rel in [
             ".claude/agents",
@@ -253,10 +263,7 @@ fn candidate_paths(keybindings_path: &Path) -> (Vec<PathBuf>, Option<PathBuf>) {
                 out.push(dir);
             }
         }
-        let user_settings = home
-            .join(".config")
-            .join("jfc")
-            .join("config.toml");
+        let user_settings = home.join(".config").join("jfc").join("config.toml");
         if user_settings.exists() {
             out.push(user_settings);
         }

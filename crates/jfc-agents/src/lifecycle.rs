@@ -34,6 +34,9 @@ pub fn render_skills_section(skills: &[Skill]) -> String {
         if !skill.files.is_empty() {
             tags.push(format!("{} files", skill.files.len()));
         }
+        if let Some(schedule) = skill.schedule.as_deref().filter(|s| !s.trim().is_empty()) {
+            tags.push(format!("schedule {schedule}"));
+        }
         let tag_text = if tags.is_empty() {
             String::new()
         } else {

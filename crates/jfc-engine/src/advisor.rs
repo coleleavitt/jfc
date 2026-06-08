@@ -171,7 +171,9 @@ pub fn resolve_local_advisor_provider(
             .ok_or_else(|| format!("advisor provider `{configured}` is not configured"));
     }
 
-    if let Some(resolved) = crate::runtime::bootstrap::resolve_provider_model(providers, advisor_model.as_str()) {
+    if let Some(resolved) =
+        crate::runtime::bootstrap::resolve_provider_model(providers, advisor_model.as_str())
+    {
         return Ok(resolved.provider);
     }
 

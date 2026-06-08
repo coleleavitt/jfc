@@ -247,6 +247,17 @@ pub fn execute_task_list(
         return ExecutionResult::failure("Task store not available");
     };
     let mut tasks = store.list(DeletedFilter::Exclude);
+
+    // CC 2.1.167 parity: exclude tasks with metadata._internal = true.
+    // These are system-internal tasks the model shouldn't see in its list.
+    tasks.retain(|t| {
+        !t.metadata
+            .as_ref()
+            .and_then(|m| m.get("_internal"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    });
+
     if let Some(sf) = status_filter {
         tasks.retain(|t| {
             let s = serde_json::to_value(t.status)
@@ -260,10 +271,39 @@ pub fn execute_task_list(
     }
     debug!(target: "jfc::tools", count = tasks.len(), "task_list: result");
 
+    // CC 2.1.167 parity: strip completed task IDs from blockedBy arrays.
+    // A task blocked by an already-completed dependency is effectively
+    // unblocked — showing it as blocked is confusing.
+    let completed_ids: std::collections::HashSet<String> = tasks
+        .iter()
+        .filter(|t| t.status == TaskStatus::Completed)
+        .map(|t| t.id.as_str().to_owned())
+        .collect();
+
+    // Serialize tasks, stripping completed IDs from blockedBy per CC 2.1.167.
+    let tasks_json: Vec<serde_json::Value> = tasks
+        .iter()
+        .map(|t| {
+            let mut v = serde_json::to_value(t).unwrap_or(serde_json::Value::Null);
+            if let Some(obj) = v.as_object_mut() {
+                if let Some(blocked) = obj.get_mut("blocked_by") {
+                    if let Some(arr) = blocked.as_array_mut() {
+                        arr.retain(|id| {
+                            id.as_str()
+                                .map(|s| !completed_ids.contains(s))
+                                .unwrap_or(true)
+                        });
+                    }
+                }
+            }
+            v
+        })
+        .collect();
+
     // Without history retrieval, preserve the original array-of-tasks shape so
     // existing callers/tests see no change.
     if !include_history {
-        let output = serde_json::to_string_pretty(&tasks)
+        let output = serde_json::to_string_pretty(&tasks_json)
             .unwrap_or_else(|_| format!("{} tasks", tasks.len()));
         return ExecutionResult::success(output);
     }
@@ -280,7 +320,7 @@ pub fn execute_task_list(
         "task_list: included archived history"
     );
     let combined = serde_json::json!({
-        "active": tasks,
+        "active": tasks_json,
         "history": history,
         "history_truncated": history.len() == TASK_HISTORY_RETRIEVAL_LIMIT,
     });
@@ -438,4 +478,56 @@ pub async fn execute_skill(name: &str, args: Option<&str>) -> ExecutionResult {
     info!(target: "jfc::tools", skill_name = name, has_args = args.is_some(), "skill: invoking");
     let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
     execute_skill_in(&cwd, name, args).await
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    fn is_internal(metadata: Option<&serde_json::Value>) -> bool {
+        metadata
+            .and_then(|m| m.get("_internal"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn internal_filter_detects_true_normal() {
+        let meta = json!({"_internal": true});
+        assert!(is_internal(Some(&meta)));
+    }
+
+    #[test]
+    fn internal_filter_allows_false_normal() {
+        let meta = json!({"_internal": false});
+        assert!(!is_internal(Some(&meta)));
+    }
+
+    #[test]
+    fn internal_filter_allows_no_metadata_robust() {
+        assert!(!is_internal(None));
+    }
+
+    #[test]
+    fn internal_filter_allows_other_metadata_robust() {
+        let meta = json!({"priority": 1, "kind": "task"});
+        assert!(!is_internal(Some(&meta)));
+    }
+
+    #[test]
+    fn blocked_by_completed_filter_removes_completed_ids_normal() {
+        let mut arr = vec![
+            json!("t1"),
+            json!("t2"),
+            json!("t3"),
+        ];
+        let completed: std::collections::HashSet<String> =
+            ["t1".to_string(), "t3".to_string()].into();
+        arr.retain(|id| {
+            id.as_str()
+                .map(|s| !completed.contains(s))
+                .unwrap_or(true)
+        });
+        assert_eq!(arr, vec![json!("t2")]);
+    }
 }

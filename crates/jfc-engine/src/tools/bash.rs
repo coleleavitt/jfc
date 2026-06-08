@@ -15,12 +15,31 @@ use super::safe_tools::{
 };
 use super::{ExecutionResult, ToolProvenance, ToolSource};
 
-type ProgressSink = Option<(String, tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>)>;
+type ProgressSink = Option<(
+    String,
+    tokio::sync::mpsc::Sender<crate::runtime::EngineEvent>,
+)>;
 
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_FOREGROUND_BUDGET_MS: u64 = 15_000;
-const INLINE_OUTPUT_BYTES: usize = 30_720;
-const TAIL_BUFFER_BYTES: usize = INLINE_OUTPUT_BYTES * 2;
+/// Default inline output cap — mirrors CC 2.1.167's `og6 = 30_000` chars.
+/// Override via `BASH_MAX_OUTPUT_LENGTH` (CC-compatible) or `JFC_BASH_MAX_OUTPUT_LENGTH`.
+const INLINE_OUTPUT_BYTES_DEFAULT: usize = 30_000;
+const INLINE_OUTPUT_BYTES_MAX: usize = 150_000; // CC's rg6 = 15e4
+
+/// Read the effective bash output cap from the environment.
+/// `BASH_MAX_OUTPUT_LENGTH` is the CC-compatible name; `JFC_BASH_MAX_OUTPUT_LENGTH`
+/// is the JFC-native override. Values are clamped to [1024, 150_000].
+fn inline_output_bytes() -> usize {
+    for key in &["JFC_BASH_MAX_OUTPUT_LENGTH", "BASH_MAX_OUTPUT_LENGTH"] {
+        if let Ok(val) = std::env::var(key) {
+            if let Ok(n) = val.trim().parse::<usize>() {
+                return n.clamp(1024, INLINE_OUTPUT_BYTES_MAX);
+            }
+        }
+    }
+    INLINE_OUTPUT_BYTES_DEFAULT
+}
 const DEFAULT_OUTPUT_LIMIT_LINES: u64 = 2_000;
 const DEFAULT_OUTPUT_WAIT_MS: u64 = 30_000;
 const TERMINATE_GRACE_MS: u64 = 1_500;
@@ -170,17 +189,19 @@ impl BashOutputState {
                 .count() as u64,
         );
         self.tail.push_str(text);
-        if self.tail.len() > TAIL_BUFFER_BYTES {
-            let excess = self.tail.len() - TAIL_BUFFER_BYTES;
+        let tail_cap = inline_output_bytes() * 2;
+        if self.tail.len() > tail_cap {
+            let excess = self.tail.len() - tail_cap;
             let split = self.tail.ceil_char_boundary(excess);
             self.tail.drain(..split);
         }
     }
 
     fn snapshot(&self) -> BashOutputSnapshot {
-        let truncated = self.total_bytes as usize > INLINE_OUTPUT_BYTES;
-        let content = if truncated && self.tail.len() > INLINE_OUTPUT_BYTES {
-            let start = self.tail.len() - INLINE_OUTPUT_BYTES;
+        let cap = inline_output_bytes();
+        let truncated = self.total_bytes as usize > cap;
+        let content = if truncated && self.tail.len() > cap {
+            let start = self.tail.len() - cap;
             self.tail[self.tail.ceil_char_boundary(start)..].to_owned()
         } else {
             self.tail.clone()
@@ -408,6 +429,14 @@ fn build_bash_command(command: &str, cwd: &Path) -> (Command, String) {
                 let exe = bwrap_argv.remove(0);
                 (exe, bwrap_argv)
             }
+            None if cfg.fail_if_unavailable => (
+                "bash".to_string(),
+                vec![
+                    "-c".into(),
+                    "echo 'Bash sandbox requested but bubblewrap is unavailable' >&2; exit 127"
+                        .into(),
+                ],
+            ),
             None => ("bash".to_string(), vec!["-c".into(), command.clone()]),
         },
         _ => ("bash".to_string(), vec!["-c".into(), command.clone()]),
@@ -791,7 +820,7 @@ fn format_completed_task(
              output_file: {}\n\
              task_id: {}\n\
              Use BashOutput to read ranges.",
-            INLINE_OUTPUT_BYTES,
+            inline_output_bytes(),
             completion.snapshot.total_bytes,
             completion.snapshot.total_lines,
             task.output_path.display(),
@@ -804,11 +833,7 @@ fn format_completed_task(
     })
 }
 
-pub async fn execute_bash(
-    command: &str,
-    timeout_ms: Option<u64>,
-    cwd: &Path,
-) -> ExecutionResult {
+pub async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> ExecutionResult {
     execute_bash_with_options(command, timeout_ms, cwd, None, false).await
 }
 

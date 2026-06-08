@@ -93,4 +93,3 @@ fn read_clipboard_image_shell() -> Result<Option<Vec<u8>>, String> {
     }
     Ok(None)
 }
-

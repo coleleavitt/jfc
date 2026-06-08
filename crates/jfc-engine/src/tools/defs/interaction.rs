@@ -223,7 +223,7 @@ fn enter_worktree_def() -> ToolDef {
     ToolDef {
         name: "EnterWorktree".into(),
         description: "Create (if needed) and switch into a git worktree at \
-            `.jfc-worktrees/<name>` checking out branch `jfc/<name>` (or a \
+            `.claude/worktrees/<slug>` checking out branch `worktree-<slug>` (or a \
             caller-provided branch). Subsequent tool calls run in that \
             worktree's directory until `ExitWorktree` is invoked."
             .into(),
@@ -232,11 +232,11 @@ fn enter_worktree_def() -> ToolDef {
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Worktree name. [A-Za-z0-9_-], <= 64 chars."
+                    "description": "Worktree name. [A-Za-z0-9_/-], <= 96 chars. Slashes flatten to + in the path and branch."
                 },
                 "branch": {
                     "type": "string",
-                    "description": "Optional branch to check out (defaults to `jfc/<name>`)."
+                    "description": "Optional branch to check out (defaults to `worktree-<slug>`)."
                 }
             },
             "required": ["name"]

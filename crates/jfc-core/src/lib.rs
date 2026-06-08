@@ -24,6 +24,7 @@ mod server_tool;
 mod status;
 mod task;
 mod task_store;
+pub mod mcp_elicitation;
 mod tool;
 pub mod tool_call;
 pub mod tool_display;

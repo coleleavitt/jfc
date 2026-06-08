@@ -84,7 +84,9 @@ pub(super) fn handle_approval_key(
             deny_pending_and_queued(&mut app.engine, tx);
         }
         KeyCode::Char('b') | KeyCode::Char('B')
-            if jfc_engine::feature_gates::is_enabled(jfc_engine::feature_gates::FeatureGate::Tern) =>
+            if jfc_engine::feature_gates::is_enabled(
+                jfc_engine::feature_gates::FeatureGate::Tern,
+            ) =>
         {
             let label = approval.tool.kind.label().to_owned();
             let tool = app.engine.pending_approval.take().unwrap().tool;

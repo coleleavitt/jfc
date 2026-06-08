@@ -27,10 +27,13 @@ use std::time::Duration;
 
 use reqwest::header::{HeaderName, HeaderValue};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ClientCapabilities, ClientInfo, Implementation,
-    ReadResourceRequestParams, ReadResourceResult, Resource, Tool,
+    CallToolRequestParams, CallToolResult, ClientCapabilities, ClientInfo,
+    CreateElicitationRequestParams, CreateElicitationResult, ElicitationAction,
+    ElicitationResponseNotificationParam, FormElicitationCapability, Implementation,
+    ReadResourceRequestParams, ReadResourceResult, Resource, Tool, UrlElicitationCapability,
+    ElicitationCapability,
 };
-use rmcp::service::{NotificationContext, RoleClient, RunningService};
+use rmcp::service::{NotificationContext, RequestContext, RoleClient, RunningService};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::{StreamableHttpClientTransport, TokioChildProcess};
 use rmcp::{ClientHandler, ServiceError, ServiceExt};
@@ -47,26 +50,178 @@ const DEFAULT_STDERR_RING_CAPACITY: usize = 200;
 type StderrRing = Arc<Mutex<VecDeque<String>>>;
 
 /// `rmcp` client handler. Reports jfc's identity in the `initialize`
-/// handshake and forwards `tools/list_changed` notifications to the
-/// process-global refresh signal so the streaming layer re-reads the
-/// catalog. All other client-role callbacks keep their no-op defaults.
+/// handshake, forwards `tools/list_changed` notifications, and handles
+/// full MCP elicitation (form + URL modes) per CC 2.1.167.
 #[derive(Clone)]
-struct JfcClientHandler;
+struct JfcClientHandler {
+    /// Which MCP server this handler belongs to (for logging / event fields).
+    server_name: String,
+}
+
+impl JfcClientHandler {
+    fn new(server_name: String) -> Self {
+        Self { server_name }
+    }
+}
 
 impl ClientHandler for JfcClientHandler {
     async fn on_tool_list_changed(&self, _ctx: NotificationContext<RoleClient>) {
         crate::registry::request_refresh();
         tracing::info!(
             target: "jfc::mcp",
+            server = %self.server_name,
             "received notifications/tools/list_changed — registry refresh requested"
         );
     }
 
+    /// Handle MCP `elicitation/create` — both form and URL modes.
+    ///
+    /// # Flow
+    /// 1. Convert rmcp params → `jfc_core::mcp_elicitation::ElicitationKind`
+    /// 2. Push to global pending queue → get back `(id, rx)`
+    /// 3. Notify engine via `send_elicitation_event(Arrived)` so the frontend renders
+    /// 4. Await oneshot `rx` for user's response
+    /// 5. Notify engine via `send_elicitation_event(Resolved)` for hook firing
+    /// 6. Return `CreateElicitationResult` to the MCP server
+    async fn create_elicitation(
+        &self,
+        request: CreateElicitationRequestParams,
+        _context: RequestContext<RoleClient>,
+    ) -> Result<CreateElicitationResult, rmcp::ErrorData> {
+        use jfc_core::mcp_elicitation::{
+            ElicitationEvent, ElicitationKind, ElicitationResponse, ElicitationSnapshot,
+            push, send_elicitation_event,
+        };
+
+        // 1. Build ElicitationKind from rmcp params
+        let kind = match &request {
+            CreateElicitationRequestParams::FormElicitationParams {
+                message,
+                requested_schema,
+                ..
+            } => {
+                let schema_val = serde_json::to_value(requested_schema)
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                ElicitationKind::Form {
+                    message: message.clone(),
+                    schema: schema_val,
+                }
+            }
+            CreateElicitationRequestParams::UrlElicitationParams {
+                message,
+                url,
+                elicitation_id,
+                ..
+            } => ElicitationKind::Url {
+                message: message.clone(),
+                url: url.clone(),
+                elicitation_id: elicitation_id.clone(),
+            },
+        };
+
+        let mode = kind.label().to_owned();
+        tracing::info!(
+            target: "jfc::mcp::elicitation",
+            server = %self.server_name,
+            mode = %mode,
+            "received elicitation/create"
+        );
+
+        // 2. Push to global pending queue
+        let (id, rx) = push(self.server_name.clone(), kind.clone());
+
+        // 3. Notify engine — engine bridges this to FrontendEvent::ElicitationRequest
+        send_elicitation_event(ElicitationEvent::Arrived(ElicitationSnapshot {
+            id: id.clone(),
+            server_name: self.server_name.clone(),
+            kind,
+        }));
+
+        // 4. Await user response
+        let response = rx.await.unwrap_or(ElicitationResponse::Cancel);
+
+        let action_label = match &response {
+            ElicitationResponse::Accept { .. } => "accept",
+            ElicitationResponse::Decline => "decline",
+            ElicitationResponse::Cancel => "cancel",
+        };
+
+        tracing::info!(
+            target: "jfc::mcp::elicitation",
+            server = %self.server_name,
+            action = %action_label,
+            "elicitation resolved"
+        );
+
+        // 5. Notify engine for hook firing
+        send_elicitation_event(ElicitationEvent::Resolved {
+            id: id.clone(),
+            server_name: self.server_name.clone(),
+            mode,
+            action: action_label.to_owned(),
+        });
+
+        // 6. Return rmcp result
+        Ok(match response {
+            ElicitationResponse::Accept { content } => CreateElicitationResult {
+                action: ElicitationAction::Accept,
+                content: Some(content),
+                meta: None,
+            },
+            ElicitationResponse::Decline => CreateElicitationResult {
+                action: ElicitationAction::Decline,
+                content: None,
+                meta: None,
+            },
+            ElicitationResponse::Cancel => CreateElicitationResult {
+                action: ElicitationAction::Cancel,
+                content: None,
+                meta: None,
+            },
+        })
+    }
+
+    /// Handle `notifications/elicitation/complete` — server confirms a URL
+    /// elicitation finished. Auto-resolve the matching pending entry.
+    async fn on_url_elicitation_notification_complete(
+        &self,
+        params: ElicitationResponseNotificationParam,
+        _context: NotificationContext<RoleClient>,
+    ) {
+        tracing::info!(
+            target: "jfc::mcp::elicitation",
+            server = %self.server_name,
+            elicitation_id = %params.elicitation_id,
+            "received notifications/elicitation/complete"
+        );
+        let resolved = jfc_core::mcp_elicitation::resolve_by_elicitation_id(
+            &params.elicitation_id,
+            jfc_core::mcp_elicitation::ElicitationResponse::Accept {
+                content: serde_json::Value::Object(Default::default()),
+            },
+        );
+        if !resolved {
+            tracing::debug!(
+                target: "jfc::mcp::elicitation",
+                server = %self.server_name,
+                elicitation_id = %params.elicitation_id,
+                "elicitation/complete notification for unknown or already-resolved elicitation"
+            );
+        }
+    }
+
     fn get_info(&self) -> ClientInfo {
-        ClientInfo::new(
-            ClientCapabilities::default(),
-            Implementation::new("jfc", env!("CARGO_PKG_VERSION")),
-        )
+        // Advertise full elicitation capability: form + url, with schema validation.
+        // ClientCapabilities is #[non_exhaustive] so we can't use struct init —
+        // build it via mutation from Default.
+        let mut caps = ClientCapabilities::default();
+        caps.elicitation = Some(ElicitationCapability {
+            form: Some(FormElicitationCapability {
+                schema_validation: Some(true),
+            }),
+            url: Some(UrlElicitationCapability {}),
+        });
+        ClientInfo::new(caps, Implementation::new("jfc", env!("CARGO_PKG_VERSION")))
     }
 }
 
@@ -263,7 +418,7 @@ impl Transport {
             spawn_stderr_drain(cfg.server_name.clone(), stderr, Arc::clone(&stderr_ring));
         }
 
-        let client = match JfcClientHandler.serve(proc).await {
+        let client = match JfcClientHandler::new(cfg.server_name.clone()).serve(proc).await {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(
@@ -314,7 +469,7 @@ impl Transport {
         let transport = StreamableHttpClientTransport::from_config(
             StreamableHttpClientTransportConfig::with_uri(url).custom_headers(headers),
         );
-        let client = match JfcClientHandler.serve(transport).await {
+        let client = match JfcClientHandler::new(cfg.server_name.clone()).serve(transport).await {
             Ok(c) => c,
             Err(e) => {
                 let rejected_auth = has_auth_header && service_error_suggests_auth_rejection(&e);

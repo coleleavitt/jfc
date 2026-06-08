@@ -47,7 +47,8 @@ pub(super) async fn handle_worktree_command(state: &mut EngineState, args: &str)
                 echo(
                     state,
                     "/worktree create".to_owned(),
-                    "Usage: `/worktree create <name>` (alphanumeric, dash, underscore)".to_owned(),
+                    "Usage: `/worktree create <name>` (alphanumeric, dash, underscore, slash)"
+                        .to_owned(),
                 );
                 return;
             }
@@ -74,7 +75,7 @@ pub(super) async fn handle_worktree_command(state: &mut EngineState, args: &str)
                 echo(
                     state,
                     "/worktree remove".to_owned(),
-                    "Usage: `/worktree remove <name>` (the `jfc/<name>` branch is preserved)"
+                    "Usage: `/worktree remove <name>` (the `worktree-<slug>` branch is preserved)"
                         .to_owned(),
                 );
                 return;
@@ -89,8 +90,11 @@ pub(super) async fn handle_worktree_command(state: &mut EngineState, args: &str)
             }
             let body = match crate::worktrees::remove_worktree_async(&repo_root, arg).await {
                 Ok(()) => format!(
-                    "Removed worktree `.jfc-worktrees/{arg}`. The branch `jfc/{arg}` is preserved \
-                     — recover with `git switch jfc/{arg}` from any checkout."
+                    "Removed worktree `{}`. The branch `{}` is preserved \
+                     — recover with `git switch {}` from any checkout.",
+                    crate::worktrees::worktree_rel_path(arg),
+                    crate::worktrees::worktree_branch_name(arg),
+                    crate::worktrees::worktree_branch_name(arg),
                 ),
                 Err(e) => format!("**Error:** {e}"),
             };
@@ -113,9 +117,8 @@ pub(super) async fn handle_worktree_command(state: &mut EngineState, args: &str)
                 );
                 return;
             }
-            let target = std::path::PathBuf::from(&state.cwd)
-                .join(".jfc-worktrees")
-                .join(arg);
+            let target =
+                std::path::PathBuf::from(&state.cwd).join(crate::worktrees::worktree_rel_path(arg));
             // jfc's cwd is captured at startup, so we can't transparently
             // teleport mid-session — print the manual recipe.
             let body = format!(

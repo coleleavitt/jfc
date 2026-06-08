@@ -279,8 +279,8 @@ fn lifecycle_from_daemon_status(status: BackgroundAgentStatus) -> TaskLifecycle 
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use crate::app::EngineState;
+    use std::sync::Arc;
     use std::time::SystemTime;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
@@ -372,13 +372,18 @@ mod tests {
         std::fs::create_dir_all(log_path.parent().expect("log parent")).expect("mkdir");
         std::fs::write(&log_path, "initial output\n").expect("write log");
         let mut daemon_state = DaemonState::default();
-        daemon_state.background_agents.insert(task_id.to_owned(), agent);
+        daemon_state
+            .background_agents
+            .insert(task_id.to_owned(), agent);
         save_state(&paths, &daemon_state).expect("save running state");
 
         assert!(sync_detached_background_tasks_from_daemon_with_paths(
             &mut state, &paths
         ));
-        let bt = state.background_tasks.get(task_id).expect("background task");
+        let bt = state
+            .background_tasks
+            .get(task_id)
+            .expect("background task");
         assert_eq!(bt.status, TaskLifecycle::Running);
         assert!(bt.completed_at.is_none());
         assert!(bt.chat_messages.iter().any(|msg| {
@@ -395,7 +400,10 @@ mod tests {
             .description
             .clone();
         completed.push_str(" done");
-        let agent = daemon_state.background_agents.get_mut(task_id).expect("agent");
+        let agent = daemon_state
+            .background_agents
+            .get_mut(task_id)
+            .expect("agent");
         agent.status = BackgroundAgentStatus::Completed;
         agent.updated_at = now;
         agent.completed_at = Some(now);
@@ -407,7 +415,10 @@ mod tests {
         assert!(sync_detached_background_tasks_from_daemon_with_paths(
             &mut state, &paths
         ));
-        let bt = state.background_tasks.get(task_id).expect("background task");
+        let bt = state
+            .background_tasks
+            .get(task_id)
+            .expect("background task");
         assert_eq!(bt.status, TaskLifecycle::Completed);
         assert_eq!(state.background_tasks_completed_since_last_turn, 1);
         assert_eq!(state.pending_background_agent_completions.len(), 1);

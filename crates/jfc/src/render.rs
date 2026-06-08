@@ -15,6 +15,7 @@ mod approval;
 /// Ported streaming-render toolkit from `openai/codex` (protocol-free pieces).
 /// Stage 1 of the selective TUI port — see `codex_stream/mod.rs`.
 pub(crate) mod codex_stream;
+pub(crate) mod elicitation;
 mod frame;
 mod input_box;
 mod messages;

@@ -774,6 +774,9 @@ pub(super) async fn cmd_skills(
             if !sk.files.is_empty() {
                 meta.push(format!("{} files", sk.files.len()));
             }
+            if let Some(schedule) = sk.schedule.as_deref().filter(|s| !s.trim().is_empty()) {
+                meta.push(format!("schedule {schedule}"));
+            }
             let meta = if meta.is_empty() {
                 String::new()
             } else {

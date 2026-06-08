@@ -52,14 +52,20 @@ fn tool_ids(tools: &[ToolCall]) -> Vec<String> {
         .collect()
 }
 
-fn dispatch_tool_batch(state: &mut EngineState, tx: &EventSender, calls: Vec<ToolCall>, eager: bool) {
+fn dispatch_tool_batch(
+    state: &mut EngineState,
+    tx: &EventSender,
+    calls: Vec<ToolCall>,
+    eager: bool,
+) {
     if calls.is_empty() {
         return;
     }
     if eager {
         state.in_flight_eager_dispatches += 1;
         for tool in &calls {
-            state.pre_dispatched_tool_ids
+            state
+                .pre_dispatched_tool_ids
                 .insert(tool.id.as_str().to_owned());
         }
     }
@@ -565,8 +571,8 @@ pub fn handle_server_tool_result(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use crate::app::EngineState;
+    use std::sync::Arc;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 
@@ -702,11 +708,14 @@ mod tests {
         state.auto_mode.enabled = true;
         state.is_streaming = true;
         state.pending_classifications = 1;
-        state.messages.push(ChatMessage::assistant_parts(Vec::new()));
+        state
+            .messages
+            .push(ChatMessage::assistant_parts(Vec::new()));
         state.streaming_assistant_idx = Some(0);
         let (tx, mut rx) = tokio::sync::mpsc::channel(8);
 
-        handle_classifier_decision(&mut state,
+        handle_classifier_decision(
+            &mut state,
             &tx,
             Box::new(glob_tool("g1")),
             false,
@@ -742,7 +751,8 @@ mod tests {
         state.pending_classifications = 1;
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        handle_classifier_decision(&mut state,
+        handle_classifier_decision(
+            &mut state,
             &tx,
             Box::new(glob_tool("g1")),
             false,

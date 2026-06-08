@@ -8,10 +8,10 @@
 //! isolated branch for a risky multi-file change without trampling the main
 //! checkout.
 //!
-//! Layout: created worktrees live at `<repo_root>/.jfc-worktrees/<name>` and
-//! check out a fresh branch `jfc/<name>`. Removing a worktree only deletes
+//! Layout: created worktrees live at `<repo_root>/.claude/worktrees/<slug>` and
+//! check out a fresh branch `worktree-<slug>`. Removing a worktree only deletes
 //! the working tree directory; the branch itself is left intact so the work
-//! is recoverable via `git switch jfc/<name>` from any other checkout.
+//! is recoverable via `git switch worktree-<slug>` from any other checkout.
 //!
 //! The shell-out functions (`list_worktrees`, `create_worktree`,
 //! `remove_worktree`) intentionally have no unit tests — they invoke real
@@ -22,6 +22,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tokio::process::Command as TokioCommand;
+
+const WORKTREE_DIR: &str = ".claude/worktrees";
 
 /// One row from `git worktree list --porcelain`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,31 +56,63 @@ pub async fn find_repo_root_async(cwd: &Path) -> Result<PathBuf, String> {
     Ok(PathBuf::from(root))
 }
 
-/// Validate a worktree name before it reaches `git`. Names become both a
-/// directory under `.jfc-worktrees/` and the leaf of a `jfc/<name>` branch,
-/// so we restrict to `[A-Za-z0-9_-]` to keep both shells and refs happy.
-/// Empty input and inputs over 64 chars are rejected.
+/// Validate a worktree name before it reaches `git`. Slashes are accepted for
+/// Claude compatibility but flattened to `+` before becoming a filesystem leaf
+/// or branch suffix. Empty input, traversal segments, and inputs over 96 chars
+/// are rejected.
 pub fn validate_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("worktree name must not be empty".to_owned());
     }
-    if name.len() > 64 {
+    if name.len() > 96 {
         return Err(format!(
-            "worktree name must be <= 64 chars (got {})",
+            "worktree name must be <= 96 chars (got {})",
             name.len()
+        ));
+    }
+    if name.starts_with('/') || name.ends_with('/') || name.contains("//") {
+        return Err(format!(
+            "worktree name `{name}` must not start/end with `/` or contain empty path segments"
+        ));
+    }
+    if name.split('/').any(|part| part == "." || part == "..") {
+        return Err(format!(
+            "worktree name `{name}` must not contain `.` or `..` path segments"
         ));
     }
     if !name
         .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '/')
     {
         return Err(format!(
-            "worktree name `{name}` must match [A-Za-z0-9_-] only \
-             (no slashes, dots, or whitespace)"
+            "worktree name `{name}` must match [A-Za-z0-9_/-] only \
+             (no dots or whitespace)"
         ));
     }
     tracing::trace!(target: "jfc::worktrees", name, "validate_name ok");
     Ok(())
+}
+
+fn flatten_slug(name: &str) -> String {
+    name.replace('/', "+")
+}
+
+pub(crate) fn worktree_rel_path(name: &str) -> String {
+    format!("{WORKTREE_DIR}/{}", flatten_slug(name))
+}
+
+pub(crate) fn worktree_branch_name(name: &str) -> String {
+    format!("worktree-{}", flatten_slug(name))
+}
+
+fn configured_base_ref() -> Option<String> {
+    crate::config::load_arc()
+        .worktree
+        .as_ref()
+        .and_then(|worktree| worktree.base_ref.as_ref())
+        .map(|base| base.trim())
+        .filter(|base| !base.is_empty())
+        .map(str::to_owned)
 }
 
 /// Parse the porcelain output of `git worktree list --porcelain`.
@@ -201,22 +235,27 @@ pub async fn list_worktrees_async(repo_root: &Path) -> Result<Vec<WorktreeInfo>,
     Ok(entries)
 }
 
-/// Create `<repo_root>/.jfc-worktrees/<name>` checking out a fresh branch
-/// `jfc/<name>`. Validates the name first; surfaces git's stderr on failure.
+/// Create `<repo_root>/.claude/worktrees/<slug>` checking out a fresh branch
+/// `worktree-<slug>`. Validates the name first; surfaces git's stderr on failure.
 /// Shells out — not unit-tested; see module docs.
 pub fn create_worktree(repo_root: &Path, name: &str) -> Result<WorktreeInfo, String> {
     tracing::info!(target: "jfc::worktrees", ?repo_root, name, "create_worktree");
     validate_name(name)?;
-    let rel_path = format!(".jfc-worktrees/{name}");
-    let branch = format!("jfc/{name}");
-    let output = Command::new("git")
+    let rel_path = worktree_rel_path(name);
+    let branch = worktree_branch_name(name);
+    let mut command = Command::new("git");
+    command
         .arg("-C")
         .arg(repo_root)
         .arg("worktree")
         .arg("add")
         .arg(&rel_path)
         .arg("-b")
-        .arg(&branch)
+        .arg(&branch);
+    if let Some(base_ref) = configured_base_ref() {
+        command.arg(base_ref);
+    }
+    let output = command
         .output()
         .map_err(|e| format!("failed to spawn `git worktree add`: {e}"))?;
     if !output.status.success() {
@@ -237,16 +276,21 @@ pub fn create_worktree(repo_root: &Path, name: &str) -> Result<WorktreeInfo, Str
 pub async fn create_worktree_async(repo_root: &Path, name: &str) -> Result<WorktreeInfo, String> {
     tracing::info!(target: "jfc::worktrees", ?repo_root, name, "create_worktree_async");
     validate_name(name)?;
-    let rel_path = format!(".jfc-worktrees/{name}");
-    let branch = format!("jfc/{name}");
-    let output = TokioCommand::new("git")
+    let rel_path = worktree_rel_path(name);
+    let branch = worktree_branch_name(name);
+    let mut command = TokioCommand::new("git");
+    command
         .arg("-C")
         .arg(repo_root)
         .arg("worktree")
         .arg("add")
         .arg(&rel_path)
         .arg("-b")
-        .arg(&branch)
+        .arg(&branch);
+    if let Some(base_ref) = configured_base_ref() {
+        command.arg(base_ref);
+    }
+    let output = command
         .output()
         .await
         .map_err(|e| format!("failed to spawn `git worktree add`: {e}"))?;
@@ -264,13 +308,13 @@ pub async fn create_worktree_async(repo_root: &Path, name: &str) -> Result<Workt
     })
 }
 
-/// Remove `<repo_root>/.jfc-worktrees/<name>`. The `jfc/<name>` branch is NOT
+/// Remove `<repo_root>/.claude/worktrees/<slug>`. The `worktree-<slug>` branch is NOT
 /// deleted — the user can still recover the work by checking the branch out
 /// elsewhere. Shells out — not unit-tested; see module docs.
 pub fn remove_worktree(repo_root: &Path, name: &str) -> Result<(), String> {
     tracing::info!(target: "jfc::worktrees", ?repo_root, name, "remove_worktree");
     validate_name(name)?;
-    let rel_path = format!(".jfc-worktrees/{name}");
+    let rel_path = worktree_rel_path(name);
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_root)
@@ -292,7 +336,7 @@ pub fn remove_worktree(repo_root: &Path, name: &str) -> Result<(), String> {
 pub async fn remove_worktree_async(repo_root: &Path, name: &str) -> Result<(), String> {
     tracing::info!(target: "jfc::worktrees", ?repo_root, name, "remove_worktree_async");
     validate_name(name)?;
-    let rel_path = format!(".jfc-worktrees/{name}");
+    let rel_path = worktree_rel_path(name);
     let output = TokioCommand::new("git")
         .arg("-C")
         .arg(repo_root)
@@ -517,7 +561,7 @@ mod tests {
 
     #[test]
     fn validate_name_accepts_normal() {
-        for name in ["feature-x", "x_y", "abc123", "A", "a-_-b"] {
+        for name in ["feature-x", "x_y", "abc123", "A", "a-_-b", "team/agent"] {
             assert!(
                 validate_name(name).is_ok(),
                 "expected `{name}` to validate, got {:?}",
@@ -537,7 +581,17 @@ mod tests {
 
     #[test]
     fn validate_name_rejects_path_traversal_robust() {
-        for bad in ["../foo", "foo/bar", "foo bar", "..", ".", "a/b/c", "x\ty"] {
+        for bad in [
+            "../foo",
+            "/foo",
+            "foo/",
+            "foo//bar",
+            "foo bar",
+            "..",
+            ".",
+            "foo/../bar",
+            "x\ty",
+        ] {
             assert!(
                 validate_name(bad).is_err(),
                 "expected `{bad}` to be rejected as invalid"
@@ -547,18 +601,27 @@ mod tests {
 
     #[test]
     fn validate_name_rejects_long_robust() {
-        let too_long: String = "a".repeat(65);
-        let err = validate_name(&too_long).expect_err("65-char name must be rejected");
+        let too_long: String = "a".repeat(97);
+        let err = validate_name(&too_long).expect_err("97-char name must be rejected");
         assert!(
-            err.contains("64"),
-            "error should reference the 64-char cap, got: {err}"
+            err.contains("96"),
+            "error should reference the 96-char cap, got: {err}"
         );
-        // Boundary: exactly 64 chars must still be accepted.
-        let ok: String = "a".repeat(64);
+        // Boundary: exactly 96 chars must still be accepted.
+        let ok: String = "a".repeat(96);
         assert!(
             validate_name(&ok).is_ok(),
-            "exactly 64 chars should be accepted"
+            "exactly 96 chars should be accepted"
         );
+    }
+
+    #[test]
+    fn worktree_slug_flattens_slashes_for_claude_layout_normal() {
+        assert_eq!(
+            worktree_rel_path("team/agent"),
+            ".claude/worktrees/team+agent"
+        );
+        assert_eq!(worktree_branch_name("team/agent"), "worktree-team+agent");
     }
 
     #[test]
@@ -688,10 +751,10 @@ mod tests {
             return;
         }
         let info = create_worktree(&repo, "feat-x").expect("create_worktree should succeed");
-        assert_eq!(info.branch, "jfc/feat-x");
-        assert!(info.path.contains(".jfc-worktrees"));
+        assert_eq!(info.branch, "worktree-feat-x");
+        assert!(info.path.contains(".claude/worktrees"));
         // The new worktree directory must exist on disk.
-        let wt_dir = repo.join(".jfc-worktrees").join("feat-x");
+        let wt_dir = repo.join(".claude/worktrees").join("feat-x");
         assert!(
             wt_dir.exists(),
             "worktree dir was not created at {wt_dir:?}"
@@ -699,16 +762,16 @@ mod tests {
 
         let listed = list_worktrees(&repo).expect("list_worktrees should succeed");
         assert!(
-            listed.iter().any(|w| w.branch == "jfc/feat-x"),
-            "expected jfc/feat-x in {listed:?}"
+            listed.iter().any(|w| w.branch == "worktree-feat-x"),
+            "expected worktree-feat-x in {listed:?}"
         );
 
         // Remove and confirm it's gone from the listing.
         remove_worktree(&repo, "feat-x").expect("remove_worktree should succeed");
         let after = list_worktrees(&repo).expect("list after remove");
         assert!(
-            !after.iter().any(|w| w.branch == "jfc/feat-x"),
-            "expected jfc/feat-x NOT in {after:?}"
+            !after.iter().any(|w| w.branch == "worktree-feat-x"),
+            "expected worktree-feat-x NOT in {after:?}"
         );
 
         let _ = std::fs::remove_dir_all(&repo);
