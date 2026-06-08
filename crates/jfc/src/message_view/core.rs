@@ -68,6 +68,12 @@ pub struct RenderCtx<'a> {
     /// messages are suppressed from rendering so only `SendUserMessage` tool
     /// output reaches the user. Mirrors Claude Code v2.1.142+ `brief_mode`.
     pub brief_mode: bool,
+    /// While streaming, how many display segments of the live message's last
+    /// (actively-accruing) text part the pacer has revealed this frame. The
+    /// renderer truncates that part's source to this many lines so output
+    /// animates in at the adaptive cadence. `None` off the streaming path
+    /// (and in the task view) — no truncation. See `codex_stream::stream_pacer`.
+    pub revealed_streaming_lines: Option<usize>,
 }
 
 impl<'a> RenderCtx<'a> {
@@ -93,6 +99,14 @@ impl<'a> RenderCtx<'a> {
             theme: app.theme,
             brief_mode: app.engine.brief_mode
                 || jfc_engine::feature_gates::pewter_owl_brief_enabled(app.engine.model.as_str(), false),
+            // The pacer is advanced in the tick handler; here we only read the
+            // current revealed count. Off the streaming path there's nothing to
+            // pace, so leave it `None` (full render).
+            revealed_streaming_lines: if app.engine.is_streaming {
+                Some(app.stream_pacer.revealed())
+            } else {
+                None
+            },
         }
     }
 
@@ -113,6 +127,7 @@ impl<'a> RenderCtx<'a> {
             render_cache: &app.render_cache,
             theme: app.theme,
             brief_mode: false,
+            revealed_streaming_lines: None,
         }
     }
 }
@@ -861,6 +876,25 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
                         std::borrow::Cow::Borrowed(text.as_str())
                     };
                     let render_text = render_text.as_ref();
+                    // Stream pacing: while this is the LIVE streaming message and
+                    // we're on its last (actively-accruing) text part, reveal only
+                    // the first `revealed` display segments so output animates in at
+                    // the adaptive smooth/catch-up cadence instead of dumping the
+                    // whole burst at once. Earlier (completed) text parts are never
+                    // truncated, and the engine still holds the full text — this only
+                    // gates the display. The streaming cache below keys on this
+                    // (truncated) `render_text`, so it stays correct automatically.
+                    let render_text: &str = if is_streaming_placeholder
+                        && p + 1 == msg.parts.len()
+                        && let Some(revealed) = ctx.revealed_streaming_lines
+                    {
+                        crate::render::codex_stream::stream_pacer::take_first_lines(
+                            render_text,
+                            revealed,
+                        )
+                    } else {
+                        render_text
+                    };
                     let lines = if is_streaming_placeholder {
                         // Streaming fast path: recompute every frame without
                         // syntect. Cost is ~5µs/KB (pulldown-cmark only) vs

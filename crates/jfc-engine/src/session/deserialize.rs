@@ -162,7 +162,6 @@ pub fn deserialize_generic_tool_input(kind: &str, summary: &str) -> Option<ToolI
     }
 
     match ToolKind::from_name(kind) {
-        ToolKind::GraphQuery => parse_legacy_graph_query(summary),
         ToolKind::WebSearch => {
             summary
                 .strip_prefix("WebSearch: ")
@@ -192,7 +191,6 @@ pub fn deserialize_generic_tool_input(kind: &str, summary: &str) -> Option<ToolI
                 })
         }
         ToolKind::MultiEdit => parse_legacy_multi_edit(summary),
-        ToolKind::RunCoverage => parse_legacy_run_coverage(summary),
         ToolKind::MarketStatus => parse_legacy_market_status(summary),
         ToolKind::RunBounty => {
             summary
@@ -205,7 +203,6 @@ pub fn deserialize_generic_tool_input(kind: &str, summary: &str) -> Option<ToolI
         ToolKind::TeamCreate => parse_legacy_team_create(summary),
         ToolKind::TeamDelete if summary == "TeamDelete" => Some(ToolInput::TeamDelete),
         ToolKind::TeamMemberMode => parse_legacy_team_member_mode(summary),
-        ToolKind::CodeIndex => parse_legacy_code_index(summary),
         ToolKind::PushNotification => parse_legacy_push_notification(summary),
         ToolKind::RemoteTrigger => {
             summary
@@ -241,34 +238,12 @@ pub fn strip_any_prefix<'a>(summary: &'a str, prefixes: &[&str]) -> Option<&'a s
         .find_map(|prefix| summary.strip_prefix(prefix))
 }
 
-pub fn parse_legacy_graph_query(summary: &str) -> Option<ToolInput> {
-    let rest = summary.strip_prefix("GraphQuery(budget=")?;
-    let (budget, query) = rest.split_once("): ")?;
-    Some(ToolInput::GraphQuery {
-        query: query.to_owned(),
-        max_tokens: budget.parse().ok(),
-        include_handles: None,
-        format: None,
-    })
-}
-
 pub fn parse_legacy_multi_edit(summary: &str) -> Option<ToolInput> {
     let rest = summary.strip_prefix("MultiEdit: ")?;
     let file_path = rest.split_once(" (").map_or(rest, |(path, _)| path);
     Some(ToolInput::MultiEdit {
         file_path: file_path.to_owned(),
         edits: serde_json::json!([]),
-    })
-}
-
-pub fn parse_legacy_run_coverage(summary: &str) -> Option<ToolInput> {
-    let inner = summary
-        .strip_prefix("RunCoverage(")?
-        .strip_suffix(')')?
-        .trim();
-    Some(ToolInput::RunCoverage {
-        lcov_path: (inner != "auto").then(|| inner.to_owned()),
-        include_untested_list: true,
     })
 }
 
@@ -300,36 +275,6 @@ pub fn parse_legacy_team_member_mode(summary: &str) -> Option<ToolInput> {
     Some(ToolInput::TeamMemberMode {
         member_name: member_name.to_owned(),
         mode: mode.to_owned(),
-    })
-}
-
-pub fn parse_legacy_code_index(summary: &str) -> Option<ToolInput> {
-    if summary == "CodeIndex" {
-        return Some(ToolInput::CodeIndex {
-            path: None,
-            query: None,
-            kind: None,
-            max_entries: None,
-        });
-    }
-    let inner = summary.strip_prefix("CodeIndex(")?.strip_suffix(')')?;
-    let mut path = None;
-    let mut query = None;
-    let mut kind = None;
-    for part in inner.split(',').map(str::trim) {
-        if kind.is_none() {
-            kind = Some(part.to_owned());
-        } else if query.is_none() {
-            query = Some(part.to_owned());
-        } else if path.is_none() {
-            path = Some(part.to_owned());
-        }
-    }
-    Some(ToolInput::CodeIndex {
-        path,
-        query,
-        kind,
-        max_entries: None,
     })
 }
 
@@ -571,26 +516,16 @@ pub fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
         SerializedToolInput::TeamMemberMode { member_name, mode } => {
             ToolInput::TeamMemberMode { member_name, mode }
         }
-        SerializedToolInput::CodeIndex {
-            path,
-            query,
-            kind,
-            max_entries,
-        } => ToolInput::CodeIndex {
-            path,
-            query,
-            kind,
-            max_entries,
+        // Back-compat read-only: the in-tree graph tools were unwired (jfc-graph
+        // removed; code intelligence now flows through the external codegraph MCP
+        // server). Sessions saved while those native tools existed still carry
+        // these serialized forms, so we rebuild them into Generic records rather
+        // than failing the load. Nothing produces these variants anymore.
+        SerializedToolInput::CodeIndex { .. } => ToolInput::Generic {
+            summary: "code_index".into(),
         },
-        SerializedToolInput::GraphQuery {
-            query,
-            max_tokens,
-            include_handles,
-        } => ToolInput::GraphQuery {
-            query,
-            max_tokens,
-            include_handles,
-            format: None,
+        SerializedToolInput::GraphQuery { query, .. } => ToolInput::Generic {
+            summary: format!("graph_query: {query}"),
         },
         SerializedToolInput::PostBounty {
             description,
@@ -613,23 +548,11 @@ pub fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             bounty_id,
             max_solvers,
         },
-        SerializedToolInput::RunCoverage {
-            lcov_path,
-            include_untested_list,
-        } => ToolInput::RunCoverage {
-            lcov_path,
-            include_untested_list,
+        SerializedToolInput::RunCoverage { lcov_path, .. } => ToolInput::Generic {
+            summary: format!("coverage({})", lcov_path.as_deref().unwrap_or("auto")),
         },
-        SerializedToolInput::SymbolEdit {
-            handle,
-            new_content,
-            validate,
-            dispatch_cascade,
-        } => ToolInput::SymbolEdit {
-            handle,
-            new_content,
-            validate,
-            dispatch_cascade,
+        SerializedToolInput::SymbolEdit { handle, .. } => ToolInput::Generic {
+            summary: format!("symbol_edit: {handle}"),
         },
         SerializedToolInput::ExitPlanMode { plan } => ToolInput::ExitPlanMode { plan },
         SerializedToolInput::MultiEdit { file_path, edits } => {

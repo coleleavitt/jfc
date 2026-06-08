@@ -45,7 +45,7 @@
 //! tiny. We stick with `serde_json::json!` macros throughout.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -59,8 +59,14 @@ use tokio::sync::oneshot;
 use crate::lsp_rpc;
 use crate::runtime::{EngineEvent, ProviderEvent};
 
-/// Re-export from jfc-graph for convenience.
-pub use jfc_graph::enrichment::LspLocation;
+/// Location returned by LSP operations. A local POD — this was re-exported
+/// from jfc-graph, which has been unwired; the LSP tool stack owns it now.
+#[derive(Debug, Clone)]
+pub struct LspLocation {
+    pub file: PathBuf,
+    pub line: u32,
+    pub col: u32,
+}
 
 /// Pending request map. Uses a `std::sync::Mutex` (not `tokio::sync::Mutex`)
 /// because the only critical sections are HashMap insert / remove — no
@@ -615,24 +621,6 @@ fn try_parse_location_link(value: &Value) -> Option<LspLocation> {
     })
 }
 
-/// Synchronous `LspDataProvider` implementation. Since the trait is sync but
-/// the LSP client is async, these stubs return None/empty. Full implementation
-/// requires a dedicated blocking thread with `tokio::runtime::Handle::block_on`
-/// or converting the trait to async.
-impl jfc_graph::enrichment::LspDataProvider for LspClient {
-    fn goto_definition(&self, _file: &Path, _line: u32, _col: u32) -> Option<LspLocation> {
-        // The async version (`goto_definition_async`) is fully functional.
-        // Bridging async→sync here would require either:
-        //   1. A dedicated OS thread running a tokio runtime for blocking calls
-        //   2. Converting LspDataProvider to an async trait
-        // For now, the graph engine works without LSP enrichment (tree-sitter only).
-        None
-    }
-
-    fn find_references(&self, _file: &Path, _line: u32, _col: u32) -> Vec<LspLocation> {
-        Vec::new()
-    }
-}
 pub fn build_did_open(uri: &str, language_id: &str, version: i32, text: &str) -> Value {
     json!({
         "jsonrpc": "2.0",

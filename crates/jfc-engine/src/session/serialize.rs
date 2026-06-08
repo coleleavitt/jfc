@@ -296,74 +296,6 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             member_name: member_name.clone(),
             mode: mode.clone(),
         },
-        ToolInput::CodeIndex {
-            path,
-            query,
-            kind,
-            max_entries,
-        } => SerializedToolInput::CodeIndex {
-            path: path.clone(),
-            query: query.clone(),
-            kind: kind.clone(),
-            max_entries: *max_entries,
-        },
-        ToolInput::GraphQuery {
-            query,
-            max_tokens,
-            include_handles,
-            format: _,
-        } => SerializedToolInput::GraphQuery {
-            query: query.clone(),
-            max_tokens: *max_tokens,
-            include_handles: *include_handles,
-        },
-        ToolInput::GraphContext { task, .. } => SerializedToolInput::Generic {
-            summary: format!("graph_context: {task}"),
-        },
-        ToolInput::GraphSearch { query, .. } => SerializedToolInput::Generic {
-            summary: format!("graph_search: {query}"),
-        },
-        ToolInput::GraphCallers { symbol, .. } => SerializedToolInput::Generic {
-            summary: format!("graph_callers: {symbol}"),
-        },
-        ToolInput::GraphCallees { symbol, .. } => SerializedToolInput::Generic {
-            summary: format!("graph_callees: {symbol}"),
-        },
-        ToolInput::GraphImpact { symbol, .. } => SerializedToolInput::Generic {
-            summary: format!("graph_impact: {symbol}"),
-        },
-        ToolInput::GraphNode { symbol, .. } => SerializedToolInput::Generic {
-            summary: format!("graph_node: {symbol}"),
-        },
-        ToolInput::GraphOutline { file } => SerializedToolInput::Generic {
-            summary: format!("outline: {file}"),
-        },
-        ToolInput::GraphGrep { pattern, .. } => SerializedToolInput::Generic {
-            summary: format!("grep: {pattern}"),
-        },
-        ToolInput::GraphExplore { query, .. } => SerializedToolInput::Generic {
-            summary: format!("graph_explore: {query}"),
-        },
-        ToolInput::GraphStatus {} => SerializedToolInput::Generic {
-            summary: "graph_status".into(),
-        },
-        ToolInput::GraphFiles { path, .. } => SerializedToolInput::Generic {
-            summary: format!("graph_files: {}", path.as_deref().unwrap_or(".")),
-        },
-        ToolInput::GetProgramSlice {
-            symbol, backward, ..
-        } => SerializedToolInput::Generic {
-            summary: format!(
-                "{} slice: {symbol}",
-                if *backward { "backward" } else { "forward" }
-            ),
-        },
-        ToolInput::GetDataDependencies { symbol, .. } => SerializedToolInput::Generic {
-            summary: format!("data_deps: {symbol}"),
-        },
-        ToolInput::TaintFlow { sources, sinks, .. } => SerializedToolInput::Generic {
-            summary: format!("taint_flow: {}→{}", sources.join(","), sinks.join(",")),
-        },
         ToolInput::PlanCreate { title, .. } => SerializedToolInput::Generic {
             summary: format!("plan_create: {title}"),
         },
@@ -396,24 +328,6 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         },
         ToolInput::LearnUserProfileShow { .. } => SerializedToolInput::Generic {
             summary: "learn_user_profile_show".into(),
-        },
-        ToolInput::RunCoverage {
-            lcov_path,
-            include_untested_list,
-        } => SerializedToolInput::RunCoverage {
-            lcov_path: lcov_path.clone(),
-            include_untested_list: *include_untested_list,
-        },
-        ToolInput::SymbolEdit {
-            handle,
-            new_content,
-            validate,
-            dispatch_cascade,
-        } => SerializedToolInput::SymbolEdit {
-            handle: handle.clone(),
-            new_content: new_content.clone(),
-            validate: *validate,
-            dispatch_cascade: *dispatch_cascade,
         },
         ToolInput::PostBounty {
             description,

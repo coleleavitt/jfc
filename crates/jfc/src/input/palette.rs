@@ -21,7 +21,9 @@ pub(super) async fn execute_palette_action(app: &mut App, label: &str) {
                 "palette: Compact Conversation triggered"
             );
             app.engine.force_compact_pending = true;
-            app.engine.messages.push(ChatMessage::user("/compact".into()));
+            app.engine
+                .messages
+                .push(ChatMessage::user("/compact".into()));
             app.engine.messages.push(ChatMessage::assistant(
                 "Compaction queued — runs on the next turn.".into(),
             ));
@@ -104,8 +106,6 @@ pub fn palette_items(app: &App) -> Vec<&'static str> {
         "Run /agents",
         "Run /claude-md",
         "Run /market",
-        "Run /cascade",
-        "Run /graph-history",
         "Run /timeline",
         "Run /export",
     ];
@@ -121,11 +121,13 @@ pub fn palette_items(app: &App) -> Vec<&'static str> {
 }
 
 pub fn collect_all_models(app: &App) -> Vec<jfc_provider::ModelInfo> {
-    let fingerprint_input: Vec<_> = app.engine
+    let fingerprint_input: Vec<_> = app
+        .engine
         .providers
         .iter()
         .map(|provider| {
-            let models = app.engine
+            let models = app
+                .engine
                 .provider_models
                 .get(provider.name())
                 .filter(|models| !models.is_empty())
@@ -156,12 +158,14 @@ pub fn collect_all_models(app: &App) -> Vec<jfc_provider::ModelInfo> {
         let merged = fingerprint_input
             .iter()
             .flat_map(|(provider_name, _)| {
-                app.engine.provider_models
+                app.engine
+                    .provider_models
                     .get(provider_name.as_str())
                     .filter(|models| !models.is_empty())
                     .cloned()
                     .unwrap_or_else(|| {
-                        app.engine.providers
+                        app.engine
+                            .providers
                             .iter()
                             .find(|provider| provider.name() == provider_name)
                             .map(|provider| provider.available_models())
@@ -169,7 +173,10 @@ pub fn collect_all_models(app: &App) -> Vec<jfc_provider::ModelInfo> {
                     })
             })
             .collect();
-        jfc_engine::providers::anthropic_models::apply_seat_tier_filter(merged, app.engine.seat_tier.as_deref())
+        jfc_engine::providers::anthropic_models::apply_seat_tier_filter(
+            merged,
+            app.engine.seat_tier.as_deref(),
+        )
     });
 
     if !app.engine.recent_models.is_empty() {

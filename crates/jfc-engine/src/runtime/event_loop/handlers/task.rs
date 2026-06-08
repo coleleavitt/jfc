@@ -611,6 +611,7 @@ pub async fn maybe_resume_after_background(state: &mut EngineState, tx: &EventSe
     );
 
     crate::system_reminder::append_to_last_user(&mut state.messages, &reminder);
+    state.take_background_agent_completions();
     state.agentic_turn_count = 0;
     state.turn_started_at = Some(std::time::Instant::now());
     // Consume the transition signal: this auto-wake has now reported every

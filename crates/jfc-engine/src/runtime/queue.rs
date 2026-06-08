@@ -1,10 +1,10 @@
+use crate::app::EngineState;
 use crate::{
     runtime::{EngineEvent, EventSender, StreamEvent, StreamRequestOverrides},
     stream,
     types::{ChatMessage, MessagePart, Role},
 };
 use jfc_core::QueuedPrompt;
-use crate::app::EngineState;
 
 pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     let drained: Vec<QueuedPrompt> = state.queued_prompts.drain_all();
@@ -23,7 +23,6 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     );
 
     let mut non_meta_texts: Vec<String> = Vec::with_capacity(total - meta_count);
-    let mut first_non_meta_text: Option<String> = None;
     for queued in drained {
         let QueuedPrompt {
             text,
@@ -68,9 +67,6 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
                 EngineEvent::Control(crate::runtime::ControlEvent::RunCommand(text.clone())),
             );
         } else {
-            if first_non_meta_text.is_none() {
-                first_non_meta_text = Some(text.clone());
-            }
             non_meta_texts.push(text);
         }
     }
@@ -106,29 +102,6 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     }
     state.tool_ctx.total_user_turns += 1;
 
-    #[cfg(feature = "intent-gate")]
-    if let Some(intent_text) = first_non_meta_text.as_deref() {
-        let intent_for_inject = crate::intent::classify(intent_text).intent;
-        if crate::intent::is_graph_intent(intent_for_inject) {
-            let cwd = std::path::PathBuf::from(&state.cwd);
-            let injected = crate::intent::auto_inject_graph_context(
-                &mut state.messages,
-                intent_for_inject,
-                intent_text,
-                &cwd,
-            );
-            if injected {
-                tracing::info!(
-                    target: "jfc::intent::auto_ctx",
-                    intent = ?intent_for_inject,
-                    "auto graph-context injected (batched queued-prompt drain)"
-                );
-            }
-        }
-    }
-    #[cfg(not(feature = "intent-gate"))]
-    let _ = first_non_meta_text;
-
     state.messages.push(ChatMessage::assistant(String::new()));
     state.streaming_text = String::new();
     state.streaming_reasoning = String::new();
@@ -153,7 +126,8 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     // turn would otherwise fire immediately on this freshly-drained
     // submission and emit "Interrupted by user".
     state.cancel_token = tokio_util::sync::CancellationToken::new();
-    state.interrupt_flag
+    state
+        .interrupt_flag
         .store(false, std::sync::atomic::Ordering::SeqCst);
     state.last_usage_output = 0;
     state.usage_apply_baseline = (0, 0, 0, 0);

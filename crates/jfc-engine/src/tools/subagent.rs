@@ -6,11 +6,7 @@ use super::{ExecutionResult, all_tool_defs, execute_tool};
 use crate::types::{ToolInput, ToolKind};
 use jfc_provider::ToolDef;
 
-pub async fn execute_skill_in(
-    cwd: &Path,
-    name: &str,
-    args: Option<&str>,
-) -> ExecutionResult {
+pub async fn execute_skill_in(cwd: &Path, name: &str, args: Option<&str>) -> ExecutionResult {
     let skills = crate::agents::load_skills(cwd);
     // Be permissive with what the model passes in. v126 lets the model
     // call a skill by its name (`do-178b`), but in practice the model
@@ -31,10 +27,15 @@ pub async fn execute_skill_in(
         .find_map(|c| crate::agents::find_skill_by_name(&skills, c));
     match found {
         Some(skill) => {
-            let body = match args.filter(|s| !s.is_empty()) {
-                Some(a) => format!("{}\n\n# Args\n{}", skill.body, a),
-                None => skill.body.clone(),
-            };
+            if !skill.is_user_invocable() {
+                return ExecutionResult::failure(format!(
+                    "Skill `{}` is not user-invocable.",
+                    skill.name
+                ));
+            }
+            let memory_root = jfc_memory::project_memory_dir(cwd);
+            let context = crate::agents::SkillRenderContext::new(Some(cwd), Some(&memory_root));
+            let body = crate::agents::render_skill_invocation(skill, context, args);
             ExecutionResult::success(body)
         }
         None => {
@@ -46,8 +47,8 @@ pub async fn execute_skill_in(
             const MAX_UNKNOWN_SKILL_SUGGESTIONS: usize = 20;
             let mut available: Vec<&str> = skills
                 .iter()
+                .filter(|skill| skill.is_discoverable())
                 .map(|s| s.name.as_str())
-                .filter(|name| !name.starts_with("superpowers:"))
                 .collect();
             available.truncate(MAX_UNKNOWN_SKILL_SUGGESTIONS);
             let suffix = if available.is_empty() {
@@ -260,10 +261,15 @@ async fn execute_task_inner(
     // prompt some models just ack and emit `end_turn` immediately,
     // which produced the "Task completed in 3 seconds with empty
     // output" symptom when subagent_type lookup missed.
-    let system_prompt = match agent_def {
+    let mut system_prompt = match agent_def {
         Some(agent) => {
             let skills = crate::agents::load_skills(&cwd);
-            Some(crate::agents::build_agent_system_prompt(agent, &skills))
+            let memory_root = jfc_memory::project_memory_dir(&cwd);
+            Some(crate::agents::build_agent_system_prompt_with_context(
+                agent,
+                &skills,
+                crate::agents::SkillRenderContext::new(Some(&cwd), Some(&memory_root)),
+            ))
         }
         None => Some(
             "You are a subagent dispatched to handle a specific task. You have \
@@ -276,6 +282,21 @@ async fn execute_task_inner(
                 + cwd.display().to_string().as_str(),
         ),
     };
+    if let Some(schema) = &task_input.schema {
+        let schema_text =
+            serde_json::to_string_pretty(schema).unwrap_or_else(|_| schema.to_string());
+        let instruction = format!(
+            "\n\n# Structured Output\n\
+             This task requires structured output. You must call the \
+             StructuredOutput tool with a JSON object that validates against \
+             this schema. Raw JSON text or prose is not accepted as the final \
+             answer for this task.\n\n{schema_text}"
+        );
+        match &mut system_prompt {
+            Some(prompt) => prompt.push_str(&instruction),
+            None => system_prompt = Some(instruction),
+        }
+    }
 
     // Tool catalogue: full list filtered by the agent's allow/disallow.
     // When there's no agent definition we still drop `Task` to avoid
@@ -284,8 +305,36 @@ async fn execute_task_inner(
         Some(a) => (&a.allowed_tools, &a.disallowed_tools),
         None => (&[], &[]),
     };
+    let schema_required = task_input.schema.is_some();
+    if schema_required
+        && disallowed
+            .iter()
+            .any(|d| d.eq_ignore_ascii_case("StructuredOutput"))
+    {
+        return ExecutionResult::failure(
+            "Task schema requires StructuredOutput, but the agent disallows that tool.",
+        );
+    }
     let allow_nested_task = depth < 2;
-    let tools = filter_tools_for_agent(all_tool_defs(), allowed, disallowed, allow_nested_task);
+    let all_tools = all_tool_defs();
+    let structured_output_def = all_tools
+        .iter()
+        .find(|tool| tool.name.eq_ignore_ascii_case("StructuredOutput"))
+        .cloned();
+    let mut tools = filter_tools_for_agent(all_tools, allowed, disallowed, allow_nested_task);
+    if schema_required {
+        if !tools
+            .iter()
+            .any(|tool| tool.name.eq_ignore_ascii_case("StructuredOutput"))
+        {
+            let Some(def) = structured_output_def else {
+                return ExecutionResult::failure("StructuredOutput tool is not available.");
+            };
+            tools.push(def);
+        }
+    } else {
+        tools.retain(|tool| !tool.name.eq_ignore_ascii_case("StructuredOutput"));
+    }
 
     let max_turns: Option<u32> = agent_def
         .and_then(|a| a.max_turns)
@@ -297,6 +346,7 @@ async fn execute_task_inner(
     }];
     let mut final_text = String::new();
     let mut last_error: Option<String> = None;
+    let mut structured_output: Option<serde_json::Value> = None;
     let mut turn: u32 = 0;
     // Cumulative counters surfaced to the parent UI via TaskProgress
     // so the fan view can render "(N tools, M tokens)". Mirrors v131
@@ -684,7 +734,27 @@ async fn execute_task_inner(
                     continue;
                 }
             };
-            let result = if let ToolInput::Task(nested_task) = &input {
+            let structured_payload = match &input {
+                ToolInput::StructuredOutput { data } => Some(data.clone()),
+                _ => None,
+            };
+            let result = if let ToolInput::StructuredOutput { .. } = &input {
+                if schema_required {
+                    execute_tool(
+                        kind,
+                        input,
+                        cwd.clone(),
+                        None,
+                        task_store.clone(),
+                        active_team_name.as_deref(),
+                    )
+                    .await
+                } else {
+                    ExecutionResult::failure(
+                        "StructuredOutput is only available for tasks with a schema.",
+                    )
+                }
+            } else if let ToolInput::Task(nested_task) = &input {
                 if depth >= 2 {
                     ExecutionResult::failure(
                         "Nested Task depth limit reached. Summarize current work instead of spawning another subagent.",
@@ -721,6 +791,9 @@ async fn execute_task_inner(
                 .await
             };
             let is_error = result.is_error();
+            if !is_error && let Some(data) = structured_payload {
+                structured_output = Some(data);
+            }
             // Cap each tool result so a single Read on a multi-MB file
             // can't push the running conversation past Bedrock's 1M
             // limit on its own. Mirrors the parent stream loop in
@@ -748,7 +821,13 @@ async fn execute_task_inner(
         });
     }
 
-    let mut result = if let Some(err) = last_error {
+    let mut result = if let Some(data) = structured_output {
+        ExecutionResult::success(serde_json::to_string(&data).unwrap_or_else(|_| data.to_string()))
+    } else if schema_required {
+        ExecutionResult::failure(
+            "Subagent ended without calling StructuredOutput with a valid object matching the required schema.",
+        )
+    } else if let Some(err) = last_error {
         if final_text.is_empty() {
             ExecutionResult::failure(err)
         } else {

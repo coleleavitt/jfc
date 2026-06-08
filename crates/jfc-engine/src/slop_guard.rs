@@ -1,6 +1,6 @@
 //! Slop Guard — automated quality checks for LLM-generated code.
 //!
-//! Runs after every file-modifying tool (Write/Edit/MultiEdit/SymbolEdit)
+//! Runs after every file-modifying tool (Write/Edit/MultiEdit)
 //! and surfaces findings to the model via system-reminder so it can
 //! self-correct before moving to the next step.
 //!

@@ -346,11 +346,15 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
     };
 
     // Drive both channels until the engine thread finishes.
+    let mut cancelled = false;
     loop {
         tokio::select! {
             biased;
 
             _ = cancel.cancelled() => {
+                cancelled = true;
+                agent_rx.close();
+                sub_wf_rx.close();
                 orch.logs.push("workflow cancelled".to_owned());
                 break;
             }
@@ -430,6 +434,14 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
         }
     }
 
+    if cancelled {
+        let rejected = reject_pending_requests(&mut agent_rx, &mut sub_wf_rx);
+        if rejected > 0 {
+            orch.logs
+                .push(format!("rejected {rejected} queued workflow request(s)"));
+        }
+    }
+
     // Wait for in-flight agents to settle (or be cancelled).
     while orch.agent_tasks.join_next().await.is_some() {}
 
@@ -463,6 +475,22 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
     }
 }
 
+fn reject_pending_requests(
+    agent_rx: &mut mpsc::UnboundedReceiver<AgentRequest>,
+    sub_wf_rx: &mut mpsc::UnboundedReceiver<SubWorkflowRequest>,
+) -> usize {
+    let mut rejected = 0;
+    while let Ok(req) = agent_rx.try_recv() {
+        let _ = req.reply.send(Err("workflow cancelled".to_owned()));
+        rejected += 1;
+    }
+    while let Ok(req) = sub_wf_rx.try_recv() {
+        let _ = req.reply.send(Err("workflow cancelled".to_owned()));
+        rejected += 1;
+    }
+    rejected
+}
+
 /// Dispatch one agent through `execute_task`, write the journal, and reply.
 async fn run_one_agent(
     req: AgentRequest,
@@ -485,19 +513,9 @@ async fn run_one_agent(
         })
         .await;
 
-    // Build the subagent prompt. When a schema was requested, append a
-    // structured-output instruction so the agent returns parseable JSON.
-    let prompt = match &req.schema {
-        Some(schema) => format!(
-            "{}\n\n---\nReturn ONLY a JSON value matching this schema (no prose, no code fences):\n{}",
-            req.prompt, schema
-        ),
-        None => req.prompt.clone(),
-    };
-
     let task_input = crate::types::TaskInput {
         description: req.label.clone(),
-        prompt,
+        prompt: req.prompt.clone(),
         subagent_type: req.agent_type.clone(),
         category: None,
         run_in_background: false,
@@ -508,7 +526,7 @@ async fn run_one_agent(
         mode: None,
         isolation: req.isolation.clone(),
         parent_task_id: None,
-        schema: None,
+        schema: req.schema.clone(),
     };
 
     // Resolve an agent definition if a custom agentType was requested.
@@ -568,12 +586,18 @@ async fn run_one_agent(
     let token_estimate = text.len() as u64 / 4;
     tokens_spent.fetch_add(token_estimate, Ordering::Relaxed);
 
-    // Record the result journal entry (store as a JSON string).
+    let journal_result = if req.schema.is_some() {
+        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::Value::String(text.clone()))
+    } else {
+        serde_json::Value::String(text.clone())
+    };
+
+    // Record the result journal entry.
     let _ = journal_writer
         .append(&JournalEntry::Result {
             key,
             agent_id,
-            result: serde_json::Value::String(text.clone()),
+            result: journal_result,
         })
         .await;
 
@@ -598,6 +622,8 @@ async fn run_one_agent(
 mod tests {
     use super::*;
 
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
     use std::sync::atomic::AtomicUsize;
 
     #[test]
@@ -644,15 +670,58 @@ mod tests {
     }
     impl jfc_provider::seal::Sealed for EchoProvider {}
 
-    fn cfg(script: &str, dir: &std::path::Path) -> WorkflowRunConfig {
+    struct SequenceProvider {
+        streams: Mutex<VecDeque<Vec<jfc_provider::StreamEvent>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl jfc_provider::Provider for SequenceProvider {
+        fn name(&self) -> &str {
+            "anthropic"
+        }
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
+            vec![]
+        }
+        async fn stream(
+            &self,
+            _messages: Vec<jfc_provider::ProviderMessage>,
+            _options: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
+            use futures::stream;
+            let events = self
+                .streams
+                .lock()
+                .expect("sequence provider mutex poisoned")
+                .pop_front()
+                .unwrap_or_else(|| {
+                    vec![jfc_provider::StreamEvent::Done {
+                        stop_reason: jfc_provider::StopReason::EndTurn,
+                    }]
+                });
+            Ok(Box::pin(stream::iter(events.into_iter().map(Ok))))
+        }
+    }
+    impl jfc_provider::seal::Sealed for SequenceProvider {}
+
+    fn cfg_with_provider(
+        script: &str,
+        dir: &std::path::Path,
+        provider: Arc<dyn jfc_provider::Provider>,
+    ) -> WorkflowRunConfig {
+        cfg_with_provider_and_args(script, dir, serde_json::Value::Null, provider)
+    }
+
+    fn cfg_with_provider_and_args(
+        script: &str,
+        dir: &std::path::Path,
+        args: serde_json::Value,
+        provider: Arc<dyn jfc_provider::Provider>,
+    ) -> WorkflowRunConfig {
         WorkflowRunConfig {
             run_id: "wf_test01".into(),
             script_body: script.into(),
-            args: serde_json::Value::Null,
-            provider: Arc::new(EchoProvider {
-                text: "AGENT_OUTPUT".into(),
-                calls: AtomicUsize::new(0),
-            }),
+            args,
+            provider,
             model: jfc_provider::ModelId::new("claude-opus-4-7"),
             session_dir: dir.to_path_buf(),
             resume_from_run_id: None,
@@ -663,6 +732,38 @@ mod tests {
             cwd: dir.to_path_buf(),
             token_budget: None,
         }
+    }
+
+    fn cfg(script: &str, dir: &std::path::Path) -> WorkflowRunConfig {
+        cfg_with_provider(
+            script,
+            dir,
+            Arc::new(EchoProvider {
+                text: "AGENT_OUTPUT".into(),
+                calls: AtomicUsize::new(0),
+            }),
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn workflow_cancel_rejects_queued_agent_requests_regression() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config = cfg("return await agent('cancel me');", tmp.path());
+        config.cancel.cancel();
+
+        let out = tokio::time::timeout(std::time::Duration::from_secs(2), run_workflow(config))
+            .await
+            .expect("cancelled workflow must not hang waiting for engine thread");
+
+        assert!(
+            out.logs.iter().any(|line| line == "workflow cancelled"),
+            "logs: {:?}",
+            out.logs
+        );
+        assert!(
+            out.error.is_some(),
+            "cancelled workflow should surface an error"
+        );
     }
 
     // A single agent() call flows engine → orchestrator → execute_task →
@@ -692,6 +793,291 @@ mod tests {
             serde_json::json!(["AGENT_OUTPUT", "AGENT_OUTPUT"])
         );
         assert_eq!(out.total_agents_dispatched, 2);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn workflow_agent_schema_requires_structured_output_regression() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let script = r#"
+            return await agent('return a review candidate', {
+                schema: {
+                    type: 'object',
+                    properties: { summary: { type: 'string' } },
+                    required: ['summary'],
+                    additionalProperties: false
+                }
+            });
+        "#;
+        let out = run_workflow(cfg_with_provider(
+            script,
+            tmp.path(),
+            Arc::new(EchoProvider {
+                text: r#"{"summary":"plain text json is not enough"}"#.into(),
+                calls: AtomicUsize::new(0),
+            }),
+        ))
+        .await;
+
+        assert!(out.error.is_some());
+        assert!(
+            out.error
+                .unwrap()
+                .contains("without calling StructuredOutput")
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn workflow_agent_schema_returns_validated_structured_output_regression() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let script = r#"
+            return await agent('return a review candidate', {
+                schema: {
+                    type: 'object',
+                    properties: { summary: { type: 'string' } },
+                    required: ['summary'],
+                    additionalProperties: false
+                }
+            });
+        "#;
+        let streams = VecDeque::from([
+            vec![
+                jfc_provider::StreamEvent::ToolDone {
+                    index: 0,
+                    tool_name: "StructuredOutput".into(),
+                    tool_use_id: "toolu_1".into(),
+                    input_json: r#"{"summary":"validated"}"#.into(),
+                    thought_signature: None,
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::ToolUse,
+                },
+            ],
+            vec![
+                jfc_provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "done".into(),
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
+                },
+            ],
+        ]);
+
+        let out = run_workflow(cfg_with_provider(
+            script,
+            tmp.path(),
+            Arc::new(SequenceProvider {
+                streams: Mutex::new(streams),
+            }),
+        ))
+        .await;
+
+        assert!(out.error.is_none(), "error: {:?}", out.error);
+        assert_eq!(out.result, serde_json::json!(r#"{"summary":"validated"}"#));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn builtin_code_review_low_effort_smoke_normal() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let wf = crate::workflows::resolve(tmp.path(), "code-review").unwrap();
+        let (_meta, body) = crate::workflows::parse_meta(&wf.script).unwrap();
+        let streams = VecDeque::from([
+            vec![
+                jfc_provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "scope notes".into(),
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
+                },
+            ],
+            vec![
+                jfc_provider::StreamEvent::ToolDone {
+                    index: 0,
+                    tool_name: "StructuredOutput".into(),
+                    tool_use_id: "toolu_find".into(),
+                    input_json: r#"{"candidates":[{"file":"src/lib.rs","line":10,"summary":"bug summary","severity":"high","category":"logic","evidence":"specific evidence","confidence":0.91}]}"#.into(),
+                    thought_signature: None,
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::ToolUse,
+                },
+            ],
+            vec![
+                jfc_provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "found".into(),
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
+                },
+            ],
+            vec![
+                jfc_provider::StreamEvent::ToolDone {
+                    index: 0,
+                    tool_name: "StructuredOutput".into(),
+                    tool_use_id: "toolu_verify".into(),
+                    input_json: r#"{"valid":true,"file":"src/lib.rs","line":10,"severity":"high","category":"logic","summary":"bug summary","evidence":"specific evidence","fix":"apply the targeted fix","confidence":0.91,"reason":"verified against the code"}"#.into(),
+                    thought_signature: None,
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::ToolUse,
+                },
+            ],
+            vec![
+                jfc_provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "verified".into(),
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
+                },
+            ],
+            vec![
+                jfc_provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "final report".into(),
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
+                },
+            ],
+        ]);
+
+        let out = run_workflow(cfg_with_provider_and_args(
+            &body,
+            tmp.path(),
+            serde_json::json!({ "level": "low", "target": "current diff" }),
+            Arc::new(SequenceProvider {
+                streams: Mutex::new(streams),
+            }),
+        ))
+        .await;
+
+        assert!(out.error.is_none(), "error: {:?}", out.error);
+        assert_eq!(out.result["level"], serde_json::json!("low"));
+        assert_eq!(out.result["target"], serde_json::json!("current diff"));
+        assert_eq!(
+            out.result["final_report"],
+            serde_json::json!("final report")
+        );
+        assert_eq!(out.result["findings"].as_array().unwrap().len(), 1);
+        assert_eq!(out.result["dismissed"].as_array().unwrap().len(), 0);
+        assert_eq!(out.result["diagnostics"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn builtin_code_review_records_finder_failures_regression() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let wf = crate::workflows::resolve(tmp.path(), "code-review").unwrap();
+        let (_meta, body) = crate::workflows::parse_meta(&wf.script).unwrap();
+
+        let out = run_workflow(cfg_with_provider_and_args(
+            &body,
+            tmp.path(),
+            serde_json::json!({ "level": "low", "target": "current diff" }),
+            Arc::new(EchoProvider {
+                text: "plain text cannot satisfy schema".into(),
+                calls: AtomicUsize::new(0),
+            }),
+        ))
+        .await;
+
+        assert!(out.error.is_none(), "error: {:?}", out.error);
+        assert_eq!(out.result["findings"].as_array().unwrap().len(), 0);
+        assert_eq!(out.result["diagnostics"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            out.result["diagnostics"][0]["stage"],
+            serde_json::json!("Find")
+        );
+        assert_eq!(
+            out.result["diagnostics"][0]["angle"],
+            serde_json::json!("bugs")
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn builtin_code_review_records_verifier_failures_regression() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let wf = crate::workflows::resolve(tmp.path(), "code-review").unwrap();
+        let (_meta, body) = crate::workflows::parse_meta(&wf.script).unwrap();
+        let streams = VecDeque::from([
+            vec![
+                jfc_provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "scope notes".into(),
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
+                },
+            ],
+            vec![
+                jfc_provider::StreamEvent::ToolDone {
+                    index: 0,
+                    tool_name: "StructuredOutput".into(),
+                    tool_use_id: "toolu_find".into(),
+                    input_json: r#"{"candidates":[{"file":"src/lib.rs","line":10,"summary":"bug summary","severity":"high","category":"logic","evidence":"specific evidence","confidence":0.91}]}"#.into(),
+                    thought_signature: None,
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::ToolUse,
+                },
+            ],
+            vec![
+                jfc_provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "found".into(),
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
+                },
+            ],
+            vec![
+                jfc_provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "plain verifier text cannot satisfy schema".into(),
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
+                },
+            ],
+            vec![
+                jfc_provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "final report".into(),
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
+                },
+            ],
+        ]);
+
+        let out = run_workflow(cfg_with_provider_and_args(
+            &body,
+            tmp.path(),
+            serde_json::json!({ "level": "low", "target": "current diff" }),
+            Arc::new(SequenceProvider {
+                streams: Mutex::new(streams),
+            }),
+        ))
+        .await;
+
+        assert!(out.error.is_none(), "error: {:?}", out.error);
+        assert_eq!(out.result["findings"].as_array().unwrap().len(), 0);
+        assert_eq!(out.result["dismissed"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            out.result["dismissed"][0]["valid"],
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            out.result["dismissed"][0]["file"],
+            serde_json::json!("src/lib.rs")
+        );
+        assert_eq!(out.result["diagnostics"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            out.result["diagnostics"][0]["stage"],
+            serde_json::json!("Verify")
+        );
     }
 
     // A second run resuming from the first replays cached results without

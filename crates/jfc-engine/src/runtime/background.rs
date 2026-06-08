@@ -1,5 +1,5 @@
 use crate::{
-    app::BackgroundTask,
+    app::{BackgroundAgentCompletion, BackgroundTask},
     daemon::{BackgroundAgentInfo, BackgroundAgentStatus, DaemonPaths},
     ids::TaskId,
     types::{MessagePart, TaskLifecycle},
@@ -40,6 +40,7 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
         let new_status = lifecycle_from_daemon_status(agent.status);
         let completed_at = background_agent_completed_at(agent, new_status);
         let messages = crate::daemon::read_last_lines(&agent.log_path, 200);
+        let mut terminal_completion = None;
         let entry = state
             .background_tasks
             .entry(id.clone())
@@ -76,7 +77,7 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
             let was_terminal = entry.status.is_terminal();
             entry.status = new_status;
             if !was_terminal && new_status.is_terminal() {
-                state.background_tasks_completed_since_last_turn += 1;
+                terminal_completion = Some(background_agent_completion(id, agent, new_status));
                 // Real terminal transition observed this process — unblocks
                 // the Case-2 auto-wake. (Restored prior-session agents arrive
                 // already-terminal and skip this branch, so `--continue` won't
@@ -150,11 +151,34 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
             entry.last_activity_at = std::time::Instant::now();
         }
 
+        if let Some(completion) = terminal_completion {
+            state.queue_background_agent_completion(completion);
+        }
+
         if update_task_status_parts_for_background_agent(state, id, new_status, agent) {
             changed = true;
         }
     }
     changed
+}
+
+fn background_agent_completion(
+    id: &str,
+    agent: &BackgroundAgentInfo,
+    status: TaskLifecycle,
+) -> BackgroundAgentCompletion {
+    let body = agent
+        .summary
+        .as_deref()
+        .or(agent.error.as_deref())
+        .unwrap_or("(no output)")
+        .to_owned();
+    BackgroundAgentCompletion {
+        task_id: TaskId::from(id.to_owned()),
+        description: agent.description.clone(),
+        status,
+        body,
+    }
 }
 
 fn update_task_status_parts_for_background_agent(
@@ -361,6 +385,7 @@ mod tests {
             msg.role == Role::Assistant
                 && matches!(msg.parts.as_slice(), [MessagePart::Text(text)] if text.contains("initial output"))
         }));
+        assert!(state.pending_background_agent_completions.is_empty());
 
         let now = SystemTime::now();
         let mut completed = state
@@ -384,6 +409,12 @@ mod tests {
         ));
         let bt = state.background_tasks.get(task_id).expect("background task");
         assert_eq!(bt.status, TaskLifecycle::Completed);
+        assert_eq!(state.background_tasks_completed_since_last_turn, 1);
+        assert_eq!(state.pending_background_agent_completions.len(), 1);
+        let completion = &state.pending_background_agent_completions[0];
+        assert_eq!(completion.description, "audit worker");
+        assert_eq!(completion.status, TaskLifecycle::Completed);
+        assert_eq!(completion.body, "audit worker done");
         assert!(
             bt.completed_at.is_some(),
             "daemon terminal agents should pin from completion time"

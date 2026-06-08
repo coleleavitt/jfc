@@ -86,7 +86,6 @@ regex = "1"
 indexmap = "2"
 jfc-theme = { path = "../jfc-theme" }
 jfc-markdown = { path = "../jfc-markdown" }
-jfc-graph = { path = "../jfc-graph" }
 jfc-economy = { path = "../jfc-economy" }
 jfc-mcp = { path = "../jfc-mcp" }
 jfc-providers = { path = "../jfc-providers" }

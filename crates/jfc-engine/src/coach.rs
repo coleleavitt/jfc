@@ -73,7 +73,7 @@ pub fn generate_coaching_tips(stats: &SessionStats) -> String {
     // Tip: no search usage
     if stats.total_tool_calls > 15 && stats.search_calls == 0 {
         tips.push(
-            "Consider using Grep or GraphSearch to locate symbols instead of \
+            "Consider using Grep or codegraph search to locate symbols instead of \
              manually reading through files."
                 .to_string(),
         );

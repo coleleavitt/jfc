@@ -186,21 +186,23 @@ pub(super) async fn handle_teleport_command(state: &mut EngineState, target: &st
 
 /// `/output-style [name]` switches assistant reply style.
 pub(super) fn handle_output_style_command(state: &mut EngineState, args: &str) {
-    use crate::output_style::OutputStyle;
+    use crate::output_style::{self, OutputStyle};
     let arg = args.trim();
     if arg.is_empty() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+        let active_name = output_style::active().name();
         let mut lines = vec!["Available output styles:".to_string(), "".to_string()];
-        for s in OutputStyle::all() {
-            let active = if *s == state.output_style {
+        for definition in output_style::load_definitions(&cwd) {
+            let active = if definition.name.eq_ignore_ascii_case(&active_name) {
                 " · ACTIVE"
             } else {
                 ""
             };
-            let suffix = s
-                .system_prompt_suffix()
-                .map(|t| t.split('.').next().unwrap_or("").trim().to_string())
-                .unwrap_or_else(|| "no system-prompt change".to_string());
-            lines.push(format!("  {} — {}{active}", s.name(), suffix));
+            lines.push(format!(
+                "  {} — {}{active}",
+                definition.name,
+                definition.summary()
+            ));
         }
         lines.push("".into());
         lines.push("Use `/output-style <name>` to switch.".into());
@@ -210,17 +212,19 @@ pub(super) fn handle_output_style_command(state: &mut EngineState, args: &str) {
             .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
         return;
     }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
     let parsed = OutputStyle::from_str_loose(arg);
-    if parsed == OutputStyle::Default && !arg.eq_ignore_ascii_case("default") {
+    let custom = output_style::find_definition(&cwd, arg);
+    if parsed == OutputStyle::Default && !arg.eq_ignore_ascii_case("default") && custom.is_none() {
         crate::toast::push_with_cap(
             &mut state.toasts,
             crate::toast::Toast::new(
                 crate::toast::ToastKind::Warning,
                 format!(
                     "Unknown output style '{arg}' — try one of: {}",
-                    OutputStyle::all()
-                        .iter()
-                        .map(|s| s.name())
+                    output_style::load_definitions(&cwd)
+                        .into_iter()
+                        .map(|s| s.name)
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
@@ -229,12 +233,13 @@ pub(super) fn handle_output_style_command(state: &mut EngineState, args: &str) {
         return;
     }
     state.output_style = parsed;
-    crate::output_style::set_active(parsed);
-    let persist_msg = match save_output_style(parsed.name()) {
-        Ok(_) => format!("output style: {}", parsed.name()),
+    crate::output_style::set_active_named(arg);
+    let style_name = output_style::active().name();
+    let persist_msg = match save_output_style(&style_name) {
+        Ok(_) => format!("output style: {}", style_name),
         Err(e) => {
-            tracing::warn!(target: "jfc::ui::output_style", style = %parsed.name(), error = %e, "applied but not persisted");
-            format!("output style: {} (not persisted: {e})", parsed.name())
+            tracing::warn!(target: "jfc::ui::output_style", style = %style_name, error = %e, "applied but not persisted");
+            format!("output style: {} (not persisted: {e})", style_name)
         }
     };
     crate::toast::push_with_cap(

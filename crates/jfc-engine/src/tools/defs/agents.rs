@@ -4,7 +4,7 @@ pub fn agent_tool_defs() -> Vec<ToolDef> {
     vec![
         ToolDef {
             name: "Skill".into(),
-            description: "Invoke a registered skill by name. The skill's body is rendered as guidance and acted upon. Pass `args` as additional context.".into(),
+            description: "Invoke a user-invocable registered skill by name. The skill body is rendered with runtime placeholders, attached package files are surfaced as readable paths, and `context: fork` skills run through the subagent path when invoked as slash commands. Pass `args` as additional context.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {

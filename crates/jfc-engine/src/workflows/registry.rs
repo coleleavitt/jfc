@@ -1,8 +1,8 @@
 //! Workflow registry — discovers JS workflows from built-in, user, plugin, and
 //! project sources and resolves a name to its script.
 //!
-//! Precedence (highest wins): project (`.jfc/workflows/`) > user
-//! (`~/.config/jfc/workflows/`) > plugin (`~/.config/jfc/plugins/*/`) >
+//! Precedence (highest wins): project (`.jfc/workflows/`, `.claude/workflows/`) >
+//! user (`~/.config/jfc/workflows/`, `~/.claude/workflows/`) > plugin >
 //! built-in (embedded). A project workflow with the same name as a built-in
 //! shadows it.
 
@@ -74,27 +74,31 @@ fn workflow_dir_for_plugin_root(path: &Path) -> PathBuf {
     }
 }
 
-/// Scan `~/.config/jfc/plugins/*/` for `.jfc-plugin.toml` manifests and
-/// return the resolved `workflows_dir` paths for every valid manifest found.
-pub fn plugin_workflow_dirs() -> Vec<PathBuf> {
+pub fn plugin_workflow_dirs_for(project_root: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    let Some(plugins_root) = dirs::config_dir().map(|c| c.join("jfc").join("plugins")) else {
-        return extra_plugin_dirs()
-            .into_iter()
-            .map(|path| workflow_dir_for_plugin_root(&path))
-            .collect();
-    };
-    if let Ok(entries) = std::fs::read_dir(&plugins_root) {
-        for entry in entries.flatten() {
-            dirs.push(workflow_dir_for_plugin_root(&entry.path()));
-        }
+    if let Some(home) = dirs::home_dir() {
+        push_plugin_workflow_dirs_in(&home.join(".claude/plugins"), &mut dirs);
     }
+    if let Some(config) = dirs::config_dir() {
+        push_plugin_workflow_dirs_in(&config.join("jfc/plugins"), &mut dirs);
+    }
+    push_plugin_workflow_dirs_in(&project_root.join("plugins"), &mut dirs);
+    push_plugin_workflow_dirs_in(&project_root.join(".claude/plugins"), &mut dirs);
     for path in extra_plugin_dirs() {
         dirs.push(workflow_dir_for_plugin_root(&path));
     }
     dirs.sort();
     dirs.dedup();
     dirs
+}
+
+fn push_plugin_workflow_dirs_in(plugins_root: &Path, dirs: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(plugins_root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        dirs.push(workflow_dir_for_plugin_root(&entry.path()));
+    }
 }
 
 /// A discovered workflow: its metadata, source, and full script text.
@@ -110,6 +114,7 @@ pub struct RegisteredWorkflow {
 /// Built-in bundled workflows, embedded at compile time.
 const BUILTINS: &[(&str, &str)] = &[
     ("bughunt", BUILTIN_BUGHUNT),
+    ("code-review", BUILTIN_CODE_REVIEW),
     ("review-branch", BUILTIN_REVIEW_BRANCH),
     ("deep-research", BUILTIN_DEEP_RESEARCH),
 ];
@@ -152,6 +157,302 @@ const reviews = await parallel(DIMENSIONS.map(d => () => agent(d.prompt, { label
 return { reviews: reviews.filter(Boolean) }
 "#;
 
+const BUILTIN_CODE_REVIEW: &str = r#"export const meta = {
+  name: 'code-review',
+  description: 'Run a multi-phase code review with candidate finding, verification, sweep, and synthesis',
+  phases: [
+    { title: 'Scope', detail: 'identify review target and depth' },
+    { title: 'Find', detail: 'parallel candidate discovery' },
+    { title: 'Verify', detail: 'deduplicate and validate findings' },
+    { title: 'Sweep', detail: 'bounded blind-spot pass' },
+    { title: 'Synthesize', detail: 'produce final review report' },
+  ],
+}
+
+function argValue(name, fallback) {
+  if (args && typeof args === 'object' && Object.prototype.hasOwnProperty.call(args, name)) {
+    return args[name]
+  }
+  return fallback
+}
+
+function parseArgs() {
+  if (typeof args === 'string') {
+    const parts = args.trim().split(/\s+/).filter(Boolean)
+    const first = (parts[0] || '').toLowerCase()
+    const levels = ['low', 'medium', 'high', 'xhigh', 'max']
+    if (levels.indexOf(first) >= 0) {
+      return { level: first, target: parts.slice(1).join(' ') || 'current git diff' }
+    }
+    return { level: 'high', target: parts.join(' ') || 'current git diff' }
+  }
+  return {
+    level: String(argValue('level', 'high')).toLowerCase(),
+    target: String(argValue('target', 'current git diff')),
+  }
+}
+
+function parseJson(value, fallback) {
+  if (value && typeof value === 'object') return value
+  if (typeof value === 'string') {
+    try { return JSON.parse(value) } catch (_) { return fallback }
+  }
+  return fallback
+}
+
+function flatten(groups) {
+  const out = []
+  ;(groups || []).forEach(function(group) {
+    ;(group || []).forEach(function(item) { out.push(item) })
+  })
+  return out
+}
+
+function candidateKey(c) {
+  return [
+    String(c.file || '').toLowerCase(),
+    String(c.line || 0),
+    String(c.summary || '').toLowerCase().replace(/\s+/g, ' ').trim(),
+  ].join(':')
+}
+
+function dedup(candidates) {
+  const seen = {}
+  const out = []
+  ;(candidates || []).forEach(function(c) {
+    if (!c || !c.file || !c.summary) return
+    const key = candidateKey(c)
+    if (seen[key]) return
+    seen[key] = true
+    out.push(c)
+  })
+  return out
+}
+
+const parsed = parseArgs()
+const effort = {
+  low: { maxVerify: 4, sweepMax: 0, angles: ['bugs'] },
+  medium: { maxVerify: 8, sweepMax: 0, angles: ['bugs', 'tests'] },
+  high: { maxVerify: 14, sweepMax: 4, angles: ['bugs', 'tests', 'regressions'] },
+  xhigh: { maxVerify: 22, sweepMax: 8, angles: ['bugs', 'tests', 'regressions', 'security', 'maintainability'] },
+  max: { maxVerify: 34, sweepMax: 12, angles: ['bugs', 'tests', 'regressions', 'security', 'maintainability', 'compatibility'] },
+}[parsed.level] || { maxVerify: 14, sweepMax: 4, angles: ['bugs', 'tests', 'regressions'] }
+const diagnostics = []
+
+const FIND_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    candidates: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          file: { type: 'string' },
+          line: { type: 'integer' },
+          summary: { type: 'string' },
+          severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+          category: { type: 'string' },
+          evidence: { type: 'string' },
+          confidence: { type: 'number' },
+          angle: { type: 'string' },
+        },
+        required: ['file', 'line', 'summary', 'severity', 'category', 'evidence', 'confidence'],
+      },
+    },
+  },
+  required: ['candidates'],
+}
+
+const VERIFY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    valid: { type: 'boolean' },
+    file: { type: 'string' },
+    line: { type: 'integer' },
+    severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+    category: { type: 'string' },
+    summary: { type: 'string' },
+    evidence: { type: 'string' },
+    fix: { type: 'string' },
+    confidence: { type: 'number' },
+    reason: { type: 'string' },
+  },
+  required: ['valid', 'file', 'line', 'severity', 'category', 'summary', 'evidence', 'fix', 'confidence', 'reason'],
+}
+
+phase('Scope')
+const scope = await agent(
+  'Scope a code review for target: ' + parsed.target + '\n' +
+  'Return the likely files, comparison base, and any constraints. Keep it concise.',
+  { label: 'scope', phase: 'Scope' }
+)
+
+const ANGLE_PROMPTS = {
+  bugs: 'Find concrete correctness bugs, logic errors, edge cases, and broken invariants.',
+  tests: 'Find missing or weak tests that would fail to catch risky behavior changes.',
+  regressions: 'Find compatibility, migration, API, persistence, or behavior regressions.',
+  security: 'Find high-confidence security issues only. Avoid speculative or non-exploitable concerns.',
+  maintainability: 'Find maintainability issues only when they create real defect risk.',
+  compatibility: 'Find platform, provider, schema, CLI, or wire-format compatibility problems.',
+}
+
+phase('Find')
+const finderGroups = await pipeline(effort.angles, async function(angle) {
+  const prompt = [
+    'Review target: ' + parsed.target,
+    'Scope notes: ' + scope,
+    ANGLE_PROMPTS[angle] || angle,
+    'Return candidates only when they name a specific file, line, evidence, and failure mode.',
+    'If there are no credible candidates, return an empty candidates array.',
+  ].join('\n\n')
+  const raw = await agent(prompt, {
+    label: 'find:' + angle,
+    phase: 'Find',
+    schema: FIND_SCHEMA,
+  })
+  const parsedResult = parseJson(raw, { candidates: [] })
+  return (parsedResult.candidates || []).map(function(c) {
+    c.angle = c.angle || angle
+    return c
+  })
+})
+
+;(finderGroups || []).forEach(function(group, index) {
+  if (group === null) {
+    diagnostics.push({
+      stage: 'Find',
+      angle: effort.angles[index] || ('angle-' + index),
+      message: 'finder agent failed, timed out, or returned invalid structured output',
+    })
+  }
+})
+const candidates = dedup(flatten(finderGroups))
+const verifyInput = candidates.slice(0, effort.maxVerify)
+
+phase('Verify')
+const verifiedRows = await pipeline(verifyInput, async function(candidate) {
+  const prompt = [
+    'Verify this code-review candidate against the repository.',
+    'Target: ' + parsed.target,
+    'Candidate JSON: ' + JSON.stringify(candidate),
+    'Only mark valid=true when the issue is concrete, reproducible from the code, and worth reporting.',
+    'For invalid candidates, set valid=false and explain why in reason.',
+  ].join('\n\n')
+  return parseJson(await agent(prompt, {
+    label: 'verify:' + candidate.file + ':' + candidate.line,
+    phase: 'Verify',
+    schema: VERIFY_SCHEMA,
+  }), null)
+})
+
+const verifierFailures = []
+;(verifiedRows || []).forEach(function(row, index) {
+  if (row === null) {
+    const candidate = verifyInput[index] || {}
+    const reason = 'verifier agent failed, timed out, or returned invalid structured output'
+    diagnostics.push({
+      stage: 'Verify',
+      file: candidate.file || '',
+      line: candidate.line || 0,
+      summary: candidate.summary || '',
+      message: reason,
+    })
+    verifierFailures.push({
+      valid: false,
+      file: candidate.file || '',
+      line: candidate.line || 0,
+      severity: candidate.severity || 'medium',
+      category: candidate.category || 'verification',
+      summary: candidate.summary || 'unverified candidate',
+      evidence: candidate.evidence || '',
+      fix: 'Re-run verification before acting on this candidate.',
+      confidence: 0,
+      reason: reason,
+    })
+  }
+})
+let findings = (verifiedRows || []).filter(function(v) { return v && v.valid })
+let dismissed = (verifiedRows || []).filter(function(v) { return v && !v.valid }).concat(verifierFailures)
+let sweep_notes = []
+
+phase('Sweep')
+if (effort.sweepMax > 0) {
+  const sweepRaw = await agent([
+    'Perform a bounded blind-spot sweep for target: ' + parsed.target,
+    'Already verified findings: ' + JSON.stringify(findings),
+    'Dismissed candidates: ' + JSON.stringify(dismissed),
+    'Look for at most ' + effort.sweepMax + ' additional high-signal candidates. Return an empty array if none.',
+  ].join('\n\n'), {
+    label: 'sweep',
+    phase: 'Sweep',
+    schema: FIND_SCHEMA,
+  })
+  const sweepCandidates = dedup(parseJson(sweepRaw, { candidates: [] }).candidates || [])
+    .filter(function(c) { return candidates.map(candidateKey).indexOf(candidateKey(c)) < 0 })
+    .slice(0, effort.sweepMax)
+  sweep_notes = sweepCandidates.map(function(c) { return c.file + ':' + c.line + ' ' + c.summary })
+  const sweepVerified = await pipeline(sweepCandidates, async function(candidate) {
+    return parseJson(await agent(
+      'Verify this sweep candidate. Target: ' + parsed.target + '\nCandidate JSON: ' + JSON.stringify(candidate),
+      { label: 'verify-sweep:' + candidate.file + ':' + candidate.line, phase: 'Verify', schema: VERIFY_SCHEMA }
+    ), null)
+  })
+  const sweepFailures = []
+  ;(sweepVerified || []).forEach(function(row, index) {
+    if (row === null) {
+      const candidate = sweepCandidates[index] || {}
+      const reason = 'sweep verifier agent failed, timed out, or returned invalid structured output'
+      diagnostics.push({
+        stage: 'Verify',
+        file: candidate.file || '',
+        line: candidate.line || 0,
+        summary: candidate.summary || '',
+        message: reason,
+      })
+      sweepFailures.push({
+        valid: false,
+        file: candidate.file || '',
+        line: candidate.line || 0,
+        severity: candidate.severity || 'medium',
+        category: candidate.category || 'verification',
+        summary: candidate.summary || 'unverified sweep candidate',
+        evidence: candidate.evidence || '',
+        fix: 'Re-run verification before acting on this candidate.',
+        confidence: 0,
+        reason: reason,
+      })
+    }
+  })
+  findings = findings.concat((sweepVerified || []).filter(function(v) { return v && v.valid }))
+  dismissed = dismissed.concat((sweepVerified || []).filter(function(v) { return v && !v.valid })).concat(sweepFailures)
+}
+
+phase('Synthesize')
+const final_report = await agent([
+  'Write the final code review report for target: ' + parsed.target,
+  'Findings JSON: ' + JSON.stringify(findings),
+  'Dismissed count: ' + dismissed.length,
+  'Workflow diagnostics JSON: ' + JSON.stringify(diagnostics),
+  'If diagnostics is non-empty, include a short review-coverage note so the report does not imply failed stages were checked.',
+  'Use a concise code-review style: findings first, ordered by severity, with file:line and concrete fix guidance.',
+  'If there are no findings, say that clearly and note residual risk or test gaps.',
+].join('\n\n'), { label: 'synthesize', phase: 'Synthesize' })
+
+return {
+  level: parsed.level,
+  target: parsed.target,
+  candidates: candidates,
+  findings: findings,
+  dismissed: dismissed,
+  diagnostics: diagnostics,
+  sweep_notes: sweep_notes,
+  final_report: final_report,
+}
+"#;
+
 const BUILTIN_DEEP_RESEARCH: &str = r#"export const meta = {
   name: 'deep-research',
   description: 'Multi-angle research on a question passed via args',
@@ -172,12 +473,28 @@ const synthesis = await agent('Synthesize these research notes into a coherent a
 return { question, synthesis }
 "#;
 
-/// The user-level workflows directory: `~/.config/jfc/workflows/`.
+pub fn user_workflows_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(config) = dirs::config_dir() {
+        dirs.push(config.join("jfc/workflows"));
+    }
+    if let Some(home) = dirs::home_dir() {
+        dirs.push(home.join(".claude/workflows"));
+    }
+    dirs
+}
+
 pub fn user_workflows_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|c| c.join("jfc").join("workflows"))
 }
 
-/// The project-level workflows directory: `<root>/.jfc/workflows/`.
+pub fn project_workflows_dirs(project_root: &Path) -> Vec<PathBuf> {
+    vec![
+        project_workflows_dir(project_root),
+        project_root.join(".claude/workflows"),
+    ]
+}
+
 pub fn project_workflows_dir(project_root: &Path) -> PathBuf {
     project_root.join(".jfc").join("workflows")
 }
@@ -232,28 +549,27 @@ pub fn discover(project_root: &Path) -> Vec<RegisteredWorkflow> {
     use std::collections::HashMap;
     // Insert in increasing-precedence order so later inserts overwrite:
     // 1. builtins
-    // 2. plugins  ← new
+    // 2. plugins
     // 3. user
     // 4. project
     let mut by_name: HashMap<String, RegisteredWorkflow> = HashMap::new();
     for wf in builtins() {
         by_name.insert(wf.name.clone(), wf);
     }
-    for plugin_dir in plugin_workflow_dirs() {
+    for plugin_dir in plugin_workflow_dirs_for(project_root) {
         for wf in load_dir(&plugin_dir, WorkflowSource::Plugin) {
             by_name.insert(wf.name.clone(), wf);
         }
     }
-    if let Some(udir) = user_workflows_dir() {
+    for udir in user_workflows_dirs() {
         for wf in load_dir(&udir, WorkflowSource::User) {
             by_name.insert(wf.name.clone(), wf);
         }
     }
-    for wf in load_dir(
-        &project_workflows_dir(project_root),
-        WorkflowSource::Project,
-    ) {
-        by_name.insert(wf.name.clone(), wf);
+    for project_dir in project_workflows_dirs(project_root) {
+        for wf in load_dir(&project_dir, WorkflowSource::Project) {
+            by_name.insert(wf.name.clone(), wf);
+        }
     }
     let mut out: Vec<RegisteredWorkflow> = by_name.into_values().collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -286,6 +602,7 @@ mod tests {
     fn builtins_parse_normal() {
         let b = builtins();
         assert!(b.iter().any(|w| w.name == "bughunt"));
+        assert!(b.iter().any(|w| w.name == "code-review"));
         assert!(b.iter().any(|w| w.name == "review-branch"));
         assert!(b.iter().any(|w| w.name == "deep-research"));
         for w in &b {
@@ -323,6 +640,29 @@ mod tests {
         let wf = resolve(tmp.path(), "bughunt").unwrap();
         assert_eq!(wf.source, WorkflowSource::Project);
         assert_eq!(wf.description, "PROJECT OVERRIDE");
+    }
+
+    #[test]
+    fn dot_claude_workflow_shadows_legacy_project_normal() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let legacy = project_workflows_dir(tmp.path());
+        let dot = tmp.path().join(".claude/workflows");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::create_dir_all(&dot).unwrap();
+        std::fs::write(
+            legacy.join("demo.js"),
+            "export const meta = { name: 'demo', description: 'legacy' }\nreturn 1",
+        )
+        .unwrap();
+        std::fs::write(
+            dot.join("demo.js"),
+            "export const meta = { name: 'demo', description: 'dot' }\nreturn 2",
+        )
+        .unwrap();
+
+        let wf = resolve(tmp.path(), "demo").unwrap();
+        assert_eq!(wf.source, WorkflowSource::Project);
+        assert_eq!(wf.description, "dot");
     }
 
     #[test]

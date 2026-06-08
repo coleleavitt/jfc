@@ -3,7 +3,7 @@
 //! splicing in resolved skill bodies.
 
 use crate::registry::find_skill_by_name;
-use crate::state::Skill;
+use crate::state::{Skill, SkillRenderContext, render_skill_invocation};
 use jfc_core::AgentDef;
 
 /// Render the loaded skills as a Markdown listing for injection into the
@@ -27,6 +27,18 @@ pub fn render_skills_section(skills: &[Skill]) -> String {
     const MAX_DESC_CHARS: usize = 200;
     let mut out = String::from("\n\n## Available skills\n\n");
     for skill in visible {
+        let mut tags = Vec::new();
+        if skill.context.is_fork() {
+            tags.push("fork".to_owned());
+        }
+        if !skill.files.is_empty() {
+            tags.push(format!("{} files", skill.files.len()));
+        }
+        let tag_text = if tags.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", tags.join(", "))
+        };
         match &skill.description {
             Some(desc) if !desc.is_empty() => {
                 let trimmed: String = if desc.chars().count() > MAX_DESC_CHARS {
@@ -36,10 +48,10 @@ pub fn render_skills_section(skills: &[Skill]) -> String {
                 } else {
                     desc.clone()
                 };
-                out.push_str(&format!("- `{}` — {}\n", skill.name, trimmed));
+                out.push_str(&format!("- `{}`{} — {}\n", skill.name, tag_text, trimmed));
             }
             _ => {
-                out.push_str(&format!("- `{}`\n", skill.name));
+                out.push_str(&format!("- `{}`{}\n", skill.name, tag_text));
             }
         }
     }
@@ -47,18 +59,23 @@ pub fn render_skills_section(skills: &[Skill]) -> String {
 }
 
 fn prompt_visible_skill(skill: &Skill) -> bool {
-    let name = skill.name.trim();
-    if name.is_empty() || name.starts_with("superpowers:") {
-        return false;
-    }
-    let source = skill.source.to_string_lossy();
-    !source.contains("/.codex/skills/.system/")
+    skill.is_discoverable()
 }
 
 /// Build the effective system prompt for an agent: its own `system_prompt`
 /// followed by each resolved skill body, separated by `## Skill: <name>`
 /// headers. Unknown skill names are skipped (with a `tracing::warn!`).
 pub fn build_agent_system_prompt(agent: &AgentDef, all_skills: &[Skill]) -> String {
+    build_agent_system_prompt_with_context(agent, all_skills, SkillRenderContext::default())
+}
+
+/// Build the effective system prompt for an agent with runtime placeholder
+/// values available to any resolved skills.
+pub fn build_agent_system_prompt_with_context(
+    agent: &AgentDef,
+    all_skills: &[Skill],
+    context: SkillRenderContext<'_>,
+) -> String {
     if agent.skills.is_empty() {
         return agent.system_prompt.clone();
     }
@@ -69,7 +86,7 @@ pub fn build_agent_system_prompt(agent: &AgentDef, all_skills: &[Skill]) -> Stri
                 out.push_str("\n\n## Skill: ");
                 out.push_str(&skill.name);
                 out.push_str("\n\n");
-                out.push_str(&skill.body);
+                out.push_str(&render_skill_invocation(skill, context, None));
             }
             None => {
                 tracing::warn!(

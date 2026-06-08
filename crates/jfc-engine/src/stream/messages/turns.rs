@@ -20,32 +20,10 @@ pub fn chat_message_text(m: &ChatMessage) -> String {
         .iter()
         .filter_map(|p| match p {
             MessagePart::Text(t) if !t.is_empty() => Some(t.to_owned()),
-            // Serialize TaskStatus parts as inline text so the model sees
-            // completed background agent summaries. Without this, detached
-            // agents could finish and update the UI, but the model never knew.
-            MessagePart::TaskStatus(ts) if ts.summary.is_some() || ts.error.is_some() => {
-                let status_label = format!("{:?}", ts.status);
-                let body = ts
-                    .summary
-                    .as_deref()
-                    .or(ts.error.as_deref())
-                    .unwrap_or("(no output)");
-                // Cap at 2000 chars to prevent unbounded prompt growth —
-                // TaskStatus summaries replay every turn and accumulate fast.
-                let body = if body.len() > 2000 {
-                    format!(
-                        "{}… [truncated {} chars]",
-                        &body[..body.floor_char_boundary(2000)],
-                        body.len()
-                    )
-                } else {
-                    body.to_string()
-                };
-                Some(format!(
-                    "[Background agent: {} ({status_label})] {body}",
-                    ts.description
-                ))
-            }
+            // TaskStatus is UI/session state. Detached worker completions are
+            // delivered to the model through a one-shot system reminder, not
+            // replayed from every historical assistant turn.
+            MessagePart::TaskStatus(_) => None,
             _ => None,
         })
         .collect::<Vec<_>>()

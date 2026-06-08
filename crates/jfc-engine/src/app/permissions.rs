@@ -106,23 +106,6 @@ impl PermissionMode {
                 | ToolKind::TaskValidate
                 | ToolKind::ToolSearch
                 | ToolKind::ToolSuggest
-                | ToolKind::CodeIndex
-                | ToolKind::GraphQuery
-                | ToolKind::GraphSearch
-                | ToolKind::GraphContext
-                | ToolKind::GraphNode
-                | ToolKind::GraphExplore
-                | ToolKind::GraphCallers
-                | ToolKind::GraphCallees
-                | ToolKind::GraphImpact
-                | ToolKind::GraphOutline
-                | ToolKind::GraphGrep
-                | ToolKind::GraphStatus
-                | ToolKind::GraphFiles
-                | ToolKind::GetProgramSlice
-                | ToolKind::GetDataDependencies
-                | ToolKind::TaintFlow
-                | ToolKind::RunCoverage
                 | ToolKind::MarketStatus
                 | ToolKind::CronList
                 | ToolKind::TeamCreate
@@ -159,7 +142,6 @@ impl PermissionMode {
                 ToolKind::Write
                 | ToolKind::Edit
                 | ToolKind::MultiEdit
-                | ToolKind::SymbolEdit
                 | ToolKind::ApplyPatch
                 | ToolKind::Read
                 | ToolKind::Glob
@@ -182,23 +164,6 @@ impl PermissionMode {
                 | ToolKind::TaskValidate
                 | ToolKind::ToolSearch
                 | ToolKind::ToolSuggest
-                | ToolKind::CodeIndex
-                | ToolKind::GraphQuery
-                | ToolKind::GraphSearch
-                | ToolKind::GraphContext
-                | ToolKind::GraphNode
-                | ToolKind::GraphExplore
-                | ToolKind::GraphCallers
-                | ToolKind::GraphCallees
-                | ToolKind::GraphImpact
-                | ToolKind::GraphOutline
-                | ToolKind::GraphGrep
-                | ToolKind::GraphStatus
-                | ToolKind::GraphFiles
-                | ToolKind::GetProgramSlice
-                | ToolKind::GetDataDependencies
-                | ToolKind::TaintFlow
-                | ToolKind::RunCoverage
                 | ToolKind::MarketStatus
                 | ToolKind::CronList
                 | ToolKind::TeamCreate

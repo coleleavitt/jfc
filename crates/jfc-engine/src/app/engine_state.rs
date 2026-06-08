@@ -150,6 +150,14 @@ pub struct BackgroundTask {
     pub last_activity_at: std::time::Instant,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BackgroundAgentCompletion {
+    pub task_id: crate::ids::TaskId,
+    pub description: String,
+    pub status: crate::types::TaskLifecycle,
+    pub body: String,
+}
+
 /// A view-facing side effect requested by engine code. Engine handlers must
 /// never touch view state (scroll, render caches, textarea) directly — they
 /// push effects here and the frontend drains them after each dispatch.
@@ -649,11 +657,14 @@ pub struct EngineState {
     /// this is the primary CPU-burn fix for sessions with hundreds of
     /// historical background agents accumulated in the state file.
     pub last_detached_state_mtime: Option<std::time::SystemTime>,
-    /// How many detached background agents transitioned to
-    /// Completed/Failed since the last user submit. Incremented by
-    /// `sync_detached_background_tasks_from_daemon`; drained to 0 and
-    /// surfaced as a system_reminder in `handle_submit` so the parent
-    /// model knows agent results are available in the transcript.
+    /// Detached background agents that transitioned to Completed/Failed since
+    /// the last user submit. This is the model-facing one-shot handoff: UI
+    /// `TaskStatus` parts persist for rendering, but their summaries must not
+    /// be replayed from transcript history on every provider request.
+    pub pending_background_agent_completions: Vec<BackgroundAgentCompletion>,
+    /// Compatibility counter for detached background completions since the
+    /// last user submit. Kept in sync with `pending_background_agent_completions`
+    /// for existing callers, but the queued summaries are the source of truth.
     pub background_tasks_completed_since_last_turn: u32,
     /// Whether a background agent has transitioned to a *terminal* state
     /// (Completed / Failed / Cancelled) **during this process** — set at the
@@ -953,6 +964,7 @@ impl EngineState {
             anthropic_snapshot_refreshed_at: None,
             last_detached_sync_at: None,
             last_detached_state_mtime: None,
+            pending_background_agent_completions: Vec::new(),
             background_tasks_completed_since_last_turn: 0,
             observed_bg_terminal_transition_this_process: false,
             team_context: crate::swarm::TeamContext::default(),
@@ -1059,6 +1071,30 @@ impl EngineState {
     /// queue is empty until the next FS event arrives.
     pub fn take_background_reminders(&mut self) -> Vec<String> {
         std::mem::take(&mut self.pending_background_reminders)
+    }
+
+    pub fn queue_background_agent_completion(&mut self, completion: BackgroundAgentCompletion) {
+        if let Some(existing) = self
+            .pending_background_agent_completions
+            .iter_mut()
+            .find(|existing| existing.task_id == completion.task_id)
+        {
+            *existing = completion;
+        } else {
+            if self.pending_background_agent_completions.len() >= BACKGROUND_REMINDERS_CAP {
+                self.pending_background_agent_completions.remove(0);
+            }
+            self.pending_background_agent_completions.push(completion);
+        }
+        self.background_tasks_completed_since_last_turn = self
+            .pending_background_agent_completions
+            .len()
+            .min(u32::MAX as usize) as u32;
+    }
+
+    pub fn take_background_agent_completions(&mut self) -> Vec<BackgroundAgentCompletion> {
+        self.background_tasks_completed_since_last_turn = 0;
+        std::mem::take(&mut self.pending_background_agent_completions)
     }
 
     /// Drain the pending post-compaction savings hint. Returns the value once,

@@ -1,29 +1,11 @@
 //! Heuristic intent classification gate.
 //!
 //! Classifies user messages into intent categories using keyword/pattern
-//! matching. No LLM round-trip — must complete in <5ms.
-//!
-//! # Auto graph-context injection
-//!
-//! When a prompt classifies as a graph-flavored intent ([`Intent::ImpactAnalysis`],
-//! [`Intent::EntrypointDiscovery`], [`Intent::RefactorRisk`],
-//! [`Intent::DependencyTrace`]) the [`auto_inject_graph_context`] helper runs
-//! a cheap structural query against the workspace `GraphSession` and appends
-//! the result as a `<system-reminder>` block on the user's turn. This
-//! "frontloads" structural context the model would otherwise have to ask
-//! for via `graph_query` — and frequently forgets to ask for at all.
-//!
-//! Disable by setting `JFC_GRAPH_AUTO_CONTEXT=0` in the environment. Default
-//! is enabled. The check is per-call so users can flip the flag mid-session
-//! without restarting.
-//!
-//! Cache: delegates to the unified `tools/registry::graph_session_cache`.
-//! mirrors the cache in [`crate::tools`] but is independent — by design, the
-//! injection path must not reach into the tool dispatcher's internals. The
-//! first prompt per workspace pays the indexing cost; subsequent prompts hit
-//! the cache. We deliberately do *not* invalidate this cache on edits because
-//! the auto-context is "best-effort hint" not "ground truth" — a slightly
-//! stale graph beats a slow first-render in the hot path.
+//! matching. No LLM round-trip — must complete in <5ms. The classification
+//! drives doc-suggestion toasts and the optional auto-plan-mode flip (see
+//! [`auto_flags`]); the former graph-flavored intents still classify but no
+//! longer auto-inject structural context (the in-tree graph was unwired —
+//! code intelligence now flows through the external codegraph MCP server).
 
 /// Classified intent of a user message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,24 +73,8 @@ pub struct Classification {
     pub confidence: f32,
 }
 
-/// Tool kind for availability mapping.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolKind {
-    Read,
-    Write,
-    Edit,
-    Bash,
-    Grep,
-    Glob,
-    Lsp,
-}
-
+mod auto_flags;
 mod classifier;
-mod graph_context;
 
+pub use auto_flags::{auto_doc_suggest_enabled, auto_plan_mode_enabled};
 pub use classifier::classify;
-pub use graph_context::clear_auto_context_cache;
-pub use graph_context::{
-    auto_doc_suggest_enabled, auto_inject_graph_context, auto_plan_mode_enabled, discouraged_tools,
-    is_graph_intent, suggested_tools,
-};

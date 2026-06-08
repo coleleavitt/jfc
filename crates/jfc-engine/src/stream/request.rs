@@ -643,10 +643,6 @@ Do not use a colon before tool calls.";
             }
         }
 
-        if let Some(block) = crate::tools::render_pending_auto_context(&cwd_path) {
-            system_prompt.push_str(&block);
-        }
-
         let git_ctx = crate::git_context::get_git_context();
         if git_ctx.current_branch.is_some() || !git_ctx.recent_commits.is_empty() {
             system_prompt.push_str("\n\n");
@@ -697,8 +693,8 @@ Do not use a colon before tool calls.";
         );
     }
 
-    if let Some(suffix) = crate::output_style::active().system_prompt_suffix() {
-        system_prompt.push_str(suffix);
+    if let Some(suffix) = crate::output_style::active_suffix(&doc_cwd) {
+        system_prompt.push_str(&suffix);
         tracing::debug!(
             target: "jfc::stream",
             style = %crate::output_style::active().name(),

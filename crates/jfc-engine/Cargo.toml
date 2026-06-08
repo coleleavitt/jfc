@@ -54,7 +54,6 @@ jfc-provider = { path = "../jfc-provider" }
 jfc-providers = { path = "../jfc-providers" }
 jfc-session = { path = "../jfc-session" }
 jfc-tools = { path = "../jfc-tools" }
-jfc-graph = { path = "../jfc-graph" }
 jfc-economy = { path = "../jfc-economy" }
 jfc-mcp = { path = "../jfc-mcp" }
 jfc-daemon = { path = "../jfc-daemon" }

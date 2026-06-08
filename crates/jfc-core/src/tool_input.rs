@@ -299,24 +299,6 @@ macro_rules! for_each_regular_tool_input {
             TeamCreate => { team_name: req_str @ "team_name", description: opt_str @ "description" }
             TeamMemberMode => { member_name: req_str @ "member_name", mode: req_str @ "mode" }
             BashOutput => { task_id: req_str @ "task_id", offset: opt_u64 @ "offset", limit: opt_u64 @ "limit", block: raw_bool_opt @ "block", timeout: opt_u64_loose @ "timeout", wait_up_to: opt_u64_loose @ "wait_up_to" }
-            CodeIndex => { path: opt_str @ "path", query: opt_str @ "query", kind: opt_str @ "kind", max_entries: opt_u64_as_usize @ "max_entries" }
-            GraphQuery => { query: req_str @ "query", max_tokens: opt_u64_as_usize @ "max_tokens", include_handles: raw_bool_opt @ "include_handles", format: opt_str @ "format" }
-            GraphContext => { task: req_str @ "task", max_nodes: opt_u64_as_usize @ "max_nodes", include_code: raw_bool_opt @ "include_code", format: opt_str @ "format" }
-            GraphSearch => { query: req_str @ "query", limit: opt_u64_as_usize @ "limit", include_code: bool_field @ "include_code", format: opt_str @ "format" }
-            GraphCallers => { symbol: req_str @ "symbol", limit: opt_u64_as_usize @ "limit", format: opt_str @ "format" }
-            GraphCallees => { symbol: req_str @ "symbol", limit: opt_u64_as_usize @ "limit", format: opt_str @ "format" }
-            GraphImpact => { symbol: req_str @ "symbol", depth: opt_u64_as_u8 @ "depth", format: opt_str @ "format" }
-            GraphNode => { symbol: req_str @ "symbol", include_code: bool_field @ "include_code" }
-            GraphExplore => { query: req_str @ "query", max_files: opt_u64_as_usize @ "max_files" }
-            GraphOutline => { file: req_str @ "file" }
-            GraphGrep => { pattern: req_str @ "pattern", glob: opt_str @ "glob", limit: opt_u64_as_usize @ "limit" }
-            GraphStatus => {}
-            GraphFiles => { path: opt_str @ "path" }
-            GetProgramSlice => { symbol: req_str @ "symbol", backward: bool_field @ "backward", max_nodes: opt_u64_as_usize @ "max_nodes" }
-            GetDataDependencies => { symbol: req_str @ "symbol", max_nodes: opt_u64_as_usize @ "max_nodes" }
-            TaintFlow => { sources: str_vec @ "sources", sinks: str_vec @ "sinks", sanitizers: str_vec @ "sanitizers", max_paths: opt_u64_as_usize @ "max_paths" }
-            RunCoverage => { lcov_path: opt_str @ "lcov_path", include_untested_list: bool_true @ "include_untested_list" }
-            SymbolEdit => { handle: req_str @ "handle", new_content: req_str @ "new_content", validate: bool_field @ "validate", dispatch_cascade: bool_field @ "dispatch_cascade" }
             PlanCreate => { title: req_str @ "title", body: opt_str @ "body" }
             PlanList => { status: opt_str @ "status" }
             PlanShow => { slug: req_str @ "slug" }
@@ -616,108 +598,6 @@ pub enum ToolInput {
         member_name: String,
         mode: String,
     },
-    CodeIndex {
-        #[serde(default)]
-        path: Option<String>,
-        #[serde(default)]
-        query: Option<String>,
-        #[serde(default)]
-        kind: Option<String>,
-        #[serde(default)]
-        max_entries: Option<usize>,
-    },
-    GraphQuery {
-        query: String,
-        max_tokens: Option<usize>,
-        #[serde(default)]
-        include_handles: Option<bool>,
-        #[serde(default)]
-        format: Option<String>,
-    },
-    GraphContext {
-        task: String,
-        #[serde(default)]
-        max_nodes: Option<usize>,
-        #[serde(default)]
-        include_code: Option<bool>,
-        #[serde(default)]
-        format: Option<String>,
-    },
-    GraphSearch {
-        query: String,
-        #[serde(default)]
-        limit: Option<usize>,
-        #[serde(default)]
-        include_code: bool,
-        #[serde(default)]
-        format: Option<String>,
-    },
-    GraphCallers {
-        symbol: String,
-        #[serde(default)]
-        limit: Option<usize>,
-        #[serde(default)]
-        format: Option<String>,
-    },
-    GraphCallees {
-        symbol: String,
-        #[serde(default)]
-        limit: Option<usize>,
-        #[serde(default)]
-        format: Option<String>,
-    },
-    GraphImpact {
-        symbol: String,
-        #[serde(default)]
-        depth: Option<u8>,
-        #[serde(default)]
-        format: Option<String>,
-    },
-    GraphNode {
-        symbol: String,
-        #[serde(default)]
-        include_code: bool,
-    },
-    GraphExplore {
-        query: String,
-        #[serde(default)]
-        max_files: Option<usize>,
-    },
-    GraphOutline {
-        file: String,
-    },
-    GraphGrep {
-        pattern: String,
-        #[serde(default)]
-        glob: Option<String>,
-        #[serde(default)]
-        limit: Option<usize>,
-    },
-    GraphStatus {},
-    GraphFiles {
-        #[serde(default)]
-        path: Option<String>,
-    },
-    GetProgramSlice {
-        symbol: String,
-        #[serde(default)]
-        backward: bool,
-        #[serde(default)]
-        max_nodes: Option<usize>,
-    },
-    GetDataDependencies {
-        symbol: String,
-        #[serde(default)]
-        max_nodes: Option<usize>,
-    },
-    TaintFlow {
-        sources: Vec<String>,
-        sinks: Vec<String>,
-        #[serde(default)]
-        sanitizers: Vec<String>,
-        #[serde(default)]
-        max_paths: Option<usize>,
-    },
     PostBounty {
         description: String,
         budget: u64,
@@ -735,19 +615,6 @@ pub enum ToolInput {
         bounty_id: String,
         #[serde(default)]
         max_solvers: Option<u8>,
-    },
-    RunCoverage {
-        #[serde(default)]
-        lcov_path: Option<String>,
-        include_untested_list: bool,
-    },
-    SymbolEdit {
-        handle: String,
-        new_content: String,
-        #[serde(default)]
-        validate: bool,
-        #[serde(default, rename = "dispatch_cascade")]
-        dispatch_cascade: bool,
     },
     PlanCreate {
         title: String,
@@ -1071,55 +938,6 @@ impl ToolInput {
             Self::TeamMemberMode { member_name, mode } => {
                 format!("set {member_name} → {mode}")
             }
-            Self::CodeIndex {
-                path, query, kind, ..
-            } => {
-                let mut parts = Vec::new();
-                if let Some(kind) = kind.as_deref().filter(|s| !s.is_empty()) {
-                    parts.push(format!("kind={kind}"));
-                }
-                if let Some(query) = query.as_deref().filter(|s| !s.is_empty()) {
-                    parts.push(format!("query={query}"));
-                }
-                if let Some(path) = path.as_deref().filter(|s| !s.is_empty()) {
-                    parts.push(format!("path={path}"));
-                }
-                if parts.is_empty() {
-                    "code index".into()
-                } else {
-                    format!("code index ({})", parts.join(", "))
-                }
-            }
-            Self::GraphQuery { query, .. } => query.clone(),
-            Self::GraphContext { task, .. } => format!("context: {task}"),
-            Self::GraphSearch { query, .. } => format!("search: {query}"),
-            Self::GraphCallers { symbol, .. } => format!("callers: {symbol}"),
-            Self::GraphCallees { symbol, .. } => format!("callees: {symbol}"),
-            Self::GraphImpact { symbol, .. } => format!("impact: {symbol}"),
-            Self::GraphNode { symbol, .. } => format!("node: {symbol}"),
-            Self::GraphExplore { query, .. } => format!("explore: {query}"),
-            Self::GraphOutline { file } => format!("outline: {file}"),
-            Self::GraphGrep { pattern, .. } => format!("grep: {pattern}"),
-            Self::GraphStatus {} => "graph_status".into(),
-            Self::GraphFiles { path, .. } => {
-                format!("files({})", path.as_deref().unwrap_or("."))
-            }
-            Self::GetProgramSlice {
-                symbol, backward, ..
-            } => {
-                format!(
-                    "{} slice: {symbol}",
-                    if *backward { "backward" } else { "forward" }
-                )
-            }
-            Self::GetDataDependencies { symbol, .. } => format!("data_deps: {symbol}"),
-            Self::TaintFlow { sources, sinks, .. } => {
-                format!("taint_flow: {}→{}", sources.join(","), sinks.join(","))
-            }
-            Self::RunCoverage { lcov_path, .. } => {
-                format!("coverage({})", lcov_path.as_deref().unwrap_or("auto"))
-            }
-            Self::SymbolEdit { handle, .. } => format!("edit: {handle}"),
             Self::PlanCreate { title, .. } => format!("plan_create: {title}"),
             Self::PlanList { .. } => "plan_list".into(),
             Self::PlanShow { slug, .. } => format!("plan_show: {slug}"),

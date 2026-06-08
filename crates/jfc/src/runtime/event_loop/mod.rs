@@ -197,13 +197,13 @@ pub(crate) async fn run(
     }
     if let Some(name) = startup_config.output_style.as_deref() {
         let parsed = jfc_engine::output_style::OutputStyle::from_str_loose(name);
+        jfc_engine::output_style::set_active_named(name);
         tracing::info!(
             target: "jfc::ui::output_style",
-            style = %parsed.name(),
+            style = %jfc_engine::output_style::active().name(),
             "applied persisted output style"
         );
         app.engine.output_style = parsed;
-        jfc_engine::output_style::set_active(parsed);
     }
 
     // v132 Finch onboarding — first-run UI for users with no prior

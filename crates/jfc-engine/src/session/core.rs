@@ -791,28 +791,6 @@ mod disk_io_tests {
         assert!(matches!(parsed, SerializedToolOutput::Empty));
     }
 
-    // Robust: legacy Generic summaries like `GraphQuery(...): ...` are
-    // repaired on load so resumed history replays structured tool_use
-    // inputs instead of `{ "input": "GraphQuery(...): ..." }`.
-    #[test]
-    fn generic_tool_input_legacy_graph_query_rehydrates_robust() {
-        let input = deserialize_tool_input_for_kind(
-            "GraphQuery",
-            SerializedToolInput::Generic {
-                summary: r#"GraphQuery(budget=3000): fn("main") | callees"#.into(),
-            },
-        );
-        match input {
-            ToolInput::GraphQuery {
-                query, max_tokens, ..
-            } => {
-                assert_eq!(query, r#"fn("main") | callees"#);
-                assert_eq!(max_tokens, Some(3000));
-            }
-            other => panic!("expected GraphQuery, got {}", other.summary()),
-        }
-    }
-
     #[test]
     fn generic_tool_input_json_rehydrates_by_kind_normal() {
         let input = deserialize_tool_input_for_kind(
@@ -951,18 +929,6 @@ mod disk_io_tests {
                     "options": [{"label": "a"}, {"label": "b"}],
                     "multiSelect": false,
                 }]),
-            },
-            ToolInput::CodeIndex {
-                path: Some("src".into()),
-                query: Some("parser".into()),
-                kind: Some("function".into()),
-                max_entries: Some(10),
-            },
-            ToolInput::GraphQuery {
-                query: "entrypoints".into(),
-                max_tokens: Some(4000),
-                include_handles: Some(true),
-                format: None,
             },
             ToolInput::Mcp {
                 name: "mcp__fs__read".into(),

@@ -31,10 +31,13 @@ pub enum SubmitOutcome {
 /// TUI's Esc handling and the whole of remote/headless interrupt.
 pub fn interrupt(state: &mut EngineState, tx: &EventSender) {
     let already_requested = state.cancel_token.is_cancelled()
-        || state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst);
+        || state
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst);
 
     let old_cancel = state.cancel_token.clone();
-    state.interrupt_flag
+    state
+        .interrupt_flag
         .store(true, std::sync::atomic::Ordering::SeqCst);
     old_cancel.cancel();
     state.cancel_token = tokio_util::sync::CancellationToken::new();
@@ -80,7 +83,8 @@ pub fn interrupt(state: &mut EngineState, tx: &EventSender) {
     }
 
     if !state.has_interruptible_work() {
-        state.interrupt_flag
+        state
+            .interrupt_flag
             .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
@@ -524,7 +528,8 @@ pub async fn submit_prompt(
         );
     }
     if keyword_result.ultrathink {
-        state.exploration_state
+        state
+            .exploration_state
             .force_next(crate::exploration::ExplorationLevel::MAX);
         crate::system_reminder::append_to_last_user(
             &mut state.messages,
@@ -532,7 +537,8 @@ pub async fn submit_prompt(
         );
     }
     if keyword_result.explore {
-        state.exploration_state
+        state
+            .exploration_state
             .force_next(crate::exploration::ExplorationLevel::new(3));
         crate::system_reminder::append_to_last_user(
             &mut state.messages,
@@ -540,26 +546,41 @@ pub async fn submit_prompt(
         );
     }
 
-    // Inject background-agent completion notification if any detached
-    // agents finished since the last user turn. The counter is
-    // incremented by sync_detached_background_tasks_from_daemon when
-    // agent status transitions to terminal. Drain it here so the model
-    // sees "N agents finished — their summaries are in the transcript"
-    // on this very turn (via the TaskStatus serialization we added to
-    // build_provider_messages). Mirrors oh-my-opencode's
-    // background-task-notification-template.ts pattern.
-    let bg_completed = state.background_tasks_completed_since_last_turn;
+    // Inject detached background-agent completions as a one-shot reminder.
+    // The visible `TaskStatus` parts stay in the transcript for UI/session
+    // state, but provider-message construction intentionally does not replay
+    // their summaries from historical assistant turns.
+    let background_completions = state.take_background_agent_completions();
+    let bg_completed = background_completions.len();
     if bg_completed > 0 {
-        state.background_tasks_completed_since_last_turn = 0;
         let plural = if bg_completed == 1 { "" } else { "s" };
+        let mut reminder = format!(
+            "{bg_completed} detached background task{plural} completed since your last turn. \
+             Review the final summar{suffix} before responding:\n\n",
+            suffix = if bg_completed == 1 { "y" } else { "ies" }
+        );
+        for completion in &background_completions {
+            let status = completion.status.label();
+            let body = if completion.body.len() > 2000 {
+                format!(
+                    "{}... [truncated {} chars]",
+                    &completion.body[..completion.body.floor_char_boundary(2000)],
+                    completion.body.len()
+                )
+            } else {
+                completion.body.clone()
+            };
+            reminder.push_str(&format!(
+                "- {} ({status}): {body}\n",
+                completion.description
+            ));
+        }
+        reminder.push_str(
+            "\nIncorporate or acknowledge these results where they matter to the user's request.",
+        );
         crate::system_reminder::append_to_last_user(
             &mut state.messages,
-            &format!(
-                "{bg_completed} detached background task{plural} completed since your last turn. \
-                 Their final summaries are visible in the assistant transcript as \
-                 [Background agent: ...] blocks. Review those summaries before responding — \
-                 the user expects you to incorporate or acknowledge completed work."
-            ),
+            &reminder,
         );
         tracing::info!(
             target: "jfc::background",
@@ -610,25 +631,7 @@ pub async fn submit_prompt(
         let classification = crate::intent::classify(&text);
         let intent_for_inject = classification.intent;
 
-        // (1) Graph-flavored intents → auto-inject structural context.
-        if crate::intent::is_graph_intent(intent_for_inject) {
-            let cwd = std::path::PathBuf::from(&state.cwd);
-            let injected = crate::intent::auto_inject_graph_context(
-                &mut state.messages,
-                intent_for_inject,
-                &text,
-                &cwd,
-            );
-            if injected {
-                tracing::info!(
-                    target: "jfc::intent::auto_ctx",
-                    intent = ?intent_for_inject,
-                    "auto graph-context injected"
-                );
-            }
-        }
-
-        // (2) Doc-request intents → suggest the matching slash command
+        // (1) Doc-request intents → suggest the matching slash command
         // via a toast. We never auto-run the command (writing a file
         // the user didn't explicitly ask for is destructive) — the
         // toast is a one-keystroke nudge. Suppressed via
@@ -654,7 +657,7 @@ pub async fn submit_prompt(
             );
         }
 
-        // (3) Auto-Plan-Mode: planning-shaped prompts flip the session
+        // (2) Auto-Plan-Mode: planning-shaped prompts flip the session
         // into Plan (read-only) permission mode — but only when the
         // user opted in via JFC_AUTO_PLAN_MODE=1, and only when we're
         // not already in a more-restrictive-or-equal mode. The user
@@ -752,8 +755,7 @@ pub async fn start_turn_from_transcript(
     state.thinking_ended_at = None;
     state.last_usage_output = 0;
     state.usage_apply_baseline = (0, 0, 0, 0);
-    state
-        .push_effect(crate::app::EngineEffect::ScrollToBottom);
+    state.push_effect(crate::app::EngineEffect::ScrollToBottom);
 
     // Auto-persist the session so the sidebar shows it. Reuses the existing
     // session id if one was loaded; otherwise mints a fresh one keyed on the

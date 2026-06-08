@@ -329,6 +329,12 @@ pub enum SerializedToolInput {
         member_name: String,
         mode: String,
     },
+    // Retained read-only for back-compat: the native graph tools (in-tree
+    // jfc-graph) were unwired — code intelligence now flows through the
+    // external codegraph MCP server. Sessions saved while those tools existed
+    // still carry these serialized forms, so they must remain deserializable.
+    // Deserialization rebuilds them into Generic records (see deserialize.rs);
+    // nothing writes these variants anymore.
     CodeIndex {
         #[serde(default)]
         path: Option<String>,
@@ -364,6 +370,8 @@ pub enum SerializedToolInput {
         #[serde(default)]
         max_solvers: Option<u8>,
     },
+    // Retained read-only for back-compat (see CodeIndex above): unwired graph
+    // tools old sessions may still reference; rebuilt to Generic on load.
     RunCoverage {
         #[serde(default)]
         lcov_path: Option<String>,

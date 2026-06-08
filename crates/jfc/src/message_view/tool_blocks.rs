@@ -758,24 +758,6 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         | ToolKind::TeamMemberMode => Color::Rgb(255, 150, 130), // coral
         ToolKind::Skill => Color::Rgb(180, 220, 255), // ice
         ToolKind::ToolSearch | ToolKind::ToolSuggest => Color::Rgb(170, 210, 180),
-        ToolKind::CodeIndex
-        | ToolKind::GraphQuery
-        | ToolKind::GraphContext
-        | ToolKind::GraphSearch
-        | ToolKind::GraphCallers
-        | ToolKind::GraphCallees
-        | ToolKind::GraphImpact
-        | ToolKind::GraphNode
-        | ToolKind::GraphExplore
-        | ToolKind::GraphOutline
-        | ToolKind::GraphGrep
-        | ToolKind::GraphStatus
-        | ToolKind::GraphFiles
-        | ToolKind::GetProgramSlice
-        | ToolKind::GetDataDependencies
-        | ToolKind::TaintFlow
-        | ToolKind::SymbolEdit
-        | ToolKind::RunCoverage => Color::Rgb(130, 200, 180), // sage
         ToolKind::PlanCreate
         | ToolKind::PlanList
         | ToolKind::PlanShow

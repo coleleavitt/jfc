@@ -12,6 +12,7 @@ pub mod delegating;
 pub mod github;
 pub mod info;
 pub mod local;
+pub mod markdown;
 pub mod mcp;
 pub mod session;
 pub mod support;
@@ -21,13 +22,11 @@ pub mod worktree;
 /// Shared imports for the command handler modules (they historically lived
 /// inside the TUI's `input` module and leaned on its glob surface).
 pub mod prelude {
-    pub use std::sync::Arc;
+    pub use std::{path::PathBuf, sync::Arc};
 
     pub use tokio::sync::mpsc;
 
-    pub use crate::app::{
-        EngineEffect, EngineEvent, EngineState, PendingApproval, PermissionMode,
-    };
+    pub use crate::app::{EngineEffect, EngineEvent, EngineState, PendingApproval, PermissionMode};
     pub use crate::runtime::{
         ControlEvent, EventSender, FrontendEvent, QueuePriority, QueuedPrompt, StreamEvent,
         ToolEvent,
@@ -133,12 +132,10 @@ engine_commands! {
         "/goal" [] "set a session stop-condition the agent works toward" => cmd_goal,
         "/memory" ["/mem"] "list memory files / toggle two-phase recall" => cmd_memory,
         "/commit" [] "generate a conventional commit message for staged changes" => cmd_commit,
-        "/review" [] "ask the model to review current git changes" => cmd_review,
+        "/review" ["/code-review", "/ultrareview"] "ask the model to review current git changes" => cmd_review,
         "/skills" [] "list available skills (.claude/skills/*.md)" => cmd_skills,
         "/agents" [] "list available agent definitions (.claude/agents/*.md)" => cmd_agents,
         "/market" [] "show the agent-economy snapshot" => cmd_market,
-        "/cascade" [] "list cascade tasks queued by symbol_edit" => cmd_cascade,
-        "/graph-history" [] "list recent code-graph queries" => cmd_graph_history,
         "/task-list" ["/tasks"] "list todo/task items" => cmd_task_list,
         "/task-add" [] "create a new task" => cmd_task_add,
         "/task-done" [] "mark a task completed" => cmd_task_done,
@@ -202,9 +199,9 @@ pub async fn run_command(
 /// v126 cli.js:226634 where a slash-name not otherwise bound resolves to a
 /// skill or markdown command and either inline-expands or forks a subagent.
 ///
-/// Phase B (not yet implemented): when `frontmatter.context == "fork"` (the
-/// v126 flag at cli.js:178962), spawn a Task subagent here instead of
-/// inline-expanding the body. For now every match inline-expands.
+/// When `frontmatter.context == "fork"`, dispatch the rendered skill body to
+/// the existing Task subagent executor. Inline skills still stream through
+/// the normal provider path as a synthetic user turn.
 pub async fn skill_fallthrough(
     state: &mut EngineState,
     parts: &[&str],
@@ -212,9 +209,44 @@ pub async fn skill_fallthrough(
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let name = parts[0].trim_start_matches('/');
-    let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+    let cwd = PathBuf::from(&state.cwd);
+    let markdown_commands = markdown::load_markdown_commands(&cwd);
+    if let Some(command) = markdown::find_markdown_command(&markdown_commands, name) {
+        let echo = if let Some(rest) = parts.get(1) {
+            let trimmed = rest.trim();
+            if trimmed.is_empty() {
+                format!("/{name}")
+            } else {
+                format!("/{name} {trimmed}")
+            }
+        } else {
+            format!("/{name}")
+        };
+        let Some(tx) = tx else {
+            state.messages.push(ChatMessage::assistant(format!(
+                "Markdown command `/{name}` cannot be invoked from this context (no stream channel). \
+                 Submit `/{name}` directly from the input bar instead."
+            )));
+            state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+            return;
+        };
+        let args = parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty());
+        let body = markdown::render_markdown_command(command, args);
+        state.messages.push(ChatMessage::user(echo));
+        start_synthetic_user_turn(state, body, tx);
+        return;
+    }
+
     let skills = crate::agents::load_skills(&cwd);
     if let Some(skill) = crate::agents::find_skill_by_name(&skills, name) {
+        if !skill.is_user_invocable() {
+            state.messages.push(ChatMessage::assistant(format!(
+                "Skill `/{name}` is installed but is not user-invocable."
+            )));
+            state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+            return;
+        }
+
         // Echo the user's invocation so the chat shows what they
         // typed (with optional args) — same pattern as the other
         // slash arms. The injected user message that follows carries
@@ -231,17 +263,62 @@ pub async fn skill_fallthrough(
         };
         state.messages.push(ChatMessage::user(echo));
 
-        // Phase A: inline-expand the body. If the user passed args
-        // after the skill name, append them under an `# Args` heading
-        // so the skill prompt can reference them without us having to
-        // template-substitute.
-        let mut body = skill.body.clone();
-        if let Some(rest) = parts.get(1) {
-            let trimmed = rest.trim();
-            if !trimmed.is_empty() {
-                body.push_str("\n\n# Args\n");
-                body.push_str(trimmed);
-            }
+        let memory_root = jfc_memory::project_memory_dir(&cwd);
+        let render_context = crate::agents::SkillRenderContext::new(Some(&cwd), Some(&memory_root));
+        let args = parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty());
+        let body = crate::agents::render_skill_invocation(skill, render_context, args);
+
+        if skill.context.is_fork() {
+            let Some(tx) = tx else {
+                state.messages.push(ChatMessage::assistant(format!(
+                    "Skill `/{name}` requires a forked subagent, but this context has no stream channel. \
+                         Submit `/{name}` directly from the input bar instead."
+                )));
+                state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+                return;
+            };
+
+            let task_input = TaskInput {
+                description: format!("Run skill /{}", skill.name),
+                prompt: body,
+                subagent_type: None,
+                category: Some("skill".to_owned()),
+                run_in_background: false,
+                model: None,
+                effort: None,
+                name: None,
+                team_name: None,
+                mode: None,
+                isolation: None,
+                parent_task_id: None,
+                schema: skill.input_schema.clone(),
+            };
+            let provider = state.provider.clone();
+            let model = state.model.clone();
+            let task_store = Some(state.task_store.clone());
+            let result = crate::tools::execute_task(
+                &task_input,
+                provider.as_ref(),
+                model,
+                Some(tx),
+                None,
+                None,
+                Some(cwd.clone()),
+                task_store,
+                None,
+            )
+            .await;
+            let reply = if result.is_error() {
+                format!(
+                    "Skill `/{name}` failed in forked context:\n\n{}",
+                    result.output
+                )
+            } else {
+                result.output
+            };
+            state.messages.push(ChatMessage::assistant(reply));
+            state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+            return;
         }
 
         let Some(tx) = tx else {
@@ -256,84 +333,7 @@ pub async fn skill_fallthrough(
             return;
         };
 
-        // Drive the same streaming setup as `handle_submit` for a
-        // fresh user turn: push the synthetic user message, push the
-        // empty assistant placeholder, prime streaming flags, persist
-        // the session, then spawn the provider stream.
-        let assistant_idx = state.messages.len() + 1;
-        state.messages.push(ChatMessage::user(body));
-        state.tool_ctx.total_user_turns += 1;
-        state.messages.push(ChatMessage::assistant(String::new()));
-        state.streaming_text.clear();
-        state.streaming_reasoning.clear();
-        state.streaming_response_bytes = 0;
-        state.network_recovery_status = None;
-        state.network_recovery_attempts = 0;
-        state.streaming_assistant_idx = Some(assistant_idx);
-        state.is_streaming = true;
-        let now = std::time::Instant::now();
-        state.streaming_started_at = Some(now);
-        state.last_stream_event_at = Some(now);
-        state.streaming_last_token_at = Some(now);
-        state.turn_started_at = Some(now);
-        state.turn_start_cost = crate::cost::total_cost(&state.usage_by_model);
-        state.agentic_turn_count = 0;
-        state.thinking_started_at = None;
-        state.pre_dispatched_tool_ids.clear();
-        state.deferred_tool_uses.clear();
-        state.in_progress_tool_use_ids.clear();
-        state.in_flight_eager_dispatches = 0;
-        state.in_flight_tool_batches = 0;
-        state.thinking_ended_at = None;
-        state.last_usage_output = 0;
-        state.usage_apply_baseline = (0, 0, 0, 0);
-        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
-
-        let session_id = state
-            .current_session_id
-            .clone()
-            .unwrap_or_else(jfc_session::generate_session_id);
-        // Fire-and-forget — don't block UI on disk I/O
-        {
-            let sid = session_id.clone();
-            let msgs = state.messages.clone();
-            let model = state.model.clone();
-            tokio::spawn(async move {
-                crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
-            });
-        }
-        state.current_session_id = Some(session_id);
-
-        let provider = state.provider.clone();
-        let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
-        let model = state.model.clone();
-        let tx_stream = tx.clone();
-        let interrupt = state.interrupt_flag.clone();
-        interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
-        state.cancel_token = tokio_util::sync::CancellationToken::new();
-        let cancel = state.cancel_token.clone();
-        let overrides = crate::runtime::StreamRequestOverrides {
-            background_reminders: state.take_background_reminders(),
-            disallowed_tools: state.effective_disallowed_tools(),
-            allowed_tools: state.allowed_tools.clone(),
-            custom_betas: state.custom_betas.clone(),
-            fine_grained_tool_streaming: state.fine_grained_tool_streaming,
-            strict_tool_schemas: state.strict_tool_schemas,
-            task_budget: state.cli_task_budget,
-            max_thinking_tokens: state.cli_max_thinking_tokens,
-            thinking_display: state.cli_thinking_display.clone(),
-            brief_mode: state.brief_mode,
-            ..Default::default()
-        };
-        // wg-async: retry path mints a fresh cancel token for the
-        // new stream so the old (possibly cancelled) one can't
-        // racially interrupt the retry.
-        tokio::spawn(async move {
-            crate::stream::stream_response(
-                provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
-            )
-            .await;
-        });
+        start_synthetic_user_turn(state, body, tx);
         return;
     }
 
@@ -343,3 +343,79 @@ pub async fn skill_fallthrough(
     )));
 }
 
+fn start_synthetic_user_turn(
+    state: &mut EngineState,
+    body: String,
+    tx: &mpsc::Sender<EngineEvent>,
+) {
+    let assistant_idx = state.messages.len() + 1;
+    state.messages.push(ChatMessage::user(body));
+    state.tool_ctx.total_user_turns += 1;
+    state.messages.push(ChatMessage::assistant(String::new()));
+    state.streaming_text.clear();
+    state.streaming_reasoning.clear();
+    state.streaming_response_bytes = 0;
+    state.network_recovery_status = None;
+    state.network_recovery_attempts = 0;
+    state.streaming_assistant_idx = Some(assistant_idx);
+    state.is_streaming = true;
+    let now = std::time::Instant::now();
+    state.streaming_started_at = Some(now);
+    state.last_stream_event_at = Some(now);
+    state.streaming_last_token_at = Some(now);
+    state.turn_started_at = Some(now);
+    state.turn_start_cost = crate::cost::total_cost(&state.usage_by_model);
+    state.agentic_turn_count = 0;
+    state.thinking_started_at = None;
+    state.pre_dispatched_tool_ids.clear();
+    state.deferred_tool_uses.clear();
+    state.in_progress_tool_use_ids.clear();
+    state.in_flight_eager_dispatches = 0;
+    state.in_flight_tool_batches = 0;
+    state.thinking_ended_at = None;
+    state.last_usage_output = 0;
+    state.usage_apply_baseline = (0, 0, 0, 0);
+    state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+
+    let session_id = state
+        .current_session_id
+        .clone()
+        .unwrap_or_else(jfc_session::generate_session_id);
+    {
+        let sid = session_id.clone();
+        let msgs = state.messages.clone();
+        let model = state.model.clone();
+        tokio::spawn(async move {
+            crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
+        });
+    }
+    state.current_session_id = Some(session_id);
+
+    let provider = state.provider.clone();
+    let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
+    let model = state.model.clone();
+    let tx_stream = tx.clone();
+    let interrupt = state.interrupt_flag.clone();
+    interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
+    state.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = state.cancel_token.clone();
+    let overrides = crate::runtime::StreamRequestOverrides {
+        background_reminders: state.take_background_reminders(),
+        disallowed_tools: state.effective_disallowed_tools(),
+        allowed_tools: state.allowed_tools.clone(),
+        custom_betas: state.custom_betas.clone(),
+        fine_grained_tool_streaming: state.fine_grained_tool_streaming,
+        strict_tool_schemas: state.strict_tool_schemas,
+        task_budget: state.cli_task_budget,
+        max_thinking_tokens: state.cli_max_thinking_tokens,
+        thinking_display: state.cli_thinking_display.clone(),
+        brief_mode: state.brief_mode,
+        ..Default::default()
+    };
+    tokio::spawn(async move {
+        crate::stream::stream_response(
+            provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
+        )
+        .await;
+    });
+}

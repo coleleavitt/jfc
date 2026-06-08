@@ -81,14 +81,9 @@ pub use subagent::{execute_task, selected_subagent_model};
 pub use swarm::CURRENT_AGENT_NAME;
 
 // registry
-pub use registry::get_or_build_graph_session;
-#[cfg(test)]
-pub use registry::invalidate_graph_session_cache;
-#[cfg(test)]
-pub use registry::record_edited_file;
 pub use registry::{
-    graph_history_snapshot, pop_undo_entry, push_undo_entry, register_active_provider,
-    register_event_sender, register_mcp_registry, render_pending_auto_context, restore_undo_entry,
+    pop_undo_entry, push_undo_entry, register_active_provider, register_event_sender,
+    register_mcp_registry, restore_undo_entry,
 };
 pub use registry::{snapshot_active_provider, snapshot_event_sender, snapshot_mcp_registry};
 

@@ -10,6 +10,7 @@ apps/*/.vite/
 .env.*
 !.env.example
 .claude/
+CLAUDE.local.md
 .jfc-worktrees/
 .sisyphus/
 dhat-heap.json

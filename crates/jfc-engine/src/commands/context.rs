@@ -117,13 +117,15 @@ pub(super) async fn cmd_advisor(
                 Ok(_) => {
                     crate::advisor::set_active_server_advisor_model(None);
                     state.server_advisor_model = None;
-                    state.messages
+                    state
+                        .messages
                         .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                             "Server advisor disabled.".into(),
                         )]));
                 }
                 Err(e) => {
-                    state.messages
+                    state
+                        .messages
                         .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                             format!("Could not persist server advisor setting: {e}"),
                         )]));
@@ -152,33 +154,40 @@ pub(super) async fn cmd_advisor(
                 )]));
             return;
         }
-        match crate::advisor::resolve_server_advisor_model(&state.model, Some(raw_model), true, true)
-        {
-            Ok(Some(model)) => match crate::config::save_server_advisor_model(Some(model.as_str()))
-            {
-                Ok(_) => {
-                    crate::advisor::set_active_server_advisor_model(Some(model.clone()));
-                    state.server_advisor_model = Some(model.clone());
-                    state.messages
-                        .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
-                            format!("Server advisor set to `{model}`."),
-                        )]));
+        match crate::advisor::resolve_server_advisor_model(
+            &state.model,
+            Some(raw_model),
+            true,
+            true,
+        ) {
+            Ok(Some(model)) => {
+                match crate::config::save_server_advisor_model(Some(model.as_str())) {
+                    Ok(_) => {
+                        crate::advisor::set_active_server_advisor_model(Some(model.clone()));
+                        state.server_advisor_model = Some(model.clone());
+                        state.messages.push(ChatMessage::assistant_parts(vec![
+                            MessagePart::Advisor(format!("Server advisor set to `{model}`.")),
+                        ]));
+                    }
+                    Err(e) => {
+                        state.messages.push(ChatMessage::assistant_parts(vec![
+                            MessagePart::Advisor(format!(
+                                "Could not persist server advisor setting: {e}"
+                            )),
+                        ]));
+                    }
                 }
-                Err(e) => {
-                    state.messages
-                        .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
-                            format!("Could not persist server advisor setting: {e}"),
-                        )]));
-                }
-            },
+            }
             Ok(None) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         "Server advisor is not available for the active model/provider.".into(),
                     )]));
             }
             Err(e) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         format!("Server advisor config error: {e}"),
                     )]));
@@ -197,13 +206,15 @@ pub(super) async fn cmd_advisor(
                 state.local_advisor_model = None;
                 state.advisor_enabled = false;
                 state.advisor_session = None;
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         "Local advisor disabled.".into(),
                     )]));
             }
             Err(e) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         format!("Could not persist advisor setting: {e}"),
                     )]));
@@ -277,13 +288,15 @@ pub(super) async fn cmd_advisor(
                 }
             }
             Ok(None) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         "Local advisor is not available.".into(),
                     )]));
             }
             Err(e) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         format!("Advisor config error: {e}"),
                     )]));
@@ -306,7 +319,8 @@ pub(super) async fn cmd_advisor(
         // models mid-session keeps the original advisor model.
         let session = state.advisor_session.get_or_insert_with(|| {
             crate::advisor::AdvisorSession::new(
-                state.local_advisor_model
+                state
+                    .local_advisor_model
                     .clone()
                     .unwrap_or_else(|| state.model.clone()),
             )
@@ -325,7 +339,8 @@ pub(super) async fn cmd_advisor(
         ) {
             Ok(provider) => provider,
             Err(e) => {
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         format!("Advisor provider error: {e}"),
                     )]));
@@ -338,7 +353,8 @@ pub(super) async fn cmd_advisor(
             Ok(reply) => {
                 let remaining = session.tokens_remaining();
                 let total_budget = session.token_budget;
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         format!(
                             "{reply}\n\n_(advisor budget: {} of {} tokens remaining)_",
@@ -411,10 +427,13 @@ pub(super) async fn cmd_model(
     let requested_model = arg.to_string();
     let old_model = state.model.clone();
     let mut recent_model = requested_model.clone();
-    if let Some(resolved) = crate::runtime::bootstrap::resolve_provider_model(&state.providers, &requested_model) {
+    if let Some(resolved) =
+        crate::runtime::bootstrap::resolve_provider_model(&state.providers, &requested_model)
+    {
         state.provider = resolved.provider;
         state.model = resolved.model;
-        recent_model = crate::runtime::bootstrap::qualified_model_id(state.provider.as_ref(), &state.model);
+        recent_model =
+            crate::runtime::bootstrap::qualified_model_id(state.provider.as_ref(), &state.model);
     } else {
         state.model = jfc_provider::ModelId::new(requested_model);
     }
@@ -503,7 +522,8 @@ pub(super) async fn cmd_pin(
         match arg.parse::<usize>() {
             Ok(idx) if idx < state.messages.len() => {
                 state.pinned_message_indices.insert(idx);
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant(format!("Pinned message #{idx}.")));
             }
             Ok(idx) => {
@@ -532,13 +552,15 @@ pub(super) async fn cmd_unpin(
     if arg.is_empty() || arg == "all" {
         let n = state.pinned_message_indices.len();
         state.pinned_message_indices.clear();
-        state.messages
+        state
+            .messages
             .push(ChatMessage::assistant(format!("Cleared {n} pin(s).")));
     } else {
         match arg.parse::<usize>() {
             Ok(idx) => {
                 if state.pinned_message_indices.remove(&idx) {
-                    state.messages
+                    state
+                        .messages
                         .push(ChatMessage::assistant(format!("Unpinned message #{idx}.")));
                 } else {
                     state.messages.push(ChatMessage::assistant(format!(
@@ -567,7 +589,8 @@ pub(super) async fn cmd_effort(
     state.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts.get(1).copied().unwrap_or("").trim();
     if arg.is_empty() {
-        state.messages
+        state
+            .messages
             .push(ChatMessage::assistant(state.effort_state.status()));
     } else if arg == "clear" || arg == "off" {
         let msg = state.effort_state.clear();
@@ -591,7 +614,8 @@ pub(super) async fn cmd_temp(
     state.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts.get(1).copied().unwrap_or("").trim();
     if arg.is_empty() {
-        state.messages
+        state
+            .messages
             .push(ChatMessage::assistant(state.temperature_state.status()));
     } else if matches!(arg, "clear" | "default" | "auto" | "off") {
         let msg = state.temperature_state.clear();
@@ -641,7 +665,8 @@ pub(super) async fn cmd_explore(
         "status" => state.exploration_state.status(),
         "clear" | "default" | "auto" => state.exploration_state.clear_adjustments(),
         "max" | "ultra" => {
-            state.exploration_state
+            state
+                .exploration_state
                 .force_next(crate::exploration::ExplorationLevel::MAX);
             "Next turn exploration forced to level 4.".to_owned()
         }
@@ -843,7 +868,9 @@ pub(super) async fn cmd_goal(
                                  once the condition is met.",
                         crate::goal::MAX_ITERATIONS
                     );
-                    let _ = tx.send(EngineEvent::Control(ControlEvent::SubmitPrompt(kickoff))).await;
+                    let _ = tx
+                        .send(EngineEvent::Control(ControlEvent::SubmitPrompt(kickoff)))
+                        .await;
                     tracing::info!(
                         target: "jfc::goal",
                         "/goal: dispatched kickoff meta-prompt"
@@ -851,7 +878,9 @@ pub(super) async fn cmd_goal(
                 }
             }
             Err(reason) => {
-                state.messages.push(ChatMessage::assistant(reason.to_owned()));
+                state
+                    .messages
+                    .push(ChatMessage::assistant(reason.to_owned()));
             }
         }
     }
@@ -1161,10 +1190,12 @@ pub(super) async fn cmd_autoloop(
     // `/loop stop` kills an active loop.
     if parts.get(1).copied() == Some("stop") {
         if state.autonomous_loop.take().is_some() {
-            state.messages
+            state
+                .messages
                 .push(ChatMessage::assistant("Autonomous loop stopped.".into()));
         } else {
-            state.messages
+            state
+                .messages
                 .push(ChatMessage::assistant("No active autonomous loop.".into()));
         }
         return;
@@ -1228,7 +1259,9 @@ pub(super) async fn cmd_permissions(
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    state.messages.push(ChatMessage::user("/permissions".into()));
+    state
+        .messages
+        .push(ChatMessage::user("/permissions".into()));
 
     let arg = parts.get(1).copied().unwrap_or("").trim();
 
@@ -1383,7 +1416,8 @@ pub(super) async fn cmd_teleport_export(
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    state.messages
+    state
+        .messages
         .push(ChatMessage::user("/teleport-export".into()));
 
     let id = uuid::Uuid::new_v4().to_string();
@@ -1426,7 +1460,8 @@ pub(super) async fn cmd_teleport_export(
             )));
         }
         Err(e) => {
-            state.messages
+            state
+                .messages
                 .push(ChatMessage::assistant(format!("Failed to export: {e}")));
         }
     }
@@ -1470,7 +1505,7 @@ pub(super) async fn cmd_coach(
                     "Read" => stats.read_calls += 1,
                     "Write" => stats.write_calls += 1,
                     "Bash" => stats.bash_calls += 1,
-                    "Grep" | "Glob" | "GraphSearch" | "GraphContext" => stats.search_calls += 1,
+                    "Grep" | "Glob" => stats.search_calls += 1,
                     _ => {}
                 }
                 if t.status == jfc_core::ExecutionStatus::Failed {
@@ -1524,7 +1559,8 @@ pub(super) async fn cmd_remote(
             )));
         }
         Err(e) => {
-            state.messages
+            state
+                .messages
                 .push(ChatMessage::assistant(format!("Remote spawn failed: {e}")));
         }
     }
@@ -1635,7 +1671,8 @@ pub(super) async fn cmd_oauth_login(
             ));
         }
         Err(e) => {
-            state.messages
+            state
+                .messages
                 .push(ChatMessage::assistant(format!("OAuth poll failed: {e}")));
         }
     }
@@ -1768,7 +1805,8 @@ pub(super) async fn cmd_babysit_prs(
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    state.messages
+    state
+        .messages
         .push(ChatMessage::user(parts.to_vec().join(" ")));
 
     let arg = parts.get(1).copied().unwrap_or("").trim();
@@ -1890,7 +1928,8 @@ pub(super) async fn cmd_morning_checkin(
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    state.messages
+    state
+        .messages
         .push(ChatMessage::user("/morning-checkin".to_string()));
 
     let mut body = String::from("# Morning check-in\n\n");

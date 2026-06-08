@@ -6,8 +6,62 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::state::{Skill, parse_agent, parse_skill};
+use crate::state::{Skill, SkillFile, parse_agent, parse_skill};
 pub use jfc_core::{AgentCost, AgentDef};
+
+#[derive(Debug, Clone)]
+struct PluginRoot {
+    path: PathBuf,
+    namespace: Option<String>,
+}
+
+fn plugin_roots(project_root: &Path) -> Vec<PluginRoot> {
+    let mut roots = Vec::new();
+    let mut seen = HashSet::new();
+    let mut push_root = |path: PathBuf, namespace: Option<String>| {
+        if seen.insert((path.clone(), namespace.clone())) {
+            roots.push(PluginRoot { path, namespace });
+        }
+    };
+
+    if let Some(home) = dirs::home_dir() {
+        push_plugin_roots_in(&home.join(".claude/plugins"), &mut push_root);
+    }
+    if let Some(config) = dirs::config_dir() {
+        push_plugin_roots_in(&config.join("jfc/plugins"), &mut push_root);
+    }
+
+    push_plugin_roots_in(&project_root.join(".claude/plugins"), &mut push_root);
+    push_plugin_roots_in(&project_root.join("plugins"), &mut push_root);
+    push_plugin_roots_in(&project_root.join(".agents/plugins"), &mut push_root);
+    push_plugin_roots_in(&project_root.join(".codex/plugins"), &mut push_root);
+
+    roots
+}
+
+fn push_plugin_roots_in(
+    plugins_dir: &Path,
+    push_root: &mut impl FnMut(PathBuf, Option<String>),
+) {
+    let Ok(entries) = std::fs::read_dir(plugins_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(plugin) = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.starts_with('.'))
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        push_root(path, Some(plugin));
+    }
+}
 
 // ─── Skill loading ────────────────────────────────────────────────────────────
 
@@ -21,6 +75,7 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
             let SkillCandidate {
                 md_path,
                 fallback_name,
+                package_root,
             } = candidate;
             let Ok(raw) = std::fs::read_to_string(&md_path) else {
                 continue;
@@ -28,6 +83,10 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
             let Some(mut skill) = parse_skill(&md_path, &raw) else {
                 continue;
             };
+            if let Some(package_root) = package_root {
+                skill.package_root = package_root;
+                skill.files = collect_skill_files(&skill.package_root, &skill.source);
+            }
             let frontmatter_set_name = !skill.name.is_empty()
                 && skill.name != "unnamed"
                 && skill.name != "SKILL"
@@ -65,6 +124,7 @@ struct SkillRoot {
 struct SkillCandidate {
     md_path: PathBuf,
     fallback_name: String,
+    package_root: Option<PathBuf>,
 }
 
 fn skill_roots(project_root: &Path) -> Vec<SkillRoot> {
@@ -85,35 +145,11 @@ fn skill_roots(project_root: &Path) -> Vec<SkillRoot> {
     push_root(project_root.join(".claude/skills"), None);
     push_root(project_root.join(".codex/skills"), None);
     push_root(project_root.join(".agents/skills"), None);
-    push_plugin_skill_roots(project_root, ".agents", &mut push_root);
-    push_plugin_skill_roots(project_root, ".codex", &mut push_root);
+    for plugin in plugin_roots(project_root) {
+        push_root(plugin.path.join("skills"), plugin.namespace);
+    }
 
     roots
-}
-
-fn push_plugin_skill_roots(
-    project_root: &Path,
-    config_dir: &str,
-    push_root: &mut impl FnMut(PathBuf, Option<String>),
-) {
-    let plugins_dir = project_root.join(config_dir).join("plugins");
-    let Ok(entries) = std::fs::read_dir(plugins_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let Some(plugin) = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .filter(|s| !s.starts_with('.'))
-        else {
-            continue;
-        };
-        push_root(path.join("skills"), Some(plugin.to_owned()));
-    }
 }
 
 fn skill_candidates(root: &Path) -> Vec<SkillCandidate> {
@@ -159,6 +195,7 @@ fn skill_candidates(root: &Path) -> Vec<SkillCandidate> {
             }
 
             if file_name.eq_ignore_ascii_case("SKILL.md") {
+                let package_root = path.parent().map(Path::to_path_buf);
                 let fallback_name = path
                     .parent()
                     .and_then(|p| p.file_name())
@@ -168,6 +205,7 @@ fn skill_candidates(root: &Path) -> Vec<SkillCandidate> {
                 out.push(SkillCandidate {
                     md_path: path,
                     fallback_name,
+                    package_root,
                 });
             } else if depth == 0 && path.extension().and_then(|s| s.to_str()) == Some("md") {
                 let fallback_name = path
@@ -178,6 +216,7 @@ fn skill_candidates(root: &Path) -> Vec<SkillCandidate> {
                 out.push(SkillCandidate {
                     md_path: path,
                     fallback_name,
+                    package_root: None,
                 });
             }
         }
@@ -186,17 +225,116 @@ fn skill_candidates(root: &Path) -> Vec<SkillCandidate> {
     out
 }
 
+fn collect_skill_files(package_root: &Path, skill_md_path: &Path) -> Vec<SkillFile> {
+    const MAX_SCAN_DEPTH: usize = 8;
+    const MAX_DIRS: usize = 512;
+    const MAX_FILES: usize = 256;
+
+    if !package_root.is_dir() {
+        return Vec::new();
+    }
+
+    let canonical_skill = skill_md_path.canonicalize().ok();
+    let mut out = Vec::new();
+    let mut queue = std::collections::VecDeque::from([(package_root.to_path_buf(), 0usize)]);
+    let mut seen_dirs = HashSet::new();
+    if let Ok(canon) = package_root.canonicalize() {
+        seen_dirs.insert(canon);
+    }
+
+    while let Some((dir, depth)) = queue.pop_front() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            if file_name.starts_with('.') {
+                continue;
+            }
+
+            if path.is_dir() {
+                if depth >= MAX_SCAN_DEPTH || seen_dirs.len() >= MAX_DIRS {
+                    continue;
+                }
+                if let Ok(canon) = path.canonicalize()
+                    && seen_dirs.insert(canon)
+                {
+                    queue.push_back((path, depth + 1));
+                }
+                continue;
+            }
+
+            if !path.is_file() {
+                continue;
+            }
+            if canonical_skill
+                .as_ref()
+                .is_some_and(|skill| path.canonicalize().ok().as_ref() == Some(skill))
+            {
+                continue;
+            }
+
+            let Ok(metadata) = std::fs::metadata(&path) else {
+                continue;
+            };
+            let relative_path = path
+                .strip_prefix(package_root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            out.push(SkillFile {
+                relative_path,
+                path,
+                bytes: metadata.len(),
+            });
+            if out.len() >= MAX_FILES {
+                break;
+            }
+        }
+        if out.len() >= MAX_FILES {
+            break;
+        }
+    }
+
+    out.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    out
+}
+
 // ─── Agent loading ────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+struct AgentRoot {
+    path: PathBuf,
+    namespace: Option<String>,
+}
+
+fn agent_roots(project_root: &Path) -> Vec<AgentRoot> {
+    let mut roots = Vec::new();
+    let mut seen = HashSet::new();
+    let mut push_root = |path: PathBuf, namespace: Option<String>| {
+        if seen.insert((path.clone(), namespace.clone())) {
+            roots.push(AgentRoot { path, namespace });
+        }
+    };
+
+    if let Some(home) = dirs::home_dir() {
+        push_root(home.join(".claude/agents"), None);
+    }
+    push_root(project_root.join(".claude/agents"), None);
+    for plugin in plugin_roots(project_root) {
+        push_root(plugin.path.join("agents"), plugin.namespace);
+    }
+
+    roots
+}
 
 /// Same precedence rules as `load_skills`, but for agent definitions.
 pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
     tracing::info!(target: "jfc::agents", project_root = %project_root.display(), "loading agents");
     let mut out: Vec<AgentDef> = Vec::new();
-    let user_dir = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/"))
-        .join(".claude/agents");
-    let project_dir = project_root.join(".claude/agents");
-    for dir in [user_dir, project_dir] {
+    for root in agent_roots(project_root) {
+        let dir = root.path;
         if !dir.exists() {
             continue;
         }
@@ -211,9 +349,14 @@ pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
             let Ok(raw) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            let Some(agent) = parse_agent(&path, &raw) else {
+            let Some(mut agent) = parse_agent(&path, &raw) else {
                 continue;
             };
+            if let Some(namespace) = &root.namespace
+                && !agent.name.contains(':')
+            {
+                agent.name = format!("{namespace}:{}", agent.name);
+            }
             out.retain(|a| a.name != agent.name);
             out.push(agent);
         }
@@ -498,21 +641,21 @@ mod tests {
     }
 
     fn make_skill(name: &str, body: &str) -> Skill {
-        Skill {
-            name: name.to_owned(),
-            source: PathBuf::from(format!("/x/skills/{name}.md")),
-            description: None,
-            body: body.to_owned(),
-        }
+        Skill::new(
+            name.to_owned(),
+            PathBuf::from(format!("/x/skills/{name}.md")),
+            None,
+            body.to_owned(),
+        )
     }
 
     fn skill(name: &str, description: Option<&str>) -> Skill {
-        Skill {
-            name: name.to_owned(),
-            source: PathBuf::from("/x/skills/x.md"),
-            description: description.map(str::to_owned),
-            body: String::new(),
-        }
+        Skill::new(
+            name.to_owned(),
+            PathBuf::from("/x/skills/x.md"),
+            description.map(str::to_owned),
+            String::new(),
+        )
     }
 
     #[test]
@@ -558,6 +701,55 @@ mod tests {
             Some("avionics certification reference")
         );
         assert!(s.body.contains("body"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn load_skills_collects_package_files_normal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_skill_pkg_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let skill_dir = tmp.join(".agents/skills/run-app");
+        std::fs::create_dir_all(skill_dir.join("scripts")).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "---\nname: run-app\n---\nbody").unwrap();
+        std::fs::write(skill_dir.join("scripts/driver.mjs"), "console.log('ok')").unwrap();
+
+        let skills = load_skills(&tmp);
+        let s = skills.iter().find(|s| s.name == "run-app").unwrap();
+        assert_eq!(s.files.len(), 1);
+        assert_eq!(s.files[0].relative_path, "scripts/driver.mjs");
+        assert!(s.files[0].path.ends_with("scripts/driver.mjs"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn plugin_skills_and_agents_load_with_namespace_normal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_plugin_registry_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let plugin_skill = tmp.join("plugins/sec/skills/audit");
+        let plugin_agent = tmp.join("plugins/sec/agents");
+        std::fs::create_dir_all(&plugin_skill).unwrap();
+        std::fs::create_dir_all(&plugin_agent).unwrap();
+        std::fs::write(plugin_skill.join("SKILL.md"), "---\nname: audit\n---\nbody").unwrap();
+        std::fs::write(
+            plugin_agent.join("reviewer.md"),
+            "---\nname: reviewer\n---\nReview things.",
+        )
+        .unwrap();
+
+        let skills = load_skills(&tmp);
+        let agents = load_agents(&tmp);
+        assert!(skills.iter().any(|skill| skill.name == "sec:audit"));
+        assert!(agents.iter().any(|agent| agent.name == "sec:reviewer"));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -616,12 +808,12 @@ mod tests {
                 "superpowers:verification-before-completion",
                 Some("internal"),
             ),
-            Skill {
-                name: "openai-docs".to_owned(),
-                source: PathBuf::from("/home/me/.codex/skills/.system/openai-docs/SKILL.md"),
-                description: Some("system skill".to_owned()),
-                body: String::new(),
-            },
+            Skill::new(
+                "openai-docs".to_owned(),
+                PathBuf::from("/home/me/.codex/skills/.system/openai-docs/SKILL.md"),
+                Some("system skill".to_owned()),
+                String::new(),
+            ),
         ];
         let out = render_skills_section(&skills);
         assert!(out.contains("vuln-researcher"));

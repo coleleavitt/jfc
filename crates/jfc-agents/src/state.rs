@@ -7,19 +7,200 @@ use serde::{Deserialize, Serialize};
 
 pub use jfc_core::{AgentCost, AgentDef, Effort, MemoryScope, PermissionMode};
 
-/// A loaded skill: frontmatter metadata + markdown body. The body becomes a
-/// `<skill_content>` system message when the skill is invoked.
+/// How a skill should be executed when it is invoked directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillContext {
+    /// Inline the rendered skill body into the current turn.
+    #[default]
+    Inline,
+    /// Run the rendered skill body in a forked subagent.
+    Fork,
+}
+
+impl SkillContext {
+    pub fn parse(value: Option<&str>) -> Self {
+        match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("fork" | "subagent" | "background") => Self::Fork,
+            _ => Self::Inline,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Inline => "inline",
+            Self::Fork => "fork",
+        }
+    }
+
+    pub fn is_fork(self) -> bool {
+        matches!(self, Self::Fork)
+    }
+}
+
+/// A non-`SKILL.md` file that belongs to the same skill package.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillFile {
+    /// Path relative to [`Skill::package_root`].
+    pub relative_path: String,
+    /// Absolute or process-relative path on disk.
+    pub path: PathBuf,
+    /// File size from metadata, in bytes.
+    pub bytes: u64,
+}
+
+/// A loaded skill package: frontmatter metadata, markdown body, and attached
+/// package files. The rendered body becomes a tool result or subagent prompt
+/// when the skill is invoked.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
     pub name: String,
     pub source: PathBuf,
     pub description: Option<String>,
     pub body: String,
+    pub user_invocable: bool,
+    pub context: SkillContext,
+    pub package_root: PathBuf,
+    pub files: Vec<SkillFile>,
+    pub allowed_tools: Vec<String>,
+    pub disallowed_tools: Vec<String>,
+    pub mcp_servers: Vec<String>,
+    pub input_schema: Option<serde_json::Value>,
+    pub schedule: Option<String>,
+}
+
+impl Skill {
+    pub fn new(name: String, source: PathBuf, description: Option<String>, body: String) -> Self {
+        let package_root = source
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        Self {
+            name,
+            source,
+            description,
+            body,
+            user_invocable: true,
+            context: SkillContext::Inline,
+            package_root,
+            files: Vec::new(),
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            mcp_servers: Vec::new(),
+            input_schema: None,
+            schedule: None,
+        }
+    }
+
+    pub fn is_user_invocable(&self) -> bool {
+        self.user_invocable
+    }
+
+    pub fn is_system_skill(&self) -> bool {
+        let source = self.source.to_string_lossy();
+        source.contains("/.codex/skills/.system/") || source.contains("/.agents/skills/.system/")
+    }
+
+    pub fn is_discoverable(&self) -> bool {
+        let name = self.name.trim();
+        !name.is_empty()
+            && !name.starts_with("superpowers:")
+            && self.is_user_invocable()
+            && !self.is_system_skill()
+    }
+}
+
+/// Runtime values available while rendering a skill body.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SkillRenderContext<'a> {
+    pub project_root: Option<&'a Path>,
+    pub memory_root: Option<&'a Path>,
+}
+
+impl<'a> SkillRenderContext<'a> {
+    pub fn new(project_root: Option<&'a Path>, memory_root: Option<&'a Path>) -> Self {
+        Self {
+            project_root,
+            memory_root,
+        }
+    }
+}
+
+/// Render a skill body for invocation: expand known placeholders, surface
+/// package attachments as readable paths, and append caller arguments.
+pub fn render_skill_invocation(
+    skill: &Skill,
+    context: SkillRenderContext<'_>,
+    args: Option<&str>,
+) -> String {
+    let mut out = expand_skill_placeholders(skill, &skill.body, context, args);
+    append_skill_files(skill, &mut out);
+    if let Some(args) = args.map(str::trim).filter(|s| !s.is_empty()) {
+        if out.ends_with('\n') {
+            out.push('\n');
+        } else {
+            out.push_str("\n\n");
+        }
+        out.push_str("# Args\n");
+        out.push_str(args);
+    }
+    out
+}
+
+fn expand_skill_placeholders(
+    skill: &Skill,
+    body: &str,
+    context: SkillRenderContext<'_>,
+    args: Option<&str>,
+) -> String {
+    let mut out = body.to_owned();
+    replace_placeholder(&mut out, "SKILL_NAME", &skill.name);
+    replace_placeholder(
+        &mut out,
+        "SKILL_ROOT",
+        &skill.package_root.to_string_lossy(),
+    );
+    if let Some(project_root) = context.project_root {
+        replace_placeholder(&mut out, "PROJECT_ROOT", &project_root.to_string_lossy());
+    }
+    if let Some(memory_root) = context.memory_root {
+        replace_placeholder(&mut out, "MEMORY_ROOT", &memory_root.to_string_lossy());
+    }
+    replace_placeholder(&mut out, "ARGS", args.unwrap_or_default());
+    out
+}
+
+fn replace_placeholder(out: &mut String, key: &str, value: &str) {
+    let placeholder = format!("{{{{{key}}}}}");
+    if out.contains(&placeholder) {
+        *out = out.replace(&placeholder, value);
+    }
+}
+
+fn append_skill_files(skill: &Skill, out: &mut String) {
+    if skill.files.is_empty() {
+        return;
+    }
+    if out.ends_with('\n') {
+        out.push('\n');
+    } else {
+        out.push_str("\n\n");
+    }
+    out.push_str("# Skill Package Files\n");
+    out.push_str("These files ship with the skill package and can be read from disk if needed:\n");
+    for file in &skill.files {
+        out.push_str(&format!(
+            "- `{}` — `{}` ({} bytes)\n",
+            file.relative_path,
+            file.path.display(),
+            file.bytes
+        ));
+    }
 }
 
 /// Parse a skill .md file: optional YAML frontmatter (between `---` lines)
-/// followed by a markdown body. Frontmatter fields: `name`, `description`.
-/// If `name` is missing, falls back to the filename stem.
+/// followed by a markdown body. If `name` is missing, falls back to the
+/// filename stem.
 pub fn parse_skill(path: &Path, raw: &str) -> Option<Skill> {
     let (front, body) = split_frontmatter(raw);
     let stem = path
@@ -28,6 +209,13 @@ pub fn parse_skill(path: &Path, raw: &str) -> Option<Skill> {
         .unwrap_or("unnamed");
     let mut name = stem.to_owned();
     let mut description = None;
+    let mut user_invocable = true;
+    let mut context = SkillContext::Inline;
+    let mut allowed_tools = Vec::new();
+    let mut disallowed_tools = Vec::new();
+    let mut mcp_servers = Vec::new();
+    let mut input_schema = None;
+    let mut schedule = None;
     if let Some(yaml) = front
         && let Ok(parsed) = serde_yaml::from_str::<SkillFront>(yaml)
     {
@@ -35,13 +223,30 @@ pub fn parse_skill(path: &Path, raw: &str) -> Option<Skill> {
             name = n;
         }
         description = parsed.description;
+        if let Some(v) = parsed.user_invocable {
+            user_invocable = v;
+        }
+        context = SkillContext::parse(parsed.context.as_deref());
+        allowed_tools = parsed.allowed_tools.unwrap_or_default();
+        disallowed_tools = parsed.disallowed_tools.unwrap_or_default();
+        mcp_servers = parsed.mcp_servers.unwrap_or_default();
+        input_schema = parsed.input_schema;
+        schedule = parsed.schedule;
     }
-    Some(Skill {
+    let mut skill = Skill::new(
         name,
-        source: path.to_path_buf(),
+        path.to_path_buf(),
         description,
-        body: body.trim().to_owned(),
-    })
+        body.trim().to_owned(),
+    );
+    skill.user_invocable = user_invocable;
+    skill.context = context;
+    skill.allowed_tools = allowed_tools;
+    skill.disallowed_tools = disallowed_tools;
+    skill.mcp_servers = mcp_servers;
+    skill.input_schema = input_schema;
+    skill.schedule = schedule;
+    Some(skill)
 }
 
 pub fn parse_agent(path: &Path, raw: &str) -> Option<AgentDef> {
@@ -95,6 +300,20 @@ struct SkillFront {
     pub name: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default, rename = "user-invocable", alias = "userInvocable")]
+    pub user_invocable: Option<bool>,
+    #[serde(default)]
+    pub context: Option<String>,
+    #[serde(default, rename = "allowed-tools", alias = "allowedTools")]
+    pub allowed_tools: Option<Vec<String>>,
+    #[serde(default, rename = "disallowed-tools", alias = "disallowedTools")]
+    pub disallowed_tools: Option<Vec<String>>,
+    #[serde(default, rename = "mcp-servers", alias = "mcpServers")]
+    pub mcp_servers: Option<Vec<String>>,
+    #[serde(default, rename = "input-schema", alias = "inputSchema")]
+    pub input_schema: Option<serde_json::Value>,
+    #[serde(default)]
+    pub schedule: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,10 +365,15 @@ mod tests {
 
     #[test]
     fn parse_skill_with_frontmatter_normal() {
-        let raw = "---\nname: my-skill\ndescription: A test skill\n---\n# Body\n\nDo the thing.";
+        let raw = "---\nname: my-skill\ndescription: A test skill\nuser-invocable: false\ncontext: fork\nallowed-tools:\n  - Read\nmcp-servers:\n  - github\nschedule: '@daily'\n---\n# Body\n\nDo the thing.";
         let s = parse_skill(Path::new("/x/skills/my.md"), raw).expect("parsed");
         assert_eq!(s.name, "my-skill");
         assert_eq!(s.description.as_deref(), Some("A test skill"));
+        assert!(!s.user_invocable);
+        assert_eq!(s.context, SkillContext::Fork);
+        assert_eq!(s.allowed_tools, vec!["Read"]);
+        assert_eq!(s.mcp_servers, vec!["github"]);
+        assert_eq!(s.schedule.as_deref(), Some("@daily"));
         assert!(s.body.contains("Do the thing"));
     }
 
@@ -159,6 +383,8 @@ mod tests {
         assert_eq!(s.name, "snake");
         assert_eq!(s.description, None);
         assert_eq!(s.body, "Just a body");
+        assert!(s.user_invocable);
+        assert_eq!(s.context, SkillContext::Inline);
     }
 
     #[test]

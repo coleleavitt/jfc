@@ -196,20 +196,6 @@ fn is_read_only(kind: &ToolKind) -> bool {
             | ToolKind::Glob
             | ToolKind::Grep
             | ToolKind::Search
-            | ToolKind::GraphSearch
-            | ToolKind::GraphQuery
-            | ToolKind::GraphContext
-            | ToolKind::GraphCallers
-            | ToolKind::GraphCallees
-            | ToolKind::GraphImpact
-            | ToolKind::GraphNode
-            | ToolKind::GraphExplore
-            | ToolKind::GraphStatus
-            | ToolKind::GraphFiles
-            | ToolKind::GetProgramSlice
-            | ToolKind::GetDataDependencies
-            | ToolKind::TaintFlow
-            | ToolKind::CodeIndex
             | ToolKind::TaskList
             | ToolKind::TaskGet
             | ToolKind::TaskValidate

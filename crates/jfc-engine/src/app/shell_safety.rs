@@ -72,12 +72,9 @@ pub const REASON_HEAD_BLOCKED: &str =
 pub const REASON_NOT_ALLOWLISTED: &str = "Plan mode: command not in read-only allowlist";
 pub const REASON_FIND_WRITE: &str =
     "Plan mode: find with write action (-delete / -exec / -fprint / -fls)";
-pub const REASON_SED_EXEC: &str =
-    "Plan mode: sed with `e` modifier / `w` write / `-i` in-place";
-pub const REASON_AWK_EXEC: &str =
-    "Plan mode: awk script with system() / getline / print-to-file";
-pub const REASON_GIT_HOOK_RCE: &str =
-    "Plan mode: `git -c` flag (pager/editor/sshCommand RCE)";
+pub const REASON_SED_EXEC: &str = "Plan mode: sed with `e` modifier / `w` write / `-i` in-place";
+pub const REASON_AWK_EXEC: &str = "Plan mode: awk script with system() / getline / print-to-file";
+pub const REASON_GIT_HOOK_RCE: &str = "Plan mode: `git -c` flag (pager/editor/sshCommand RCE)";
 pub const REASON_GIT_SUBCOMMAND: &str = "Plan mode: git subcommand not in read-only set";
 pub const REASON_CURL_WRITE: &str =
     "Plan mode: curl with write flag (-X / -d / --data / -T / -o / -F)";
@@ -85,8 +82,7 @@ pub const REASON_WGET_WRITE: &str = "Plan mode: wget without --spider (writes to
 pub const REASON_SSH_FORWARD: &str = "Plan mode: ssh with port-forward / agent-forward flag";
 pub const REASON_SSH_INTERACTIVE: &str = "Plan mode: ssh without an explicit remote command";
 pub const REASON_SUDO_BARE: &str = "Plan mode: sudo / doas without a command to elevate";
-pub const REASON_REDIRECT: &str =
-    "Plan mode: redirect target is not /dev/null or another FD";
+pub const REASON_REDIRECT: &str = "Plan mode: redirect target is not /dev/null or another FD";
 pub const REASON_FIND_NO_ACTION: &str =
     "Plan mode: find without any allowlisted action (or with unknown flag)";
 
@@ -291,8 +287,11 @@ fn catastrophic_rm_reason(norm: &str) -> Option<&'static str> {
     if !is_recursive_rm(norm) {
         return None;
     }
-    // Pull the argument tokens after `rm`'s flags and test each target.
-    let mut tokens = norm.split(' ').peekable();
+    // Pull the argument tokens after `rm`'s flags and test each target. Use the
+    // shell tokenizer so quoted `$HOME` forms normalize the same way as bare
+    // arguments.
+    let tokens = shell_words(norm);
+    let mut tokens = tokens.iter().map(String::as_str).peekable();
     while let Some(t) = tokens.next() {
         if t != "rm" {
             continue;
@@ -316,8 +315,9 @@ fn catastrophic_rm_reason(norm: &str) -> Option<&'static str> {
 fn is_catastrophic_rm_target(arg: &str) -> bool {
     // Strip a trailing slash for comparison.
     let p = arg.trim_end_matches('/');
+    let lower = p.to_ascii_lowercase();
     // Bare glob / cwd / home with nothing after it.
-    if matches!(arg, "*" | "." | ".." | "~" | "/" | "/*") {
+    if matches!(arg, "*" | "." | ".." | "~" | "/" | "/*" | "~/*") {
         return true;
     }
     // Absolute system roots and their globs.
@@ -329,20 +329,26 @@ fn is_catastrophic_rm_target(arg: &str) -> bool {
         // `/etc`, `/etc/`, `/etc/*`, `/home` exactly — but NOT a deep,
         // specific path like `/home/cole/RustProjects/x/target` which is a
         // legitimate targeted delete.
-        if p == *root || arg == format!("{root}/*") {
+        if p == *root || arg.strip_prefix(root).is_some_and(|rest| rest == "/*") {
             return true;
         }
         // `/home/<user>` with no further path component is whole-home.
         if *root == "/home"
             && let Some(rest) = p.strip_prefix("/home/")
             && !rest.is_empty()
-            && !rest.contains('/')
+            && (!rest.contains('/')
+                || rest
+                    .strip_suffix("/*")
+                    .is_some_and(|user| !user.is_empty() && !user.contains('/')))
         {
-            return true; // /home/<user>
+            return true; // /home/<user> or /home/<user>/*
         }
     }
     // `$HOME` / `~` with no sub-path.
-    if arg == "$HOME" || arg == "${HOME}" || arg == "~" {
+    if matches!(
+        lower.as_str(),
+        "$home" | "${home}" | "~" | "$home/*" | "${home}/*" | "~/*"
+    ) {
         return true;
     }
     false
@@ -756,47 +762,20 @@ fn match_remaining_segment(command: &str, args: &[String]) -> Result<(), &'stati
             Ok(())
         }
         "git" => {
-            if args.iter().any(|a| a == "-c" || a.starts_with("-c=")) {
-                return Err(REASON_GIT_HOOK_RCE);
-            }
-            let sub_ok = args
-                .iter()
-                .find(|a| !a.starts_with('-'))
-                .is_some_and(|subcommand| {
-                    matches!(
-                        subcommand.as_str(),
-                        "log"
-                            | "show"
-                            | "diff"
-                            | "status"
-                            | "branch"
-                            | "ls-files"
-                            | "ls-tree"
-                            | "rev-parse"
-                            | "blame"
-                            | "describe"
-                            | "tag"
-                            | "remote"
-                            | "shortlog"
-                            | "reflog"
-                            | "submodule"
-                            | "for-each-ref"
-                            | "cat-file"
-                    )
-                });
-            if sub_ok {
+            if is_readonly_git(args) {
                 Ok(())
             } else {
                 Err(REASON_GIT_SUBCOMMAND)
             }
         }
         "cargo" => {
-            let sub_ok = args.first().is_some_and(|subcommand| {
-                matches!(
-                    subcommand.as_str(),
-                    "check" | "test" | "clippy" | "tree" | "metadata" | "search" | "doc" | "fmt"
-                )
-            });
+            let sub_ok = args
+                .first()
+                .is_some_and(|subcommand| match subcommand.as_str() {
+                    "check" | "test" | "clippy" | "tree" | "metadata" | "search" | "doc" => true,
+                    "fmt" => args.iter().skip(1).any(|arg| arg == "--check"),
+                    _ => false,
+                });
             if sub_ok {
                 Ok(())
             } else {
@@ -871,18 +850,13 @@ fn match_remaining_segment(command: &str, args: &[String]) -> Result<(), &'stati
             }
         }
         "terraform" | "tofu" => {
-            let sub_ok = args.first().is_some_and(|sub| {
-                matches!(
-                    sub.as_str(),
-                    "plan"
-                        | "show"
-                        | "output"
-                        | "version"
-                        | "validate"
-                        | "fmt"
-                        | "providers"
-                        | "graph"
-                )
+            let sub_ok = args.first().is_some_and(|sub| match sub.as_str() {
+                "plan" | "show" | "output" | "version" | "validate" | "providers" | "graph" => true,
+                "fmt" => args
+                    .iter()
+                    .skip(1)
+                    .any(|arg| matches!(arg.as_str(), "-check" | "--check")),
+                _ => false,
             });
             if sub_ok {
                 Ok(())
@@ -941,14 +915,23 @@ fn match_remaining_segment(command: &str, args: &[String]) -> Result<(), &'stati
                 lower.starts_with("-d")
                     || lower == "--data"
                     || lower.starts_with("--data-")
-                    || lower == "-t"
+                    || lower.starts_with("-t")
                     || lower == "--upload-file"
-                    || lower == "-f"
+                    || lower.starts_with("--upload-file=")
+                    || lower == "-c"
+                    || lower.starts_with("-f")
                     || lower == "--form"
-                    || lower == "-o"
+                    || lower.starts_with("-o")
                     || lower == "--output"
+                    || lower.starts_with("--output=")
                     || lower == "--cookie-jar"
-                    || (lower == "-x" || lower == "--request")
+                    || lower.starts_with("--cookie-jar=")
+                    || lower == "-d"
+                    || lower == "--dump-header"
+                    || lower.starts_with("--dump-header=")
+                    || lower.starts_with("-x")
+                    || lower == "--request"
+                    || lower.starts_with("--request=")
             });
             if has_write {
                 Err(REASON_CURL_WRITE)
@@ -990,6 +973,226 @@ fn match_remaining_segment(command: &str, args: &[String]) -> Result<(), &'stati
         | "dasel" | "miller" | "mlr" | "csvkit" => Ok(()),
         _ => Err(REASON_NOT_ALLOWLISTED),
     }
+}
+
+fn is_readonly_git(args: &[String]) -> bool {
+    if args.iter().any(|a| a == "-c" || a.starts_with("-c=")) {
+        return false;
+    }
+
+    let Some((subcommand_idx, subcommand)) = git_subcommand(args) else {
+        return false;
+    };
+    let rest = &args[subcommand_idx + 1..];
+    if git_has_write_output_flag(rest) {
+        return false;
+    }
+
+    match subcommand {
+        "log" | "show" | "diff" | "status" | "ls-files" | "ls-tree" | "rev-parse" | "blame"
+        | "describe" | "shortlog" | "for-each-ref" | "cat-file" => true,
+        "branch" => git_branch_is_readonly(rest),
+        "tag" => git_tag_is_readonly(rest),
+        "remote" => git_remote_is_readonly(rest),
+        "submodule" => git_submodule_is_readonly(rest),
+        "reflog" => git_reflog_is_readonly(rest),
+        _ => false,
+    }
+}
+
+fn git_subcommand(args: &[String]) -> Option<(usize, &str)> {
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "--" {
+            return None;
+        }
+        if git_global_option_takes_value(arg) {
+            i += if arg.contains('=') { 1 } else { 2 };
+            continue;
+        }
+        if arg.starts_with('-') {
+            i += 1;
+            continue;
+        }
+        return Some((i, arg.as_str()));
+    }
+    None
+}
+
+fn git_global_option_takes_value(arg: &str) -> bool {
+    matches!(
+        arg,
+        "--git-dir"
+            | "--work-tree"
+            | "--namespace"
+            | "--super-prefix"
+            | "--config-env"
+            | "--exec-path"
+            | "--html-path"
+            | "--man-path"
+            | "--info-path"
+    ) || arg.starts_with("--git-dir=")
+        || arg.starts_with("--work-tree=")
+        || arg.starts_with("--namespace=")
+        || arg.starts_with("--super-prefix=")
+        || arg.starts_with("--config-env=")
+        || arg.starts_with("--exec-path=")
+        || arg.starts_with("--html-path=")
+        || arg.starts_with("--man-path=")
+        || arg.starts_with("--info-path=")
+}
+
+fn git_has_write_output_flag(args: &[String]) -> bool {
+    args.iter().any(|arg| {
+        matches!(arg.as_str(), "--output" | "-o" | "--ext-diff")
+            || arg.starts_with("--output=")
+            || arg.starts_with("-o")
+    })
+}
+
+fn git_branch_is_readonly(args: &[String]) -> bool {
+    git_args_are_inspection_only(
+        args,
+        &[
+            "--delete",
+            "--move",
+            "--copy",
+            "--force",
+            "--set-upstream-to",
+            "--unset-upstream",
+            "--edit-description",
+            "--track",
+            "--no-track",
+            "--create-reflog",
+        ],
+        &['d', 'm', 'c', 'f'],
+        &[
+            "--contains",
+            "--no-contains",
+            "--merged",
+            "--no-merged",
+            "--points-at",
+            "--format",
+            "--sort",
+            "--color",
+            "--column",
+            "--abbrev",
+        ],
+    )
+}
+
+fn git_tag_is_readonly(args: &[String]) -> bool {
+    git_args_are_inspection_only(
+        args,
+        &[
+            "--delete",
+            "--annotate",
+            "--sign",
+            "--local-user",
+            "--force",
+            "--message",
+            "--file",
+            "--edit",
+            "--cleanup",
+        ],
+        &['a', 's', 'u', 'f', 'd', 'm'],
+        &[
+            "--list",
+            "--contains",
+            "--no-contains",
+            "--merged",
+            "--no-merged",
+            "--points-at",
+            "--format",
+            "--sort",
+            "--color",
+            "--column",
+        ],
+    )
+}
+
+fn git_args_are_inspection_only(
+    args: &[String],
+    mutating_long: &[&str],
+    mutating_short_chars: &[char],
+    value_flags: &[&str],
+) -> bool {
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        if arg == "--" {
+            return false;
+        }
+        if mutating_long
+            .iter()
+            .any(|flag| arg_matches_long_flag_or_value(arg, flag))
+        {
+            return false;
+        }
+        if arg.starts_with('-') && !arg.starts_with("--") {
+            if arg
+                .chars()
+                .skip(1)
+                .any(|ch| mutating_short_chars.contains(&ch))
+            {
+                return false;
+            }
+            i += 1;
+            continue;
+        }
+        if let Some(flag) = value_flags
+            .iter()
+            .find(|flag| arg_matches_long_flag_or_value(arg, flag))
+        {
+            i += if arg == *flag { 2 } else { 1 };
+            continue;
+        }
+        if arg.starts_with('-') {
+            i += 1;
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+fn arg_matches_long_flag_or_value(arg: &str, flag: &str) -> bool {
+    arg == flag
+        || arg
+            .strip_prefix(flag)
+            .is_some_and(|rest| rest.starts_with('='))
+}
+
+fn git_remote_is_readonly(args: &[String]) -> bool {
+    let Some((idx, subcommand)) = first_non_flag_arg(args) else {
+        return true;
+    };
+    match subcommand {
+        "show" | "get-url" => args[idx + 1..].iter().all(|arg| arg != "--add"),
+        _ => false,
+    }
+}
+
+fn git_submodule_is_readonly(args: &[String]) -> bool {
+    let Some((_, subcommand)) = first_non_flag_arg(args) else {
+        return true;
+    };
+    matches!(subcommand, "status" | "summary")
+}
+
+fn git_reflog_is_readonly(args: &[String]) -> bool {
+    let Some((_, subcommand)) = first_non_flag_arg(args) else {
+        return true;
+    };
+    matches!(subcommand, "show" | "exists")
+}
+
+fn first_non_flag_arg(args: &[String]) -> Option<(usize, &str)> {
+    args.iter()
+        .enumerate()
+        .find(|(_, arg)| !arg.starts_with('-'))
+        .map(|(idx, arg)| (idx, arg.as_str()))
 }
 
 /// Result-returning twin of `is_readonly_ssh`.
@@ -1358,6 +1561,87 @@ fn awk_script_has_dangerous(script: &str) -> bool {
 pub static CATASTROPHIC_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(test)]
+mod readonly_tests {
+    use super::*;
+
+    #[test]
+    fn git_mutating_subcommands_are_not_readonly_regression() {
+        for command in [
+            "git branch -D feature/old",
+            "git tag -d v1.0.0",
+            "git remote add origin git@example.com:repo.git",
+            "git remote set-url origin git@example.com:repo.git",
+            "git submodule update --init",
+        ] {
+            assert_eq!(
+                classify_readonly_bash(command),
+                Err(REASON_GIT_SUBCOMMAND),
+                "must reject mutating git command: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn git_inspection_subcommands_remain_readonly_normal() {
+        for command in [
+            "git status --short",
+            "git diff --stat",
+            "git branch --show-current",
+            "git tag --list v*",
+            "git remote show origin",
+            "git remote get-url origin",
+            "git submodule status",
+            "git reflog show --date=iso",
+        ] {
+            assert!(
+                is_readonly_bash(command),
+                "must allow read-only git command: {command:?} -> {:?}",
+                classify_readonly_bash(command)
+            );
+        }
+    }
+
+    #[test]
+    fn curl_attached_write_flags_are_not_readonly_regression() {
+        for command in [
+            "curl -o/tmp/out https://example.com",
+            "curl --output=/tmp/out https://example.com",
+            "curl --cookie-jar=/tmp/cookies https://example.com",
+            "curl --upload-file=/tmp/payload https://example.com",
+            "curl -XPOST https://example.com",
+            "curl --request=POST https://example.com",
+        ] {
+            assert_eq!(
+                classify_readonly_bash(command),
+                Err(REASON_CURL_WRITE),
+                "must reject curl write form: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn formatters_require_check_mode_regression() {
+        for command in ["cargo fmt", "terraform fmt", "tofu fmt"] {
+            assert!(
+                classify_readonly_bash(command).is_err(),
+                "must reject writing formatter: {command}"
+            );
+        }
+        for command in [
+            "cargo fmt --check",
+            "terraform fmt -check",
+            "tofu fmt --check",
+        ] {
+            assert!(
+                is_readonly_bash(command),
+                "must allow formatter check mode: {command:?} -> {:?}",
+                classify_readonly_bash(command)
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod catastrophic_tests {
     use super::*;
 
@@ -1379,7 +1663,12 @@ mod catastrophic_tests {
             "rm -rf /",
             "rm -rf /*",
             "rm -rf ~",
+            "rm -rf ~/*",
             "rm -rf /home/cole",
+            "rm -rf /home/cole/*",
+            "rm -rf $HOME/*",
+            "rm -rf \"$HOME\"/*",
+            "rm -rf \"${HOME}\"/*",
             "rm -rf /etc",
             "sudo rm -rf /usr",
             "dd if=/dev/zero of=/dev/sda bs=1M",
@@ -1456,7 +1745,9 @@ mod catastrophic_tests {
     fn deep_home_path_is_not_whole_home_robust() {
         let _g = guard_off();
         assert!(catastrophic_bash_reason("rm -rf /home/cole/project/build").is_none());
+        assert!(catastrophic_bash_reason("rm -rf /home/cole/project/*").is_none());
         // but the bare home dir IS catastrophic
         assert!(catastrophic_bash_reason("rm -rf /home/cole").is_some());
+        assert!(catastrophic_bash_reason("rm -rf /home/cole/*").is_some());
     }
 }

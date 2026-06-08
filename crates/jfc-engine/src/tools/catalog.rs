@@ -25,14 +25,6 @@ const STARTER_TOOL_NAMES: &[&str] = &[
     "EnterPlanMode",
     "ExitPlanMode",
     "SendUserMessage",
-    "graph_context",
-    "graph_search",
-    "graph_grep",
-    "graph_outline",
-    "graph_node",
-    "graph_explore",
-    "graph_files",
-    "graph_status",
 ];
 
 const MAX_INTENT_MATCHES: usize = 12;

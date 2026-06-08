@@ -451,6 +451,19 @@ pub struct App {
 
     /// `--json`: structured JSON output mode for CI.
     pub json_mode: bool,
+
+    /// View-layer reveal pacer for live streaming text — animates the *display*
+    /// of the engine's (already-immediate) streaming output at the adaptive
+    /// smooth/catch-up cadence. The engine still holds the full text (single
+    /// source of truth); this only gates how fast lines appear on screen.
+    /// Ported from Codex's stream chunking. See
+    /// `crate::render::codex_stream::stream_pacer`.
+    pub(crate) stream_pacer: crate::render::codex_stream::stream_pacer::StreamPacer,
+    /// `(streaming_assistant_idx, part_count)` the pacer is currently animating.
+    /// When it changes — a new streaming message, or a new part within it (e.g.
+    /// the second text block after a tool call) — the pacer resets so each text
+    /// segment animates in from the start instead of inheriting the prior count.
+    pub(crate) paced_stream_key: Option<(usize, usize)>,
 }
 
 
@@ -465,6 +478,8 @@ impl App {
 
         let mut app = Self {
             engine: EngineState::new(provider, model),
+            stream_pacer: crate::render::codex_stream::stream_pacer::StreamPacer::default(),
+            paced_stream_key: None,
             theme: Theme::dark(),
             esc_saved_text: None,
             history_cursor: None,

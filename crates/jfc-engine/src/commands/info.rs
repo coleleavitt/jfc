@@ -451,7 +451,8 @@ pub(super) async fn cmd_commit(
                              Output ONLY the commit message — no explanation, no markdown fences.\n\n\
                              ```\n{diff_str}\n```"
                 );
-                state.messages
+                state
+                    .messages
                     .push(ChatMessage::assistant("Analyzing staged changes…".into()));
                 state.queued_prompts.push(crate::runtime::QueuedPrompt {
                     text: prompt,
@@ -467,13 +468,18 @@ pub(super) async fn cmd_commit(
 
 pub(super) async fn cmd_review(
     state: &mut EngineState,
-    _parts: &[&str],
-    _text: &str,
-    _tx: Option<&mpsc::Sender<EngineEvent>>,
+    parts: &[&str],
+    text: &str,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    // Ask the model to review current git changes for bugs, security
-    // issues, and code quality problems with file:line specificity.
-    state.messages.push(ChatMessage::user("/review".into()));
+    let req = parse_review_request(parts);
+    state.messages.push(ChatMessage::user(text.to_owned()));
+
+    if req.level.uses_workflow() {
+        dispatch_code_review_workflow(state, &req, tx).await;
+        return;
+    }
+
     let cwd = state.cwd.clone();
     // Prefer staged diff; fall back to HEAD diff; fall back to
     // working-tree diff so /review always finds something useful.
@@ -516,14 +522,19 @@ pub(super) async fn cmd_review(
         } else {
             diff_output
         };
+        let target = req.target_or_default();
         let prompt = format!(
-            "Review the following git diff for bugs, security issues, and code quality \
+            "Review level: {}.\nTarget: {}.\n\n\
+                     Review the following git diff for bugs, security issues, and code quality \
                      problems. Be specific — reference exact file names and line numbers where \
                      relevant. Organise findings by severity (Critical / High / Medium / Low). \
                      If there are no issues worth calling out, say so briefly.\n\n\
-                     ```diff\n{capped}\n```"
+                     ```diff\n{capped}\n```",
+            req.level.as_str(),
+            target,
         );
-        state.messages
+        state
+            .messages
             .push(ChatMessage::assistant("Reviewing changes…".into()));
         state.queued_prompts.push(crate::runtime::QueuedPrompt {
             text: prompt,
@@ -535,6 +546,197 @@ pub(super) async fn cmd_review(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReviewLevel {
+    Low,
+    Medium,
+    High,
+    XHigh,
+    Max,
+    Ultra,
+}
+
+impl ReviewLevel {
+    fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "low" => Some(Self::Low),
+            "medium" | "med" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            "xhigh" | "extra-high" | "extra_high" => Some(Self::XHigh),
+            "max" => Some(Self::Max),
+            "ultra" | "ultrareview" => Some(Self::Ultra),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::XHigh => "xhigh",
+            Self::Max => "max",
+            Self::Ultra => "ultra",
+        }
+    }
+
+    fn workflow_level(self) -> &'static str {
+        match self {
+            Self::Ultra => "max",
+            _ => self.as_str(),
+        }
+    }
+
+    fn uses_workflow(self) -> bool {
+        matches!(self, Self::High | Self::XHigh | Self::Max | Self::Ultra)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReviewRequest {
+    level: ReviewLevel,
+    target: String,
+}
+
+impl ReviewRequest {
+    fn target_or_default(&self) -> &str {
+        if self.target.is_empty() {
+            "current git diff"
+        } else {
+            &self.target
+        }
+    }
+}
+
+fn parse_review_request(parts: &[&str]) -> ReviewRequest {
+    let rest = parts.get(1).copied().unwrap_or("").trim();
+    let default_level = match parts.first().copied().unwrap_or("") {
+        cmd if cmd.eq_ignore_ascii_case("/code-review") => ReviewLevel::High,
+        cmd if cmd.eq_ignore_ascii_case("/ultrareview") => ReviewLevel::Ultra,
+        _ => ReviewLevel::Medium,
+    };
+    if rest.is_empty() {
+        return ReviewRequest {
+            level: default_level,
+            target: String::new(),
+        };
+    }
+
+    let mut words = rest.splitn(2, char::is_whitespace);
+    let first = words.next().unwrap_or("");
+    let tail = words.next().unwrap_or("").trim();
+    if let Some(level) = ReviewLevel::parse(first) {
+        ReviewRequest {
+            level,
+            target: tail.to_owned(),
+        }
+    } else {
+        ReviewRequest {
+            level: default_level,
+            target: rest.to_owned(),
+        }
+    }
+}
+
+async fn dispatch_code_review_workflow(
+    state: &mut EngineState,
+    req: &ReviewRequest,
+    tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    let cwd = state.cwd.clone();
+    if crate::workflows::resolve(std::path::Path::new(&cwd), "code-review").is_none() {
+        state.messages.push(ChatMessage::assistant(
+            "Workflow `code-review` is not available. List workflows with `/workflow`.".into(),
+        ));
+        return;
+    }
+
+    if req.level == ReviewLevel::Ultra {
+        state.messages.push(ChatMessage::assistant(
+            "Cloud UltraReview is not implemented yet; dispatching local `code-review` at max effort.".into(),
+        ));
+    }
+
+    let Some(tx) = tx else {
+        state.messages.push(ChatMessage::assistant(
+            "Code review workflow needs the event channel; called from a context without one."
+                .into(),
+        ));
+        return;
+    };
+
+    let args = serde_json::json!({
+        "level": req.level.workflow_level(),
+        "target": req.target_or_default(),
+    });
+    let prompt = format!(
+        "Run the saved workflow named \"code-review\" by calling the Workflow tool: \
+         Workflow({{ name: \"code-review\", args: {} }}). Do not describe it — call the tool.",
+        args
+    );
+    let _ = tx
+        .send(crate::runtime::EngineEvent::Control(
+            crate::runtime::ControlEvent::SubmitPrompt(prompt),
+        ))
+        .await;
+    state.messages.push(ChatMessage::assistant(format!(
+        "Dispatching `code-review` workflow at `{}` effort for `{}`…",
+        req.level.workflow_level(),
+        req.target_or_default(),
+    )));
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+
+    #[test]
+    fn parse_review_request_defaults_to_medium_normal() {
+        let req = parse_review_request(&["/review"]);
+        assert_eq!(req.level, ReviewLevel::Medium);
+        assert_eq!(req.target_or_default(), "current git diff");
+    }
+
+    #[test]
+    fn parse_review_request_extracts_level_and_target_normal() {
+        let req = parse_review_request(&["/code-review", "xhigh origin/main"]);
+        assert_eq!(req.level, ReviewLevel::XHigh);
+        assert_eq!(req.target, "origin/main");
+    }
+
+    #[test]
+    fn parse_code_review_defaults_to_high_normal() {
+        let req = parse_review_request(&["/code-review"]);
+        assert_eq!(req.level, ReviewLevel::High);
+        assert_eq!(req.target_or_default(), "current git diff");
+    }
+
+    #[test]
+    fn parse_review_request_treats_unknown_first_word_as_target_robust() {
+        let req = parse_review_request(&["/review", "feature/login"]);
+        assert_eq!(req.level, ReviewLevel::Medium);
+        assert_eq!(req.target, "feature/login");
+    }
+
+    #[test]
+    fn parse_ultrareview_defaults_to_ultra_normal() {
+        let req = parse_review_request(&["/ultrareview", "origin/main"]);
+        assert_eq!(req.level, ReviewLevel::Ultra);
+        assert_eq!(req.target, "origin/main");
+    }
+
+    #[test]
+    fn review_level_routes_high_and_above_to_workflow_normal() {
+        assert!(!ReviewLevel::Low.uses_workflow());
+        assert!(!ReviewLevel::Medium.uses_workflow());
+        assert!(ReviewLevel::High.uses_workflow());
+        assert!(ReviewLevel::XHigh.uses_workflow());
+        assert!(ReviewLevel::Max.uses_workflow());
+        assert!(ReviewLevel::Ultra.uses_workflow());
+        assert_eq!(ReviewLevel::Ultra.workflow_level(), "max");
+    }
+}
+
 pub(super) async fn cmd_skills(
     state: &mut EngineState,
     _parts: &[&str],
@@ -543,16 +745,20 @@ pub(super) async fn cmd_skills(
 ) {
     let skills =
         crate::agents::load_skills(&std::env::current_dir().unwrap_or_else(|_| ".".into()));
-    let body = if skills.is_empty() {
-        "No skills defined. Add .claude/skills/<name>.md files.".to_owned()
+    let visible: Vec<_> = skills
+        .iter()
+        .filter(|skill| skill.is_discoverable())
+        .collect();
+    let body = if visible.is_empty() {
+        "No user-invocable skills defined. Add .claude/skills/<name>/SKILL.md files.".to_owned()
     } else {
         // Compute column width for alignment
-        let max_name_len = skills.iter().map(|s| s.name.len()).max().unwrap_or(10);
+        let max_name_len = visible.iter().map(|s| s.name.len()).max().unwrap_or(10);
         let pad = max_name_len + 2;
         let mut s = String::from("Available Skills:\n");
         s.push_str(&"\u{2500}".repeat(pad + 40));
         s.push('\n');
-        for sk in &skills {
+        for sk in visible {
             let desc = sk.description.as_deref().unwrap_or("(no description)");
             // Truncate long descriptions for readability
             let desc_trunc: String = desc.chars().take(60).collect();
@@ -561,8 +767,20 @@ pub(super) async fn cmd_skills(
             } else {
                 ""
             };
+            let mut meta = Vec::new();
+            if sk.context.is_fork() {
+                meta.push("fork".to_owned());
+            }
+            if !sk.files.is_empty() {
+                meta.push(format!("{} files", sk.files.len()));
+            }
+            let meta = if meta.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", meta.join(", "))
+            };
             s.push_str(&format!(
-                "{:<width$}\u{2014} {}{suffix}\n",
+                "{:<width$}\u{2014} {}{suffix}{meta}\n",
                 sk.name,
                 desc_trunc,
                 width = pad,
@@ -625,121 +843,4 @@ pub(super) async fn cmd_market(
     };
     state.messages.push(ChatMessage::user("/market".into()));
     state.messages.push(ChatMessage::assistant(report_str));
-}
-
-pub(super) async fn cmd_cascade(
-    state: &mut EngineState,
-    _parts: &[&str],
-    _text: &str,
-    _tx: Option<&mpsc::Sender<EngineEvent>>,
-) {
-    // Filter the task store for cascade-tagged entries
-    // produced by symbol_edit's `dispatch_cascade=true`. The
-    // metadata.kind="cascade" tag is the signal we emit when
-    // queuing them. Group by file (one Task ≈ one file) and
-    // show status + caller list per group.
-    let tasks = state.task_store.list(jfc_session::DeletedFilter::Exclude);
-    let cascade: Vec<&jfc_session::Task> = tasks
-        .iter()
-        .filter(|t| {
-            t.metadata
-                .as_ref()
-                .and_then(|m| m.get("kind"))
-                .and_then(|k| k.as_str())
-                == Some("cascade")
-        })
-        .collect();
-    let body = if cascade.is_empty() {
-        "No cascade tasks. Cascade entries are queued by `symbol_edit` \
-                 when called with `dispatch_cascade: true` and the edit changes \
-                 a function signature with downstream callers."
-            .to_owned()
-    } else {
-        let mut s = format!(
-            "**{} cascade task{}** (from `symbol_edit dispatch_cascade=true`):\n\n",
-            cascade.len(),
-            if cascade.len() == 1 { "" } else { "s" }
-        );
-        for t in &cascade {
-            let status_marker = t.status.glyph();
-            let file = t
-                .metadata
-                .as_ref()
-                .and_then(|m| m.get("file"))
-                .and_then(|f| f.as_str())
-                .unwrap_or("<unknown>");
-            let callers = t
-                .metadata
-                .as_ref()
-                .and_then(|m| m.get("callers"))
-                .and_then(|c| c.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
-                .unwrap_or_default();
-            s.push_str(&format!(
-                "{status_marker} `{}` — {}\n  callers: {callers}\n  → {}\n\n",
-                t.id, file, t.subject,
-            ));
-        }
-        s
-    };
-    state.messages.push(ChatMessage::user("/cascade".into()));
-    state.messages.push(ChatMessage::assistant(body));
-}
-
-pub(super) async fn cmd_graph_history(
-    state: &mut EngineState,
-    _parts: &[&str],
-    _text: &str,
-    _tx: Option<&mpsc::Sender<EngineEvent>>,
-) {
-    let records = crate::tools::graph_history_snapshot();
-    let body = if records.is_empty() {
-        "No graph queries recorded yet. Run `graph_query` (via the model) or \
-                 ask the model to query the code graph, then re-invoke `/graph-history` \
-                 to see the most recent queries with their result counts."
-            .to_owned()
-    } else {
-        let mut s = format!(
-            "**{} graph quer{} recorded** (most recent first):\n\n",
-            records.len(),
-            if records.len() == 1 { "y" } else { "ies" }
-        );
-        for record in records.iter().rev().take(20) {
-            let trunc_marker = if record.was_truncated {
-                " [truncated]"
-            } else {
-                ""
-            };
-            let cycle_marker = if record.cycles_detected > 0 {
-                format!(
-                    " [{} cycle{} detected]",
-                    record.cycles_detected,
-                    if record.cycles_detected == 1 { "" } else { "s" }
-                )
-            } else {
-                String::new()
-            };
-            s.push_str(&format!(
-                "- `{}`\n  → {} node{}{}{}\n",
-                record.query_text,
-                record.result_node_count,
-                if record.result_node_count == 1 {
-                    ""
-                } else {
-                    "s"
-                },
-                trunc_marker,
-                cycle_marker,
-            ));
-        }
-        s
-    };
-    state.messages
-        .push(ChatMessage::user("/graph-history".into()));
-    state.messages.push(ChatMessage::assistant(body));
 }

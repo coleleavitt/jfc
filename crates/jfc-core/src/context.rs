@@ -257,6 +257,10 @@ pub struct ClaudeMdHierarchy {
     pub project: Option<(PathBuf, String)>,
     /// `<project>/.claude/CLAUDE.md` — alternative project location.
     pub project_dot: Option<(PathBuf, String)>,
+    /// `<project>/.claude/rules/*.md` — focused always-on project rules.
+    pub rules: Vec<(PathBuf, String)>,
+    /// `<project>/MEMORY.md` — Claude Code-style concise memory index.
+    pub memory: Option<(PathBuf, String)>,
     /// `<project>/CLAUDE.local.md` — gitignored personal overrides.
     pub local: Option<(PathBuf, String)>,
 }
@@ -272,6 +276,8 @@ impl ClaudeMdHierarchy {
             user: read_if_exists(&home.join(".claude/CLAUDE.md")),
             project: read_if_exists(&project_root.join("CLAUDE.md")),
             project_dot: read_if_exists(&project_root.join(".claude/CLAUDE.md")),
+            rules: read_markdown_dir(&project_root.join(".claude/rules")),
+            memory: read_if_exists(&project_root.join("MEMORY.md")),
             local: read_if_exists(&project_root.join("CLAUDE.local.md")),
         };
         tracing::debug!(
@@ -280,6 +286,8 @@ impl ClaudeMdHierarchy {
             has_user = result.user.is_some(),
             has_project = result.project.is_some(),
             has_project_dot = result.project_dot.is_some(),
+            rules = result.rules.len(),
+            has_memory = result.memory.is_some(),
             has_local = result.local.is_some(),
             "CLAUDE.md hierarchy loaded"
         );
@@ -292,27 +300,41 @@ impl ClaudeMdHierarchy {
     /// from the rendered output (it's metadata, not prompt content).
     pub fn render(&self) -> Option<String> {
         let mut out = String::new();
-        let mut push = |label: &str, layer: &Option<(PathBuf, String)>| {
-            if let Some((path, content)) = layer
-                && !content.trim().is_empty()
-            {
-                // Strip frontmatter before rendering into prompt
-                let (_fm, body) = parse_claudemd_frontmatter(content);
-                let body = body.trim();
-                if body.is_empty() {
-                    return;
-                }
-                if !out.is_empty() {
-                    out.push_str("\n\n");
-                }
-                out.push_str(&format!("# {label} ({})\n\n{}", path.display(), body));
+        fn append_layer(out: &mut String, label: &str, path: &Path, content: &str) {
+            if content.trim().is_empty() {
+                return;
             }
-        };
-        push("Managed policy", &self.managed);
-        push("User preferences", &self.user);
-        push("Project instructions", &self.project);
-        push("Project (.claude)", &self.project_dot);
-        push("Local overrides", &self.local);
+            let (_fm, body) = parse_claudemd_frontmatter(content);
+            let body = body.trim();
+            if body.is_empty() {
+                return;
+            }
+            if !out.is_empty() {
+                out.push_str("\n\n");
+            }
+            out.push_str(&format!("# {label} ({})\n\n{}", path.display(), body));
+        }
+        for (label, layer) in [
+            ("Managed policy", &self.managed),
+            ("User preferences", &self.user),
+            ("Project instructions", &self.project),
+            ("Project (.claude)", &self.project_dot),
+        ] {
+            if let Some((path, content)) = layer {
+                append_layer(&mut out, label, path, content);
+            }
+        }
+        for (path, content) in &self.rules {
+            append_layer(&mut out, "Project rule", path, content);
+        }
+        for (label, layer) in [
+            ("Project memory index", &self.memory),
+            ("Local overrides", &self.local),
+        ] {
+            if let Some((path, content)) = layer {
+                append_layer(&mut out, label, path, content);
+            }
+        }
         let result = if out.is_empty() { None } else { Some(out) };
         tracing::trace!(
             target: "jfc::context",
@@ -327,14 +349,19 @@ impl ClaudeMdHierarchy {
     /// the model's available tools.
     pub fn collect_disallowed_tools(&self) -> Vec<String> {
         let mut tools = Vec::new();
-        let layers: [&Option<(PathBuf, String)>; 5] = [
+        let layers: [&Option<(PathBuf, String)>; 6] = [
             &self.managed,
             &self.user,
             &self.project,
             &self.project_dot,
+            &self.memory,
             &self.local,
         ];
         for (_path, content) in layers.into_iter().flatten() {
+            let (fm, _body) = parse_claudemd_frontmatter(content);
+            tools.extend(fm.disallowed_tools);
+        }
+        for (_path, content) in &self.rules {
             let (fm, _body) = parse_claudemd_frontmatter(content);
             tools.extend(fm.disallowed_tools);
         }
@@ -358,6 +385,8 @@ impl ClaudeMdHierarchy {
             || self.user.is_some()
             || self.project.is_some()
             || self.project_dot.is_some()
+            || !self.rules.is_empty()
+            || self.memory.is_some()
             || self.local.is_some()
     }
 }
@@ -368,6 +397,24 @@ fn read_if_exists(path: &Path) -> Option<(PathBuf, String)> {
         return None;
     }
     Some((path.to_path_buf(), content))
+}
+
+fn read_markdown_dir(dir: &Path) -> Vec<(PathBuf, String)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+        if let Some(layer) = read_if_exists(&path) {
+            out.push(layer);
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
 }
 pub fn build_system_prompt(claude_md: Option<&str>) -> Option<String> {
     let has_claude_md = claude_md.is_some();
@@ -425,6 +472,7 @@ mod tests {
             project: Some((PathBuf::from("/proj/CLAUDE.md"), "PROJECT".into())),
             project_dot: None,
             local: Some((PathBuf::from("/proj/CLAUDE.local.md"), "LOCAL".into())),
+            ..Default::default()
         };
         let r = h.render().expect("non-empty render");
         let idx_managed = r.find("MANAGED").expect("managed");
@@ -603,15 +651,22 @@ mod tests {
         fs::create_dir_all(root.join(".claude")).expect("dotclaude");
         fs::write(root.join("CLAUDE.md"), "PROJECT_RULES").expect("project");
         fs::write(root.join(".claude/CLAUDE.md"), "DOT_RULES").expect("project_dot");
+        fs::create_dir_all(root.join(".claude/rules")).expect("rules dir");
+        fs::write(root.join(".claude/rules/security.md"), "SECURITY_RULES").expect("rule");
+        fs::write(root.join("MEMORY.md"), "MEMORY_INDEX").expect("memory");
         fs::write(root.join("CLAUDE.local.md"), "LOCAL_RULES").expect("local");
 
         let h = ClaudeMdHierarchy::load(root);
         assert!(h.project.is_some());
         assert!(h.project_dot.is_some());
+        assert_eq!(h.rules.len(), 1);
+        assert!(h.memory.is_some());
         assert!(h.local.is_some());
         let rendered = h.render().expect("renders");
         assert!(rendered.contains("PROJECT_RULES"));
         assert!(rendered.contains("DOT_RULES"));
+        assert!(rendered.contains("SECURITY_RULES"));
+        assert!(rendered.contains("MEMORY_INDEX"));
         assert!(rendered.contains("LOCAL_RULES"));
     }
 

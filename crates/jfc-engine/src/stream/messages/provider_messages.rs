@@ -199,9 +199,10 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::ToolId;
+    use crate::ids::{TaskId, ToolId};
     use crate::types::{
-        MessagePart, Role, ToolCall, ToolDisplayState, ToolInput, ToolKind, ToolOutput, ToolStatus,
+        MessagePart, Role, TaskLifecycle, TaskStatusPart, ToolCall, ToolDisplayState, ToolInput,
+        ToolKind, ToolOutput, ToolStatus,
     };
 
     fn user_msg(text: &str) -> ChatMessage {
@@ -308,6 +309,36 @@ mod tests {
     fn build_empty_input_robust() {
         let out = build_provider_messages(&[]);
         assert!(out.is_empty());
+    }
+
+    // Robust: completed TaskStatus parts are transcript/UI state, not provider
+    // history. Detached completions are forwarded by a one-shot system reminder;
+    // replaying them here re-injected old background-agent summaries on every
+    // future request.
+    #[test]
+    fn build_ignores_task_status_summary_robust() {
+        let task_status = TaskStatusPart {
+            task_id: TaskId::from("task-bg"),
+            description: "Explore plugin support".to_owned(),
+            status: TaskLifecycle::Completed,
+            summary: Some("stale summary".to_owned()),
+            error: None,
+            elapsed_ms: Some(123),
+            model: Some("test-model".to_owned()),
+        };
+        let msgs = vec![
+            user_msg("continue"),
+            assistant_with_parts(vec![MessagePart::TaskStatus(task_status)]),
+        ];
+
+        let out = build_provider_messages(&msgs);
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].role, ProviderRole::User);
+        match &out[0].content[0] {
+            ProviderContent::Text(text) => assert_eq!(text, "continue"),
+            _ => panic!("expected text content"),
+        }
     }
 
     // Normal: assistant turn with a completed tool produces a 2-message pair

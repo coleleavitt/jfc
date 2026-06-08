@@ -234,7 +234,9 @@ fn cursor_move_visual_down_jumps_to_end_when_last_line_robust() {
 fn user_prompts_collects_chronologically_normal() {
     let mut app = test_app();
     app.engine.messages.push(ChatMessage::user("first".into()));
-    app.engine.messages.push(ChatMessage::assistant("hi".into()));
+    app.engine
+        .messages
+        .push(ChatMessage::assistant("hi".into()));
     app.engine.messages.push(ChatMessage::user("second".into()));
     let prompts = user_prompts(&app);
     assert_eq!(prompts, vec!["first".to_string(), "second".to_string()]);
@@ -455,7 +457,8 @@ async fn approval_a_batches_following_auto_approved_tools_robust() {
         tool: make_bash_tool("t1", "sleep 1; echo slow"),
         selected: 0,
     });
-    app.engine.approval_queue
+    app.engine
+        .approval_queue
         .push_back(make_bash_tool("t2", "echo quick"));
     let (tx, mut rx) = channel();
 
@@ -509,7 +512,8 @@ async fn approval_enter_uses_selected_choice_normal() {
 async fn approval_esc_clears_queue_robust() {
     let mut app = test_app();
     arm_approval(&mut app, ToolKind::Bash);
-    app.engine.approval_queue
+    app.engine
+        .approval_queue
         .push_back(make_tool("t2", ToolKind::Bash));
     let (tx, mut rx) = channel();
     handle_key(&mut app, key(KeyCode::Esc), &tx).await.unwrap();
@@ -527,7 +531,8 @@ async fn approval_ctrl_c_interrupts_instead_of_being_swallowed_robust() {
     let mut app = test_app();
     app.engine.is_streaming = true;
     arm_approval(&mut app, ToolKind::Bash);
-    app.engine.approval_queue
+    app.engine
+        .approval_queue
         .push_back(make_tool("t2", ToolKind::Bash));
     let (tx, mut rx) = channel();
 
@@ -543,7 +548,9 @@ async fn approval_ctrl_c_interrupts_instead_of_being_swallowed_robust() {
     assert!(app.engine.pending_approval.is_none());
     assert!(app.engine.approval_queue.is_empty());
     assert!(
-        app.engine.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
+        app.engine
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst),
         "Ctrl+C in approval modal must still request an active turn interrupt"
     );
     assert!(
@@ -565,7 +572,12 @@ async fn remote_approval_matches_current_tool_id_normal() {
     });
     let (tx, mut rx) = channel();
 
-    crate::runtime::approvals::handle_remote_approval_response(&mut app.engine, &tx, "t1".into(), true);
+    crate::runtime::approvals::handle_remote_approval_response(
+        &mut app.engine,
+        &tx,
+        "t1".into(),
+        true,
+    );
 
     assert!(app.engine.pending_approval.is_none());
     let event = rx.recv().await;
@@ -581,13 +593,20 @@ async fn remote_orphaned_permission_response_recovers_unresolved_tool_robust() {
     let mut app = test_app();
     let tool = make_tool("t_orphan", ToolKind::Bash);
     app.engine.messages.push(ChatMessage::user("run".into()));
-    app.engine.messages
+    app.engine
+        .messages
         .push(ChatMessage::assistant_parts(vec![MessagePart::tool(tool)]));
     let (tx, _rx) = channel();
 
-    crate::runtime::approvals::handle_remote_approval_response(&mut app.engine, &tx, "t_orphan".into(), false);
+    crate::runtime::approvals::handle_remote_approval_response(
+        &mut app.engine,
+        &tx,
+        "t_orphan".into(),
+        false,
+    );
 
-    let status = app.engine
+    let status = app
+        .engine
         .messages
         .iter()
         .flat_map(|msg| msg.parts.iter())
@@ -821,7 +840,8 @@ async fn ctrl_m_opens_model_picker_normal() {
 #[test]
 fn collect_all_models_empty_cache_falls_back_to_static_robust() {
     let mut app = App::new(Arc::new(StaticModelProvider), "static-model");
-    app.engine.provider_models
+    app.engine
+        .provider_models
         .insert(jfc_provider::ProviderId::from("static"), Vec::new());
 
     let models = collect_all_models(&app);
@@ -949,8 +969,12 @@ async fn ctrl_f_opens_search_normal() {
 #[tokio::test]
 async fn search_typing_finds_matches_normal() {
     let mut app = test_app();
-    app.engine.messages.push(ChatMessage::user("hello world".into()));
-    app.engine.messages.push(ChatMessage::assistant("nope".into()));
+    app.engine
+        .messages
+        .push(ChatMessage::user("hello world".into()));
+    app.engine
+        .messages
+        .push(ChatMessage::assistant("nope".into()));
     app.transcript_search = Some(crate::app::TranscriptSearch::default());
     let (tx, _rx) = channel();
     for c in "hello".chars() {
@@ -1041,7 +1065,8 @@ async fn ctrl_g_arms_jump_mode_normal() {
 async fn jump_armed_e_jumps_to_error_normal() {
     let mut app = test_app();
     // failed tool in messages → e jumps to it
-    app.engine.messages
+    app.engine
+        .messages
         .push(ChatMessage::assistant_parts(vec![MessagePart::tool(
             ToolCall {
                 id: "t1".into(),
@@ -1161,7 +1186,9 @@ async fn up_recalls_queued_prompt_robust() {
         attachments: Vec::new(),
     });
     // Push the placeholder user message that recall expects to remove.
-    app.engine.messages.push(ChatMessage::user("⏳ queued".into()));
+    app.engine
+        .messages
+        .push(ChatMessage::user("⏳ queued".into()));
     let (tx, _rx) = channel();
     handle_key(&mut app, key(KeyCode::Up), &tx).await.unwrap();
     let txt = app.textarea.lines().join("\n");
@@ -1187,7 +1214,9 @@ async fn up_recall_replaces_textarea_no_double_insert_regression() {
         is_meta: false,
         attachments: Vec::new(),
     });
-    app.engine.messages.push(ChatMessage::user("⏳ alpha".into()));
+    app.engine
+        .messages
+        .push(ChatMessage::user("⏳ alpha".into()));
     // Residual content already in the textarea (a prior un-submitted recall).
     app.textarea = TextArea::from(vec!["alpha".to_string()]);
     let (tx, _rx) = channel();
@@ -1298,7 +1327,9 @@ async fn ctrl_c_interrupts_active_work_when_input_empty_normal() {
     .unwrap();
     assert!(!exit);
     assert!(
-        app.engine.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
+        app.engine
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst),
         "Ctrl+C during active work should request interrupt, not exit"
     );
     assert!(
@@ -1551,15 +1582,17 @@ async fn ctrl_s_toggles_info_sidebar_normal() {
 #[tokio::test]
 async fn ctrl_o_opens_diagnostic_panel_when_diagnostics_present_normal() {
     let mut app = test_app();
-    app.engine.diagnostics.push(jfc_engine::diagnostics::DiagnosticEntry {
-        file: "src/lib.rs".into(),
-        line: 1,
-        col: 1,
-        severity: jfc_engine::diagnostics::Severity::Error,
-        message: "boom".into(),
-        code: None,
-        source: None,
-    });
+    app.engine
+        .diagnostics
+        .push(jfc_engine::diagnostics::DiagnosticEntry {
+            file: "src/lib.rs".into(),
+            line: 1,
+            col: 1,
+            severity: jfc_engine::diagnostics::Severity::Error,
+            message: "boom".into(),
+            code: None,
+            source: None,
+        });
     let (tx, _rx) = channel();
     handle_key(
         &mut app,
@@ -1773,7 +1806,8 @@ async fn shift_question_toggles_help_robust() {
 #[tokio::test]
 async fn lower_o_toggles_tool_expand_normal() {
     let mut app = test_app();
-    app.engine.messages
+    app.engine
+        .messages
         .push(ChatMessage::assistant_parts(vec![MessagePart::tool(
             ToolCall {
                 id: "t".into(),
@@ -1841,13 +1875,17 @@ async fn esc_double_tap_while_streaming_interrupts_instantly_normal() {
     handle_key(&mut app, key(KeyCode::Esc), &tx).await.unwrap();
     assert!(app.last_esc_at.is_some(), "1st ESC should arm the timer");
     assert!(
-        !app.engine.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
+        !app.engine
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst),
         "1st ESC should NOT fire interrupt"
     );
     // 2nd ESC: instantly kills.
     handle_key(&mut app, key(KeyCode::Esc), &tx).await.unwrap();
     assert!(
-        app.engine.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
+        app.engine
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst),
         "2nd ESC must set interrupt_flag"
     );
     assert!(
@@ -1871,7 +1909,9 @@ async fn esc_repeat_does_not_confirm_or_spam_interrupt_robust() {
         .unwrap();
 
     assert!(
-        !app.engine.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
+        !app.engine
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst),
         "held ESC repeat must not count as the confirming tap"
     );
     assert!(!app.engine.cancel_token.is_cancelled());
@@ -2060,7 +2100,9 @@ async fn alt_d_deletes_next_word_robust() {
 #[tokio::test]
 async fn alt_period_raises_reasoning_effort_normal() {
     let mut app = test_app();
-    app.engine.effort_state.set(jfc_engine::effort::ReasoningEffort::Medium);
+    app.engine
+        .effort_state
+        .set(jfc_engine::effort::ReasoningEffort::Medium);
     let (tx, _rx) = channel();
     handle_key(
         &mut app,
@@ -2078,7 +2120,9 @@ async fn alt_period_raises_reasoning_effort_normal() {
 #[tokio::test]
 async fn alt_comma_lowers_reasoning_effort_normal() {
     let mut app = test_app();
-    app.engine.effort_state.set(jfc_engine::effort::ReasoningEffort::Medium);
+    app.engine
+        .effort_state
+        .set(jfc_engine::effort::ReasoningEffort::Medium);
     let (tx, _rx) = channel();
     handle_key(
         &mut app,
@@ -2275,7 +2319,10 @@ async fn slash_mode_sets_permission_mode_normal() {
 async fn slash_mode_default_robust() {
     let mut app = test_app();
     run_slash_command(&mut app, "/mode default").await;
-    assert_eq!(app.engine.permission_mode, crate::app::PermissionMode::Default);
+    assert_eq!(
+        app.engine.permission_mode,
+        crate::app::PermissionMode::Default
+    );
 }
 
 #[tokio::test]
@@ -2304,7 +2351,8 @@ async fn slash_temp_sets_temperature_normal() {
 
     assert_eq!(app.engine.temperature_state.current, Some(0.7));
     assert_eq!(jfc_engine::exploration::active_temperature(), Some(0.7));
-    let last_text = app.engine
+    let last_text = app
+        .engine
         .messages
         .last()
         .and_then(|m| m.parts.first())
@@ -2336,7 +2384,8 @@ async fn slash_temp_rejects_out_of_range_robust() {
 
     assert_eq!(app.engine.temperature_state.current, None);
     assert_eq!(jfc_engine::exploration::active_temperature(), None);
-    let last_text = app.engine
+    let last_text = app
+        .engine
         .messages
         .last()
         .and_then(|m| m.parts.first())
@@ -2358,7 +2407,8 @@ async fn slash_explore_raises_sticky_level_normal() {
         jfc_engine::exploration::active_exploration_level(),
         Some(app.engine.exploration_state.current)
     );
-    let last_text = app.engine
+    let last_text = app
+        .engine
         .messages
         .last()
         .and_then(|m| m.parts.first())
@@ -2377,7 +2427,8 @@ async fn slash_focus_lowers_sticky_level_normal() {
     run_slash_command(&mut app, "/focus").await;
 
     assert_eq!(app.engine.exploration_state.sticky_delta, 0);
-    let last_text = app.engine
+    let last_text = app
+        .engine
         .messages
         .last()
         .and_then(|m| m.parts.first())
@@ -2412,7 +2463,10 @@ async fn slash_auto_mode_status_robust() {
 async fn slash_task_add_creates_task_normal() {
     let mut app = test_app();
     run_slash_command(&mut app, "/task-add make tests pass").await;
-    let tasks = app.engine.task_store.list(jfc_session::DeletedFilter::Exclude);
+    let tasks = app
+        .engine
+        .task_store
+        .list(jfc_session::DeletedFilter::Exclude);
     assert_eq!(tasks.len(), 1);
 }
 
@@ -2420,7 +2474,10 @@ async fn slash_task_add_creates_task_normal() {
 async fn slash_task_add_robust_no_args() {
     let mut app = test_app();
     run_slash_command(&mut app, "/task-add").await;
-    let tasks = app.engine.task_store.list(jfc_session::DeletedFilter::Exclude);
+    let tasks = app
+        .engine
+        .task_store
+        .list(jfc_session::DeletedFilter::Exclude);
     assert!(tasks.is_empty());
 }
 
@@ -2449,7 +2506,12 @@ async fn slash_task_rm_robust_no_args() {
 async fn slash_check_emits_assistant_robust() {
     let mut app = test_app();
     run_slash_command(&mut app, "/check").await;
-    assert!(app.engine.messages.iter().any(|m| m.role == Role::Assistant));
+    assert!(
+        app.engine
+            .messages
+            .iter()
+            .any(|m| m.role == Role::Assistant)
+    );
 }
 
 #[tokio::test]
@@ -2457,7 +2519,8 @@ async fn slash_config_reports_path_normal() {
     let mut app = test_app();
     run_slash_command(&mut app, "/config path").await;
     assert!(
-        app.engine.messages
+        app.engine
+            .messages
             .iter()
             .any(|m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("Config path")))
     );
@@ -2618,7 +2681,8 @@ async fn slash_resume_unknown_id_robust() {
     let mut app = test_app();
     run_slash_command(&mut app, "/resume ses_does_not_exist").await;
     assert!(
-        app.engine.messages
+        app.engine
+            .messages
             .iter()
             .any(|m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("not found")))
     );
@@ -2699,7 +2763,8 @@ async fn slash_market_renders_snapshot_normal() {
     let mut app = test_app();
     run_slash_command(&mut app, "/market").await;
     assert!(!app.engine.messages.is_empty());
-    let body: String = app.engine
+    let body: String = app
+        .engine
         .messages
         .last()
         .unwrap()
@@ -2745,7 +2810,8 @@ async fn slash_cascade_empty_state_normal() {
 async fn slash_cascade_filters_by_metadata_normal() {
     let mut app = test_app();
     // A regular (non-cascade) task — should NOT appear.
-    let regular = app.engine
+    let regular = app
+        .engine
         .task_store
         .create::<jfc_session::TaskId>(
             "regular work".into(),
@@ -2755,7 +2821,8 @@ async fn slash_cascade_filters_by_metadata_normal() {
         )
         .expect("create regular task");
     // A cascade task — SHOULD appear.
-    let cascade = app.engine
+    let cascade = app
+        .engine
         .task_store
         .create::<jfc_session::TaskId>(
             "Update 2 call sites in src/foo.rs".into(),
@@ -2776,7 +2843,8 @@ async fn slash_cascade_filters_by_metadata_normal() {
         },
     );
     run_slash_command(&mut app, "/cascade").await;
-    let body: String = app.engine
+    let body: String = app
+        .engine
         .messages
         .last()
         .unwrap()
@@ -2800,29 +2868,6 @@ async fn slash_cascade_filters_by_metadata_normal() {
         "/cascade should list caller names from metadata: {body}"
     );
     let _ = regular; // suppress unused
-}
-
-// Normal: /graph-history with no recorded queries shows the empty-
-// state hint instead of erroring (some users will run it before
-// they've ever invoked graph_query).
-#[tokio::test]
-async fn slash_graph_history_empty_state_normal() {
-    let mut app = test_app();
-    run_slash_command(&mut app, "/graph-history").await;
-    assert!(!app.engine.messages.is_empty());
-    let last = app.engine.messages.last().unwrap();
-    let body: String = last
-        .parts
-        .iter()
-        .filter_map(|p| match p {
-            jfc_core::MessagePart::Text(t) => Some(t.clone()),
-            _ => None,
-        })
-        .collect();
-    assert!(
-        body.contains("No graph queries recorded yet"),
-        "expected empty-state hint, got: {body}"
-    );
 }
 
 // ─────────────────────────────────────────────────────────────────────

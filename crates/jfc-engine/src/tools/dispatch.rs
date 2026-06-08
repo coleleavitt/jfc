@@ -42,14 +42,11 @@ use super::tasks::{
 use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 
 use super::registry::{
-    collusion_detector, invalidate_graph_session_cache, market_orchestrator, record_edited_file,
-    snapshot_event_sender, snapshot_mcp_registry,
+    collusion_detector, market_orchestrator, snapshot_event_sender, snapshot_mcp_registry,
 };
 #[cfg(feature = "permission-automation")]
 use super::safe_tools::tool_permission_path;
-use super::safe_tools::{
-    execute_code_index, execute_tool_search, execute_tool_suggest, maybe_run_slop_guard,
-};
+use super::safe_tools::{execute_tool_search, execute_tool_suggest, maybe_run_slop_guard};
 
 pub fn resolve_bash_workdir(cwd: &Path, workdir: Option<&str>) -> PathBuf {
     let Some(workdir) = workdir.map(str::trim).filter(|workdir| !workdir.is_empty()) else {
@@ -198,10 +195,6 @@ pub async fn execute_tool(
                 if let Some(cache) = &dedup {
                     cache.lock().await.invalidate(Path::new(&file_path));
                 }
-                // Drop the cached graph for this workspace so the next
-                // graph_query reflects the new file content.
-                invalidate_graph_session_cache(Some(&cwd));
-                record_edited_file(Path::new(&file_path));
                 // Slop guard: check the written content for quality issues.
                 return maybe_run_slop_guard(result, Path::new(&file_path), &content, &cwd).await;
             }
@@ -221,8 +214,6 @@ pub async fn execute_tool(
                 if let Some(cache) = &dedup {
                     cache.lock().await.invalidate(Path::new(&file_path));
                 }
-                invalidate_graph_session_cache(Some(&cwd));
-                record_edited_file(Path::new(&file_path));
                 // Slop guard: read the post-edit content and check for quality issues.
                 let post_content = tokio::fs::read_to_string(&file_path)
                     .await
@@ -413,137 +404,6 @@ pub async fn execute_tool(
         (ToolKind::TeamMemberMode, ToolInput::TeamMemberMode { member_name, mode }) => {
             execute_team_member_mode(&member_name, &mode, active_team_name).await
         }
-        (
-            ToolKind::CodeIndex,
-            ToolInput::CodeIndex {
-                path,
-                query,
-                kind,
-                max_entries,
-            },
-        ) => execute_code_index(
-            &cwd,
-            path.as_deref(),
-            query.as_deref(),
-            kind.as_deref(),
-            max_entries,
-        ),
-        (
-            ToolKind::GraphQuery,
-            ToolInput::GraphQuery {
-                query,
-                max_tokens,
-                include_handles,
-                format,
-            },
-        ) => dispatch_heavy::execute_graph_query(
-            query,
-            max_tokens,
-            include_handles,
-            format.as_deref(),
-            &cwd,
-        ),
-        (
-            ToolKind::GraphContext,
-            ToolInput::GraphContext {
-                task,
-                max_nodes,
-                include_code,
-                format,
-            },
-        ) => dispatch_heavy::execute_graph_context(
-            task,
-            max_nodes,
-            include_code,
-            format.as_deref(),
-            &cwd,
-        ),
-        (
-            ToolKind::GraphSearch,
-            ToolInput::GraphSearch {
-                query,
-                limit,
-                include_code,
-                format,
-            },
-        ) => dispatch_heavy::execute_graph_search(
-            query,
-            limit,
-            include_code,
-            format.as_deref(),
-            &cwd,
-        ),
-        (
-            ToolKind::GraphCallers,
-            ToolInput::GraphCallers {
-                symbol,
-                limit,
-                format,
-            },
-        ) => dispatch_heavy::execute_graph_callers(symbol, limit, format.as_deref(), &cwd),
-        (
-            ToolKind::GraphCallees,
-            ToolInput::GraphCallees {
-                symbol,
-                limit,
-                format,
-            },
-        ) => dispatch_heavy::execute_graph_callees(symbol, limit, format.as_deref(), &cwd),
-        (
-            ToolKind::GraphImpact,
-            ToolInput::GraphImpact {
-                symbol,
-                depth,
-                format,
-            },
-        ) => dispatch_heavy::execute_graph_impact(symbol, depth, format.as_deref(), &cwd),
-        (
-            ToolKind::GraphNode,
-            ToolInput::GraphNode {
-                symbol,
-                include_code,
-            },
-        ) => dispatch_heavy::execute_graph_node(symbol, include_code, &cwd),
-        (ToolKind::GraphExplore, ToolInput::GraphExplore { query, max_files }) => {
-            dispatch_heavy::execute_graph_explore(query, max_files, &cwd)
-        }
-        (ToolKind::GraphOutline, ToolInput::GraphOutline { file }) => {
-            dispatch_heavy::execute_graph_outline(file, &cwd)
-        }
-        (
-            ToolKind::GraphGrep,
-            ToolInput::GraphGrep {
-                pattern,
-                glob,
-                limit,
-            },
-        ) => dispatch_heavy::execute_graph_grep(pattern, glob.as_deref(), limit, &cwd),
-        (ToolKind::GraphStatus, ToolInput::GraphStatus {}) => {
-            dispatch_heavy::execute_graph_status(&cwd)
-        }
-        (ToolKind::GraphFiles, ToolInput::GraphFiles { path }) => {
-            dispatch_heavy::execute_graph_files(path.as_deref(), &cwd)
-        }
-        (
-            ToolKind::GetProgramSlice,
-            ToolInput::GetProgramSlice {
-                symbol,
-                backward,
-                max_nodes,
-            },
-        ) => dispatch_heavy::execute_get_program_slice(symbol, backward, max_nodes, &cwd),
-        (ToolKind::GetDataDependencies, ToolInput::GetDataDependencies { symbol, max_nodes }) => {
-            dispatch_heavy::execute_get_data_dependencies(symbol, max_nodes, &cwd)
-        }
-        (
-            ToolKind::TaintFlow,
-            ToolInput::TaintFlow {
-                sources,
-                sinks,
-                sanitizers,
-                max_paths,
-            },
-        ) => dispatch_heavy::execute_taint_flow(sources, sinks, sanitizers, max_paths, &cwd),
         (ToolKind::PlanCreate, ToolInput::PlanCreate { title, body }) => {
             crate::tools::plans::execute_plan_create(&title, body.as_deref())
         }
@@ -576,32 +436,6 @@ pub async fn execute_tool(
         }
         (ToolKind::LearnUserProfileShow, ToolInput::LearnUserProfileShow {}) => {
             crate::tools::learn::execute_learn_user_profile_show()
-        }
-        (
-            ToolKind::RunCoverage,
-            ToolInput::RunCoverage {
-                lcov_path,
-                include_untested_list,
-            },
-        ) => dispatch_heavy::execute_run_coverage(lcov_path, include_untested_list, &cwd),
-        (
-            ToolKind::SymbolEdit,
-            ToolInput::SymbolEdit {
-                handle,
-                new_content,
-                validate,
-                dispatch_cascade,
-            },
-        ) => {
-            dispatch_heavy::execute_symbol_edit(
-                handle,
-                new_content,
-                validate,
-                dispatch_cascade,
-                &cwd,
-                task_store,
-            )
-            .await
         }
         (
             ToolKind::PostBounty,
@@ -766,8 +600,6 @@ pub async fn execute_tool(
                 bytes = content.len(),
                 "MultiEdit applied"
             );
-            invalidate_graph_session_cache(Some(&cwd));
-            record_edited_file(Path::new(&file_path));
             let result =
                 ExecutionResult::success(format!("Applied {applied} edits to {file_path}."));
             // Slop guard: check the final content for quality issues.

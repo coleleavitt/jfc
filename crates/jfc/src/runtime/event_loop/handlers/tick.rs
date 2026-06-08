@@ -66,6 +66,46 @@ pub(crate) async fn handle_tick(
         }
     }
 
+    // Stream pacing: advance the reveal animation over the live streaming
+    // message's last (actively-accruing) text part. We pace by display segments
+    // (a cheap newline count) so the renderer reveals lines at the adaptive
+    // smooth/catch-up cadence; the engine's text is untouched (single source of
+    // truth). The pacer resets when a new message — or a new part within it
+    // (e.g. the second text block after a tool call) — begins.
+    if app.engine.is_streaming {
+        let now = std::time::Instant::now();
+        let idx = app.engine.streaming_assistant_idx;
+        let msg = idx.and_then(|i| app.engine.messages.get(i));
+        let part_count = msg.map(|m| m.parts.len()).unwrap_or(0);
+        let key = idx.map(|i| (i, part_count));
+        if app.paced_stream_key != key {
+            app.stream_pacer.reset();
+            app.paced_stream_key = key;
+        }
+        // Pace only the last part, and only when it's the text segment being
+        // streamed (reasoning/tool tails contribute no revealable text lines).
+        let total = msg
+            .and_then(|m| m.parts.last())
+            .and_then(|p| match p {
+                jfc_core::MessagePart::Text(t) => {
+                    Some(crate::render::codex_stream::stream_pacer::display_line_count(t))
+                }
+                _ => None,
+            })
+            .unwrap_or(0);
+        app.stream_pacer.advance(total, now);
+        if app.stream_pacer.is_catching_up(total) {
+            // Still revealing held-back lines — keep animating even if no new
+            // chunk arrives this tick.
+            needs_draw = true;
+        }
+    } else if app.paced_stream_key.is_some() {
+        // Stream ended: drop pacing state. The final render shows the full text
+        // (truncation only applies while `is_streaming`), so nothing is held back.
+        app.paced_stream_key = None;
+        app.stream_pacer.reset();
+    }
+
     // Windowed tokens/sec sampling: push one (elapsed, count) point per tick
     // while streaming, then trim to TOKEN_RATE_WINDOW. The render path reads
     // the window each frame; we mutate it here because tick.rs has `&mut App`

@@ -3,7 +3,6 @@ mod daemon;
 mod design;
 mod economy;
 mod filesystem;
-mod graph;
 mod interaction;
 mod tasks;
 
@@ -14,7 +13,6 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
     defs.extend(filesystem::filesystem_tool_defs());
     defs.extend(tasks::task_tool_defs());
     defs.extend(agents::agent_tool_defs());
-    defs.extend(graph::graph_tool_defs());
     defs.extend(economy::economy_tool_defs());
     defs.extend(design::design_tool_defs());
     defs.extend(interaction::interaction_tool_defs());

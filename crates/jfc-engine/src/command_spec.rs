@@ -211,7 +211,10 @@ pub fn register_slash_commands(table: &'static [(&'static str, &'static str)]) {
 }
 
 fn slash_commands() -> &'static [(&'static str, &'static str)] {
-    SLASH_COMMANDS_TABLE.get().copied().unwrap_or(&[])
+    SLASH_COMMANDS_TABLE
+        .get()
+        .copied()
+        .unwrap_or(crate::commands::ENGINE_SLASH_COMMANDS)
 }
 
 /// The `/help` command list, rendered from the slash rows of the unified
@@ -487,14 +490,13 @@ mod tests {
             ("/help", "show command help"),
             ("/h", "show command help"),
             ("/compact", "compact the conversation"),
+            ("/changes", "list/show/apply/revert agent change-sets"),
         ];
         register_slash_commands(TEST_TABLE);
         let rendered = slash_help_lines();
         // One line per UNIQUE help string in the registry (aliases dedup).
-        let unique_helps: std::collections::HashSet<&str> = slash_commands()
-            .iter()
-            .map(|(_, h)| *h)
-            .collect();
+        let unique_helps: std::collections::HashSet<&str> =
+            slash_commands().iter().map(|(_, h)| *h).collect();
         let line_count = rendered.lines().filter(|l| !l.is_empty()).count();
         assert_eq!(
             line_count,

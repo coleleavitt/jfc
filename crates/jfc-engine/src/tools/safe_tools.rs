@@ -4,8 +4,6 @@
 use std::path::Path;
 use std::process::Stdio;
 
-use jfc_graph::nodes::{NodeData, NodeKind, Visibility};
-use std::collections::BTreeMap;
 use tokio::process::Command;
 
 use crate::runtime::ExecutionResult;
@@ -16,272 +14,6 @@ use super::registry::snapshot_mcp_registry;
 #[cfg(unix)]
 unsafe extern "C" {
     fn setsid() -> i32;
-}
-
-// ---------------------------------------------------------------------------
-// Code-index constants and helpers
-// ---------------------------------------------------------------------------
-
-pub const CODE_INDEX_DEFAULT_LIMIT: usize = 80;
-pub const CODE_INDEX_MAX_LIMIT: usize = 200;
-
-pub fn execute_code_index(
-    cwd: &Path,
-    path: Option<&str>,
-    query: Option<&str>,
-    kind: Option<&str>,
-    max_entries: Option<usize>,
-) -> ExecutionResult {
-    let kind_filter = match kind.and_then(trim_nonempty) {
-        Some(raw) => match parse_code_index_kind(raw) {
-            Some(kind) => Some(kind),
-            None => {
-                return ExecutionResult::failure(format!(
-                    "code_index kind must be one of: function, struct, enum, module, trait (got {raw:?})"
-                ));
-            }
-        },
-        None => None,
-    };
-
-    let path_filter = path.and_then(trim_nonempty).map(normalize_filter);
-    let query_filter = query.and_then(trim_nonempty).map(normalize_filter);
-    let limit = max_entries
-        .unwrap_or(CODE_INDEX_DEFAULT_LIMIT)
-        .clamp(1, CODE_INDEX_MAX_LIMIT);
-
-    let session = super::registry::get_or_build_graph_session(cwd);
-    let mut nodes = session
-        .graph
-        .all_node_ids()
-        .into_iter()
-        .filter_map(|id| session.graph.get_node(id))
-        .filter(|node| {
-            kind_filter.is_none_or(|kind| node.kind == kind)
-                && path_filter
-                    .as_deref()
-                    .is_none_or(|filter| code_index_path_matches(cwd, node, filter))
-                && query_filter
-                    .as_deref()
-                    .is_none_or(|filter| code_index_query_matches(cwd, node, filter))
-        })
-        .collect::<Vec<_>>();
-
-    nodes.sort_by(|a, b| {
-        code_index_display_path(cwd, &a.file_path)
-            .cmp(&code_index_display_path(cwd, &b.file_path))
-            .then(a.span.start_line.cmp(&b.span.start_line))
-            .then(a.kind.cmp(&b.kind))
-            .then(a.qualified_name.cmp(&b.qualified_name))
-    });
-
-    let total_matching = nodes.len();
-    let shown = total_matching.min(limit);
-    let mut by_file: BTreeMap<String, Vec<&NodeData>> = BTreeMap::new();
-    for node in nodes.into_iter().take(limit) {
-        by_file
-            .entry(code_index_display_path(cwd, &node.file_path))
-            .or_default()
-            .push(node);
-    }
-
-    let mut out = String::new();
-    out.push_str(&format!(
-        "Code index: {shown}/{total_matching} matching symbols shown · graph {} nodes / {} edges",
-        session.graph.node_count(),
-        session.graph.edge_count()
-    ));
-
-    let filters = code_index_filter_summary(path, query, kind);
-    if !filters.is_empty() {
-        out.push_str(&format!("\nfilters: {}", filters.join(", ")));
-    }
-    out.push_str("\nUse handles with graph_query or symbol_edit.");
-
-    if by_file.is_empty() {
-        out.push_str("\n\nNo symbols matched.");
-        return ExecutionResult::success(out);
-    }
-
-    for (file, file_nodes) in by_file {
-        out.push_str("\n\n");
-        out.push_str(&file);
-        for node in file_nodes {
-            let incoming = session.graph.get_edges_to(&node.id).len();
-            let outgoing = session.graph.get_edges_from(&node.id).len();
-            let metadata = code_index_metadata_summary(node);
-            out.push_str(&format!(
-                "\n  {} {} lines {}-{} · {} · in {} / out {} · {}",
-                code_index_kind_label(node.kind),
-                node.qualified_name,
-                node.span.start_line,
-                node.span.end_line,
-                code_index_visibility_label(&node.visibility),
-                incoming,
-                outgoing,
-                code_index_handle(node)
-            ));
-            if !metadata.is_empty() {
-                out.push_str(" · ");
-                out.push_str(&metadata.join(", "));
-            }
-        }
-    }
-
-    if total_matching > shown {
-        out.push_str(&format!(
-            "\n\n... and {} more (use path/query/kind or raise max_entries up to {CODE_INDEX_MAX_LIMIT})",
-            total_matching - shown
-        ));
-    }
-
-    ExecutionResult::success(out)
-}
-
-pub fn trim_nonempty(value: &str) -> Option<&str> {
-    let value = value.trim();
-    (!value.is_empty()).then_some(value)
-}
-
-fn normalize_filter(value: &str) -> String {
-    value.replace('\\', "/").to_ascii_lowercase()
-}
-
-fn parse_code_index_kind(kind: &str) -> Option<NodeKind> {
-    match kind
-        .trim()
-        .to_ascii_lowercase()
-        .replace(['_', '-'], "")
-        .as_str()
-    {
-        "fn" | "func" | "function" => Some(NodeKind::Function),
-        "struct" => Some(NodeKind::Struct),
-        "enum" => Some(NodeKind::Enum),
-        "mod" | "module" => Some(NodeKind::Module),
-        "trait" => Some(NodeKind::Trait),
-        "enumvariant" | "variant" => Some(NodeKind::EnumVariant),
-        "field" | "property" => Some(NodeKind::Field),
-        "typealias" | "type" => Some(NodeKind::TypeAlias),
-        "constant" | "const" | "static" => Some(NodeKind::Constant),
-        "interface" => Some(NodeKind::Interface),
-        _ => None,
-    }
-}
-
-fn code_index_path_matches(cwd: &Path, node: &NodeData, filter: &str) -> bool {
-    normalize_filter(&code_index_display_path(cwd, &node.file_path)).contains(filter)
-        || normalize_filter(&node.file_path.display().to_string()).contains(filter)
-}
-
-fn code_index_query_matches(cwd: &Path, node: &NodeData, filter: &str) -> bool {
-    normalize_filter(&node.name).contains(filter)
-        || normalize_filter(&node.qualified_name).contains(filter)
-        || code_index_path_matches(cwd, node, filter)
-}
-
-fn code_index_display_path(cwd: &Path, path: &Path) -> String {
-    let display_path = path.strip_prefix(cwd).unwrap_or(path);
-    display_path.display().to_string().replace('\\', "/")
-}
-
-fn code_index_filter_summary(
-    path: Option<&str>,
-    query: Option<&str>,
-    kind: Option<&str>,
-) -> Vec<String> {
-    let mut filters = Vec::new();
-    if let Some(kind) = kind.and_then(trim_nonempty) {
-        filters.push(format!("kind={kind}"));
-    }
-    if let Some(query) = query.and_then(trim_nonempty) {
-        filters.push(format!("query={query}"));
-    }
-    if let Some(path) = path.and_then(trim_nonempty) {
-        filters.push(format!("path={path}"));
-    }
-    filters
-}
-
-fn code_index_kind_label(kind: NodeKind) -> &'static str {
-    match kind {
-        NodeKind::Function => "fn",
-        NodeKind::Struct => "struct",
-        NodeKind::Enum => "enum",
-        NodeKind::Module => "mod",
-        NodeKind::Trait => "trait",
-        NodeKind::EnumVariant => "variant",
-        NodeKind::Field => "field",
-        NodeKind::TypeAlias => "type",
-        NodeKind::Constant => "const",
-        NodeKind::Interface => "interface",
-    }
-}
-
-fn code_index_visibility_label(visibility: &Visibility) -> &'static str {
-    match visibility {
-        Visibility::Public => "pub",
-        Visibility::Crate => "crate",
-        Visibility::Super => "super",
-        Visibility::Private => "private",
-    }
-}
-
-fn code_index_handle(node: &NodeData) -> String {
-    format!(
-        "{}:{}",
-        match node.kind {
-            NodeKind::Function => "fn",
-            NodeKind::Struct => "struct",
-            NodeKind::Enum => "enum",
-            NodeKind::Module => "mod",
-            NodeKind::Trait => "trait",
-            NodeKind::EnumVariant => "variant",
-            NodeKind::Field => "field",
-            NodeKind::TypeAlias => "type",
-            NodeKind::Constant => "const",
-            NodeKind::Interface => "interface",
-        },
-        node.qualified_name
-    )
-}
-
-fn code_index_metadata_summary(node: &NodeData) -> Vec<String> {
-    let mut parts = Vec::new();
-    match node.kind {
-        NodeKind::Function => {
-            if node
-                .metadata
-                .get("async")
-                .is_some_and(|value| matches!(value.as_str(), "true" | "1"))
-            {
-                parts.push("async".to_owned());
-            }
-            if let Some(params) = node.metadata.get("param_count") {
-                parts.push(format!("params={params}"));
-            }
-            if let Some(tested) = node.metadata.get("coverage_tested") {
-                parts.push(format!("tested={tested}"));
-            }
-        }
-        NodeKind::Struct => {
-            if let Some(fields) = node.metadata.get("field_count") {
-                parts.push(format!("fields={fields}"));
-            }
-        }
-        NodeKind::Enum => {
-            if let Some(variants) = node.metadata.get("variant_count") {
-                parts.push(format!("variants={variants}"));
-            }
-        }
-        NodeKind::Trait => {
-            if let Some(methods) = node.metadata.get("method_count") {
-                parts.push(format!("methods={methods}"));
-            }
-        }
-        NodeKind::Module => {}
-        _ => {}
-    }
-    parts
 }
 
 // ---------------------------------------------------------------------------
@@ -314,11 +46,7 @@ pub async fn all_tool_defs_with_mcp() -> Vec<jfc_provider::ToolDef> {
     tools
 }
 
-pub async fn execute_tool_search(
-    query: &str,
-    limit: Option<u64>,
-    cwd: &Path,
-) -> ExecutionResult {
+pub async fn execute_tool_search(query: &str, limit: Option<u64>, cwd: &Path) -> ExecutionResult {
     let query = query.trim().to_ascii_lowercase();
     let limit = limit.unwrap_or(20).clamp(1, 50) as usize;
     let mut rows: Vec<(usize, String)> = Vec::new();
@@ -349,20 +77,37 @@ pub async fn execute_tool_search(
     }
 
     for skill in crate::agents::load_skills(cwd) {
+        if !skill.is_discoverable() {
+            continue;
+        }
         let haystack = format!(
-            "{} {} {}",
+            "{} {} {} {}",
             skill.name,
             skill.description.clone().unwrap_or_default(),
+            skill.context.as_str(),
             skill.body.lines().take(6).collect::<Vec<_>>().join(" ")
         )
         .to_ascii_lowercase();
         let score = relevance_score(&haystack, &query);
         if score > 0 {
+            let mut details = Vec::new();
+            if skill.context.is_fork() {
+                details.push("fork".to_owned());
+            }
+            if !skill.files.is_empty() {
+                details.push(format!("{} package files", skill.files.len()));
+            }
+            let detail_suffix = if details.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", details.join(", "))
+            };
             rows.push((
                 score.saturating_add(1),
                 format!(
-                    "- skill `{}`: {}\n  invoke: Skill {{ \"name\": \"{}\" }}",
+                    "- skill `{}`{}: {}\n  invoke: Skill {{ \"name\": \"{}\" }}",
                     skill.name,
+                    detail_suffix,
                     skill.description.as_deref().unwrap_or("no description"),
                     skill.name
                 ),
@@ -384,11 +129,7 @@ pub async fn execute_tool_search(
     }
 }
 
-pub async fn execute_tool_suggest(
-    intent: &str,
-    limit: Option<u64>,
-    cwd: &Path,
-) -> ExecutionResult {
+pub async fn execute_tool_suggest(intent: &str, limit: Option<u64>, cwd: &Path) -> ExecutionResult {
     execute_tool_search(intent, Some(limit.unwrap_or(8).clamp(1, 20)), cwd).await
 }
 

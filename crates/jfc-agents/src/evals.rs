@@ -140,12 +140,12 @@ fn delegation_prompt_preserves_parallel_review_shape(
 }
 
 fn skills_are_progressively_disclosed() -> EvalCaseReport {
-    let skill = Skill {
-        name: "rust-style".to_owned(),
-        source: PathBuf::from(".agents/skills/rust-style/SKILL.md"),
-        description: Some("Prefer small, idiomatic Rust changes.".to_owned()),
-        body: "This body must not be listed until Skill is invoked.".to_owned(),
-    };
+    let skill = Skill::new(
+        "rust-style".to_owned(),
+        PathBuf::from(".agents/skills/rust-style/SKILL.md"),
+        Some("Prefer small, idiomatic Rust changes.".to_owned()),
+        "This body must not be listed until Skill is invoked.".to_owned(),
+    );
     let listing = render_skills_section(std::slice::from_ref(&skill));
     let agent = jfc_core::AgentDef {
         name: "tester".to_owned(),

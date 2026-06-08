@@ -212,23 +212,48 @@ fn candidate_paths(keybindings_path: &Path) -> (Vec<PathBuf>, Option<PathBuf>) {
         if project_md.exists() {
             out.push(project_md);
         }
-        let agents_dir = c.join(".claude").join("agents");
-        if agents_dir.is_dir() {
-            out.push(agents_dir);
+        for rel in [
+            ".claude/agents",
+            ".claude/skills",
+            ".claude/rules",
+            ".claude/commands",
+            ".claude/output-styles",
+            ".claude/workflows",
+            ".claude/plugins",
+            "plugins",
+        ] {
+            let dir = c.join(rel);
+            if dir.is_dir() {
+                out.push(dir);
+            }
         }
-        let local_md = c.join(".claude").join("CLAUDE.md");
-        if local_md.exists() {
-            out.push(local_md);
+        for rel in [".claude/CLAUDE.md", "CLAUDE.local.md", "MEMORY.md"] {
+            let file = c.join(rel);
+            if file.exists() {
+                out.push(file);
+            }
         }
     }
     if let Some(home) = std::env::var_os("HOME") {
-        let user_md = std::path::Path::new(&home)
-            .join(".claude")
-            .join("CLAUDE.md");
+        let home = std::path::Path::new(&home);
+        let user_md = home.join(".claude").join("CLAUDE.md");
         if user_md.exists() {
             out.push(user_md);
         }
-        let user_settings = std::path::Path::new(&home)
+        for rel in [
+            ".claude/agents",
+            ".claude/skills",
+            ".claude/commands",
+            ".claude/output-styles",
+            ".claude/workflows",
+            ".claude/plugins",
+        ] {
+            let dir = home.join(rel);
+            if dir.is_dir() {
+                out.push(dir);
+            }
+        }
+        let user_settings = home
             .join(".config")
             .join("jfc")
             .join("config.toml");
