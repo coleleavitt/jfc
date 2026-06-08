@@ -138,9 +138,27 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
         e.starts_with(crate::providers::anthropic::AUTO_RETRY_SENTINEL);
     let auto_retry_anthropic_oauth_signal =
         e.starts_with(crate::providers::anthropic_oauth::AUTO_RETRY_SENTINEL);
-    let auto_retry_signal = auto_retry_openwebui_signal
+    let sentinel_signal = auto_retry_openwebui_signal
         || auto_retry_anthropic_signal
         || auto_retry_anthropic_oauth_signal;
+
+    // Uniform rate-limit / overload handling. A retryable error (429, 529,
+    // overloaded, 5xx, "too many requests", …) should auto-retry with backoff
+    // regardless of whether the provider tagged it with an `auto-retry-*`
+    // sentinel. Some paths *don't* tag it — a proxy 503 HTML page the parser
+    // can't classify, or a transport-cancellation wrapper — and those used to
+    // fall straight to the hard "Ctrl+R to retry" banner with no backoff,
+    // producing the inconsistent UX where one rate-limit silently recovered
+    // and another stranded the turn. The subagent runner already classifies
+    // bare transients via `retryable_stream_error`; do the same here so the
+    // main turn loop matches. Bounded by MAX_NETWORK_RECOVERY_ATTEMPTS so a
+    // persistent outage eventually surfaces instead of looping forever.
+    let bare_transient_retryable = !sentinel_signal
+        && jfc_provider::retry::retryable_stream_error(&e).is_some()
+        && state.network_recovery_attempts < crate::app::MAX_NETWORK_RECOVERY_ATTEMPTS
+        && state.streaming_assistant_idx.is_some();
+
+    let auto_retry_signal = sentinel_signal || bare_transient_retryable;
     let visible_error = if auto_retry_openwebui_signal {
         e.trim_start_matches(crate::providers::openwebui::AUTO_RETRY_SENTINEL)
     } else if auto_retry_anthropic_signal {
@@ -169,6 +187,11 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
             NetworkRecoveryProvider::AnthropicOAuth,
             e.trim_start_matches(crate::providers::anthropic_oauth::AUTO_RETRY_SENTINEL),
         );
+    } else if bare_transient_retryable {
+        // No provider sentinel, but the bare text is a recognized transient
+        // (429/529/overloaded/5xx). Record it under the generic provider so the
+        // recovery banner + backoff behave identically to the sentinel path.
+        record_network_recovery(state, NetworkRecoveryProvider::Provider, &e);
     } else {
         state.network_recovery_status = None;
         state.network_recovery_attempts = 0;

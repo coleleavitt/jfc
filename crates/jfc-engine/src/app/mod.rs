@@ -18,8 +18,9 @@ pub const TOKEN_HISTORY_CAP: usize = 32;
 pub const STREAM_WATCHDOG_TIMEOUT_SECS: u64 = 90;
 
 pub use engine_state::{
-    BackgroundAgentCompletion, BackgroundTask, EngineEffect, EngineState, NetworkRecoveryProvider,
-    NetworkRecoveryReason, NetworkRecoveryStatus,
+    BackgroundAgentCompletion, BackgroundTask, EngineEffect, EngineState,
+    MAX_NETWORK_RECOVERY_ATTEMPTS, NetworkRecoveryProvider, NetworkRecoveryReason,
+    NetworkRecoveryStatus,
 };
 pub use events::EngineEvent;
 pub use permissions::{

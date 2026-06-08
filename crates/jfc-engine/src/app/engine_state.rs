@@ -37,6 +37,11 @@ pub enum NetworkRecoveryProvider {
     Anthropic,
     AnthropicOAuth,
     OpenWebUI,
+    /// A transient error recognized from the bare error text (no provider
+    /// sentinel) — e.g. a proxy 503 page or a transport-cancellation wrapper
+    /// that didn't carry an `auto-retry-*` prefix. Classified uniformly via
+    /// `jfc_provider::retry::retryable_stream_error`.
+    Provider,
 }
 
 impl NetworkRecoveryProvider {
@@ -45,9 +50,15 @@ impl NetworkRecoveryProvider {
             Self::Anthropic => "anthropic",
             Self::AnthropicOAuth => "anthropic-oauth",
             Self::OpenWebUI => "openwebui",
+            Self::Provider => "provider",
         }
     }
 }
+
+/// Cap on consecutive auto-retries before a transient stream error is surfaced
+/// as a hard error. Without this, a persistent 429/529/overload would restart
+/// the stream forever. Each successful chunk/turn resets the counter to 0.
+pub const MAX_NETWORK_RECOVERY_ATTEMPTS: u32 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkRecoveryReason {

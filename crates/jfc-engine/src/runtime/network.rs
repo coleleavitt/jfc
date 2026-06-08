@@ -77,4 +77,23 @@ mod tests {
             NetworkRecoveryReason::ServerError
         );
     }
+
+    /// The uniform-rate-limit fix relies on `retryable_stream_error` recognizing
+    /// bare (un-sentinel'd) transients so the main turn loop auto-retries them
+    /// just like the subagent path. Guard that contract here: a bare 429/529/
+    /// overloaded must classify as retryable, while auth/validation must not.
+    #[test]
+    fn bare_transients_are_retryable_uniformly_normal() {
+        use jfc_provider::retry::retryable_stream_error;
+        assert!(retryable_stream_error("HTTP 529 from upstream").is_some());
+        assert!(retryable_stream_error("API error 429: rate_limit_error").is_some());
+        assert!(retryable_stream_error("the service is temporarily overloaded").is_some());
+    }
+
+    #[test]
+    fn non_transient_errors_are_not_retryable_robust() {
+        use jfc_provider::retry::retryable_stream_error;
+        assert!(retryable_stream_error("HTTP 401 unauthorized").is_none());
+        assert!(retryable_stream_error("invalid_request_error: bad tool schema").is_none());
+    }
 }
