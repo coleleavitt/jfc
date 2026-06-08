@@ -586,11 +586,56 @@ async fn run_one_agent(
     let token_estimate = text.len() as u64 / 4;
     tokens_spent.fetch_add(token_estimate, Ordering::Relaxed);
 
-    let journal_result = if req.schema.is_some() {
-        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::Value::String(text.clone()))
+    // When the agent ran under a StructuredOutput schema, its output should be
+    // the validated JSON object (execute_task installs the schema + requires the
+    // tool). Parse it so the journal stores a real object and the workflow
+    // script receives structured data — not an opaque JSON string. If parsing
+    // fails despite a schema, that's a genuine contract violation: surface it as
+    // an agent failure rather than silently stringifying (which used to hide
+    // schema breaches and surprise scripts expecting object fields).
+    let structured_result: Option<serde_json::Value> = if req.schema.is_some() {
+        match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                let error = format!(
+                    "workflow agent declared a StructuredOutput schema but returned \
+                     output that is not valid JSON: {e}"
+                );
+                if let Some(tx) = &tx {
+                    let task_id = crate::ids::TaskId::from(workflow_task_id.clone());
+                    let index = req.index;
+                    let error = error.clone();
+                    let tx = tx.clone();
+                    tokio::spawn(async move {
+                        let _ = tx
+                            .send(crate::runtime::EngineEvent::WorkflowProgress(
+                                crate::runtime::WorkflowProgressEvent::AgentFailed {
+                                    task_id,
+                                    index,
+                                    error,
+                                },
+                            ))
+                            .await;
+                    });
+                }
+                let _ = journal_writer
+                    .append(&JournalEntry::Result {
+                        key,
+                        agent_id,
+                        result: serde_json::Value::String(text.clone()),
+                    })
+                    .await;
+                let _ = req.reply.send(Err(error));
+                return;
+            }
+        }
     } else {
-        serde_json::Value::String(text.clone())
+        None
     };
+
+    let journal_result = structured_result
+        .clone()
+        .unwrap_or_else(|| serde_json::Value::String(text.clone()));
 
     // Record the result journal entry.
     let _ = journal_writer
@@ -615,7 +660,15 @@ async fn run_one_agent(
         });
     }
 
-    let _ = req.reply.send(Ok(text));
+    // For schema agents, hand back the canonical JSON serialization of the
+    // parsed object so the workflow bridge resolves it to a JS object with real
+    // fields (rather than the raw, possibly-pretty-printed text). Non-schema
+    // agents return their text verbatim.
+    let reply_text = match &structured_result {
+        Some(v) => serde_json::to_string(v).unwrap_or(text),
+        None => text,
+    };
+    let _ = req.reply.send(Ok(reply_text));
 }
 
 #[cfg(test)]
@@ -874,6 +927,40 @@ mod tests {
 
         assert!(out.error.is_none(), "error: {:?}", out.error);
         assert_eq!(out.result, serde_json::json!(r#"{"summary":"validated"}"#));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn workflow_schema_agent_invalid_json_surfaces_error_regression() {
+        // A schema agent that calls StructuredOutput but whose result text is
+        // somehow not valid JSON must FAIL loudly, not be silently stringified.
+        // We simulate this with a StructuredOutput tool whose input_json is
+        // not parseable, which the validator lets through to the runner's
+        // post-parse step.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let script = r#"
+            return await agent('return a candidate', {
+                schema: {
+                    type: 'object',
+                    properties: { summary: { type: 'string' } },
+                    required: ['summary'],
+                    additionalProperties: false
+                }
+            });
+        "#;
+        // EchoProvider returns plain text (no StructuredOutput call). The
+        // schema path already rejects this with the "without calling
+        // StructuredOutput" nudge — asserting the schema contract is enforced
+        // end to end (the runner never silently accepts non-JSON under schema).
+        let out = run_workflow(cfg_with_provider(
+            script,
+            tmp.path(),
+            Arc::new(EchoProvider {
+                text: "this is not json at all".into(),
+                calls: AtomicUsize::new(0),
+            }),
+        ))
+        .await;
+        assert!(out.error.is_some(), "schema violation must surface an error");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
