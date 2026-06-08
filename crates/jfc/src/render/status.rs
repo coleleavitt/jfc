@@ -225,6 +225,23 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     ) {
         push1!(badge, muted, 40);
     }
+
+    // Unified rate-limit quota badge: the OAuth account snapshot already carries
+    // 5h/7d utilization, claim, and overage state — surface the highest-pressure
+    // quota so the user sees it climbing *before* getting rejected. Coloured by
+    // pressure (amber ≥ 80%, red ≥ 95%).
+    if let Some(snapshot) = app.engine.anthropic_account_snapshot.as_ref()
+        && let Some((label, pct)) = quota_badge(snapshot)
+    {
+        let style = if pct >= 95 {
+            Style::default().fg(t.error)
+        } else if pct >= 80 {
+            Style::default().fg(t.warning)
+        } else {
+            muted
+        };
+        push1!(label, style, 38);
+    }
     if app
         .engine
         .last_session_save_at
@@ -341,6 +358,37 @@ pub(super) fn effort_status_badge(app: &App) -> String {
     "effort default".to_string()
 }
 
+/// Build the rate-limit quota badge from the OAuth account snapshot, or `None`
+/// when no utilization is known. Returns `(label, peak_percent)` where the
+/// label shows the highest-pressure window (5h or 7d) plus an overage hint, and
+/// `peak_percent` drives the colour.
+///
+/// Examples: `"5h 87%"`, `"7d 95% · overage off"`, `"5h 40%"`.
+pub(super) fn quota_badge(
+    snapshot: &jfc_engine::providers::anthropic_accounts::AccountSnapshot,
+) -> Option<(String, u32)> {
+    let pct5 = snapshot.utilization_5h.map(|u| (u * 100.0).round() as u32);
+    let pct7 = snapshot.utilization_7d.map(|u| (u * 100.0).round() as u32);
+
+    // Pick the window with the higher pressure to surface.
+    let (window, pct) = match (pct5, pct7) {
+        (Some(a), Some(b)) if b > a => ("7d", b),
+        (Some(a), _) => ("5h", a),
+        (None, Some(b)) => ("7d", b),
+        (None, None) => return None,
+    };
+
+    let mut label = format!("{window} {pct}%");
+    // If overage is explicitly disabled, the user can't burst past the limit —
+    // worth flagging so a rejection isn't a surprise.
+    if snapshot.overage_disabled_reason.is_some() {
+        label.push_str(" · overage off");
+    } else if snapshot.is_using_overage {
+        label.push_str(" · overage");
+    }
+    Some((label, pct))
+}
+
 /// Render the Anthropic plan/seat badge for the status bar, or `None` when no
 /// subscription info is known.
 ///
@@ -444,4 +492,45 @@ pub(super) fn fit_segments(
         }
     }
     keep
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jfc_engine::providers::anthropic_accounts::AccountSnapshot;
+
+    fn snap(u5: Option<f64>, u7: Option<f64>) -> AccountSnapshot {
+        AccountSnapshot {
+            utilization_5h: u5,
+            utilization_7d: u7,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn quota_badge_picks_higher_pressure_window_normal() {
+        let (label, pct) = quota_badge(&snap(Some(0.40), Some(0.95))).unwrap();
+        assert_eq!(pct, 95);
+        assert!(label.starts_with("7d 95%"), "got {label}");
+    }
+
+    #[test]
+    fn quota_badge_uses_5h_when_higher_normal() {
+        let (label, pct) = quota_badge(&snap(Some(0.87), Some(0.20))).unwrap();
+        assert_eq!(pct, 87);
+        assert!(label.starts_with("5h 87%"), "got {label}");
+    }
+
+    #[test]
+    fn quota_badge_none_without_utilization_robust() {
+        assert!(quota_badge(&snap(None, None)).is_none());
+    }
+
+    #[test]
+    fn quota_badge_flags_overage_off_normal() {
+        let mut s = snap(Some(0.99), None);
+        s.overage_disabled_reason = Some("out_of_credits".into());
+        let (label, _) = quota_badge(&s).unwrap();
+        assert!(label.contains("overage off"), "got {label}");
+    }
 }
