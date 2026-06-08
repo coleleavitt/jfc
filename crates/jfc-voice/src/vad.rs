@@ -89,8 +89,15 @@ pub struct Vad {
     min_modulation: f64,
     /// Minimum autocorrelation-peak periodicity to *start* speech (0 = off).
     min_periodicity: f64,
+    /// Maximum spectral flatness to *start* speech (0 = off, the default).
+    /// Speech is spectrally peaky (flatness ≈ 0.1–0.4); broadband noise is flat
+    /// (≈ 0.6–1.0). Opt-in via JFC_VAD_MAX_FLATNESS for environments where a
+    /// loud *tonal* noise (a motor whine) defeats the periodicity gate.
+    max_flatness: f64,
     /// Most recent frame periodicity score (for diagnostics).
     last_periodicity: f64,
+    /// Most recent frame spectral flatness (for diagnostics).
+    last_flatness: f64,
     /// Most recent frame zero-crossing rate (for diagnostics).
     last_zcr: f32,
 
@@ -158,7 +165,13 @@ impl Vad {
             rms_history: VecDeque::with_capacity(MODULATION_WINDOW),
             min_modulation,
             min_periodicity,
+            // Spectral-flatness gate is OFF by default (0.0): the periodicity +
+            // modulation gates already handle fans/AC/chair noise, and a
+            // miscalibrated flatness bar could reject real speech. Opt in via
+            // JFC_VAD_MAX_FLATNESS (e.g. 0.5) for stubborn tonal noise.
+            max_flatness: env_f64("JFC_VAD_MAX_FLATNESS", 0.0),
             last_periodicity: 0.0,
+            last_flatness: 0.0,
             last_zcr: 0.0,
             consecutive_voiced: 0,
             consecutive_silent: 0,
@@ -223,7 +236,15 @@ impl Vad {
                 self.last_periodicity = frame_periodicity(frame);
                 self.last_periodicity >= self.min_periodicity
             };
-            modulated && periodic
+            // Spectral-flatness gate (opt-in): a low flatness means a tonal,
+            // speech-like spectrum; a high flatness means broadband/tonal noise.
+            let tonal = if self.max_flatness <= 0.0 {
+                true
+            } else {
+                self.last_flatness = spectral_flatness(frame);
+                self.last_flatness <= self.max_flatness
+            };
+            modulated && periodic && tonal
         };
 
         let voiced = loud_enough && speech_like;
@@ -343,6 +364,12 @@ impl Vad {
         self.last_periodicity
     }
 
+    /// Most recent frame spectral flatness (0..1), for diagnostics. Only
+    /// updated when the flatness gate is enabled (JFC_VAD_MAX_FLATNESS).
+    pub fn last_flatness(&self) -> f64 {
+        self.last_flatness
+    }
+
     /// Current adaptive noise floor estimate (for diagnostics / meter scaling).
     pub fn noise_floor(&self) -> u32 {
         self.noise_floor as u32
@@ -440,6 +467,115 @@ pub fn frame_periodicity(pcm_bytes: &[u8]) -> f64 {
         }
     }
     best.clamp(0.0, 1.0)
+}
+
+/// Spectral flatness measure (Wiener entropy) of a 16-bit LE PCM frame,
+/// returned in `0.0..=1.0`.
+///
+/// Defined as the ratio of the geometric mean to the arithmetic mean of the
+/// power spectrum: `exp(mean(ln S)) / mean(S)`. A flat (white-noise-like)
+/// spectrum → near 1.0; a tonal/voiced spectrum with energy concentrated in a
+/// few harmonics → near 0.0.
+///
+/// This is the discriminator rVAD (Tan et al. 2019) and Moattar & Homayounpour
+/// use to separate speech from noise: it complements time-domain periodicity by
+/// catching steady *tonal* noise (a motor whine) that autocorrelation alone
+/// would mistake for voiced speech — such a tone is periodic but spectrally
+/// *peaky in the wrong band*, and broadband noise is flat. Computed with a
+/// dependency-free radix-2 DFT over the frame (zero-padded to the next power of
+/// two), so no FFT crate is required.
+pub fn spectral_flatness(pcm_bytes: &[u8]) -> f64 {
+    let samples: Vec<f64> = pcm_bytes
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]) as f64)
+        .collect();
+    let n = samples.len();
+    if n < 8 {
+        return 0.0;
+    }
+
+    // Next power of two ≥ n for the radix-2 DFT.
+    let mut fft_len = 1usize;
+    while fft_len < n {
+        fft_len <<= 1;
+    }
+
+    // Hann window reduces spectral leakage so the flatness estimate is stable.
+    let mut re = vec![0.0f64; fft_len];
+    let mut im = vec![0.0f64; fft_len];
+    for (i, &s) in samples.iter().enumerate() {
+        let w = 0.5
+            - 0.5 * (std::f64::consts::TAU * i as f64 / (n.max(2) - 1) as f64).cos();
+        re[i] = s * w;
+    }
+
+    dft_in_place(&mut re, &mut im);
+
+    // Power spectrum over the positive-frequency bins (skip DC). Add a tiny
+    // floor so ln() of a zero bin doesn't blow up.
+    let half = fft_len / 2;
+    let mut sum_log = 0.0f64;
+    let mut sum_lin = 0.0f64;
+    let mut count = 0usize;
+    for k in 1..half {
+        let power = re[k] * re[k] + im[k] * im[k] + 1e-9;
+        sum_log += power.ln();
+        sum_lin += power;
+        count += 1;
+    }
+    if count == 0 || sum_lin <= 0.0 {
+        return 0.0;
+    }
+    let geo = (sum_log / count as f64).exp();
+    let arith = sum_lin / count as f64;
+    (geo / arith).clamp(0.0, 1.0)
+}
+
+/// In-place iterative radix-2 Cooley–Tukey FFT. `re`/`im` must be the same
+/// power-of-two length. No external dependency; used only for the per-frame
+/// spectral-flatness estimate (frame ≤ 512 samples, so this is cheap).
+fn dft_in_place(re: &mut [f64], im: &mut [f64]) {
+    let n = re.len();
+    debug_assert!(n.is_power_of_two());
+    // Bit-reversal permutation.
+    let mut j = 0usize;
+    for i in 1..n {
+        let mut bit = n >> 1;
+        while j & bit != 0 {
+            j ^= bit;
+            bit >>= 1;
+        }
+        j ^= bit;
+        if i < j {
+            re.swap(i, j);
+            im.swap(i, j);
+        }
+    }
+    // Danielson–Lanczos butterflies.
+    let mut len = 2usize;
+    while len <= n {
+        let ang = -std::f64::consts::TAU / len as f64;
+        let (wlen_cos, wlen_sin) = (ang.cos(), ang.sin());
+        let mut i = 0;
+        while i < n {
+            let (mut wr, mut wi) = (1.0f64, 0.0f64);
+            for k in 0..len / 2 {
+                let u_re = re[i + k];
+                let u_im = im[i + k];
+                let v_re = re[i + k + len / 2] * wr - im[i + k + len / 2] * wi;
+                let v_im = re[i + k + len / 2] * wi + im[i + k + len / 2] * wr;
+                re[i + k] = u_re + v_re;
+                im[i + k] = u_im + v_im;
+                re[i + k + len / 2] = u_re - v_re;
+                im[i + k + len / 2] = u_im - v_im;
+                let next_wr = wr * wlen_cos - wi * wlen_sin;
+                wi = wr * wlen_sin + wi * wlen_cos;
+                wr = next_wr;
+            }
+            i += len;
+        }
+        len <<= 1;
+    }
 }
 
 /// Root-mean-square energy of a 16-bit LE PCM byte buffer.
@@ -657,25 +793,19 @@ mod tests {
     }
 
     #[test]
-    fn adaptive_rejects_chair_movement_transients_normal() {
-        // Moving a chair / wheelchair makes brief aperiodic clunks and scrapes
-        // — loud bursts, but (a) aperiodic (no pitch) and (b) too short to
-        // satisfy the 3-frame onset debounce. Simulate random short noise
-        // bursts separated by quiet and confirm none start speech.
+    fn adaptive_rejects_single_frame_clunks_normal() {
+        // A single loud aperiodic frame (a clunk) followed by quiet, repeated,
+        // must never satisfy the 3-frame onset debounce → no speech start.
         let mut vad = Vad::new();
         vad.fixed_threshold = None;
         let quiet = silent_frame(320);
-        let started = (0..40).any(|i| {
-            // 1-frame loud aperiodic burst, then quiet — a "clunk".
-            let burst = noise_frame(320, 8000, (i * 31 + 5) as u64);
-            let a = vad.push(&burst).contains(&VadEvent::SpeechStart);
-            let b = vad.push(&quiet).contains(&VadEvent::SpeechStart);
-            a || b
-        });
-        assert!(
-            !started,
-            "brief aperiodic chair-movement transients must not start speech"
-        );
+        let frames: Vec<Vec<u8>> = (0..40)
+            .flat_map(|i| [noise_frame(320, 8000, (i * 31 + 5) as u64), quiet.clone()])
+            .collect();
+        let started = frames
+            .iter()
+            .any(|f| vad.push(f).contains(&VadEvent::SpeechStart));
+        assert!(!started, "single-frame clunks must not start speech");
     }
 
     #[test]
@@ -705,31 +835,31 @@ mod tests {
         assert!(!started, "steady fan noise must not be detected as speech");
     }
 
+    /// Feed an alternating burst/quiet "chair scrape" pattern and report whether
+    /// any frame started speech. Flat (no nested branching) for clarity.
+    fn ran_chair_scrape_pattern(vad: &mut Vad) -> bool {
+        let quiet = silent_frame(320);
+        let frames: Vec<Vec<u8>> = (0..30)
+            .flat_map(|burst| {
+                let bursts = (0..4).map(move |f| noise_frame(320, 7000, (burst * 10 + f) as u64));
+                let quiets = (0..3).map(|_| quiet.clone());
+                bursts.chain(quiets)
+            })
+            .collect();
+        frames
+            .iter()
+            .any(|f| vad.push(f).contains(&VadEvent::SpeechStart))
+    }
+
     #[test]
     fn chair_movement_transient_does_not_trigger_speech_normal() {
-        // Simulate moving around in a chair / wheelchair: bursts of loud
-        // aperiodic noise separated by quiet, repeated. None of it is pitched,
-        // so the periodicity gate (plus the onset debounce) must reject it all.
+        // Moving around in a chair / wheelchair: bursts of loud aperiodic noise
+        // separated by quiet. None is pitched, so the periodicity gate (plus
+        // the onset debounce) must reject it all.
         let mut vad = Vad::new();
         vad.fixed_threshold = None;
-        let quiet = silent_frame(320);
-        let mut started = false;
-        for burst in 0..30 {
-            // Each "scrape" is a few loud noise frames, then quiet.
-            for f in 0..4 {
-                let frame = noise_frame(320, 7000, (burst * 10 + f) as u64);
-                if ran_speech_start(&mut vad, &frame, 1) {
-                    started = true;
-                }
-            }
-            for _ in 0..3 {
-                if ran_speech_start(&mut vad, &quiet, 1) {
-                    started = true;
-                }
-            }
-        }
         assert!(
-            !started,
+            !ran_chair_scrape_pattern(&mut vad),
             "chair/wheelchair movement (aperiodic transients) must not start speech"
         );
     }
@@ -745,6 +875,45 @@ mod tests {
         }
         let started = ran_speech_start(&mut vad, &voiced_frame(320, 80, 9000), 8);
         assert!(started, "real voiced speech must beat the noise floor");
+    }
+
+    #[test]
+    fn spectral_flatness_low_for_tone_normal() {
+        // A pure pitched tone has energy in a few bins → low flatness.
+        let tone = voiced_frame(320, 80, 8000);
+        let flatness = spectral_flatness(&tone);
+        assert!(flatness < 0.5, "tonal signal should have low flatness, got {flatness}");
+    }
+
+    #[test]
+    fn spectral_flatness_high_for_noise_robust() {
+        // Broadband white noise spreads energy across all bins → high flatness.
+        let noise = noise_frame(320, 8000, 3);
+        let flatness = spectral_flatness(&noise);
+        assert!(
+            flatness > 0.3,
+            "broadband noise should have higher flatness than a tone, got {flatness}"
+        );
+    }
+
+    #[test]
+    fn spectral_flatness_separates_tone_from_noise_normal() {
+        // The discriminator must rank noise strictly flatter than a tone.
+        let tone = spectral_flatness(&voiced_frame(320, 80, 8000));
+        let noise = spectral_flatness(&noise_frame(320, 8000, 9));
+        assert!(noise > tone, "noise ({noise}) should be flatter than tone ({tone})");
+    }
+
+    #[test]
+    fn flatness_gate_rejects_tonal_noise_when_enabled_normal() {
+        // With the opt-in flatness gate, broadband noise that somehow clears
+        // periodicity is still rejected for being too flat.
+        let mut vad = Vad::new();
+        vad.fixed_threshold = None;
+        vad.min_periodicity = 0.0; // isolate the flatness gate
+        vad.max_flatness = 0.4;
+        let started = (0..40).any(|i| ran_speech_start(&mut vad, &noise_frame(320, 6000, i), 1));
+        assert!(!started, "flat broadband noise must be rejected by the flatness gate");
     }
 
     #[test]

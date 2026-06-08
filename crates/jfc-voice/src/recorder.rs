@@ -343,6 +343,16 @@ async fn vad_listen_loop(
         let mut utterance_buf: Vec<u8> = Vec::new();
         let mut chunk = vec![0u8; 640]; // 20ms at 16kHz 16-bit mono
 
+        // Pre-roll ring buffer (Silero's `speech_pad_ms`): the onset debounce
+        // only fires SpeechStart after a few voiced frames, so without this the
+        // first ~60ms of audio — often the leading consonant — is discarded,
+        // which both hurts the transcript and feeds Whisper a clipped utterance
+        // it's more likely to hallucinate on. Keep the last PREROLL_FRAMES of
+        // pre-onset audio and prepend it when speech starts.
+        const PREROLL_FRAMES: usize = 10; // ~200ms at 20ms/frame
+        let mut preroll: std::collections::VecDeque<Vec<u8>> =
+            std::collections::VecDeque::with_capacity(PREROLL_FRAMES);
+
         // Wait for speech start (or stop signal)
         let speech_started = loop {
             tokio::select! {
@@ -353,10 +363,19 @@ async fn vad_listen_loop(
                         let frame = &chunk[..n];
                         let vad_events = detector.push(frame);
                         if vad_events.contains(&VadEvent::SpeechStart) {
-                            // Capture the onset frames too (prepend to utterance)
+                            // Prepend the buffered pre-onset audio so the first
+                            // phoneme isn't clipped, then the onset frame itself.
+                            for pf in preroll.drain(..) {
+                                utterance_buf.extend_from_slice(&pf);
+                            }
                             utterance_buf.extend_from_slice(frame);
                             break true;
                         }
+                        // Not speech yet — keep it in the rolling pre-roll.
+                        if preroll.len() == PREROLL_FRAMES {
+                            preroll.pop_front();
+                        }
+                        preroll.push_back(frame.to_vec());
                     }
                 }
             }
