@@ -1792,3 +1792,69 @@ mod level_tests {
         assert!(text.contains("b.rs"));
     }
 }
+
+#[cfg(test)]
+mod circuit_breaker_tests {
+    use super::*;
+    use crate::context::ToolContext;
+    use crate::types::ChatMessage;
+
+    /// A provider that must NEVER be called: the circuit-breaker trip and the
+    /// "too few groups" guard both short-circuit before any provider use, so a
+    /// panic here proves the early return fired.
+    struct NeverCalledProvider;
+
+    #[async_trait::async_trait]
+    impl jfc_provider::Provider for NeverCalledProvider {
+        fn name(&self) -> &str {
+            "anthropic"
+        }
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
+            vec![]
+        }
+        async fn stream(
+            &self,
+            _messages: Vec<jfc_provider::ProviderMessage>,
+            _options: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
+            panic!("provider.stream must not be called once the breaker has tripped");
+        }
+    }
+    impl jfc_provider::seal::Sealed for NeverCalledProvider {}
+
+    #[tokio::test]
+    async fn breaker_trips_at_limit_before_calling_provider_normal() {
+        let provider = NeverCalledProvider;
+        let opts = StreamOptions::new("claude-opus-4-8");
+        let mut ctx = ToolContext {
+            rapid_refill_count: CIRCUIT_BREAKER_LIMIT,
+            // total_user_turns == last_compact_turn → turns_since_compact == 0,
+            // so the recovery reset (needs >= THRASH_TURN_WINDOW) does NOT fire.
+            total_user_turns: 0,
+            last_compact_turn: 0,
+            ..Default::default()
+        };
+        let messages = vec![ChatMessage::user("hello".to_owned()), ChatMessage::assistant("hi".to_owned())];
+        let result = compact(&messages, &provider, &opts, &mut ctx, 200_000, None).await;
+        assert!(matches!(result, CompactResult::CircuitBreakerTripped));
+    }
+
+    #[tokio::test]
+    async fn breaker_auto_clears_after_thrash_window_normal() {
+        let provider = NeverCalledProvider;
+        let opts = StreamOptions::new("claude-opus-4-8");
+        // Tripped count, but enough turns have elapsed → recovery resets it to 0
+        // and we fall through to the (provider-free) TooFewGroups guard.
+        let mut ctx = ToolContext {
+            rapid_refill_count: CIRCUIT_BREAKER_LIMIT,
+            total_user_turns: THRASH_TURN_WINDOW + 1,
+            last_compact_turn: 0,
+            ..Default::default()
+        };
+        let messages = vec![ChatMessage::user("hello".to_owned())];
+        let result = compact(&messages, &provider, &opts, &mut ctx, 200_000, None).await;
+        // The breaker cleared, so it did NOT return CircuitBreakerTripped.
+        assert!(!matches!(result, CompactResult::CircuitBreakerTripped));
+        assert_eq!(ctx.rapid_refill_count, 0, "breaker should auto-clear");
+    }
+}
