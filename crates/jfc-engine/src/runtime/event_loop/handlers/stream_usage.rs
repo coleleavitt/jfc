@@ -66,10 +66,42 @@ pub fn handle_stream_usage(
     // Previously this only summed input + output, under-reporting by
     // the cache contribution — which can be 50-80% of context on
     // prompt-cache-heavy sessions.
-    let reported_total = input_tokens as usize
+    let mut reported_total = input_tokens as usize
         + output_tokens as usize
         + cache_read_tokens as usize
         + cache_write_tokens as usize;
+
+    // Post-compaction stale-cache guard. Anthropic's prompt cache survives a
+    // compaction (~5-min TTL), so the first request(s) after a compact report
+    // a `cache_read_tokens` reflecting the OLD, pre-compaction prefix — which
+    // would re-inflate the gauge straight back to its pre-compact size even
+    // though the conversation was just trimmed. While the ceiling is armed,
+    // clamp the reported total to the freshly-compacted estimate. A genuine
+    // `cache_write` (the model re-caching the new, smaller prefix) disarms the
+    // guard, after which the real numbers flow through normally.
+    if let Some(ceiling) = state.post_compact_token_ceiling {
+        if cache_write_tokens > 0 {
+            // The new (smaller) prefix is being cached — the next cache_read
+            // will be accurate, so stop clamping.
+            tracing::debug!(
+                target: "jfc::compact",
+                ceiling,
+                cache_write_tokens,
+                "post-compact cache rebuilt — disarming gauge ceiling"
+            );
+            state.post_compact_token_ceiling = None;
+        } else if reported_total > ceiling {
+            tracing::debug!(
+                target: "jfc::compact",
+                reported_total,
+                ceiling,
+                cache_read_tokens,
+                "clamping gauge to post-compact ceiling (stale prompt cache)"
+            );
+            reported_total = ceiling;
+        }
+    }
+
     state.tool_ctx.approx_tokens = if partial_input_only {
         // ResponseMetadata can arrive before full Usage and carries only
         // input_tokens. Treat it as an early lower-bound so the context gauge
@@ -184,6 +216,41 @@ mod tests {
 
     fn test_app() -> EngineState {
         EngineState::new(Arc::new(TestProvider), "test-model")
+    }
+
+    #[test]
+    fn post_compact_ceiling_clamps_stale_cache_read_normal() {
+        // After compaction, a huge stale cache_read must NOT re-inflate the
+        // gauge while the ceiling is armed.
+        let mut state = test_app();
+        state.post_compact_token_ceiling = Some(60_000);
+        // Stale cache: cache_read reports the old 800k prefix, no cache_write.
+        handle_stream_usage(&mut state, 2, 100, 800_000, 0);
+        assert_eq!(
+            state.tool_ctx.approx_tokens, 60_000,
+            "stale cache_read should be clamped to the post-compact ceiling"
+        );
+        // Ceiling stays armed until a cache_write proves the new prefix cached.
+        assert_eq!(state.post_compact_token_ceiling, Some(60_000));
+    }
+
+    #[test]
+    fn post_compact_ceiling_disarms_on_cache_write_normal() {
+        let mut state = test_app();
+        state.post_compact_token_ceiling = Some(60_000);
+        // A cache_write means the new (small) prefix is being cached → trust wire.
+        handle_stream_usage(&mut state, 2, 100, 5_000, 4_000);
+        assert_eq!(state.post_compact_token_ceiling, None);
+        // Now the real (small) total flows through unclamped.
+        assert_eq!(state.tool_ctx.approx_tokens, 2 + 100 + 5_000 + 4_000);
+    }
+
+    #[test]
+    fn no_ceiling_means_wire_total_unclamped_robust() {
+        let mut state = test_app();
+        assert!(state.post_compact_token_ceiling.is_none());
+        handle_stream_usage(&mut state, 1_000, 500, 200_000, 0);
+        assert_eq!(state.tool_ctx.approx_tokens, 1_000 + 500 + 200_000);
     }
 
     #[test]

@@ -771,6 +771,16 @@ pub struct EngineState {
     /// post-compact `approx_tokens` estimate (system prompt + tool defs
     /// are invisible to the message-only local estimate).
     pub last_system_prompt_len: Option<usize>,
+    /// Gauge ceiling immediately after a compaction.
+    ///
+    /// Anthropic's prompt cache survives a compaction (5-min TTL), so the next
+    /// request's `cache_read_tokens` still reflects the *pre-compaction* prefix
+    /// — which would snap the context gauge right back up to e.g. 750k even
+    /// though the conversation was just compacted down. While this is `Some`,
+    /// `StreamUsage` clamps the gauge to this post-compact estimate so a stale
+    /// cache read can't re-inflate it. Cleared once a real `cache_write`
+    /// confirms the new (smaller) prefix has been re-cached.
+    pub post_compact_token_ceiling: Option<usize>,
 
     // ── CLI-injected configuration ────────────────────────────────────
     // These fields are populated from the CLI flags parsed in `cli::run`
@@ -1002,6 +1012,7 @@ impl EngineState {
             prefetch_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             git_root: None,
             last_system_prompt_len: None,
+            post_compact_token_ceiling: None,
             // CLI-injected configuration: defaults are off / empty; the
             // `cli::run` entry point overwrites these after construction
             // when the user passed the corresponding flags.

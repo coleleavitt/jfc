@@ -377,10 +377,16 @@ async fn vad_listen_loop(
         // room / high mic gain), SpeechEnd may never fire. Force-end after
         // MAX_UTTERANCE so the loop can't hang forever. Override via
         // JFC_VAD_MAX_UTTERANCE_MS.
+        //
+        // This is a stuck-recording safety net, NOT a speech-length limit —
+        // it must be long enough that normal continuous speech never hits it
+        // (that was the "it cuts me off mid-sentence" bug, where a 20s cap
+        // fired while the user was still talking). 90s is well beyond any
+        // single spoken utterance while still bounding a truly wedged loop.
         let max_utterance_ms: u64 = std::env::var("JFC_VAD_MAX_UTTERANCE_MS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(20_000);
+            .unwrap_or(90_000);
         let max_bytes = (max_utterance_ms as usize * 16_000 * 2 / 1000).max(640);
         let mut frames_seen: u64 = 0;
         let mut max_rms: u32 = 0;

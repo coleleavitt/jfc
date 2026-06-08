@@ -115,6 +115,20 @@ pub async fn handle_done(
         // be 50-100k+ of overhead.
         let overhead = state.last_system_prompt_len.unwrap_or(30_000);
         state.tool_ctx.approx_tokens = state.tool_ctx.approx_tokens.saturating_add(overhead);
+        // Arm the post-compaction gauge ceiling. Anthropic's prompt cache
+        // still holds the pre-compaction prefix for ~5 min, so the very next
+        // request reports a `cache_read_tokens` ≈ the OLD (large) prefix —
+        // which would snap the gauge right back to its pre-compact size
+        // (the "compacts at 750k but never resets" bug). Clamp the gauge to
+        // this freshly-compacted estimate (with generous headroom so a
+        // genuinely growing post-compact turn isn't pinned low) until a real
+        // cache_write proves the new, smaller prefix has been re-cached.
+        let ceiling = state
+            .tool_ctx
+            .approx_tokens
+            .saturating_mul(2)
+            .max(state.tool_ctx.approx_tokens.saturating_add(50_000));
+        state.post_compact_token_ceiling = Some(ceiling);
         state.last_usage_input = 0;
         // Reset the per-turn baseline so the next
         // `StreamUsage` cumulative delta builds from 0,

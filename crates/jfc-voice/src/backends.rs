@@ -23,6 +23,33 @@ pub async fn transcribe(pcm: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Option<
         return Ok(None);
     }
 
+    // Silence/energy gate: if the buffer's overall RMS is near-silent, don't
+    // send it to Whisper at all. Whisper hallucinates caption boilerplate on
+    // silence, so the cheapest, most reliable fix is to never transcribe a
+    // near-empty buffer. ~120 RMS is comfortably below speech (~1000+) but
+    // above a quiet room's noise floor.
+    let overall_rms = crate::vad::rms_energy(pcm);
+    const MIN_TRANSCRIBE_RMS: u32 = 120;
+    if overall_rms < MIN_TRANSCRIBE_RMS {
+        debug!(
+            target: "jfc::voice::stt",
+            overall_rms,
+            "skipping transcription — buffer is near-silent (avoids Whisper hallucination)"
+        );
+        return Ok(None);
+    }
+    // Also require a minimum duration: a <300ms buffer can't be a real
+    // utterance and is a prime hallucination source. 16kHz * 2 bytes * 0.3s.
+    const MIN_TRANSCRIBE_BYTES: usize = 16_000 * 2 * 3 / 10;
+    if pcm.len() < MIN_TRANSCRIBE_BYTES {
+        debug!(
+            target: "jfc::voice::stt",
+            bytes = pcm.len(),
+            "skipping transcription — buffer too short to be speech"
+        );
+        return Ok(None);
+    }
+
     let wav = crate::audio::wrap_wav(pcm);
     debug!(
         target: "jfc::voice::stt",
@@ -164,6 +191,10 @@ async fn try_openai_whisper(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Opt
         .part("file", part)
         .text("model", "whisper-1")
         .text("language", cfg.language.clone())
+        // temperature=0 makes decoding deterministic and greatly reduces the
+        // hallucinated-caption problem ("Thank you for watching", "Please
+        // subscribe", "Go to <site>.com") Whisper emits on near-silent audio.
+        .text("temperature", "0")
         .text("response_format", "json");
 
     debug!(
@@ -277,7 +308,85 @@ async fn try_local_whisper(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Opti
 
 fn nonempty(s: String) -> Option<String> {
     let trimmed = collapse_repeats(s.trim());
-    if trimmed.is_empty() { None } else { Some(trimmed) }
+    if trimmed.is_empty() {
+        return None;
+    }
+    // Drop known Whisper hallucinations on near-silent / non-speech audio.
+    // Whisper is trained on YouTube captions, so when fed silence or noise it
+    // emits caption boilerplate ("Thank you for watching", "Subscribe", ad
+    // reads like "Go to Beadaholique.com"). These are never real user speech.
+    if is_whisper_hallucination(&trimmed) {
+        tracing::debug!(
+            target: "jfc::voice::stt",
+            text = %trimmed,
+            "dropped Whisper hallucination (non-speech boilerplate)"
+        );
+        return None;
+    }
+    Some(trimmed)
+}
+
+/// Whether a transcript is a known Whisper hallucination — caption/ad
+/// boilerplate Whisper emits on silence or noise rather than real speech.
+///
+/// Matches the *whole* transcript (case-insensitive, punctuation-stripped)
+/// against known phrases, so genuine speech that merely contains one of these
+/// words isn't dropped — only a transcript that is *entirely* boilerplate.
+fn is_whisper_hallucination(text: &str) -> bool {
+    let normalized: String = text
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect();
+    let normalized = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return true;
+    }
+
+    // Exact full-transcript matches (the most common silence hallucinations).
+    const EXACT: &[&str] = &[
+        "thank you",
+        "thank you for watching",
+        "thanks for watching",
+        "thank you very much",
+        "thank you so much",
+        "thank you for watching this video",
+        "please subscribe",
+        "please subscribe to my channel",
+        "subscribe to my channel",
+        "dont forget to subscribe",
+        "like and subscribe",
+        "see you next time",
+        "see you in the next video",
+        "bye",
+        "bye bye",
+        "you",
+        "the end",
+        "music",
+        "applause",
+        "silence",
+        "i dont know",
+        "okay",
+        "ok",
+    ];
+    if EXACT.contains(&normalized.as_str()) {
+        return true;
+    }
+
+    // Substring markers for ad-read / caption hallucinations that vary in
+    // wording but always contain a tell-tale fragment.
+    const CONTAINS: &[&str] = &[
+        "beadaholique",
+        "for all of your beading",
+        "subtitles by",
+        "amara.org",
+        "transcription by",
+        "captions by",
+        "subscribe to",
+        "for watching this video",
+        "thanks for watching the video",
+    ];
+    CONTAINS.iter().any(|m| normalized.contains(m))
 }
 
 /// Collapse Whisper's repetition hallucination.
@@ -604,5 +713,59 @@ mod tests {
     #[test]
     fn case_insensitive_dedup_robust() {
         assert_eq!(collapse_repeats("Hello? hello? HELLO?"), "Hello?");
+    }
+}
+
+#[cfg(test)]
+mod hallucination_tests {
+    use super::{collapse_repeats, is_whisper_hallucination};
+
+    #[test]
+    fn detects_thank_you_for_watching_normal() {
+        assert!(is_whisper_hallucination("Thank you for watching!"));
+        assert!(is_whisper_hallucination("Thanks for watching."));
+        assert!(is_whisper_hallucination("THANK YOU FOR WATCHING"));
+    }
+
+    #[test]
+    fn detects_subscribe_boilerplate_normal() {
+        assert!(is_whisper_hallucination("Please subscribe to my channel."));
+        assert!(is_whisper_hallucination("Like and subscribe!"));
+        assert!(is_whisper_hallucination("Don't forget to subscribe."));
+    }
+
+    #[test]
+    fn detects_ad_read_hallucinations_normal() {
+        assert!(is_whisper_hallucination(
+            "Go to Beadaholique.com for all of your beading supply needs!"
+        ));
+        assert!(is_whisper_hallucination("Subtitles by the Amara.org community"));
+    }
+
+    #[test]
+    fn keeps_real_speech_robust() {
+        // Real speech that merely contains a flagged word is NOT dropped.
+        assert!(!is_whisper_hallucination(
+            "Can you subscribe me to the newsletter in the code?"
+        ));
+        assert!(!is_whisper_hallucination(
+            "Thank you for the help, now let's fix the parser bug"
+        ));
+        assert!(!is_whisper_hallucination("How are you doing today?"));
+        assert!(!is_whisper_hallucination(
+            "Add a function that reads the config file"
+        ));
+    }
+
+    #[test]
+    fn bare_thank_you_dropped_robust() {
+        // A bare "Thank you." with nothing else is the classic silence output.
+        assert!(is_whisper_hallucination("Thank you."));
+        assert!(is_whisper_hallucination("You"));
+    }
+
+    #[test]
+    fn collapse_still_works_normal() {
+        assert_eq!(collapse_repeats("Hello? Hello? Hello?"), "Hello?");
     }
 }
