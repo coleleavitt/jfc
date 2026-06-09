@@ -314,6 +314,7 @@ pub async fn submit_prompt(
         state.streaming_response_bytes = 0;
         state.turn_output_tokens = 0;
         state.refusal_fallback_attempted = false;
+        state.refusal_resend_count = 0;
         state.streaming_assistant_idx = None;
     }
     // Pre-submit compaction gate (mirrors v126 `Du7` running before the API
@@ -795,6 +796,7 @@ pub async fn start_turn_from_transcript(
     // refusal-fallback guard (each user turn gets one fallback attempt).
     state.turn_output_tokens = 0;
     state.refusal_fallback_attempted = false;
+    state.refusal_resend_count = 0;
     state.network_recovery_status = None;
     state.network_recovery_attempts = 0;
     state.streaming_assistant_idx = Some(assistant_idx);

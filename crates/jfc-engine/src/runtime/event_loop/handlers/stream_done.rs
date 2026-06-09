@@ -122,6 +122,57 @@ pub async fn handle_stream_done(
                 stream::continue_agentic_loop(state, tx).await;
                 return;
             }
+
+            // No fallback model configured (or already used this turn): a
+            // content-bearing refusal still dead-stops below (it has content, so
+            // the empty-billed resend doesn't fire, and Refusal is excluded from
+            // self-continuation). Under transient provider degradation — the
+            // `Rate limited`/`overloaded` mid-stream errors seen in the wild — a
+            // refusal stop is frequently spurious and clears on a plain resend.
+            // So retry on the SAME model a bounded number of times before
+            // surfacing the stall, mirroring the empty-billed resend cap.
+            //
+            // Only for CONTENT-BEARING refusals: an empty-but-billed refusal is
+            // handled by the empty-billed resend ladder below (which has its own
+            // budget + teardown), so we must not intercept it here.
+            let refusal_has_content =
+                idx < state.messages.len() && !assistant_turn_has_no_content(&state.messages[idx]);
+            if refusal_has_content && state.refusal_resend_count < refusal_resend_cap() {
+                state.refusal_resend_count += 1;
+                tracing::warn!(
+                    target: "jfc::stream::lifecycle",
+                    ?stop_reason,
+                    attempt = state.refusal_resend_count,
+                    max = refusal_resend_cap(),
+                    "content-bearing refusal — resending on the same model (likely \
+                     transient degradation) instead of dead-stopping"
+                );
+                crate::toast::push_with_cap(
+                    &mut state.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Warning,
+                        format!(
+                            "Refusal — retrying ({}/{})",
+                            state.refusal_resend_count,
+                            refusal_resend_cap()
+                        ),
+                    ),
+                );
+                state.is_streaming = false;
+                state.active_stream_handle = None;
+                state.last_stream_event_at = None;
+                state.push_effect(crate::app::EngineEffect::StreamingFinalized);
+                state.streaming_text = String::new();
+                state.streaming_reasoning = String::new();
+                state.streaming_assistant_idx = None;
+                state.current_stream_request = None;
+                state.stream_lifecycle = None;
+                if idx < state.messages.len() {
+                    state.messages.remove(idx);
+                }
+                stream::continue_agentic_loop(state, tx).await;
+                return;
+            }
         }
         let inputs = EmptyBilledInputs {
             safe_to_discard,
@@ -194,8 +245,10 @@ pub async fn handle_stream_done(
             EmptyBilledAction::ResetBudget => {
                 // The turn produced real content (text, tools, reasoning, …) →
                 // reset the resend budget so a later genuinely-empty turn gets
-                // its full retries rather than inheriting a stale count.
+                // its full retries rather than inheriting a stale count. A normal
+                // (non-refusal) result also clears the refusal retry budget.
                 state.empty_billed_resend_count = 0;
+                state.refusal_resend_count = 0;
             }
             EmptyBilledAction::None => {}
         }
@@ -811,6 +864,17 @@ fn empty_billed_resend_cap() -> u32 {
     stream::max_self_continuations().min(3)
 }
 
+/// Max same-model resends for a content-bearing refusal before giving up and
+/// surfacing the stall. Kept small (2) — a refusal that survives two clean
+/// resends is probably a real refusal, not transient degradation. Overridable
+/// via `JFC_REFUSAL_RESEND_CAP`.
+fn refusal_resend_cap() -> u32 {
+    std::env::var("JFC_REFUSAL_RESEND_CAP")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(2)
+}
+
 /// Value-only snapshot of everything `decide_empty_billed` needs, so the
 /// discard-and-resend decision is unit-testable without an `App`, env vars, or
 /// a live stream (mirrors the `TurnIdleness` pattern). All fields are resolved
@@ -965,6 +1029,35 @@ mod stream_done_lifecycle_tests {
         assert!(!stop_reason_is_refusal(&StopReason::Other("stop".into())));
     }
 
+    // Normal: the refusal resend cap is small and positive (bounded recovery,
+    // not an infinite retry loop).
+    #[test]
+    fn refusal_resend_cap_is_bounded_normal() {
+        let cap = refusal_resend_cap();
+        assert!(cap >= 1, "must allow at least one recovery retry");
+        assert!(cap <= 5, "must stay small so a real refusal isn't hammered");
+    }
+
+    // Robust: JFC_REFUSAL_RESEND_CAP overrides the default, and a bad value
+    // falls back to the default (env is restored so parallel tests are safe).
+    #[serial_test::serial]
+    #[serial_test::serial]
+    #[test]
+    fn refusal_resend_cap_env_override_robust() {
+        const KEY: &str = "JFC_REFUSAL_RESEND_CAP";
+        let prev = std::env::var(KEY).ok();
+        unsafe { std::env::set_var(KEY, "4") };
+        assert_eq!(refusal_resend_cap(), 4);
+        unsafe { std::env::set_var(KEY, "not-a-number") };
+        assert_eq!(refusal_resend_cap(), 2, "bad value falls back to default");
+        unsafe {
+            match &prev {
+                Some(v) => std::env::set_var(KEY, v),
+                None => std::env::remove_var(KEY),
+            }
+        }
+    }
+
     struct TestProvider;
 
     #[async_trait::async_trait]
@@ -1040,6 +1133,68 @@ mod stream_done_lifecycle_tests {
         state.streaming_assistant_idx = Some(1);
         state.is_streaming = true;
         state
+    }
+
+    // Builds a state whose latest assistant turn HAS content (text) + usage —
+    // the "content-bearing refusal" shape that previously dead-stopped.
+    fn app_with_content_turn() -> EngineState {
+        let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
+        state.task_store = jfc_session::TaskStore::in_memory();
+        state.messages.push(ChatMessage::user("hello".into()));
+        let mut msg = ChatMessage::assistant("I can't help with that.".into());
+        msg.usage = Some(ModelUsage {
+            output_tokens: 32,
+            ..Default::default()
+        });
+        state.messages.push(msg);
+        state.streaming_assistant_idx = Some(1);
+        state.is_streaming = true;
+        state
+    }
+
+    // REGRESSION (content-bearing refusal dead-stop): a refusal that produced
+    // text used to neither empty-billed-resend (it has content) nor self-
+    // continue (Refusal excluded) — so it stalled. It must now auto-resend on
+    // the same model, bounded by the cap.
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn content_refusal_auto_resends_bounded_robust() {
+        unsafe { std::env::set_var("JFC_AUTO_CONTINUE", "1") };
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        // First refusal → one resend consumed, the refused message removed and
+        // a fresh stream staged (the recovery).
+        let mut state = app_with_content_turn();
+        handle_stream_done(&mut state, &tx, jfc_provider::StopReason::Refusal).await;
+        assert_eq!(
+            state.refusal_resend_count, 1,
+            "first content refusal resends once"
+        );
+        assert!(
+            !state
+                .messages
+                .iter()
+                .any(|m| m.usage.as_ref().is_some_and(|u| u.output_tokens == 32)),
+            "the refused (billed) message was removed for the resend"
+        );
+
+        // Already at the cap: must NOT resend again — the refused message is
+        // retained and the turn finalizes (bounded recovery, no infinite loop).
+        let mut state2 = app_with_content_turn();
+        state2.refusal_resend_count = refusal_resend_cap();
+        handle_stream_done(&mut state2, &tx, jfc_provider::StopReason::Refusal).await;
+        assert!(
+            state2.refusal_resend_count <= refusal_resend_cap(),
+            "never exceeds the cap"
+        );
+        assert!(
+            state2
+                .messages
+                .iter()
+                .any(|m| m.usage.as_ref().is_some_and(|u| u.output_tokens == 32)),
+            "at the cap the refused message is retained (not resent), left for the user"
+        );
+        unsafe { std::env::remove_var("JFC_AUTO_CONTINUE") };
     }
 
     // Normal: with auto-continue on, an empty-but-billed EndTurn is discarded

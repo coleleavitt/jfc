@@ -77,6 +77,7 @@ pub fn restart_stream_in_place_with_overrides(
     state.streaming_response_bytes = 0;
     state.turn_output_tokens = 0;
     state.refusal_fallback_attempted = false;
+    state.refusal_resend_count = 0;
     state.streaming_thinking_tokens = 0;
     state.streaming_assistant_idx = Some(assistant_idx);
     state.is_streaming = true;

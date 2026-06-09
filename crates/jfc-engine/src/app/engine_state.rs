@@ -246,6 +246,12 @@ pub struct EngineState {
     /// switched to the fallback model after a refusal, so a second refusal
     /// doesn't trigger an endless model-swap loop. Reset at each new user turn.
     pub refusal_fallback_attempted: bool,
+    /// Bounded retry counter for content-bearing refusals on the SAME model.
+    /// Under transient provider degradation a refusal stop is frequently
+    /// spurious and clears on a plain resend, so we retry a couple of times
+    /// before surfacing the dead-stop. Reset at each new user turn and when a
+    /// turn produces a normal (non-refusal) result.
+    pub refusal_resend_count: u32,
     /// Server-authoritative cumulative thinking token count from `thinking_delta.estimated_tokens`.
     /// Populated during extended-thinking phases (live thinking) or redacted-thinking blocks.
     /// Reset at the start of each streaming turn. Displayed separately from output tokens.
@@ -887,6 +893,7 @@ impl EngineState {
             streaming_response_baseline: 0,
             turn_output_tokens: 0,
             refusal_fallback_attempted: false,
+            refusal_resend_count: 0,
             streaming_thinking_tokens: 0,
             pending_context_hint_tokens_saved: None,
             network_recovery_status: None,
