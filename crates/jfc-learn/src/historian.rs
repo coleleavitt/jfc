@@ -566,7 +566,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let q_path = tmp.path().join("learn").join("quarantine.jsonl");
 
-        let transcript = vec![("user".to_string(), "The project pins the Rust toolchain in rust-toolchain.toml.".to_string())];
+        let transcript = vec![(
+            "user".to_string(),
+            "The project pins the Rust toolchain in rust-toolchain.toml.".to_string(),
+        )];
         let report = historian
             .process_session_with_verifier(&transcript, &verifier, &llm, &q_path)
             .unwrap();
@@ -619,7 +622,10 @@ mod tests {
         };
         let historian = Historian::new(provider, memory, HistorianConfig::default());
 
-        let transcript = vec![("user".to_string(), "The project pins the Rust toolchain in rust-toolchain.toml.".to_string())];
+        let transcript = vec![(
+            "user".to_string(),
+            "The project pins the Rust toolchain in rust-toolchain.toml.".to_string(),
+        )];
         let report = historian.process(&transcript).unwrap();
 
         // Counts.
@@ -681,7 +687,10 @@ mod tests {
         };
         let historian = Historian::new(provider, memory, HistorianConfig::default());
 
-        let transcript = vec![("user".to_string(), "We should standardize on snake_case for module names.".to_string())];
+        let transcript = vec![(
+            "user".to_string(),
+            "We should standardize on snake_case for module names.".to_string(),
+        )];
         let result = historian.run(&transcript);
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -710,12 +719,19 @@ mod tests {
                 "{\"tool\":\"Read\",\"file_path\":\"a.rs\"}".to_string(),
             ),
         ];
-        assert_eq!(Historian::<MockProvider, MockMemory>::skip_reason(&transcript), Some(SkipReason::NoProse));
+        assert_eq!(
+            Historian::<MockProvider, MockMemory>::skip_reason(&transcript),
+            Some(SkipReason::NoProse)
+        );
 
         // And `process` returns an empty, skipped report without touching the model.
         let historian = Historian::new(
-            MockProvider { response: "SHOULD NOT BE CALLED".to_string() },
-            MockMemory { existing_hashes: HashSet::new() },
+            MockProvider {
+                response: "SHOULD NOT BE CALLED".to_string(),
+            },
+            MockMemory {
+                existing_hashes: HashSet::new(),
+            },
             HistorianConfig::default(),
         );
         let report = historian.process(&transcript).unwrap();
