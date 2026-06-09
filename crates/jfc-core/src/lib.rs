@@ -68,7 +68,7 @@ pub use task_store::{
 pub use tool::*;
 pub use tool_call::{InvalidToolTransition, ToolCall, ToolUndoEntry};
 pub use tool_display::ToolDisplayState;
-pub use tool_input::{ReplacementMode, ToolInput, ToolInputError};
+pub use tool_input::{CoercionOutcome, ReplacementMode, ToolInput, ToolInputError};
 pub use tool_kind::ToolKind;
 pub use tool_output::{LargeText, ToolOutput, format_server_tool_result_text_public};
 pub use tool_retrieval::{IdentityQueryGen, QueryGen, ToolIndex, retrieve_multi, should_defer};

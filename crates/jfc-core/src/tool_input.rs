@@ -1524,6 +1524,44 @@ impl ToolInput {
         Ok(parsed)
     }
 
+    /// Parse with a coercion pre-pass, recovering from the common shape mistakes
+    /// models make rather than hard-failing. Mirrors Claude Code 2.1.170's
+    /// `tengu_tool_input_coerced`: when the raw args don't match the schema, we
+    /// normalize the JSON first (alias common key typos, unwrap a single-key
+    /// wrapper, scalar↔array) and re-parse.
+    ///
+    /// Returns the parsed input plus a [`CoercionOutcome`] describing what was
+    /// done, so the caller can log a `tool_input_coerced` event. The happy path
+    /// (`from_value` already succeeds) yields [`CoercionOutcome::Unchanged`] and
+    /// is byte-for-byte the existing behavior — coercion only runs on failure.
+    pub fn from_value_coerced(
+        tool_name: &str,
+        value: serde_json::Value,
+    ) -> (Result<Self, ToolInputError>, CoercionOutcome) {
+        // Fast path: already valid → no coercion.
+        if let Ok(parsed) = Self::from_value(tool_name, value.clone()) {
+            return (Ok(parsed), CoercionOutcome::Unchanged);
+        }
+        // Slow path: try to coerce, then re-parse.
+        let serde_json::Value::Object(map) = value else {
+            // Non-object inputs can't be coerced field-wise; report the original error.
+            return (Self::from_value(tool_name, value), CoercionOutcome::Rejected);
+        };
+        let (coerced, shape) = coerce_object(&map);
+        if shape.is_empty() {
+            // Nothing to coerce — the failure is genuine.
+            return (
+                Self::from_value(tool_name, serde_json::Value::Object(map)),
+                CoercionOutcome::Rejected,
+            );
+        }
+        match Self::from_value(tool_name, serde_json::Value::Object(coerced)) {
+            Ok(parsed) => (Ok(parsed), CoercionOutcome::Coerced { shape }),
+            // Coercion didn't make it parseable — surface the original-shape error.
+            Err(e) => (Err(e), CoercionOutcome::CoercedStillInvalid { shape }),
+        }
+    }
+
     pub fn to_value(&self) -> serde_json::Value {
         use serde_json::json;
         match self {
@@ -1667,6 +1705,115 @@ impl ToolInput {
             }
         }
     }
+}
+
+/// Result of [`ToolInput::from_value_coerced`]. Mirrors Claude Code 2.1.170's
+/// coercion outcomes (`unchanged` / `coerced` / `coerced_still` / `rejected`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoercionOutcome {
+    /// The raw args already matched the schema; nothing was changed.
+    Unchanged,
+    /// Coercion was applied and the result parsed. `shape` lists the fixes
+    /// (e.g. `["alias_file→file_path", "wrap_array:edits"]`) for telemetry.
+    Coerced { shape: Vec<String> },
+    /// Coercion was applied but the result still didn't parse.
+    CoercedStillInvalid { shape: Vec<String> },
+    /// Input was un-coercible (not an object, or no known fix applied).
+    Rejected,
+}
+
+impl CoercionOutcome {
+    /// Stable label for a `tool_input_coerced` telemetry event.
+    pub fn label(&self) -> &'static str {
+        match self {
+            CoercionOutcome::Unchanged => "unchanged",
+            CoercionOutcome::Coerced { .. } => "coerced",
+            CoercionOutcome::CoercedStillInvalid { .. } => "coerced_still",
+            CoercionOutcome::Rejected => "rejected",
+        }
+    }
+
+    /// The `+`-joined shape classes (CC's `shapeClass`), empty when none.
+    pub fn shape_class(&self) -> String {
+        match self {
+            CoercionOutcome::Coerced { shape }
+            | CoercionOutcome::CoercedStillInvalid { shape } => shape.join("+"),
+            _ => String::new(),
+        }
+    }
+}
+
+/// Common key aliases models emit instead of the canonical schema key. Each
+/// entry is `(canonical, &[aliases])`. When the canonical key is absent but an
+/// alias is present (and the canonical isn't), we rename it. Mirrors the alias
+/// table CC applies in its TaskCreate/TodoWrite coercion (`alias_<key>`).
+const FIELD_ALIASES: &[(&str, &[&str])] = &[
+    ("file_path", &["filepath", "path", "filename", "file"]),
+    ("command", &["cmd", "bash", "script"]),
+    ("pattern", &["query", "regex", "search"]),
+    ("content", &["text", "body", "data"]),
+    ("old_string", &["old", "search", "from"]),
+    ("new_string", &["new", "replace", "to"]),
+    ("subject", &["title", "name", "summary"]),
+    ("description", &["desc", "details", "body"]),
+    ("prompt", &["instructions", "task", "message"]),
+    ("url", &["uri", "link", "href"]),
+];
+
+/// Keys whose value is frequently a single object/string when the schema wants
+/// an array — wrap them. Mirrors CC's scalar→array coercion.
+const WRAP_ARRAY_KEYS: &[&str] = &["edits", "questions", "todos", "tasks", "files"];
+
+/// Coerce a raw tool-input object toward the schema. Returns the new object plus
+/// a list of applied "shape classes" (empty = nothing changed). This is
+/// intentionally conservative: it only renames absent-canonical aliases, unwraps
+/// a single-key wrapper, and wraps known array fields — never drops data.
+fn coerce_object(
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> (serde_json::Map<String, serde_json::Value>, Vec<String>) {
+    use serde_json::Value;
+    let mut out = map.clone();
+    let mut shape = Vec::new();
+
+    // 1. Unwrap a single-key wrapper object: `{"input": {...}}` / `{"args": {...}}`
+    //    / `{"params": {...}}` → the inner object. (CC's `task_wrapper_object`.)
+    if out.len() == 1 {
+        for wrapper in ["input", "args", "arguments", "params", "tool_input"] {
+            if let Some(Value::Object(inner)) = out.get(wrapper) {
+                let inner = inner.clone();
+                out = inner;
+                shape.push(format!("unwrap:{wrapper}"));
+                break;
+            }
+        }
+    }
+
+    // 2. Rename aliases where the canonical key is missing.
+    for (canonical, aliases) in FIELD_ALIASES {
+        if out.contains_key(*canonical) {
+            continue;
+        }
+        for alias in *aliases {
+            if let Some(v) = out.remove(*alias) {
+                out.insert((*canonical).to_string(), v);
+                shape.push(format!("alias_{alias}->{canonical}"));
+                break;
+            }
+        }
+    }
+
+    // 3. Wrap scalar/object values for known array fields.
+    for key in WRAP_ARRAY_KEYS {
+        if let Some(v) = out.get(*key) {
+            if !v.is_array() && !v.is_null() {
+                let wrapped = Value::Array(vec![v.clone()]);
+                out.insert((*key).to_string(), wrapped);
+                shape.push(format!("wrap_array:{key}"));
+            }
+        }
+    }
+
+    (out, shape)
 }
 
 fn split_advertised_mcp(name: &str) -> Option<(&str, &str)> {
@@ -2001,6 +2148,55 @@ mod macro_equivalence_tests {
             .unwrap(),
             ToolInput::TaskUpdate { ref task_id, ref blocked_by, .. }
                 if task_id == "t1" && *blocked_by == vec!["t6".to_string()]
+        ));
+    }
+
+    // ─── tool_input_coerced (CC 2.1.170 parity) ─────────────────────────────
+
+    // Normal: valid input is passed through untouched (Unchanged), no coercion.
+    #[test]
+    fn coerce_valid_input_is_unchanged_normal() {
+        let (parsed, outcome) = ToolInput::from_value_coerced(
+            "Read",
+            json!({ "file_path": "src/main.rs" }),
+        );
+        assert!(parsed.is_ok());
+        assert_eq!(outcome, CoercionOutcome::Unchanged);
+        assert_eq!(outcome.label(), "unchanged");
+    }
+
+    // Normal: a common key alias (`path` instead of `file_path`) is renamed and
+    // the input then parses, with the shape class recorded.
+    #[test]
+    fn coerce_aliases_path_to_file_path_normal() {
+        let (parsed, outcome) =
+            ToolInput::from_value_coerced("Read", json!({ "path": "src/main.rs" }));
+        assert!(matches!(parsed, Ok(ToolInput::Read { ref file_path, .. }) if file_path == "src/main.rs"));
+        assert_eq!(outcome.label(), "coerced");
+        assert!(outcome.shape_class().contains("alias_path->file_path"));
+    }
+
+    // Robust: a single-key wrapper object (`{"input": {...}}`) is unwrapped.
+    #[test]
+    fn coerce_unwraps_input_wrapper_robust() {
+        let (parsed, outcome) = ToolInput::from_value_coerced(
+            "Read",
+            json!({ "input": { "file_path": "a.rs" } }),
+        );
+        assert!(parsed.is_ok());
+        assert!(outcome.shape_class().contains("unwrap:input"));
+    }
+
+    // Robust: a genuinely wrong input that no fix can repair stays an error and
+    // is reported as Rejected — coercion never masks a real schema violation.
+    #[test]
+    fn coerce_uncoercible_input_is_rejected_robust() {
+        let (parsed, outcome) =
+            ToolInput::from_value_coerced("Read", json!({ "nonsense": 42 }));
+        assert!(parsed.is_err());
+        assert!(matches!(
+            outcome,
+            CoercionOutcome::Rejected | CoercionOutcome::CoercedStillInvalid { .. }
         ));
     }
 }

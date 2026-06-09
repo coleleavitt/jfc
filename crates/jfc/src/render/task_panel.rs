@@ -117,8 +117,9 @@ pub(super) fn task_panel(f: &mut Frame, app: &mut App) {
         .iter()
         .map(|(tk, depth)| {
             let status_style = match tk.status {
-                TaskStatus::Pending => t.style_text_muted,
+                TaskStatus::Pending | TaskStatus::Queued => t.style_text_muted,
                 TaskStatus::InProgress => t.style_accent_bold,
+                TaskStatus::Blocked => t.style_accent,
                 TaskStatus::Completed => t.style_success.add_modifier(Modifier::CROSSED_OUT),
                 _ => t.style_error,
             };

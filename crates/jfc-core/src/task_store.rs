@@ -121,9 +121,18 @@ pub enum TaskKind {
 pub enum TaskStatus {
     #[default]
     Pending,
+    /// Accepted into a run queue but not yet started (e.g. waiting for a worker
+    /// or a dependency window). Distinct from `Pending`, which is "unscheduled".
+    Queued,
     InProgress,
+    /// Cannot start because a `blocked_by` dependency is unmet. Non-terminal —
+    /// transitions back to `Pending`/`Queued` once unblocked.
+    Blocked,
     Completed,
     Failed,
+    /// Explicitly cancelled by the user/system before completing (distinct from
+    /// `Deleted`, which removes the task from the working set entirely).
+    Cancelled,
     Deleted,
 }
 
@@ -135,9 +144,11 @@ impl TaskStatus {
     pub fn glyph(self) -> &'static str {
         match self {
             TaskStatus::Pending => "□",
+            TaskStatus::Queued => "▢",
             TaskStatus::InProgress => "▣",
+            TaskStatus::Blocked => "◫",
             TaskStatus::Completed => "✓",
-            TaskStatus::Failed | TaskStatus::Deleted => "✗",
+            TaskStatus::Failed | TaskStatus::Deleted | TaskStatus::Cancelled => "✗",
         }
     }
 
@@ -146,11 +157,34 @@ impl TaskStatus {
     pub fn label(self) -> &'static str {
         match self {
             TaskStatus::Pending => "pending",
+            TaskStatus::Queued => "queued",
             TaskStatus::InProgress => "in_progress",
+            TaskStatus::Blocked => "blocked",
             TaskStatus::Completed => "completed",
             TaskStatus::Failed => "failed",
+            TaskStatus::Cancelled => "cancelled",
             TaskStatus::Deleted => "deleted",
         }
+    }
+
+    /// Whether this status is terminal (no further work happens).
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            TaskStatus::Completed
+                | TaskStatus::Failed
+                | TaskStatus::Cancelled
+                | TaskStatus::Deleted
+        )
+    }
+
+    /// Whether the task is actively counted as "open work" (shows in the live
+    /// working set and blocks turn-completion claims).
+    pub fn is_open(self) -> bool {
+        matches!(
+            self,
+            TaskStatus::Pending | TaskStatus::Queued | TaskStatus::InProgress | TaskStatus::Blocked
+        )
     }
 }
 
@@ -337,5 +371,40 @@ impl FactoryMetrics {
         // Each task is attempted at least conceptually once; attempt_count
         // counts *extra* tries, so average extra retries per task.
         self.total_attempts as f64 / total as f64
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::TaskStatus;
+
+    // Normal: the CC 2.1.170-parity statuses serialize to snake_case wire form.
+    #[test]
+    fn new_statuses_serde_roundtrip_normal() {
+        for (status, wire) in [
+            (TaskStatus::Queued, "\"queued\""),
+            (TaskStatus::Blocked, "\"blocked\""),
+            (TaskStatus::Cancelled, "\"cancelled\""),
+        ] {
+            let json = serde_json::to_string(&status).unwrap();
+            assert_eq!(json, wire, "{status:?} wire form");
+            let back: TaskStatus = serde_json::from_str(wire).unwrap();
+            assert_eq!(back, status, "{wire} round-trip");
+            assert_eq!(status.label(), wire.trim_matches('"'), "{status:?} label");
+        }
+    }
+
+    // Robust: terminal vs open classification covers every variant.
+    #[test]
+    fn terminal_and_open_partition_robust() {
+        use TaskStatus::*;
+        for s in [Pending, Queued, InProgress, Blocked] {
+            assert!(s.is_open(), "{s:?} should be open");
+            assert!(!s.is_terminal(), "{s:?} should not be terminal");
+        }
+        for s in [Completed, Failed, Cancelled, Deleted] {
+            assert!(s.is_terminal(), "{s:?} should be terminal");
+            assert!(!s.is_open(), "{s:?} should not be open");
+        }
     }
 }

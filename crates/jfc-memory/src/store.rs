@@ -1104,7 +1104,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn new_memory_types_parse_normal() {
         assert_eq!("user".parse::<MemoryType>().unwrap(), MemoryType::User);
         assert_eq!("reference".parse::<MemoryType>().unwrap(), MemoryType::Reference);

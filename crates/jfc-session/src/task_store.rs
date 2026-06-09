@@ -1003,10 +1003,11 @@ impl TaskStore {
         let mut c = TaskCounts::default();
         for t in inner.tasks.values() {
             match t.status {
-                TaskStatus::Pending => c.pending += 1,
+                // Queued + Blocked are unstarted open work — count with Pending.
+                TaskStatus::Pending | TaskStatus::Queued | TaskStatus::Blocked => c.pending += 1,
                 TaskStatus::InProgress => c.in_progress += 1,
                 TaskStatus::Completed => c.completed += 1,
-                TaskStatus::Failed | TaskStatus::Deleted => {}
+                TaskStatus::Failed | TaskStatus::Cancelled | TaskStatus::Deleted => {}
             }
         }
         c
@@ -1031,11 +1032,13 @@ impl TaskStore {
         let mut m = FactoryMetrics::default();
         for t in inner.tasks.values() {
             match t.status {
-                TaskStatus::Pending => m.pending += 1,
+                TaskStatus::Pending | TaskStatus::Queued | TaskStatus::Blocked => m.pending += 1,
                 TaskStatus::InProgress => m.in_progress += 1,
                 TaskStatus::Completed => m.completed += 1,
                 TaskStatus::Failed => m.failed += 1,
-                TaskStatus::Deleted => continue,
+                // Cancelled/Deleted aren't throughput — skip (Cancelled is a
+                // user abort, not a factory failure).
+                TaskStatus::Cancelled | TaskStatus::Deleted => continue,
             }
             if t.tags.contains(&"replan".to_string()) {
                 m.replan_tasks += 1;
@@ -1445,12 +1448,15 @@ fn cmp_priority_then_creation(a: &Task, b: &Task) -> std::cmp::Ordering {
     pa.cmp(&pb).then_with(|| seq(a).cmp(&seq(b)))
 }
 
-/// Whether a blocker id refers to a "dead" task — Failed, Deleted, or missing
-/// entirely. Matches the existing `blocked_forever` semantics in `validate`.
+/// Whether a blocker id refers to a "dead" task — Failed, Cancelled, Deleted, or
+/// missing entirely. Matches the existing `blocked_forever` semantics in `validate`.
 fn blocker_is_dead(inner: &TaskStoreInner, id: &TaskId) -> bool {
     match inner.tasks.get(id.as_str()) {
         None => true,
-        Some(t) => matches!(t.status, TaskStatus::Failed | TaskStatus::Deleted),
+        Some(t) => matches!(
+            t.status,
+            TaskStatus::Failed | TaskStatus::Cancelled | TaskStatus::Deleted
+        ),
     }
 }
 

@@ -155,13 +155,16 @@ pub fn execute_task_update(
     };
     let parsed_status = match status.as_deref() {
         Some("pending") => Some(TaskStatus::Pending),
+        Some("queued") => Some(TaskStatus::Queued),
         Some("in_progress") => Some(TaskStatus::InProgress),
+        Some("blocked") => Some(TaskStatus::Blocked),
         Some("completed") => Some(TaskStatus::Completed),
         Some("failed") => Some(TaskStatus::Failed),
+        Some("cancelled") => Some(TaskStatus::Cancelled),
         Some("deleted") => Some(TaskStatus::Deleted),
         Some(other) => {
             return ExecutionResult::failure(format!(
-                "Invalid task status '{other}'. Expected one of: pending, in_progress, completed, failed, deleted"
+                "Invalid task status '{other}'. Expected one of: pending, queued, in_progress, blocked, completed, failed, cancelled, deleted"
             ));
         }
         None => None,

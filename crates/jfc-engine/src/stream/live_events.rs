@@ -214,17 +214,31 @@ pub async fn drain_stream_events(
                 let id = crate::ids::ToolId::from(tool_use_id.clone());
                 let signature = thought_signature.clone();
                 let tool = match parse_outcome {
-                    Ok(input_val) => match ToolInput::from_value(&tool_name, input_val) {
-                        Ok(parsed) => ToolCall::new_pending(id, kind, parsed)
-                            .with_thought_signature(signature.clone()),
-                        Err(err) => {
+                    Ok(input_val) => match ToolInput::from_value_coerced(&tool_name, input_val) {
+                        (Ok(parsed), outcome) => {
+                            // CC 2.1.170 `tool_input_coerced`: malformed args were
+                            // repaired to the schema rather than hard-failing.
+                            if let jfc_core::CoercionOutcome::Coerced { .. } = &outcome {
+                                tracing::info!(
+                                    target: "jfc::stream",
+                                    tool_name = %tool_name,
+                                    tool_use_id = %tool_use_id,
+                                    outcome = outcome.label(),
+                                    shape = %outcome.shape_class(),
+                                    "tool_input_coerced: repaired malformed tool args to schema"
+                                );
+                            }
+                            ToolCall::new_pending(id, kind, parsed)
+                                .with_thought_signature(signature.clone())
+                        }
+                        (Err(err), _outcome) => {
                             tracing::warn!(
                                 target: "jfc::stream",
                                 tool_name = %tool_name,
                                 tool_use_id = %tool_use_id,
                                 input_len = assembled.len(),
                                 error = %err,
-                                "tool_done: input shape validation failed - failing tool"
+                                "tool_done: input shape validation failed (uncoercible) - failing tool"
                             );
                             let msg = format!(
                                 "{err}\n\n\
