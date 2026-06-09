@@ -527,6 +527,7 @@ pub async fn handle_stream_done(
     if turn_done {
         state.streaming_response_bytes = 0;
         state.streaming_thinking_tokens = 0;
+        state.last_thinking_estimate = 0;
     }
     // Clear the user-turn clock only when the loop has
     // genuinely concluded — EndTurn stop reason AND no

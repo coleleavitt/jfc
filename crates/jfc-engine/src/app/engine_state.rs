@@ -252,10 +252,19 @@ pub struct EngineState {
     /// before surfacing the dead-stop. Reset at each new user turn and when a
     /// turn produces a normal (non-refusal) result.
     pub refusal_resend_count: u32,
-    /// Server-authoritative cumulative thinking token count from `thinking_delta.estimated_tokens`.
-    /// Populated during extended-thinking phases (live thinking) or redacted-thinking blocks.
-    /// Reset at the start of each streaming turn. Displayed separately from output tokens.
+    /// Cumulative thinking-token estimate for the turn, summed across all
+    /// thinking blocks. Populated during extended-thinking phases (live thinking)
+    /// or redacted-thinking blocks. Reset at the start of each streaming turn.
+    /// Displayed separately from output tokens.
     pub streaming_thinking_tokens: u64,
+    /// Last cumulative `thinking_delta.estimated_tokens` value seen *within the
+    /// current thinking block*. The API sends `estimated_tokens` as a running
+    /// total per block (e.g. 100, 250, 400), so — exactly like `last_usage_output`
+    /// for output tokens — we accumulate the *delta* against this baseline, not
+    /// the raw total (which would triple-count: 100+250+400 instead of 400). A
+    /// new block restarts the total lower, which we detect and treat as a fresh
+    /// block's growth from zero.
+    pub last_thinking_estimate: u32,
     /// Tokens freed by the most recent compaction, pending forward to the next
     /// outbound request as `context_hint.target_tokens_saved`
     /// (context-hint-2026-04-09 beta). Set by the CompactionDone handler;
@@ -895,6 +904,7 @@ impl EngineState {
             refusal_fallback_attempted: false,
             refusal_resend_count: 0,
             streaming_thinking_tokens: 0,
+            last_thinking_estimate: 0,
             pending_context_hint_tokens_saved: None,
             network_recovery_status: None,
             network_recovery_attempts: 0,

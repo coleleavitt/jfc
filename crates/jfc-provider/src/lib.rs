@@ -282,8 +282,11 @@ pub enum StreamEvent {
     ThinkingDelta {
         index: usize,
         delta: String,
-        /// Server-provided thinking token estimate for this delta. Accumulates
-        /// across the thinking block. Matches cli.js's `estimated_tokens_delta`
+        /// Server-provided thinking-token estimate: the *cumulative running
+        /// total* for the current thinking block (the API's `estimated_tokens`,
+        /// NOT the per-event `estimated_tokens_delta`). Consumers must take the
+        /// delta against the previous value rather than summing, or they'll
+        /// over-count. Approximate progress for spinners, not billed tokens.
         /// (Anthropic's official client accumulates these to report live thinking
         /// tok/s).
         estimated_tokens: Option<u32>,
@@ -1040,7 +1043,11 @@ mod tests {
         let mut deduped = labels.clone();
         deduped.sort();
         deduped.dedup();
-        assert_eq!(deduped.len(), labels.len(), "labels must be distinct: {labels:?}");
+        assert_eq!(
+            deduped.len(),
+            labels.len(),
+            "labels must be distinct: {labels:?}"
+        );
         assert!(labels[3].contains("access denied"));
         assert!(labels[4].contains("last-resort"));
     }

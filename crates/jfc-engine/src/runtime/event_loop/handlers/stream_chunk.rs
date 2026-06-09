@@ -198,9 +198,20 @@ pub fn handle_thinking_tokens(state: &mut EngineState, tokens: u32) {
     if state.thinking_started_at.is_none() && state.thinking_ended_at.is_none() {
         state.thinking_started_at = Some(now);
     }
-    state.streaming_thinking_tokens = state
-        .streaming_thinking_tokens
-        .saturating_add(tokens as u64);
+    // `tokens` is the API's `estimated_tokens` — the *cumulative running total*
+    // for the current thinking block (per cli.js: "running total … not the
+    // authoritative billed output_tokens"). Accumulate only the delta against
+    // the last total we saw, exactly as the output-token path does with
+    // `last_usage_output`. Adding the cumulative total each event triple-counts.
+    let delta = if tokens >= state.last_thinking_estimate {
+        tokens - state.last_thinking_estimate
+    } else {
+        // A new thinking block restarted the total lower → its growth so far is
+        // the full `tokens` (it began from 0).
+        tokens
+    };
+    state.last_thinking_estimate = tokens;
+    state.streaming_thinking_tokens = state.streaming_thinking_tokens.saturating_add(delta as u64);
 }
 
 pub fn handle_response_id(state: &mut EngineState, id: String) {
@@ -248,20 +259,59 @@ mod tests {
     // Summarized/redacted thinking: estimates arrive with no visible reasoning
     // text, so this handler is the only thing that can light up the thinking
     // phase. It must both accumulate the count AND mark thinking started.
+    // `estimated_tokens` is the CUMULATIVE running total for the thinking block,
+    // so the counter must follow the latest total — not sum every event. A
+    // monotonically-rising 40 → 90 → 130 means the block is at 130, not 260.
     #[test]
-    fn thinking_tokens_accumulate_and_mark_phase_normal() {
+    fn thinking_tokens_track_cumulative_total_normal() {
         let mut state = test_app();
         assert!(state.thinking_started_at.is_none());
 
         handle_thinking_tokens(&mut state, 40);
-        handle_thinking_tokens(&mut state, 35);
+        handle_thinking_tokens(&mut state, 90);
+        handle_thinking_tokens(&mut state, 130);
 
-        assert_eq!(state.streaming_thinking_tokens, 75);
+        assert_eq!(
+            state.streaming_thinking_tokens, 130,
+            "must equal the latest cumulative total, not the sum of events"
+        );
         assert!(
             state.thinking_started_at.is_some(),
             "first estimate must mark the thinking phase live"
         );
         assert!(state.thinking_ended_at.is_none());
+    }
+
+    // REGRESSION (thinking-token triple-count): adding the cumulative total on
+    // each event inflated the count (100,250,400 → 750). The delta-accumulation
+    // fix must report the true block total (400).
+    #[test]
+    fn thinking_tokens_do_not_triple_count_regression() {
+        let mut state = test_app();
+        for total in [100u32, 250, 400] {
+            handle_thinking_tokens(&mut state, total);
+        }
+        assert_eq!(
+            state.streaming_thinking_tokens, 400,
+            "cumulative totals must not be summed (was 750 before the fix)"
+        );
+    }
+
+    // A second thinking block restarts `estimated_tokens` lower; its tokens must
+    // ADD to the first block's total (turn-cumulative across blocks).
+    #[test]
+    fn thinking_tokens_sum_across_blocks_robust() {
+        let mut state = test_app();
+        // Block 1 reaches 400.
+        handle_thinking_tokens(&mut state, 150);
+        handle_thinking_tokens(&mut state, 400);
+        // Block 2 restarts low (50) then grows to 120.
+        handle_thinking_tokens(&mut state, 50);
+        handle_thinking_tokens(&mut state, 120);
+        assert_eq!(
+            state.streaming_thinking_tokens, 520,
+            "block totals accumulate across the turn (400 + 120)"
+        );
     }
 
     // Once a visible text byte concluded thinking (`thinking_ended_at` set), a
@@ -275,17 +325,19 @@ mod tests {
 
         handle_thinking_tokens(&mut state, 10);
 
-        // Counter still moves, but the phase stays concluded.
+        // Counter still moves (first total 10 from a fresh baseline), but the
+        // phase stays concluded.
         assert_eq!(state.streaming_thinking_tokens, 10);
         assert_eq!(state.thinking_started_at, Some(t0));
         assert_eq!(state.thinking_ended_at, Some(t0));
     }
 
-    // Saturating add: pathological huge estimates can't overflow the counter.
+    // Saturating add: a pathological huge delta can't overflow the counter.
     #[test]
     fn thinking_tokens_saturate_robust() {
         let mut state = test_app();
         state.streaming_thinking_tokens = u64::MAX - 1;
+        // First event from a zero baseline → delta == tokens == 100.
         handle_thinking_tokens(&mut state, 100);
         assert_eq!(state.streaming_thinking_tokens, u64::MAX);
     }
