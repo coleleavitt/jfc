@@ -12,7 +12,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { Project, Node, ts } from 'ts-morph';
-import { leadingJsdoc, readText, slash, walk } from './common.mjs';
+import { escRx, leadingJsdoc, readText, slash, walk } from './common.mjs';
 import { resolveDistEntry } from './bundle.mjs';
 import { exportedNames, isComponentName } from './dts.mjs';
 
@@ -116,8 +116,12 @@ export async function resolvePackage(ctx) {
         // bare-file match, then prefer one that actually exports `c.name`.
         // Override: cfg.componentSrcMap.
         const kebab = c.name.replace(/([a-z0-9])([A-Z])/g, '$1-$2');
+        // Escape both before interpolating into the pattern — a component name
+        // with regex metacharacters would otherwise build an invalid/ReDoS regex.
+        const safeName = escRx(c.name);
+        const safeKebab = escRx(kebab);
         const nameRx = new RegExp(
-          `(?:^|/)(?:${c.name}/(?:index|${c.name})\\.(tsx|jsx)|(?:${c.name}|${kebab})\\.(tsx|jsx))$`,
+          `(?:^|/)(?:${safeName}/(?:index|${safeName})\\.(tsx|jsx)|(?:${safeName}|${safeKebab})\\.(tsx|jsx))$`,
           'i',
         );
         const hits = srcFiles
@@ -127,7 +131,7 @@ export async function resolvePackage(ctx) {
               (b.toLowerCase().includes(`/${c.name.toLowerCase()}/`) ? 1 : 0) -
               (a.toLowerCase().includes(`/${c.name.toLowerCase()}/`) ? 1 : 0),
           );
-        const exportRx = new RegExp(`export\\s+(?:default\\s+)?(?:const|let|var|function|class)\\s+${c.name}\\b`);
+        const exportRx = new RegExp(`export\\s+(?:default\\s+)?(?:const|let|var|function|class)\\s+${safeName}\\b`);
         hit = hits.find((p) => exportRx.test(readText(p))) ?? hits[0];
       }
       if (!hit || !existsSync(hit)) continue;

@@ -18,6 +18,11 @@ export const readText = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
 export const escapeHtml = (s) =>
   String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
+// Escape regex metacharacters so an arbitrary string (e.g. a component name)
+// can be interpolated into a `new RegExp(...)` pattern literally. Without this,
+// a name like `Foo.Bar` or `A(B` produces an invalid or ReDoS-prone pattern.
+export const escRx = (s) => String(s ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // Storybook title → {name, group}. titleMap remaps a derived name to the
 // real export name (e.g. {"Toast": "ToastNotification"}). With `exportedSet`,
 // scan segments right-to-left for the first that's a known export — handles
@@ -62,7 +67,7 @@ export function lookupArgsById(argsById, id, componentName) {
 // decl so a multi-export file picks the nearest doc, not the first-in-file.
 export function leadingJsdoc(text, name) {
   const declRx = name
-    ? new RegExp(`(?:export\\s+)?(?:declare\\s+)?(?:const|let|function|class|interface|type)\\s+${name}\\b`)
+    ? new RegExp(`(?:export\\s+)?(?:declare\\s+)?(?:const|let|function|class|interface|type)\\s+${escRx(name)}\\b`)
     : /(?:export|declare|const|function|class|interface)/;
   const dm = declRx.exec(text);
   if (!dm) return '';
