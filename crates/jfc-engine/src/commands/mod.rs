@@ -134,6 +134,7 @@ engine_commands! {
         "/commit" [] "generate a conventional commit message for staged changes" => cmd_commit,
         "/review" ["/code-review", "/ultrareview"] "ask the model to review current git changes" => cmd_review,
         "/skills" [] "list available skills (.claude/skills/*.md)" => cmd_skills,
+        "/recall" ["/search-sessions"] "search past sessions + commits (`/recall <query>`)" => cmd_recall,
         "/agents" [] "list available agent definitions (.claude/agents/*.md)" => cmd_agents,
         "/market" [] "show the agent-economy snapshot" => cmd_market,
         "/task-list" ["/tasks"] "list todo/task items" => cmd_task_list,

@@ -847,3 +847,70 @@ pub(super) async fn cmd_market(
     state.messages.push(ChatMessage::user("/market".into()));
     state.messages.push(ChatMessage::assistant(report_str));
 }
+
+/// `/recall <query>` — zero-LLM cross-session + commit search. Searches past
+/// session transcripts (and this repo's commit messages) for `query` and prints
+/// the top hits. With no query, browses the most recent sessions. Ported from
+/// Hermes' session_search + magic-context's commit source.
+pub(super) async fn cmd_recall(
+    state: &mut EngineState,
+    parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    let query = parts.get(1).map(|s| s.trim()).unwrap_or("");
+
+    let body = if query.is_empty() {
+        // BROWSE mode: most recent sessions.
+        let recent = jfc_session::browse_sessions(10);
+        if recent.is_empty() {
+            "No past sessions found.".to_owned()
+        } else {
+            let mut s = String::from("Recent sessions (use `/recall <query>` to search):\n");
+            for b in recent {
+                s.push_str(&format!(
+                    "  {}  {}  ({} msgs)\n",
+                    b.session_id,
+                    b.title.chars().take(50).collect::<String>(),
+                    b.message_count,
+                ));
+            }
+            s
+        }
+    } else {
+        let sessions = jfc_session::search_sessions(query, 5, 1);
+        let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+        let commits = jfc_session::search_commits(&cwd, query, 5, 500);
+
+        if sessions.is_empty() && commits.is_empty() {
+            format!("No sessions or commits matched `{query}`.")
+        } else {
+            let mut s = String::new();
+            if !sessions.is_empty() {
+                s.push_str(&format!("Sessions matching `{query}`:\n"));
+                for h in &sessions {
+                    s.push_str(&format!(
+                        "  {}  {}\n    \u{2026}{}\n",
+                        h.session_id,
+                        h.title.chars().take(50).collect::<String>(),
+                        h.snippet.chars().take(120).collect::<String>(),
+                    ));
+                }
+            }
+            if !commits.is_empty() {
+                s.push_str(&format!("\nCommits matching `{query}`:\n"));
+                for c in &commits {
+                    s.push_str(&format!(
+                        "  {}  {}  {}\n",
+                        c.short_hash,
+                        c.date.chars().take(10).collect::<String>(),
+                        c.subject.chars().take(70).collect::<String>(),
+                    ));
+                }
+            }
+            s
+        }
+    };
+    state.messages.push(ChatMessage::assistant(body));
+}
