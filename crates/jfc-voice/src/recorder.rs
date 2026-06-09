@@ -273,15 +273,31 @@ impl VoiceRecorder {
             .unwrap_or_else(|_| debug!(target: "jfc::voice", "event channel closed on state change"));
     }
 
-    /// Cancel any in-progress recording and reset to Idle.
+    /// Cancel any in-progress recording AND the VAD listen loop, resetting to
+    /// Idle. Both stop signals must fire: in VAD mode the long-running
+    /// `vad_stop_tx` owns the capture loop, while `stop_tx` only exists for a
+    /// hold/tap recording. A previous version signalled `stop_tx` only, so
+    /// `/voice off` left the VAD loop running in the background (mic stayed hot,
+    /// utterances kept being transcribed after the user turned voice off).
     pub async fn cancel(&mut self) {
         if let Some(tx) = self.stop_tx.take() {
             if tx.send(()).is_err() {
-                debug!(target: "jfc::voice", "cancel: stop signal had no receiver");
+                debug!(target: "jfc::voice", "cancel: recording stop signal had no receiver");
+            }
+        }
+        if let Some(tx) = self.vad_stop_tx.take() {
+            if tx.send(()).is_err() {
+                debug!(target: "jfc::voice", "cancel: VAD stop signal had no receiver");
             }
         }
         self.audio_buf.lock().await.clear();
         self.set_state(VoiceState::Idle).await;
+    }
+
+    /// Whether the VAD listen loop is currently running. Used by tests and the
+    /// UI to reflect mic-hot state accurately.
+    pub fn vad_loop_running(&self) -> bool {
+        self.vad_stop_tx.is_some()
     }
 }
 
@@ -378,6 +394,37 @@ fn send_or_debug(tx: &mpsc::UnboundedSender<VoiceTranscriptEvent>, ev: VoiceTran
         .unwrap_or_else(|_| debug!(target: "jfc::voice", "event channel closed"));
 }
 
+/// Default max-utterance safety cap (ms). High enough that no real single
+/// spoken utterance reaches it; it only bounds a wedged loop (e.g. a noise
+/// floor stuck above the VAD threshold so SpeechEnd never fires).
+const DEFAULT_MAX_UTTERANCE_MS: u64 = 90_000;
+/// Hard floor for the cap. A long sentence routinely runs 20-30s; clamping
+/// below this would truncate normal speech mid-sentence — the reported
+/// "long sentence gets cut off" bug, which happened when the env was set to a
+/// too-aggressive value (e.g. 15000). Anything below the floor is ignored.
+const MIN_MAX_UTTERANCE_MS: u64 = 45_000;
+
+/// Resolve the max-utterance cap from `JFC_VAD_MAX_UTTERANCE_MS`, clamped to a
+/// safe floor so a misconfigured/too-small value can't truncate normal speech.
+fn max_utterance_cap_ms() -> u64 {
+    let configured = std::env::var("JFC_VAD_MAX_UTTERANCE_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_MAX_UTTERANCE_MS);
+    if configured < MIN_MAX_UTTERANCE_MS {
+        warn!(
+            target: "jfc::voice::vad",
+            configured,
+            floor = MIN_MAX_UTTERANCE_MS,
+            "JFC_VAD_MAX_UTTERANCE_MS is below the safe floor — clamping so long \
+             sentences aren't cut off mid-utterance"
+        );
+        MIN_MAX_UTTERANCE_MS
+    } else {
+        configured
+    }
+}
+
 /// VAD continuous-listen loop.
 ///
 /// Streams audio indefinitely, running it through the VAD energy detector.
@@ -466,10 +513,7 @@ async fn vad_listen_loop(
         // (that was the "it cuts me off mid-sentence" bug, where a 20s cap
         // fired while the user was still talking). 90s is well beyond any
         // single spoken utterance while still bounding a truly wedged loop.
-        let max_utterance_ms: u64 = std::env::var("JFC_VAD_MAX_UTTERANCE_MS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(90_000);
+        let max_utterance_ms: u64 = max_utterance_cap_ms();
         let max_bytes = (max_utterance_ms as usize * 16_000 * 2 / 1000).max(640);
         let mut frames_seen: u64 = 0;
         let mut max_rms: u32 = 0;
@@ -604,6 +648,123 @@ mod tests {
         let mut rec = VoiceRecorder::new(VoiceConfig::default(), tx);
         rec.cancel().await; // should not panic
         assert_eq!(rec.state().await, VoiceState::Idle);
+    }
+
+    // REGRESSION (`/voice off` left the mic hot): cancel() must signal the VAD
+    // stop channel, not just the push-to-talk one. We install a vad_stop_tx
+    // directly (start_vad_loop needs a real audio backend) and assert cancel
+    // consumes it and the loop's receiver observes the stop.
+    #[tokio::test]
+    async fn cancel_stops_vad_listen_loop_robust() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut rec = VoiceRecorder::new(
+            VoiceConfig { mode: VoiceMode::Vad, ..Default::default() },
+            tx,
+        );
+        let (vad_tx, mut vad_rx) = tokio::sync::oneshot::channel::<()>();
+        rec.vad_stop_tx = Some(vad_tx);
+        assert!(rec.vad_loop_running(), "loop should be marked running");
+
+        rec.cancel().await;
+
+        assert!(!rec.vad_loop_running(), "cancel must clear the VAD stop handle");
+        assert_eq!(rec.state().await, VoiceState::Idle);
+        // The listen loop's receiver must see the stop signal (Ok), not a
+        // dropped-sender error — proving cancel actually told it to stop.
+        assert_eq!(vad_rx.try_recv(), Ok(()), "VAD loop must receive the stop signal");
+    }
+
+    // REGRESSION (long sentence cut off mid-utterance): the max-utterance cap
+    // must never fall below the safe floor, even if JFC_VAD_MAX_UTTERANCE_MS is
+    // set to a too-aggressive value. The constants are the contract; assert them
+    // directly so the test is hermetic (independent of the caller's env).
+    #[test]
+    fn max_utterance_floor_protects_long_sentences_normal() {
+        // Default is well beyond any real single utterance.
+        assert!(DEFAULT_MAX_UTTERANCE_MS >= 60_000);
+        // Floor is at least ~45s — a long sentence (20-30s) is comfortably under.
+        assert!(MIN_MAX_UTTERANCE_MS >= 30_000);
+        assert!(DEFAULT_MAX_UTTERANCE_MS >= MIN_MAX_UTTERANCE_MS);
+
+        // A 30s continuous sentence in bytes must be under the floor's byte cap,
+        // so even the smallest allowed cap can't truncate it.
+        let thirty_second_sentence = 30 * 16_000 * 2;
+        let floor_bytes = (MIN_MAX_UTTERANCE_MS as usize * 16_000 * 2 / 1000).max(640);
+        assert!(
+            thirty_second_sentence < floor_bytes,
+            "a 30s sentence ({thirty_second_sentence}) must fit under the floor cap ({floor_bytes})"
+        );
+    }
+
+    // Robust: a too-small env value is clamped up to the floor (this is the
+    // exact failure mode behind the user's report — env was set to 15000).
+    #[test]
+    fn too_small_env_cap_is_clamped_to_floor_robust() {
+        const KEY: &str = "JFC_VAD_MAX_UTTERANCE_MS";
+        // Save + restore the prior value so this test can't corrupt another
+        // test that reads the same env (no serial_test dependency needed).
+        let prev = std::env::var(KEY).ok();
+        // SAFETY: env mutation; bounded to this test and restored immediately.
+        unsafe { std::env::set_var(KEY, "15000") };
+        let resolved = max_utterance_cap_ms();
+        unsafe {
+            match &prev {
+                Some(v) => std::env::set_var(KEY, v),
+                None => std::env::remove_var(KEY),
+            }
+        }
+        assert_eq!(
+            resolved, MIN_MAX_UTTERANCE_MS,
+            "a 15s cap must be clamped up to the floor so long speech isn't cut off"
+        );
+    }
+
+    // And a generous value passes through unclamped.
+    #[test]
+    fn large_env_cap_passes_through_normal() {
+        const KEY: &str = "JFC_VAD_MAX_UTTERANCE_MS";
+        let prev = std::env::var(KEY).ok();
+        unsafe { std::env::set_var(KEY, "120000") };
+        let resolved = max_utterance_cap_ms();
+        unsafe {
+            match &prev {
+                Some(v) => std::env::set_var(KEY, v),
+                None => std::env::remove_var(KEY),
+            }
+        }
+        assert_eq!(resolved, 120_000, "a generous cap must pass through unchanged");
+    }
+
+    // REGRESSION: cancel() must stop the VAD listen loop, not just a hold/tap
+    // recording. Before the fix, cancel() only signalled stop_tx, so `/voice
+    // off` left the VAD loop (and the mic) running. We simulate a running VAD
+    // loop by installing a vad_stop_tx and asserting cancel consumes it and the
+    // receiver observes the stop signal.
+    #[tokio::test]
+    async fn cancel_stops_vad_loop_robust() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut rec = VoiceRecorder::new(VoiceConfig::default(), tx);
+        let (vad_stop_tx, vad_stop_rx) = tokio::sync::oneshot::channel::<()>();
+        rec.vad_stop_tx = Some(vad_stop_tx);
+        assert!(rec.vad_loop_running(), "precondition: VAD loop marked running");
+
+        rec.cancel().await;
+
+        assert!(!rec.vad_loop_running(), "cancel must clear the VAD stop sender");
+        assert_eq!(rec.state().await, VoiceState::Idle);
+        // The loop's receiver must have been signalled (Ok) — i.e. it would break.
+        assert_eq!(vad_stop_rx.await, Ok(()), "VAD loop must receive the stop signal");
+    }
+
+    // Normal: vad_loop_running reflects whether a stop sender is installed.
+    #[tokio::test]
+    async fn vad_loop_running_reflects_state_normal() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut rec = VoiceRecorder::new(VoiceConfig::default(), tx);
+        assert!(!rec.vad_loop_running());
+        let (vad_stop_tx, _rx2) = tokio::sync::oneshot::channel::<()>();
+        rec.vad_stop_tx = Some(vad_stop_tx);
+        assert!(rec.vad_loop_running());
     }
 
     #[test]
