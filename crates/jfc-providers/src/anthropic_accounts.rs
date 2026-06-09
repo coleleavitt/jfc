@@ -700,6 +700,44 @@ impl AccountManager {
         Self::tier_capacity(account) / denominator.max(1.0)
     }
 
+    fn choose_best_usable_from_state(
+        state: &ManagerState,
+        exclude: &std::collections::HashSet<String>,
+    ) -> Option<Account> {
+        let mut usable: Vec<(&Account, RuntimeState)> = state
+            .store
+            .accounts
+            .iter()
+            .filter_map(|a| {
+                let rt = state.runtime.get(&a.name).cloned().unwrap_or_default();
+                (!exclude.contains(&a.name) && Self::is_account_usable(a, &rt)).then_some((a, rt))
+            })
+            .collect();
+        if usable.is_empty() {
+            return None;
+        }
+        let now = Instant::now();
+        let max_daily_tokens = usable
+            .iter()
+            .map(|(a, _)| Self::daily_token_total(a))
+            .max()
+            .unwrap_or(0);
+        usable.sort_by(|(a1, r1), (a2, r2)| {
+            let s1 = Self::account_score(a1, r1, now, max_daily_tokens);
+            let s2 = Self::account_score(a2, r2, now, max_daily_tokens);
+            s2.partial_cmp(&s1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| match (r1.last_success_at, r2.last_success_at) {
+                    (None, None) => std::cmp::Ordering::Equal,
+                    (None, Some(_)) => std::cmp::Ordering::Less,
+                    (Some(_), None) => std::cmp::Ordering::Greater,
+                    (Some(t1), Some(t2)) => t1.cmp(&t2),
+                })
+                .then_with(|| a1.name.cmp(&a2.name))
+        });
+        Some(usable[0].0.clone())
+    }
+
     fn choose_account_from_state(
         state: &ManagerState,
         exclude: &std::collections::HashSet<String>,
@@ -709,34 +747,8 @@ impl AccountManager {
             return None;
         }
 
-        let mut usable: Vec<(&Account, RuntimeState)> = accounts
-            .iter()
-            .filter_map(|a| {
-                let rt = state.runtime.get(&a.name).cloned().unwrap_or_default();
-                (!exclude.contains(&a.name) && Self::is_account_usable(a, &rt)).then_some((a, rt))
-            })
-            .collect();
-        if !usable.is_empty() {
-            let now = Instant::now();
-            let max_daily_tokens = usable
-                .iter()
-                .map(|(a, _)| Self::daily_token_total(a))
-                .max()
-                .unwrap_or(0);
-            usable.sort_by(|(a1, r1), (a2, r2)| {
-                let s1 = Self::account_score(a1, r1, now, max_daily_tokens);
-                let s2 = Self::account_score(a2, r2, now, max_daily_tokens);
-                s2.partial_cmp(&s1)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| match (r1.last_success_at, r2.last_success_at) {
-                        (None, None) => std::cmp::Ordering::Equal,
-                        (None, Some(_)) => std::cmp::Ordering::Less,
-                        (Some(_), None) => std::cmp::Ordering::Greater,
-                        (Some(t1), Some(t2)) => t1.cmp(&t2),
-                    })
-                    .then_with(|| a1.name.cmp(&a2.name))
-            });
-            return Some(usable[0].0.clone());
+        if let Some(account) = Self::choose_best_usable_from_state(state, exclude) {
+            return Some(account);
         }
 
         // Tier-3: nothing usable now — pick the soonest-recovering account
@@ -785,7 +797,47 @@ impl AccountManager {
         exclude: &std::collections::HashSet<String>,
     ) -> Option<(Account, AccountRequestGuard)> {
         let mut state = self.inner.state.lock().await;
-        let account = Self::choose_account_from_state(&state, exclude)?;
+        // For a *real outbound request*, pick only accounts that are usable now.
+        // `choose_account_from_state` has a tier-3 fallback that returns the
+        // soonest-recovering account even while it is still rate-limited; that's
+        // useful for UI/status (`pick_next`) but wrong for sending — it causes a
+        // just-rejected SevenDay account to be selected again and surfaced as a
+        // hard stream error instead of rotating / waiting. Here we intentionally
+        // skip the waiting tier and return None when no account is currently
+        // usable; the caller's outer loop then decides whether to wait for the
+        // soonest recovery or surface an all-accounts-exhausted error.
+        let mut usable: Vec<(&Account, RuntimeState)> = state
+            .store
+            .accounts
+            .iter()
+            .filter_map(|a| {
+                let rt = state.runtime.get(&a.name).cloned().unwrap_or_default();
+                (!exclude.contains(&a.name) && Self::is_account_usable(a, &rt)).then_some((a, rt))
+            })
+            .collect();
+        if usable.is_empty() {
+            return None;
+        }
+        let now = Instant::now();
+        let max_daily_tokens = usable
+            .iter()
+            .map(|(a, _)| Self::daily_token_total(a))
+            .max()
+            .unwrap_or(0);
+        usable.sort_by(|(a1, r1), (a2, r2)| {
+            let s1 = Self::account_score(a1, r1, now, max_daily_tokens);
+            let s2 = Self::account_score(a2, r2, now, max_daily_tokens);
+            s2.partial_cmp(&s1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| match (r1.last_success_at, r2.last_success_at) {
+                    (None, None) => std::cmp::Ordering::Equal,
+                    (None, Some(_)) => std::cmp::Ordering::Less,
+                    (Some(_), None) => std::cmp::Ordering::Greater,
+                    (Some(t1), Some(t2)) => t1.cmp(&t2),
+                })
+                .then_with(|| a1.name.cmp(&a2.name))
+        });
+        let account = usable[0].0.clone();
         let rt = state.runtime.entry(account.name.clone()).or_default();
         rt.in_flight = rt.in_flight.saturating_add(1);
         let guard = AccountRequestGuard::new(self.clone(), account.name.clone());
@@ -1771,9 +1823,16 @@ mod tests {
         b.rate_limit_reset_time = Some(now_ms() + 5_000);
         mgr.atomic_add_account(a).await.unwrap();
         mgr.atomic_add_account(b).await.unwrap();
-        // Both disk-limited → fall through to "soonest reset". b resets first.
+        // UI/status picker still falls through to "soonest reset". b resets first.
         let picked = mgr.pick_next().await.unwrap();
         assert_eq!(picked.name, "b");
+
+        // Real outbound acquisition must NOT pick a still-limited account just
+        // because it recovers soonest. It returns None so the caller can wait
+        // (or surface all-accounts-exhausted) rather than immediately burning a
+        // doomed request against the same account.
+        let exclude = std::collections::HashSet::new();
+        assert!(mgr.acquire_next_excluding(&exclude).await.is_none());
     }
 
     // Edge: a disabled account is invisible to selection even if it's the

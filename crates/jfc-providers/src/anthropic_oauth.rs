@@ -1543,6 +1543,19 @@ impl Provider for AnthropicOAuthProvider {
             for attempt in 0..ROTATION_MAX_ATTEMPTS {
                 let Some((account, request_guard)) = mgr.acquire_next_excluding(&tried).await
                 else {
+                    // No account is usable RIGHT NOW. This can happen when the
+                    // disk store already knows every enabled account is cooling
+                    // down (e.g. SevenDay claim exhausted). Do not pick the
+                    // "soonest recovering" account and send anyway — that was
+                    // the Advisor bug where it immediately retried the same
+                    // rate-limited account (often exploitdemon) and surfaced a
+                    // hard error. Mark this round as rate-limited so the outer
+                    // loop waits up to MAX_TOTAL_WAIT for the soonest recovery;
+                    // if there is no recovery path, it will surface a clean
+                    // all-accounts-exhausted error.
+                    if mgr.time_until_soonest_recovery().await.is_some() {
+                        hit_rate_limit_this_round = true;
+                    }
                     break;
                 };
                 tried.insert(account.name.clone());
@@ -2053,6 +2066,9 @@ impl Provider for AnthropicOAuthProvider {
             for attempt in 0..ROTATION_MAX_ATTEMPTS {
                 let Some((account, _request_guard)) = mgr.acquire_next_excluding(&tried).await
                 else {
+                    if mgr.time_until_soonest_recovery().await.is_some() {
+                        hit_rate_limit_this_round = true;
+                    }
                     break;
                 };
                 tried.insert(account.name.clone());
