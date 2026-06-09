@@ -116,6 +116,12 @@ impl SkillUsageStore {
         self.skills.get(name)
     }
 
+    /// Read-only iterator over `(name, record)` — used by the curator to plan
+    /// lifecycle transitions without taking a mutable borrow.
+    pub fn records(&self) -> impl Iterator<Item = (&String, &SkillUsage)> {
+        self.skills.iter()
+    }
+
     /// Mutable access, inserting a default record (with `created_at` stamped) if
     /// absent.
     fn entry(&mut self, name: &str) -> &mut SkillUsage {
