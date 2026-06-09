@@ -10,6 +10,7 @@ use jfc_core::SessionId;
 use tracing::debug;
 
 mod catalog;
+mod search;
 mod task_history;
 mod task_store;
 
@@ -18,6 +19,10 @@ pub use catalog::{
     list_session_ids_only, list_sessions, list_sessions_filtered, list_sessions_with_metadata,
     load_session_metadata, most_recent_session, most_recent_session_for_cwd, relative_time,
     shorten_cwd,
+};
+pub use search::{
+    SessionBrief, SessionHit, SessionMessage, browse as browse_sessions,
+    discover as search_sessions, scroll as scroll_session,
 };
 pub use task_history::{TaskHistoryRecord, history_path_for, read_records as read_task_history};
 pub use task_store::{
