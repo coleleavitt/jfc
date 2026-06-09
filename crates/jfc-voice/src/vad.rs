@@ -105,6 +105,12 @@ pub struct Vad {
     consecutive_voiced: usize,
     consecutive_silent: usize,
     in_speech: bool,
+    /// Voiced frames accumulated in the current segment. Used to enforce a
+    /// minimum utterance length so a single stray quiet frame just after onset
+    /// can't fire SpeechEnd before any real speech was captured.
+    speech_frames: usize,
+    /// Minimum voiced frames before SpeechEnd may fire (anti-truncation).
+    min_speech_frames: usize,
     /// Most recent frame RMS — exposed for the UI level meter.
     last_rms: u32,
     /// Leftover bytes from the last push that didn't fill a complete frame.
@@ -149,10 +155,20 @@ impl Vad {
             if fixed_threshold.is_some() { 0.0 } else { 0.35 },
         );
 
+        // Minimum voiced frames before SpeechEnd may fire — anti-truncation
+        // guard so a single stray quiet frame just after onset can't end the
+        // utterance before any real speech is captured. ~200ms (10 × 20ms),
+        // override via JFC_VAD_MIN_SPEECH_MS.
+        let min_speech_ms = env_u32("JFC_VAD_MIN_SPEECH_MS", 200);
+        let min_speech_frames =
+            (min_speech_ms * sample_rate / 1000 / frame_samples as u32).max(1) as usize;
+
         Self {
             speech_onset_frames: 3,
             silence_frames,
             frame_samples,
+            speech_frames: 0,
+            min_speech_frames,
             // Seed the floor non-zero so the first frames don't all read as
             // speech before the EMA adapts.
             noise_floor: 150.0,
@@ -270,12 +286,22 @@ impl Vad {
 
         if !self.in_speech && self.consecutive_voiced >= self.speech_onset_frames {
             self.in_speech = true;
+            self.speech_frames = self.consecutive_voiced;
             return Some(VadEvent::SpeechStart);
         }
-        if self.in_speech && self.consecutive_silent >= self.silence_frames {
-            self.in_speech = false;
-            self.consecutive_voiced = 0;
-            return Some(VadEvent::SpeechEnd);
+        if self.in_speech {
+            self.speech_frames += 1;
+            // Anti-truncation: require a minimum amount of captured speech
+            // before honoring an end-of-utterance, so a stray quiet frame right
+            // after onset can't truncate the very start of a sentence.
+            if self.consecutive_silent >= self.silence_frames
+                && self.speech_frames >= self.min_speech_frames
+            {
+                self.in_speech = false;
+                self.consecutive_voiced = 0;
+                self.speech_frames = 0;
+                return Some(VadEvent::SpeechEnd);
+            }
         }
         None
     }
@@ -346,6 +372,7 @@ impl Vad {
             self.in_speech = false;
             self.consecutive_voiced = 0;
             self.consecutive_silent = 0;
+            self.speech_frames = 0;
             true
         } else {
             false
@@ -398,6 +425,7 @@ impl Vad {
         self.consecutive_voiced = 0;
         self.consecutive_silent = 0;
         self.in_speech = false;
+        self.speech_frames = 0;
         self.last_rms = 0;
         self.last_zcr = 0.0;
         self.last_periodicity = 0.0;
@@ -680,6 +708,9 @@ mod tests {
         v.min_modulation = 0.0;
         v.min_periodicity = 0.0;
         v.silence_frames = 5;
+        // Keep the min-utterance guard small for the short loudness tests so it
+        // doesn't mask the behavior they assert (they push ~5 loud frames).
+        v.min_speech_frames = 1;
         v
     }
 
@@ -1024,6 +1055,30 @@ mod tests {
             .count();
         assert_eq!(ends, 1, "a real end-of-utterance silence must fire one SpeechEnd");
         assert!(!vad.is_speaking());
+    }
+
+    /// REGRESSION (anti-truncation): a single stray quiet frame immediately
+    /// after onset must NOT fire SpeechEnd before the minimum utterance length,
+    /// so the very start of a sentence can't be truncated.
+    #[test]
+    fn min_utterance_guard_blocks_immediate_end_robust() {
+        let mut vad = fixed_vad(300);
+        vad.min_speech_frames = 10; // ~200ms guard
+        vad.silence_frames = 2; // make end easy to trigger if unguarded
+        let loud = loud_frame(320, 5000);
+        // Just enough loud frames to start speech (3-frame onset).
+        for _ in 0..3 {
+            vad.push(&loud);
+        }
+        assert!(vad.is_speaking());
+        // Immediate silence — without the guard this would end after 2 frames,
+        // truncating a 3-frame utterance.
+        let silent = silent_frame(320);
+        let ends: usize = (0..5)
+            .flat_map(|_| vad.push(&silent))
+            .filter(|e| *e == VadEvent::SpeechEnd)
+            .count();
+        assert_eq!(ends, 0, "min-utterance guard must block truncating SpeechEnd");
     }
 
     #[test]
