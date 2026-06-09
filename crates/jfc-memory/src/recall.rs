@@ -600,10 +600,68 @@ pub async fn run_recall(
     provider: Arc<dyn Provider>,
     model: ModelId,
 ) -> Option<String> {
+    run_recall_excluding_visible(query, available, "", provider, model).await
+}
+
+/// Drop memories whose body text is already present in `visible_context` (the
+/// live prompt / session transcript the model can already see). Recalling such a
+/// memory re-injects text that's already in context — wasted tokens that crowd
+/// out genuinely-new recall. Mirrors magic-context's visible-memory hard filter.
+///
+/// The match is conservative: a memory is excluded only when a substantial
+/// prefix of its (whitespace-normalized) body appears verbatim in the visible
+/// context, so near-duplicates aren't over-pruned.
+fn filter_visible<'a>(available: &'a [MemoryEntry], visible_context: &str) -> Vec<&'a MemoryEntry> {
+    if visible_context.trim().is_empty() {
+        return available.iter().collect();
+    }
+    let haystack = normalize_ws(visible_context);
+    available
+        .iter()
+        .filter(|m| {
+            let body = normalize_ws(&m.body);
+            // A short body could coincidentally appear; require enough signal.
+            if body.len() < 24 {
+                return true;
+            }
+            let probe: String = body.chars().take(80).collect();
+            !haystack.contains(&probe)
+        })
+        .collect()
+}
+
+/// Collapse runs of whitespace to single spaces and lowercase, so the
+/// "already visible" check is robust to reflowing/indentation differences.
+fn normalize_ws(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+/// [`run_recall`] but first drops any memory already present in
+/// `visible_context` (the live prompt). Pass the current session/system-prompt
+/// text so recall never re-injects what the model can already read.
+pub async fn run_recall_excluding_visible(
+    query: &str,
+    available: &[MemoryEntry],
+    visible_context: &str,
+    provider: Arc<dyn Provider>,
+    model: ModelId,
+) -> Option<String> {
     if let Some(cached) = cached_recall(query) {
         tracing::debug!(target: "jfc::memory_recall", "recall cache hit");
         return cached;
     }
+
+    // Visible-context dedup: a memory already in the prompt costs tokens twice.
+    let visible_filtered = filter_visible(available, visible_context);
+    if visible_filtered.len() < available.len() {
+        tracing::debug!(
+            target: "jfc::memory_recall",
+            dropped = available.len() - visible_filtered.len(),
+            "recall: skipped memories already visible in context"
+        );
+    }
+    let available: Vec<MemoryEntry> = visible_filtered.into_iter().cloned().collect();
+    let available = available.as_slice();
 
     if available.is_empty() {
         cache_recall(query, None);
@@ -757,6 +815,35 @@ mod tests {
             frontmatter: MemoryFrontmatter::new(MemoryType::Context, MemoryScope::Private),
             body: body.to_owned(),
         }
+    }
+
+    // ── filter_visible (visible-context dedup) ───────────────────────────
+
+    // Normal: a memory whose body is already in the visible context is dropped;
+    // a memory absent from it is kept. (magic-context's visible-memory filter.)
+    #[test]
+    fn filter_visible_drops_already_present_normal() {
+        let entries = vec![
+            make_entry("a.md", "The project pins the Rust toolchain in rust-toolchain.toml."),
+            make_entry("b.md", "Prefer snake_case for all module names across the workspace."),
+        ];
+        // The live prompt already contains a.md's content (reflowed/indented).
+        let visible = "earlier context...\n   The project pins the Rust toolchain\n   in \
+                       rust-toolchain.toml.\nmore context";
+        let kept = filter_visible(&entries, visible);
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0].path.ends_with("b.md"), "only the not-yet-visible memory survives");
+    }
+
+    // Robust: empty visible context keeps everything; a very short body is never
+    // pruned (could coincidentally appear).
+    #[test]
+    fn filter_visible_edge_cases_robust() {
+        let entries = vec![make_entry("a.md", "x"), make_entry("b.md", "use serde for config")];
+        assert_eq!(filter_visible(&entries, "").len(), 2, "empty context prunes nothing");
+        // Short body (<24 chars) is kept even if present.
+        let kept = filter_visible(&entries, "x use serde for config");
+        assert!(kept.iter().any(|m| m.path.ends_with("a.md")), "short body never pruned");
     }
 
     // ── select_relevant_memories ─────────────────────────────────────────

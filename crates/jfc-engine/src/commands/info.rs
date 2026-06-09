@@ -879,7 +879,12 @@ pub(super) async fn cmd_recall(
             s
         }
     } else {
-        let sessions = jfc_session::search_sessions(query, 5, 1);
+        // Exclude the *current* session — its transcript is already live in the
+        // prompt, so returning hits from it would re-inject text the model can
+        // already see (magic-context's visible-content dedup). Past sessions are
+        // the useful recall surface.
+        let current = state.current_session_id.as_ref().map(|s| s.as_str());
+        let sessions = jfc_session::search_sessions_excluding(query, 5, 1, current);
         let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
         let commits = jfc_session::search_commits(&cwd, query, 5, 500);
 

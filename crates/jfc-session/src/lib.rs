@@ -24,7 +24,8 @@ pub use catalog::{
 pub use git_commits::{CommitHit, search as search_commits};
 pub use search::{
     SessionBrief, SessionHit, SessionMessage, browse as browse_sessions,
-    discover as search_sessions, scroll as scroll_session,
+    discover as search_sessions, discover_excluding as search_sessions_excluding,
+    scroll as scroll_session,
 };
 pub use task_history::{TaskHistoryRecord, history_path_for, read_records as read_task_history};
 pub use task_store::{

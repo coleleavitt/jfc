@@ -7,8 +7,9 @@ pub mod recall;
 pub mod store;
 
 pub use recall::{
-    Fact, cached_recall, format_recall_block, is_enabled, run_recall, select_relevant_memories,
-    set_runtime_override, synthesize_memories,
+    Fact, cached_recall, format_recall_block, is_enabled, run_recall,
+    run_recall_excluding_visible, select_relevant_memories, set_runtime_override,
+    synthesize_memories,
 };
 pub use store::{
     MemoryEntry, MemoryFrontmatter, MemoryLevel, MemoryScope, MemoryType, TeamMemoryConflict,
