@@ -77,7 +77,10 @@ pub async fn execute_tool_search(query: &str, limit: Option<u64>, cwd: &Path) ->
     }
 
     for skill in crate::agents::load_skills(cwd) {
-        if !skill.is_discoverable() {
+        // Hide non-discoverable skills, and skills the model isn't allowed to
+        // auto-invoke (`disable-model-invocation: true`), from the model's
+        // skill-search catalog. Such skills stay user-invocable via the palette.
+        if !skill.is_discoverable() || !skill.is_model_invocable() {
             continue;
         }
         let haystack = format!(

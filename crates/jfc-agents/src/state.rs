@@ -67,6 +67,18 @@ pub struct Skill {
     pub mcp_servers: Vec<String>,
     pub input_schema: Option<serde_json::Value>,
     pub schedule: Option<String>,
+    /// `argument-hint` frontmatter — a short usage hint shown in the command
+    /// palette (e.g. `<file> [--flag]`). Display-only.
+    pub argument_hint: Option<String>,
+    /// `model` frontmatter — the skill's preferred model id. When set, invoking
+    /// the skill suggests switching to this model.
+    pub model: Option<String>,
+    /// `effort` frontmatter — the skill's preferred reasoning effort
+    /// (low/medium/high/xhigh/max), applied for the skill's turn.
+    pub effort: Option<String>,
+    /// `disable-model-invocation` frontmatter — when true the model may NOT
+    /// auto-invoke this skill via the Skill tool; only the user can run it.
+    pub disable_model_invocation: bool,
 }
 
 impl Skill {
@@ -89,11 +101,22 @@ impl Skill {
             mcp_servers: Vec::new(),
             input_schema: None,
             schedule: None,
+            argument_hint: None,
+            model: None,
+            effort: None,
+            disable_model_invocation: false,
         }
     }
 
     pub fn is_user_invocable(&self) -> bool {
         self.user_invocable
+    }
+
+    /// Whether the *model* may auto-invoke this skill via the Skill tool.
+    /// `disable-model-invocation: true` makes a skill user-only — it stays in
+    /// the command palette but is hidden from the model's skill catalog.
+    pub fn is_model_invocable(&self) -> bool {
+        !self.disable_model_invocation
     }
 
     pub fn is_system_skill(&self) -> bool {
@@ -216,6 +239,10 @@ pub fn parse_skill(path: &Path, raw: &str) -> Option<Skill> {
     let mut mcp_servers = Vec::new();
     let mut input_schema = None;
     let mut schedule = None;
+    let mut argument_hint = None;
+    let mut model = None;
+    let mut effort = None;
+    let mut disable_model_invocation = false;
     if let Some(yaml) = front
         && let Ok(parsed) = serde_yaml::from_str::<SkillFront>(yaml)
     {
@@ -232,6 +259,10 @@ pub fn parse_skill(path: &Path, raw: &str) -> Option<Skill> {
         mcp_servers = parsed.mcp_servers.unwrap_or_default();
         input_schema = parsed.input_schema;
         schedule = parsed.schedule;
+        argument_hint = parsed.argument_hint;
+        model = parsed.model;
+        effort = parsed.effort;
+        disable_model_invocation = parsed.disable_model_invocation.unwrap_or(false);
     }
     let mut skill = Skill::new(
         name,
@@ -246,6 +277,10 @@ pub fn parse_skill(path: &Path, raw: &str) -> Option<Skill> {
     skill.mcp_servers = mcp_servers;
     skill.input_schema = input_schema;
     skill.schedule = schedule;
+    skill.argument_hint = argument_hint;
+    skill.model = model;
+    skill.effort = effort;
+    skill.disable_model_invocation = disable_model_invocation;
     Some(skill)
 }
 
@@ -314,6 +349,18 @@ struct SkillFront {
     pub input_schema: Option<serde_json::Value>,
     #[serde(default)]
     pub schedule: Option<String>,
+    #[serde(default, rename = "argument-hint", alias = "argumentHint")]
+    pub argument_hint: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub effort: Option<String>,
+    #[serde(
+        default,
+        rename = "disable-model-invocation",
+        alias = "disableModelInvocation"
+    )]
+    pub disable_model_invocation: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -385,6 +432,33 @@ mod tests {
         assert_eq!(s.body, "Just a body");
         assert!(s.user_invocable);
         assert_eq!(s.context, SkillContext::Inline);
+        // Defaults for the richer fields.
+        assert_eq!(s.argument_hint, None);
+        assert_eq!(s.model, None);
+        assert_eq!(s.effort, None);
+        assert!(!s.disable_model_invocation);
+        assert!(s.is_model_invocable());
+    }
+
+    #[test]
+    fn parse_skill_richer_frontmatter_normal() {
+        let raw = "---\nname: deploy\ndescription: Ship it\nargument-hint: \"<env> [--dry-run]\"\nmodel: claude-opus-4-8\neffort: high\ndisable-model-invocation: true\n---\n# Deploy\n\nRun the deploy.";
+        let s = parse_skill(Path::new("/x/skills/deploy.md"), raw).expect("parsed");
+        assert_eq!(s.argument_hint.as_deref(), Some("<env> [--dry-run]"));
+        assert_eq!(s.model.as_deref(), Some("claude-opus-4-8"));
+        assert_eq!(s.effort.as_deref(), Some("high"));
+        assert!(s.disable_model_invocation);
+        // disable-model-invocation hides it from the model but not the user.
+        assert!(!s.is_model_invocable());
+        assert!(s.is_user_invocable());
+    }
+
+    #[test]
+    fn parse_skill_camelcase_aliases_robust() {
+        let raw = "---\nname: x\nargumentHint: \"<arg>\"\ndisableModelInvocation: true\n---\nbody";
+        let s = parse_skill(Path::new("/x/skills/x.md"), raw).expect("parsed");
+        assert_eq!(s.argument_hint.as_deref(), Some("<arg>"));
+        assert!(s.disable_model_invocation);
     }
 
     #[test]
