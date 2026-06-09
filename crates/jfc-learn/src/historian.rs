@@ -54,6 +54,28 @@ impl Default for HistorianConfig {
     }
 }
 
+/// Why an extraction run produced nothing before calling the model. Mirrors
+/// Claude Code 2.1.170's `tengu_extract_memories_skipped_*` events — the
+/// historian shouldn't burn an LLM extraction pass on a transcript that has
+/// nothing worth remembering (tool-only turns, or content already persisted).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkipReason {
+    /// The transcript has no substantive assistant *prose* — only tool calls /
+    /// tool results / boilerplate. (`skipped_no_prose`)
+    NoProse,
+    /// The transcript is empty or below the minimum size to bother. (`skipped_empty`)
+    TooSmall,
+}
+
+impl SkipReason {
+    pub fn label(self) -> &'static str {
+        match self {
+            SkipReason::NoProse => "skipped_no_prose",
+            SkipReason::TooSmall => "skipped_too_small",
+        }
+    }
+}
+
 /// Result of a historian extraction run.
 #[derive(Debug, Clone, Default)]
 pub struct HistorianReport {
@@ -67,6 +89,9 @@ pub struct HistorianReport {
     /// Per-fact outcome — populated by `process` (not `run`, which only
     /// reports counts for backwards compatibility with v0.1.0 callers).
     pub processed: Vec<ProcessedFact>,
+    /// `Some` when extraction was short-circuited *before* the LLM call by the
+    /// pre-extraction gate. All count fields are `0` in that case.
+    pub skipped: Option<SkipReason>,
 }
 
 /// One extracted fact tagged with its dedup outcome.
@@ -148,6 +173,40 @@ impl<P: HistorianProvider, M: MemoryLookup> Historian<P, M> {
         msg
     }
 
+    /// Pre-extraction gate. Returns `Some(reason)` when the transcript isn't
+    /// worth an LLM extraction pass. Mirrors CC 2.1.170's `skipped_no_prose` /
+    /// size checks: extraction only earns its cost when the assistant actually
+    /// said something durable (prose), not when the turn was pure tool traffic.
+    ///
+    /// "Prose" = an `assistant`/`user` turn with enough non-tool natural-language
+    /// text. Tool-call/tool-result turns (role `tool`, or JSON-shaped bodies) and
+    /// trivially short turns don't count.
+    pub fn skip_reason(transcript: &[(String, String)]) -> Option<SkipReason> {
+        /// Minimum total prose chars across the transcript to bother extracting.
+        /// Deliberately low: one real instruction/explanation is worth a pass;
+        /// the gate's job is to drop *tool-only* turns and empty/one-word noise,
+        /// not to second-guess short-but-substantive statements.
+        const MIN_PROSE_CHARS: usize = 12;
+
+        if transcript.is_empty() {
+            return Some(SkipReason::TooSmall);
+        }
+
+        let prose_chars: usize = transcript
+            .iter()
+            .filter(|(role, _)| is_prose_role(role))
+            .map(|(_, body)| prose_len(body))
+            .sum();
+
+        if prose_chars == 0 {
+            return Some(SkipReason::NoProse);
+        }
+        if prose_chars < MIN_PROSE_CHARS {
+            return Some(SkipReason::TooSmall);
+        }
+        None
+    }
+
     /// Run the extraction pipeline.
     pub fn run(&self, transcript: &[(String, String)]) -> Result<HistorianReport, LearnError> {
         self.process(transcript)
@@ -160,6 +219,23 @@ impl<P: HistorianProvider, M: MemoryLookup> Historian<P, M> {
     /// pre-existing callers (kept that way to avoid breaking the v0.1.0
     /// HistorianReport API contract — `run` still returns the same counts).
     pub fn process(&self, transcript: &[(String, String)]) -> Result<HistorianReport, LearnError> {
+        // Pre-extraction gate (CC 2.1.170 parity): don't spend an LLM extraction
+        // pass on a transcript with nothing to remember — a turn that's only tool
+        // calls/results, or too small to carry a durable fact. Returns an empty
+        // report tagged with the skip reason instead of calling the model.
+        if let Some(reason) = Self::skip_reason(transcript) {
+            tracing::debug!(
+                target: "jfc::historian",
+                reason = reason.label(),
+                turns = transcript.len(),
+                "extract_memories skipped before model call"
+            );
+            return Ok(HistorianReport {
+                skipped: Some(reason),
+                ..Default::default()
+            });
+        }
+
         let user_message = Self::build_transcript_message(transcript);
 
         let raw_response = self
@@ -198,6 +274,7 @@ impl<P: HistorianProvider, M: MemoryLookup> Historian<P, M> {
             facts_deduped,
             facts_quarantined: 0,
             processed,
+            skipped: None,
         })
     }
 
@@ -313,6 +390,32 @@ impl<P: HistorianProvider, M: MemoryLookup> Historian<P, M> {
 // ─── Quarantine I/O ─────────────────────────────────────────────────────────
 
 /// Append one JSONL line per quarantined record. Creates parent directories
+/// Roles whose turns can carry durable prose. Tool-result turns (`tool`,
+/// `tool_result`, `function`) never do — they're inputs to extract *from* the
+/// surrounding reasoning, not facts themselves.
+fn is_prose_role(role: &str) -> bool {
+    matches!(role.to_ascii_lowercase().as_str(), "assistant" | "user")
+}
+
+/// Approximate the natural-language prose length of a turn body, discounting
+/// tool-call/tool-result noise. A body that is a single JSON object/array (a
+/// serialized tool call or result) contributes 0; otherwise we count trimmed
+/// non-whitespace length. This is the `no_prose` heuristic: turns that are pure
+/// machine payload don't move the needle.
+fn prose_len(body: &str) -> usize {
+    let t = body.trim();
+    if t.is_empty() {
+        return 0;
+    }
+    // Whole-body JSON payload → treat as non-prose (tool traffic).
+    if (t.starts_with('{') && t.ends_with('}')) || (t.starts_with('[') && t.ends_with(']')) {
+        if serde_json::from_str::<serde_json::Value>(t).is_ok() {
+            return 0;
+        }
+    }
+    t.len()
+}
+
 /// and the file itself if missing. Each line is a serialized
 /// [`QuarantineRecord`].
 fn append_quarantine_records(path: &Path, records: &[QuarantineRecord]) -> Result<(), LearnError> {
@@ -463,7 +566,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let q_path = tmp.path().join("learn").join("quarantine.jsonl");
 
-        let transcript = vec![("user".to_string(), "session".to_string())];
+        let transcript = vec![("user".to_string(), "The project pins the Rust toolchain in rust-toolchain.toml.".to_string())];
         let report = historian
             .process_session_with_verifier(&transcript, &verifier, &llm, &q_path)
             .unwrap();
@@ -516,7 +619,7 @@ mod tests {
         };
         let historian = Historian::new(provider, memory, HistorianConfig::default());
 
-        let transcript = vec![("user".to_string(), "session".to_string())];
+        let transcript = vec![("user".to_string(), "The project pins the Rust toolchain in rust-toolchain.toml.".to_string())];
         let report = historian.process(&transcript).unwrap();
 
         // Counts.
@@ -578,7 +681,7 @@ mod tests {
         };
         let historian = Historian::new(provider, memory, HistorianConfig::default());
 
-        let transcript = vec![("user".to_string(), "Hello".to_string())];
+        let transcript = vec![("user".to_string(), "We should standardize on snake_case for module names.".to_string())];
         let result = historian.run(&transcript);
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -587,5 +690,56 @@ mod tests {
             }
             other => panic!("Expected Parse error, got: {:?}", other),
         }
+    }
+
+    // ─── pre-extraction gate (CC 2.1.170 skipped_* parity) ──────────────────
+
+    // Normal: a tool-only transcript (no assistant/user prose) is skipped
+    // *before* the model call — saves an extraction pass on tool traffic.
+    #[test]
+    fn gate_skips_tool_only_transcript_no_prose() {
+        let transcript = vec![
+            ("tool".to_string(), "ran Bash: cargo build".to_string()),
+            (
+                "tool_result".to_string(),
+                "{\"exit_code\":0,\"stdout\":\"ok\"}".to_string(),
+            ),
+            // An assistant turn that is *only* a tool-call payload → not prose.
+            (
+                "assistant".to_string(),
+                "{\"tool\":\"Read\",\"file_path\":\"a.rs\"}".to_string(),
+            ),
+        ];
+        assert_eq!(Historian::<MockProvider, MockMemory>::skip_reason(&transcript), Some(SkipReason::NoProse));
+
+        // And `process` returns an empty, skipped report without touching the model.
+        let historian = Historian::new(
+            MockProvider { response: "SHOULD NOT BE CALLED".to_string() },
+            MockMemory { existing_hashes: HashSet::new() },
+            HistorianConfig::default(),
+        );
+        let report = historian.process(&transcript).unwrap();
+        assert_eq!(report.skipped, Some(SkipReason::NoProse));
+        assert_eq!(report.facts_extracted, 0);
+    }
+
+    // Robust: empty and one-word transcripts are skipped as too-small.
+    #[test]
+    fn gate_skips_empty_and_tiny_transcripts_robust() {
+        type H = Historian<MockProvider, MockMemory>;
+        assert_eq!(H::skip_reason(&[]), Some(SkipReason::TooSmall));
+        let tiny = vec![("user".to_string(), "ok".to_string())];
+        assert_eq!(H::skip_reason(&tiny), Some(SkipReason::TooSmall));
+    }
+
+    // Normal: a real assistant explanation passes the gate (None).
+    #[test]
+    fn gate_allows_substantive_prose_normal() {
+        type H = Historian<MockProvider, MockMemory>;
+        let transcript = vec![(
+            "assistant".to_string(),
+            "The build pins nightly via rust-toolchain.toml so CI is reproducible.".to_string(),
+        )];
+        assert_eq!(H::skip_reason(&transcript), None);
     }
 }
