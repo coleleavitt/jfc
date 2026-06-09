@@ -17,6 +17,7 @@ pub mod key_files;
 pub mod lifecycle;
 pub mod normalize_hash;
 pub mod scaffold_detector;
+pub mod skill_usage;
 pub mod trajectory;
 pub mod user_memory;
 pub mod variant_selector;
@@ -32,6 +33,7 @@ pub use historian::{
 };
 pub use key_files::{KeyFileStore, PinnedFile, ReadEvent};
 pub use normalize_hash::normalize_and_hash;
+pub use skill_usage::{CreatedBy, SkillState, SkillUsage, SkillUsageStore, record_skill_use};
 pub use trajectory::{Turn, compress, total_tokens};
 pub use user_memory::{UserMemoryPipeline, UserObservation, UserProfile, UserProfileEntry};
 pub use variant_selector::{

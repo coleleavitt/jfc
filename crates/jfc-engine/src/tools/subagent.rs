@@ -33,6 +33,9 @@ pub async fn execute_skill_in(cwd: &Path, name: &str, args: Option<&str>) -> Exe
                     skill.name
                 ));
             }
+            // Best-effort usage telemetry (the curator's foundation). Never
+            // affects invocation — errors are logged inside record_skill_use.
+            jfc_learn::record_skill_use(cwd, &skill.name);
             let memory_root = jfc_memory::project_memory_dir(cwd);
             let context = crate::agents::SkillRenderContext::new(Some(cwd), Some(&memory_root));
             let body = crate::agents::render_skill_invocation(skill, context, args);
