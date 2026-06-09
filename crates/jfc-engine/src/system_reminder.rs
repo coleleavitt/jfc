@@ -46,6 +46,67 @@ pub fn append_to_last_user(messages: &mut Vec<ChatMessage>, body: &str) {
     messages.push(ChatMessage::user(formatted));
 }
 
+/// Periodic "persist what you learned" nudge.
+///
+/// Ported from Hermes Agent (`agent/turn_context.py` `_turns_since_memory` /
+/// `_memory_nudge_interval`): every N user turns, inject a background reminder
+/// that prompts the agent to save durable facts via its memory tool. This is
+/// what makes an agent *reliably* write memories mid-session, complementing the
+/// post-hoc historian extraction. Deterministic + cheap (no model call).
+///
+/// The counter is owned by the caller (engine state) so it survives the turn
+/// and can be hydrated across restarts. `interval == 0` disables nudging.
+#[derive(Debug, Clone)]
+pub struct MemoryNudge {
+    /// Fire a nudge every `interval` user turns. `0` disables.
+    pub interval: u32,
+    /// User turns observed since the last nudge fired.
+    pub turns_since: u32,
+}
+
+impl Default for MemoryNudge {
+    fn default() -> Self {
+        // Mirrors Hermes' default `_memory_nudge_interval = 10`.
+        Self { interval: 10, turns_since: 0 }
+    }
+}
+
+impl MemoryNudge {
+    pub fn new(interval: u32) -> Self {
+        Self { interval, turns_since: 0 }
+    }
+
+    /// Record one user turn. Returns the nudge body to inject when the interval
+    /// is reached (and resets the counter), or `None` otherwise.
+    pub fn on_user_turn(&mut self) -> Option<String> {
+        if self.interval == 0 {
+            return None;
+        }
+        self.turns_since += 1;
+        if self.turns_since >= self.interval {
+            self.turns_since = 0;
+            Some(MEMORY_NUDGE_BODY.to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Hydrate the counter from the number of prior user turns this session, so
+    /// a restart mid-interval resumes at the right phase (Hermes issue #22357).
+    pub fn hydrate(&mut self, prior_user_turns: u32) {
+        if self.interval > 0 {
+            self.turns_since = prior_user_turns % self.interval;
+        }
+    }
+}
+
+/// The nudge text. Phrased as background context (it's wrapped in a
+/// system-reminder), pointing the agent at its own memory-write path.
+pub const MEMORY_NUDGE_BODY: &str = "Checkpoint: if anything durable emerged since the last few \
+turns — a user preference or correction, a project decision, a non-obvious constraint, or a \
+confirmed approach — save it now with the memory tool so it survives this session. Skip if \
+nothing is worth persisting (don't save ephemeral task state or anything already in the code).";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,5 +160,43 @@ mod tests {
         append_to_last_user(&mut msgs, "boot reminder");
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0].role, Role::User);
+    }
+
+    // ─── MemoryNudge (Hermes parity) ────────────────────────────────────────
+
+    /// Normal: the nudge fires exactly on the Nth user turn and resets.
+    #[test]
+    fn memory_nudge_fires_on_interval_normal() {
+        let mut n = MemoryNudge::new(3);
+        assert!(n.on_user_turn().is_none(), "turn 1");
+        assert!(n.on_user_turn().is_none(), "turn 2");
+        let body = n.on_user_turn().expect("turn 3 fires");
+        assert!(body.contains("memory tool"));
+        // Counter reset → next two turns are quiet again.
+        assert!(n.on_user_turn().is_none(), "turn 4");
+        assert!(n.on_user_turn().is_none(), "turn 5");
+        assert!(n.on_user_turn().is_some(), "turn 6 fires");
+    }
+
+    /// Robust: interval 0 disables nudging entirely (never fires).
+    #[test]
+    fn memory_nudge_zero_interval_never_fires_robust() {
+        let mut n = MemoryNudge::new(0);
+        for _ in 0..50 {
+            assert!(n.on_user_turn().is_none());
+        }
+    }
+
+    /// Robust: hydration resumes at the right phase after a restart, so a
+    /// session that already had `prior` turns doesn't re-start the count.
+    #[test]
+    fn memory_nudge_hydrates_phase_robust() {
+        let mut n = MemoryNudge::new(10);
+        n.hydrate(7); // 7 turns already happened this session
+        assert_eq!(n.turns_since, 7);
+        // 3 more turns reach the interval and fire.
+        assert!(n.on_user_turn().is_none());
+        assert!(n.on_user_turn().is_none());
+        assert!(n.on_user_turn().is_some());
     }
 }

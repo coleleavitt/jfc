@@ -314,6 +314,10 @@ pub struct EngineState {
     /// 2.1.144's `maxTurns`). Without this, a model stuck in a retry loop
     /// runs indefinitely, burning unlimited API credits.
     pub agentic_turn_count: u32,
+    /// Periodic "persist what you learned" nudge (ported from Hermes Agent's
+    /// `_memory_nudge_interval`). Advanced once per genuine user submit; when it
+    /// fires it queues a memory-persist `<system-reminder>` for the next request.
+    pub memory_nudge: crate::system_reminder::MemoryNudge,
     /// Consecutive self-continuations (auto-driving the next step without a
     /// user "continue") since the last real user submit. Capped by
     /// `max_self_continuations` to prevent a runaway loop when the model keeps
@@ -902,6 +906,7 @@ impl EngineState {
             turn_start_cost: 0.0,
             turn_edited_files: std::collections::BTreeSet::new(),
             agentic_turn_count: 0,
+            memory_nudge: crate::system_reminder::MemoryNudge::default(),
             self_continuation_count: 0,
             empty_billed_resend_count: 0,
             is_streaming: false,

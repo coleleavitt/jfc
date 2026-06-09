@@ -577,6 +577,19 @@ pub async fn submit_prompt(
     state.messages.push(user_msg);
     state.tool_ctx.total_user_turns += 1;
 
+    // Periodic memory-persist nudge (Hermes parity): every N user turns, queue a
+    // background `<system-reminder>` prompting the model to save durable facts
+    // via the memory tool. Queued (not appended inline) so it rides the same
+    // background-reminder drain as FS/MCP reminders on the next request.
+    if let Some(body) = state.memory_nudge.on_user_turn() {
+        tracing::debug!(
+            target: "jfc::memory",
+            interval = state.memory_nudge.interval,
+            "memory-persist nudge fired"
+        );
+        state.queue_background_reminder(body);
+    }
+
     // Ultrawork keyword: inject the system-reminder telling the model
     // to use the Workflow tool.
     if keyword_result.ultrawork {
