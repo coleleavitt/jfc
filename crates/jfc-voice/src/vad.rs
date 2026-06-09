@@ -255,9 +255,17 @@ impl Vad {
         } else {
             self.consecutive_silent += 1;
             self.consecutive_voiced = 0;
-            // Adapt the noise floor on any non-voiced frame (including a loud
-            // but flat fan), so the floor rises to absorb steady noise.
-            self.update_noise_floor(rms);
+            // Adapt the noise floor only while IDLE (not mid-utterance). During
+            // an active segment the natural between-word pauses are non-voiced;
+            // adapting on them ratchets the floor up, which raises the `offset`
+            // (stay-in-speech) threshold, which makes the next normal-volume
+            // words read as silence and fires SpeechEnd mid-sentence — the
+            // "cut off, transcribe, then catch up when I keep talking" bug.
+            // Freezing the floor during speech matches the documented invariant
+            // ("updates on non-speech frames") and how production VADs behave.
+            if !self.in_speech {
+                self.update_noise_floor(rms);
+            }
         }
 
         if !self.in_speech && self.consecutive_voiced >= self.speech_onset_frames {
@@ -930,6 +938,92 @@ mod tests {
         let mut vad = fixed_vad(300);
         vad.push(&silent_frame(320));
         assert!(vad.level() < 0.2);
+    }
+
+    /// REGRESSION (premature endpoint): the adaptive noise floor must NOT rise
+    /// during an active utterance. Bug symptom: while you talk, the between-word
+    /// pauses ratcheted the floor up, the offset threshold rose with it, and a
+    /// normal pause then read as silence → SpeechEnd fired mid-sentence, the
+    /// fragment transcribed, and continued speech started a new utterance.
+    #[test]
+    fn noise_floor_frozen_during_speech_robust() {
+        let mut vad = Vad::new();
+        vad.fixed_threshold = None;
+        // Calibrate the idle floor on quiet room tone.
+        let quiet = loud_frame(320, 200);
+        for _ in 0..20 {
+            vad.push(&quiet);
+        }
+        // Enter speech with loud voiced frames.
+        let loud = voiced_frame(320, 80, 8000);
+        for _ in 0..6 {
+            vad.push(&loud);
+        }
+        assert!(vad.is_speaking(), "should be mid-utterance");
+        let floor_at_speech_start = vad.noise_floor();
+        // A natural mid-sentence pause: several non-voiced frames (but below the
+        // silence hangover, so the utterance is still active).
+        let pause = loud_frame(320, 250);
+        for _ in 0..3 {
+            vad.push(&pause);
+        }
+        assert!(vad.is_speaking(), "pause shorter than hangover must not end speech");
+        assert_eq!(
+            vad.noise_floor(),
+            floor_at_speech_start,
+            "noise floor must be frozen while in_speech (premature-endpoint bug)"
+        );
+    }
+
+    /// REGRESSION: a long utterance with periodic short pauses must stay ONE
+    /// segment — no SpeechEnd until a real silence ≥ the hangover. Directly
+    /// models the reported "gets cut off then catches up" behavior.
+    #[test]
+    fn long_utterance_with_pauses_stays_one_segment_robust() {
+        let mut vad = Vad::new();
+        vad.fixed_threshold = None;
+        let loud = voiced_frame(320, 80, 9000);
+        let short_pause = loud_frame(320, 250); // below hangover length
+        // Warm up the floor, then start speaking.
+        for _ in 0..10 {
+            vad.push(&loud_frame(320, 200));
+        }
+        let mut ends = 0;
+        for _ in 0..8 {
+            // ~10 voiced frames, then a 2-frame pause (well under the 1s/50-frame
+            // hangover) — a natural speaking cadence.
+            for _ in 0..10 {
+                ends += vad.push(&loud).iter().filter(|e| **e == VadEvent::SpeechEnd).count();
+            }
+            for _ in 0..2 {
+                ends += vad.push(&short_pause).iter().filter(|e| **e == VadEvent::SpeechEnd).count();
+            }
+        }
+        assert_eq!(ends, 0, "short within-utterance pauses must not fire SpeechEnd");
+    }
+
+    /// A genuine end-of-utterance silence (≥ hangover) still fires exactly one
+    /// SpeechEnd after the pause-tolerant change — we didn't break endpointing.
+    #[test]
+    fn real_silence_still_ends_utterance_normal() {
+        let mut vad = Vad::new();
+        vad.fixed_threshold = None;
+        let loud = voiced_frame(320, 80, 9000);
+        for _ in 0..10 {
+            vad.push(&loud_frame(320, 200));
+        }
+        for _ in 0..10 {
+            vad.push(&loud);
+        }
+        assert!(vad.is_speaking());
+        // A full second of real silence (> 50-frame hangover).
+        let silent = silent_frame(320);
+        let ends: usize = (0..60)
+            .flat_map(|_| vad.push(&silent))
+            .filter(|e| *e == VadEvent::SpeechEnd)
+            .count();
+        assert_eq!(ends, 1, "a real end-of-utterance silence must fire one SpeechEnd");
+        assert!(!vad.is_speaking());
     }
 
     #[test]
