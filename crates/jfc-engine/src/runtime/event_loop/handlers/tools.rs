@@ -507,9 +507,26 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
             target: "jfc::compact",
             "skipping post-response compact — suppressed after permanent failure"
         );
-    } else if manual
-        || crate::compact::should_compact(state.tool_ctx.approx_tokens, state.max_context_tokens)
-    {
+    } else {
+        if !manual {
+            let level = crate::compact::compact_level(state.tool_ctx.approx_tokens, state.max_context_tokens);
+            let saved_tokens = crate::compact::microcompact_if_helpful(
+                &mut state.messages,
+                &mut state.tool_ctx.approx_tokens,
+                level,
+            );
+            if saved_tokens > 0 {
+                tracing::info!(
+                    target: "jfc::compact::micro",
+                    saved_tokens,
+                    new_est = state.tool_ctx.approx_tokens,
+                    "post-response microcompaction applied"
+                );
+            }
+        }
+        if manual
+            || crate::compact::should_compact(state.tool_ctx.approx_tokens, state.max_context_tokens)
+        {
         if manual {
             // /compact is the user's explicit override — clear
             // BOTH the suppression flag AND the rapid-refill
@@ -686,6 +703,7 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
                 }
             }
         });
+        }
     }
     // Gate the agentic continuation on the approval pipeline being
     // empty. Without this, dispatching tool 0 fires

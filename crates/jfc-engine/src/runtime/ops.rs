@@ -334,8 +334,26 @@ pub async fn submit_prompt(
     // also under-count by missing the cache_read contribution. Using the
     // calibrated value makes pre-submit and post-tool compaction agree on
     // when the session is actually full.
-    let est = state.tool_ctx.approx_tokens;
-    let level = crate::compact::compact_level(est, state.max_context_tokens);
+    let mut est = state.tool_ctx.approx_tokens;
+    let mut level = crate::compact::compact_level(est, state.max_context_tokens);
+    if !state.force_compact_pending {
+        let saved_tokens = crate::compact::microcompact_if_helpful(
+            &mut state.messages,
+            &mut state.tool_ctx.approx_tokens,
+            level,
+        );
+        if saved_tokens > 0 {
+            est = state.tool_ctx.approx_tokens;
+            level = crate::compact::compact_level(est, state.max_context_tokens);
+            tracing::info!(
+                target: "jfc::compact::micro",
+                saved_tokens,
+                new_est = est,
+                new_level = ?level,
+                "pre-submit microcompaction applied"
+            );
+        }
+    }
     let want_compact = matches!(
         level,
         crate::compact::CompactLevel::Compact | crate::compact::CompactLevel::Blocked

@@ -203,5 +203,7 @@ pub fn should_compact(current_tokens: usize, max_context_tokens: usize) -> bool 
 }
 
 mod engine;
+pub mod microcompact;
 
 pub use engine::{CompactProgressCb, CompactResult, compact};
+pub use microcompact::{microcompact, microcompact_if_helpful, microcompact_savings};
