@@ -136,6 +136,9 @@ RemoteTrigger
 EnterPlanMode
   to_value={"reason":"r"}
   summary=enter plan mode: r
+SetGoal
+  to_value={"condition":"all tests pass"}
+  summary=set goal: all tests pass
 EnterWorktree
   to_value={"name":"w","branch":"b"}
   summary=enter worktree w (b)

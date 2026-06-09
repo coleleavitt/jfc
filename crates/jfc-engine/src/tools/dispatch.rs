@@ -39,7 +39,9 @@ use super::tasks::{
     execute_task_get, execute_task_list, execute_task_stop, execute_task_update,
     execute_task_validate,
 };
-use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
+use super::worktree::{
+    execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree, execute_set_goal,
+};
 
 use super::registry::{
     collusion_detector, market_orchestrator, snapshot_event_sender, snapshot_mcp_registry,
@@ -891,6 +893,7 @@ pub async fn execute_tool(
         (ToolKind::EnterPlanMode, ToolInput::EnterPlanMode { reason }) => {
             execute_enter_plan_mode(&reason).await
         }
+        (ToolKind::SetGoal, ToolInput::SetGoal { condition }) => execute_set_goal(&condition).await,
         (ToolKind::EnterWorktree, ToolInput::EnterWorktree { name, branch }) => {
             execute_enter_worktree(&name, branch.as_deref(), &cwd).await
         }

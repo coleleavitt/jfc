@@ -31,6 +31,64 @@ pub fn handle_enter_plan_mode(state: &mut EngineState, reason: String) {
     );
 }
 
+/// Handle `FrontendEvent::GoalSet { condition }` — the model-invocable `SetGoal`
+/// tool. Sets (or clears) the session stop-condition the same way `/goal` does,
+/// so the goal loop drives the agent until an evaluator says the condition is
+/// met. Reuses [`crate::goal`] validation + sidecar persistence so the model
+/// path and the user `/goal` path can't diverge.
+pub fn handle_set_goal(state: &mut EngineState, condition: String) {
+    let arg = condition.trim();
+    if arg.is_empty() || crate::goal::is_clear_arg(arg) {
+        let prev = state.goal.take();
+        state.goal_evaluator_in_flight = false;
+        if let Some(sid) = state.current_session_id.as_ref() {
+            crate::goal::save_sidecar(sid.as_str(), None);
+        }
+        let body = match prev {
+            Some(g) => format!("Goal cleared (model) after {} iterations.", g.iterations),
+            None => "No goal was set.".to_owned(),
+        };
+        toast::push_with_cap(
+            &mut state.toasts,
+            toast::Toast::new(toast::ToastKind::Info, body),
+        );
+        return;
+    }
+    match crate::goal::validate_condition(arg) {
+        Ok(condition) => {
+            state.goal = Some(crate::goal::ActiveGoal::new(condition.clone()));
+            if let Some(sid) = state.current_session_id.as_ref() {
+                crate::goal::save_sidecar(sid.as_str(), state.goal.as_ref());
+            }
+            let preview: String = condition.chars().take(80).collect();
+            toast::push_with_cap(
+                &mut state.toasts,
+                toast::Toast::new(toast::ToastKind::Success, format!("Goal set: {preview}")),
+            );
+            // Mid-stream reminder so the next turn sees the new stop-condition
+            // explicitly (mirrors the plan-mode reminder pattern).
+            crate::system_reminder::append_to_last_user(
+                &mut state.messages,
+                &format!(
+                    "Session goal is now active: \"{condition}\". Keep working until \
+                     it is met; it is auto-evaluated after each turn (max {} iterations). \
+                     Call SetGoal with an empty/`clear` condition to cancel.",
+                    crate::goal::MAX_ITERATIONS
+                ),
+            );
+        }
+        Err(reason) => {
+            toast::push_with_cap(
+                &mut state.toasts,
+                toast::Toast::new(
+                    toast::ToastKind::Error,
+                    format!("SetGoal rejected: {reason}"),
+                ),
+            );
+        }
+    }
+}
+
 /// Handle `StreamEvent::SystemPromptLen(len)`.
 pub fn handle_system_prompt_len(state: &mut EngineState, len: usize) {
     state.last_system_prompt_len = Some(len);

@@ -135,8 +135,8 @@ static ELICITATION_TX: std::sync::OnceLock<
     std::sync::Mutex<Option<tokio::sync::mpsc::Sender<ElicitationEvent>>>,
 > = std::sync::OnceLock::new();
 
-fn elicitation_tx_slot(
-) -> &'static std::sync::Mutex<Option<tokio::sync::mpsc::Sender<ElicitationEvent>>> {
+fn elicitation_tx_slot()
+-> &'static std::sync::Mutex<Option<tokio::sync::mpsc::Sender<ElicitationEvent>>> {
     ELICITATION_TX.get_or_init(|| std::sync::Mutex::new(None))
 }
 
@@ -223,7 +223,11 @@ pub fn resolve_by_elicitation_id(elicitation_id: &str, response: ElicitationResp
         guard
             .iter()
             .find(|(_, v)| {
-                if let ElicitationKind::Url { elicitation_id: eid, .. } = &v.kind {
+                if let ElicitationKind::Url {
+                    elicitation_id: eid,
+                    ..
+                } = &v.kind
+                {
                     eid == elicitation_id
                 } else {
                     false
@@ -310,10 +314,10 @@ mod tests {
             elicitation_id: elicitation_id.clone(),
         };
         let (_id, _rx) = push("url-server".to_owned(), kind);
-        let resolved =
-            resolve_by_elicitation_id(&elicitation_id, ElicitationResponse::Accept {
-                content: json!({}),
-            });
+        let resolved = resolve_by_elicitation_id(
+            &elicitation_id,
+            ElicitationResponse::Accept { content: json!({}) },
+        );
         assert!(resolved);
     }
 

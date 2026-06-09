@@ -509,7 +509,10 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
         );
     } else {
         if !manual {
-            let level = crate::compact::compact_level(state.tool_ctx.approx_tokens, state.max_context_tokens);
+            let level = crate::compact::compact_level(
+                state.tool_ctx.approx_tokens,
+                state.max_context_tokens,
+            );
             let saved_tokens = crate::compact::microcompact_if_helpful(
                 &mut state.messages,
                 &mut state.tool_ctx.approx_tokens,
@@ -525,184 +528,189 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
             }
         }
         if manual
-            || crate::compact::should_compact(state.tool_ctx.approx_tokens, state.max_context_tokens)
+            || crate::compact::should_compact(
+                state.tool_ctx.approx_tokens,
+                state.max_context_tokens,
+            )
         {
-        if manual {
-            // /compact is the user's explicit override — clear
-            // BOTH the suppression flag AND the rapid-refill
-            // counter. Otherwise a previously tripped breaker
-            // would still fast-fail this manual attempt.
-            state.compact_suppressed = false;
-            state.tool_ctx.rapid_refill_count = 0;
-        }
-        tracing::info!(
-            target: "jfc::compact",
-            manual,
-            model = %state.model,
-            max_context_tokens = state.max_context_tokens,
-            message_count = state.messages.len(),
-            rapid_refill_count = state.tool_ctx.rapid_refill_count,
-            "post-response compaction triggered"
-        );
-        // Set the compaction guard synchronously so the agentic
-        // loop continuation check (below) sees it immediately.
-        // The CompactionStarted event still fires for the UI
-        // spinner, but the guard must be synchronous to prevent
-        // the race where continue_agentic_loop fires before the
-        // async event is processed.
-        state.compacting_started_at = Some(std::time::Instant::now());
-        state.compacting_output_chars = 0;
-        state.compacting_attempt_baseline = 0;
-        state.compacting_last_progress = 0;
-        let _ = tx
-            .send(EngineEvent::Compaction(CompactionEvent::Started))
-            .await;
-        let messages = state.messages.clone();
-        let provider = Arc::clone(&state.provider);
-        let model = state.model.clone();
-        let mut tool_ctx = state.tool_ctx.clone();
-        let window = state.max_context_tokens;
-        let tx_compact = tx.clone();
-        let progress_tx = tx_compact.clone();
-        let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
-            // CompactionProgress is non-critical; next progress update supersedes.
-            let _ = progress_tx.try_send(EngineEvent::Compaction(CompactionEvent::Progress {
-                output_chars: chars,
-            }));
-        });
-        // wg-async: compact holds critical state (the full
-        // message slice + an outbound tx). Race the long
-        // provider call against `cancelled()` so ESC×2
-        // mid-compact doesn't leave it running for ~30s
-        // sending CompactionDone into a stale state.
-        let cancel_compact = state.cancel_token.clone();
-        tokio::spawn(async move {
-            // Use compaction_model from config if set; otherwise
-            // fall back to the session's current model.
-            let compact_model_id = crate::config::load_arc()
-                .default
-                .compaction_model
-                .clone()
-                .map(jfc_provider::ModelId::new)
-                .unwrap_or_else(|| model.clone());
-            let options = jfc_provider::StreamOptions::new(compact_model_id.clone());
-            tracing::debug!(
-                target: "jfc::compact",
-                model = %compact_model_id,
-                window,
-                "spawned post-response compaction task"
-            );
-            let result = tokio::select! {
-                biased;
-                _ = cancel_compact.cancelled() => {
-                    tracing::info!(
-                        target: "jfc::compact",
-                        "compaction cancelled via token"
-                    );
-                    let _ = tx_compact
-                        .send(EngineEvent::Compaction(CompactionEvent::Failed {
-                            reason: "Compaction cancelled by user".into(),
-                            calibrated_tokens: None,
-                            transient: true,
-                        }))
-                        .await;
-                    return;
-                }
-                r = crate::compact::compact(
-                    &messages,
-                    provider.as_ref(),
-                    &options,
-                    &mut tool_ctx,
-                    window,
-                    Some(on_progress),
-                ) => r,
-            };
-            match result {
-                crate::compact::CompactResult::Success {
-                    messages,
-                    pre_tokens,
-                    post_tokens,
-                } => {
-                    tracing::info!(
-                        target: "jfc::compact",
-                        pre_tokens, post_tokens,
-                        saved = pre_tokens.saturating_sub(post_tokens),
-                        "post-response compaction succeeded — sending CompactionDone"
-                    );
-                    let _ = tx_compact
-                        .send(EngineEvent::Compaction(CompactionEvent::Done {
-                            messages,
-                            tool_ctx,
-                            pre_tokens,
-                            post_tokens,
-                        }))
-                        .await;
-                }
-                crate::compact::CompactResult::Unsupported => {
-                    tracing::info!(
-                        target: "jfc::compact",
-                        "post-response compaction skipped (provider unsupported)"
-                    );
-                    let _ = tx_compact
-                        .send(EngineEvent::Compaction(CompactionEvent::Failed {
-                            reason: "Provider does not support compaction — \
-                 try /clear or switch to a provider with non-streaming support."
-                                .into(),
-                            calibrated_tokens: None,
-                            transient: false, // permanent: provider mismatch won't fix itself
-                        }))
-                        .await;
-                }
-                crate::compact::CompactResult::TooFewGroups => {
-                    tracing::info!(
-                        target: "jfc::compact",
-                        "post-response compaction skipped (single user turn)"
-                    );
-                    // Transient: the next user message creates a
-                    // second group, so auto-compaction can fire
-                    // again. Don't latch `compact_suppressed` —
-                    // otherwise a single huge agentic batch leaves
-                    // auto-compact dormant for the rest of the
-                    // session until the user remembers /compact.
-                    let _ = tx_compact
-                        .send(EngineEvent::Compaction(CompactionEvent::Failed {
-                            reason: "Nothing to compact yet — only one conversation turn so far. \
-                     Auto-compact will retry after your next message."
-                                .into(),
-                            calibrated_tokens: None,
-                            transient: true, // transient: more user turns will unblock it
-                        }))
-                        .await;
-                }
-                crate::compact::CompactResult::CircuitBreakerTripped => {
-                    tracing::warn!(
-                        target: "jfc::compact",
-                        "post-response compaction: circuit breaker tripped"
-                    );
-                    let _ = tx_compact
-                        .send(EngineEvent::Compaction(CompactionEvent::Failed {
-                            reason: "Circuit breaker tripped — compaction keeps refilling".into(),
-                            calibrated_tokens: None,
-                            transient: false,
-                        }))
-                        .await;
-                }
-                crate::compact::CompactResult::Exhausted { attempts } => {
-                    tracing::warn!(
-                        target: "jfc::compact",
-                        attempts,
-                        "post-response compaction exhausted all attempts"
-                    );
-                    let _ = tx_compact
-                        .send(EngineEvent::Compaction(CompactionEvent::Failed {
-                            reason: format!("Exhausted {attempts} compaction attempts"),
-                            calibrated_tokens: None,
-                            transient: false,
-                        }))
-                        .await;
-                }
+            if manual {
+                // /compact is the user's explicit override — clear
+                // BOTH the suppression flag AND the rapid-refill
+                // counter. Otherwise a previously tripped breaker
+                // would still fast-fail this manual attempt.
+                state.compact_suppressed = false;
+                state.tool_ctx.rapid_refill_count = 0;
             }
-        });
+            tracing::info!(
+                target: "jfc::compact",
+                manual,
+                model = %state.model,
+                max_context_tokens = state.max_context_tokens,
+                message_count = state.messages.len(),
+                rapid_refill_count = state.tool_ctx.rapid_refill_count,
+                "post-response compaction triggered"
+            );
+            // Set the compaction guard synchronously so the agentic
+            // loop continuation check (below) sees it immediately.
+            // The CompactionStarted event still fires for the UI
+            // spinner, but the guard must be synchronous to prevent
+            // the race where continue_agentic_loop fires before the
+            // async event is processed.
+            state.compacting_started_at = Some(std::time::Instant::now());
+            state.compacting_output_chars = 0;
+            state.compacting_attempt_baseline = 0;
+            state.compacting_last_progress = 0;
+            let _ = tx
+                .send(EngineEvent::Compaction(CompactionEvent::Started))
+                .await;
+            let messages = state.messages.clone();
+            let provider = Arc::clone(&state.provider);
+            let model = state.model.clone();
+            let mut tool_ctx = state.tool_ctx.clone();
+            let window = state.max_context_tokens;
+            let tx_compact = tx.clone();
+            let progress_tx = tx_compact.clone();
+            let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
+                // CompactionProgress is non-critical; next progress update supersedes.
+                let _ = progress_tx.try_send(EngineEvent::Compaction(CompactionEvent::Progress {
+                    output_chars: chars,
+                }));
+            });
+            // wg-async: compact holds critical state (the full
+            // message slice + an outbound tx). Race the long
+            // provider call against `cancelled()` so ESC×2
+            // mid-compact doesn't leave it running for ~30s
+            // sending CompactionDone into a stale state.
+            let cancel_compact = state.cancel_token.clone();
+            tokio::spawn(async move {
+                // Use compaction_model from config if set; otherwise
+                // fall back to the session's current model.
+                let compact_model_id = crate::config::load_arc()
+                    .default
+                    .compaction_model
+                    .clone()
+                    .map(jfc_provider::ModelId::new)
+                    .unwrap_or_else(|| model.clone());
+                let options = jfc_provider::StreamOptions::new(compact_model_id.clone());
+                tracing::debug!(
+                    target: "jfc::compact",
+                    model = %compact_model_id,
+                    window,
+                    "spawned post-response compaction task"
+                );
+                let result = tokio::select! {
+                    biased;
+                    _ = cancel_compact.cancelled() => {
+                        tracing::info!(
+                            target: "jfc::compact",
+                            "compaction cancelled via token"
+                        );
+                        let _ = tx_compact
+                            .send(EngineEvent::Compaction(CompactionEvent::Failed {
+                                reason: "Compaction cancelled by user".into(),
+                                calibrated_tokens: None,
+                                transient: true,
+                            }))
+                            .await;
+                        return;
+                    }
+                    r = crate::compact::compact(
+                        &messages,
+                        provider.as_ref(),
+                        &options,
+                        &mut tool_ctx,
+                        window,
+                        Some(on_progress),
+                    ) => r,
+                };
+                match result {
+                    crate::compact::CompactResult::Success {
+                        messages,
+                        pre_tokens,
+                        post_tokens,
+                    } => {
+                        tracing::info!(
+                            target: "jfc::compact",
+                            pre_tokens, post_tokens,
+                            saved = pre_tokens.saturating_sub(post_tokens),
+                            "post-response compaction succeeded — sending CompactionDone"
+                        );
+                        let _ = tx_compact
+                            .send(EngineEvent::Compaction(CompactionEvent::Done {
+                                messages,
+                                tool_ctx,
+                                pre_tokens,
+                                post_tokens,
+                            }))
+                            .await;
+                    }
+                    crate::compact::CompactResult::Unsupported => {
+                        tracing::info!(
+                            target: "jfc::compact",
+                            "post-response compaction skipped (provider unsupported)"
+                        );
+                        let _ = tx_compact
+                            .send(EngineEvent::Compaction(CompactionEvent::Failed {
+                                reason: "Provider does not support compaction — \
+                 try /clear or switch to a provider with non-streaming support."
+                                    .into(),
+                                calibrated_tokens: None,
+                                transient: false, // permanent: provider mismatch won't fix itself
+                            }))
+                            .await;
+                    }
+                    crate::compact::CompactResult::TooFewGroups => {
+                        tracing::info!(
+                            target: "jfc::compact",
+                            "post-response compaction skipped (single user turn)"
+                        );
+                        // Transient: the next user message creates a
+                        // second group, so auto-compaction can fire
+                        // again. Don't latch `compact_suppressed` —
+                        // otherwise a single huge agentic batch leaves
+                        // auto-compact dormant for the rest of the
+                        // session until the user remembers /compact.
+                        let _ = tx_compact
+                            .send(EngineEvent::Compaction(CompactionEvent::Failed {
+                                reason:
+                                    "Nothing to compact yet — only one conversation turn so far. \
+                     Auto-compact will retry after your next message."
+                                        .into(),
+                                calibrated_tokens: None,
+                                transient: true, // transient: more user turns will unblock it
+                            }))
+                            .await;
+                    }
+                    crate::compact::CompactResult::CircuitBreakerTripped => {
+                        tracing::warn!(
+                            target: "jfc::compact",
+                            "post-response compaction: circuit breaker tripped"
+                        );
+                        let _ = tx_compact
+                            .send(EngineEvent::Compaction(CompactionEvent::Failed {
+                                reason: "Circuit breaker tripped — compaction keeps refilling"
+                                    .into(),
+                                calibrated_tokens: None,
+                                transient: false,
+                            }))
+                            .await;
+                    }
+                    crate::compact::CompactResult::Exhausted { attempts } => {
+                        tracing::warn!(
+                            target: "jfc::compact",
+                            attempts,
+                            "post-response compaction exhausted all attempts"
+                        );
+                        let _ = tx_compact
+                            .send(EngineEvent::Compaction(CompactionEvent::Failed {
+                                reason: format!("Exhausted {attempts} compaction attempts"),
+                                calibrated_tokens: None,
+                                transient: false,
+                            }))
+                            .await;
+                    }
+                }
+            });
         }
     }
     // Gate the agentic continuation on the approval pipeline being

@@ -347,6 +347,7 @@ macro_rules! for_each_regular_tool_input {
             DesignCheckSystem => { project_dir: req_str @ "project_dir" }
             DesignCapabilities => { format: opt_str @ "format" }
             DesignServe => { project_dir: req_str @ "project_dir", port: opt_u64_as_u32 @ "port", file: opt_str @ "file" }
+            SetGoal => { condition: req_str @ "condition" }
         }
     };
 }
@@ -830,6 +831,14 @@ pub enum ToolInput {
         port: Option<u32>,
         file: Option<String>,
     },
+    /// Model-invocable session goal / stop-condition. The agent reads a task,
+    /// distills the condition under which it's "done", and registers it — the
+    /// goal loop then keeps the agent working until an evaluator says the
+    /// condition is met (or the iteration cap is hit). `condition` empty or a
+    /// clear-word (`clear`/`stop`/…) clears any active goal.
+    SetGoal {
+        condition: String,
+    },
     Generic {
         summary: String,
     },
@@ -1124,6 +1133,14 @@ impl ToolInput {
                 Some(file) => format!("serve design: {project_dir}/{file}"),
                 None => format!("serve design: {project_dir}"),
             },
+            Self::SetGoal { condition } => {
+                if condition.trim().is_empty() {
+                    "clear goal".into()
+                } else {
+                    let preview: String = condition.chars().take(60).collect();
+                    format!("set goal: {preview}")
+                }
+            }
         }
     }
 
@@ -1545,7 +1562,10 @@ impl ToolInput {
         // Slow path: try to coerce, then re-parse.
         let serde_json::Value::Object(map) = value else {
             // Non-object inputs can't be coerced field-wise; report the original error.
-            return (Self::from_value(tool_name, value), CoercionOutcome::Rejected);
+            return (
+                Self::from_value(tool_name, value),
+                CoercionOutcome::Rejected,
+            );
         };
         let (coerced, shape) = coerce_object(&map);
         if shape.is_empty() {
@@ -1736,8 +1756,9 @@ impl CoercionOutcome {
     /// The `+`-joined shape classes (CC's `shapeClass`), empty when none.
     pub fn shape_class(&self) -> String {
         match self {
-            CoercionOutcome::Coerced { shape }
-            | CoercionOutcome::CoercedStillInvalid { shape } => shape.join("+"),
+            CoercionOutcome::Coerced { shape } | CoercionOutcome::CoercedStillInvalid { shape } => {
+                shape.join("+")
+            }
             _ => String::new(),
         }
     }
@@ -1979,6 +2000,7 @@ mod macro_equivalence_tests {
                 json!({"trigger_id":"ci","payload":{"x":1}}),
             ),
             ("EnterPlanMode", json!({"reason":"r"})),
+            ("SetGoal", json!({"condition":"all tests pass"})),
             ("EnterWorktree", json!({"name":"w","branch":"b"})),
             ("ExitWorktree", json!({})),
             ("NotebookRead", json!({"path":"n.ipynb"})),
@@ -2151,15 +2173,35 @@ mod macro_equivalence_tests {
         ));
     }
 
+    // ─── SetGoal (model-invocable goal) ─────────────────────────────────────
+
+    // Normal: SetGoal parses by name and round-trips through to_value.
+    #[test]
+    fn set_goal_parses_and_serializes_normal() {
+        let input =
+            ToolInput::from_value("SetGoal", json!({"condition": "all tests pass"})).unwrap();
+        assert!(
+            matches!(input, ToolInput::SetGoal { ref condition } if condition == "all tests pass")
+        );
+        assert_eq!(input.to_value()["condition"], json!("all tests pass"));
+        assert!(input.summary().contains("set goal"));
+    }
+
+    // Robust: the tool name resolves through ToolKind (incl. snake_case alias).
+    #[test]
+    fn set_goal_kind_resolves_robust() {
+        assert_eq!(ToolKind::from_name("SetGoal"), ToolKind::SetGoal);
+        assert_eq!(ToolKind::from_name("set_goal"), ToolKind::SetGoal);
+        assert_eq!(ToolKind::SetGoal.api_name(), "set_goal");
+    }
+
     // ─── tool_input_coerced (CC 2.1.170 parity) ─────────────────────────────
 
     // Normal: valid input is passed through untouched (Unchanged), no coercion.
     #[test]
     fn coerce_valid_input_is_unchanged_normal() {
-        let (parsed, outcome) = ToolInput::from_value_coerced(
-            "Read",
-            json!({ "file_path": "src/main.rs" }),
-        );
+        let (parsed, outcome) =
+            ToolInput::from_value_coerced("Read", json!({ "file_path": "src/main.rs" }));
         assert!(parsed.is_ok());
         assert_eq!(outcome, CoercionOutcome::Unchanged);
         assert_eq!(outcome.label(), "unchanged");
@@ -2171,7 +2213,9 @@ mod macro_equivalence_tests {
     fn coerce_aliases_path_to_file_path_normal() {
         let (parsed, outcome) =
             ToolInput::from_value_coerced("Read", json!({ "path": "src/main.rs" }));
-        assert!(matches!(parsed, Ok(ToolInput::Read { ref file_path, .. }) if file_path == "src/main.rs"));
+        assert!(
+            matches!(parsed, Ok(ToolInput::Read { ref file_path, .. }) if file_path == "src/main.rs")
+        );
         assert_eq!(outcome.label(), "coerced");
         assert!(outcome.shape_class().contains("alias_path->file_path"));
     }
@@ -2179,10 +2223,8 @@ mod macro_equivalence_tests {
     // Robust: a single-key wrapper object (`{"input": {...}}`) is unwrapped.
     #[test]
     fn coerce_unwraps_input_wrapper_robust() {
-        let (parsed, outcome) = ToolInput::from_value_coerced(
-            "Read",
-            json!({ "input": { "file_path": "a.rs" } }),
-        );
+        let (parsed, outcome) =
+            ToolInput::from_value_coerced("Read", json!({ "input": { "file_path": "a.rs" } }));
         assert!(parsed.is_ok());
         assert!(outcome.shape_class().contains("unwrap:input"));
     }
@@ -2191,8 +2233,7 @@ mod macro_equivalence_tests {
     // is reported as Rejected — coercion never masks a real schema violation.
     #[test]
     fn coerce_uncoercible_input_is_rejected_robust() {
-        let (parsed, outcome) =
-            ToolInput::from_value_coerced("Read", json!({ "nonsense": 42 }));
+        let (parsed, outcome) = ToolInput::from_value_coerced("Read", json!({ "nonsense": 42 }));
         assert!(parsed.is_err());
         assert!(matches!(
             outcome,

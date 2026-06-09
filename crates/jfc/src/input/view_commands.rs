@@ -354,7 +354,9 @@ pub(super) async fn cmd_voice(
         // Push the full report into the transcript as an assistant note
         app.engine
             .messages
-            .push(jfc_core::ChatMessage::assistant(format!("```\n{report}\n```")));
+            .push(jfc_core::ChatMessage::assistant(format!(
+                "```\n{report}\n```"
+            )));
         jfc_engine::toast::push_with_cap(
             &mut app.engine.toasts,
             jfc_engine::toast::Toast::new(kind, diag.verdict.summary()),
@@ -397,7 +399,8 @@ pub(super) async fn cmd_voice(
     let hint = jfc_voice::VoiceConfig {
         mode,
         ..Default::default()
-    }.mode_hint();
+    }
+    .mode_hint();
     jfc_engine::toast::push_with_cap(
         &mut app.engine.toasts,
         jfc_engine::toast::Toast::new(

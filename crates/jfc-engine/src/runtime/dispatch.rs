@@ -269,14 +269,21 @@ pub async fn handle_engine_event(
         EngineEvent::Frontend(FrontendEvent::PlanReview { plan }) => {
             crate::runtime::event_loop::handlers::ui_actions::handle_exit_plan_mode(state, plan);
         }
+        EngineEvent::Frontend(FrontendEvent::GoalSet { condition }) => {
+            crate::runtime::event_loop::handlers::ui_actions::handle_set_goal(state, condition);
+        }
         EngineEvent::Frontend(FrontendEvent::ElicitationRequest {
             id,
             server_name,
             kind,
         }) => {
-            state.pending_elicitations.push_back(
-                jfc_core::mcp_elicitation::ElicitationSnapshot { id, server_name, kind },
-            );
+            state
+                .pending_elicitations
+                .push_back(jfc_core::mcp_elicitation::ElicitationSnapshot {
+                    id,
+                    server_name,
+                    kind,
+                });
         }
         // ── Task (subagent) events ──────────────────────────────
         EngineEvent::Task(TaskEvent::AgentChunk { task_id, text }) => {

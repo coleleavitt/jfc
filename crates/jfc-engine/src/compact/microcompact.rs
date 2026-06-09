@@ -120,7 +120,6 @@ pub fn microcompact(messages: &mut [ChatMessage]) -> usize {
     saved
 }
 
-
 /// Whether microcompaction would reclaim a meaningful amount of context — used
 /// to decide whether to run the (cheap) pass before falling back to full
 /// compaction. Returns the estimated reclaimable chars without mutating.
@@ -187,11 +186,9 @@ mod tests {
     use jfc_core::{ToolCall, ToolKind};
 
     fn tool_msg(output: ToolOutput) -> ChatMessage {
-        let input = jfc_core::ToolInput::from_value(
-            "Bash",
-            serde_json::json!({"command":"echo test"}),
-        )
-        .expect("valid bash input");
+        let input =
+            jfc_core::ToolInput::from_value("Bash", serde_json::json!({"command":"echo test"}))
+                .expect("valid bash input");
         let mut tc = ToolCall::new_pending("tool_1".into(), ToolKind::Bash, input);
         tc.output = output;
         let mut m = ChatMessage::assistant(String::new());

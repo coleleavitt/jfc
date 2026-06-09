@@ -519,18 +519,10 @@ mod tests {
 
     #[test]
     fn blocked_by_completed_filter_removes_completed_ids_normal() {
-        let mut arr = vec![
-            json!("t1"),
-            json!("t2"),
-            json!("t3"),
-        ];
+        let mut arr = vec![json!("t1"), json!("t2"), json!("t3")];
         let completed: std::collections::HashSet<String> =
             ["t1".to_string(), "t3".to_string()].into();
-        arr.retain(|id| {
-            id.as_str()
-                .map(|s| !completed.contains(s))
-                .unwrap_or(true)
-        });
+        arr.retain(|id| id.as_str().map(|s| !completed.contains(s)).unwrap_or(true));
         assert_eq!(arr, vec![json!("t2")]);
     }
 }

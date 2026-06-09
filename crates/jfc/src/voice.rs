@@ -9,8 +9,8 @@
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
-use jfc_voice::{VoiceConfig, VoiceRecorder, VoiceTranscriptEvent};
 use jfc_engine::runtime::{EngineEvent, VoiceEvent};
+use jfc_voice::{VoiceConfig, VoiceRecorder, VoiceTranscriptEvent};
 
 /// Process-global recorder handle.
 static RECORDER: OnceLock<Mutex<VoiceRecorder>> = OnceLock::new();
@@ -22,10 +22,7 @@ static RECORDER: OnceLock<Mutex<VoiceRecorder>> = OnceLock::new();
 /// transcript events → the engine event bus.
 ///
 /// Returns immediately without initializing when voice is disabled or config is absent.
-pub fn init(
-    voice_value: Option<&serde_json::Value>,
-    engine_tx: jfc_engine::runtime::EventSender,
-) {
+pub fn init(voice_value: Option<&serde_json::Value>, engine_tx: jfc_engine::runtime::EventSender) {
     let cfg = VoiceConfig::from_settings(voice_value);
     if !cfg.enabled {
         tracing::debug!(target: "jfc::voice", "voice mode disabled (voice.enabled=false)");
@@ -38,8 +35,7 @@ pub fn init(
         "voice mode initializing"
     );
 
-    let (event_tx, mut event_rx) =
-        tokio::sync::mpsc::unbounded_channel::<VoiceTranscriptEvent>();
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<VoiceTranscriptEvent>();
     let recorder = VoiceRecorder::new(cfg, event_tx);
 
     if RECORDER.set(Mutex::new(recorder)).is_err() {

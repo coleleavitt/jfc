@@ -993,14 +993,16 @@ pub(crate) async fn run(
                     // initialize the input state from its schema.
                     if app.engine.pending_elicitations.len() > elicit_before {
                         if let Some(e) = app.engine.pending_elicitations.front() {
-                            app.elicitation_input =
-                                match &e.kind {
-                                    jfc_core::mcp_elicitation::ElicitationKind::Form {
+                            app.elicitation_input = match &e.kind {
+                                jfc_core::mcp_elicitation::ElicitationKind::Form {
+                                    schema, ..
+                                } => {
+                                    crate::render::elicitation::ElicitationInputState::from_schema(
                                         schema,
-                                        ..
-                                    } => crate::render::elicitation::ElicitationInputState::from_schema(schema),
-                                    _ => crate::render::elicitation::ElicitationInputState::default(),
-                                };
+                                    )
+                                }
+                                _ => crate::render::elicitation::ElicitationInputState::default(),
+                            };
                         }
                     }
                 }
@@ -1224,7 +1226,11 @@ async fn handle_voice_event(
             // Live transcription: type the partial transcript into the input
             // box, replacing the previous interim in place. CC types interims
             // live; we mirror that so the box feels alive while you speak.
-            app.voice_interim = if text.is_empty() { None } else { Some(text.clone()) };
+            app.voice_interim = if text.is_empty() {
+                None
+            } else {
+                Some(text.clone())
+            };
             replace_interim_in_input(app, text);
         }
         VoiceEvent::Final(text) => {
@@ -1289,11 +1295,7 @@ fn clear_interim_from_input(app: &mut App) {
 }
 
 /// Inject the STT transcript into the textarea (and optionally submit).
-async fn inject_voice_transcript(
-    app: &mut App,
-    text: &str,
-    tx: &crate::runtime::EventSender,
-) {
+async fn inject_voice_transcript(app: &mut App, text: &str, tx: &crate::runtime::EventSender) {
     let cfg = jfc_engine::config::load_arc();
     let auto_submit = cfg
         .claude

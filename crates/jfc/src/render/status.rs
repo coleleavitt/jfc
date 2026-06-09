@@ -309,10 +309,7 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         }
         jfc_voice::VoiceState::Processing => {
             spans.push(Span::styled(" · ", muted));
-            spans.push(Span::styled(
-                "…STT",
-                Style::default().fg(app.theme.warning),
-            ));
+            spans.push(Span::styled("…STT", Style::default().fg(app.theme.warning)));
         }
         jfc_voice::VoiceState::Idle => {
             // Also show interim transcript if available

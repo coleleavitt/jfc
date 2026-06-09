@@ -26,6 +26,38 @@ pub async fn execute_enter_plan_mode(reason: &str) -> ExecutionResult {
     ))
 }
 
+/// Model-invocable `SetGoal`: emit a `GoalSet` FrontendEvent so the main loop
+/// sets (or clears) the session stop-condition on a single owning task — the
+/// same path `/goal` uses. An empty/clear `condition` clears the goal.
+pub async fn execute_set_goal(condition: &str) -> ExecutionResult {
+    let Some(tx) = snapshot_event_sender() else {
+        return ExecutionResult::failure(
+            "set_goal: no event sender registered (main.rs must call \
+             tools::register_event_sender during startup)",
+        );
+    };
+    let condition = condition.trim().to_owned();
+    if let Err(e) = tx
+        .send(crate::runtime::EngineEvent::Frontend(
+            crate::runtime::FrontendEvent::GoalSet {
+                condition: condition.clone(),
+            },
+        ))
+        .await
+    {
+        return ExecutionResult::failure(format!("set_goal: send failed: {e}"));
+    }
+    if condition.is_empty() {
+        ExecutionResult::success("Session goal cleared.".to_owned())
+    } else {
+        ExecutionResult::success(format!(
+            "Session goal set: \"{condition}\". The goal loop will keep you working \
+             until it is met (auto-evaluated each turn). Call SetGoal with an empty \
+             condition to clear it."
+        ))
+    }
+}
+
 // ─── EnterWorktree / ExitWorktree ──────────────────────────────────────────
 //
 // EnterWorktree creates the worktree (idempotent on git's side — it errors

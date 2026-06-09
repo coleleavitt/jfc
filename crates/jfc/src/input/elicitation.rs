@@ -48,9 +48,13 @@ pub(super) fn handle_elicitation_key(
 
         // Enter — accept
         (KeyModifiers::NONE, KeyCode::Enter) => {
-            resolve_elicitation(app, tx, ElicitationResponse::Accept {
-                content: app.elicitation_input.to_json(),
-            });
+            resolve_elicitation(
+                app,
+                tx,
+                ElicitationResponse::Accept {
+                    content: app.elicitation_input.to_json(),
+                },
+            );
             true
         }
 
@@ -93,12 +97,11 @@ fn resolve_elicitation(
         return;
     };
 
-    let ev = crate::runtime::EngineEvent::Control(
-        crate::runtime::ControlEvent::ResolveElicitation {
+    let ev =
+        crate::runtime::EngineEvent::Control(crate::runtime::ControlEvent::ResolveElicitation {
             id: pending.id,
             response,
-        },
-    );
+        });
     // Best-effort send — channel full or closed means the engine shut down,
     // which is not a problem we can recover from here.
     if tx.try_send(ev).is_err() {
@@ -111,9 +114,7 @@ fn resolve_elicitation(
     // Re-initialize input state for the next queued elicitation (if any).
     if let Some(next) = app.engine.pending_elicitations.front() {
         app.elicitation_input = match &next.kind {
-            ElicitationKind::Form { schema, .. } => {
-                ElicitationInputState::from_schema(schema)
-            }
+            ElicitationKind::Form { schema, .. } => ElicitationInputState::from_schema(schema),
             ElicitationKind::Url { .. } => ElicitationInputState::default(),
         };
     } else {

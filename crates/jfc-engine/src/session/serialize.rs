@@ -504,7 +504,8 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         | ToolInput::DesignHandoff { .. }
         | ToolInput::DesignCheckSystem { .. }
         | ToolInput::DesignCapabilities { .. }
-        | ToolInput::DesignServe { .. } => serialize_generic_tool_input_json(input),
+        | ToolInput::DesignServe { .. }
+        | ToolInput::SetGoal { .. } => serialize_generic_tool_input_json(input),
     }
 }
 pub fn serialize_generic_tool_input_json(input: &ToolInput) -> SerializedToolInput {

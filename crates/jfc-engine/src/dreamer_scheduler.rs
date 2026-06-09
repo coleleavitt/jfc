@@ -235,11 +235,7 @@ pub fn spawn<C: DreamerCycle>(cycle: C, interval: Duration) -> SchedulerHandle {
 /// (interval == 0, `autoDreamEnabled: false`, or `RealDreamers::open` fails).
 pub fn spawn_from_env(project_root: PathBuf) -> Option<SchedulerHandle> {
     // CC 2.1.167 `autoDreamEnabled` — when explicitly false, skip the dreamer.
-    if crate::config::load_arc()
-        .claude
-        .auto_dream_enabled
-        == Some(false)
-    {
+    if crate::config::load_arc().claude.auto_dream_enabled == Some(false) {
         tracing::debug!(
             target: "jfc::dreamer_scheduler",
             "autoDreamEnabled=false — dreamer scheduler disabled"

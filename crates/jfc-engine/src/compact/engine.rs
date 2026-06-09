@@ -1834,7 +1834,10 @@ mod circuit_breaker_tests {
             last_compact_turn: 0,
             ..Default::default()
         };
-        let messages = vec![ChatMessage::user("hello".to_owned()), ChatMessage::assistant("hi".to_owned())];
+        let messages = vec![
+            ChatMessage::user("hello".to_owned()),
+            ChatMessage::assistant("hi".to_owned()),
+        ];
         let result = compact(&messages, &provider, &opts, &mut ctx, 200_000, None).await;
         assert!(matches!(result, CompactResult::CircuitBreakerTripped));
     }

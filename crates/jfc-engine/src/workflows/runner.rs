@@ -960,7 +960,10 @@ mod tests {
             }),
         ))
         .await;
-        assert!(out.error.is_some(), "schema violation must surface an error");
+        assert!(
+            out.error.is_some(),
+            "schema violation must surface an error"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

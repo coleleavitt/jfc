@@ -119,6 +119,10 @@ pub enum FrontendEvent {
     /// Model-callable plan-mode entry. Dispatched by the `EnterPlanMode`
     /// tool — flips the permission mode to `PermissionMode::Plan`.
     PlanModeEntered { reason: String },
+    /// Model-callable session goal. Dispatched by the `SetGoal` tool — the agent
+    /// distilled a stop-condition for the current task and wants the goal loop
+    /// to drive it to completion. An empty/clear `condition` clears the goal.
+    GoalSet { condition: String },
     /// An MCP server is requesting interactive user input (elicitation/create).
     /// The frontend must present the form or URL to the user, collect their
     /// response, and dispatch `ControlEvent::ResolveElicitation` with the

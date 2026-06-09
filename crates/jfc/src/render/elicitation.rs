@@ -16,7 +16,6 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
-
 use crate::app::App;
 use crate::theme::Theme;
 use jfc_core::mcp_elicitation::ElicitationKind;
@@ -67,12 +66,8 @@ pub(super) fn elicitation(f: &mut Frame, app: &App) {
         format!(" MCP Input Request · {} ", pending.server_name)
     };
 
-    let border_style = Style::default()
-        .fg(t.warning)
-        .add_modifier(Modifier::BOLD);
-    let title_style = Style::default()
-        .fg(t.warning)
-        .add_modifier(Modifier::BOLD);
+    let border_style = Style::default().fg(t.warning).add_modifier(Modifier::BOLD);
+    let title_style = Style::default().fg(t.warning).add_modifier(Modifier::BOLD);
 
     let outer = Block::default()
         .title(Span::styled(title, title_style))
@@ -155,8 +150,14 @@ fn build_field_lines<'a>(
 ) -> Vec<Line<'a>> {
     let is_required = required.contains(&name);
     let req_mark = if is_required { "*" } else { " " };
-    let field_type = prop.get("type").and_then(|v| v.as_str()).unwrap_or("string");
-    let description = prop.get("description").and_then(|d| d.as_str()).unwrap_or("");
+    let field_type = prop
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("string");
+    let description = prop
+        .get("description")
+        .and_then(|d| d.as_str())
+        .unwrap_or("");
 
     let label_style = if is_required {
         Style::default().fg(t.warning).add_modifier(Modifier::BOLD)
@@ -166,7 +167,10 @@ fn build_field_lines<'a>(
 
     let mut out = vec![Line::from(vec![
         Span::styled(format!("{req_mark} {name}"), label_style),
-        Span::styled(format!(" ({field_type})"), Style::default().fg(t.text_muted)),
+        Span::styled(
+            format!(" ({field_type})"),
+            Style::default().fg(t.text_muted),
+        ),
     ])];
 
     if !description.is_empty() {
@@ -179,7 +183,9 @@ fn build_field_lines<'a>(
     let current_val = inputs.values.get(name).map(|s| s.as_str()).unwrap_or("");
     let is_active = inputs.active_field.as_deref() == Some(name);
     let val_style = if is_active {
-        Style::default().fg(t.accent).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        Style::default()
+            .fg(t.accent)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
     } else {
         Style::default().fg(t.text_primary)
     };
@@ -199,24 +205,30 @@ fn build_field_lines<'a>(
 
 fn form_footer_line(t: &Theme) -> Line<'static> {
     Line::from(vec![
-        Span::styled(" Tab ", Style::default().fg(t.accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Tab ",
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("next  ", Style::default().fg(t.text_muted)),
-        Span::styled(" Enter ", Style::default().fg(t.success).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Enter ",
+            Style::default().fg(t.success).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("accept  ", Style::default().fg(t.text_muted)),
-        Span::styled(" Esc ", Style::default().fg(t.error).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Esc ",
+            Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("decline  ", Style::default().fg(t.text_muted)),
-        Span::styled(" q ", Style::default().fg(t.error).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " q ",
+            Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("cancel", Style::default().fg(t.text_muted)),
     ])
 }
 
-fn render_url_elicitation(
-    f: &mut Frame,
-    area: Rect,
-    message: &str,
-    url: &str,
-    t: &Theme,
-) {
+fn render_url_elicitation(f: &mut Frame, area: Rect, message: &str, url: &str, t: &Theme) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -250,9 +262,15 @@ fn render_url_elicitation(
     f.render_widget(instruction, chunks[2]);
 
     let footer = Line::from(vec![
-        Span::styled(" Enter ", Style::default().fg(t.success).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Enter ",
+            Style::default().fg(t.success).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("dismiss  ", Style::default().fg(t.text_muted)),
-        Span::styled(" Esc ", Style::default().fg(t.error).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Esc ",
+            Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("cancel", Style::default().fg(t.text_muted)),
     ]);
     f.render_widget(Paragraph::new(footer), chunks[3]);

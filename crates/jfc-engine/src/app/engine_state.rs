@@ -384,7 +384,8 @@ pub struct EngineState {
     /// Active MCP elicitation requests waiting for user input.
     /// Multiple elicitations can queue up (one per in-flight MCP tool call).
     /// The TUI renders the first one as a modal; subsequent ones wait.
-    pub pending_elicitations: std::collections::VecDeque<jfc_core::mcp_elicitation::ElicitationSnapshot>,
+    pub pending_elicitations:
+        std::collections::VecDeque<jfc_core::mcp_elicitation::ElicitationSnapshot>,
     /// Tool calls that have been yielded to the host but are not executing yet:
     /// waiting for approval, classifier judgment, or stream_done batch
     /// dispatch. This is the TUI/remote equivalent of upstream's

@@ -271,14 +271,20 @@ mod tests {
     #[test]
     fn detects_and_strips_turn_effort_marker_normal() {
         let result = scan_and_strip("//effort high refactor the parser");
-        assert_eq!(result.turn_effort, Some(crate::effort::ReasoningEffort::High));
+        assert_eq!(
+            result.turn_effort,
+            Some(crate::effort::ReasoningEffort::High)
+        );
         assert_eq!(result.text, "refactor the parser");
     }
 
     #[test]
     fn turn_effort_marker_mid_text_normal() {
         let result = scan_and_strip("fix the bug //effort max please");
-        assert_eq!(result.turn_effort, Some(crate::effort::ReasoningEffort::Max));
+        assert_eq!(
+            result.turn_effort,
+            Some(crate::effort::ReasoningEffort::Max)
+        );
         assert_eq!(result.text, "fix the bug please");
     }
 

@@ -8,6 +8,7 @@ pub fn interaction_tool_defs() -> Vec<ToolDef> {
         web_search_def(),
         exit_plan_mode_def(),
         enter_plan_mode_def(),
+        set_goal_def(),
         enter_worktree_def(),
         exit_worktree_def(),
         send_user_message_def(),
@@ -173,6 +174,44 @@ fn exit_plan_mode_def() -> ToolDef {
                 }
             },
             "required": ["plan"]
+        }),
+    }
+}
+
+fn set_goal_def() -> ToolDef {
+    ToolDef {
+        name: "SetGoal".into(),
+        description: "Set a session goal (stop-condition) that you will keep working \
+            toward across multiple turns without the user having to re-prompt. Use this \
+            when a task has a clear, verifiable 'done' state and is likely to take \
+            several turns — distill that done-state into one concrete condition and \
+            register it. The runtime then auto-evaluates after each turn and keeps you \
+            going until the condition is met (or an iteration cap is hit), so you can \
+            self-drive to completion.\n\n\
+            ## When to use\n\
+            - A multi-step task with an objective finish line (e.g. \"all tests in \
+            crate X pass\", \"the build is clean and the new endpoint returns 200\").\n\
+            - You find yourself about to do step 1 of N and want to commit to finishing N.\n\n\
+            ## When NOT to use\n\
+            - Open-ended/exploratory work with no checkable end state.\n\
+            - A one-shot task you'll finish this turn.\n\n\
+            ## Notes\n\
+            - Write `condition` as a checkable predicate, not a vague aim.\n\
+            - Call SetGoal again with an empty (or `clear`) condition to cancel the goal.\n\
+            - The goal auto-clears after a bounded number of 'not yet met' evaluations \
+            so it can never loop forever."
+            .into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "condition": {
+                    "type": "string",
+                    "description": "A concrete, checkable stop-condition (what 'done' means \
+                        for this task). Pass an empty string or 'clear' to cancel an \
+                        active goal."
+                }
+            },
+            "required": ["condition"]
         }),
     }
 }

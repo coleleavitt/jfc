@@ -67,13 +67,19 @@ pub struct MemoryNudge {
 impl Default for MemoryNudge {
     fn default() -> Self {
         // Mirrors Hermes' default `_memory_nudge_interval = 10`.
-        Self { interval: 10, turns_since: 0 }
+        Self {
+            interval: 10,
+            turns_since: 0,
+        }
     }
 }
 
 impl MemoryNudge {
     pub fn new(interval: u32) -> Self {
-        Self { interval, turns_since: 0 }
+        Self {
+            interval,
+            turns_since: 0,
+        }
     }
 
     /// Record one user turn. Returns the nudge body to inject when the interval
