@@ -24,20 +24,16 @@ profiling-results/
 core
 core.*
 
-# jfc runtime state (caches, task store, pending learning) — keep project
-# config (.jfc/agents, .jfc/memory, .jfc/workflows, .jfc/plans) tracked.
-.jfc/scratchpad/
-.jfc/tasks.json
-.jfc/tasks-history.jsonl
-.jfc/learn/
-.jfc/teleport/
-.jfc/verification/
-.jfc/design/
-# Runtime audit ledger + agent change-sets (per-run state, not source).
-.jfc/audit/
-.jfc/changes/
-.jfc/*-cache.json
-.jfc/*-heights.json
+# jfc runtime state (caches, task store, pending learning, skills usage,
+# audit ledgers, change-sets, …) is all per-run noise — ignore the whole
+# .jfc/ tree by default, then re-include only the deliberately-tracked
+# project config dirs (agents, memory, workflows, plans). This catches new
+# runtime subdirs (e.g. .jfc/skills/) automatically without growing the list.
+.jfc/*
+!.jfc/agents/
+!.jfc/memory/
+!.jfc/workflows/
+!.jfc/plans/
 # Per-crate runtime state dirs created when running jfc from a subdir.
 crates/**/.jfc/
 
