@@ -13,7 +13,7 @@
 //! For tap mode:  first `tap` starts recording, second `tap` stops it.
 
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, info, warn};
 
 use crate::audio::{AudioCapture, CaptureBackend};
@@ -217,7 +217,9 @@ impl VoiceRecorder {
         let backend = match AudioCapture::detect_backend().await {
             Some(b) => b,
             None => {
-                self.emit_error("No audio recording backend found (install arecord, sox, or ffmpeg)");
+                self.emit_error(
+                    "No audio recording backend found (install arecord, sox, or ffmpeg)",
+                );
                 self.set_state(VoiceState::Idle).await;
                 return;
             }
@@ -270,7 +272,9 @@ impl VoiceRecorder {
         *self.state.lock().await = s;
         self.events
             .send(VoiceTranscriptEvent::StateChanged(s))
-            .unwrap_or_else(|_| debug!(target: "jfc::voice", "event channel closed on state change"));
+            .unwrap_or_else(
+                |_| debug!(target: "jfc::voice", "event channel closed on state change"),
+            );
     }
 
     /// Cancel any in-progress recording AND the VAD listen loop, resetting to
@@ -371,7 +375,10 @@ async fn transcribe_and_emit(
 ) {
     let result = backends::transcribe(&pcm, cfg).await;
     *state.lock().await = VoiceState::Idle;
-    send_or_debug(&events, VoiceTranscriptEvent::StateChanged(VoiceState::Idle));
+    send_or_debug(
+        &events,
+        VoiceTranscriptEvent::StateChanged(VoiceState::Idle),
+    );
 
     match result {
         Ok(Some(text)) => {
@@ -500,7 +507,10 @@ async fn vad_listen_loop(
 
         // ── Recording phase ────────────────────────────────────────────────
         *state.lock().await = VoiceState::Recording;
-        send_or_debug(&events, VoiceTranscriptEvent::StateChanged(VoiceState::Recording));
+        send_or_debug(
+            &events,
+            VoiceTranscriptEvent::StateChanged(VoiceState::Recording),
+        );
         info!(target: "jfc::voice::vad", "speech detected, recording utterance");
 
         // Safety cap: if the noise floor stays above the VAD threshold (loud
@@ -582,7 +592,10 @@ async fn vad_listen_loop(
 
         // ── Transcription phase ────────────────────────────────────────────
         *state.lock().await = VoiceState::Processing;
-        send_or_debug(&events, VoiceTranscriptEvent::StateChanged(VoiceState::Processing));
+        send_or_debug(
+            &events,
+            VoiceTranscriptEvent::StateChanged(VoiceState::Processing),
+        );
 
         let pcm = std::mem::take(&mut utterance_buf);
         info!(
@@ -594,7 +607,10 @@ async fn vad_listen_loop(
         let result = backends::transcribe(&pcm, &cfg).await;
 
         *state.lock().await = VoiceState::Idle;
-        send_or_debug(&events, VoiceTranscriptEvent::StateChanged(VoiceState::Idle));
+        send_or_debug(
+            &events,
+            VoiceTranscriptEvent::StateChanged(VoiceState::Idle),
+        );
 
         match result {
             Ok(Some(text)) => {
@@ -620,7 +636,10 @@ async fn vad_listen_loop(
     }
 
     *state.lock().await = VoiceState::Idle;
-    send_or_debug(&events, VoiceTranscriptEvent::StateChanged(VoiceState::Idle));
+    send_or_debug(
+        &events,
+        VoiceTranscriptEvent::StateChanged(VoiceState::Idle),
+    );
     debug!(target: "jfc::voice::vad", "VAD loop exited");
 }
 
@@ -658,7 +677,10 @@ mod tests {
     async fn cancel_stops_vad_listen_loop_robust() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut rec = VoiceRecorder::new(
-            VoiceConfig { mode: VoiceMode::Vad, ..Default::default() },
+            VoiceConfig {
+                mode: VoiceMode::Vad,
+                ..Default::default()
+            },
             tx,
         );
         let (vad_tx, mut vad_rx) = tokio::sync::oneshot::channel::<()>();
@@ -667,11 +689,18 @@ mod tests {
 
         rec.cancel().await;
 
-        assert!(!rec.vad_loop_running(), "cancel must clear the VAD stop handle");
+        assert!(
+            !rec.vad_loop_running(),
+            "cancel must clear the VAD stop handle"
+        );
         assert_eq!(rec.state().await, VoiceState::Idle);
         // The listen loop's receiver must see the stop signal (Ok), not a
         // dropped-sender error — proving cancel actually told it to stop.
-        assert_eq!(vad_rx.try_recv(), Ok(()), "VAD loop must receive the stop signal");
+        assert_eq!(
+            vad_rx.try_recv(),
+            Ok(()),
+            "VAD loop must receive the stop signal"
+        );
     }
 
     // REGRESSION (long sentence cut off mid-utterance): the max-utterance cap
@@ -732,7 +761,10 @@ mod tests {
                 None => std::env::remove_var(KEY),
             }
         }
-        assert_eq!(resolved, 120_000, "a generous cap must pass through unchanged");
+        assert_eq!(
+            resolved, 120_000,
+            "a generous cap must pass through unchanged"
+        );
     }
 
     // REGRESSION: cancel() must stop the VAD listen loop, not just a hold/tap
@@ -746,14 +778,24 @@ mod tests {
         let mut rec = VoiceRecorder::new(VoiceConfig::default(), tx);
         let (vad_stop_tx, vad_stop_rx) = tokio::sync::oneshot::channel::<()>();
         rec.vad_stop_tx = Some(vad_stop_tx);
-        assert!(rec.vad_loop_running(), "precondition: VAD loop marked running");
+        assert!(
+            rec.vad_loop_running(),
+            "precondition: VAD loop marked running"
+        );
 
         rec.cancel().await;
 
-        assert!(!rec.vad_loop_running(), "cancel must clear the VAD stop sender");
+        assert!(
+            !rec.vad_loop_running(),
+            "cancel must clear the VAD stop sender"
+        );
         assert_eq!(rec.state().await, VoiceState::Idle);
         // The loop's receiver must have been signalled (Ok) — i.e. it would break.
-        assert_eq!(vad_stop_rx.await, Ok(()), "VAD loop must receive the stop signal");
+        assert_eq!(
+            vad_stop_rx.await,
+            Ok(()),
+            "VAD loop must receive the stop signal"
+        );
     }
 
     // Normal: vad_loop_running reflects whether a stop sender is installed.

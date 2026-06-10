@@ -70,40 +70,39 @@ impl AudioCapture {
                 // Output raw PCM to stdout; stderr stays for diagnostics
                 Command::new("arecord")
                     .args([
-                        "-f", "S16_LE",   // 16-bit signed little-endian
-                        "-r", "16000",    // 16 kHz
-                        "-c", "1",        // mono
-                        "-t", "raw",      // raw PCM (no WAV header)
-                        "-",              // stdout
+                        "-f", "S16_LE", // 16-bit signed little-endian
+                        "-r", "16000", // 16 kHz
+                        "-c", "1", // mono
+                        "-t", "raw", // raw PCM (no WAV header)
+                        "-",   // stdout
                     ])
                     .stdout(Stdio::piped())
                     .stderr(Stdio::null())
                     .spawn()?
             }
-            CaptureBackend::Sox => {
-                Command::new("rec")
-                    .args([
-                        "-r", "16000",
-                        "-c", "1",
-                        "-e", "signed",
-                        "-b", "16",
-                        "-t", "raw",
-                        "-",
-                    ])
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::null())
-                    .spawn()?
-            }
+            CaptureBackend::Sox => Command::new("rec")
+                .args([
+                    "-r", "16000", "-c", "1", "-e", "signed", "-b", "16", "-t", "raw", "-",
+                ])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()?,
             CaptureBackend::Ffmpeg => {
                 Command::new("ffmpeg")
                     .args([
-                        "-f", "alsa",
-                        "-i", "default",
-                        "-ar", "16000",
-                        "-ac", "1",
-                        "-f", "s16le",   // raw PCM, no container
-                        "-",             // stdout
-                        "-loglevel", "quiet",
+                        "-f",
+                        "alsa",
+                        "-i",
+                        "default",
+                        "-ar",
+                        "16000",
+                        "-ac",
+                        "1",
+                        "-f",
+                        "s16le", // raw PCM, no container
+                        "-",     // stdout
+                        "-loglevel",
+                        "quiet",
                     ])
                     .stdout(Stdio::piped())
                     .stderr(Stdio::null())

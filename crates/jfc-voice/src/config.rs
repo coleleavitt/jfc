@@ -144,8 +144,7 @@ impl VoiceConfig {
     /// Build from the `voice` serde_json::Value from ClaudeCompatibilityConfig.
     pub fn from_settings(voice_value: Option<&serde_json::Value>) -> Self {
         let mut cfg = Self {
-            language: std::env::var("JFC_VOICE_LANGUAGE")
-                .unwrap_or_else(|_| "en".to_owned()),
+            language: std::env::var("JFC_VOICE_LANGUAGE").unwrap_or_else(|_| "en".to_owned()),
             anthropic_voice_url: std::env::var("JFC_VOICE_ANTHROPIC_URL")
                 .ok()
                 .or_else(|| std::env::var("VOICE_STREAM_BASE_URL").ok()),

@@ -65,8 +65,7 @@ impl NeuralVad {
         // The gap is the hysteresis that stops a brief mid-word confidence dip
         // from ending the utterance. Both overridable via env.
         let onset_threshold = env_f32("JFC_VAD_NEURAL_ONSET", 0.5).clamp(0.05, 0.95);
-        let offset_threshold =
-            env_f32("JFC_VAD_NEURAL_OFFSET", 0.35).clamp(0.01, onset_threshold);
+        let offset_threshold = env_f32("JFC_VAD_NEURAL_OFFSET", 0.35).clamp(0.01, onset_threshold);
 
         // Silence hangover before declaring end-of-utterance. Matches the
         // energy VAD's ~1s default (Deepgram utterance_end_ms), expressed in

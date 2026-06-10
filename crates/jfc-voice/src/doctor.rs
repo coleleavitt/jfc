@@ -62,12 +62,12 @@ impl Verdict {
             Self::NoBackend => {
                 "No audio backend found. Install arecord (ALSA), sox, or ffmpeg.".to_owned()
             }
-            Self::Silence => {
-                "Mic captured silence. Check it isn't muted, the right device is \
+            Self::Silence => "Mic captured silence. Check it isn't muted, the right device is \
                  selected, and the app has microphone permission."
-                    .to_owned()
-            }
-            Self::TooQuiet { suggested_threshold } => format!(
+                .to_owned(),
+            Self::TooQuiet {
+                suggested_threshold,
+            } => format!(
                 "Mic works but your voice is quiet. Set JFC_VAD_THRESHOLD={suggested_threshold} \
                  (or raise your system mic volume)."
             ),
@@ -130,8 +130,8 @@ async fn record_sample(backend: CaptureBackend) -> anyhow::Result<Vec<u8>> {
         if tokio::time::Instant::now() >= deadline {
             break;
         }
-        let read = tokio::time::timeout(Duration::from_millis(500), capture.read_chunk(&mut chunk))
-            .await;
+        let read =
+            tokio::time::timeout(Duration::from_millis(500), capture.read_chunk(&mut chunk)).await;
         match read {
             Ok(Ok(0)) => break,
             Ok(Ok(n)) => pcm.extend_from_slice(&chunk[..n]),
@@ -156,7 +156,9 @@ pub fn analyze(backend: CaptureBackend, pcm: &[u8]) -> VoiceDiagnostic {
     } else {
         // Suggest a threshold at ~50% of the loudest frame, floored at 80.
         let suggested = (max_frame_rms / 2).max(80);
-        Verdict::TooQuiet { suggested_threshold: suggested }
+        Verdict::TooQuiet {
+            suggested_threshold: suggested,
+        }
     };
 
     VoiceDiagnostic {
@@ -198,10 +200,7 @@ fn frame_stats(pcm: &[u8]) -> (u32, usize, usize) {
 
 /// Render a full diagnostic report as human-readable text.
 pub fn format_report(diag: &VoiceDiagnostic) -> String {
-    let backend = diag
-        .backend
-        .map(|b| b.label())
-        .unwrap_or("none");
+    let backend = diag.backend.map(|b| b.label()).unwrap_or("none");
     let pct = if diag.peak_amplitude > 0 {
         100.0 * diag.peak_amplitude as f64 / 32767.0
     } else {
@@ -268,7 +267,9 @@ mod tests {
         let pcm = loud(16_000, 200);
         let diag = analyze(CaptureBackend::Arecord, &pcm);
         match diag.verdict {
-            Verdict::TooQuiet { suggested_threshold } => {
+            Verdict::TooQuiet {
+                suggested_threshold,
+            } => {
                 assert!(suggested_threshold >= 80);
                 assert!(suggested_threshold < DEFAULT_THRESHOLD);
             }

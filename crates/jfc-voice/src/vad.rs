@@ -360,8 +360,7 @@ impl Vad {
                 self.floor_seeded = true;
             }
         } else {
-            self.noise_floor =
-                (1.0 - self.noise_alpha) * self.noise_floor + self.noise_alpha * x;
+            self.noise_floor = (1.0 - self.noise_alpha) * self.noise_floor + self.noise_alpha * x;
         }
         self.noise_floor = self.noise_floor.clamp(20.0, 8000.0);
     }
@@ -540,8 +539,7 @@ pub fn spectral_flatness(pcm_bytes: &[u8]) -> f64 {
     let mut re = vec![0.0f64; fft_len];
     let mut im = vec![0.0f64; fft_len];
     for (i, &s) in samples.iter().enumerate() {
-        let w = 0.5
-            - 0.5 * (std::f64::consts::TAU * i as f64 / (n.max(2) - 1) as f64).cos();
+        let w = 0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / (n.max(2) - 1) as f64).cos();
         re[i] = s * w;
     }
 
@@ -693,7 +691,12 @@ mod tests {
 
     /// Seed modulation history with quiet frames, then push a continuous run of
     /// loud frames; report whether SpeechStart fired. Models real speech onset.
-    fn ran_seeded_speech_start(vad: &mut Vad, loud: &[u8], quiet: &[u8], loud_frames: usize) -> bool {
+    fn ran_seeded_speech_start(
+        vad: &mut Vad,
+        loud: &[u8],
+        quiet: &[u8],
+        loud_frames: usize,
+    ) -> bool {
         for _ in 0..6 {
             vad.push(quiet);
         }
@@ -800,7 +803,10 @@ mod tests {
         for _ in 0..50 {
             vad.push(&noise);
         }
-        assert!(vad.noise_floor() > 150, "floor should rise with sustained noise");
+        assert!(
+            vad.noise_floor() > 150,
+            "floor should rise with sustained noise"
+        );
     }
 
     #[test]
@@ -814,7 +820,10 @@ mod tests {
             let fan = noise_frame(320, 5000, i as u64);
             vad.push(&fan).contains(&VadEvent::SpeechStart)
         });
-        assert!(!started, "loud steady fan noise must not be treated as speech");
+        assert!(
+            !started,
+            "loud steady fan noise must not be treated as speech"
+        );
     }
 
     #[test]
@@ -921,7 +930,10 @@ mod tests {
         // A pure pitched tone has energy in a few bins → low flatness.
         let tone = voiced_frame(320, 80, 8000);
         let flatness = spectral_flatness(&tone);
-        assert!(flatness < 0.5, "tonal signal should have low flatness, got {flatness}");
+        assert!(
+            flatness < 0.5,
+            "tonal signal should have low flatness, got {flatness}"
+        );
     }
 
     #[test]
@@ -940,7 +952,10 @@ mod tests {
         // The discriminator must rank noise strictly flatter than a tone.
         let tone = spectral_flatness(&voiced_frame(320, 80, 8000));
         let noise = spectral_flatness(&noise_frame(320, 8000, 9));
-        assert!(noise > tone, "noise ({noise}) should be flatter than tone ({tone})");
+        assert!(
+            noise > tone,
+            "noise ({noise}) should be flatter than tone ({tone})"
+        );
     }
 
     #[test]
@@ -952,7 +967,10 @@ mod tests {
         vad.min_periodicity = 0.0; // isolate the flatness gate
         vad.max_flatness = 0.4;
         let started = (0..40).any(|i| ran_speech_start(&mut vad, &noise_frame(320, 6000, i), 1));
-        assert!(!started, "flat broadband noise must be rejected by the flatness gate");
+        assert!(
+            !started,
+            "flat broadband noise must be rejected by the flatness gate"
+        );
     }
 
     #[test]
@@ -998,7 +1016,10 @@ mod tests {
         for _ in 0..3 {
             vad.push(&pause);
         }
-        assert!(vad.is_speaking(), "pause shorter than hangover must not end speech");
+        assert!(
+            vad.is_speaking(),
+            "pause shorter than hangover must not end speech"
+        );
         assert_eq!(
             vad.noise_floor(),
             floor_at_speech_start,
@@ -1024,13 +1045,24 @@ mod tests {
             // ~10 voiced frames, then a 2-frame pause (well under the 1s/50-frame
             // hangover) — a natural speaking cadence.
             for _ in 0..10 {
-                ends += vad.push(&loud).iter().filter(|e| **e == VadEvent::SpeechEnd).count();
+                ends += vad
+                    .push(&loud)
+                    .iter()
+                    .filter(|e| **e == VadEvent::SpeechEnd)
+                    .count();
             }
             for _ in 0..2 {
-                ends += vad.push(&short_pause).iter().filter(|e| **e == VadEvent::SpeechEnd).count();
+                ends += vad
+                    .push(&short_pause)
+                    .iter()
+                    .filter(|e| **e == VadEvent::SpeechEnd)
+                    .count();
             }
         }
-        assert_eq!(ends, 0, "short within-utterance pauses must not fire SpeechEnd");
+        assert_eq!(
+            ends, 0,
+            "short within-utterance pauses must not fire SpeechEnd"
+        );
     }
 
     /// A genuine end-of-utterance silence (≥ hangover) still fires exactly one
@@ -1053,7 +1085,10 @@ mod tests {
             .flat_map(|_| vad.push(&silent))
             .filter(|e| *e == VadEvent::SpeechEnd)
             .count();
-        assert_eq!(ends, 1, "a real end-of-utterance silence must fire one SpeechEnd");
+        assert_eq!(
+            ends, 1,
+            "a real end-of-utterance silence must fire one SpeechEnd"
+        );
         assert!(!vad.is_speaking());
     }
 
@@ -1078,7 +1113,10 @@ mod tests {
             .flat_map(|_| vad.push(&silent))
             .filter(|e| *e == VadEvent::SpeechEnd)
             .count();
-        assert_eq!(ends, 0, "min-utterance guard must block truncating SpeechEnd");
+        assert_eq!(
+            ends, 0,
+            "min-utterance guard must block truncating SpeechEnd"
+        );
     }
 
     #[test]
@@ -1098,4 +1136,3 @@ mod tests {
         assert!(!vad.force_end());
     }
 }
-
