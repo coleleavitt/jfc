@@ -162,32 +162,38 @@ fn walk_anthropic(body: &Value, out: &mut Vec<VolatileFinding>) {
 // ─── OpenAI walker ─────────────────────────────────────────────────────
 
 fn walk_openai(body: &Value, out: &mut Vec<VolatileFinding>) {
-    if let Some(Value::Array(messages)) = body.get("messages") {
-        for (i, msg) in messages.iter().enumerate() {
-            if out.len() >= MAX_FINDINGS_PER_REQUEST {
-                return;
-            }
-            if let Some(content) = msg.get("content") {
-                let loc = format!("messages[{i}].content");
-                scan_value_for_strings(content, &loc, out);
-            }
+    scan_message_contents(body, out);
+    let Some(Value::Array(tools)) = body.get("tools") else {
+        return;
+    };
+    for (i, tool) in tools.iter().enumerate() {
+        if out.len() >= MAX_FINDINGS_PER_REQUEST {
+            return;
+        }
+        let Some(function) = tool.get("function") else {
+            continue;
+        };
+        if let Some(Value::String(desc)) = function.get("description") {
+            scan_string(desc, &format!("tools[{i}].function.description"), out);
+        }
+        if let Some(params) = function.get("parameters") {
+            scan_value_recursive(params, &format!("tools[{i}].function.parameters"), out);
         }
     }
-    if let Some(Value::Array(tools)) = body.get("tools") {
-        for (i, tool) in tools.iter().enumerate() {
-            if out.len() >= MAX_FINDINGS_PER_REQUEST {
-                return;
-            }
-            if let Some(function) = tool.get("function") {
-                if let Some(Value::String(desc)) = function.get("description") {
-                    let loc = format!("tools[{i}].function.description");
-                    scan_string(desc, &loc, out);
-                }
-                if let Some(params) = function.get("parameters") {
-                    let loc = format!("tools[{i}].function.parameters");
-                    scan_value_recursive(params, &loc, out);
-                }
-            }
+}
+
+/// Walk `messages[].content` (string or content-block array) — the shape
+/// shared by both the Anthropic and OpenAI request bodies.
+fn scan_message_contents(body: &Value, out: &mut Vec<VolatileFinding>) {
+    let Some(Value::Array(messages)) = body.get("messages") else {
+        return;
+    };
+    for (i, msg) in messages.iter().enumerate() {
+        if out.len() >= MAX_FINDINGS_PER_REQUEST {
+            return;
+        }
+        if let Some(content) = msg.get("content") {
+            scan_value_for_strings(content, &format!("messages[{i}].content"), out);
         }
     }
 }
@@ -200,17 +206,20 @@ fn scan_value_for_strings(v: &Value, location: &str, out: &mut Vec<VolatileFindi
     }
     match v {
         Value::String(s) => scan_string(s, location, out),
-        Value::Array(items) => {
-            for (i, item) in items.iter().enumerate() {
-                if out.len() >= MAX_FINDINGS_PER_REQUEST {
-                    return;
-                }
-                let nested = format!("{location}[{i}]");
-                scan_value_recursive(item, &nested, out);
-            }
-        }
+        Value::Array(items) => scan_array(items, location, out),
         Value::Object(_) => scan_value_recursive(v, location, out),
-        _ => {}
+        // Numbers / bools / null carry no scannable text and no keys.
+        Value::Number(_) | Value::Bool(_) | Value::Null => {}
+    }
+}
+
+/// Scan each element of an array, threading the global finding cap.
+fn scan_array(items: &[Value], location: &str, out: &mut Vec<VolatileFinding>) {
+    for (i, item) in items.iter().enumerate() {
+        if out.len() >= MAX_FINDINGS_PER_REQUEST {
+            return;
+        }
+        scan_value_recursive(item, &format!("{location}[{i}]"), out);
     }
 }
 
@@ -220,35 +229,35 @@ fn scan_value_recursive(v: &Value, location: &str, out: &mut Vec<VolatileFinding
     }
     match v {
         Value::String(s) => scan_string(s, location, out),
-        Value::Array(items) => {
-            for (i, item) in items.iter().enumerate() {
-                if out.len() >= MAX_FINDINGS_PER_REQUEST {
-                    return;
-                }
-                let nested = format!("{location}[{i}]");
-                scan_value_recursive(item, &nested, out);
+        Value::Array(items) => scan_array(items, location, out),
+        Value::Object(map) => scan_object(map, location, out),
+        // Numbers / bools / null carry no scannable text and no keys.
+        Value::Number(_) | Value::Bool(_) | Value::Null => {}
+    }
+}
+
+/// Scan a JSON object: flag any non-empty ID-named key, then recurse into
+/// every value. The only walker that inspects keys.
+fn scan_object(
+    map: &serde_json::Map<String, Value>,
+    location: &str,
+    out: &mut Vec<VolatileFinding>,
+) {
+    for (k, sub) in map.iter() {
+        if out.len() >= MAX_FINDINGS_PER_REQUEST {
+            return;
+        }
+        if is_id_named_key(k) && !is_value_empty(sub) {
+            out.push(VolatileFinding {
+                kind: VolatileKind::IdField,
+                location: format!("{location}.{k}"),
+                sample: truncate_sample(&value_to_sample(sub)),
+            });
+            if out.len() >= MAX_FINDINGS_PER_REQUEST {
+                return;
             }
         }
-        Value::Object(map) => {
-            for (k, sub) in map.iter() {
-                if out.len() >= MAX_FINDINGS_PER_REQUEST {
-                    return;
-                }
-                if is_id_named_key(k) && !is_value_empty(sub) {
-                    out.push(VolatileFinding {
-                        kind: VolatileKind::IdField,
-                        location: format!("{location}.{k}"),
-                        sample: truncate_sample(&value_to_sample(sub)),
-                    });
-                    if out.len() >= MAX_FINDINGS_PER_REQUEST {
-                        return;
-                    }
-                }
-                let nested = format!("{location}.{k}");
-                scan_value_recursive(sub, &nested, out);
-            }
-        }
-        _ => {}
+        scan_value_recursive(sub, &format!("{location}.{k}"), out);
     }
 }
 
