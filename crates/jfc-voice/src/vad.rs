@@ -472,9 +472,14 @@ pub fn zero_crossing_rate(pcm_bytes: &[u8]) -> f32 {
 
 /// Periodicity of a 16-bit LE PCM frame, in `0.0..=1.0`.
 ///
-/// Peak of the normalized autocorrelation over lags for the human pitch range
-/// (80–400 Hz at 16 kHz → lags 40–200). Voiced speech is quasi-periodic and
-/// scores high; broadband noise (fans, AC, hiss) is aperiodic and scores low.
+/// Peak of the **normalized** autocorrelation over lags for the human pitch
+/// range (80–400 Hz at 16 kHz → lags 40–200). Voiced speech is quasi-periodic
+/// and scores high; broadband noise (fans, AC, hiss) is aperiodic and scores
+/// low. Because the autocorrelation is normalized by the frame's own energy,
+/// this score is **amplitude-invariant** — the same voiced vowel scores the
+/// same whether spoken loudly or softly, which is the property that lets the
+/// detector accept a quiet/changing-tone voice without retuning a hardcoded
+/// energy level. See [`harmonics_to_noise_ratio`] for the dB form.
 pub fn frame_periodicity(pcm_bytes: &[u8]) -> f64 {
     let samples: Vec<f64> = pcm_bytes
         .chunks_exact(2)
@@ -502,6 +507,41 @@ pub fn frame_periodicity(pcm_bytes: &[u8]) -> f64 {
         }
     }
     best.clamp(0.0, 1.0)
+}
+
+/// Harmonics-to-noise ratio (HNR) of a 16-bit LE PCM frame, in decibels.
+///
+/// This is the Boersma (1993) autocorrelation estimator used by Praat. Given
+/// the *normalized* autocorrelation peak `r = frame_periodicity(frame)` (the
+/// fraction of the frame that is periodic), the harmonic and noise energy split
+/// as `r` and `1 − r`, so
+///
+/// ```text
+/// HNR_dB = 10 · log10( r / (1 − r) )
+/// ```
+///
+/// Why it matters here: because `r` is normalized by the frame's own energy,
+/// **HNR is independent of how loud or quiet the voice is** — it measures signal
+/// *structure* (harmonic vs. aperiodic), not level. That is exactly the
+/// intensity-invariant "is this a legitimate voice at any tone/volume?" property
+/// a raw energy threshold lacks: a soft vowel and a loud vowel both yield high
+/// HNR, while white/broadband noise (fans, hiss) yields a very low or negative
+/// HNR regardless of loudness. Clean voiced speech typically sits around
+/// ~7–20 dB; broadband noise sits well below 0 dB.
+///
+/// Returned as a diagnostic / optional voicing feature; see `VAD_RESEARCH.md`
+/// (§5) for the proposed gate. Saturates to ±40 dB so a perfectly periodic or
+/// perfectly aperiodic frame doesn't return infinities.
+pub fn harmonics_to_noise_db(pcm_bytes: &[u8]) -> f64 {
+    let r = frame_periodicity(pcm_bytes).clamp(0.0, 1.0);
+    // Guard the endpoints so log10 stays finite.
+    if r <= 1e-4 {
+        return -40.0;
+    }
+    if r >= 1.0 - 1e-4 {
+        return 40.0;
+    }
+    (10.0 * (r / (1.0 - r)).log10()).clamp(-40.0, 40.0)
 }
 
 /// Spectral flatness measure (Wiener entropy) of a 16-bit LE PCM frame,
@@ -1134,5 +1174,91 @@ mod tests {
     fn force_end_while_silent_returns_false_robust() {
         let mut vad = fixed_vad(300);
         assert!(!vad.force_end());
+    }
+
+    // ── Intensity-invariant voicing (HNR) ──────────────────────────────────
+
+    /// HNR must be HIGH for a pitched/voiced frame and LOW for white noise —
+    /// this is the "real voice vs. white noise" discrimination, independent of
+    /// loudness.
+    #[test]
+    fn hnr_separates_voice_from_white_noise_normal() {
+        let voice = voiced_frame(320, 100, 6000); // pitched (160 Hz)
+        let noise = noise_frame(320, 6000, 42); // broadband, same amplitude
+        let hnr_voice = harmonics_to_noise_db(&voice);
+        let hnr_noise = harmonics_to_noise_db(&noise);
+        assert!(
+            hnr_voice > hnr_noise + 6.0,
+            "voiced HNR ({hnr_voice:.1} dB) must clearly exceed noise HNR ({hnr_noise:.1} dB)"
+        );
+    }
+
+    /// REGRESSION (the user's "my voice changes tone / volume" concern): HNR is
+    /// derived from the *normalized* autocorrelation, so it must be ~invariant
+    /// to amplitude. The same voiced shape at a quiet and a loud level must
+    /// yield nearly identical HNR — i.e. detection shouldn't depend on how loud
+    /// you happen to be.
+    #[test]
+    fn hnr_is_amplitude_invariant_robust() {
+        let quiet = voiced_frame(320, 100, 800); // soft voice
+        let loud = voiced_frame(320, 100, 16000); // loud voice, same pitch
+        let hnr_quiet = harmonics_to_noise_db(&quiet);
+        let hnr_loud = harmonics_to_noise_db(&loud);
+        assert!(
+            (hnr_quiet - hnr_loud).abs() < 1.0,
+            "HNR must be amplitude-invariant: quiet={hnr_quiet:.2} dB vs loud={hnr_loud:.2} dB"
+        );
+        // And both must read as clearly voiced (well above 0 dB).
+        assert!(hnr_quiet > 3.0, "soft voice should still read as voiced ({hnr_quiet:.1} dB)");
+    }
+
+    /// Periodicity (the gate the VAD actually uses) is likewise amplitude
+    /// invariant — proves a quiet voice isn't penalized by the speech-vs-noise
+    /// gate, only by the energy floor (which is itself adaptive).
+    #[test]
+    fn periodicity_is_amplitude_invariant_robust() {
+        let quiet = frame_periodicity(&voiced_frame(320, 100, 800));
+        let loud = frame_periodicity(&voiced_frame(320, 100, 16000));
+        assert!(
+            (quiet - loud).abs() < 0.05,
+            "normalized periodicity must be amplitude-invariant: {quiet:.3} vs {loud:.3}"
+        );
+    }
+
+    // ── Energy VAD long-idle floor recovery (no drift) ─────────────────────
+
+    /// REGRESSION (long-idle, energy engine): unlike the neural model, the
+    /// energy VAD's adaptive noise floor is a symmetric idle-only EMA, so after
+    /// a loud noisy idle stretch it must DECAY back down when the room goes
+    /// quiet again — it must not ratchet up and then miss a normal-volume voice.
+    #[test]
+    fn noise_floor_recovers_after_noisy_idle_robust() {
+        let mut vad = Vad::new(); // adaptive mode
+        let quiet = silent_frame(320);
+        // Settle on a quiet room.
+        for _ in 0..30 {
+            vad.push(&quiet);
+        }
+        let floor_quiet = vad.noise_floor();
+        // A loud, aperiodic idle stretch (e.g. AC kicks on) — must not be
+        // mistaken for speech (it's gated out) but it raises the floor.
+        for i in 0..120 {
+            vad.push(&noise_frame(320, 4000, i as u64));
+        }
+        let floor_noisy = vad.noise_floor();
+        assert!(
+            floor_noisy > floor_quiet,
+            "floor should rise during noisy idle ({floor_quiet} -> {floor_noisy})"
+        );
+        // Room goes quiet again — the floor MUST recover (decay back down).
+        for _ in 0..300 {
+            vad.push(&quiet);
+        }
+        let floor_recovered = vad.noise_floor();
+        assert!(
+            floor_recovered < floor_noisy / 2,
+            "floor must decay back down when quiet returns ({floor_noisy} -> {floor_recovered}), \
+             otherwise a ratcheted floor would miss a normal-volume voice"
+        );
     }
 }
