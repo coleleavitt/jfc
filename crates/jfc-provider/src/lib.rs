@@ -350,6 +350,14 @@ pub enum StreamEvent {
     Error {
         message: String,
     },
+    /// Wire keep-alive — a provider liveness signal that carries no content
+    /// (Anthropic SSE `ping` events, empty SSE comment frames). It exists so
+    /// the runtime can prove the socket is alive and reset its stream idle
+    /// watchdog even during phases that emit no semantic deltas (e.g. a long
+    /// server-side thinking pause). Consumers MUST treat it as activity-only:
+    /// no text, no tokens, no message mutation. Mirrors how Claude Code's
+    /// byte-level watchdog resets on every raw byte (including pings).
+    Keepalive,
     /// Emitted when a model fallback occurs — the requested model was
     /// unavailable (e.g. 529 overload) and a fallback was used instead.
     FallbackTriggered(FallbackTriggered),

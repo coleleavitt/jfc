@@ -1216,7 +1216,19 @@ pub fn into_event_stream(resp: reqwest::Response) -> EventStream {
                             "sse raw"
                         );
                         if ev.event == "ping" || ev.data.is_empty() {
-                            return futures::future::ready(Some(None));
+                            // Surface keepalives as an explicit liveness event
+                            // instead of dropping them. Anthropic emits `ping`
+                            // frames (and empty SSE comment lines) to keep the
+                            // socket warm during long thinking / tool-input
+                            // phases that produce no semantic delta. Forwarding
+                            // a content-free `Keepalive` lets the runtime reset
+                            // its idle watchdog on raw-byte liveness — mirroring
+                            // Claude Code's byte-watchdog which refreshes on
+                            // every chunk pull — so a slow-but-alive stream is
+                            // never mistaken for a dead one.
+                            return futures::future::ready(Some(Some(Ok(
+                                StreamEvent::Keepalive,
+                            ))));
                         }
                         if ev.data == "[DONE]" {
                             tracing::debug!(target: "jfc::provider::anthropic_sse", "sse [DONE]");

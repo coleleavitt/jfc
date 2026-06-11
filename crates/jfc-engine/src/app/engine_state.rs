@@ -28,7 +28,8 @@ use jfc_provider::{ModelId, ModelInfo, Provider, ProviderId};
 use jfc_session::TaskId;
 
 use super::{
-    BACKGROUND_REMINDERS_CAP, DEFAULT_CONTEXT_WINDOW_TOKENS, STREAM_WATCHDOG_TIMEOUT_SECS,
+    BACKGROUND_REMINDERS_CAP, DEFAULT_CONTEXT_WINDOW_TOKENS,
+    STREAM_WATCHDOG_THINKING_TIMEOUT_SECS, STREAM_WATCHDOG_TIMEOUT_SECS,
 };
 use super::{PendingApproval, PermissionDecision, PermissionMode, load_recent_models};
 
@@ -1289,7 +1290,14 @@ impl EngineState {
         if !self.is_streaming {
             return;
         }
-        let Some(timeout_secs) = stream_watchdog_timeout_secs() else {
+        // Phase-aware idle deadline: while an extended-thinking block is open
+        // the model can be legitimately byte-quiet for a long stretch, so we use
+        // the lenient thinking tier; once it is responding (or is a non-thinking
+        // model that never opens a thinking block) a silent wire is treated as a
+        // dead socket and the tighter base tier applies.
+        let thinking_live =
+            self.thinking_started_at.is_some() && self.thinking_ended_at.is_none();
+        let Some(timeout_secs) = stream_watchdog_timeout_secs(thinking_live) else {
             return;
         };
         let timed_out = self
@@ -1680,17 +1688,41 @@ impl EngineState {
     }
 }
 
-fn stream_watchdog_timeout_secs() -> Option<u64> {
+/// Resolve the watchdog idle deadline for the current stream phase.
+///
+/// Two tiers, selected by `thinking_live` (an extended-thinking block is open):
+///   * **thinking** → lenient (`STREAM_WATCHDOG_THINKING_TIMEOUT_SECS`, env
+///     `JFC_STREAM_WATCHDOG_THINKING_TIMEOUT_SECS`). The server can reason in
+///     silence for a long time; cancelling there discards the costly thinking.
+///   * **responding / non-thinking model** → aggressive
+///     (`STREAM_WATCHDOG_TIMEOUT_SECS`, env `JFC_STREAM_WATCHDOG_TIMEOUT_SECS`).
+///     A silent wire here is almost always a dead socket — reap it fast.
+///
+/// `JFC_DISABLE_STREAM_WATCHDOG=1` returns `None` (watchdog off). An explicit
+/// `JFC_STREAM_WATCHDOG_TIMEOUT_SECS` override is treated as a floor for the
+/// thinking tier too, so a user who tightens the base never accidentally makes
+/// the thinking tier *looser* than the base they asked for.
+fn stream_watchdog_timeout_secs(thinking_live: bool) -> Option<u64> {
     if std::env::var("JFC_DISABLE_STREAM_WATCHDOG")
         .map(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
         .unwrap_or(false)
     {
         return None;
     }
-    match std::env::var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS") {
-        Ok(raw) => raw.trim().parse::<u64>().ok().filter(|&secs| secs != 0),
-        Err(_) => Some(STREAM_WATCHDOG_TIMEOUT_SECS),
+    let env_secs = |key: &str| -> Option<u64> {
+        std::env::var(key)
+            .ok()
+            .and_then(|raw| raw.trim().parse::<u64>().ok())
+            .filter(|&secs| secs != 0)
+    };
+    let base = env_secs("JFC_STREAM_WATCHDOG_TIMEOUT_SECS").unwrap_or(STREAM_WATCHDOG_TIMEOUT_SECS);
+    if !thinking_live {
+        return Some(base);
     }
+    let thinking = env_secs("JFC_STREAM_WATCHDOG_THINKING_TIMEOUT_SECS")
+        .unwrap_or(STREAM_WATCHDOG_THINKING_TIMEOUT_SECS);
+    // The thinking tier must never be tighter than the responding base.
+    Some(thinking.max(base))
 }
 
 /// Whether the watchdog should re-drive a hard-idle stream in place instead of
@@ -1730,8 +1762,11 @@ mod watchdog_tests {
     }
     impl jfc_provider::seal::Sealed for TestProvider {}
 
-    /// A streaming state whose last event was `idle_secs` ago — i.e. the
-    /// watchdog (90s default) considers it hard-idle.
+    /// A streaming state whose last event was `idle_secs` ago. To stay
+    /// independent of the default idle threshold (`STREAM_WATCHDOG_TIMEOUT_SECS`,
+    /// currently 180s), tests that want a *tripped* watchdog set
+    /// `JFC_STREAM_WATCHDOG_TIMEOUT_SECS` to a small value and pass an
+    /// `idle_secs` above it.
     fn idle_streaming_state(idle_secs: u64) -> EngineState {
         let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
         state.task_store = jfc_session::TaskStore::in_memory();
@@ -1747,15 +1782,122 @@ mod watchdog_tests {
     }
 
     // A live-but-slow stream (last event recent) must NOT trip the watchdog —
-    // the 90s clock is silence-since-last-event, so a stream emitting anything
+    // the idle clock is silence-since-last-event, so a stream emitting anything
     // keeps itself alive.
     #[tokio::test]
     #[serial_test::serial]
     async fn watchdog_leaves_recently_active_stream_alone_normal() {
+        unsafe {
+            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
+            std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
+        }
         let mut state = idle_streaming_state(2);
         let (tx, _rx) = mpsc::channel(8);
         state.check_stream_watchdog(&tx);
         assert!(state.is_streaming, "recent activity must keep streaming");
+        assert_eq!(state.network_recovery_attempts, 0, "no retry recorded");
+    }
+
+    // The default idle threshold must be a coarse backstop: a stream that went
+    // quiet for ~2 minutes (longer than the OLD 90s default, well within the
+    // new 180s default) must NOT be cancelled. This is the direct regression
+    // guard for "writing a big file and it cancels after ~1m30s" — the watchdog
+    // window now sits above normal inter-event silence.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn watchdog_default_window_tolerates_two_minute_quiet_regression() {
+        unsafe {
+            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
+            std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
+            std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY");
+        }
+        let mut state = idle_streaming_state(120);
+        let (tx, _rx) = mpsc::channel(8);
+        state.check_stream_watchdog(&tx);
+        assert!(
+            state.is_streaming,
+            "120s quiet must be under the 180s default backstop — not cancelled"
+        );
+        assert_eq!(state.network_recovery_attempts, 0, "no retry recorded");
+    }
+
+    // Phase-aware tier — THINKING: a live extended-thinking block that has been
+    // byte-quiet for 200s must NOT be cancelled under the lenient thinking tier
+    // (default 600s), even though the same silence would trip the aggressive
+    // base tier (180s). Cancelling mid-thinking discards the costly reasoning.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn watchdog_thinking_phase_uses_lenient_tier_robust() {
+        unsafe {
+            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
+            std::env::remove_var("JFC_STREAM_WATCHDOG_THINKING_TIMEOUT_SECS");
+            std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
+            std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY");
+        }
+        let mut state = idle_streaming_state(200);
+        // A thinking block is open (started, not yet concluded).
+        state.thinking_started_at = Some(Instant::now() - Duration::from_secs(200));
+        state.thinking_ended_at = None;
+        let (tx, _rx) = mpsc::channel(8);
+        state.check_stream_watchdog(&tx);
+        assert!(
+            state.is_streaming,
+            "200s quiet while thinking is under the lenient 600s tier — not cancelled"
+        );
+        assert_eq!(state.network_recovery_attempts, 0, "no retry recorded");
+    }
+
+    // Phase-aware tier — RESPONDING: the same 200s silence, but with no live
+    // thinking block (a responding or non-thinking model), DOES trip — the
+    // aggressive base tier governs and a silent wire is treated as dead.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn watchdog_responding_phase_uses_aggressive_tier_robust() {
+        unsafe {
+            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
+            std::env::remove_var("JFC_STREAM_WATCHDOG_THINKING_TIMEOUT_SECS");
+            std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
+            std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY");
+        }
+        let mut state = idle_streaming_state(200);
+        // No thinking block open → aggressive 180s base tier applies.
+        state.thinking_started_at = None;
+        state.thinking_ended_at = None;
+        let (tx, _rx) = mpsc::channel(8);
+        state.check_stream_watchdog(&tx);
+        assert!(
+            state.is_streaming,
+            "auto-retry re-drives the turn (still streaming)"
+        );
+        assert_eq!(
+            state.network_recovery_attempts, 1,
+            "200s silence past the 180s base tier must trip the watchdog"
+        );
+    }
+
+    // A keepalive/any decoded event resets the idle clock: a state that is
+    // 120s stale but receives `record_stream_activity()` (what a Keepalive
+    // dispatch does) is no longer idle and must not trip even a tight window.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn watchdog_keepalive_resets_idle_clock_robust() {
+        unsafe {
+            std::env::set_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS", "60");
+            std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
+            std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY");
+        }
+        let mut state = idle_streaming_state(120);
+        // Simulate the Keepalive dispatch path resetting wire liveness.
+        state.record_stream_activity();
+        let (tx, _rx) = mpsc::channel(8);
+        state.check_stream_watchdog(&tx);
+        unsafe {
+            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
+        }
+        assert!(
+            state.is_streaming,
+            "a keepalive reset the clock; stream must stay alive even at a 60s window"
+        );
         assert_eq!(state.network_recovery_attempts, 0, "no retry recorded");
     }
 
@@ -1769,12 +1911,17 @@ mod watchdog_tests {
         unsafe {
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY");
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
-            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
+            // Pin a tight window so the 120s-idle fixture trips regardless of
+            // the (coarser) production default.
+            std::env::set_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS", "60");
         }
         let mut state = idle_streaming_state(120);
         let (tx, _rx) = mpsc::channel(8);
 
         state.check_stream_watchdog(&tx);
+        unsafe {
+            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
+        }
 
         assert!(state.is_streaming, "turn re-driven, still streaming");
         assert_eq!(state.streaming_assistant_idx, Some(1));
@@ -1802,7 +1949,7 @@ mod watchdog_tests {
         unsafe {
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY");
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
-            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
+            std::env::set_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS", "60");
         }
         let mut state = idle_streaming_state(120);
         state.messages[1] = ChatMessage::assistant("partial output".into());
@@ -1810,9 +1957,15 @@ mod watchdog_tests {
         let (tx, _rx) = mpsc::channel(8);
 
         state.check_stream_watchdog(&tx);
+        unsafe {
+            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
+        }
 
         assert!(!state.is_streaming, "exhausted: turn torn down");
-        assert_eq!(state.network_recovery_attempts, 0, "counter reset on give-up");
+        assert_eq!(
+            state.network_recovery_attempts, 0,
+            "counter reset on give-up"
+        );
         assert!(
             !state.cancel_token.is_cancelled(),
             "fresh token for the next turn"
@@ -1838,7 +1991,7 @@ mod watchdog_tests {
         unsafe {
             std::env::set_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY", "1");
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
-            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
+            std::env::set_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS", "60");
         }
         let mut state = idle_streaming_state(120);
         state.messages[1] = ChatMessage::assistant("partial output".into());
@@ -1848,8 +2001,12 @@ mod watchdog_tests {
 
         unsafe {
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY");
+            std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
         }
-        assert!(!state.is_streaming, "opt-out: turn torn down on first timeout");
+        assert!(
+            !state.is_streaming,
+            "opt-out: turn torn down on first timeout"
+        );
         assert_eq!(state.network_recovery_attempts, 0, "no retry recorded");
         let last = state.messages.last().expect("error message appended");
         let text: String = last

@@ -301,6 +301,12 @@ pub enum StreamEvent {
     /// Keeps long context assembly, first-byte waits, and fallback retries from
     /// looking like a frozen UI.
     Lifecycle(StreamLifecycleStatus),
+    /// Content-free wire-liveness tick — forwarded from a provider `Keepalive`
+    /// (an SSE `ping`/comment frame). The dispatcher routes it straight to
+    /// `record_stream_activity()` so the stream idle watchdog resets even
+    /// during long no-delta phases (extended thinking, big tool-input streams).
+    /// It mutates nothing else: no text, tokens, or message parts.
+    Keepalive,
 }
 pub enum ToolEvent {
     Result {

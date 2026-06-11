@@ -192,6 +192,13 @@ pub async fn handle_engine_event(
                 state, status,
             );
         }
+        EngineEvent::Stream(StreamEvent::Keepalive) => {
+            // Wire-liveness tick (SSE ping/keepalive) — reset the stream idle
+            // watchdog clock and nothing else. This is what lets a slow-but-
+            // alive stream (long thinking pause, large tool-input generation)
+            // survive instead of being cancelled by `check_stream_watchdog`.
+            state.record_stream_activity();
+        }
 
         // ── Provider events ─────────────────────────────────────
         EngineEvent::Provider(ev) => {

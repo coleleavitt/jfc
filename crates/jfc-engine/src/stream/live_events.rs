@@ -160,18 +160,24 @@ pub async fn drain_stream_events(
             StreamEvent::ToolDelta { index, delta } => {
                 committed_output = true;
                 tool_accum.entry(index).or_default().2.push_str(&delta);
-                // Keep spinner byte estimate and stall timer live while
-                // providers stream input_json_delta fragments; headless
-                // frontends re-emit the delta text on the wire.
-                if tx
-                    .try_send(EngineEvent::Stream(RuntimeStreamEvent::ToolInputDelta {
+                // MUST use blocking send — `try_send` drops on backpressure,
+                // and during a large tool-input / file write the
+                // `input_json_delta` stream is the ONLY event flowing. Dropping
+                // it (a) corrupts the spinner's byte estimate and (b) — far
+                // worse — starves `last_stream_event_at`, which the engine's
+                // stream watchdog (`check_stream_watchdog`) keys off. A dropped
+                // delta means the watchdog sees no activity even though bytes
+                // are pouring in, so it false-cancels an actively-streaming
+                // response after the idle window ("writing a big file and it
+                // just cancels"). Tool-input JSON is model output; like
+                // TextDelta/ThinkingDelta it must not be lost. Blocking send
+                // applies backpressure to the SSE reader instead of dropping.
+                let _ = tx
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::ToolInputDelta {
                         index,
                         delta,
                     }))
-                    .is_err()
-                {
-                    tracing::trace!(target: "jfc::stream", "ToolInputDelta dropped (buffer full)");
-                }
+                    .await;
             }
             StreamEvent::ToolDone {
                 index,
@@ -421,6 +427,23 @@ pub async fn drain_stream_events(
                     }))
                     .await;
             }
+            StreamEvent::Keepalive => {
+                // Wire-liveness only: forward a content-free Keepalive so the
+                // engine's idle watchdog (`check_stream_watchdog`) resets its
+                // clock. Crucial during long no-delta phases (extended thinking,
+                // large tool-input generation) where Anthropic keeps the socket
+                // warm with `ping` frames and nothing else — without this the
+                // 90s watchdog would cancel a stream that is genuinely alive.
+                // Does NOT set `committed_output` (no model output was produced)
+                // and never blocks: dropping one keepalive under backpressure is
+                // harmless because the next byte/keepalive will tick the clock.
+                if tx
+                    .try_send(EngineEvent::Stream(RuntimeStreamEvent::Keepalive))
+                    .is_err()
+                {
+                    tracing::trace!(target: "jfc::stream", "Keepalive dropped (buffer full)");
+                }
+            }
             StreamEvent::Error { message } => {
                 tracing::error!(target: "jfc::stream", %message, "stream error event");
                 return DrainOutcome::Error {
@@ -510,5 +533,79 @@ mod tests {
             DrainOutcome::Done(reason) => assert_eq!(reason, StopReason::EndTurn),
             _ => panic!("expected Done after terminal stream event"),
         }
+    }
+
+    // A provider Keepalive (SSE ping) must be forwarded as a runtime Keepalive
+    // so the engine dispatcher can reset the idle watchdog. It must NOT be
+    // treated as model output (no Chunk) and must not end the turn.
+    #[tokio::test]
+    async fn keepalive_forwards_runtime_liveness_event_normal() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let outcome = drain_stream_events(
+            event_stream(vec![
+                Ok(StreamEvent::Keepalive),
+                Ok(StreamEvent::Done {
+                    stop_reason: StopReason::EndTurn,
+                }),
+            ]),
+            &tx,
+            Arc::new(AtomicBool::new(false)),
+            CancellationToken::new(),
+        )
+        .await;
+        assert!(matches!(outcome, DrainOutcome::Done(StopReason::EndTurn)));
+        assert!(
+            matches!(
+                rx.try_recv(),
+                Ok(EngineEvent::Stream(RuntimeStreamEvent::Keepalive))
+            ),
+            "expected a forwarded runtime Keepalive event"
+        );
+    }
+
+    // Every ToolInputDelta must be forwarded even when the receiver lags behind
+    // the producer. Before the fix these used `try_send` and were silently
+    // dropped on a full channel — which both corrupted tool input and starved
+    // the watchdog clock during big file writes. Blocking `send` means a slow
+    // consumer applies backpressure rather than losing deltas: all N arrive.
+    #[tokio::test]
+    async fn tool_input_deltas_are_never_dropped_under_backpressure_regression() {
+        // Channel smaller than the delta count: a lossy `try_send` path would
+        // drop the overflow. Blocking send must deliver all of them.
+        let (tx, mut rx) = mpsc::channel(4);
+        const N: usize = 64;
+        let mut events: Vec<anyhow::Result<StreamEvent>> = (0..N)
+            .map(|i| {
+                Ok(StreamEvent::ToolDelta {
+                    index: 0,
+                    delta: format!("chunk{i}"),
+                })
+            })
+            .collect();
+        events.push(Ok(StreamEvent::Done {
+            stop_reason: StopReason::EndTurn,
+        }));
+
+        // Drain concurrently so the producer's blocking sends can make progress.
+        let drain = tokio::spawn(async move {
+            drain_stream_events(
+                event_stream(events),
+                &tx,
+                Arc::new(AtomicBool::new(false)),
+                CancellationToken::new(),
+            )
+            .await
+        });
+
+        let mut deltas = 0usize;
+        while let Some(ev) = rx.recv().await {
+            if let EngineEvent::Stream(RuntimeStreamEvent::ToolInputDelta { delta, .. }) = ev {
+                assert_eq!(delta, format!("chunk{deltas}"), "in-order, no gaps");
+                deltas += 1;
+            }
+        }
+        let outcome = drain.await.expect("drain task");
+        assert!(matches!(outcome, DrainOutcome::Done(StopReason::EndTurn)));
+        assert_eq!(deltas, N, "all tool-input deltas delivered (none dropped)");
     }
 }
