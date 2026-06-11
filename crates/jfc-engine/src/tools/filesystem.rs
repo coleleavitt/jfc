@@ -321,11 +321,73 @@ fn normalize_ws(line: &str) -> String {
     folded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Locate `needle` in `haystack` by comparing whole lines on whitespace-
-/// normalized content, returning the real byte range spanning the matched lines
-/// (so the file's actual indentation is what gets replaced). Returns a range
-/// only when the match is unique. Mirrors `jfc_tools::filesystem`.
+/// Unescape literal escape sequences a model sometimes emits as text instead of
+/// real control characters (`\n`, `\t`, `\r`, `\"`, `\\`). Returns `None` when
+/// the input contains no such backslash sequences (so we don't pay for an
+/// allocation on the common path). Mirrors Cline/OpenCode's
+/// `EscapeNormalizedReplacer`.
+fn unescape_literal(s: &str) -> Option<String> {
+    if !s.contains('\\') {
+        return None;
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    let mut changed = false;
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => {
+                    out.push('\n');
+                    changed = true;
+                }
+                Some('t') => {
+                    out.push('\t');
+                    changed = true;
+                }
+                Some('r') => {
+                    out.push('\r');
+                    changed = true;
+                }
+                Some('"') => {
+                    out.push('"');
+                    changed = true;
+                }
+                Some('\\') => {
+                    out.push('\\');
+                    changed = true;
+                }
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    changed.then_some(out)
+}
+
+/// Locate `needle` in `haystack`, tolerant of whitespace/unicode drift and — as
+/// a final tier — of over-escaped model output (literal `\n` etc.). Returns a
+/// byte range only when the match is unique.
 fn locate_whitespace_insensitive(haystack: &str, needle: &str) -> WsMatch {
+    match locate_ws_core(haystack, needle) {
+        WsMatch::None => {
+            // Tier 3: the model emitted literal escape sequences (e.g. "\n" as
+            // two characters) instead of real newlines. Retry once unescaped.
+            match unescape_literal(needle) {
+                Some(unescaped) => locate_ws_core(haystack, &unescaped),
+                None => WsMatch::None,
+            }
+        }
+        other => other,
+    }
+}
+
+/// Core whitespace/unicode-normalized line matcher (no escape handling).
+fn locate_ws_core(haystack: &str, needle: &str) -> WsMatch {
     let mut needle_norm: Vec<String> = needle.lines().map(normalize_ws).collect();
     while needle_norm.last().map(|s| s.is_empty()).unwrap_or(false) {
         needle_norm.pop();

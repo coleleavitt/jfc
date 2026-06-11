@@ -1606,6 +1606,17 @@ fn apply_one_edit_exact_and_ws_tolerant_normal() {
 }
 
 #[test]
+fn apply_one_edit_tolerates_literal_escape_sequences_normal() {
+    use super::filesystem::apply_one_edit;
+    // The model emitted "\n" as two literal characters instead of a newline.
+    // Tier 3 (escape-normalized) recovers the real two-line block.
+    let file = "fn f() {\n    a();\n    b();\n}\n";
+    let out = apply_one_edit(file, "    a();\\n    b();", "    c();", false, "e7").unwrap();
+    assert!(out.contains("c();"), "{out}");
+    assert!(!out.contains("a();"), "{out}");
+}
+
+#[test]
 fn apply_one_edit_ambiguous_and_missing_fail_robust() {
     use super::filesystem::apply_one_edit;
     // No match → error mentioning the label.
