@@ -23,8 +23,11 @@ pub mod landlock {
     pub use super::fallback::*;
 }
 
+pub mod egress;
 #[cfg(not(target_os = "linux"))]
 mod fallback;
+
+pub use egress::{EgressDecision, EgressPolicy};
 pub use landlock::{SandboxPolicy, SandboxResult};
 
 /// Global flag: set to `true` once the landlock sandbox has been
@@ -200,10 +203,13 @@ pub fn build_bwrap_argv(cfg: &BashSandboxConfig, cwd: &std::path::Path) -> Optio
         argv.push(path.clone());
         argv.push(path.clone());
     }
-    // Network: by default, sandboxed commands have no network. To allow
-    // it, the user must explicitly add allowed_domains (not implemented
-    // at the bwrap level — needs a proxy). For now, sandbox = no network.
-    if cfg.network.allowed_domains.is_empty() {
+    // Network: resolve the egress policy. When outbound is disabled (no
+    // allowlisted domains) the network namespace is unshared so the command
+    // gets no network at all. When an allowlist is present, bwrap keeps the
+    // network and a host-level egress proxy/guard enforces the per-domain
+    // [`egress::EgressPolicy`] (wildcards, deny-precedence, default-deny).
+    let egress = egress::EgressPolicy::from_network_config(&cfg.network);
+    if !egress.outbound_enabled {
         argv.push("--unshare-net".into());
     }
     // Apply deny-read paths.
