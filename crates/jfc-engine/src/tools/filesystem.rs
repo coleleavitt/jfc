@@ -288,6 +288,86 @@ pub async fn execute_write(file_path: &str, content: &str) -> ExecutionResult {
     }
 }
 
+/// Outcome of a whitespace-insensitive search for an edit's `old_string`.
+enum WsMatch {
+    /// Exactly one matching region — carries its real byte range in the file.
+    Unique(std::ops::Range<usize>),
+    /// More than one region matched — too risky to auto-pick (carries count).
+    Ambiguous(usize),
+    /// No region matched.
+    None,
+}
+
+/// Fold Unicode punctuation variants that LLMs frequently substitute for their
+/// ASCII equivalents (smart quotes, em/en dashes, non-breaking space) back to
+/// ASCII, so an edit whose only difference is `"` vs `"` or `—` vs `-` still
+/// matches. Mirrors Codex's `seek_sequence` Unicode-normalization tier — the
+/// "underrated" fallback per the agent-harness survey.
+fn fold_unicode_punct(ch: char) -> char {
+    match ch {
+        '\u{2018}' | '\u{2019}' | '\u{201B}' | '\u{2032}' => '\'', // ‘ ’ ‛ ′ → '
+        '\u{201C}' | '\u{201D}' | '\u{201F}' | '\u{2033}' => '"',  // “ ” ‟ ″ → "
+        '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2015}' => '-', // dashes → -
+        '\u{00A0}' | '\u{2007}' | '\u{202F}' => ' ', // non-breaking / figure / narrow no-break space
+        other => other,
+    }
+}
+
+/// Normalize a line for whitespace-insensitive comparison: fold Unicode
+/// punctuation variants to ASCII, then trim and collapse internal whitespace
+/// runs to a single space.
+fn normalize_ws(line: &str) -> String {
+    let folded: String = line.chars().map(fold_unicode_punct).collect();
+    folded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Locate `needle` in `haystack` by comparing whole lines on whitespace-
+/// normalized content, returning the real byte range spanning the matched lines
+/// (so the file's actual indentation is what gets replaced). Returns a range
+/// only when the match is unique. Mirrors `jfc_tools::filesystem`.
+fn locate_whitespace_insensitive(haystack: &str, needle: &str) -> WsMatch {
+    let mut needle_norm: Vec<String> = needle.lines().map(normalize_ws).collect();
+    while needle_norm.last().map(|s| s.is_empty()).unwrap_or(false) {
+        needle_norm.pop();
+    }
+    if needle_norm.is_empty() {
+        return WsMatch::None;
+    }
+
+    let mut line_spans: Vec<(usize, usize, String)> = Vec::new();
+    let mut idx = 0usize;
+    for line in haystack.split_inclusive('\n') {
+        let trimmed_len = line.trim_end_matches('\n').len();
+        let start = idx;
+        let end = idx + trimmed_len;
+        line_spans.push((start, end, normalize_ws(&haystack[start..end])));
+        idx += line.len();
+    }
+
+    let window = needle_norm.len();
+    if window > line_spans.len() {
+        return WsMatch::None;
+    }
+
+    let mut matches: Vec<std::ops::Range<usize>> = Vec::new();
+    for i in 0..=(line_spans.len() - window) {
+        let candidate = &line_spans[i..i + window];
+        if candidate
+            .iter()
+            .zip(&needle_norm)
+            .all(|((_, _, norm), need)| norm == need)
+        {
+            matches.push(candidate[0].0..candidate[window - 1].1);
+        }
+    }
+
+    match matches.len() {
+        0 => WsMatch::None,
+        1 => WsMatch::Unique(matches.into_iter().next().unwrap()),
+        n => WsMatch::Ambiguous(n),
+    }
+}
+
 pub async fn execute_edit(
     file_path: &str,
     old_string: &str,
@@ -306,21 +386,50 @@ pub async fn execute_edit(
                 );
             }
             let count = content.matches(old_string).count();
-            if count == 0 {
-                warn!(target: "jfc::tools", file_path, "edit: old_string not found");
-                return ExecutionResult::failure(format!("old_string not found in {file_path}"));
-            }
             if count > 1 && !replacement.replace_all() {
                 warn!(target: "jfc::tools", file_path, count, "edit: multiple matches found");
                 return ExecutionResult::failure(format!(
                     "Found {count} matches for old_string in {file_path}. Use replace_all=true or provide more context."
                 ));
             }
-            let new_content = if replacement.replace_all() {
+            // Tier 2 fallback: when there's no exact match, the usual cause is
+            // indentation / trailing-whitespace drift between what the model
+            // emitted and what's on disk. Re-locate the block by comparing
+            // whitespace-normalized lines and, only when the match is UNIQUE,
+            // edit that real byte range. Preserves "unique or fail" safety.
+            let mut ws_range: Option<std::ops::Range<usize>> = None;
+            if count == 0 {
+                match locate_whitespace_insensitive(&content, old_string) {
+                    WsMatch::Unique(r) => {
+                        info!(target: "jfc::tools", file_path, "edit: exact miss; using whitespace-tolerant match");
+                        ws_range = Some(r);
+                    }
+                    WsMatch::Ambiguous(n) => {
+                        warn!(target: "jfc::tools", file_path, n, "edit: ambiguous whitespace match");
+                        return ExecutionResult::failure(format!(
+                            "old_string not found exactly, and the whitespace-insensitive match is ambiguous ({n} candidates) in {file_path}. Include surrounding lines to disambiguate."
+                        ));
+                    }
+                    WsMatch::None => {
+                        warn!(target: "jfc::tools", file_path, "edit: old_string not found");
+                        return ExecutionResult::failure(format!(
+                            "old_string not found in {file_path}"
+                        ));
+                    }
+                }
+            }
+            let new_content = if let Some(range) = ws_range {
+                let mut s = String::with_capacity(content.len());
+                s.push_str(&content[..range.start]);
+                s.push_str(new_string);
+                s.push_str(&content[range.end..]);
+                s
+            } else if replacement.replace_all() {
                 content.replace(old_string, new_string)
             } else {
                 content.replacen(old_string, new_string, 1)
             };
+            let count = count.max(1);
             // /undo capture: stash the pre-mutation content. The Edit
             // tool always preserves the file, so we never push None.
             crate::tools::push_undo_entry(file_path, Some(content.clone()), "Edit");
