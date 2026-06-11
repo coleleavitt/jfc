@@ -11,6 +11,7 @@
 pub mod protocol;
 pub mod registry;
 pub mod tool_dispatch;
+pub mod tool_permissions;
 pub mod transport;
 
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,9 @@ pub use registry::{
 };
 pub use tool_dispatch::{
     DEFAULT_DISPATCH_TIMEOUT, dispatch_mcp_tool, dispatch_mcp_tool_with_timeout, is_mcp_tool_name,
+};
+pub use tool_permissions::{
+    AdminSetting, BlockSource, MemberOverride, ServerToolPolicy, ToolDecision, ToolPermissionStore,
 };
 pub use transport::{RequestError, SpawnConfig, Transport, TransportKind};
 

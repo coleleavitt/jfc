@@ -130,8 +130,6 @@ pub fn refresh_counter() -> u64 {
     REFRESH_PENDING.load(std::sync::atomic::Ordering::SeqCst)
 }
 
-
-
 impl McpRegistry {
     pub fn new() -> Self {
         Self::default()
@@ -230,8 +228,34 @@ impl McpRegistry {
         arguments: Value,
         timeout: std::time::Duration,
     ) -> Result<ToolCallOutcome, DispatchError> {
+        self.dispatch_tool_gated(advertised_name, arguments, timeout, None)
+            .await
+    }
+
+    /// Dispatch with optional per-tool permission gating. When `permissions` is
+    /// `Some`, the `(server, tool)` decision is consulted first and a blocked
+    /// tool returns [`DispatchError::ToolBlocked`] without contacting the
+    /// server. `None` preserves the default-open behaviour.
+    pub async fn dispatch_tool_gated(
+        &self,
+        advertised_name: &str,
+        arguments: Value,
+        timeout: std::time::Duration,
+        permissions: Option<&crate::tool_permissions::ToolPermissionStore>,
+    ) -> Result<ToolCallOutcome, DispatchError> {
         let (server_name, tool_name) =
             protocol::split_advertised(advertised_name).ok_or(DispatchError::NotMcpName)?;
+        if let Some(store) = permissions {
+            if let crate::tool_permissions::ToolDecision::Blocked(src) =
+                store.decide(server_name, tool_name)
+            {
+                return Err(DispatchError::ToolBlocked {
+                    server: server_name.to_owned(),
+                    tool: tool_name.to_owned(),
+                    reason: src.reason(),
+                });
+            }
+        }
         let server = self
             .get(server_name)
             .await
@@ -260,6 +284,12 @@ pub enum DispatchError {
     UnknownServer(String),
     /// Server entry exists but transport is gone.
     ServerNotConnected(String),
+    /// The tool is disabled by the active per-tool permission policy.
+    ToolBlocked {
+        server: String,
+        tool: String,
+        reason: &'static str,
+    },
     /// Lower-layer transport error.
     Request(RequestError),
 }
@@ -270,6 +300,11 @@ impl std::fmt::Display for DispatchError {
             Self::NotMcpName => f.write_str("tool name is not in mcp__server__tool format"),
             Self::UnknownServer(s) => write!(f, "unknown MCP server: {s}"),
             Self::ServerNotConnected(s) => write!(f, "MCP server {s} is not connected"),
+            Self::ToolBlocked {
+                server,
+                tool,
+                reason,
+            } => write!(f, "MCP tool {server}/{tool} is disabled: {reason}"),
             Self::Request(e) => write!(f, "MCP dispatch error: {e}"),
         }
     }
