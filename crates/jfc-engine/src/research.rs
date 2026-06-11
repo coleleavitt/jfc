@@ -160,6 +160,15 @@ pub struct ResearchReport {
     pub synthesis: String,
 }
 
+/// A research artifact exported to disk: the report rendered as markdown plus a
+/// machine-readable JSON sidecar. Mirrors Perplexity's
+/// `/rest/deeper-research/export-asset`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResearchArtifact {
+    pub markdown_path: std::path::PathBuf,
+    pub json_path: std::path::PathBuf,
+}
+
 impl ResearchReport {
     pub fn successful_steps(&self) -> usize {
         self.steps.iter().filter(|s| s.succeeded()).count()
@@ -183,6 +192,72 @@ impl ResearchReport {
             }
         }
         out
+    }
+
+    /// Serialise the report to a JSON value (the export sidecar payload).
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "question": self.question,
+            "plan": self.plan,
+            "synthesis": self.synthesis,
+            "steps": self.steps.iter().map(|s| {
+                serde_json::json!({
+                    "sub_query": s.sub_query,
+                    "ok": s.succeeded(),
+                    "evidence": s.evidence(),
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+
+    /// Export the report to `dir` as `<slug>.md` + `<slug>.json`, mirroring
+    /// Perplexity's deeper-research export-asset. Returns the written paths.
+    pub fn export(&self, dir: &std::path::Path) -> std::io::Result<ResearchArtifact> {
+        std::fs::create_dir_all(dir)?;
+        let slug = export_slug(&self.question);
+        let markdown_path = dir.join(format!("{slug}.md"));
+        let json_path = dir.join(format!("{slug}.json"));
+        std::fs::write(&markdown_path, self.to_markdown())?;
+        std::fs::write(
+            &json_path,
+            serde_json::to_string_pretty(&self.to_json()).unwrap_or_default(),
+        )?;
+        Ok(ResearchArtifact {
+            markdown_path,
+            json_path,
+        })
+    }
+
+    /// Convenience wrapper: export under `dir` (defaults to a `jfc-research`
+    /// subdir of the system temp dir) and return the markdown artifact path.
+    pub fn export_artifact(
+        &self,
+        dir: Option<std::path::PathBuf>,
+    ) -> std::io::Result<std::path::PathBuf> {
+        let dir = dir.unwrap_or_else(|| std::env::temp_dir().join("jfc-research"));
+        Ok(self.export(&dir)?.markdown_path)
+    }
+}
+
+/// Build a filesystem-safe slug from the question (lowercase, hyphenated,
+/// capped). Empty questions fall back to `research`.
+fn export_slug(question: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = false;
+    for ch in question.chars().take(80) {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+    let slug = slug.trim_matches('-').to_owned();
+    if slug.is_empty() {
+        "research".to_owned()
+    } else {
+        slug
     }
 }
 
@@ -548,5 +623,39 @@ mod tests {
         assert!(md.contains("## Research"));
         assert!(md.contains("✅"));
         assert!(md.contains("⚠️"));
+    }
+
+    // ── Export ───────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn export_writes_markdown_and_json_normal() {
+        let searcher = MockSearcher::new();
+        let synth = CountingSynth;
+        let req = ResearchRequest::new("rust async runtimes").with_max_steps(2);
+        let report = run_research(req, &searcher, &synth).await.unwrap();
+
+        let dir = std::env::temp_dir().join(format!("jfc-research-test-{}", std::process::id()));
+        let artifact = report.export(&dir).expect("export ok");
+        assert!(artifact.markdown_path.exists());
+        assert!(artifact.json_path.exists());
+
+        let md = std::fs::read_to_string(&artifact.markdown_path).unwrap();
+        assert!(md.contains("Research"));
+        let json = std::fs::read_to_string(&artifact.json_path).unwrap();
+        assert!(json.contains("\"question\""));
+        assert!(json.contains("rust async runtimes"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_slug_is_filesystem_safe_robust() {
+        assert_eq!(export_slug("Why is the sky blue?"), "why-is-the-sky-blue");
+        assert_eq!(export_slug("   "), "research");
+        assert!(
+            export_slug("a/b\\c:d")
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        );
     }
 }

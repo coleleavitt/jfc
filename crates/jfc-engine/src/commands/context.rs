@@ -523,6 +523,67 @@ fn render_council_snapshot(messages: &[ChatMessage]) -> String {
     out
 }
 
+/// `/research <question>` — run the deep-research loop: plan sub-queries,
+/// search the web per step, and synthesise the evidence into one answer.
+///
+/// Mirrors Perplexity's `/rest/sse/perplexity_ask` research flow (PLAN →
+/// pro_search_step → FINAL). Runs out-of-band like `/advisor` and `/council`:
+/// it does its own web searches via `research::WebSearcher` and a deterministic
+/// `LocalSynthesizer`, then surfaces the markdown report. Append ` --export` to
+/// also write a durable artifact bundle next to the project.
+pub(super) async fn cmd_research(
+    state: &mut EngineState,
+    _parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    use crate::research::{LocalSynthesizer, ResearchRequest, WebSearcher, run_research};
+
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    let args = text.trim().strip_prefix("/research").unwrap_or("").trim();
+
+    let export = args.contains("--export");
+    let question = args.replace("--export", "").trim().to_owned();
+    if question.is_empty() {
+        state
+            .messages
+            .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                "Usage: `/research <question>` (add `--export` to save an artifact).".into(),
+            )]));
+        return;
+    }
+
+    let request = ResearchRequest::new(question);
+    let searcher = WebSearcher;
+    let synthesizer = LocalSynthesizer;
+    match run_research(request, &searcher, &synthesizer).await {
+        Ok(report) => {
+            let mut body = report.to_markdown();
+            if export {
+                match report.export(&std::env::temp_dir().join("jfc-research")) {
+                    Ok(artifact) => body.push_str(&format!(
+                        "\n\n_Artifact saved: `{}`_",
+                        artifact.markdown_path.display()
+                    )),
+                    Err(e) => body.push_str(&format!("\n\n_(export failed: {e})_")),
+                }
+            }
+            state
+                .messages
+                .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                    body,
+                )]));
+        }
+        Err(e) => {
+            state
+                .messages
+                .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                    format!("Research error: {e}"),
+                )]));
+        }
+    }
+}
+
 pub(super) async fn cmd_config(
     state: &mut EngineState,
     parts: &[&str],
