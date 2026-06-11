@@ -264,15 +264,20 @@ pub fn agent_tool_defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "Research".into(),
-            description: "Run a deep-research pass on a question: JFC plans a set of \
-                sub-queries, searches the web for each in steps, and synthesises the \
-                gathered evidence into one answer (mirrors Perplexity's pro-search \
-                research flow). Runs out-of-band — it does NOT consume the main \
+            description: "Run an agentic deep-research pass on a question: a model plans \
+                and REFORMULATES each next sub-query from the evidence gathered so far \
+                (read → decide → search → repeat), routing sub-queries to the best source \
+                — general web, the local codebase (ripgrep), or specialised indexes \
+                (arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar, DOAJ, CORE, a named \
+                university via `uni:`, Wikipedia, etc.) — then a model synthesises the \
+                gathered evidence into one CITED answer. Mirrors claude.ai/Perplexity \
+                deep research. Runs out-of-band — it does NOT consume the main \
                 conversation's tools and returns a self-contained report.\n\n\
-                Use when a question needs current/external information across multiple \
-                angles (background + latest developments + mechanism + criticism), not a \
-                single lookup. For a one-shot fact, use WebSearch instead. Set `export` \
-                to also write a durable markdown+json artifact.".into(),
+                Use when a question needs current/external or academic information across \
+                multiple angles (background + latest developments + mechanism + \
+                criticism), or wants both web and repo evidence — not a single lookup. \
+                For a one-shot fact, use WebSearch instead. Set `export` to also write a \
+                durable markdown+json artifact.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {

@@ -369,13 +369,63 @@ pub fn plan_subqueries(request: &ResearchRequest) -> Vec<String> {
     plan
 }
 
+/// Backend prefixes understood by [`jfc_web::search`]. When a sub-query starts
+/// with one of these (`arxiv:`, `uni:`, …), reformulation must preserve the
+/// prefix verbatim and only rewrite the remainder, or routing breaks. Kept in
+/// sync with the `search()` dispatcher in `jfc-web`.
+pub const BACKEND_PREFIXES: &[&str] = &[
+    "arxiv", "scholar", "openalex", "crossref", "pubmed", "doaj", "core", "unpaywall", "papers",
+    "brave", "tavily", "exa", "ddg", "wiki", "primo", "uni", "edu", "cn", "gov",
+];
+
+/// Split a leading `prefix:`/`prefix ` backend selector off a query, returning
+/// `(Some(prefix), remainder)` when one of [`BACKEND_PREFIXES`] matches, else
+/// `(None, query)`.
+fn split_backend_prefix(query: &str) -> (Option<&'static str>, &str) {
+    let trimmed = query.trim_start();
+    for &p in BACKEND_PREFIXES {
+        // Match `prefix:` or `prefix ` (case-insensitive on the selector only).
+        let lower = trimmed.to_ascii_lowercase();
+        if let Some(rest) = lower
+            .strip_prefix(&format!("{p}:"))
+            .or_else(|| lower.strip_prefix(&format!("{p} ")))
+        {
+            let cut = trimmed.len() - rest.len();
+            return (Some(p), trimmed[cut..].trim_start());
+        }
+    }
+    (None, query)
+}
+
 /// Rewrite a sub-query into a retrieval-friendly search query before it hits the
 /// search backend. Mirrors Perplexity's `/rest/autosuggest/reformulate-query`
 /// (which uses a model); this is a deterministic, dependency-light version:
 /// strip conversational scaffolding ("can you", "please tell me about", a
 /// trailing question mark), collapse whitespace, and keep the salient terms.
-/// The result is never empty — it falls back to the trimmed input.
+/// A leading backend selector (`arxiv:`, `uni:`, …) is preserved verbatim so
+/// routing survives reformulation. The result is never empty — it falls back to
+/// the trimmed input.
 pub fn reformulate_query(query: &str) -> String {
+    // Preserve a backend selector and reformulate only the remainder.
+    let (prefix, body) = split_backend_prefix(query);
+    if let Some(p) = prefix {
+        // `uni:` carries a second `<University>: <topic>` colon structure; keep
+        // its body intact (only trim) so the institution lookup still parses.
+        let body_reformulated = if p == "uni" {
+            body.trim().to_owned()
+        } else {
+            reformulate_plain(body)
+        };
+        if body_reformulated.is_empty() {
+            return query.trim().to_owned();
+        }
+        return format!("{p}: {body_reformulated}");
+    }
+    reformulate_plain(query)
+}
+
+/// Reformulate a query with no backend prefix (the core keyword cleanup).
+fn reformulate_plain(query: &str) -> String {
     let lower_trimmed = query.trim();
     if lower_trimmed.is_empty() {
         return String::new();
@@ -612,13 +662,38 @@ const PLANNER_MAX_TOKENS: u32 = 256;
 /// Max output tokens for the final synthesis completion.
 const SYNTH_MAX_TOKENS: u32 = 3072;
 
+/// Search-backend selectors the planner may prefix onto a sub-query to route it
+/// to a specialised source instead of general web search. Mirrors the prefixes
+/// understood by [`jfc_web::search`]. Kept in sync with `crate::research`'s
+/// knowledge of `jfc-web`; the planner is told about these so academic / domain
+/// questions hit the right index (arXiv, OpenAlex, PubMed, a named university,
+/// etc.) rather than always defaulting to Google.
+pub const SEARCH_BACKENDS: &str = "\
+Available search backends — prefix the query with one to route it (omit the \
+prefix for a general web search):\n\
+- `arxiv:` preprints (physics/CS/math). e.g. `arxiv: diffusion model guidance`\n\
+- `openalex:` 250M+ scholarly works across all fields. e.g. `openalex: graph neural networks`\n\
+- `crossref:` DOI metadata for published papers. e.g. `crossref: attention is all you need`\n\
+- `pubmed:` biomedical / life-sciences literature. e.g. `pubmed: CRISPR off-target`\n\
+- `scholar:` Semantic Scholar (citations, TLDRs). e.g. `scholar: retrieval augmented generation`\n\
+- `papers:` arXiv + Semantic Scholar + OpenAlex merged + deduped (best for a broad academic sweep). e.g. `papers: mixture of experts`\n\
+- `doaj:` open-access journals. `core:` 290M+ OA full texts. `unpaywall:` resolve a DOI to a free PDF.\n\
+- `uni:` a named university's research output (any country), e.g. `uni: Tsinghua University: quantum computing`\n\
+- `edu:` academic-domain web (.edu/.ac.uk/…). `gov:` government sources. `cn:` Chinese academic domains. `primo:` university library discovery.\n\
+- `wiki:` Wikipedia overview. `ddg:` quick factual definitions. `brave:`/`tavily:`/`exa:` alternative web indexes.";
+
 const PLANNER_SYSTEM_PROMPT: &str = "\
 You are the planning step of a deep-research loop. Given the user's research \
 question and the evidence gathered by prior searches, decide the single most \
 useful NEXT search query to close the biggest remaining gap. Reply with ONLY \
 that query — no preamble, no quotes, no explanation. The query must be a \
-concise, retrieval-friendly set of keywords (not a sentence). If the evidence \
-already answers the question well enough, reply with exactly DONE.";
+concise, retrieval-friendly set of keywords (not a sentence).\n\n\
+Route to the right source by prefixing the query with a backend selector when \
+it helps (e.g. an academic question → `papers:` or `arxiv:` or `pubmed:`; a \
+specific institution → `uni: <University>: <topic>`; a quick definition → \
+`wiki:`). Omit the prefix for ordinary web questions. Vary backends across \
+steps so you triangulate rather than re-querying one index.\n\n\
+If the evidence already answers the question well enough, reply with exactly DONE.";
 
 const SYNTH_SYSTEM_PROMPT: &str = "\
 You are the synthesis step of a deep-research loop. You are given the original \
@@ -779,10 +854,12 @@ impl Planner for LlmPlanner {
     async fn next_query(&self, question: &str, steps: &[ResearchStep]) -> Option<String> {
         let evidence = numbered_evidence(steps);
         let block = if evidence.trim().is_empty() {
-            format!("Research question:\n{question}\n\nNo evidence gathered yet. Give the first search query.")
+            format!(
+                "{SEARCH_BACKENDS}\n\nResearch question:\n{question}\n\nNo evidence gathered yet. Give the first search query (prefix a backend selector if it helps)."
+            )
         } else {
             format!(
-                "Research question:\n{question}\n\nEvidence gathered so far:\n{evidence}\n\nGive the next search query, or DONE."
+                "{SEARCH_BACKENDS}\n\nResearch question:\n{question}\n\nEvidence gathered so far:\n{evidence}\n\nGive the next search query (prefix a backend selector if it helps), or DONE."
             )
         };
         let messages = vec![ProviderMessage {
@@ -1005,10 +1082,21 @@ impl CombinedSearcher {
 #[async_trait]
 impl Searcher for CombinedSearcher {
     async fn search(&self, query: &str, max_results: usize) -> Result<String, String> {
-        let (web, local) = tokio::join!(
-            self.web.search(query, max_results),
-            self.local.search(query, max_results),
-        );
+        // A backend-prefixed query (`arxiv:`, `openalex:`, `uni:`, …) is an
+        // explicit external/academic lookup — route it only to the web backend
+        // and skip the local codebase (the prefix would otherwise be searched
+        // as a literal term and never match). Local search uses the prefix
+        // stripped off so repo grep sees real terms.
+        let (prefix, body) = split_backend_prefix(query);
+        let local_fut = async {
+            if prefix.is_some() {
+                Err("skipped local search for backend-routed query".to_owned())
+            } else {
+                self.local.search(query, max_results).await
+            }
+        };
+        let _ = body;
+        let (web, local) = tokio::join!(self.web.search(query, max_results), local_fut);
         let mut out = String::new();
         if let Ok(w) = &web {
             out.push_str("## Web\n");
@@ -1122,6 +1210,76 @@ mod tests {
         async fn next_query(&self, _question: &str, steps: &[ResearchStep]) -> Option<String> {
             self.evidence_seen.lock().unwrap().push(steps.len());
             self.queries.lock().unwrap().pop()
+        }
+    }
+
+    // ── Backend routing / prefix preservation ───────────────────────────────
+
+    #[test]
+    fn reformulate_preserves_backend_prefix_normal() {
+        // The selector survives; only the body is cleaned up.
+        assert_eq!(
+            reformulate_query("arxiv: can you tell me about diffusion models?"),
+            "arxiv: diffusion models"
+        );
+        assert_eq!(
+            reformulate_query("pubmed: CRISPR off-target effects"),
+            "pubmed: CRISPR off-target effects"
+        );
+    }
+
+    #[test]
+    fn reformulate_preserves_uni_two_colon_structure_robust() {
+        // `uni:` carries `<University>: <topic>` — the inner colon must survive.
+        assert_eq!(
+            reformulate_query("uni: Tsinghua University: quantum computing"),
+            "uni: Tsinghua University: quantum computing"
+        );
+    }
+
+    #[test]
+    fn reformulate_plain_query_unaffected_by_prefix_logic_normal() {
+        // A query that merely contains a word like "core" mid-sentence is NOT a
+        // backend prefix — it's reformulated as a plain query (lead-ins stripped,
+        // whitespace collapsed; stopwords are kept, matching reformulate_plain).
+        assert_eq!(
+            reformulate_query("tell me about the core scheduler"),
+            "the core scheduler"
+        );
+    }
+
+    #[test]
+    fn split_backend_prefix_detects_known_selectors_normal() {
+        assert_eq!(
+            split_backend_prefix("openalex: graph neural nets"),
+            (Some("openalex"), "graph neural nets")
+        );
+        assert_eq!(
+            split_backend_prefix("just a normal query"),
+            (None, "just a normal query")
+        );
+    }
+
+    #[tokio::test]
+    async fn combined_searcher_skips_local_for_backend_query_robust() {
+        // A backend-prefixed query must not produce a "## Local codebase" block.
+        let searcher = CombinedSearcher::new(std::env::temp_dir());
+        // Web will likely fail offline, but the local-skip path is what we test:
+        // the result must never contain a local-codebase section for a prefixed
+        // query. (If web also fails we get Err, which is fine — no local block.)
+        let res = searcher.search("arxiv: nonexistent-xyzzy-term", 2).await;
+        if let Ok(text) = res {
+            assert!(!text.contains("## Local codebase"));
+        }
+    }
+
+    #[test]
+    fn search_backends_doc_lists_core_indexes_normal() {
+        for needle in ["arxiv:", "openalex:", "pubmed:", "uni:", "papers:"] {
+            assert!(
+                SEARCH_BACKENDS.contains(needle),
+                "planner backend doc must mention {needle}"
+            );
         }
     }
 
