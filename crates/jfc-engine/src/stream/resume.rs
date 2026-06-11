@@ -249,6 +249,60 @@ pub fn global_resume(backend_uuid: &str) -> Result<ResumeSnapshot, ResumeError> 
         .resume(backend_uuid)
 }
 
+/// RAII handle the live stream loop uses to back one turn with a resumable
+/// snapshot in the global [`ResumeStore`]. `begin()` mints an entry, `record()`
+/// appends each text delta, and `Drop` finalizes it as `Complete` (or
+/// `finish_failed()` for an error path) so a dropped connection can always
+/// replay whatever accumulated. Token-gated writes go through the global store.
+pub struct DrainResumeHandle {
+    backend_uuid: String,
+    token: String,
+    finished: bool,
+}
+
+impl DrainResumeHandle {
+    /// Mint a new resumable entry for the current turn.
+    pub fn begin() -> Self {
+        let (backend_uuid, token) = global_begin();
+        Self {
+            backend_uuid,
+            token,
+            finished: false,
+        }
+    }
+
+    /// The reconnect key for this turn.
+    pub fn backend_uuid(&self) -> &str {
+        &self.backend_uuid
+    }
+
+    /// Append a text delta to the snapshot (best-effort; ignores errors so the
+    /// stream is never impacted by resume bookkeeping).
+    pub fn record(&self, delta: &str) {
+        let _ = global_record_delta(&self.backend_uuid, &self.token, delta);
+    }
+
+    /// Finalize as `Complete` explicitly (otherwise `Drop` does it).
+    pub fn finish_complete(mut self) {
+        let _ = global_finish(&self.backend_uuid, &self.token, EntryState::Complete);
+        self.finished = true;
+    }
+
+    /// Finalize as `Failed`, preserving the partial snapshot.
+    pub fn finish_failed(mut self) {
+        let _ = global_finish(&self.backend_uuid, &self.token, EntryState::Failed);
+        self.finished = true;
+    }
+}
+
+impl Drop for DrainResumeHandle {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = global_finish(&self.backend_uuid, &self.token, EntryState::Complete);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,5 +417,37 @@ mod tests {
         assert_eq!(snap.snapshot, "global snapshot");
         global_finish(&uuid, &tok, EntryState::Complete).unwrap();
         assert_eq!(global_resume(&uuid).unwrap().state, EntryState::Complete);
+    }
+
+    // ── Drain handle (live stream wiring) ──────────────────────────────────────
+
+    #[test]
+    fn drain_handle_records_and_reconnect_replays_normal() {
+        let handle = DrainResumeHandle::begin();
+        let uuid = handle.backend_uuid().to_owned();
+        handle.record("The answer ");
+        handle.record("is 42.");
+
+        // Mid-stream reconnect sees the accumulated snapshot, still streaming.
+        let mid = global_resume(&uuid).expect("reconnect");
+        assert_eq!(mid.snapshot, "The answer is 42.");
+        assert_eq!(mid.state, EntryState::Streaming);
+
+        // Dropping the handle finalizes the entry as Complete.
+        drop(handle);
+        let done = global_resume(&uuid).expect("still present");
+        assert_eq!(done.snapshot, "The answer is 42.");
+        assert_eq!(done.state, EntryState::Complete);
+    }
+
+    #[test]
+    fn drain_handle_finish_failed_preserves_snapshot_robust() {
+        let handle = DrainResumeHandle::begin();
+        let uuid = handle.backend_uuid().to_owned();
+        handle.record("partial output");
+        handle.finish_failed();
+        let snap = global_resume(&uuid).expect("present");
+        assert_eq!(snap.snapshot, "partial output");
+        assert_eq!(snap.state, EntryState::Failed);
     }
 }

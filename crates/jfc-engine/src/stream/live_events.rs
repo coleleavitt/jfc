@@ -45,6 +45,9 @@ pub async fn drain_stream_events(
     let mut terminal_done_deadline: Option<tokio::time::Instant> = None;
     let mut saw_terminal_done = false;
     let mut committed_output = false;
+    // Resumable-stream snapshot: mint a resume entry for this turn and feed text
+    // deltas into it so a dropped connection can replay the partial answer.
+    let resume = crate::stream::resume::DrainResumeHandle::begin();
 
     loop {
         // Cooperative cancel: the user pressed ESC twice. The legacy atomic
@@ -118,6 +121,7 @@ pub async fn drain_stream_events(
         match event {
             StreamEvent::TextDelta { delta, .. } => {
                 committed_output = true;
+                resume.record(&delta);
                 // MUST use blocking send for text — try_send drops data on
                 // backpressure, causing permanent text loss in the assistant
                 // message. Blocking send applies backpressure to the SSE
