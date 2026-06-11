@@ -29,6 +29,7 @@ use super::lsp::execute_lsp;
 use super::memory::{execute_memory_create, execute_memory_delete};
 use super::notebook::{execute_notebook_edit, execute_notebook_read};
 use super::notifications::{execute_push_notification, execute_remote_trigger};
+use super::research::execute_research;
 use super::scratchpad::{execute_scratchpad_read, execute_scratchpad_write};
 use super::search::{execute_glob, execute_grep};
 use super::swarm::{
@@ -1209,6 +1210,15 @@ pub async fn execute_tool(
             "Advisor must be executed through the stream dispatcher so JFC can \
                  attach the current transcript snapshot. Use `/advisor <question>` \
                  for a direct manual query."
+                .to_string(),
+        ),
+        (ToolKind::Research, ToolInput::Research { question, export }) => {
+            execute_research(&question, export).await
+        }
+        (ToolKind::Council, ToolInput::Council { .. }) => ExecutionResult::failure(
+            "Council must be executed through the stream dispatcher so JFC can \
+                 resolve member providers/models. Use `/council <question>` for a \
+                 direct manual query."
                 .to_string(),
         ),
         (ToolKind::ConnectGitHub, ToolInput::ConnectGitHub {}) => ExecutionResult::failure(

@@ -262,5 +262,60 @@ pub fn agent_tool_defs() -> Vec<ToolDef> {
                 "description": "JSON object matching the schema specified by the parent agent"
             }),
         },
+        ToolDef {
+            name: "Research".into(),
+            description: "Run a deep-research pass on a question: JFC plans a set of \
+                sub-queries, searches the web for each in steps, and synthesises the \
+                gathered evidence into one answer (mirrors Perplexity's pro-search \
+                research flow). Runs out-of-band — it does NOT consume the main \
+                conversation's tools and returns a self-contained report.\n\n\
+                Use when a question needs current/external information across multiple \
+                angles (background + latest developments + mechanism + criticism), not a \
+                single lookup. For a one-shot fact, use WebSearch instead. Set `export` \
+                to also write a durable markdown+json artifact.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The research question to investigate."
+                    },
+                    "export": {
+                        "type": "boolean",
+                        "description": "When true, also write the report to a durable \
+                            artifact file (markdown + json). Defaults to false."
+                    }
+                },
+                "required": ["question"]
+            }),
+        },
+        ToolDef {
+            name: "Council".into(),
+            description: "Convene a model council: fan a question out to several models in \
+                parallel, then an arbiter model synthesises their independent answers into \
+                one consolidated reply that surfaces agreement (higher confidence) and \
+                disagreement (presents the options). Mirrors Perplexity's COUNCIL_RESEARCH \
+                / Model Council flow. Runs out-of-band like the advisor.\n\n\
+                Use for high-stakes or contested questions where cross-checking multiple \
+                models is worth the extra cost — architecture decisions, ambiguous \
+                trade-offs, correctness reviews. For a quick second opinion, use the \
+                advisor instead.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The question to put to the council."
+                    },
+                    "models": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional explicit member model ids. When omitted, \
+                            the council uses the active model plus the local advisor model."
+                    }
+                },
+                "required": ["question"]
+            }),
+        },
     ]
 }

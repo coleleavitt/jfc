@@ -348,6 +348,8 @@ macro_rules! for_each_regular_tool_input {
             DesignCapabilities => { format: opt_str @ "format" }
             DesignServe => { project_dir: req_str @ "project_dir", port: opt_u64_as_u32 @ "port", file: opt_str @ "file" }
             SetGoal => { condition: req_str @ "condition" }
+            Research => { question: req_str @ "question", export: bool_field @ "export" }
+            Council => { question: req_str @ "question", models: str_vec @ "models" }
         }
     };
 }
@@ -839,6 +841,14 @@ pub enum ToolInput {
     SetGoal {
         condition: String,
     },
+    Research {
+        question: String,
+        export: bool,
+    },
+    Council {
+        question: String,
+        models: Vec<String>,
+    },
     Generic {
         summary: String,
     },
@@ -1140,6 +1150,14 @@ impl ToolInput {
                     let preview: String = condition.chars().take(60).collect();
                     format!("set goal: {preview}")
                 }
+            }
+            Self::Research { question, .. } => {
+                let preview: String = question.chars().take(60).collect();
+                format!("research: {preview}")
+            }
+            Self::Council { question, .. } => {
+                let preview: String = question.chars().take(60).collect();
+                format!("council: {preview}")
             }
         }
     }
@@ -2193,6 +2211,52 @@ mod macro_equivalence_tests {
         assert_eq!(ToolKind::from_name("SetGoal"), ToolKind::SetGoal);
         assert_eq!(ToolKind::from_name("set_goal"), ToolKind::SetGoal);
         assert_eq!(ToolKind::SetGoal.api_name(), "set_goal");
+    }
+
+    // ─── Research / Council (model-invocable) ───────────────────────────────
+
+    #[test]
+    fn research_parses_and_serializes_normal() {
+        let input = ToolInput::from_value(
+            "Research",
+            json!({"question": "rust async", "export": true}),
+        )
+        .unwrap();
+        assert!(
+            matches!(input, ToolInput::Research { ref question, export } if question == "rust async" && export)
+        );
+        assert_eq!(input.to_value()["question"], json!("rust async"));
+        assert_eq!(input.to_value()["export"], json!(true));
+        assert!(input.summary().contains("research"));
+    }
+
+    #[test]
+    fn research_export_defaults_false_robust() {
+        let input = ToolInput::from_value("research", json!({"question": "q"})).unwrap();
+        assert!(matches!(input, ToolInput::Research { export: false, .. }));
+        assert_eq!(ToolKind::from_name("deep_research"), ToolKind::Research);
+        assert_eq!(ToolKind::Research.api_name(), "research");
+    }
+
+    #[test]
+    fn council_parses_and_serializes_normal() {
+        let input = ToolInput::from_value(
+            "Council",
+            json!({"question": "which db?", "models": ["a", "b"]}),
+        )
+        .unwrap();
+        assert!(
+            matches!(input, ToolInput::Council { ref question, ref models } if question == "which db?" && models.len() == 2)
+        );
+        assert_eq!(input.to_value()["models"], json!(["a", "b"]));
+        assert!(input.summary().contains("council"));
+        assert_eq!(ToolKind::from_name("model_council"), ToolKind::Council);
+    }
+
+    #[test]
+    fn council_models_default_empty_robust() {
+        let input = ToolInput::from_value("council", json!({"question": "q"})).unwrap();
+        assert!(matches!(input, ToolInput::Council { ref models, .. } if models.is_empty()));
     }
 
     // ─── tool_input_coerced (CC 2.1.170 parity) ─────────────────────────────

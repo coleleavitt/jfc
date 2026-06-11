@@ -86,9 +86,11 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
     let mut task_calls: Vec<ToolCall> = Vec::new();
     let mut workflow_calls: Vec<ToolCall> = Vec::new();
     let mut advisor_calls: Vec<ToolCall> = Vec::new();
+    let mut council_calls: Vec<ToolCall> = Vec::new();
     for tc in tool_calls {
         match (&tc.kind, &tc.input) {
             (ToolKind::Advisor, ToolInput::Advisor {}) => advisor_calls.push(tc),
+            (ToolKind::Council, ToolInput::Council { .. }) => council_calls.push(tc),
             (_, ToolInput::Task(_)) => task_calls.push(tc),
             (_, ToolInput::Workflow { .. }) => workflow_calls.push(tc),
             _ => regular_calls.push(tc),
@@ -98,14 +100,19 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
     let task_count = task_calls.len();
     let workflow_count = workflow_calls.len();
     let advisor_count = advisor_calls.len();
+    let council_count = council_calls.len();
     let regular_count = regular_calls.len();
     tracing::info!(
         target: "jfc::stream",
-        task_count, workflow_count, advisor_count, regular_count,
+        task_count, workflow_count, advisor_count, council_count, regular_count,
         "dispatch_tools_batched: splitting tool calls"
     );
     let pending = Arc::new(AtomicUsize::new(
-        task_count + workflow_count + advisor_count + usize::from(!regular_calls.is_empty()),
+        task_count
+            + workflow_count
+            + advisor_count
+            + council_count
+            + usize::from(!regular_calls.is_empty()),
     ));
     let tx_done = tx.clone();
     let send_all_complete = move || {
@@ -151,6 +158,44 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
             };
             send_critical(
                 &tx_advisor,
+                EngineEvent::Tool(ToolEvent::Result { tool_id, result }),
+            );
+            done();
+        });
+    }
+
+    // Council: fan the question out to the active model plus the local advisor
+    // model (when distinct/available), then synthesise. Runs out-of-band like
+    // the advisor — providers come from the dispatch context, so no transcript
+    // or full provider registry is needed.
+    for tc in council_calls {
+        let tx_council = tx.clone();
+        let done = send_all_complete.clone();
+        let tool_id = tc.id.clone();
+        let cancel_council = cancel.clone();
+        let active_provider = provider.clone();
+        let active_model = model.clone();
+        let advisor_ctx = local_advisor.clone();
+        let (question, requested_models) = match tc.input.clone() {
+            ToolInput::Council { question, models } => (question, models),
+            _ => (String::new(), Vec::new()),
+        };
+        tokio::spawn(async move {
+            let result = tokio::select! {
+                biased;
+                _ = cancel_council.cancelled() => {
+                    crate::runtime::ExecutionResult::failure("Council cancelled by user")
+                }
+                result = run_council_tool(
+                    question,
+                    requested_models,
+                    active_provider,
+                    active_model,
+                    advisor_ctx,
+                ) => result,
+            };
+            send_critical(
+                &tx_council,
                 EngineEvent::Tool(ToolEvent::Result { tool_id, result }),
             );
             done();
@@ -983,4 +1028,45 @@ fn build_task_notification(
         outcome.agent_count, outcome.total_agents_dispatched, outcome.cache_hits, elapsed_ms
     ));
     body
+}
+
+/// Execute a model-invocable `Council` tool call out-of-band. Members are the
+/// active model plus the local advisor model (when configured + distinct), each
+/// already resolved to a `(provider, model)` by the dispatch context — so the
+/// council needs neither the transcript nor the full provider registry. The
+/// active model's provider also serves as the arbiter.
+async fn run_council_tool(
+    question: String,
+    _requested_models: Vec<String>,
+    active_provider: Arc<dyn Provider>,
+    active_model: ModelId,
+    advisor_ctx: Option<LocalAdvisorDispatchContext>,
+) -> crate::runtime::ExecutionResult {
+    use crate::council::{CouncilMember, CouncilRequest, run_council};
+
+    let question = question.trim().to_owned();
+    if question.is_empty() {
+        return crate::runtime::ExecutionResult::failure(
+            "Council requires a non-empty `question`.",
+        );
+    }
+
+    let mut members = vec![
+        CouncilMember::new(active_provider.clone(), active_model.clone())
+            .with_label(active_model.as_str()),
+    ];
+    if let Some(ctx) = advisor_ctx.as_ref()
+        && ctx.advisor_model.as_str() != active_model.as_str()
+    {
+        members.push(
+            CouncilMember::new(ctx.provider.clone(), ctx.advisor_model.clone())
+                .with_label(ctx.advisor_model.as_str()),
+        );
+    }
+
+    let request = CouncilRequest::new(question, members);
+    match run_council(request).await {
+        Ok(report) => crate::runtime::ExecutionResult::success(report.to_markdown()),
+        Err(e) => crate::runtime::ExecutionResult::failure(format!("Council failed: {e}")),
+    }
 }

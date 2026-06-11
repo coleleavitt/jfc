@@ -787,6 +787,7 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         | ToolKind::ScheduleWakeup
         | ToolKind::Monitor => Color::Rgb(180, 200, 255),
         ToolKind::Lsp => Color::Rgb(140, 200, 240),
+        ToolKind::Research | ToolKind::Council => Color::Rgb(200, 180, 255), // research violet
         ToolKind::PushNotification | ToolKind::RemoteTrigger => Color::Rgb(255, 180, 110),
         ToolKind::EnterPlanMode
         | ToolKind::SetGoal
