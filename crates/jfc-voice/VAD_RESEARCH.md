@@ -210,16 +210,70 @@ lineage:
   "cocktail fork" three-stem separation (arXiv:2110.09958). These require a
   **speaker enrollment / reference** to know which voice is "yours."
 
-### Recommendation
+### What we implemented: the BVC *decision layer* (`speaker.rs`)
 
-Implementing BVC is a large, model-bearing feature and **out of scope**. It's
-now documented as a known limitation in `neural_vad.rs`. Practical mitigations
-that need no new model:
+The full neural masking half of BVC needs a trained separation network we don't
+have in-tree. But the **decision** half — *"is this captured utterance the
+enrolled primary speaker, or a background voice?"* — is implementable
+dependency-free, and is now shipped as an **opt-in target-speaker gate**
+(`crate::speaker`, wired into the recorder's transcription phase).
 
-- a **close-talking mic** (proximity raises your SNR over the background),
-- **push-to-talk / hold** mode in noisy rooms (bypasses always-listening),
-- raising the onset threshold / periodicity bar (helps for *quiet* background
-  speech only).
+Pipeline, grounded in the speaker-verification literature:
+
+1. **MFCC front-end** — pre-emphasis (α=0.97) → 25 ms Hamming frames @ 10 ms
+   stride → 512-pt FFT power spectrum → 26 triangular **mel** filters
+   (`m = 2595·log10(1+f/700)`) → `ln` → orthonormal **DCT-II**, keep cepstra
+   `c1..c12` (drop `c0`, the loudness term → loudness-invariant). This is the
+   exact front-end the x-vector uses ("20 MFCCs, 25 ms frames, mean-normalized",
+   Snyder et al. 2018) and ECAPA-TDNN uses ("80-dim MFCCs, 25 ms window, 10 ms
+   shift", Desplanques et al. 2020).
+2. **Enrollment** → a diagonal-Gaussian speaker model: per-coefficient **mean**
+   (cepstral template) + **variance** (one-component **GMM-UBM**, Reynolds et
+   al. 2000), plus the speaker's **pitch** distribution (median ± IQR of f0) and
+   a **threshold calibrated** from the enrollment self-distance distribution
+   (rather than a blind constant — fixed thresholds are device/voice dependent).
+3. **Scoring** a captured utterance → average **Mahalanobis** distance of its
+   voiced frames to the Gaussian (the GMM-UBM score; ≈1 for the enrolled
+   speaker, ≫1 for a dissimilar source), plus **cosine** similarity of the
+   utterance's mean cepstrum to the centroid (the **d-vector** score, Variani
+   2014 / Wan et al. GE2E 2018), plus a **pitch** consistency check.
+4. **Gate** — `accepts()` requires the Mahalanobis distance within the
+   calibrated threshold **and** consistent pitch; the recorder drops a
+   non-matching utterance before spending an STT call. The gate is **OFF by
+   default** and **fails open** (admits) when disabled, unenrolled, or unable to
+   measure the segment — it can never silently swallow your speech.
+
+Config: `voice.speakerGate` / `JFC_VOICE_SPEAKER_GATE` (enable),
+`voice.speakerProfile` / `JFC_VOICE_SPEAKER_PROFILE` (path),
+`voice.speakerThreshold` / `JFC_VOICE_SPEAKER_THRESHOLD` (override). Enroll once
+via `recorder::enroll_primary_speaker()` (speak yourself for a few seconds).
+
+### Honest accuracy tiers (no overclaiming)
+
+This is the canonical *Personal VAD* idea — "detect the voice activity of a
+**target speaker**… useful for **gating** the inputs" (Ding et al. 2019,
+arXiv:1908.04284) — but with a **classical** speaker model where Personal VAD
+uses a trained d-vector. Accuracy differs by tier:
+
+| Tier | Speaker representation | Real-world discrimination |
+| --- | --- | --- |
+| **Implemented** | MFCC mean/variance template + pitch (GMM-UBM, 1 Gaussian) | Reliably rejects acoustically *dissimilar* sources (broadband media, a much higher/lower voice). **Weak** on two *similar* human voices. |
+| **Seam (follow-on)** | Trained **ECAPA-TDNN / x-vector** ONNX embedding + cosine | SOTA verification (EER ~0.9% on VoxCeleb, Desplanques 2020). Drop-in: reuse the `ort` runtime like Silero; replace the embedding step, keep enrollment + cosine + gate. |
+| **Separation (follow-on)** | **VoiceFilter** speaker-conditioned masking net | Actually *removes* the background voice rather than dropping the segment (Wang et al. 2019). Needs training data. |
+
+The unit tests validate the **pipeline + math** on synthetic signals
+(deterministic MFCC, enroll→accept-self, reject-noise, reject-very-different
+pitch, JSON round-trip, threshold knob, gate admit/drop). They deliberately do
+**not** claim real two-human-voice accuracy — that needs the trained-embedding
+tier, which is the recommended next step (the `ort` dependency is already linked
+behind `vad-neural`, so an ECAPA-TDNN ONNX model drops in the same way Silero
+does).
+
+### Practical mitigations available today
+
+Independent of the gate: a **close-talking mic** (raises your SNR over the
+background), **push-to-talk / hold** mode in noisy rooms, or raising the VAD
+onset/periodicity bar for *quiet* background speech.
 
 ---
 
@@ -322,11 +376,17 @@ No recorder change was required: the idle wait-loop already calls
 
 - **Semantic end-of-turn / turn-taking model** (§2) — the real cure for
   breath/pause cutoffs; needs a model + latency budget + evals.
-- **Background Voice Cancellation / target-speaker extraction** (§3) — the real
-  cure for background-TV detection; needs a separation model + speaker
-  enrollment.
+- **ECAPA-TDNN / x-vector ONNX embedding for the speaker gate** (§3) — the
+  trained-embedding tier that lifts the gate from "rejects dissimilar sources"
+  to SOTA two-voice discrimination. The seam exists (`speaker.rs` enrollment +
+  cosine + gate are model-agnostic; the `ort` runtime is already linked behind
+  `vad-neural`). Remaining work: ship/point at an ONNX model and swap the
+  embedding step.
+- **VoiceFilter speaker-conditioned masking** (§3) — *separating* the background
+  voice out instead of *dropping* the segment; needs a trained masking net +
+  data.
 - **Statistical/LTSD/HNR-gate threshold replacement** (§4) — principled
-  de-hardcoding; needs eval coverage before changing defaults.
+  de-hardcoding of the energy VAD; needs eval coverage before changing defaults.
 
 ---
 
@@ -360,3 +420,18 @@ No recorder change was required: the idle wait-loop already calls
 - Silero VAD (`snakers4/silero-vad`) discussions/README on state reset; Pipecat
   `SileroVADAnalyzer` (`_MODEL_RESET_STATES_TIME = 5.0`); `voice_activity_detector`
   crate v0.2.1 source (recurrent `state` field carried across `predict()`).
+
+Speaker verification / target-speaker (for the `speaker.rs` gate, §3):
+- Reynolds, Quatieri & Dunn (2000), *Speaker Verification Using Adapted GMMs*
+  (GMM-UBM; the diagonal-Gaussian score this gate implements)
+- Davis & Mermelstein (1980); Fayek (2016) — the MFCC pipeline
+- Variani et al. (2014), *Deep neural networks for small-footprint TI-SV*
+  (the **d-vector**); Wan et al. (2018), *Generalized End-to-End Loss* (GE2E) —
+  arXiv:1710.10467 (L2-normalize → average → cosine)
+- Snyder et al. (2018), *X-vectors* (MFCC front-end, stats pooling, cosine/PLDA)
+- Desplanques et al. (2020), *ECAPA-TDNN* — arXiv:2005.07143 (SOTA embedding;
+  the recommended ONNX seam for real accuracy)
+- Ding et al. (2019), *Personal VAD: Speaker-Conditioned VAD* — arXiv:1908.04284
+  (the canonical "gate inputs to the target speaker" framing)
+- Wang et al. (2019), *VoiceFilter* — arXiv:1810.04826 (speaker-conditioned
+  spectrogram masking = the separation follow-on)

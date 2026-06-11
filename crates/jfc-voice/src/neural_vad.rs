@@ -468,7 +468,10 @@ mod tests {
             .filter_map(|_| silent_prob(&mut vad))
             .filter(|e| *e == VadEvent::SpeechEnd)
             .count();
-        assert_eq!(ends, 0, "min-speech guard must block a truncating SpeechEnd");
+        assert_eq!(
+            ends, 0,
+            "min-speech guard must block a truncating SpeechEnd"
+        );
     }
 
     // A genuine end-of-utterance (past the hangover, after enough speech) still
@@ -490,7 +493,10 @@ mod tests {
             .filter_map(|_| silent_prob(&mut vad))
             .filter(|e| *e == VadEvent::SpeechEnd)
             .count();
-        assert_eq!(ends, 1, "a real end-of-utterance must fire exactly one SpeechEnd");
+        assert_eq!(
+            ends, 1,
+            "a real end-of-utterance must fire exactly one SpeechEnd"
+        );
         assert!(!vad.is_speaking());
     }
 
@@ -523,7 +529,13 @@ mod tests {
                     .count();
             }
         }
-        assert_eq!(ends, 0, "short within-utterance pauses must not fire SpeechEnd");
-        assert!(vad.is_speaking(), "should still be mid-utterance after breath pauses");
+        assert_eq!(
+            ends, 0,
+            "short within-utterance pauses must not fire SpeechEnd"
+        );
+        assert!(
+            vad.is_speaking(),
+            "should still be mid-utterance after breath pauses"
+        );
     }
 }

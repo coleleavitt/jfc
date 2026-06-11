@@ -36,6 +36,7 @@ pub mod doctor;
 pub mod neural_vad;
 pub mod platform;
 pub mod recorder;
+pub mod speaker;
 pub mod vad;
 
 pub use audio::AudioCapture;
@@ -44,3 +45,4 @@ pub use doctor::{Verdict, VoiceDiagnostic, format_report, run_diagnostic};
 #[cfg(feature = "vad-neural")]
 pub use neural_vad::NeuralVad;
 pub use recorder::{VoiceRecorder, VoiceState, VoiceTranscriptEvent};
+pub use speaker::{MatchScore, SpeakerProfile};

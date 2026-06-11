@@ -85,6 +85,149 @@ impl VadDetector {
     }
 }
 
+/// Optional target-speaker gate (the BVC decision layer). When enabled in
+/// config and a profile is enrolled, a captured utterance is scored against the
+/// enrolled primary speaker; non-matching segments (a background movie/TV voice
+/// or another person) are dropped instead of transcribed. No-ops cleanly when
+/// disabled or unenrolled — default behavior is unchanged.
+struct SpeakerGate {
+    profile: Option<crate::speaker::SpeakerProfile>,
+}
+
+impl SpeakerGate {
+    /// Load the gate from config: returns an inert gate (no profile) unless the
+    /// gate is enabled AND a profile JSON loads successfully.
+    fn from_config(cfg: &VoiceConfig) -> Self {
+        if !cfg.speaker_gate {
+            return Self { profile: None };
+        }
+        let path = Self::profile_path(cfg);
+        match crate::speaker::SpeakerProfile::load(&path) {
+            Ok(mut profile) => {
+                if let Some(t) = cfg.speaker_threshold {
+                    profile = profile.with_threshold(t);
+                }
+                info!(
+                    target: "jfc::voice::speaker",
+                    path = %path.display(),
+                    threshold = profile.threshold,
+                    "target-speaker gate enabled"
+                );
+                Self {
+                    profile: Some(profile),
+                }
+            }
+            Err(err) => {
+                warn!(
+                    target: "jfc::voice::speaker",
+                    path = %path.display(),
+                    error = %err,
+                    "speaker gate enabled but no usable profile; gate disabled \
+                     (enroll one to filter background voices)"
+                );
+                Self { profile: None }
+            }
+        }
+    }
+
+    /// Resolve the profile path: explicit config/env, else `<config>/voice/
+    /// speaker_profile.json` under the user config dir.
+    fn profile_path(cfg: &VoiceConfig) -> std::path::PathBuf {
+        if let Some(p) = &cfg.speaker_profile_path {
+            return std::path::PathBuf::from(p);
+        }
+        let base = dirs_config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+        base.join("jfc").join("voice").join("speaker_profile.json")
+    }
+
+    /// Decide whether a captured utterance should be transcribed. Returns `true`
+    /// (transcribe) when the gate is inert, or when the segment matches the
+    /// enrolled speaker; `false` to drop a non-matching (background) voice.
+    fn admits(&self, pcm: &[u8]) -> bool {
+        let Some(profile) = &self.profile else {
+            return true;
+        };
+        let score = profile.score(pcm);
+        if score.voiced_frames == 0 {
+            // Couldn't measure — fail open so we never silently swallow speech.
+            return true;
+        }
+        if !score.accepted {
+            info!(
+                target: "jfc::voice::speaker",
+                mahalanobis = score.mahalanobis,
+                threshold = profile.threshold,
+                cosine = score.cosine,
+                pitch_ok = score.pitch_ok,
+                "dropped a non-primary-speaker utterance (background voice)"
+            );
+        }
+        score.accepted
+    }
+}
+
+/// Best-effort user config dir without pulling in the `dirs` crate.
+fn dirs_config_dir() -> Option<std::path::PathBuf> {
+    if let Ok(x) = std::env::var("XDG_CONFIG_HOME") {
+        if !x.is_empty() {
+            return Some(std::path::PathBuf::from(x));
+        }
+    }
+    std::env::var("HOME")
+        .ok()
+        .map(|h| std::path::PathBuf::from(h).join(".config"))
+}
+
+/// The default on-disk path for the enrolled speaker profile, honoring an
+/// explicit `cfg.speaker_profile_path` and falling back to the user config dir.
+pub fn default_speaker_profile_path(cfg: &VoiceConfig) -> std::path::PathBuf {
+    SpeakerGate::profile_path(cfg)
+}
+
+/// Enroll the primary speaker by capturing ~`secs` seconds of microphone audio
+/// and writing a [`crate::speaker::SpeakerProfile`] to `cfg`'s profile path.
+///
+/// This is the one-off setup step that makes the target-speaker gate useful:
+/// the user speaks naturally for a few seconds; we build their voiceprint and
+/// persist it. Returns the path written. Speak only yourself during enrollment.
+pub async fn enroll_primary_speaker(
+    cfg: &VoiceConfig,
+    secs: f64,
+) -> Result<std::path::PathBuf, String> {
+    let backend = AudioCapture::detect_backend()
+        .await
+        .ok_or_else(|| "no audio capture backend available".to_owned())?;
+    let mut capture = AudioCapture::start(backend)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let target_bytes = (secs * 16_000.0 * 2.0) as usize;
+    let mut pcm: Vec<u8> = Vec::with_capacity(target_bytes);
+    let mut chunk = vec![0u8; 640];
+    while pcm.len() < target_bytes {
+        match capture.read_chunk(&mut chunk).await {
+            Ok(0) => break,
+            Ok(n) => pcm.extend_from_slice(&chunk[..n]),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    pcm.extend_from_slice(&capture.stop().await);
+
+    let profile = crate::speaker::SpeakerProfile::enroll_from_pcm(&pcm).ok_or_else(|| {
+        "not enough voiced speech to enroll — speak continuously for a few seconds".to_owned()
+    })?;
+    let path = SpeakerGate::profile_path(cfg);
+    profile.save(&path).map_err(|e| e.to_string())?;
+    info!(
+        target: "jfc::voice::speaker",
+        path = %path.display(),
+        frames = profile.enrolled_frames,
+        threshold = profile.threshold,
+        "enrolled primary speaker profile"
+    );
+    Ok(path)
+}
+
 /// Current voice state (exposed to the TUI for rendering).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VoiceState {
@@ -447,6 +590,11 @@ async fn vad_listen_loop(
     debug!(target: "jfc::voice::vad", "VAD loop starting");
     tokio::pin!(stop_rx);
 
+    // Target-speaker gate (BVC decision layer). Built once; inert unless enabled
+    // in config AND a profile is enrolled. When active it drops utterances that
+    // don't match the enrolled primary speaker (background TV/movie/other voice).
+    let speaker_gate = SpeakerGate::from_config(&cfg);
+
     loop {
         // ── Listening phase (Idle) ─────────────────────────────────────────
         let mut capture = match AudioCapture::start(backend).await {
@@ -598,6 +746,24 @@ async fn vad_listen_loop(
         );
 
         let pcm = std::mem::take(&mut utterance_buf);
+
+        // Target-speaker gate: drop a non-primary-speaker utterance (e.g. a
+        // background movie/TV voice) before spending an STT call on it. Inert
+        // when the gate is disabled or unenrolled.
+        if !speaker_gate.admits(&pcm) {
+            *state.lock().await = VoiceState::Idle;
+            send_or_debug(
+                &events,
+                VoiceTranscriptEvent::StateChanged(VoiceState::Idle),
+            );
+            if speech_ended {
+                detector.reset();
+                continue;
+            } else {
+                break;
+            }
+        }
+
         info!(
             target: "jfc::voice::vad",
             bytes = pcm.len(),
@@ -851,5 +1017,87 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(VadDetector::select(&cfg), VadDetector::Neural(_)));
+    }
+
+    // ── Target-speaker gate ────────────────────────────────────────────────
+
+    /// A disabled gate (the default) must admit every utterance — proving the
+    /// feature is fully backward-compatible / no-op when off.
+    #[test]
+    fn speaker_gate_disabled_admits_everything_normal() {
+        let cfg = VoiceConfig::default(); // speaker_gate = false
+        let gate = SpeakerGate::from_config(&cfg);
+        assert!(gate.profile.is_none());
+        // Even random bytes are admitted when the gate is inert.
+        assert!(gate.admits(&vec![0u8; 6400]));
+        assert!(gate.admits(b"\x01\x02\x03\x04"));
+    }
+
+    /// Enabled-but-unenrolled (no profile file) must also admit everything: the
+    /// gate fails open rather than swallowing speech when misconfigured.
+    #[test]
+    fn speaker_gate_enabled_without_profile_admits_everything_robust() {
+        let cfg = VoiceConfig {
+            speaker_gate: true,
+            speaker_profile_path: Some("/nonexistent/speaker_profile.json".to_owned()),
+            ..Default::default()
+        };
+        let gate = SpeakerGate::from_config(&cfg);
+        assert!(gate.profile.is_none(), "missing profile ⇒ inert gate");
+        assert!(gate.admits(&vec![0u8; 6400]));
+    }
+
+    /// With an enrolled profile, the gate admits the enrolled speaker and drops
+    /// an acoustically very different source. Uses synthetic signals (validates
+    /// the wiring + decision, not real two-human-voice accuracy).
+    #[test]
+    fn speaker_gate_admits_self_drops_other_robust() {
+        use crate::speaker::SpeakerProfile;
+        // Synthesize an enrolled voice and persist it to a temp profile.
+        let me = synth_pcm(130.0, 2.0, 1.0, 7);
+        let profile = SpeakerProfile::enroll_from_pcm(&me).expect("enroll");
+        let gate = SpeakerGate {
+            profile: Some(profile),
+        };
+
+        // Same synthetic speaker → admitted.
+        let me_again = synth_pcm(130.0, 1.0, 1.0, 21);
+        assert!(gate.admits(&me_again), "enrolled speaker must be admitted");
+
+        // A very different source (high pitch, different spectrum) → dropped.
+        let other = synth_pcm(330.0, 1.0, 1.6, 9);
+        assert!(
+            !gate.admits(&other),
+            "acoustically different voice must be dropped"
+        );
+
+        // Unmeasurable audio (silence) fails open → admitted.
+        assert!(gate.admits(&vec![0u8; 16_000 * 2]));
+    }
+
+    /// Mirror of speaker.rs's synth helper for the recorder-level gate test.
+    fn synth_pcm(f0: f64, secs: f64, tilt: f64, seed: u64) -> Vec<u8> {
+        use std::f64::consts::TAU;
+        let sr = 16_000.0;
+        let n = (sr * secs) as usize;
+        let mut state = seed.wrapping_add(0x9E3779B97F4A7C15);
+        let mut rng = move || {
+            state = state.wrapping_add(0x9E3779B97F4A7C15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            ((z ^ (z >> 31)) as f64 / u64::MAX as f64) - 0.5
+        };
+        let mut out = Vec::with_capacity(n * 2);
+        for i in 0..n {
+            let t = i as f64 / sr;
+            let mut s = 0.0;
+            for k in 1..=8 {
+                s += (1.0 / (k as f64).powf(tilt)) * (TAU * f0 * k as f64 * t).sin();
+            }
+            s += 0.02 * rng();
+            let v = (s / 3.0 * 12000.0).clamp(-32000.0, 32000.0) as i16;
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        out
     }
 }

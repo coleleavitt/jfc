@@ -606,9 +606,10 @@ pub fn spectral_flatness(pcm_bytes: &[u8]) -> f64 {
 }
 
 /// In-place iterative radix-2 Cooley–Tukey FFT. `re`/`im` must be the same
-/// power-of-two length. No external dependency; used only for the per-frame
-/// spectral-flatness estimate (frame ≤ 512 samples, so this is cheap).
-fn dft_in_place(re: &mut [f64], im: &mut [f64]) {
+/// power-of-two length. No external dependency; used by the per-frame
+/// spectral-flatness estimate and by the speaker module's MFCC front-end
+/// (frame ≤ 512 samples, so this is cheap).
+pub(crate) fn dft_in_place(re: &mut [f64], im: &mut [f64]) {
     let n = re.len();
     debug_assert!(n.is_power_of_two());
     // Bit-reversal permutation.
@@ -1209,7 +1210,10 @@ mod tests {
             "HNR must be amplitude-invariant: quiet={hnr_quiet:.2} dB vs loud={hnr_loud:.2} dB"
         );
         // And both must read as clearly voiced (well above 0 dB).
-        assert!(hnr_quiet > 3.0, "soft voice should still read as voiced ({hnr_quiet:.1} dB)");
+        assert!(
+            hnr_quiet > 3.0,
+            "soft voice should still read as voiced ({hnr_quiet:.1} dB)"
+        );
     }
 
     /// Periodicity (the gate the VAD actually uses) is likewise amplitude

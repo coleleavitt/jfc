@@ -124,6 +124,19 @@ pub struct VoiceConfig {
     pub local_whisper_bin: Option<String>,
     /// Path to whisper model file for local backend.
     pub local_whisper_model: Option<String>,
+    /// Target-speaker gate: when enabled and a profile is enrolled, captured
+    /// utterances that don't match the enrolled primary speaker (e.g. a movie /
+    /// TV / another person in the room) are dropped instead of transcribed.
+    /// OFF by default; opt-in via config `voice.speakerGate` or
+    /// `JFC_VOICE_SPEAKER_GATE`.
+    pub speaker_gate: bool,
+    /// Path to the enrolled [`crate::speaker::SpeakerProfile`] JSON. When unset,
+    /// defaults to `<config dir>/speaker_profile.json`. The gate no-ops when the
+    /// file is missing/unreadable.
+    pub speaker_profile_path: Option<String>,
+    /// Optional override for the profile's calibrated acceptance threshold
+    /// (`JFC_VOICE_SPEAKER_THRESHOLD`). Larger = more permissive.
+    pub speaker_threshold: Option<f64>,
 }
 
 /// Which STT backend to attempt first.
@@ -153,6 +166,11 @@ impl VoiceConfig {
             local_whisper_model: std::env::var("JFC_WHISPER_MODEL").ok(),
             backend: parse_backend_env(),
             vad_engine: VadEngine::from_env(),
+            speaker_gate: env_flag("JFC_VOICE_SPEAKER_GATE"),
+            speaker_profile_path: std::env::var("JFC_VOICE_SPEAKER_PROFILE").ok(),
+            speaker_threshold: std::env::var("JFC_VOICE_SPEAKER_THRESHOLD")
+                .ok()
+                .and_then(|s| s.parse().ok()),
             ..Default::default()
         };
 
@@ -182,6 +200,23 @@ impl VoiceConfig {
         // voice.autoSubmit
         if let Some(auto) = v.get("autoSubmit").and_then(|a| a.as_bool()) {
             cfg.auto_submit = auto;
+        }
+
+        // voice.speakerGate (env JFC_VOICE_SPEAKER_GATE wins).
+        if std::env::var("JFC_VOICE_SPEAKER_GATE").is_err() {
+            if let Some(g) = v.get("speakerGate").and_then(|g| g.as_bool()) {
+                cfg.speaker_gate = g;
+            }
+        }
+        // voice.speakerProfile (path) / voice.speakerThreshold.
+        if cfg.speaker_profile_path.is_none() {
+            cfg.speaker_profile_path = v
+                .get("speakerProfile")
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_owned());
+        }
+        if cfg.speaker_threshold.is_none() {
+            cfg.speaker_threshold = v.get("speakerThreshold").and_then(|t| t.as_f64());
         }
 
         cfg
@@ -223,6 +258,17 @@ fn parse_backend_env() -> SttBackendKind {
         "local" | "whisper" | "local-whisper" | "whisper-cpp" => SttBackendKind::LocalWhisper,
         _ => SttBackendKind::Auto,
     }
+}
+
+/// Interpret an env var as a boolean flag (`1`/`true`/`yes`/`on` → true).
+fn env_flag(key: &str) -> bool {
+    matches!(
+        std::env::var(key)
+            .unwrap_or_default()
+            .to_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    )
 }
 
 #[cfg(test)]
