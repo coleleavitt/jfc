@@ -37,6 +37,7 @@ pub mod compact;
 pub mod config;
 pub mod context;
 pub mod cost;
+pub mod council;
 pub mod daemon;
 pub mod diagnostics;
 pub mod diagnostics_producer;

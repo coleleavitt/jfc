@@ -373,6 +373,156 @@ pub(super) async fn cmd_advisor(
     }
 }
 
+/// `/council [model-a,model-b,…] <question>` — convene a multi-model council.
+///
+/// Fans the question out to each member model in parallel (one tool-less
+/// `provider.complete()` each, like `/advisor`), then an arbiter model
+/// synthesises the member answers into one consolidated reply that surfaces
+/// agreement/disagreement. The first member doubles as the arbiter unless a
+/// dedicated one is configured. Budget-bounded like the advisor so a runaway
+/// fan-out can't drain the account.
+///
+/// Member selection: a leading comma-separated token list is treated as model
+/// ids; otherwise members default to the active model plus the local advisor
+/// model (when distinct), giving a 2-model council out of the box.
+pub(super) async fn cmd_council(
+    state: &mut EngineState,
+    _parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    use crate::council::{CouncilMember, CouncilRequest, run_council};
+
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    let args = text.trim().strip_prefix("/council").unwrap_or("").trim();
+    if args.is_empty() {
+        state
+            .messages
+            .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                "Usage: `/council <question>` or `/council model-a,model-b <question>`.".into(),
+            )]));
+        return;
+    }
+
+    // A leading token with a comma is a member list; otherwise default members.
+    let (model_ids, question) = parse_council_args(args, state);
+    if question.trim().is_empty() {
+        state
+            .messages
+            .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                "No question provided to the council.".into(),
+            )]));
+        return;
+    }
+
+    let mut members = Vec::new();
+    let mut unresolved = Vec::new();
+    for id in &model_ids {
+        match crate::runtime::bootstrap::resolve_provider_model(&state.providers, id) {
+            Some(res) => members.push(CouncilMember::new(res.provider, res.model).with_label(id)),
+            None => unresolved.push(id.clone()),
+        }
+    }
+
+    if members.is_empty() {
+        state
+            .messages
+            .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                format!(
+                    "Could not resolve any council models from: {}. Try `/council <model-id> <question>` with a configured model.",
+                    model_ids.join(", ")
+                ),
+            )]));
+        return;
+    }
+
+    let snapshot = render_council_snapshot(&state.messages);
+    let request = CouncilRequest::new(question, members).with_context(snapshot);
+    match run_council(request).await {
+        Ok(report) => {
+            let mut body = report.to_markdown();
+            if !unresolved.is_empty() {
+                body.push_str(&format!(
+                    "\n_(skipped unresolved models: {})_",
+                    unresolved.join(", ")
+                ));
+            }
+            state
+                .messages
+                .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                    body,
+                )]));
+        }
+        Err(e) => {
+            state
+                .messages
+                .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                    format!("Council error: {e}"),
+                )]));
+        }
+    }
+}
+
+/// Split `/council` args into (member model ids, question). A leading token is
+/// treated as a comma-separated member list only when it actually contains a
+/// comma; otherwise members default to the active model + local advisor model.
+fn parse_council_args(args: &str, state: &EngineState) -> (Vec<String>, String) {
+    if let Some((head, rest)) = args.split_once(char::is_whitespace) {
+        if head.contains(',') {
+            let ids: Vec<String> = head
+                .split(',')
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !ids.is_empty() {
+                return (ids, rest.trim().to_owned());
+            }
+        }
+    }
+    (default_council_models(state), args.to_owned())
+}
+
+/// Default council membership: the active model plus the local advisor model
+/// when it's distinct. Falls back to a single-model council (still valid).
+fn default_council_models(state: &EngineState) -> Vec<String> {
+    let mut ids = vec![state.model.to_string()];
+    if let Some(advisor) = state.local_advisor_model.as_ref() {
+        let advisor = advisor.to_string();
+        if advisor != ids[0] {
+            ids.push(advisor);
+        }
+    }
+    ids
+}
+
+/// Render a compact transcript snapshot as shared council context. Mirrors the
+/// advisor's snapshot semantic but kept short to bound member token cost.
+fn render_council_snapshot(messages: &[ChatMessage]) -> String {
+    const MAX_CHARS: usize = 8_000;
+    let mut out = String::new();
+    for msg in messages.iter().rev() {
+        let role = match msg.role {
+            Role::User => "User",
+            Role::Assistant => "Assistant",
+        };
+        let text = msg
+            .parts
+            .iter()
+            .map(|p| p.text_only())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if text.trim().is_empty() {
+            continue;
+        }
+        let line = format!("{role}: {text}\n");
+        if out.len() + line.len() > MAX_CHARS {
+            break;
+        }
+        out.insert_str(0, &line);
+    }
+    out
+}
+
 pub(super) async fn cmd_config(
     state: &mut EngineState,
     parts: &[&str],

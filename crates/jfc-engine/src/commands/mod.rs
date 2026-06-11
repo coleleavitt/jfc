@@ -94,6 +94,7 @@ engine_commands! {
         "/check" [] "re-run cargo-check diagnostics" => cmd_check,
         "/compact" [] "summarize earlier messages to free context" => cmd_compact,
         "/advisor" [] "ask a parallel advisor without disturbing the main agent" => cmd_advisor,
+        "/council" [] "convene a multi-model council: fan a question to N models, synthesise (`/council <model-a,model-b> <question>`)" => cmd_council,
         "/brief" [] "toggle brief-only mode (hide plain text, only show SendUserMessage output)" => cmd_brief,
         "/autoloop" [] "start an autonomous loop tick (reads loop.md)" => cmd_autoloop,
         "/sandbox" [] "toggle bash sandbox (bwrap network isolation)" => cmd_sandbox,
