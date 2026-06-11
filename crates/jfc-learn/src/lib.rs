@@ -10,12 +10,13 @@
 //! - `verifier` — ASG-SI contract verification for memory promotion
 
 pub mod auto_hints;
+pub mod curator;
+pub mod digest;
 pub mod dreamer;
 pub mod error;
 pub mod historian;
 pub mod key_files;
 pub mod lifecycle;
-pub mod curator;
 pub mod normalize_hash;
 pub mod scaffold_detector;
 pub mod skill_usage;
@@ -26,6 +27,11 @@ pub mod verifier;
 pub mod workflow_opt;
 
 pub use auto_hints::{HintSource, RecallHint};
+pub use curator::{CuratorConfig, CuratorPlan, SkillTransition, plan_transitions};
+pub use digest::{
+    Cadence, Digest, DigestItem, DigestSettings, DreamSettings, Wiki, WikiPage, build_digest,
+    build_wiki,
+};
 pub use dreamer::{Dreamer, DreamerReport, DreamerTask};
 pub use error::LearnError;
 pub use historian::{
@@ -33,7 +39,6 @@ pub use historian::{
     ProcessedFact,
 };
 pub use key_files::{KeyFileStore, PinnedFile, ReadEvent};
-pub use curator::{CuratorConfig, CuratorPlan, SkillTransition, plan_transitions};
 pub use normalize_hash::normalize_and_hash;
 pub use skill_usage::{CreatedBy, SkillState, SkillUsage, SkillUsageStore, record_skill_use};
 pub use trajectory::{Turn, compress, total_tokens};
