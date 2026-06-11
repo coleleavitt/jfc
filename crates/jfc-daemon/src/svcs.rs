@@ -378,35 +378,68 @@ impl DaemonService for ScheduledTaskService {
         if fired.is_empty() {
             return TickOutcome::Continue;
         }
-        for task in &fired {
+        // `due_and_advance` already recorded a "fired" run + advanced last_run,
+        // so persist immediately — a slow run can't re-fire on the next tick.
+        if let Err(e) = registry.save(&path) {
+            tracing::warn!(target: "jfc::daemon", error = %e, "could not persist scheduled tasks");
+        }
+        let results_dir = daemon.paths.base_dir.join("scheduled-task-results");
+        for task in fired {
             tracing::info!(
                 target: "jfc::daemon",
                 task_id = %task.id,
                 title = %task.title,
                 "scheduled agentic task firing"
             );
-            if let Err(e) = run_scheduled_task(&task.prompt).await {
-                tracing::warn!(
-                    target: "jfc::daemon",
-                    task_id = %task.id,
-                    error = %e,
-                    "scheduled task spawn failed"
-                );
-            }
-        }
-        if let Err(e) = registry.save(&path) {
-            tracing::warn!(target: "jfc::daemon", error = %e, "could not persist scheduled tasks");
+            // Spawn each run on its own detached task so a long agentic run
+            // never blocks the daemon tick; it records its outcome back into
+            // the registry when the process exits.
+            let path = path.clone();
+            let results_dir = results_dir.clone();
+            tokio::spawn(async move {
+                run_scheduled_task(&task.id, &task.prompt, &path, &results_dir).await;
+            });
         }
         daemon.touch_activity();
         TickOutcome::Continue
     }
 }
 
-/// Spawn `jfc --print "<prompt>"` as a detached headless run. Env-hardened the
-/// same way [`crate::cron::run_cron_command`] hardens shell spawns.
-async fn run_scheduled_task(prompt: &str) -> std::io::Result<()> {
+/// Run a scheduled task's prompt headlessly (`jfc --print`), capturing its
+/// output to a result file under `results_dir`, then record the exit outcome
+/// back into the registry at `path`. Env-hardened the same way
+/// [`crate::cron::run_cron_command`] hardens shell spawns. Runs to completion
+/// on a detached tokio task (the caller does not await it), so a long agentic
+/// run never blocks the daemon tick.
+async fn run_scheduled_task(
+    task_id: &str,
+    prompt: &str,
+    path: &std::path::Path,
+    results_dir: &std::path::Path,
+) {
+    use std::time::UNIX_EPOCH;
     use tokio::process::Command;
-    let exe = crate::worker::resolve_worker_exe(None)?;
+
+    let exe = match crate::worker::resolve_worker_exe(None) {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = crate::scheduled_tasks::ScheduledTaskRegistry::record_run_outcome(
+                path,
+                task_id,
+                false,
+                format!("spawn failed: {e}"),
+            );
+            return;
+        }
+    };
+
+    let _ = std::fs::create_dir_all(results_dir);
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let result_path = results_dir.join(format!("{task_id}-{stamp}.log"));
+
     let mut command = Command::new(exe);
     command.arg("--print").arg(prompt);
     for var in [
@@ -426,12 +459,40 @@ async fn run_scheduled_task(prompt: &str) -> std::io::Result<()> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("SUDO_ASKPASS", "/bin/false")
         .env("SSH_ASKPASS", "/bin/false")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    // Detach: spawn and don't await completion — agentic runs are long-lived.
-    let _child = command.spawn()?;
-    Ok(())
+        .stdin(std::process::Stdio::null());
+
+    let output = command.output().await;
+    let (ok, note) = match output {
+        Ok(out) => {
+            // Persist stdout+stderr to the result file for later inspection.
+            let mut buf = out.stdout;
+            buf.extend_from_slice(&out.stderr);
+            let _ = std::fs::write(&result_path, &buf);
+            let ok = out.status.success();
+            let note = if ok {
+                format!("ok → {}", result_path.display())
+            } else {
+                format!(
+                    "exit {} → {}",
+                    out.status.code().unwrap_or(-1),
+                    result_path.display()
+                )
+            };
+            (ok, note)
+        }
+        Err(e) => (false, format!("run failed: {e}")),
+    };
+
+    if let Err(e) =
+        crate::scheduled_tasks::ScheduledTaskRegistry::record_run_outcome(path, task_id, ok, note)
+    {
+        tracing::warn!(
+            target: "jfc::daemon",
+            task_id = %task_id,
+            error = %e,
+            "could not record scheduled task outcome"
+        );
+    }
 }
 
 /// The ordered roster of real daemon services. `run_daemon` builds this once

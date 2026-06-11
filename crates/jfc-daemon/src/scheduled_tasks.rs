@@ -102,7 +102,9 @@ impl ScheduledTask {
         should_fire_cron(&projected, now)
     }
 
-    /// Record a run result and advance `last_run`.
+    /// Record a run result and advance `last_run`. Run history is bounded to
+    /// the most recent [`Self::MAX_RUN_HISTORY`] entries so a high-frequency
+    /// task can't grow the registry file without limit.
     pub fn record_run(&mut self, now: SystemTime, ok: bool, note: impl Into<String>) {
         self.last_run = Some(now);
         self.runs.push(TaskRun {
@@ -110,6 +112,23 @@ impl ScheduledTask {
             ok,
             note: note.into(),
         });
+        let len = self.runs.len();
+        if len > Self::MAX_RUN_HISTORY {
+            self.runs.drain(0..len - Self::MAX_RUN_HISTORY);
+        }
+    }
+
+    /// Maximum retained run-history entries per task.
+    pub const MAX_RUN_HISTORY: usize = 50;
+
+    /// Update the outcome of the most recent run (the one `due_and_advance`
+    /// recorded as "fired"), e.g. once the headless process exits. No-op if
+    /// there is no run history.
+    pub fn record_outcome(&mut self, ok: bool, note: impl Into<String>) {
+        if let Some(last) = self.runs.last_mut() {
+            last.ok = ok;
+            last.note = note.into();
+        }
     }
 }
 
@@ -232,6 +251,23 @@ impl ScheduledTaskRegistry {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::new()),
             Err(e) => Err(e),
         }
+    }
+
+    /// Record the completion outcome of a task's most recent run and persist
+    /// the registry. Reloads from `path` first so a concurrent tick that fired
+    /// other tasks isn't clobbered. No-op if the task no longer exists.
+    pub fn record_run_outcome(
+        path: &std::path::Path,
+        task_id: &str,
+        ok: bool,
+        note: impl Into<String>,
+    ) -> std::io::Result<()> {
+        let mut registry = Self::load(path)?;
+        if let Some(task) = registry.get_mut(task_id) {
+            task.record_outcome(ok, note);
+            registry.save(path)?;
+        }
+        Ok(())
     }
 
     /// Persist the registry to `path` (pretty JSON), creating parent dirs.
@@ -400,6 +436,54 @@ mod tests {
         let back = ScheduledTaskRegistry::load(&path).unwrap();
         assert_eq!(back.len(), 1);
         assert!(back.get("a").is_some());
+    }
+
+    #[test]
+    fn record_run_bounds_history_robust() {
+        let mut t = task("a", every(60), at(0));
+        let total = ScheduledTask::MAX_RUN_HISTORY + 20;
+        for i in 0..total {
+            t.record_run(at(i as u64), true, format!("run {i}"));
+        }
+        assert_eq!(t.runs.len(), ScheduledTask::MAX_RUN_HISTORY);
+        // Oldest entries dropped — newest retained.
+        assert_eq!(t.runs.last().unwrap().note, format!("run {}", total - 1));
+    }
+
+    #[test]
+    fn record_outcome_updates_last_run_normal() {
+        let mut t = task("a", every(60), at(0));
+        t.record_run(at(1), true, "fired");
+        t.record_outcome(false, "exit 1 → /tmp/x.log");
+        let last = t.runs.last().unwrap();
+        assert!(!last.ok);
+        assert!(last.note.contains("exit 1"));
+    }
+
+    #[test]
+    fn record_run_outcome_persists_normal() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = ScheduledTaskRegistry::default_path(dir.path());
+        let mut reg = ScheduledTaskRegistry::new();
+        let mut t = task("a", every(60), at(0));
+        t.record_run(at(1), true, "fired");
+        reg.create(t).unwrap();
+        reg.save(&path).unwrap();
+
+        ScheduledTaskRegistry::record_run_outcome(&path, "a", true, "ok → /tmp/a.log").unwrap();
+        let back = ScheduledTaskRegistry::load(&path).unwrap();
+        let run = back.get("a").unwrap().runs.last().unwrap();
+        assert!(run.ok);
+        assert!(run.note.contains("ok →"));
+    }
+
+    #[test]
+    fn record_run_outcome_unknown_task_is_noop_robust() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = ScheduledTaskRegistry::default_path(dir.path());
+        ScheduledTaskRegistry::new().save(&path).unwrap();
+        // Should not error on a missing task id.
+        ScheduledTaskRegistry::record_run_outcome(&path, "ghost", true, "x").unwrap();
     }
 
     #[test]
