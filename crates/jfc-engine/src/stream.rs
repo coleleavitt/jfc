@@ -5,6 +5,7 @@ mod messages;
 mod model_policy;
 mod orchestrator;
 mod request;
+pub mod resume;
 mod retry;
 mod tool_dispatch;
 mod tool_results;
