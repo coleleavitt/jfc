@@ -57,6 +57,11 @@ pub struct ToolBatchDispatch {
     pub current_session_id: Option<String>,
     pub provider: Arc<dyn Provider>,
     pub model: ModelId,
+    /// Full provider registry, so tools that pick arbitrary models (e.g. the
+    /// Council with an explicit `models` list) can resolve them via
+    /// [`crate::runtime::bootstrap::resolve_provider_model`]. Empty when the
+    /// caller has no registry handy (falls back to the active provider).
+    pub providers: Vec<Arc<dyn Provider>>,
     pub teammate_event_tx: mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
     pub local_advisor: Option<LocalAdvisorDispatchContext>,
     pub cancel: CancellationToken,
@@ -72,6 +77,7 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
         current_session_id,
         provider,
         model,
+        providers,
         teammate_event_tx,
         local_advisor,
         // wg-async: tool batches can run for minutes (Bash, subagents). Hand
@@ -176,6 +182,7 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
         let active_provider = provider.clone();
         let active_model = model.clone();
         let advisor_ctx = local_advisor.clone();
+        let registry = providers.clone();
         let (question, requested_models) = match tc.input.clone() {
             ToolInput::Council { question, models } => (question, models),
             _ => (String::new(), Vec::new()),
@@ -192,6 +199,7 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
                     active_provider,
                     active_model,
                     advisor_ctx,
+                    registry,
                 ) => result,
             };
             send_critical(
@@ -1037,12 +1045,13 @@ fn build_task_notification(
 /// active model's provider also serves as the arbiter.
 async fn run_council_tool(
     question: String,
-    _requested_models: Vec<String>,
+    requested_models: Vec<String>,
     active_provider: Arc<dyn Provider>,
     active_model: ModelId,
     advisor_ctx: Option<LocalAdvisorDispatchContext>,
+    registry: Vec<Arc<dyn Provider>>,
 ) -> crate::runtime::ExecutionResult {
-    use crate::council::{CouncilMember, CouncilRequest, run_council};
+    use crate::council::{CouncilRequest, run_council};
 
     let question = question.trim().to_owned();
     if question.is_empty() {
@@ -1051,22 +1060,182 @@ async fn run_council_tool(
         );
     }
 
-    let mut members = vec![
-        CouncilMember::new(active_provider.clone(), active_model.clone())
-            .with_label(active_model.as_str()),
-    ];
-    if let Some(ctx) = advisor_ctx.as_ref()
-        && ctx.advisor_model.as_str() != active_model.as_str()
-    {
-        members.push(
-            CouncilMember::new(ctx.provider.clone(), ctx.advisor_model.clone())
-                .with_label(ctx.advisor_model.as_str()),
-        );
+    let (members, unresolved) = resolve_council_members(
+        &requested_models,
+        &active_provider,
+        &active_model,
+        advisor_ctx.as_ref(),
+        &registry,
+    );
+
+    if members.is_empty() {
+        return crate::runtime::ExecutionResult::failure(format!(
+            "Council could not resolve any models{}.",
+            if unresolved.is_empty() {
+                String::new()
+            } else {
+                format!(" from: {}", unresolved.join(", "))
+            }
+        ));
     }
 
     let request = CouncilRequest::new(question, members);
     match run_council(request).await {
-        Ok(report) => crate::runtime::ExecutionResult::success(report.to_markdown()),
+        Ok(report) => {
+            let mut body = report.to_markdown();
+            if !unresolved.is_empty() {
+                body.push_str(&format!(
+                    "\n\n_(skipped unresolved models: {})_",
+                    unresolved.join(", ")
+                ));
+            }
+            crate::runtime::ExecutionResult::success(body)
+        }
         Err(e) => crate::runtime::ExecutionResult::failure(format!("Council failed: {e}")),
+    }
+}
+
+/// Build the council's de-duplicated member list. With an explicit `requested`
+/// list, ids are resolved against the full provider `registry` (unresolved ids
+/// returned separately); otherwise the council defaults to the active model
+/// plus the local advisor model (when distinct).
+fn resolve_council_members(
+    requested: &[String],
+    active_provider: &Arc<dyn Provider>,
+    active_model: &ModelId,
+    advisor_ctx: Option<&LocalAdvisorDispatchContext>,
+    registry: &[Arc<dyn Provider>],
+) -> (Vec<crate::council::CouncilMember>, Vec<String>) {
+    use crate::council::CouncilMember;
+
+    let mut members: Vec<CouncilMember> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut unresolved: Vec<String> = Vec::new();
+
+    let mut add =
+        |provider: Arc<dyn Provider>, model: ModelId, members: &mut Vec<CouncilMember>| {
+            if seen.insert(model.as_str().to_owned()) {
+                let label = model.as_str().to_owned();
+                members.push(CouncilMember::new(provider, model).with_label(label));
+            }
+        };
+
+    if requested.is_empty() {
+        add(active_provider.clone(), active_model.clone(), &mut members);
+        if let Some(ctx) = advisor_ctx {
+            add(
+                ctx.provider.clone(),
+                ctx.advisor_model.clone(),
+                &mut members,
+            );
+        }
+    } else {
+        for id in requested {
+            match crate::runtime::bootstrap::resolve_provider_model(registry, id) {
+                Some(res) => add(res.provider, res.model, &mut members),
+                None => unresolved.push(id.clone()),
+            }
+        }
+    }
+
+    (members, unresolved)
+}
+
+#[cfg(test)]
+mod council_member_tests {
+    use super::*;
+    use anyhow::{Result, anyhow};
+    use async_trait::async_trait;
+    use jfc_provider::{
+        CompletionResponse, EventStream, ModelInfo, ProviderMessage as PMsg, StreamConvention,
+        StreamOptions as SOpts,
+    };
+
+    struct NamedProvider {
+        name: &'static str,
+    }
+
+    #[async_trait]
+    impl Provider for NamedProvider {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        fn stream_convention(&self) -> StreamConvention {
+            StreamConvention::AnthropicNative
+        }
+        async fn stream(&self, _m: Vec<PMsg>, _o: &SOpts) -> Result<EventStream> {
+            Err(anyhow!("unused"))
+        }
+        async fn complete(&self, _m: Vec<PMsg>, _o: &SOpts) -> Result<CompletionResponse> {
+            Err(anyhow!("unused"))
+        }
+    }
+    impl jfc_provider::seal::Sealed for NamedProvider {}
+
+    fn registry() -> Vec<Arc<dyn Provider>> {
+        vec![
+            Arc::new(NamedProvider { name: "alpha" }) as Arc<dyn Provider>,
+            Arc::new(NamedProvider { name: "beta" }) as Arc<dyn Provider>,
+        ]
+    }
+
+    fn active() -> (Arc<dyn Provider>, ModelId) {
+        (
+            Arc::new(NamedProvider { name: "alpha" }) as Arc<dyn Provider>,
+            ModelId::new("active-model"),
+        )
+    }
+
+    #[test]
+    fn explicit_models_resolve_against_registry_normal() {
+        let (ap, am) = active();
+        let (members, unresolved) = resolve_council_members(
+            &["alpha/model-a".to_owned(), "beta/model-b".to_owned()],
+            &ap,
+            &am,
+            None,
+            &registry(),
+        );
+        assert_eq!(members.len(), 2);
+        assert!(unresolved.is_empty());
+    }
+
+    #[test]
+    fn unresolved_models_are_reported_robust() {
+        let (ap, am) = active();
+        let (members, unresolved) = resolve_council_members(
+            &["alpha/ok".to_owned(), "ghost/nope".to_owned()],
+            &ap,
+            &am,
+            None,
+            &registry(),
+        );
+        assert_eq!(members.len(), 1);
+        assert_eq!(unresolved, vec!["ghost/nope".to_owned()]);
+    }
+
+    #[test]
+    fn explicit_models_are_deduped_robust() {
+        let (ap, am) = active();
+        let (members, _unresolved) = resolve_council_members(
+            &["alpha/dup".to_owned(), "beta/dup".to_owned()],
+            &ap,
+            &am,
+            None,
+            &registry(),
+        );
+        // Same model id `dup` from two providers collapses to one member.
+        assert_eq!(members.len(), 1);
+    }
+
+    #[test]
+    fn empty_request_falls_back_to_active_model_normal() {
+        let (ap, am) = active();
+        let (members, unresolved) = resolve_council_members(&[], &ap, &am, None, &registry());
+        assert_eq!(members.len(), 1);
+        assert!(unresolved.is_empty());
     }
 }

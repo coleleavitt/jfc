@@ -76,6 +76,7 @@ pub fn dispatch_approved_tools(
                 .map(|id| id.as_str().to_owned()),
             provider: Arc::clone(&state.provider),
             model: state.model.clone(),
+            providers: state.providers.clone(),
             teammate_event_tx: state.teammate_event_tx.clone(),
             local_advisor: stream::LocalAdvisorDispatchContext::from_state(state),
             cancel: state.cancel_token.clone(),
