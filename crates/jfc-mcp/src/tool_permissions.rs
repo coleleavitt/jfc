@@ -18,6 +18,7 @@
 //! `registry::dispatch_tool`.
 
 use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -223,6 +224,36 @@ impl ToolPermissionStore {
             Some((server, tool)) => self.decide(server, tool),
             None => ToolDecision::Allowed,
         }
+    }
+}
+
+/// Process-global active tool-permission store. The MCP dispatch path consults
+/// this so per-tool gating is enforced without threading a store argument
+/// through every call site. `None` (the default) means fully open — JFC's
+/// historical behaviour — so the gate is opt-in.
+static ACTIVE: OnceLock<RwLock<Option<ToolPermissionStore>>> = OnceLock::new();
+
+fn active() -> &'static RwLock<Option<ToolPermissionStore>> {
+    ACTIVE.get_or_init(|| RwLock::new(None))
+}
+
+/// Install (or replace) the process-global tool-permission store. Pass `None`
+/// to clear it (revert to fully-open dispatch).
+pub fn set_active_permissions(store: Option<ToolPermissionStore>) {
+    if let Ok(mut guard) = active().write() {
+        *guard = store;
+    }
+}
+
+/// Resolve the `(server, tool)` decision against the active global store.
+/// Returns `Allowed` when no store is installed.
+pub fn active_decision(server: &str, tool: &str) -> ToolDecision {
+    match active().read() {
+        Ok(guard) => match guard.as_ref() {
+            Some(store) => store.decide(server, tool),
+            None => ToolDecision::Allowed,
+        },
+        Err(_) => ToolDecision::Allowed,
     }
 }
 

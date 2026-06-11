@@ -58,6 +58,19 @@ pub async fn dispatch_mcp_tool_with_timeout(
         timeout_secs = timeout.as_secs(),
         "dispatch_mcp_tool"
     );
+    // Consult the process-global per-tool permission store (no-op when none is
+    // installed). A blocked tool is rejected before the server is contacted.
+    if let Some((server, tool)) = super::protocol::split_advertised(tool_name) {
+        if let super::tool_permissions::ToolDecision::Blocked(src) =
+            super::tool_permissions::active_decision(server, tool)
+        {
+            return Err(super::registry::DispatchError::ToolBlocked {
+                server: server.to_owned(),
+                tool: tool.to_owned(),
+                reason: src.reason(),
+            });
+        }
+    }
     registry.dispatch_tool(tool_name, arguments, timeout).await
 }
 
@@ -92,5 +105,39 @@ mod tests {
         let reg = McpRegistry::new();
         let res = dispatch_mcp_tool(&reg, "Bash", json!({})).await;
         assert!(matches!(res, Err(DispatchError::NotMcpName)));
+    }
+
+    #[tokio::test]
+    async fn dispatch_respects_global_permission_block_normal() {
+        use crate::tool_permissions::{
+            AdminSetting, ServerToolPolicy, ToolPermissionStore, set_active_permissions,
+        };
+
+        // Install a global store that hard-blocks fs/write_file.
+        let mut store = ToolPermissionStore::new();
+        let mut policy = ServerToolPolicy::default();
+        policy.set_admin("write_file", AdminSetting::HardBlock);
+        store.set_policy("fs", policy);
+        set_active_permissions(Some(store));
+
+        let reg = McpRegistry::new();
+        // The blocked tool is rejected before the (absent) server is contacted:
+        // ToolBlocked, not UnknownServer.
+        let blocked = dispatch_mcp_tool(&reg, "mcp__fs__write_file", json!({})).await;
+        assert!(
+            matches!(blocked, Err(DispatchError::ToolBlocked { .. })),
+            "expected ToolBlocked, got {blocked:?}"
+        );
+
+        // A non-blocked tool falls through to normal dispatch (UnknownServer
+        // here, since no server is registered).
+        let allowed = dispatch_mcp_tool(&reg, "mcp__fs__read_file", json!({})).await;
+        assert!(
+            matches!(allowed, Err(DispatchError::UnknownServer(_))),
+            "expected UnknownServer, got {allowed:?}"
+        );
+
+        // Clear the global so other tests see open dispatch.
+        set_active_permissions(None);
     }
 }

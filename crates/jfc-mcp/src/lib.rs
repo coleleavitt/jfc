@@ -27,6 +27,7 @@ pub use tool_dispatch::{
 };
 pub use tool_permissions::{
     AdminSetting, BlockSource, MemberOverride, ServerToolPolicy, ToolDecision, ToolPermissionStore,
+    active_decision, set_active_permissions,
 };
 pub use transport::{RequestError, SpawnConfig, Transport, TransportKind};
 
