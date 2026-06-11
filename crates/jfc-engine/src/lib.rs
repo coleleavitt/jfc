@@ -168,6 +168,7 @@ pub mod plan_recall;
 pub mod providers;
 pub mod push_notifications;
 pub mod remote_host;
+pub mod research;
 pub mod runtime;
 pub mod sandbox;
 pub mod scaffold_detector;
