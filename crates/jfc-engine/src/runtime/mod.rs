@@ -17,7 +17,8 @@ mod stream_control;
 mod task_activity;
 
 pub use background::{
-    restore_persistent_background_agents, sync_detached_background_tasks_from_daemon,
+    persist_background_result, restore_persistent_background_agents,
+    sync_detached_background_tasks_from_daemon,
 };
 pub use dispatch::{FrontendDirective, handle_engine_event};
 pub use events::{

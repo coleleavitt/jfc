@@ -642,11 +642,26 @@ pub async fn submit_prompt(
         for completion in &background_completions {
             let status = completion.status.label();
             let body = if completion.body.len() > 2000 {
-                format!(
-                    "{}... [truncated {} chars]",
-                    &completion.body[..completion.body.floor_char_boundary(2000)],
-                    completion.body.len()
-                )
+                // The inline reminder stays bounded, but the FULL result must
+                // not be lost: persist it to a retrievable artifact and point
+                // the model at it so it can read the complete report instead of
+                // only the truncated preview.
+                let artifact = crate::runtime::persist_background_result(
+                    completion.task_id.as_str(),
+                    &completion.body,
+                );
+                let preview = &completion.body[..completion.body.floor_char_boundary(2000)];
+                match artifact {
+                    Some(path) => format!(
+                        "{preview}... [truncated {} chars — full result: {}]",
+                        completion.body.len(),
+                        path.display()
+                    ),
+                    None => format!(
+                        "{preview}... [truncated {} chars]",
+                        completion.body.len()
+                    ),
+                }
             } else {
                 completion.body.clone()
             };

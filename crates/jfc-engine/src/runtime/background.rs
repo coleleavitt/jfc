@@ -12,6 +12,25 @@ pub fn sync_detached_background_tasks_from_daemon(state: &mut EngineState) -> bo
     sync_detached_background_tasks_from_daemon_with_paths(state, &DaemonPaths::default_user())
 }
 
+/// Persist a background agent's full result to a retrievable artifact so the
+/// parent can read the complete report even when the inline completion reminder
+/// is truncated. Returns the written path, or `None` if it could not be written
+/// (best-effort — never blocks the reminder).
+pub fn persist_background_result(task_id: &str, body: &str) -> Option<std::path::PathBuf> {
+    let dir = DaemonPaths::default_user()
+        .base_dir
+        .join("background-results");
+    std::fs::create_dir_all(&dir).ok()?;
+    // Sanitise the task id for use as a filename.
+    let safe: String = task_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    let path = dir.join(format!("{safe}.md"));
+    std::fs::write(&path, body).ok()?;
+    Some(path)
+}
+
 fn sync_detached_background_tasks_from_daemon_with_paths(
     state: &mut EngineState,
     paths: &DaemonPaths,

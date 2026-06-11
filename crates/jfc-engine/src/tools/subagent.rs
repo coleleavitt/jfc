@@ -348,6 +348,13 @@ async fn execute_task_inner(
         content: vec![ProviderContent::Text(task_input.prompt.clone())],
     }];
     let mut final_text = String::new();
+    // Full narrative across turns. `final_text` holds only the LAST turn's text,
+    // which loses earlier substantive output when the agent's final turn is a
+    // short preamble before a tool call (e.g. "Let me write the report:") and
+    // the loop then ends — the exact "lost report" failure. We keep every
+    // non-trivial turn so the harvested result can fall back to the full
+    // narrative instead of a dangling preamble.
+    let mut narrative: Vec<String> = Vec::new();
     let mut last_error: Option<String> = None;
     let mut structured_output: Option<serde_json::Value> = None;
     let mut turn: u32 = 0;
@@ -675,7 +682,10 @@ async fn execute_task_inner(
         if !turn_text.is_empty() {
             // Replace, not append — the most recent text is the one to
             // surface as the subagent's final reply when the loop ends.
-            final_text = turn_text;
+            final_text = turn_text.clone();
+            // …but also retain it so a final short preamble doesn't erase a
+            // substantive earlier turn (the "lost report" case).
+            narrative.push(turn_text);
         }
 
         // No tool calls → subagent is done speaking. Don't also gate on
@@ -837,23 +847,28 @@ async fn execute_task_inner(
             ExecutionResult::success(format!("{final_text}\n\n[note: {err}]"))
         }
     } else if final_text.trim().is_empty() {
-        // No error and all tools completed, but no conversational prose
-        // was emitted. This is common when subagents perform pure
-        // file-editing tasks (Write, Edit, Bash) without producing a
-        // summary paragraph. Treat as success with a synthetic summary
-        // so the parent doesn't misreport the run as failed.
-        let summary = if total_tool_uses > 0 {
-            format!(
-                "Completed task successfully. Executed {total_tool_uses} tool \
-                 call{} in isolated context.",
-                if total_tool_uses == 1 { "" } else { "s" }
-            )
+        // No error and all tools completed, but the final turn emitted no
+        // prose. If earlier turns produced substantive narrative, surface that
+        // (the "lost report" guard) rather than a synthetic one-liner.
+        if !narrative.is_empty() {
+            ExecutionResult::success(narrative.join("\n\n"))
         } else {
-            "Completed task successfully.".to_string()
-        };
-        ExecutionResult::success(summary)
+            // Pure file-editing tasks (Write, Edit, Bash) often emit no summary
+            // paragraph at all. Treat as success with a synthetic summary so the
+            // parent doesn't misreport the run as failed.
+            let summary = if total_tool_uses > 0 {
+                format!(
+                    "Completed task successfully. Executed {total_tool_uses} tool \
+                     call{} in isolated context.",
+                    if total_tool_uses == 1 { "" } else { "s" }
+                )
+            } else {
+                "Completed task successfully.".to_string()
+            };
+            ExecutionResult::success(summary)
+        }
     } else {
-        ExecutionResult::success(final_text)
+        ExecutionResult::success(harvest_final_output(&final_text, &narrative))
     };
 
     if is_verification_agent(agent_def)
@@ -870,6 +885,24 @@ async fn execute_task_inner(
     }
 
     result
+}
+
+/// Choose the text to surface as a subagent's final result, guarding against the
+/// "lost report" case: when the agent's LAST turn is a short preamble (e.g.
+/// "Let me write the report:") that precedes a tool call after which the loop
+/// ended, `final_text` holds only that dangling fragment and discards the
+/// substantive earlier narrative. When the final turn looks like such a preamble
+/// and there is richer prior narrative, return the full accumulated narrative.
+fn harvest_final_output(final_text: &str, narrative: &[String]) -> String {
+    let trimmed = final_text.trim();
+    let looks_like_preamble = trimmed.len() < 120 && trimmed.ends_with(':');
+    if looks_like_preamble && narrative.len() > 1 {
+        let joined = narrative.join("\n\n");
+        if joined.trim().len() > trimmed.len() {
+            return joined;
+        }
+    }
+    final_text.to_owned()
 }
 
 fn is_verification_agent(agent_def: Option<&crate::agents::AgentDef>) -> bool {
@@ -1028,6 +1061,50 @@ mod tests {
     use super::*;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn harvest_returns_full_narrative_when_final_is_preamble_normal() {
+        // The agent did substantive work, then its last turn was a preamble
+        // before a tool call, after which the loop ended.
+        let narrative = vec![
+            "## Findings\nThe bug is in foo.rs:42 where the lock is dropped early."
+                .to_string(),
+            "Let me write the report:".to_string(),
+        ];
+        let final_text = "Let me write the report:";
+        let out = harvest_final_output(final_text, &narrative);
+        assert!(out.contains("foo.rs:42"), "must recover the lost report");
+        assert!(out.contains("Let me write the report:"));
+    }
+
+    #[test]
+    fn harvest_keeps_final_text_when_substantive_normal() {
+        let narrative = vec![
+            "intermediate thinking".to_string(),
+            "## Final Answer\nHere is the complete result with all details.".to_string(),
+        ];
+        let final_text = "## Final Answer\nHere is the complete result with all details.";
+        let out = harvest_final_output(final_text, &narrative);
+        assert_eq!(out, final_text, "a substantive final turn is used as-is");
+    }
+
+    #[test]
+    fn harvest_keeps_final_text_when_no_prior_narrative_robust() {
+        // Only one turn (which happens to end in a colon) — nothing to recover.
+        let narrative = vec!["Plan:".to_string()];
+        let out = harvest_final_output("Plan:", &narrative);
+        assert_eq!(out, "Plan:");
+    }
+
+    #[test]
+    fn persist_background_result_writes_full_body_normal() {
+        let body = "X".repeat(5000);
+        let path = crate::runtime::persist_background_result("toolu_test_abc123", &body)
+            .expect("artifact written");
+        let read = std::fs::read_to_string(&path).expect("read back");
+        assert_eq!(read.len(), 5000, "full body persisted, not truncated");
+        let _ = std::fs::remove_file(&path);
+    }
 
     fn task_input(model: Option<&str>) -> crate::types::TaskInput {
         crate::types::TaskInput {
