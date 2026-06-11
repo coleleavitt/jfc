@@ -201,6 +201,33 @@ impl ScheduledTaskRegistry {
     pub fn is_empty(&self) -> bool {
         self.tasks.is_empty()
     }
+
+    /// Default on-disk location for the registry under a config dir
+    /// (`<config>/scheduled-tasks.json`).
+    pub fn default_path(config_dir: &std::path::Path) -> std::path::PathBuf {
+        config_dir.join("scheduled-tasks.json")
+    }
+
+    /// Load the registry from `path`. A missing file yields an empty registry
+    /// (first run); a malformed file is an error.
+    pub fn load(path: &std::path::Path) -> std::io::Result<Self> {
+        match std::fs::read_to_string(path) {
+            Ok(s) => serde_json::from_str(&s)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::new()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Persist the registry to `path` (pretty JSON), creating parent dirs.
+    pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        std::fs::write(path, json)
+    }
 }
 
 #[cfg(test)]
@@ -317,6 +344,21 @@ mod tests {
         assert_eq!(t.last_run, Some(at(120)));
         assert!(!t.runs[1].ok);
         assert_eq!(t.runs[0].note, "first");
+    }
+
+    #[test]
+    fn load_missing_file_is_empty_then_save_roundtrips_normal() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = ScheduledTaskRegistry::default_path(dir.path());
+        // Missing → empty.
+        let mut reg = ScheduledTaskRegistry::load(&path).unwrap();
+        assert!(reg.is_empty());
+        reg.create(task("a", every(3600), at(0))).unwrap();
+        reg.save(&path).unwrap();
+        // Reload sees it.
+        let back = ScheduledTaskRegistry::load(&path).unwrap();
+        assert_eq!(back.len(), 1);
+        assert!(back.get("a").is_some());
     }
 
     #[test]

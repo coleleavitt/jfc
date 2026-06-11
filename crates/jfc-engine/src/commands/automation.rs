@@ -325,6 +325,14 @@ pub(super) async fn handle_schedule_command(
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     let arg = arg.trim();
+
+    // `/schedule tasks …` manages the recurring agentic-task registry directly
+    // (no model turn). Mirrors Perplexity's list_scheduled / list_archived.
+    if let Some(rest) = arg.strip_prefix("tasks") {
+        handle_scheduled_tasks_subcommand(state, rest.trim());
+        return;
+    }
+
     let (echo, prompt, status_msg) = if arg.is_empty() || arg == "list" {
         (
             "/schedule".to_owned(),
@@ -355,7 +363,9 @@ and display the results in a readable table with columns: id, schedule, command,
         state.messages.push(ChatMessage::assistant(
             "Usage:\n\
   `/schedule` or `/schedule list` — list all scheduled cron jobs\n\
-  `/schedule cancel <id>` — cancel a cron job by id"
+  `/schedule cancel <id>` — cancel a cron job by id\n\
+  `/schedule tasks` — list recurring agentic tasks (`tasks add <cron> <prompt>`, \
+`tasks archived`, `tasks pause|resume|archive <id>`)"
                 .into(),
         ));
         state.push_effect(crate::app::EngineEffect::ScrollToBottom);
@@ -436,4 +446,133 @@ and display the results in a readable table with columns: id, schedule, command,
         )
         .await;
     });
+}
+
+/// `/schedule tasks [list|archived|add <cron> <prompt>|pause|resume|archive <id>]`
+/// — manage recurring agentic-task definitions in the persisted
+/// [`crate::daemon::ScheduledTaskRegistry`]. Mirrors Perplexity's
+/// list_scheduled / list_archived computer-task surface. Runs inline (no model
+/// turn): these are data operations on the registry file under `~/.config/jfc`.
+fn handle_scheduled_tasks_subcommand(state: &mut EngineState, args: &str) {
+    use crate::daemon::{DaemonPaths, ScheduledTaskRegistry};
+
+    state.messages.push(ChatMessage::user(
+        format!("/schedule tasks {args}").trim_end().to_owned(),
+    ));
+
+    let path = ScheduledTaskRegistry::default_path(&DaemonPaths::default_user().base_dir);
+    let mut registry = match ScheduledTaskRegistry::load(&path) {
+        Ok(r) => r,
+        Err(e) => {
+            state.messages.push(ChatMessage::assistant(format!(
+                "Could not load scheduled tasks: {e}"
+            )));
+            state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+            return;
+        }
+    };
+
+    let (verb, rest) = match args.split_once(char::is_whitespace) {
+        Some((v, r)) => (v.trim(), r.trim()),
+        None => (args.trim(), ""),
+    };
+
+    let reply = match verb {
+        "" | "list" => render_scheduled_tasks(&registry, false),
+        "archived" => render_scheduled_tasks(&registry, true),
+        "add" => match add_scheduled_task(&mut registry, rest) {
+            Ok(id) => match registry.save(&path) {
+                Ok(()) => format!("Scheduled agentic task `{id}` created."),
+                Err(e) => format!("Created but failed to persist: {e}"),
+            },
+            Err(e) => format!("Usage: `/schedule tasks add <cron-expr> <prompt>` — {e}"),
+        },
+        "pause" | "archive" | "resume" => mutate_scheduled_task(&mut registry, verb, rest, &path),
+        other => format!("Unknown `/schedule tasks` subcommand: `{other}`."),
+    };
+
+    state.messages.push(ChatMessage::assistant(reply));
+    state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+}
+
+fn render_scheduled_tasks(
+    registry: &crate::daemon::ScheduledTaskRegistry,
+    archived: bool,
+) -> String {
+    let tasks = if archived {
+        registry.list_archived()
+    } else {
+        registry.list_scheduled()
+    };
+    if tasks.is_empty() {
+        return if archived {
+            "No archived agentic tasks.".to_owned()
+        } else {
+            "No scheduled agentic tasks. Add one with `/schedule tasks add <cron-expr> <prompt>`."
+                .to_owned()
+        };
+    }
+    let mut out = String::from(if archived {
+        "Archived agentic tasks:\n"
+    } else {
+        "Scheduled agentic tasks:\n"
+    });
+    for t in tasks {
+        out.push_str(&format!("- `{}` [{}] {}\n", t.id, t.title, t.prompt));
+    }
+    out
+}
+
+fn add_scheduled_task(
+    registry: &mut crate::daemon::ScheduledTaskRegistry,
+    rest: &str,
+) -> Result<String, String> {
+    // `<cron-expr> <prompt>` — the cron expression is the first 5 fields.
+    let tokens: Vec<&str> = rest.split_whitespace().collect();
+    if tokens.len() < 6 {
+        return Err("need a 5-field cron expression then a prompt".to_owned());
+    }
+    let cron_expr = tokens[..5].join(" ");
+    let prompt = tokens[5..].join(" ");
+    let schedule =
+        crate::daemon::parse_schedule(&cron_expr).map_err(|e| format!("bad cron: {e}"))?;
+
+    let id = format!(
+        "task-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    );
+    let title = prompt.chars().take(48).collect::<String>();
+    let task = crate::daemon::ScheduledTask::new(
+        id.clone(),
+        title,
+        prompt,
+        schedule,
+        std::time::SystemTime::now(),
+    );
+    registry.create(task)?;
+    Ok(id)
+}
+
+fn mutate_scheduled_task(
+    registry: &mut crate::daemon::ScheduledTaskRegistry,
+    verb: &str,
+    id: &str,
+    path: &std::path::Path,
+) -> String {
+    if id.is_empty() {
+        return format!("Usage: `/schedule tasks {verb} <id>`.");
+    }
+    let result = match verb {
+        "pause" => registry.pause(id),
+        "resume" => registry.resume(id),
+        "archive" => registry.archive(id),
+        _ => Err("unknown verb".to_owned()),
+    };
+    match result.and_then(|()| registry.save(path).map_err(|e| e.to_string())) {
+        Ok(()) => format!("Task `{id}` {verb}d."),
+        Err(e) => format!("Could not {verb} `{id}`: {e}"),
+    }
 }
