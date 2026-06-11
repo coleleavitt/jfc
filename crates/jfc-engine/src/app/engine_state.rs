@@ -821,6 +821,12 @@ pub struct EngineState {
     /// `--no-advisor`, or `JFC_ADVISOR_DISABLED=1`. When false, manual advisor
     /// queries surface a hint instead of running.
     pub advisor_enabled: bool,
+    /// Opt-in: route the high-stakes session-goal verdict through the model
+    /// Council (active model + advisor model must agree) instead of a single
+    /// model. Off by default; set via config `council_verdict = true` or the
+    /// `JFC_COUNCIL_VERDICT` env var. Requires the advisor to be available; with
+    /// no second model it transparently degrades to the single-model evaluator.
+    pub council_verdict_enabled: bool,
     /// Active local/client-side advisor model. When set, JFC advertises the
     /// normal `Advisor` tool and executes it through the local provider path,
     /// returning the advisor reply as a regular tool result.
@@ -1107,6 +1113,10 @@ impl EngineState {
             // by setting the field directly; users who want it on for a
             // session export `JFC_ADVISOR_ENABLED=1` before launch.
             advisor_enabled: std::env::var("JFC_ADVISOR_ENABLED")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
+            council_verdict_enabled: std::env::var("JFC_COUNCIL_VERDICT")
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),

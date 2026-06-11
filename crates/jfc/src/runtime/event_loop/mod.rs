@@ -121,6 +121,10 @@ pub(crate) async fn run(
     app.engine.fine_grained_tool_streaming = cli_config.fine_grained_tool_streaming;
     app.engine.strict_tool_schemas = cli_config.strict_tool_schemas;
     let startup_config = config::load_arc();
+    // Opt-in council-verdict: config `council_verdict = true` OR the env var
+    // (already applied in EngineState::default). Either source enables it.
+    app.engine.council_verdict_enabled = app.engine.council_verdict_enabled
+        || startup_config.council_verdict.unwrap_or(false);
     for dir in &startup_config.claude.permissions.additional_directories {
         let path = std::path::PathBuf::from(dir);
         if !app.engine.extra_dirs.contains(&path) {

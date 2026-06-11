@@ -69,6 +69,16 @@ pub struct Config {
         skip_serializing_if = "Option::is_none"
     )]
     pub server_advisor_model: Option<String>,
+    /// Opt-in: route high-stakes decisions (currently the session-goal
+    /// "is the condition met?" verdict) through the model Council instead of a
+    /// single model, so the active model and the advisor model must agree. Off
+    /// by default; the `JFC_COUNCIL_VERDICT` env var overrides it per run.
+    #[serde(
+        default,
+        alias = "councilVerdict",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub council_verdict: Option<bool>,
     #[serde(default)]
     pub slate_enabled: bool,
     #[serde(default)]
@@ -362,6 +372,7 @@ impl Default for Config {
             advisor_model: None,
             advisor_enabled: None,
             server_advisor_model: None,
+            council_verdict: None,
             slate_enabled: false,
             slate_rules: None,
             memory_recall_enabled: default_memory_recall_enabled(),

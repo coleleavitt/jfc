@@ -292,6 +292,40 @@ pub async fn evaluate(
     parse_verdict(&resp.content)
 }
 
+/// Council-backed evaluator (opt-in high-stakes path): instead of a single
+/// model deciding whether the goal condition is met, fan the verdict question
+/// out to a model [`crate::council`] (active model + advisor model) and let the
+/// arbiter synthesise. The arbiter is instructed to answer in the evaluator's
+/// JSON shape so the same [`parse_verdict`] applies.
+///
+/// Falls back to the single-model [`evaluate`] when the council can't be formed
+/// (fewer than 2 members) so enabling the flag never makes the goal loop worse.
+pub async fn evaluate_with_council(
+    members: Vec<crate::council::CouncilMember>,
+    condition: &str,
+    history: &[ChatMessage],
+) -> Result<GoalVerdict> {
+    use crate::council::{CouncilRequest, run_council};
+
+    // A council of one is just a single-model call — defer to `evaluate`.
+    if members.len() < 2 {
+        if let Some(m) = members.into_iter().next() {
+            return evaluate(m.provider.as_ref(), m.model, condition, history).await;
+        }
+        return Err(anyhow!("council verdict requested with no members"));
+    }
+
+    let snapshot = render_snapshot(history);
+    let question = format!(
+        "{GOAL_EVALUATOR_SYSTEM_PROMPT}\n\nTranscript:\n{snapshot}\n\nCondition to verify:\n{condition}\n\nAnswer ONLY with the JSON object {{\"ok\": <bool>, \"reason\": <string>}}."
+    );
+    let request = CouncilRequest::new(question, members);
+    let report = run_council(request)
+        .await
+        .map_err(|e| anyhow!("council goal evaluator failed: {e}"))?;
+    parse_verdict(&report.synthesis)
+}
+
 /// Best-effort verdict parser. Looks for the first balanced `{...}`
 /// JSON object in the reply and deserialises it. If parsing fails, we
 /// default to `ok=false` with the raw reply as the reason — the loop
@@ -698,6 +732,96 @@ mod tests {
         assert!(
             load_sidecar(&session_id).is_none(),
             "corrupt sidecar must not panic, must read as None"
+        );
+    }
+
+    // ── Council-backed verdict (opt-in high-stakes path) ─────────────────────
+
+    struct GoalScriptedProvider {
+        reply: String,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for GoalScriptedProvider {
+        fn name(&self) -> &str {
+            "scripted"
+        }
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
+            Vec::new()
+        }
+        fn stream_convention(&self) -> jfc_provider::StreamConvention {
+            jfc_provider::StreamConvention::AnthropicNative
+        }
+        async fn stream(
+            &self,
+            _m: Vec<ProviderMessage>,
+            _o: &StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
+            Err(anyhow!("stream unused"))
+        }
+        async fn complete(
+            &self,
+            _m: Vec<ProviderMessage>,
+            _o: &StreamOptions,
+        ) -> anyhow::Result<jfc_provider::CompletionResponse> {
+            Ok(jfc_provider::CompletionResponse {
+                content: self.reply.clone(),
+                usage: jfc_provider::TokenUsage::default(),
+            })
+        }
+    }
+    impl jfc_provider::seal::Sealed for GoalScriptedProvider {}
+
+    fn council_member(model: &str, reply: &str) -> crate::council::CouncilMember {
+        crate::council::CouncilMember::new(
+            std::sync::Arc::new(GoalScriptedProvider {
+                reply: reply.to_owned(),
+            }),
+            model,
+        )
+    }
+
+    // Normal: two members agreeing the goal is met → arbiter (member 1's
+    // provider) returns the JSON verdict, which parse_verdict reads.
+    #[tokio::test]
+    async fn evaluate_with_council_parses_arbiter_verdict_normal() {
+        let members = vec![
+            council_member("model-a", "{\"ok\": true, \"reason\": \"build + tests pass\"}"),
+            council_member("model-b", "{\"ok\": true, \"reason\": \"confirmed\"}"),
+        ];
+        let history = vec![ChatMessage::user("did the work".to_string())];
+        let v = evaluate_with_council(members, "build passes", &history)
+            .await
+            .expect("verdict");
+        assert!(v.ok);
+        assert!(v.reason.to_lowercase().contains("pass") || v.reason.contains("confirmed"));
+    }
+
+    // Robust: a single-member "council" degrades to the single-model evaluator
+    // rather than erroring — enabling the flag never makes the loop worse.
+    #[tokio::test]
+    async fn evaluate_with_council_single_member_falls_back_robust() {
+        let members = vec![council_member(
+            "solo",
+            "{\"ok\": false, \"reason\": \"tests still failing\"}",
+        )];
+        let history = vec![ChatMessage::user("attempt".to_string())];
+        let v = evaluate_with_council(members, "tests pass", &history)
+            .await
+            .expect("verdict");
+        assert!(!v.ok);
+        assert!(v.reason.contains("failing"));
+    }
+
+    // Robust: an empty member list is a hard error (mis-wired caller), not a
+    // silent pass.
+    #[tokio::test]
+    async fn evaluate_with_council_no_members_is_error_robust() {
+        let history = vec![ChatMessage::user("x".to_string())];
+        assert!(
+            evaluate_with_council(Vec::new(), "cond", &history)
+                .await
+                .is_err()
         );
     }
 }

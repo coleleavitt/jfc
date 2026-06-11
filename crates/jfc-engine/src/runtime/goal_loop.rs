@@ -31,6 +31,28 @@ pub fn dispatch_goal_evaluator_if_active(state: &mut app::EngineState, tx: &Even
     let model = state.model.clone();
     let cancel = state.cancel_token.clone();
     let tx_eval = tx.clone();
+
+    // Opt-in high-stakes path: when council-verdict is enabled and a distinct
+    // advisor model is available, decide "is the goal met?" by Council (active
+    // model + advisor) so a single model can't prematurely declare success.
+    let council_members = if state.council_verdict_enabled {
+        let mut members = vec![crate::council::CouncilMember::new(
+            std::sync::Arc::clone(&state.provider),
+            model.clone(),
+        )
+        .with_label(model.as_str().to_owned())];
+        if let Some(ctx) = crate::stream::LocalAdvisorDispatchContext::from_state(state) {
+            members.push(
+                crate::council::CouncilMember::new(ctx.provider, ctx.advisor_model.clone())
+                    .with_label(ctx.advisor_model.as_str().to_owned()),
+            );
+        }
+        members
+    } else {
+        Vec::new()
+    };
+    let use_council = council_members.len() >= 2;
+
     tokio::spawn(async move {
         let verdict = tokio::select! {
             biased;
@@ -38,7 +60,14 @@ pub fn dispatch_goal_evaluator_if_active(state: &mut app::EngineState, tx: &Even
                 tracing::info!(target: "jfc::goal", "evaluator cancelled before reply");
                 return;
             }
-            verdict = crate::goal::evaluate(provider.as_ref(), model, &condition, &history) => verdict,
+            verdict = async {
+                if use_council {
+                    tracing::info!(target: "jfc::goal", members = council_members.len(), "goal verdict via model council");
+                    crate::goal::evaluate_with_council(council_members, &condition, &history).await
+                } else {
+                    crate::goal::evaluate(provider.as_ref(), model, &condition, &history).await
+                }
+            } => verdict,
         };
         let event = match verdict {
             Ok(verdict) => EngineEvent::Goal(GoalEvent::Verdict {
