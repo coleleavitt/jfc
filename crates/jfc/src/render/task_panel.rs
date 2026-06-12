@@ -322,11 +322,7 @@ fn render_task_detail(f: &mut Frame, app: &App, task: &Task, area: Rect) {
         let elapsed_label =
             super::visual::format_elapsed_secs(bt.started_at.elapsed().as_secs());
 
-        let total_tokens = bt
-            .latest_input_tokens
-            .saturating_add(bt.latest_cache_read_tokens)
-            .saturating_add(bt.latest_cache_write_tokens)
-            .saturating_add(bt.cumulative_output_tokens);
+        let total_tokens = bt.total_tokens();
 
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(

@@ -94,11 +94,7 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
         let elapsed_label =
             super::visual::format_elapsed_secs(now.duration_since(bt.started_at).as_secs());
 
-        let total_tokens = bt
-            .latest_input_tokens
-            .saturating_add(bt.latest_cache_read_tokens)
-            .saturating_add(bt.latest_cache_write_tokens)
-            .saturating_add(bt.cumulative_output_tokens);
+        let total_tokens = bt.total_tokens();
         let token_label = if total_tokens > 0 {
             format!(" · ↓ {} tok", super::format_token_count(total_tokens))
         } else {

@@ -174,6 +174,18 @@ impl BackgroundTask {
     /// the tail.
     pub const LOG_CAP: usize = 500;
 
+    /// Total tokens attributed to this agent across all four usage buckets
+    /// (input + cache-read + cache-write + cumulative output). The roster
+    /// surfaces (agents fan, teammates panel, task detail) all show this; it
+    /// lived as four hand-rolled `saturating_add` copies before. `saturating`
+    /// so a corrupt counter can't overflow-panic the render path.
+    pub fn total_tokens(&self) -> u64 {
+        self.latest_input_tokens
+            .saturating_add(self.latest_cache_read_tokens)
+            .saturating_add(self.latest_cache_write_tokens)
+            .saturating_add(self.cumulative_output_tokens)
+    }
+
     /// Append to the raw string log, dropping oldest entries over the cap.
     pub fn push_log(&mut self, entry: String) {
         self.messages.push(entry);
@@ -2145,6 +2157,25 @@ mod background_task_cap_tests {
             workflow_progress: None,
             last_activity_at: std::time::Instant::now(),
         }
+    }
+
+    #[test]
+    fn total_tokens_sums_all_buckets_normal() {
+        let mut bt = bg();
+        bt.latest_input_tokens = 100;
+        bt.latest_cache_read_tokens = 20;
+        bt.latest_cache_write_tokens = 5;
+        bt.cumulative_output_tokens = 50;
+        assert_eq!(bt.total_tokens(), 175);
+    }
+
+    #[test]
+    fn total_tokens_saturates_instead_of_overflowing_robust() {
+        let mut bt = bg();
+        bt.latest_input_tokens = u64::MAX;
+        bt.cumulative_output_tokens = 1;
+        // Saturating add — never panics, clamps at u64::MAX.
+        assert_eq!(bt.total_tokens(), u64::MAX);
     }
 
     #[test]

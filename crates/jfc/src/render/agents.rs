@@ -29,11 +29,7 @@ pub fn format_subagent_counters(bt: &crate::app::BackgroundTask) -> String {
             if bt.tool_use_count == 1 { "" } else { "s" }
         ));
     }
-    let total_tokens = bt
-        .latest_input_tokens
-        .saturating_add(bt.latest_cache_read_tokens)
-        .saturating_add(bt.latest_cache_write_tokens)
-        .saturating_add(bt.cumulative_output_tokens);
+    let total_tokens = bt.total_tokens();
     if total_tokens > 0 {
         parts.push(format!("{} tok", format_token_count(total_tokens)));
     }
@@ -293,11 +289,7 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
         // Right-side metadata, highest-priority last (rightmost = where
         // the eye lands): tool · model · count · time · ↓tok.
         let elapsed = super::visual::format_elapsed_secs(bt.started_at.elapsed().as_secs());
-        let total_tokens = bt
-            .latest_input_tokens
-            .saturating_add(bt.latest_cache_read_tokens)
-            .saturating_add(bt.latest_cache_write_tokens)
-            .saturating_add(bt.cumulative_output_tokens);
+        let total_tokens = bt.total_tokens();
         let time_label = if is_terminal {
             match status {
                 TaskLifecycle::Completed => "done".to_owned(),
