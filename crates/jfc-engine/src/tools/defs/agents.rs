@@ -80,7 +80,7 @@ pub fn agent_tool_defs() -> Vec<ToolDef> {
                     },
                     "category": {
                         "type": "string",
-                        "description": "Task category for model selection"
+                        "description": "Task category, used to auto-select a cost-appropriate model tier when no explicit `model` is given: read-only/mapping work (explore, search, summarize, classify, lint) → a fast cheap model; hard work (architecture, design, security, audit, debug, refactor) → the heavy model; standard implementation (build, code, test, fix) → the balanced model. An explicit `model` always overrides this."
                     },
                     "run_in_background": {
                         "type": "boolean",

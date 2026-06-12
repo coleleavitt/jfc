@@ -126,6 +126,31 @@ fn subagent_model_alias(model: &str, provider_name: &str) -> String {
     }
 }
 
+/// Map a Task `category` (advertised on the Task tool as "Task category for
+/// model selection") to a model tier alias (`haiku`/`sonnet`/`opus`). This gives
+/// subagents a sensible cost-appropriate default — cheap models for read-only
+/// mapping/exploration, the heavy model for hard reasoning — when no explicit
+/// model is set. Returns `None` for unknown categories (fall back to parent).
+///
+/// The tiers are deliberately conservative: only clearly-cheap categories get
+/// `haiku`, only clearly-hard ones get `opus`, everything recognized else maps
+/// to `sonnet`. Unknown categories inherit the parent model unchanged.
+fn category_to_tier(category: &str) -> Option<&'static str> {
+    match category.trim().to_ascii_lowercase().as_str() {
+        // Cheap, read-only / mechanical work → smallest model.
+        "explore" | "exploration" | "search" | "mapping" | "map" | "read" | "readonly"
+        | "lookup" | "summarize" | "summarisation" | "summarization" | "classify"
+        | "classification" | "lint" | "format" | "trivial" | "cheap" | "fast" => Some("haiku"),
+        // Hard reasoning / architecture / security → largest model.
+        "architecture" | "design" | "plan" | "planning" | "reasoning" | "hard" | "complex"
+        | "security" | "audit" | "review" | "debug" | "refactor" | "heavy" => Some("opus"),
+        // Standard implementation / general work → balanced model.
+        "build" | "implement" | "implementation" | "code" | "coding" | "edit" | "test"
+        | "testing" | "fix" | "general" | "balanced" => Some("sonnet"),
+        _ => None,
+    }
+}
+
 /// Lazily cached agent-model config. Config is unlikely to change mid-session,
 /// so we parse it once and reuse the `agents` map on every subagent spawn.
 fn cached_agent_models() -> &'static std::collections::HashMap<String, crate::config::AgentConfig> {
@@ -148,13 +173,24 @@ pub fn selected_subagent_model(
         .and_then(|a| a.model.clone())
         .filter(|s| !s.is_empty());
 
+    // Category-based tier is the LAST fallback before parent inheritance, so
+    // explicit choices (env, Task `model`, config, agent-def) always win, but a
+    // bare `category` still routes to a cost-appropriate model instead of always
+    // inheriting the (often heavy) parent model.
+    let category_tier = task_input
+        .category
+        .as_deref()
+        .and_then(category_to_tier)
+        .map(str::to_string);
+
     let raw = std::env::var("CLAUDE_CODE_SUBAGENT_MODEL")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .or_else(|| task_input.model.clone())
         .or(config_model)
-        .or_else(|| agent_def.and_then(|a| a.model.clone()));
+        .or_else(|| agent_def.and_then(|a| a.model.clone()))
+        .or(category_tier);
 
     let Some(raw) = raw else {
         return Ok(parent_model);
@@ -1265,6 +1301,79 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("provider switching for subagents is not wired yet"));
+    }
+
+    /// Build a TaskInput carrying a `category` and no explicit model, to test
+    /// category→tier routing.
+    fn task_input_with_category(category: &str) -> crate::types::TaskInput {
+        let mut t = task_input(None);
+        t.subagent_type = None; // avoid agent-config model interference
+        t.category = Some(category.to_string());
+        t
+    }
+
+    #[test]
+    fn selected_subagent_model_routes_explore_category_to_haiku_normal() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let model = selected_subagent_model(
+            &task_input_with_category("explore"),
+            None,
+            jfc_provider::ModelId::new("claude-opus-4-6"),
+            "openwebui",
+        )
+        .unwrap();
+        assert_eq!(model.as_str(), "bedrock-claude-4-5-haiku");
+    }
+
+    #[test]
+    fn selected_subagent_model_routes_security_category_to_opus_normal() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let model = selected_subagent_model(
+            &task_input_with_category("security"),
+            None,
+            jfc_provider::ModelId::new("bedrock-claude-4-5-haiku"),
+            "openwebui",
+        )
+        .unwrap();
+        assert_eq!(model.as_str(), "bedrock-claude-4-6-opus");
+    }
+
+    #[test]
+    fn selected_subagent_model_explicit_model_overrides_category_robust() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        // category says haiku, but an explicit Task `model` must win.
+        let mut t = task_input_with_category("explore");
+        t.model = Some("sonnet".to_string());
+        let model = selected_subagent_model(
+            &t,
+            None,
+            jfc_provider::ModelId::new("claude-opus-4-6"),
+            "openwebui",
+        )
+        .unwrap();
+        assert_eq!(model.as_str(), "bedrock-claude-4-6-sonnet");
+    }
+
+    #[test]
+    fn selected_subagent_model_unknown_category_inherits_parent_robust() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let parent = jfc_provider::ModelId::new("claude-opus-4-6");
+        let model = selected_subagent_model(
+            &task_input_with_category("wibble-unknown"),
+            None,
+            parent.clone(),
+            "anthropic",
+        )
+        .unwrap();
+        assert_eq!(model.as_str(), parent.as_str());
     }
 
     struct ScriptedProvider {
