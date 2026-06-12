@@ -320,6 +320,7 @@ mod disk_io_tests {
     };
     use std::sync::Mutex;
     use tempfile::TempDir;
+    use serial_test::serial;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -366,6 +367,7 @@ mod disk_io_tests {
     // Normal: round-trip a session through save/load with a few common
     // message variants. Verifies the file lands under sessions_dir() and
     // load_session reconstructs the messages with the same shape.
+    #[serial]
     #[tokio::test]
     async fn save_load_roundtrip_normal() {
         let _g = TempConfigHome::new();
@@ -385,6 +387,7 @@ mod disk_io_tests {
     }
 
     // Normal: load_session_with_model returns the persisted model id.
+    #[serial]
     #[tokio::test]
     async fn load_session_with_model_normal() {
         let _g = TempConfigHome::new();
@@ -398,6 +401,7 @@ mod disk_io_tests {
 
     // Robust: load_session for a non-existent id returns None instead of
     // panicking.
+    #[serial]
     #[tokio::test]
     async fn load_session_missing_returns_none_robust() {
         let _g = TempConfigHome::new();
@@ -409,6 +413,7 @@ mod disk_io_tests {
 
     // Normal: load_session_metadata reports the same first_prompt and
     // message_count we saved.
+    #[serial]
     #[tokio::test]
     async fn load_session_metadata_picks_up_first_prompt_normal() {
         let _g = TempConfigHome::new();
@@ -427,6 +432,7 @@ mod disk_io_tests {
 
     // Robust: corrupted JSON in a session file makes load_session_metadata
     // return None without aborting (parse errors are logged and swallowed).
+    #[serial]
     #[tokio::test]
     async fn load_session_metadata_handles_corrupted_robust() {
         let _g = TempConfigHome::new();
@@ -443,6 +449,7 @@ mod disk_io_tests {
 
     // Normal: list_sessions returns all known ids, newest-first by id sort
     // (which is also chronological for the `ses_YYYYMMDD_HHMMSS` shape).
+    #[serial]
     #[tokio::test]
     async fn list_sessions_returns_all_sorted_newest_first_normal() {
         let _g = TempConfigHome::new();
@@ -463,6 +470,7 @@ mod disk_io_tests {
 
     // Robust: list_sessions on a non-existent sessions directory returns
     // an empty vec rather than panicking.
+    #[serial]
     #[tokio::test]
     async fn list_sessions_missing_dir_is_empty_robust() {
         let _g = TempConfigHome::new();
@@ -472,6 +480,7 @@ mod disk_io_tests {
 
     // Normal: list_sessions_filtered with a cwd filter returns only that
     // project's sessions plus any legacy (cwd=None) entries.
+    #[serial]
     #[tokio::test]
     async fn list_sessions_filtered_includes_matching_and_legacy_normal() {
         let _g = TempConfigHome::new();
@@ -512,6 +521,7 @@ mod disk_io_tests {
     // with the greatest `updated_at`. Saved in creation order here (each
     // save stamps updated_at=now), so the last-saved /proj session wins and
     // the /other-cwd session is excluded.
+    #[serial]
     #[tokio::test]
     async fn most_recent_session_for_cwd_returns_top_normal() {
         let _g = TempConfigHome::new();
@@ -550,6 +560,7 @@ mod disk_io_tests {
     // one. The old session now has the latest updated_at, so --continue must
     // resume IT — even though its filename sorts earlier. Pre-fix, filename
     // order wrongly picked the newer-created-but-untouched session.
+    #[serial]
     #[tokio::test]
     async fn most_recent_session_for_cwd_ranks_by_updated_at_regression() {
         let _g = TempConfigHome::new();
@@ -574,6 +585,7 @@ mod disk_io_tests {
     // Robust: a cwd with no matching sessions returns None (the caller's
     // global fallback + foreign-cwd warning lives in the event loop). The
     // /other session must not leak through as a match for /proj.
+    #[serial]
     #[tokio::test]
     async fn most_recent_session_for_cwd_no_match_returns_none_robust() {
         let _g = TempConfigHome::new();
@@ -590,6 +602,7 @@ mod disk_io_tests {
 
     // Robust: most_recent_session (global) returns the newest id regardless
     // of cwd.
+    #[serial]
     #[tokio::test]
     async fn most_recent_session_global_robust() {
         let _g = TempConfigHome::new();
@@ -605,6 +618,7 @@ mod disk_io_tests {
 
     // Normal: set_session_title writes a custom title that overrides
     // first_prompt in display.
+    #[serial]
     #[tokio::test]
     async fn set_session_title_persists_and_overrides_first_prompt_normal() {
         let _g = TempConfigHome::new();
@@ -619,6 +633,7 @@ mod disk_io_tests {
 
     // Robust: set_session_title on a non-existent id is a no-op (does not
     // panic, does not create files).
+    #[serial]
     #[tokio::test]
     async fn set_session_title_missing_session_is_noop_robust() {
         let _g = TempConfigHome::new();
@@ -630,6 +645,7 @@ mod disk_io_tests {
 
     // Normal: when re-saving an existing session, the original created_at
     // and cwd are preserved (cwd is pinned at first save).
+    #[serial]
     #[tokio::test]
     async fn save_session_preserves_created_at_and_cwd_normal() {
         let _g = TempConfigHome::new();
@@ -654,6 +670,7 @@ mod disk_io_tests {
     // Normal: round-trip a tool message with full input + output content.
     // Exercises the serialize_part / deserialize_part / serialize_tool_input
     // / deserialize_tool_input paths for a non-trivial tool variant.
+    #[serial]
     #[tokio::test]
     async fn save_load_with_tool_message_round_trips_normal() {
         let _g = TempConfigHome::new();
