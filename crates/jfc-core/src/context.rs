@@ -257,6 +257,10 @@ pub struct ClaudeMdHierarchy {
     pub project: Option<(PathBuf, String)>,
     /// `<project>/.claude/CLAUDE.md` — alternative project location.
     pub project_dot: Option<(PathBuf, String)>,
+    /// `<project>/AGENTS.md` — cross-tool agent-instructions convention
+    /// (shared with Codex/Cursor/etc.). Auto-loaded so JFC honours the same
+    /// project guidance other agent harnesses read.
+    pub agents: Option<(PathBuf, String)>,
     /// `<project>/.claude/rules/*.md` — focused always-on project rules.
     pub rules: Vec<(PathBuf, String)>,
     /// `<project>/MEMORY.md` — Claude Code-style concise memory index.
@@ -284,6 +288,8 @@ impl ClaudeMdHierarchy {
             user: read_if_exists(&home.join(".claude/CLAUDE.md")),
             project: read_if_exists(&project_root.join("CLAUDE.md")),
             project_dot: read_if_exists(&project_root.join(".claude/CLAUDE.md")),
+            agents: read_if_exists(&project_root.join("AGENTS.md"))
+                .or_else(|| read_if_exists(&project_root.join(".agents/AGENTS.md"))),
             rules: read_markdown_dir(&project_root.join(".claude/rules")),
             memory: read_if_exists(&project_root.join("MEMORY.md")),
             local: read_if_exists(&project_root.join("CLAUDE.local.md")),
@@ -296,6 +302,7 @@ impl ClaudeMdHierarchy {
             has_project = result.project.is_some(),
             has_project_dot = result.project_dot.is_some(),
             rules = result.rules.len(),
+            has_agents = result.agents.is_some(),
             has_memory = result.memory.is_some(),
             has_local = result.local.is_some(),
             extra_roots = result.extra_roots.len(),
@@ -329,6 +336,7 @@ impl ClaudeMdHierarchy {
             ("User preferences", &self.user),
             ("Project instructions", &self.project),
             ("Project (.claude)", &self.project_dot),
+            ("Project agents (AGENTS.md)", &self.agents),
         ] {
             if let Some((path, content)) = layer {
                 append_layer(&mut out, label, path, content);
@@ -362,11 +370,12 @@ impl ClaudeMdHierarchy {
     /// the model's available tools.
     pub fn collect_disallowed_tools(&self) -> Vec<String> {
         let mut tools = Vec::new();
-        let layers: [&Option<(PathBuf, String)>; 6] = [
+        let layers: [&Option<(PathBuf, String)>; 7] = [
             &self.managed,
             &self.user,
             &self.project,
             &self.project_dot,
+            &self.agents,
             &self.memory,
             &self.local,
         ];
@@ -402,6 +411,7 @@ impl ClaudeMdHierarchy {
             || self.user.is_some()
             || self.project.is_some()
             || self.project_dot.is_some()
+            || self.agents.is_some()
             || !self.rules.is_empty()
             || self.memory.is_some()
             || self.local.is_some()
@@ -711,6 +721,32 @@ mod tests {
         assert!(rendered.contains("SECURITY_RULES"));
         assert!(rendered.contains("MEMORY_INDEX"));
         assert!(rendered.contains("LOCAL_RULES"));
+    }
+
+    #[test]
+    fn hierarchy_loads_and_renders_agents_md_normal() {
+        let dir = TempDir::new().expect("tempdir");
+        let root = dir.path();
+        fs::write(root.join("AGENTS.md"), "AGENTS_GUIDANCE").expect("agents");
+
+        let h = ClaudeMdHierarchy::load(root);
+        assert!(h.agents.is_some(), "AGENTS.md must be auto-loaded");
+        assert!(h.any());
+        let rendered = h.render().expect("renders");
+        assert!(rendered.contains("AGENTS_GUIDANCE"), "{rendered}");
+        assert!(rendered.contains("AGENTS.md"), "label cites the file");
+    }
+
+    #[test]
+    fn hierarchy_agents_md_falls_back_to_dot_agents_dir_robust() {
+        let dir = TempDir::new().expect("tempdir");
+        let root = dir.path();
+        fs::create_dir_all(root.join(".agents")).expect("dotagents");
+        fs::write(root.join(".agents/AGENTS.md"), "DOT_AGENTS").expect("agents");
+
+        let h = ClaudeMdHierarchy::load(root);
+        assert!(h.agents.is_some());
+        assert!(h.render().expect("renders").contains("DOT_AGENTS"));
     }
 
     #[test]
