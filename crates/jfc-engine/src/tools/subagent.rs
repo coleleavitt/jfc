@@ -229,12 +229,7 @@ pub fn selected_subagent_provider_model(
     parent_model: jfc_provider::ModelId,
     registry: &[std::sync::Arc<dyn jfc_provider::Provider>],
 ) -> Result<(std::sync::Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId), String> {
-    match selected_subagent_model(
-        task_input,
-        agent_def,
-        parent_model.clone(),
-        parent_provider.name(),
-    ) {
+    match selected_subagent_model(task_input, agent_def, parent_model, parent_provider.name()) {
         Ok(model) => Ok((parent_provider, model)),
         Err(same_provider_error) => {
             // Cross-provider spec: re-derive the raw request and route it
