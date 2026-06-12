@@ -2431,7 +2431,13 @@ mod tests {
     // detect_iana_timezone falls back to UTC when nothing's configured.
     // `TZ=` (empty) and `TZ=:` are both treated as unset, mirroring
     // glibc's tzset behavior.
+    // Serialized on the shared `tz_env` group: all three tests mutate the
+    // process-global `TZ` env var, so running them concurrently (cargo test's
+    // default) let one test observe another's `TZ` mid-flight — the source of
+    // the intermittent `detect_iana_timezone_strips_leading_colon` failure in
+    // full-workspace runs.
     #[test]
+    #[serial_test::serial(tz_env)]
     fn detect_iana_timezone_falls_back_to_utc_when_empty_robust() {
         let _g = TzGuard::set(":");
         // /etc/timezone may exist with a real value on the CI host, so
@@ -2443,12 +2449,14 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(tz_env)]
     fn detect_iana_timezone_uses_tz_env_when_set_normal() {
         let _g = TzGuard::set("America/Phoenix");
         assert_eq!(detect_iana_timezone(), "America/Phoenix");
     }
 
     #[test]
+    #[serial_test::serial(tz_env)]
     fn detect_iana_timezone_strips_leading_colon_normal() {
         // Posix `:Region/City` form — leading colon is a parser hint
         // to glibc, not part of the zone name.
