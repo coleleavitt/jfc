@@ -533,6 +533,10 @@ async fn login_with_tokens(
         last_usage_refresh_at: None,
         daily_usage: None,
         total_usage: None,
+        last_refresh_attempt_at: None,
+        last_refresh_success_at: None,
+        last_auth_error: None,
+        refresh_failure_count: None,
         extra,
     };
     manager.atomic_add_account(account).await?;
@@ -1021,6 +1025,10 @@ mod tests {
             last_usage_refresh_at: None,
             daily_usage: None,
             total_usage: None,
+            last_refresh_attempt_at: None,
+            last_refresh_success_at: None,
+            last_auth_error: None,
+            refresh_failure_count: None,
             extra: serde_json::Map::new(),
         };
         mgr.atomic_add_account(acct).await.unwrap();
@@ -1063,6 +1071,10 @@ mod tests {
             last_usage_refresh_at: None,
             daily_usage: None,
             total_usage: None,
+            last_refresh_attempt_at: None,
+            last_refresh_success_at: None,
+            last_auth_error: None,
+            refresh_failure_count: None,
             extra,
         }
     }

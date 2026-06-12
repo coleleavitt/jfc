@@ -301,6 +301,31 @@ pub(crate) async fn handle_tick(
         });
     }
 
+    // Proactive token-maintenance sweep (~every 60s): keep every enabled
+    // Anthropic account's OAuth token warm so account selection never has to
+    // refresh on the hot path. The sweep is overlap-safe (its own in-progress
+    // guard) and fire-and-forget; a slow refresh can't stack because the
+    // manager's begin_sweep() rejects a second concurrent sweep.
+    let needs_sweep = app
+        .engine
+        .anthropic_sweep_at
+        .map(|t| t.elapsed().as_secs() >= 60)
+        .unwrap_or(true);
+    if needs_sweep && let Some(oauth) = oauth_for_snapshot {
+        app.engine.anthropic_sweep_at = Some(std::time::Instant::now());
+        let oauth = oauth.clone();
+        tokio::spawn(async move {
+            let refreshed = oauth.sweep_proactive_refresh().await;
+            if refreshed > 0 {
+                tracing::info!(
+                    target: "jfc::provider::anthropic_oauth::sweep",
+                    refreshed,
+                    "proactive token sweep refreshed accounts"
+                );
+            }
+        });
+    }
+
     // Kinetic scroll: apply velocity, decay, stop.
     {
         let now = std::time::Instant::now();

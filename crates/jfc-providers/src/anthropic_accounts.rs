@@ -173,9 +173,40 @@ pub struct Account {
     /// breakdown with cost. Mirrors opencode's `totalUsage`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_usage: Option<TotalUsage>,
+    /// Unix-ms of the last refresh *attempt* (success or failure). Audit field
+    /// — lets `/auth` and operators see whether maintenance is running.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_refresh_attempt_at: Option<u64>,
+    /// Unix-ms of the last *successful* token refresh.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_refresh_success_at: Option<u64>,
+    /// Human-readable last auth error (e.g. `invalid_grant`, a transient
+    /// network message). Cleared on a successful refresh.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_auth_error: Option<String>,
+    /// Consecutive refresh failures. Reset to 0 on success. Distinct from
+    /// `RuntimeState::consecutive_failures` (request failures) — this counts
+    /// *refresh* failures only, so transient refresh errors don't disable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_failure_count: Option<u32>,
     /// All other fields opencode (or future jfc) may write — preserved verbatim.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+/// Classification of an account's *auth* health, kept separate from quota
+/// health (rate-limit cooldown / overage). Picking, disabling, and the `/auth`
+/// UI all want to distinguish "needs re-login" from "just stale" from "fine".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthHealth {
+    /// Access token present and not within the refresh buffer — usable as-is.
+    Healthy,
+    /// Access token expired/near-expiry but a refresh token exists — refresh
+    /// will fix it. Not an error; the maintenance sweeper handles it.
+    Stale,
+    /// Refresh token is gone (cleared on `invalid_grant`) — the account needs
+    /// an interactive re-login and cannot be auto-recovered.
+    NeedsReLogin,
 }
 
 /// Per-account subscription-gated feature flags. Each `None` means "haven't
@@ -334,6 +365,28 @@ impl Account {
         self.enabled != Some(false)
     }
 
+    /// Classify the account's *auth* health (independent of quota/rate-limit
+    /// state). See [`AuthHealth`].
+    pub fn auth_health(&self) -> AuthHealth {
+        if self.refresh_token.is_empty() {
+            // No way to refresh — only a re-login can recover this.
+            return AuthHealth::NeedsReLogin;
+        }
+        if self.access_token.is_none() || self.is_token_expired() {
+            AuthHealth::Stale
+        } else {
+            AuthHealth::Healthy
+        }
+    }
+
+    /// Whether the maintenance sweeper should proactively refresh this account:
+    /// it is enabled, has a refresh token, and its token is missing or within
+    /// the refresh buffer. Quota/rate-limit state is intentionally ignored —
+    /// keeping a token warm is orthogonal to whether the account is cooling.
+    pub fn needs_proactive_refresh(&self) -> bool {
+        self.is_enabled() && matches!(self.auth_health(), AuthHealth::Stale)
+    }
+
     /// Persisted disk-side rate-limit clearance check. Runtime in-memory cooldown
     /// is layered on top of this in [`AccountManager::is_account_usable`].
     pub fn is_disk_rate_limit_cleared(&self) -> bool {
@@ -467,6 +520,21 @@ impl Drop for AccountRequestGuard {
     }
 }
 
+/// RAII guard for an in-progress proactive sweep. Clears the
+/// `sweep_in_progress` flag on drop so a panic or early return can't wedge the
+/// sweeper permanently "running".
+pub struct SweepGuard<'a> {
+    inner: &'a Inner,
+}
+
+impl Drop for SweepGuard<'_> {
+    fn drop(&mut self) {
+        self.inner
+            .sweep_in_progress
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
 struct Inner {
     /// Path to the accounts JSON file. All disk operations route through
     /// `disk_lock` to serialize read-modify-write cycles within this process.
@@ -474,6 +542,14 @@ struct Inner {
     disk_lock: Mutex<()>,
     /// Authoritative in-memory snapshot of disk + runtime overlays.
     state: Mutex<ManagerState>,
+    /// Per-account single-flight refresh locks. Sits *outside* `disk_lock`
+    /// (never acquired while holding it) so a network refresh never blocks
+    /// disk writers, and so two callers can't both spend the same refresh
+    /// token concurrently. Keyed by validated account name.
+    refresh_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// Guards against overlapping proactive sweeps when one runs longer than
+    /// the tick interval. A sweep that can't acquire it simply skips.
+    sweep_in_progress: std::sync::atomic::AtomicBool,
 }
 
 struct ManagerState {
@@ -499,6 +575,8 @@ impl AccountManager {
                     last_mtime_ns: mtime_ns,
                     runtime: HashMap::new(),
                 }),
+                refresh_locks: Mutex::new(HashMap::new()),
+                sweep_in_progress: std::sync::atomic::AtomicBool::new(false),
             }),
         };
         mgr.normalize_active_index().await;
@@ -1262,6 +1340,109 @@ impl AccountManager {
         }
     }
 
+    /// Begin a proactive sweep, returning an RAII guard that clears the
+    /// in-progress flag on drop. Returns `None` if a sweep is already running,
+    /// so overlapping tick-driven sweeps skip instead of stacking.
+    pub fn begin_sweep(&self) -> Option<SweepGuard<'_>> {
+        use std::sync::atomic::Ordering;
+        if self
+            .inner
+            .sweep_in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            Some(SweepGuard { inner: &self.inner })
+        } else {
+            None
+        }
+    }
+
+    /// Acquire (creating if needed) the single-flight refresh lock for one
+    /// account. The returned `Arc<Mutex<()>>` is held by the caller for the
+    /// duration of a refresh; concurrent callers for the same account serialize
+    /// on it. This lock is intentionally separate from `disk_lock` so the HTTP
+    /// refresh never blocks unrelated disk writes.
+    pub async fn refresh_lock_for(&self, account_name: &str) -> Arc<Mutex<()>> {
+        let mut locks = self.inner.refresh_locks.lock().await;
+        locks
+            .entry(account_name.to_owned())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
+    /// Re-read a single account's current token state directly from disk
+    /// (bypassing the in-memory cache). Used before a refresh to detect that a
+    /// peer process (opencode, another jfc) already rotated the token, so we
+    /// don't burn a now-invalid refresh token. Returns `(access_token,
+    /// refresh_token, expires_at)`.
+    pub async fn read_account_tokens_from_disk(
+        &self,
+        account_name: &str,
+    ) -> Option<(Option<String>, String, Option<u64>)> {
+        let _guard = self.inner.disk_lock.lock().await;
+        let (store, _) = read_store(&self.inner.store_path).await.ok()?;
+        store
+            .accounts
+            .into_iter()
+            .find(|a| a.name == account_name)
+            .map(|a| (a.access_token, a.refresh_token, a.expires_at))
+    }
+
+    /// Record a refresh *attempt* (audit). Sets `last_refresh_attempt_at` and,
+    /// on failure, `last_auth_error` + increments `refresh_failure_count`.
+    /// A transient failure never disables — only the auth-health classification
+    /// (an `invalid_grant`) does, via [`Self::atomic_clear_refresh_token`].
+    pub async fn record_refresh_attempt(
+        &self,
+        name: &str,
+        error: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let now = now_ms();
+        let error = error.map(str::to_owned);
+        self.atomic_modify(move |store| {
+            if let Some(a) = store.accounts.iter_mut().find(|a| a.name == name) {
+                a.last_refresh_attempt_at = Some(now);
+                if let Some(err) = error {
+                    a.last_auth_error = Some(err);
+                    a.refresh_failure_count = Some(a.refresh_failure_count.unwrap_or(0) + 1);
+                }
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Record a successful refresh (audit): set `last_refresh_success_at`, clear
+    /// `last_auth_error`, and reset `refresh_failure_count`. Token fields are
+    /// persisted separately via [`Self::atomic_update_tokens`].
+    pub async fn record_refresh_success(&self, name: &str) -> anyhow::Result<()> {
+        let now = now_ms();
+        self.atomic_modify(move |store| {
+            if let Some(a) = store.accounts.iter_mut().find(|a| a.name == name) {
+                a.last_refresh_attempt_at = Some(now);
+                a.last_refresh_success_at = Some(now);
+                a.last_auth_error = None;
+                a.refresh_failure_count = Some(0);
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Snapshot of accounts that currently want a proactive refresh
+    /// (`needs_proactive_refresh`). Returned as `(name, refresh_token)` pairs so
+    /// the sweeper can run network refreshes without holding any lock.
+    pub async fn accounts_needing_refresh(&self) -> Vec<(String, String)> {
+        let state = self.inner.state.lock().await;
+        state
+            .store
+            .accounts
+            .iter()
+            .filter(|a| a.needs_proactive_refresh())
+            .map(|a| (a.name.clone(), a.refresh_token.clone()))
+            .collect()
+    }
+
     /// Atomically persist new OAuth tokens for an account, then refresh the
     /// in-memory cache. Call after a successful refresh-token exchange.
     pub async fn atomic_update_tokens(
@@ -1666,8 +1847,171 @@ mod tests {
             last_usage_refresh_at: None,
             daily_usage: None,
             total_usage: None,
+            last_refresh_attempt_at: None,
+            last_refresh_success_at: None,
+            last_auth_error: None,
+            refresh_failure_count: None,
             extra: Map::new(),
         }
+    }
+
+    // ── auth-health / proactive-refresh classification ──────────────────────
+
+    // Normal: a healthy account (valid unexpired token + refresh token) is
+    // Healthy and does NOT want a proactive refresh.
+    #[test]
+    fn auth_health_healthy_normal() {
+        let mut a = mk_account("a", None);
+        a.expires_at = Some(now_ms() + 60 * 60 * 1000); // 1h out, beyond buffer
+        assert_eq!(a.auth_health(), AuthHealth::Healthy);
+        assert!(!a.needs_proactive_refresh());
+    }
+
+    // Normal: a token within the 5min refresh buffer is Stale and wants a
+    // proactive refresh (the whole point — refresh before it expires).
+    #[test]
+    fn auth_health_stale_within_buffer_normal() {
+        let mut a = mk_account("a", None);
+        a.expires_at = Some(now_ms() + 60 * 1000); // 1min out, inside 5min buffer
+        assert_eq!(a.auth_health(), AuthHealth::Stale);
+        assert!(a.needs_proactive_refresh());
+    }
+
+    // Robust: no refresh token → NeedsReLogin, and never a proactive-refresh
+    // candidate (can't be auto-recovered).
+    #[test]
+    fn auth_health_needs_relogin_without_refresh_token_robust() {
+        let mut a = mk_account("a", None);
+        a.refresh_token = String::new();
+        assert_eq!(a.auth_health(), AuthHealth::NeedsReLogin);
+        assert!(!a.needs_proactive_refresh());
+    }
+
+    // Robust: a disabled but stale account is NOT swept (enabled gate), so the
+    // sweeper can't resurrect an account a user/operator disabled.
+    #[test]
+    fn disabled_stale_account_not_swept_robust() {
+        let mut a = mk_account("a", None);
+        a.expires_at = Some(now_ms() + 60 * 1000);
+        a.enabled = Some(false);
+        assert_eq!(a.auth_health(), AuthHealth::Stale);
+        assert!(!a.needs_proactive_refresh());
+    }
+
+    // ── audit metadata ──────────────────────────────────────────────────────
+
+    // Normal: record_refresh_attempt(Some(err)) writes the error + bumps the
+    // failure count; record_refresh_success clears them.
+    #[tokio::test]
+    async fn refresh_audit_metadata_roundtrip_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        mgr.atomic_add_account(mk_account("a", None)).await.unwrap();
+
+        mgr.record_refresh_attempt("a", Some("network down"))
+            .await
+            .unwrap();
+        let a = mgr.list_accounts().await.into_iter().next().unwrap();
+        assert_eq!(a.last_auth_error.as_deref(), Some("network down"));
+        assert_eq!(a.refresh_failure_count, Some(1));
+        assert!(a.last_refresh_attempt_at.is_some());
+        assert!(a.last_refresh_success_at.is_none());
+
+        mgr.record_refresh_success("a").await.unwrap();
+        let a = mgr.list_accounts().await.into_iter().next().unwrap();
+        assert_eq!(a.last_auth_error, None);
+        assert_eq!(a.refresh_failure_count, Some(0));
+        assert!(a.last_refresh_success_at.is_some());
+    }
+
+    // Robust: consecutive failures accumulate (so an operator can see a
+    // persistently-failing account), and the audit field round-trips on disk.
+    #[tokio::test]
+    async fn refresh_failure_count_accumulates_robust() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        mgr.atomic_add_account(mk_account("a", None)).await.unwrap();
+        for _ in 0..3 {
+            mgr.record_refresh_attempt("a", Some("5xx")).await.unwrap();
+        }
+        let a = mgr.list_accounts().await.into_iter().next().unwrap();
+        assert_eq!(a.refresh_failure_count, Some(3));
+    }
+
+    // ── single-flight + sweep guard ─────────────────────────────────────────
+
+    // Normal: the same account name returns the same refresh lock instance
+    // (single-flight), different names return different locks.
+    #[tokio::test]
+    async fn refresh_lock_is_per_account_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        let a1 = mgr.refresh_lock_for("a").await;
+        let a2 = mgr.refresh_lock_for("a").await;
+        let b = mgr.refresh_lock_for("b").await;
+        assert!(Arc::ptr_eq(&a1, &a2), "same account shares one lock");
+        assert!(!Arc::ptr_eq(&a1, &b), "different accounts get distinct locks");
+    }
+
+    // Robust: begin_sweep is single-entry — a second concurrent begin_sweep
+    // returns None until the first guard drops.
+    #[tokio::test]
+    async fn begin_sweep_rejects_overlap_robust() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        let guard = mgr.begin_sweep().expect("first sweep starts");
+        assert!(mgr.begin_sweep().is_none(), "overlapping sweep is rejected");
+        drop(guard);
+        assert!(mgr.begin_sweep().is_some(), "after drop a new sweep can start");
+    }
+
+    // Normal: accounts_needing_refresh returns only enabled, stale accounts.
+    #[tokio::test]
+    async fn accounts_needing_refresh_filters_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        let mut healthy = mk_account("healthy", None);
+        healthy.expires_at = Some(now_ms() + 60 * 60 * 1000);
+        let mut stale = mk_account("stale", None);
+        stale.expires_at = Some(now_ms() + 30 * 1000);
+        let relogin = mk_account("relogin", None);
+        mgr.atomic_add_account(healthy).await.unwrap();
+        mgr.atomic_add_account(stale).await.unwrap();
+        mgr.atomic_add_account(relogin).await.unwrap();
+        // A NeedsReLogin account arises by the real path: invalid_grant clears
+        // its refresh token. After that it must NOT be a refresh candidate.
+        mgr.atomic_clear_refresh_token("relogin").await.unwrap();
+
+        let pending = mgr.accounts_needing_refresh().await;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].0, "stale");
+    }
+
+    // Robust: read_account_tokens_from_disk reflects what another process wrote
+    // — the foundation of re-read-before-refresh. A peer-style direct write to
+    // the store is observed by a fresh read.
+    #[tokio::test]
+    async fn read_account_tokens_from_disk_sees_peer_write_robust() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path.clone()).await.unwrap();
+        mgr.atomic_add_account(mk_account("a", None)).await.unwrap();
+
+        // Simulate a peer (opencode) rotating the token on disk.
+        mgr.atomic_update_tokens("a", "peer-rotated-at".to_owned(), now_ms() + 9_999_999, Some("peer-rt".to_owned()))
+            .await
+            .unwrap();
+
+        let (access, refresh, expires) =
+            mgr.read_account_tokens_from_disk("a").await.unwrap();
+        assert_eq!(access.as_deref(), Some("peer-rotated-at"));
+        assert_eq!(refresh, "peer-rt");
+        assert!(expires.unwrap() > now_ms());
     }
 
     // Normal: tier ranking matches opencode's getTierRank.

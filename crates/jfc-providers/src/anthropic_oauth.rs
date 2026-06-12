@@ -428,6 +428,22 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+/// Maximum per-account jitter (ms) applied before a proactive sweep refresh so
+/// N accounts don't all hit the token endpoint simultaneously.
+const SWEEP_JITTER_MAX_MS: u64 = 800;
+
+/// Deterministic per-account jitter in `0..SWEEP_JITTER_MAX_MS`, derived from
+/// the account name. Deterministic (not RNG) so it needs no rand dependency and
+/// is stable per account, which is enough to fan out a handful of accounts.
+fn sweep_jitter_ms(account_name: &str) -> u64 {
+    let mut hash: u64 = 1469598103934665603; // FNV-1a offset basis
+    for byte in account_name.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(1099511628211);
+    }
+    hash % (SWEEP_JITTER_MAX_MS + 1)
+}
+
 async fn refresh_access_token(
     client: &reqwest::Client,
     refresh_token: &str,
@@ -722,6 +738,77 @@ impl AnthropicOAuthProvider {
         Ok(mgr)
     }
 
+    /// Proactive token-maintenance sweep: keep every enabled account's token
+    /// warm independently of routing so picking an account stays cheap and
+    /// boring (read state, skip cooling accounts, use an already-fresh token).
+    ///
+    /// For every enabled account whose token is missing or within the refresh
+    /// buffer (`Account::needs_proactive_refresh`), refresh it through the same
+    /// single-flight, re-read-before-refresh, audit-recording path the reactive
+    /// path uses. Per-account jitter spreads N accounts' refreshes so they don't
+    /// all hit the token endpoint at once. A transient failure is recorded and
+    /// retried on the next sweep — it never disables; only a definite
+    /// `invalid_grant` disables (handled inside the refresh path).
+    ///
+    /// Overlap-safe: if a previous sweep is still running (one refresh exceeding
+    /// the tick interval), this call returns immediately. Returns the number of
+    /// accounts refreshed this sweep.
+    pub async fn sweep_proactive_refresh(&self) -> usize {
+        let Ok(mgr) = self.account_manager().await else {
+            return 0;
+        };
+        let Some(_sweep_guard) = mgr.begin_sweep() else {
+            // Another sweep is in progress; skip rather than stack.
+            return 0;
+        };
+
+        let pending = mgr.accounts_needing_refresh().await;
+        if pending.is_empty() {
+            return 0;
+        }
+        tracing::debug!(
+            target: "jfc::provider::anthropic_oauth::sweep",
+            count = pending.len(),
+            "proactive token sweep starting"
+        );
+
+        let mut refreshed = 0usize;
+        for (name, refresh_token) in pending {
+            // Jitter: spread refreshes across the token endpoint.
+            let jitter_ms = sweep_jitter_ms(&name);
+            if jitter_ms > 0 {
+                tokio::time::sleep(Duration::from_millis(jitter_ms)).await;
+            }
+            match self
+                .refresh_with_disable_on_invalid_grant(&name, &refresh_token)
+                .await
+            {
+                Ok((access_token, new_refresh, expires_at)) => {
+                    let _ = mgr
+                        .atomic_update_tokens(
+                            &name,
+                            access_token,
+                            expires_at,
+                            Some(new_refresh),
+                        )
+                        .await;
+                    refreshed += 1;
+                }
+                Err(e) => {
+                    // Transient: already recorded as an audit failure inside the
+                    // refresh path; leave the account enabled for the next sweep.
+                    tracing::debug!(
+                        target: "jfc::provider::anthropic_oauth::sweep",
+                        account = %name,
+                        error = %e,
+                        "proactive refresh failed (will retry next sweep)"
+                    );
+                }
+            }
+        }
+        refreshed
+    }
+
     /// Fetch and cache the OAuth profile (`GET /api/oauth/profile`). v126 calls this
     /// once after sign-in to discover seatTier / subscriptionType, which then drive
     /// what the model picker shows. Returns the cached value on subsequent calls;
@@ -891,31 +978,111 @@ impl AnthropicOAuthProvider {
         Ok(access_token)
     }
 
-    /// Wraps [`refresh_access_token`] so a permanent `invalid_grant` failure
-    /// auto-disables the account in the rotation manager. Transient errors
-    /// (network, 5xx) bubble through unchanged so the caller can retry.
+    /// Single-flight, re-read-before-refresh wrapper around
+    /// [`refresh_access_token`].
+    ///
+    /// Correctness invariants (the store is shared with opencode and other jfc
+    /// processes, so each of these races is real):
+    /// 1. **Single-flight**: holds the per-account refresh lock so two callers
+    ///    can't both spend the same refresh token at once.
+    /// 2. **Re-read before refresh**: re-reads the account from disk under the
+    ///    lock; if a peer already rotated the token (a different, unexpired
+    ///    access token is now on disk), returns that as success WITHOUT a
+    ///    network call — refreshing again would burn the just-rotated token and
+    ///    trigger a spurious `invalid_grant`.
+    /// 3. **Auth vs quota**: only a definite `invalid_grant` clears the refresh
+    ///    token / disables. Transient errors (network, 5xx) bubble up so the
+    ///    caller/sweeper can retry later — they are recorded as audit failures
+    ///    but never disable.
     async fn refresh_with_disable_on_invalid_grant(
         &self,
         account_name: &str,
         refresh_token: &str,
     ) -> anyhow::Result<(String, String, u64)> {
+        let mgr = self.account_manager().await.ok();
+
+        // (1) Acquire the per-account single-flight lock (outside disk_lock).
+        let _flight = match &mgr {
+            Some(mgr) => Some(mgr.refresh_lock_for(account_name).await),
+            None => None,
+        };
+        let _flight_guard = match &_flight {
+            Some(lock) => Some(lock.lock().await),
+            None => None,
+        };
+
+        // (2) Re-read disk: a peer may have rotated the token while we waited
+        // for the lock. If a different, still-valid access token now exists,
+        // adopt it instead of refreshing again.
+        if let Some(mgr) = &mgr
+            && let Some((disk_access, disk_refresh, disk_expires)) =
+                mgr.read_account_tokens_from_disk(account_name).await
+            && let (Some(access), Some(expires)) = (disk_access, disk_expires)
+            && now_ms() < expires
+            && access != self.cached_access_token_for(account_name).await
+        {
+            tracing::info!(
+                target: "jfc::provider::anthropic_oauth::rotation",
+                account = %account_name,
+                "another process already refreshed this token — adopting it"
+            );
+            return Ok((access, disk_refresh, expires));
+        }
+
+        // Record the attempt for audit before the network call.
+        if let Some(mgr) = &mgr {
+            let _ = mgr.record_refresh_attempt(account_name, None).await;
+        }
+
         match refresh_access_token(&self.client, refresh_token).await {
-            Ok(t) => Ok(t),
+            Ok(t) => {
+                if let Some(mgr) = &mgr {
+                    let _ = mgr.record_refresh_success(account_name).await;
+                }
+                Ok(t)
+            }
             Err(e) => {
                 let msg = e.to_string().to_lowercase();
+                // (3) Auth vs quota: invalid_grant is a permanent auth failure
+                // (refresh token dead) → clear + disable. Everything else is
+                // transient → record and retry later, never disable.
                 if msg.contains("invalid_grant") {
-                    if let Ok(mgr) = self.account_manager().await {
+                    if let Some(mgr) = &mgr {
+                        let _ = mgr.record_refresh_attempt(account_name, Some("invalid_grant")).await;
                         let _ = mgr.atomic_clear_refresh_token(account_name).await;
                     }
                     tracing::warn!(
                         target: "jfc::provider::anthropic_oauth::rotation",
                         account = %account_name,
-                        "refresh failed with invalid_grant — account auto-disabled"
+                        "refresh failed with invalid_grant — account auto-disabled (needs re-login)"
+                    );
+                } else if let Some(mgr) = &mgr {
+                    let _ = mgr
+                        .record_refresh_attempt(account_name, Some(&msg))
+                        .await;
+                    tracing::warn!(
+                        target: "jfc::provider::anthropic_oauth::rotation",
+                        account = %account_name,
+                        error = %msg,
+                        "transient refresh failure — will retry later (not disabled)"
                     );
                 }
                 Err(e)
             }
         }
+    }
+
+    /// The currently cached access token for `account_name`, if the in-memory
+    /// `TokenState` belongs to it. Used to detect a peer-rotated on-disk token
+    /// (one that differs from what we last used).
+    async fn cached_access_token_for(&self, account_name: &str) -> String {
+        self.token
+            .read()
+            .await
+            .as_ref()
+            .filter(|t| t.account_name == account_name)
+            .map(|t| t.access_token.clone())
+            .unwrap_or_default()
     }
 
     /// Pre-rotation legacy path. Used when the manager is unavailable (e.g.,
@@ -3602,6 +3769,30 @@ mod tests {
         // Hit a closed loopback port — hard guarantee of "no service".
         let req = client.post("http://127.0.0.1:1/oauth/token").send().await;
         assert!(req.is_err(), "expected network error: {req:?}");
+    }
+
+    // Normal: sweep jitter is bounded to the configured window and is stable
+    // per account name (so it spreads N accounts deterministically).
+    #[test]
+    fn sweep_jitter_is_bounded_and_stable_normal() {
+        for name in ["alpha", "bravo", "charlie", "delta-1"] {
+            let j = sweep_jitter_ms(name);
+            assert!(j <= SWEEP_JITTER_MAX_MS, "{name} jitter {j} out of range");
+            assert_eq!(j, sweep_jitter_ms(name), "jitter must be stable per name");
+        }
+    }
+
+    // Robust: different account names generally land on different jitter
+    // offsets, so a handful of accounts don't all refresh at the same instant.
+    #[test]
+    fn sweep_jitter_spreads_accounts_robust() {
+        let offsets: std::collections::HashSet<u64> = ["a", "b", "c", "d", "e", "f"]
+            .iter()
+            .map(|n| sweep_jitter_ms(n))
+            .collect();
+        // With a 0..=800 range and 6 names, collisions are unlikely; require at
+        // least 4 distinct offsets to prove the spread is real, not constant.
+        assert!(offsets.len() >= 4, "jitter not spreading: {offsets:?}");
     }
 
     // ── OAuthProfile serde defaults ───────────────────────────────────────

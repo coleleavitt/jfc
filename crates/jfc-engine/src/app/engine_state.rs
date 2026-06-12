@@ -766,6 +766,10 @@ pub struct EngineState {
     /// every ~10s so the ribbon stays current without burning a lock per
     /// frame at 30fps.
     pub anthropic_snapshot_refreshed_at: Option<std::time::Instant>,
+    /// Last instant we ran a proactive Anthropic token-refresh sweep. Throttled
+    /// to once every ~60s so accounts stay "warm" (refreshed before expiry)
+    /// without hammering the token endpoint.
+    pub anthropic_sweep_at: Option<std::time::Instant>,
     /// Last wall-clock time the UI re-read `daemon-state.json` to refresh
     /// counters for detached background workers. Throttled in the Tick
     /// handler so we don't hammer the JSON file every frame.
@@ -1101,6 +1105,7 @@ impl EngineState {
             usage_by_model: HashMap::new(),
             anthropic_account_snapshot: None,
             anthropic_snapshot_refreshed_at: None,
+            anthropic_sweep_at: None,
             last_detached_sync_at: None,
             last_detached_state_mtime: None,
             pending_background_agent_completions: Vec::new(),
