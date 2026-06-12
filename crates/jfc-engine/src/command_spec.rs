@@ -398,7 +398,12 @@ mod tests {
     // Normal — single-source guarantee: the manifest has exactly one line per
     // spec in the unified list, so it is derived from the metadata, never a
     // hand-maintained parallel list that could drift.
+    // Serialized against the other slash-table tests: `all_specs()` reads the
+    // process-global SLASH_COMMANDS_TABLE that
+    // `slash_help_lines_cover_every_unique_description_robust` registers, so
+    // they must not interleave or the spec count drifts.
     #[test]
+    #[serial_test::serial(slash_commands_table)]
     fn manifest_is_one_line_per_spec_normal() {
         let specs = all_specs();
         let manifest = render_manifest_all();
@@ -421,6 +426,7 @@ mod tests {
     // Robust: completions are the sorted unique command names from the same
     // metadata — a known command is present, and there are no duplicates.
     #[test]
+    #[serial_test::serial(slash_commands_table)]
     fn completions_cover_metadata_names_robust() {
         let specs = all_specs();
         let refs: Vec<&dyn CommandSpec> = specs.iter().map(|s| s as &dyn CommandSpec).collect();
@@ -484,6 +490,7 @@ mod tests {
     // the slash rows from the unified metadata, proving /help has no parallel
     // hand-maintained list.
     #[test]
+    #[serial_test::serial(slash_commands_table)]
     fn slash_help_lines_cover_every_unique_description_robust() {
         // A representative table; the real TUI registry registers at boot.
         static TEST_TABLE: &[(&str, &str)] = &[

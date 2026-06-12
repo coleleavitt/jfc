@@ -124,7 +124,12 @@ pub fn clear_for_test() {
 mod tests {
     use super::*;
 
+    // These two tests share the process-global CACHE via clear_for_test(); the
+    // `idle_prefetch_cache` serial group keeps them from racing each other (one
+    // test's put() landing between another's clear() and assert) without
+    // serializing against unrelated tests.
     #[test]
+    #[serial_test::serial(idle_prefetch_cache)]
     fn put_then_get_normal() {
         clear_for_test();
         put("src/foo.rs", None, None, "body".into());
@@ -132,6 +137,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(idle_prefetch_cache)]
     fn get_with_different_offset_misses_normal() {
         clear_for_test();
         put("src/foo.rs", None, None, "body".into());
