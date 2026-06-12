@@ -667,7 +667,7 @@ use std::sync::Arc;
 
 use jfc_provider::{
     CompletionResponse, ModelId, Provider, ProviderContent, ProviderMessage, ProviderRole,
-    StreamEvent, StreamOptions, TokenUsage,
+    StreamOptions,
 };
 
 /// Default number of agentic search steps (model-decided queries) for one
@@ -721,63 +721,17 @@ block numbers whenever you state a fact drawn from them. Lead with the answer, \
 be concrete, and flag where the evidence is thin or conflicting. Do not invent \
 sources or citation numbers that aren't in the evidence.";
 
-/// Run a single tool-less completion, with the advisor/council
-/// stream-to-completion fallback for providers that don't implement
-/// `complete()`.
+/// Run a single tool-less completion via the shared one-shot executor
+/// ([`crate::prompt_executor::complete_once`]). Research surfaces failures as
+/// `String`, so the executor's `anyhow::Error` is flattened here.
 async fn research_complete(
     provider: &dyn Provider,
     messages: Vec<ProviderMessage>,
     opts: &StreamOptions,
 ) -> Result<CompletionResponse, String> {
-    match provider.complete(messages.clone(), opts).await {
-        Ok(r) => Ok(r),
-        Err(e) => {
-            let lower = e.to_string().to_lowercase();
-            if lower.contains("not support") || lower.contains("unsupported") {
-                research_stream_to_completion(provider, messages, opts).await
-            } else {
-                Err(e.to_string())
-            }
-        }
-    }
-}
-
-async fn research_stream_to_completion(
-    provider: &dyn Provider,
-    messages: Vec<ProviderMessage>,
-    opts: &StreamOptions,
-) -> Result<CompletionResponse, String> {
-    use futures::StreamExt;
-    let mut stream = provider
-        .stream(messages, opts)
+    crate::prompt_executor::complete_once(provider, messages, opts)
         .await
-        .map_err(|e| e.to_string())?;
-    let mut collected = String::new();
-    let mut usage = TokenUsage::default();
-    while let Some(event) = stream.next().await {
-        match event {
-            Ok(StreamEvent::TextDelta { delta, .. }) => collected.push_str(&delta),
-            Ok(StreamEvent::Usage {
-                input_tokens,
-                output_tokens,
-                cache_read_tokens,
-                cache_write_tokens,
-            }) => {
-                usage.input_tokens = input_tokens as usize;
-                usage.output_tokens = output_tokens as usize;
-                usage.cache_read_tokens = cache_read_tokens as usize;
-                usage.cache_creation_tokens = cache_write_tokens as usize;
-            }
-            Ok(StreamEvent::Done { .. }) => break,
-            Ok(StreamEvent::Error { message }) => return Err(message),
-            Ok(_) => {}
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-    Ok(CompletionResponse {
-        content: collected,
-        usage,
-    })
+        .map_err(|e| e.to_string())
 }
 
 /// Build the labelled, numbered evidence block handed to the planner/synthesizer

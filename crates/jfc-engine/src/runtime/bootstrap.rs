@@ -438,7 +438,7 @@ pub fn resolve_provider_model(
             return Some(provider_resolution(
                 Arc::clone(p),
                 ModelSpec::bare(model_id),
-                model.clone(),
+                model,
                 ModelResolutionReason::Heuristic {
                     rule: "gemini-prefixed id routed to antigravity".to_owned(),
                 },
@@ -448,7 +448,7 @@ pub fn resolve_provider_model(
             return Some(provider_resolution(
                 Arc::clone(p),
                 ModelSpec::bare(model_id),
-                model.clone(),
+                model,
                 ModelResolutionReason::Heuristic {
                     rule: "gemini-prefixed id".to_owned(),
                 },

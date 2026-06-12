@@ -28,13 +28,12 @@
 use std::sync::{Arc, OnceLock, RwLock};
 
 use anyhow::{Result, anyhow};
-use futures::StreamExt;
 use uuid::Uuid;
 
 use crate::types::{ChatMessage, MessagePart, Role, ToolCall, ToolOutput};
 use jfc_provider::{
-    CompletionResponse, ModelId, ModelSpec, Provider, ProviderContent, ProviderError,
-    ProviderErrorKind, ProviderId, ProviderMessage, ProviderRole, StreamEvent, StreamOptions,
+    ModelId, ModelSpec, Provider, ProviderContent, ProviderError, ProviderErrorKind, ProviderId,
+    ProviderMessage, ProviderRole, StreamOptions,
 };
 
 /// Default per-session token budget. Conservative — about three round-trips
@@ -799,17 +798,7 @@ async fn ask_advisor_once(
         .system(ADVISOR_SYSTEM_PROMPT)
         .max_tokens(2048);
 
-    let resp = match provider.complete(messages.clone(), &opts).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err_msg = e.to_string().to_lowercase();
-            if err_msg.contains("not support") || err_msg.contains("unsupported") {
-                stream_to_completion(provider, messages, &opts).await?
-            } else {
-                return Err(e);
-            }
-        }
-    };
+    let resp = crate::prompt_executor::complete_once(provider, messages, &opts).await?;
 
     let used = if resp.usage.input_tokens + resp.usage.output_tokens > 0 {
         (resp.usage.input_tokens + resp.usage.output_tokens) as u64
@@ -864,55 +853,14 @@ fn advisor_error_allows_model_fallback(error: &anyhow::Error) -> bool {
         || message.contains("model not found")
 }
 
-/// Stream-to-completion fallback for providers that don't implement
-/// `Provider::complete`. Collects all `TextDelta`s and returns them as a
-/// `CompletionResponse`. Token usage is captured from `StreamEvent::Usage` if
-/// the provider reports it.
-async fn stream_to_completion(
-    provider: &dyn Provider,
-    messages: Vec<ProviderMessage>,
-    opts: &StreamOptions,
-) -> Result<CompletionResponse> {
-    let mut stream = provider.stream(messages, opts).await?;
-    let mut collected = String::new();
-    let mut usage = jfc_provider::TokenUsage::default();
-    while let Some(event) = stream.next().await {
-        match event {
-            Ok(StreamEvent::TextDelta { delta, .. }) => collected.push_str(&delta),
-            Ok(StreamEvent::Usage {
-                input_tokens,
-                output_tokens,
-                cache_read_tokens,
-                cache_write_tokens,
-            }) => {
-                usage.input_tokens = input_tokens as usize;
-                usage.output_tokens = output_tokens as usize;
-                usage.cache_read_tokens = cache_read_tokens as usize;
-                usage.cache_creation_tokens = cache_write_tokens as usize;
-            }
-            Ok(StreamEvent::Done { .. }) => break,
-            Ok(StreamEvent::Error { message }) => return Err(anyhow!("{}", message)),
-            Ok(other) => tracing::debug!(
-                target: "jfc::advisor",
-                event = ?other,
-                "ignoring non-text advisor stream event"
-            ),
-            Err(e) => return Err(anyhow!("{}", e)),
-        }
-    }
-    Ok(CompletionResponse {
-        content: collected,
-        usage,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{ToolInput, ToolKind};
     use async_trait::async_trait;
     use jfc_provider::{
-        EventStream, ModelInfo, ProviderMessage as PMsg, StreamConvention, StreamOptions as SOpts,
+        CompletionResponse, EventStream, ModelInfo, ProviderMessage as PMsg, StreamConvention,
+        StreamOptions as SOpts,
     };
 
     /// Mock provider that always returns a canned `CompletionResponse`.

@@ -26,12 +26,11 @@
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
-use futures::StreamExt;
 use futures::future::join_all;
 
 use jfc_provider::{
     CompletionResponse, ModelId, Provider, ProviderContent, ProviderMessage, ProviderRole,
-    StreamEvent, StreamOptions, TokenUsage,
+    StreamOptions, TokenUsage,
 };
 
 /// Default max output tokens for a single member or arbiter completion.
@@ -242,58 +241,15 @@ fn arbiter_messages(question: &str, members: &[MemberSummary]) -> Vec<ProviderMe
     }]
 }
 
-/// Run a single tool-less completion, with the advisor's stream-to-completion
-/// fallback for providers that don't implement `complete()`.
+/// Run a single tool-less completion via the shared one-shot executor
+/// ([`crate::prompt_executor::complete_once`]): native `complete()` with a
+/// stream-to-completion fallback for providers that don't implement it.
 async fn complete_with_fallback(
     provider: &dyn Provider,
     messages: Vec<ProviderMessage>,
     opts: &StreamOptions,
 ) -> Result<CompletionResponse> {
-    match provider.complete(messages.clone(), opts).await {
-        Ok(r) => Ok(r),
-        Err(e) => {
-            let lower = e.to_string().to_lowercase();
-            if lower.contains("not support") || lower.contains("unsupported") {
-                stream_to_completion(provider, messages, opts).await
-            } else {
-                Err(e)
-            }
-        }
-    }
-}
-
-async fn stream_to_completion(
-    provider: &dyn Provider,
-    messages: Vec<ProviderMessage>,
-    opts: &StreamOptions,
-) -> Result<CompletionResponse> {
-    let mut stream = provider.stream(messages, opts).await?;
-    let mut collected = String::new();
-    let mut usage = TokenUsage::default();
-    while let Some(event) = stream.next().await {
-        match event {
-            Ok(StreamEvent::TextDelta { delta, .. }) => collected.push_str(&delta),
-            Ok(StreamEvent::Usage {
-                input_tokens,
-                output_tokens,
-                cache_read_tokens,
-                cache_write_tokens,
-            }) => {
-                usage.input_tokens = input_tokens as usize;
-                usage.output_tokens = output_tokens as usize;
-                usage.cache_read_tokens = cache_read_tokens as usize;
-                usage.cache_creation_tokens = cache_write_tokens as usize;
-            }
-            Ok(StreamEvent::Done { .. }) => break,
-            Ok(StreamEvent::Error { message }) => return Err(anyhow!("{message}")),
-            Ok(_) => {}
-            Err(e) => return Err(anyhow!("{e}")),
-        }
-    }
-    Ok(CompletionResponse {
-        content: collected,
-        usage,
-    })
+    crate::prompt_executor::complete_once(provider, messages, opts).await
 }
 
 /// Configuration for a council run.
