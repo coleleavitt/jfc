@@ -211,12 +211,17 @@ impl EconomyAgentInvoker {
                 _ => {}
             }
         }
-        let tokens = if input_tokens > 0 || output_tokens > 0 {
-            input_tokens + output_tokens
-        } else {
-            // Fallback: 4 chars per token (v131 z_$).
-            (text.len() as u64).div_ceil(4)
+        // Shared canonical derivation: provider-reported tokens, else
+        // floor(chars/4). Routed through TokenUsage::billable_tokens so the
+        // economy ledger stays aligned with the advisor and council budgets
+        // (previously this path used div_ceil, drifting by up to one token).
+        let usage = jfc_provider::TokenUsage {
+            input_tokens: input_tokens as usize,
+            output_tokens: output_tokens as usize,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
         };
+        let (tokens, _source) = usage.billable_tokens(text.len());
         Ok((text, tokens))
     }
 

@@ -1031,6 +1031,80 @@ impl TokenUsage {
     pub fn total_input(&self) -> usize {
         self.input_tokens + self.cache_read_tokens + self.cache_creation_tokens
     }
+
+    /// Canonical "billable tokens for this call" derivation, shared by every
+    /// usage sink (advisor budget, council budget, economy ledger).
+    ///
+    /// When the provider reported a real token count (`input + output > 0`) it
+    /// is authoritative. Otherwise the count is estimated from `fallback_chars`
+    /// at the workspace-wide 4-chars-per-token ratio using **floor** division
+    /// (`chars / 4`), which is the rounding the budget gates have always used.
+    /// The returned [`TokenSource`] tells each sink whether the number is
+    /// authoritative or an estimate so it can apply its own policy (a cost
+    /// ledger may treat an estimate as provisional).
+    ///
+    /// Before this method the same logic was copy-pasted three different ways
+    /// (advisor inlined `/4`, council's `estimate_tokens`, economy's
+    /// `div_ceil`); centralizing it keeps the budget gate and the cost ledger
+    /// from drifting apart on the boundary token.
+    pub fn billable_tokens(&self, fallback_chars: usize) -> (u64, TokenSource) {
+        let reported = self.input_tokens + self.output_tokens;
+        if reported > 0 {
+            (reported as u64, TokenSource::Provider)
+        } else {
+            ((fallback_chars / 4) as u64, TokenSource::EstimatedFromChars)
+        }
+    }
+}
+
+/// Provenance of a billable-token count: whether it came from the provider's
+/// own usage reporting or was estimated from character length. Sinks that
+/// distinguish authoritative spend from provisional estimates (e.g. a USD cost
+/// ledger) branch on this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenSource {
+    /// The provider reported a real token count.
+    Provider,
+    /// No usage was reported; the count is a chars/4 estimate.
+    EstimatedFromChars,
+}
+
+/// One call's usage attributed to the model that actually served it.
+///
+/// Pairs the [`ResolvedModel`] (requested vs effective identity + reason) with
+/// the call's [`TokenUsage`] and the provenance of the billable count. This is
+/// the shared *fact* — "this much usage occurred against this resolved model" —
+/// that advisor, council, and economy each record into their own sink. It is
+/// deliberately a value type, not a recording trait: each sink still owns what
+/// it does with the report (gate a budget, debit a USD balance, accumulate
+/// per-account stats).
+#[derive(Debug, Clone)]
+pub struct UsageReport {
+    pub resolved: ResolvedModel,
+    pub usage: TokenUsage,
+    /// Billable token count and its provenance, derived once via
+    /// [`TokenUsage::billable_tokens`] against the call's text fallback.
+    pub billable_tokens: u64,
+    pub token_source: TokenSource,
+}
+
+impl UsageReport {
+    /// Assemble a report from a resolved model, the call's usage, and the text
+    /// fallback used to estimate tokens when the provider reported none.
+    pub fn new(resolved: ResolvedModel, usage: TokenUsage, fallback_chars: usize) -> Self {
+        let (billable_tokens, token_source) = usage.billable_tokens(fallback_chars);
+        Self {
+            resolved,
+            usage,
+            billable_tokens,
+            token_source,
+        }
+    }
+
+    /// The model id that actually served the call (the effective model).
+    pub fn effective_model(&self) -> &ModelId {
+        self.resolved.effective_model_id()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1900,6 +1974,66 @@ mod tests {
         assert_eq!(u.total_input(), 0);
         assert_eq!(u.input_tokens, 0);
         assert_eq!(u.output_tokens, 0);
+    }
+
+    // ─── billable_tokens / UsageReport ──────────────────────────────────────
+
+    // Normal: when the provider reported tokens, billable_tokens returns their
+    // sum and marks the count authoritative — the fallback char count is ignored.
+    #[test]
+    fn billable_tokens_prefers_provider_count_normal() {
+        let u = TokenUsage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+        };
+        let (tokens, source) = u.billable_tokens(40_000);
+        assert_eq!(tokens, 150);
+        assert_eq!(source, TokenSource::Provider);
+    }
+
+    // Robust: with no reported usage, billable_tokens estimates at floor(chars/4)
+    // and flags the count as an estimate. Floor (not ceil) is the pinned ratio
+    // shared by every budget gate.
+    #[test]
+    fn billable_tokens_estimates_floor_chars_over_four_robust() {
+        let u = TokenUsage::default();
+        let (tokens, source) = u.billable_tokens(403);
+        assert_eq!(tokens, 100, "403 / 4 floors to 100");
+        assert_eq!(source, TokenSource::EstimatedFromChars);
+    }
+
+    // Robust: zero fallback chars and zero usage yields zero billable tokens
+    // (no synthetic baseline), still flagged as an estimate.
+    #[test]
+    fn billable_tokens_zero_everything_is_zero_estimate_robust() {
+        let (tokens, source) = TokenUsage::default().billable_tokens(0);
+        assert_eq!(tokens, 0);
+        assert_eq!(source, TokenSource::EstimatedFromChars);
+    }
+
+    // Normal: a UsageReport pairs the resolved model with the call usage and
+    // derives the billable count once, exposing the effective model id.
+    #[test]
+    fn usage_report_pairs_resolved_model_and_usage_normal() {
+        let info = ModelInfo::new("claude-sonnet-4-6", "Sonnet", "anthropic");
+        let resolved = ResolvedModel::new(
+            ModelSpec::bare("sonnet"),
+            ModelSpec::qualified("anthropic", "claude-sonnet-4-6"),
+            ModelResolutionReason::ExplicitProvider,
+            Some(&info),
+        );
+        let usage = TokenUsage {
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+        };
+        let report = UsageReport::new(resolved, usage, 999);
+        assert_eq!(report.billable_tokens, 15);
+        assert_eq!(report.token_source, TokenSource::Provider);
+        assert_eq!(report.effective_model().as_str(), "claude-sonnet-4-6");
     }
 }
 

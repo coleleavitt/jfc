@@ -196,13 +196,13 @@ impl Default for CouncilBudget {
     }
 }
 
+/// Billable tokens for one member/arbiter call via the shared canonical
+/// derivation ([`TokenUsage::billable_tokens`]) so the council budget gate
+/// can't drift from the advisor budget and economy ledger on the boundary
+/// token. The provenance flag is unused here — the council budget treats an
+/// estimate the same as a reported count.
 fn estimate_tokens(usage: &TokenUsage, fallback_chars: usize) -> u64 {
-    let reported = usage.input_tokens + usage.output_tokens;
-    if reported > 0 {
-        reported as u64
-    } else {
-        (fallback_chars / 4) as u64
-    }
+    usage.billable_tokens(fallback_chars).0
 }
 
 fn member_messages(question: &str, context: Option<&str>) -> Vec<ProviderMessage> {

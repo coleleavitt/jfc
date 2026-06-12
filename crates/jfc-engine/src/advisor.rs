@@ -800,11 +800,11 @@ async fn ask_advisor_once(
 
     let resp = crate::prompt_executor::complete_once(provider, messages, &opts).await?;
 
-    let used = if resp.usage.input_tokens + resp.usage.output_tokens > 0 {
-        (resp.usage.input_tokens + resp.usage.output_tokens) as u64
-    } else {
-        ((snapshot.len() + trimmed_query.len() + resp.content.len()) / 4) as u64
-    };
+    // Shared canonical derivation: provider-reported tokens, else floor(chars/4)
+    // over the snapshot + query + reply. Keeps the advisor budget gate aligned
+    // with the council budget and economy ledger.
+    let fallback_chars = snapshot.len() + trimmed_query.len() + resp.content.len();
+    let (used, _source) = resp.usage.billable_tokens(fallback_chars);
     session.record_usage(used);
     session
         .transcript
