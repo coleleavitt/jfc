@@ -179,6 +179,7 @@ pub mod research;
 pub mod response_processor;
 pub mod review;
 pub mod runtime;
+pub mod rust_lex;
 pub mod sandbox;
 pub mod scaffold_detector;
 pub mod scheduler;

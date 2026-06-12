@@ -1704,36 +1704,85 @@ pub fn check_resource_leaks(file_content: &str) -> Vec<SlopFinding> {
 /// `async fn` for a fixed set of blocking call shapes and skips lines that
 /// already hop to a blocking pool (`spawn_blocking`, `block_in_place`).
 pub fn check_blocking_in_async(file_content: &str) -> Vec<SlopFinding> {
-    // Blocking call fragments → human label. Kept conservative to avoid noise:
-    // each is unambiguously blocking when run on an async executor thread.
+    // (fragment, label, whole_segment_match). `whole_segment_match` means the
+    // call ident must end at the fragment boundary — used to stop a prefix like
+    // `std::fs::read` from matching `std::fs::read_dir`/`read_to_string`, and
+    // `.read_to_string(` from matching the *async* AsyncReadExt method (only the
+    // sync `std::io::Read::read_to_string` shape, called on a non-`.await` line,
+    // is blocking; async usage is followed by `.await`).
     const BLOCKING: &[(&str, &str)] = &[
-        ("std::thread::sleep", "std::thread::sleep blocks the executor; use tokio::time::sleep"),
-        ("thread::sleep(", "thread::sleep blocks the executor; use tokio::time::sleep"),
-        ("std::fs::read", "synchronous std::fs read blocks the executor; use tokio::fs or spawn_blocking"),
-        ("std::fs::write", "synchronous std::fs write blocks the executor; use tokio::fs or spawn_blocking"),
-        ("reqwest::blocking", "reqwest::blocking inside async blocks the executor; use the async client"),
-        (".read_to_string(", "synchronous read_to_string blocks the executor; use tokio::io or spawn_blocking"),
+        (
+            "std::thread::sleep(",
+            "std::thread::sleep blocks the executor; use tokio::time::sleep",
+        ),
+        (
+            "thread::sleep(",
+            "thread::sleep blocks the executor; use tokio::time::sleep",
+        ),
+        (
+            "std::fs::read(",
+            "synchronous std::fs::read blocks the executor; use tokio::fs or spawn_blocking",
+        ),
+        (
+            "std::fs::read_to_string(",
+            "synchronous std::fs::read_to_string blocks the executor; use tokio::fs or spawn_blocking",
+        ),
+        (
+            "std::fs::write(",
+            "synchronous std::fs::write blocks the executor; use tokio::fs or spawn_blocking",
+        ),
+        (
+            "reqwest::blocking",
+            "reqwest::blocking inside async blocks the executor; use the async client",
+        ),
     ];
 
+    // Mask strings/char-literals/comments so a `}` or a blocking-looking token
+    // inside one can't terminate the body scan early or trigger a false hit.
+    let masked = crate::rust_lex::mask_source(file_content);
+    let lines: Vec<&str> = masked.lines().collect();
     let mut findings = Vec::new();
-    let lines: Vec<&str> = file_content.lines().collect();
     let mut i = 0;
     while i < lines.len() {
-        let line = lines[i];
-        let is_async_fn = {
-            let t = line.trim_start();
-            t.starts_with("async fn ") || t.starts_with("pub async fn ") || t.contains(" async fn ")
-        };
+        let t = lines[i].trim_start();
+        let is_async_fn =
+            t.starts_with("async fn ") || t.starts_with("pub async fn ") || t.contains(" async fn ");
         if !is_async_fn {
             i += 1;
             continue;
         }
-        // Walk the function body by brace depth starting at this line.
+        // Walk the function body by brace depth (over masked source, so braces
+        // inside strings/comments are already gone).
         let mut depth: i32 = 0;
         let mut started = false;
+        // Tracks the brace depth of the innermost `spawn_blocking` /
+        // `block_in_place` closure so a blocking call on a *later* line inside
+        // that closure is correctly suppressed (multi-line offload pattern).
+        let mut hop_depth: Option<i32> = None;
         let mut j = i;
         while j < lines.len() {
             let body_line = lines[j];
+
+            // A spawn-off marker opens an offload region from here until its
+            // closure's braces close.
+            if body_line.contains("spawn_blocking") || body_line.contains("block_in_place") {
+                hop_depth = Some(depth);
+            }
+
+            if started && j > i && hop_depth.is_none() {
+                for (frag, msg) in BLOCKING {
+                    if body_line.contains(frag) {
+                        findings.push(SlopFinding {
+                            rule: "blocking_in_async".into(),
+                            message: format!("Line {}: {msg}.", j + 1),
+                            file: None,
+                            line: Some(j + 1),
+                        });
+                        break;
+                    }
+                }
+            }
+
             for c in body_line.chars() {
                 match c {
                     '{' => {
@@ -1744,27 +1793,19 @@ pub fn check_blocking_in_async(file_content: &str) -> Vec<SlopFinding> {
                     _ => {}
                 }
             }
-            // Inspect body lines (after the opening brace, before close).
-            if started && j > i {
-                let t = body_line.trim_start();
-                let is_comment = t.starts_with("//") || t.starts_with('*');
-                // Skip lines that explicitly hop off the async thread.
-                let hops_off = body_line.contains("spawn_blocking")
-                    || body_line.contains("block_in_place");
-                if !is_comment && !hops_off {
-                    for (frag, msg) in BLOCKING {
-                        if body_line.contains(frag) {
-                            findings.push(SlopFinding {
-                                rule: "blocking_in_async".into(),
-                                message: format!("Line {}: {msg}.", j + 1),
-                                file: None,
-                                line: Some(j + 1),
-                            });
-                            break;
-                        }
-                    }
-                }
+
+            // Reconcile the offload region. If the spawn line opened a closure
+            // brace, `depth` is now above the spawn depth and suppression
+            // persists into the closure body; once the closure closes (depth
+            // back to/below the spawn depth) — or for a single-line offload
+            // that never opened a brace — clear it so later sibling lines are
+            // checked normally.
+            if let Some(hd) = hop_depth
+                && depth <= hd
+            {
+                hop_depth = None;
             }
+
             if started && depth <= 0 {
                 break;
             }
@@ -2303,6 +2344,75 @@ fn helper() {
         assert!(
             check_blocking_in_async(code).is_empty(),
             "sync fn must not be flagged"
+        );
+    }
+
+    // Regression (auto-review #1): a `}` inside a string earlier in the body
+    // must not terminate the body scan and hide a later blocking call.
+    #[test]
+    fn blocking_in_async_sees_past_brace_in_string_robust() {
+        let code = "\
+async fn handler() {
+    let s = \"}\";
+    std::thread::sleep(std::time::Duration::from_secs(1));
+}";
+        assert!(
+            check_blocking_in_async(code)
+                .iter()
+                .any(|f| f.rule == "blocking_in_async"),
+            "string brace hid the later blocking call"
+        );
+    }
+
+    // Regression (auto-review #2): a blocking call on a different line than the
+    // `spawn_blocking` keyword (the idiomatic multi-line closure) must NOT be
+    // flagged.
+    #[test]
+    fn blocking_in_async_allows_multiline_spawn_blocking_robust() {
+        let code = "\
+async fn poll() {
+    tokio::task::spawn_blocking(move || {
+        std::fs::write(p, d).unwrap();
+    }).await.unwrap();
+}";
+        assert!(
+            check_blocking_in_async(code).is_empty(),
+            "multi-line spawn_blocking offload must not be flagged: {:?}",
+            check_blocking_in_async(code)
+        );
+    }
+
+    // Regression (auto-review #3): substring over-match. Async
+    // AsyncReadExt::read_to_string().await and std::fs::read_dir must NOT be
+    // flagged as blocking.
+    #[test]
+    fn blocking_in_async_no_substring_overmatch_robust() {
+        let code = "\
+async fn poll() {
+    let n = r.read_to_string(&mut buf).await.unwrap();
+    let entries = std::fs::read_dir(p).unwrap();
+}";
+        assert!(
+            check_blocking_in_async(code).is_empty(),
+            "async read_to_string / read_dir wrongly flagged: {:?}",
+            check_blocking_in_async(code)
+        );
+    }
+
+    // A genuinely-blocking call after a single-line offload on a sibling line
+    // is still caught (the offload suppression must not over-extend).
+    #[test]
+    fn blocking_in_async_single_line_offload_does_not_oversuppress_robust() {
+        let code = "\
+async fn poll() {
+    let a = tokio::task::spawn_blocking(|| heavy()).await;
+    std::thread::sleep(std::time::Duration::from_secs(1));
+}";
+        assert!(
+            check_blocking_in_async(code)
+                .iter()
+                .any(|f| f.rule == "blocking_in_async"),
+            "single-line offload over-suppressed a later sibling blocking call"
         );
     }
 
