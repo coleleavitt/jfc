@@ -25,6 +25,7 @@
 //! | `tavily:` | Tavily (LLM-oriented search) | yes | `tavily: latest llm benchmarks` |
 //! | `exa:` | Exa (neural/semantic search) | yes | `exa: papers like AlphaFold` |
 //! | `ddg:` | DuckDuckGo Instant Answer (facts/definitions) | no | `ddg: what is a monad` |
+//! | `searxng:` | SearXNG meta-search (key-free SERP; `SEARXNG_URL` env) | no | `searxng: rust web framework` |
 //! | `wiki:` | Wikipedia / MediaWiki search | no | `wiki: transformer model` |
 //!
 //! ## Google CSE
@@ -101,6 +102,8 @@ pub async fn search(query: &str, max_results: usize) -> Result<String, String> {
         search_exa(q, max_results).await
     } else if let Some(q) = match_prefix(query, "ddg") {
         search_duckduckgo(q).await
+    } else if let Some(q) = match_prefix(query, "searxng") {
+        search_searxng(q, max_results).await
     } else if let Some(q) = match_prefix(query, "wiki") {
         search_wikipedia(q, max_results).await
     } else if let Some(q) = match_prefix(query, "primo") {
@@ -471,12 +474,35 @@ async fn search_google(query: &str, max_results: usize) -> Result<String, String
         serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
 
     if let Some(err) = parsed.error {
+        // Quota/rate-limit (429) and transient 5xx errors are recoverable via a
+        // different backend — don't make the whole search fail just because the
+        // Google CSE daily quota is exhausted. Fall back to Brave, then DDG.
+        if google_error_is_recoverable(err.code, &err.message) {
+            tracing::warn!(
+                code = err.code,
+                "Google CSE error {} ({}); falling back to an alternate backend",
+                err.code,
+                err.message
+            );
+            return google_fallback(query, max_results).await.map_err(|fb| {
+                format!(
+                    "Google CSE error {}: {} (and fallback failed: {fb})",
+                    err.code, err.message
+                )
+            });
+        }
         return Err(format!(
             "Google CSE API error {}: {}",
             err.code, err.message
         ));
     }
     if !status.is_success() {
+        if status.as_u16() == 429 || status.is_server_error() {
+            tracing::warn!(%status, "Google CSE HTTP {status}; falling back to an alternate backend");
+            return google_fallback(query, max_results)
+                .await
+                .map_err(|fb| format!("Google CSE returned HTTP {status} (and fallback failed: {fb})"));
+        }
         return Err(format!("Google CSE returned HTTP {status}"));
     }
 
@@ -502,6 +528,35 @@ async fn search_google(query: &str, max_results: usize) -> Result<String, String
         }
     }
     Ok(out)
+}
+
+/// True when a Google CSE error is worth retrying on a different backend:
+/// quota/rate-limit (HTTP 429) or transient server errors (5xx). Permanent
+/// errors (bad key, malformed query) are not recoverable this way.
+fn google_error_is_recoverable(code: i32, message: &str) -> bool {
+    if code == 429 || (500..=599).contains(&code) {
+        return true;
+    }
+    let m = message.to_ascii_lowercase();
+    m.contains("quota") || m.contains("rate limit") || m.contains("ratelimit") || m.contains("exceeded")
+}
+
+/// Fallback chain for a failed/throttled Google CSE search: try Brave, then
+/// SearXNG (key-free meta-search SERP), then DuckDuckGo (instant answers).
+/// Returns the first backend that yields results, or the combined error.
+async fn google_fallback(query: &str, max_results: usize) -> Result<String, String> {
+    match brave_results(query, max_results).await {
+        Ok(out) => Ok(out),
+        Err(brave_err) => match search_searxng(query, max_results).await {
+            Ok(out) => Ok(out),
+            Err(searx_err) => match search_duckduckgo(query).await {
+                Ok(out) => Ok(out),
+                Err(ddg_err) => Err(format!(
+                    "Brave: {brave_err}; SearXNG: {searx_err}; DuckDuckGo: {ddg_err}"
+                )),
+            },
+        },
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2242,6 +2297,58 @@ async fn search_exa(query: &str, max_results: usize) -> Result<String, String> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SearXNG (key-free meta-search; aggregates Google/Bing/DDG/etc.)
+//
+// Microsoft retired the Bing Web Search API in Aug 2025, so the durable
+// key-free way to get a real SERP is a SearXNG instance. Reads the base URL
+// from `SEARXNG_URL` (e.g. a self-hosted instance) and falls back to a public
+// instance; both expose the standard `/search?format=json` JSON API.
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn searxng_base_url() -> String {
+    std::env::var("SEARXNG_URL")
+        .ok()
+        .map(|s| s.trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://searx.be".to_string())
+}
+
+async fn search_searxng(query: &str, max_results: usize) -> Result<String, String> {
+    let base = searxng_base_url();
+    let client = http_client()?;
+    let resp = client
+        .get(format!("{base}/search"))
+        .query(&[("q", query), ("format", "json")])
+        // Some public instances reject requests without a browser-ish UA.
+        .header("User-Agent", "jfc-web/1.0 (+https://github.com/coleleavitt/jfc)")
+        .send()
+        .await
+        .map_err(|e| format!("SearXNG request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("SearXNG ({base}) returned HTTP {}", resp.status()));
+    }
+    let parsed: serde_json::Value = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))
+        .and_then(|b| serde_json::from_str(&b).map_err(|e| format!("JSON parse: {e}")))?;
+
+    let mut out = format!("SearXNG ({base}): \"{query}\"\n\n");
+    match parsed.get("results").and_then(|v| v.as_array()) {
+        Some(items) if !items.is_empty() => {
+            for (i, item) in items.iter().take(max_results.clamp(1, 20)).enumerate() {
+                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("?");
+                let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                out.push_str(&format!("{}. {title}\n   URL: {url}\n   {content}\n\n", i + 1));
+            }
+        }
+        _ => out.push_str("No results found.\n"),
+    }
+    Ok(out)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // DuckDuckGo Instant Answer (key-free; facts/definitions, not full SERP)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -3650,4 +3757,34 @@ async fn search_primo(query: &str, max_results: usize) -> Result<String, String>
         _ => out.push_str("No results found.\n"),
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod fallback_tests {
+    use super::{google_error_is_recoverable, match_prefix, searxng_base_url};
+
+    #[test]
+    fn google_429_and_quota_are_recoverable_normal() {
+        assert!(google_error_is_recoverable(429, "Quota exceeded for quota metric"));
+        assert!(google_error_is_recoverable(503, "backend error"));
+        assert!(google_error_is_recoverable(200, "daily Limit Exceeded"));
+        assert!(google_error_is_recoverable(200, "user rate limit"));
+    }
+
+    #[test]
+    fn google_permanent_errors_not_recoverable_robust() {
+        assert!(!google_error_is_recoverable(400, "Invalid Value"));
+        assert!(!google_error_is_recoverable(403, "API key not valid"));
+        assert!(!google_error_is_recoverable(404, "not found"));
+    }
+
+    #[test]
+    fn searxng_prefix_routes_and_base_url_defaults_normal() {
+        // Prefix parsing routes to the searxng backend.
+        assert_eq!(match_prefix("searxng: rust traits", "searxng"), Some("rust traits"));
+        // Default base URL is a non-empty https endpoint with no trailing slash.
+        let base = searxng_base_url();
+        assert!(base.starts_with("https://"), "{base}");
+        assert!(!base.ends_with('/'), "{base}");
+    }
 }

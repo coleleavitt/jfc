@@ -138,6 +138,9 @@ fn web_search_def() -> ToolDef {
             • `exa: <query>` — Exa neural/semantic search (key: EXA_API_KEY).\n\
             • `ddg: <query>` — DuckDuckGo Instant Answer; facts/definitions \
             only, not a full SERP (free, no key).\n\
+            • `searxng: <query>` — SearXNG meta-search; a key-free full SERP that \
+            aggregates Google/Bing/DDG (set `SEARXNG_URL` for a self-hosted \
+            instance). Also the automatic fallback when Google CSE is rate-limited.\n\
             • `wiki: <query>` — Wikipedia/MediaWiki article search (free, no key)."
             .into(),
         input_schema: serde_json::json!({
