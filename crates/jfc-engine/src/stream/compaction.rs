@@ -246,6 +246,32 @@ pub async fn auto_compact_subagent_history(
 /// Soft cap on total request bytes for a subagent / teammate provider call.
 pub const SUBAGENT_HISTORY_BUDGET_BYTES: usize = 500_000;
 
+/// What the two-stage context-safety pass did to a history.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ContextSafetyOutcome {
+    /// The LLM auto-compaction pass rewrote the transcript into a summary.
+    pub compacted: bool,
+    /// The byte-budget eviction dropped one or more old message pairs.
+    pub elided: bool,
+}
+
+/// Run the standard two-stage context-safety pass shared by the subagent
+/// (`tools::execute_task`) and teammate (`swarm::executor`) turn loops:
+/// (1) try LLM-based auto-compaction once the transcript crosses the token
+/// threshold, then (2) fall through to a byte-budget eviction so a single
+/// oversized tool result still can't push the request past the provider's
+/// hard token cap. Returns what each stage did so the caller can keep its own
+/// tracing target. Behavior is identical to the two inlined copies it replaces.
+pub async fn apply_subagent_context_safety(
+    history: &mut Vec<ProviderMessage>,
+    provider: &dyn Provider,
+    model: jfc_provider::ModelId,
+) -> ContextSafetyOutcome {
+    let compacted = auto_compact_subagent_history(history, provider, model).await;
+    let elided = cap_messages_for_budget(history, SUBAGENT_HISTORY_BUDGET_BYTES);
+    ContextSafetyOutcome { compacted, elided }
+}
+
 /// Rough byte count of a provider message used for budget enforcement.
 pub fn estimate_provider_message_bytes(msg: &ProviderMessage) -> usize {
     msg.content
@@ -705,5 +731,45 @@ mod auto_compact_tests {
         assert!(SUBAGENT_AUTO_COMPACT_PROMPT.contains("Important Discoveries"));
         assert!(SUBAGENT_AUTO_COMPACT_PROMPT.contains("Next Steps"));
         assert!(SUBAGENT_AUTO_COMPACT_PROMPT.contains("<summary>"));
+    }
+
+    // The shared helper (used by both the subagent and teammate turn loops)
+    // runs both stages and reports what each did. Under threshold, a small
+    // transcript is left untouched and reports no compaction/elision.
+    #[tokio::test(flavor = "current_thread")]
+    async fn context_safety_under_threshold_is_noop_normal() {
+        let provider = CannedSummaryProvider::new("<summary>x</summary>");
+        let mut msgs = vec![user_text("PROMPT"), assistant_text("hi"), user_text("ok")];
+        let outcome =
+            apply_subagent_context_safety(&mut msgs, &provider, ModelId::new("stub")).await;
+        assert!(!outcome.compacted);
+        assert!(!outcome.elided);
+        assert_eq!(msgs.len(), 3);
+    }
+
+    // Over the token threshold, the helper compacts (same result the inlined
+    // copies produced) and flags it via the outcome.
+    #[tokio::test(flavor = "current_thread")]
+    async fn context_safety_over_threshold_compacts_normal() {
+        let provider = CannedSummaryProvider::new(
+            "<summary>The agent read three files and reported their structure.</summary>",
+        );
+        let big = "x".repeat(200_000);
+        let mut msgs = vec![
+            user_text("PROMPT"),
+            assistant_tool_use("t1", "Read"),
+            user_tool_result("t1", &big),
+            assistant_tool_use("t2", "Read"),
+            user_tool_result("t2", &big),
+            assistant_tool_use("t3", "Read"),
+            user_tool_result("t3", &big),
+            assistant_text("recent assistant"),
+            user_text("recent user"),
+        ];
+        let outcome =
+            apply_subagent_context_safety(&mut msgs, &provider, ModelId::new("stub")).await;
+        assert!(outcome.compacted, "expected compaction to fire");
+        // The transcript was folded to the prompt + summary + recent pair.
+        assert_eq!(msgs.len(), 4);
     }
 }

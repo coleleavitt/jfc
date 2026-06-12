@@ -624,13 +624,13 @@ async fn execute_task_inner(
         // fall through to a byte-budget eviction so a single oversized
         // tool result still can't blow the request past Bedrock's
         // 1M-token cap (the original 8.85M-token 400).
-        let compacted = crate::stream::auto_compact_subagent_history(
+        let context_safety = crate::stream::apply_subagent_context_safety(
             &mut conversation,
             provider,
             model.clone(),
         )
         .await;
-        if compacted {
+        if context_safety.compacted {
             tracing::info!(
                 target: "jfc::tools",
                 task_id = ?task_id,
@@ -638,11 +638,7 @@ async fn execute_task_inner(
                 "subagent transcript auto-compacted"
             );
         }
-        let elided = crate::stream::cap_messages_for_budget(
-            &mut conversation,
-            crate::stream::SUBAGENT_HISTORY_BUDGET_BYTES,
-        );
-        if elided {
+        if context_safety.elided {
             tracing::info!(
                 target: "jfc::tools",
                 task_id = ?task_id,

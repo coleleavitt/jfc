@@ -104,13 +104,14 @@ pub async fn run_single_turn(
         // Two-stage context safety mirroring v131 Claude Code: (1) try
         // LLM-based auto-compaction at 100k tokens, (2) fall through
         // to byte-budget eviction if compaction is skipped or fails.
-        // Same logic as `tools::execute_task` — a long-running teammate
-        // doing multi-turn research can otherwise blow the context
-        // window before its final summary turn.
-        let compacted =
-            crate::stream::auto_compact_subagent_history(history, provider.as_ref(), model.clone())
+        // Shared with `tools::execute_task` via
+        // `apply_subagent_context_safety` — a long-running teammate doing
+        // multi-turn research can otherwise blow the context window before
+        // its final summary turn.
+        let context_safety =
+            crate::stream::apply_subagent_context_safety(history, provider.as_ref(), model.clone())
                 .await;
-        if compacted {
+        if context_safety.compacted {
             tracing::info!(
                 target: "jfc::swarm::executor",
                 task_id,
@@ -119,11 +120,7 @@ pub async fn run_single_turn(
                 "teammate transcript auto-compacted"
             );
         }
-        let elided = crate::stream::cap_messages_for_budget(
-            history,
-            crate::stream::SUBAGENT_HISTORY_BUDGET_BYTES,
-        );
-        if elided {
+        if context_safety.elided {
             tracing::info!(
                 target: "jfc::swarm::executor",
                 task_id,
