@@ -541,6 +541,11 @@ pub fn built_in_agents() -> Vec<AgentDef> {
         // catalogue, so Explore/Plan/researcher couldn't search the web at all.
         "WebSearch",
         "WebFetch",
+        // Deep research is read-only and runs out-of-band; without it the
+        // research-shaped agents (Explore / Plan / researcher) were limited
+        // to single-shot WebSearch and couldn't run cited multi-source
+        // research passes at all.
+        "Research",
     ]);
     read_only_tools.extend(strs(CODE_NAVIGATION_TOOLS));
     let no_write_tools = strs(&["Task", "Edit", "Write", "ApplyPatch"]);

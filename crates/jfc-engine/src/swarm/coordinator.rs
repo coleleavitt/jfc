@@ -360,6 +360,10 @@ pub async fn check_task_list_for_work(
     store: Option<std::sync::Arc<jfc_session::TaskStore>>,
 ) -> Option<(String, String)> {
     let store = store.unwrap_or_else(|| jfc_session::TaskStore::open_team(&identity.team_name));
+    // Pick up writes from the leader / other teammates (separate handles,
+    // possibly separate processes) before claiming. Without this refresh a
+    // stale in-memory copy could claim a task another teammate already owns.
+    store.reload_if_changed();
     let task = store.claim_next_available(&identity.agent_name)?;
     debug!(
         "[InProcessRunner] {} auto-claimed task #{}: {}",

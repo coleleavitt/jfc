@@ -81,6 +81,21 @@ pub async fn execute_team_delete(active_team_name: Option<&str>) -> ExecutionRes
         }
     };
 
+    // The tool contract says "must terminate all teammates first" — enforce
+    // it. Deleting the team dirs under live teammates left them polling
+    // deleted mailboxes (orphaned workers, mailbox NotFound noise) while a
+    // subsequent TeamCreate with the same name silently adopted the debris.
+    let active = team_helpers::get_active_teammates(team_name).await;
+    if !active.is_empty() {
+        let names: Vec<&str> = active.iter().map(|m| m.name.as_str()).collect();
+        return ExecutionResult::failure(format!(
+            "Cannot delete team \"{team_name}\": {} teammate(s) still active ({}). \
+             Terminate them first, then retry TeamDelete.",
+            active.len(),
+            names.join(", ")
+        ));
+    }
+
     match team_helpers::delete_team(team_name).await {
         Ok(()) => {
             let result = serde_json::json!({
@@ -127,6 +142,34 @@ pub async fn execute_send_message(
     // tool) wrote `from = team-lead`, so the leader couldn't tell which
     // teammate actually messaged it and inbox routing collapsed.
     let from = current_agent_name().unwrap_or_else(|| crate::swarm::TEAM_LEAD_NAME.to_owned());
+
+    // Validate the recipient against the team roster before writing.
+    // Without this, a message to an exited (or mistyped) teammate is
+    // persisted to a mailbox nobody will ever read and the sender is
+    // told "success" — silent message loss.
+    if to != crate::swarm::TEAM_LEAD_NAME
+        && let Some(team_file) = crate::swarm::team_helpers::read_team_file(team_name).await
+    {
+        let known = team_file.members.iter().any(|m| m.name == to);
+        let active = team_file
+            .members
+            .iter()
+            .any(|m| m.name == to && m.is_active != Some(false));
+        if !known {
+            let roster: Vec<&str> = team_file.members.iter().map(|m| m.name.as_str()).collect();
+            return ExecutionResult::failure(format!(
+                "Unknown recipient '{to}' — no such teammate in team '{team_name}'. \
+                 Known members: {}",
+                roster.join(", ")
+            ));
+        }
+        if !active {
+            return ExecutionResult::failure(format!(
+                "Teammate '{to}' has exited; the message would never be read. \
+                 Spawn a new teammate or message the team lead instead."
+            ));
+        }
+    }
 
     let msg = MailboxMessage {
         from: from.clone(),

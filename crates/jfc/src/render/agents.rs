@@ -60,13 +60,14 @@ pub(crate) fn model_fqn(raw: &str) -> String {
 }
 
 /// Background-task ids in fleet display order — the same ordering the
-/// agent fan renders (failed → active → running → idle → done, then a
-/// stable id tie-break). The tab strip and the leader-key / arrow agent
-/// navigation all step through this list, so cycling moves in the same
-/// meaningful order the user sees in the fan, deterministically, instead
-/// of HashMap-iteration order (arbitrary, and not failures-first).
+/// agent fan renders (active → running → fresh-failed → idle → done →
+/// stale-failed, then a stable id tie-break). The tab strip and the
+/// leader-key / arrow agent navigation all step through this list, so
+/// cycling moves in the same meaningful order the user sees in the fan,
+/// deterministically, instead of HashMap-iteration order.
 pub(crate) fn fleet_ordered_task_ids(app: &App) -> Vec<String> {
     use jfc_core::TaskLifecycle;
+    let now = std::time::Instant::now();
     let mut ids: Vec<(&str, u8)> = app
         .engine
         .background_tasks
@@ -75,27 +76,42 @@ pub(crate) fn fleet_ordered_task_ids(app: &App) -> Vec<String> {
             let is_active = !matches!(bt.status, TaskLifecycle::Idle)
                 && !bt.status.is_terminal()
                 && app.engine.last_active_agent_task.as_deref() == Some(bt.task_id.as_str());
-            (bt.task_id.as_str(), fleet_rank(bt.status, is_active))
+            (
+                bt.task_id.as_str(),
+                fleet_rank(bt.status, is_active, failed_is_fresh(bt, now)),
+            )
         })
         .collect();
     ids.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(b.0)));
     ids.into_iter().map(|(id, _)| id.to_owned()).collect()
 }
 
-/// Sort rank for the fleet ordering. Failures float to the very top
-/// (impossible to miss), then live work, then idle, then the
-/// recently-completed fade-out tail. Lower = higher on screen.
-fn fleet_rank(status: jfc_core::TaskLifecycle, is_active: bool) -> u8 {
+/// Sort rank for the fleet ordering. Live work first — the agent the
+/// user is waiting on must be visible without scrolling — then fresh
+/// failures (actionable), then idle, completed, and finally stale
+/// failures from old runs, which previously buried the running agent
+/// under a wall of ✗ rows. Lower = higher on screen.
+fn fleet_rank(status: jfc_core::TaskLifecycle, is_active: bool, failed_is_fresh: bool) -> u8 {
     use jfc_core::TaskLifecycle;
     match status {
-        TaskLifecycle::Failed => 0,
-        _ if is_active => 1, // the agent whose stream is live right now
-        s if s.is_alive() && !matches!(s, TaskLifecycle::Idle) => 2,
+        _ if is_active => 0, // the agent whose stream is live right now
+        s if s.is_alive() && !matches!(s, TaskLifecycle::Idle) => 1,
+        TaskLifecycle::Failed if failed_is_fresh => 2,
         TaskLifecycle::Idle => 3,
         TaskLifecycle::Completed => 4,
         TaskLifecycle::Cancelled => 5,
-        _ => 6,
+        TaskLifecycle::Failed => 6, // stale failure: keep visible, but below live work
+        _ => 7,
     }
+}
+
+/// A failure is "fresh" (still actionable, ranked near the top) for this
+/// long after it finished; older failures sink below completed rows.
+const FRESH_FAILURE_WINDOW: std::time::Duration = std::time::Duration::from_secs(300);
+
+fn failed_is_fresh(bt: &crate::app::BackgroundTask, now: std::time::Instant) -> bool {
+    let finished_at = bt.completed_at.unwrap_or(bt.started_at);
+    now.duration_since(finished_at) < FRESH_FAILURE_WINDOW
 }
 
 pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
@@ -120,8 +136,11 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
             if bt.status.is_alive() {
                 return true;
             }
+            // Strictly time-windowed. The old `|| bt.last_tool.is_some()`
+            // escape kept every agent that had ever used a tool pinned
+            // forever — hours-old failures crowded out live agents.
             let finished_at = bt.completed_at.unwrap_or(bt.started_at);
-            now.duration_since(finished_at) < COMPLETED_PIN_WINDOW || bt.last_tool.is_some()
+            now.duration_since(finished_at) < COMPLETED_PIN_WINDOW
         })
         .collect();
     if shown.is_empty() {
@@ -157,11 +176,11 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
                 .unwrap_or(false)
     };
 
-    // Sort: failed → active → running → idle → done. Stable tie-break on
-    // id so rows don't jitter between frames.
+    // Sort: active → running → fresh-failed → idle → done → stale-failed.
+    // Stable tie-break on id so rows don't jitter between frames.
     shown.sort_by(|a, b| {
-        fleet_rank(a.status, is_active_of(a))
-            .cmp(&fleet_rank(b.status, is_active_of(b)))
+        fleet_rank(a.status, is_active_of(a), failed_is_fresh(a, now))
+            .cmp(&fleet_rank(b.status, is_active_of(b), failed_is_fresh(b, now)))
             .then_with(|| a.task_id.as_str().cmp(b.task_id.as_str()))
     });
 
@@ -217,7 +236,7 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     //
     // Window: the summary owns 1 row; the rest go to agent rows. If the
     // fleet overflows, drop a "+N more" footer. Sorting already floated
-    // the rows that matter (failed/running) to the top of the window.
+    // the rows that matter (running/fresh failures) to the top of the window.
     let body_rows = (area.height as usize).saturating_sub(1).max(1);
     let overflow = shown.len() > body_rows;
     let visible_rows = if overflow {
@@ -367,7 +386,7 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     if overflow {
         let hidden = shown.len() - visible_rows;
         lines.push(Line::from(Span::styled(
-            format!("  ▾ +{hidden} more (failed & running shown first)"),
+            format!("  ▾ +{hidden} more (running shown first)"),
             Style::default()
                 .fg(t.text_muted)
                 .add_modifier(Modifier::ITALIC),
