@@ -19,7 +19,7 @@ pub mod search_compressor;
 pub mod tag_protector;
 
 pub use content_detector::{
-    detect_content_type, is_json_array_of_dicts, ContentType, DetectionResult,
+    ContentType, DetectionResult, detect_content_type, is_json_array_of_dicts,
 };
 pub use diff_compressor::{
     DiffCompressionResult, DiffCompressor, DiffCompressorConfig, DiffCompressorStats,
@@ -28,9 +28,9 @@ pub use log_compressor::{
     LogCompressionResult, LogCompressor, LogCompressorConfig, LogCompressorStats, LogFormat,
     LogLevel, LogLine,
 };
-pub use safety::{tool_pair_indices, ToolPair};
+pub use safety::{ToolPair, tool_pair_indices};
 pub use search_compressor::{
     FileMatches, SearchCompressionResult, SearchCompressor, SearchCompressorConfig,
     SearchCompressorStats, SearchMatch,
 };
-pub use tag_protector::{is_known_html_tag, protect_tags, restore_tags, ProtectStats};
+pub use tag_protector::{ProtectStats, is_known_html_tag, protect_tags, restore_tags};

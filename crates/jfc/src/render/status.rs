@@ -364,8 +364,8 @@ pub(super) fn effort_status_badge(app: &App) -> String {
 pub(super) fn quota_badge(
     snapshot: &jfc_engine::providers::anthropic_accounts::AccountSnapshot,
 ) -> Option<(String, u32)> {
-    let pct5 = snapshot.utilization_5h.map(|u| (u * 100.0).round() as u32);
-    let pct7 = snapshot.utilization_7d.map(|u| (u * 100.0).round() as u32);
+    let pct5 = snapshot.utilization_5h.and_then(utilization_percent);
+    let pct7 = snapshot.utilization_7d.and_then(utilization_percent);
 
     // Pick the window with the higher pressure to surface.
     let (window, pct) = match (pct5, pct7) {
@@ -384,6 +384,12 @@ pub(super) fn quota_badge(
         label.push_str(" · overage");
     }
     Some((label, pct))
+}
+
+fn utilization_percent(value: f64) -> Option<u32> {
+    value
+        .is_finite()
+        .then(|| (value.clamp(0.0, 1.0) * 100.0).round() as u32)
 }
 
 /// Render the Anthropic plan/seat badge for the status bar, or `None` when no
@@ -516,6 +522,13 @@ mod tests {
         let (label, pct) = quota_badge(&snap(Some(0.87), Some(0.20))).unwrap();
         assert_eq!(pct, 87);
         assert!(label.starts_with("5h 87%"), "got {label}");
+    }
+
+    #[test]
+    fn quota_badge_clamps_over_100_robust() {
+        let (label, pct) = quota_badge(&snap(Some(1.01), None)).unwrap();
+        assert_eq!(pct, 100);
+        assert!(label.starts_with("5h 100%"), "got {label}");
     }
 
     #[test]

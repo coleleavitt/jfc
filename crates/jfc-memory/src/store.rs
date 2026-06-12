@@ -109,7 +109,9 @@ impl std::str::FromStr for MemoryType {
             "reference" | "ref" => Ok(Self::Reference),
             "preference" | "pref" => Ok(Self::Preference),
             "context" | "ctx" => Ok(Self::Context),
-            other => Err(format!("unknown memory type: {other}. Use: user, feedback, project, reference")),
+            other => Err(format!(
+                "unknown memory type: {other}. Use: user, feedback, project, reference"
+            )),
         }
     }
 }
@@ -462,7 +464,10 @@ pub fn create_memory_checked(
         scope = %scope,
         "created memory (with conflict check)"
     );
-    Ok(CreateMemoryResult { path, conflicting_memory_id: conflicting })
+    Ok(CreateMemoryResult {
+        path,
+        conflicting_memory_id: conflicting,
+    })
 }
 
 /// Create a new memory file. Returns the path of the created file.
@@ -574,8 +579,7 @@ fn write_memory_file(
     body: &str,
 ) -> Result<PathBuf, String> {
     // Ensure directory exists
-    std::fs::create_dir_all(dir)
-        .map_err(|e| format!("failed to create memory directory: {e}"))?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("failed to create memory directory: {e}"))?;
 
     let now: DateTime<Utc> = SystemTime::now().into();
     let slug = slugify(body, 40);
@@ -606,7 +610,9 @@ fn write_memory_file(
 /// the existing memory's body, it's considered a near-duplicate.
 /// This is the same heuristic CC uses via `conflicting_memory_id`.
 fn find_conflicting_memory(dir: &Path, new_body: &str) -> Option<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else { return None };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return None;
+    };
     let new_words = word_set(new_body);
     if new_words.is_empty() {
         return None;
@@ -617,7 +623,9 @@ fn find_conflicting_memory(dir: &Path, new_body: &str) -> Option<PathBuf> {
         if path.extension().and_then(|e| e.to_str()) != Some("md") {
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         let body = strip_frontmatter(&content);
         let existing_words = word_set(body);
         // Count how many of the new body's words appear in the existing memory
@@ -642,8 +650,12 @@ fn find_conflicting_memory(dir: &Path, new_body: &str) -> Option<PathBuf> {
 /// Extract the body portion of a memory file (after the `---` front-matter block).
 fn strip_frontmatter(content: &str) -> &str {
     // Skip the opening `---`
-    let after_first = content.strip_prefix("---").map(|s| s.trim_start_matches('\n'));
-    let Some(rest) = after_first else { return content };
+    let after_first = content
+        .strip_prefix("---")
+        .map(|s| s.trim_start_matches('\n'));
+    let Some(rest) = after_first else {
+        return content;
+    };
     // Find the closing `---`
     if let Some(pos) = rest.find("\n---") {
         rest[pos + 4..].trim_start_matches('\n')
@@ -1094,8 +1106,14 @@ mod tests {
         assert!(index.contains("# Project Memory Index"), "{index}");
         // The pointer links the relative path and carries the title/hook.
         let rel = path.strip_prefix(root).unwrap().to_string_lossy();
-        assert!(index.contains(&format!("({rel})")), "index links file: {index}");
-        assert!(index.contains("Build runs from the workspace root"), "{index}");
+        assert!(
+            index.contains(&format!("({rel})")),
+            "index links file: {index}"
+        );
+        assert!(
+            index.contains("Build runs from the workspace root"),
+            "{index}"
+        );
     }
 
     #[test]
@@ -1236,9 +1254,15 @@ mod tests {
     #[test]
     fn new_memory_types_parse_normal() {
         assert_eq!("user".parse::<MemoryType>().unwrap(), MemoryType::User);
-        assert_eq!("reference".parse::<MemoryType>().unwrap(), MemoryType::Reference);
+        assert_eq!(
+            "reference".parse::<MemoryType>().unwrap(),
+            MemoryType::Reference
+        );
         assert_eq!("ref".parse::<MemoryType>().unwrap(), MemoryType::Reference);
-        assert_eq!("feedback".parse::<MemoryType>().unwrap(), MemoryType::Feedback);
+        assert_eq!(
+            "feedback".parse::<MemoryType>().unwrap(),
+            MemoryType::Feedback
+        );
     }
 
     #[test]

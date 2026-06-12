@@ -487,26 +487,18 @@ async fn refresh_access_token(
     Ok((json.access_token, new_refresh, expires_at))
 }
 
-/// Pure resolver for the Anthropic accounts store path. Inputs are explicit so the
-/// precedence rules can be unit-tested without mutating process state or the filesystem.
-///
-/// Precedence: `override_env` (set by `JFC_ANTHROPIC_ACCOUNTS_PATH`) → canonical
-/// `~/.config/jfc-anthropic-accounts.json`.
-fn resolve_store_path(override_env: Option<&str>, home: &std::path::Path) -> PathBuf {
-    if let Some(p) = override_env {
-        return PathBuf::from(p);
-    }
-    home.join(".config/jfc-anthropic-accounts.json")
+/// Pure resolver for the Anthropic accounts store path. Inputs are explicit so
+/// unit tests do not need to mutate process state or the filesystem.
+fn resolve_store_path(home: &std::path::Path) -> PathBuf {
+    home.join(".config")
+        .join("jfc")
+        .join("anthropic-accounts.json")
 }
 
-/// Resolve the Anthropic accounts store. Canonical location is
-/// `~/.config/jfc-anthropic-accounts.json`. Override with `JFC_ANTHROPIC_ACCOUNTS_PATH`
-/// (e.g. to point at opencode's `~/.config/opencode/anthropic-accounts.json` if you
-/// want to share rotation state with opencode again).
+/// Resolve the Anthropic accounts store.
 pub fn default_store_path() -> PathBuf {
-    let override_env = std::env::var("JFC_ANTHROPIC_ACCOUNTS_PATH").ok();
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-    resolve_store_path(override_env.as_deref(), &home)
+    resolve_store_path(&home)
 }
 
 fn load_store(path: &PathBuf) -> anyhow::Result<AccountStore> {

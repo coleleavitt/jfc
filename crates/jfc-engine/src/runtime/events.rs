@@ -4,7 +4,9 @@ use tokio::sync::mpsc;
 
 use super::ExecutionResult;
 use crate::types::{ChatMessage, ToolCall};
-use jfc_provider::{FallbackReason, ModelInfo, ProviderId, ServerToolResultKind, StopReason};
+use jfc_provider::{
+    FallbackReason, ModelInfo, ProviderId, ResolvedModel, ServerToolResultKind, StopReason,
+};
 
 /// Bounded channel capacity for the main runtime event loop. 1024 accommodates
 /// typical streaming bursts (50-200 chunks) with headroom for concurrent tool
@@ -116,6 +118,20 @@ pub enum FrontendEvent {
     /// The model called `ExitPlanMode` and wants the user to review the
     /// plan + transition out of plan mode.
     PlanReview { plan: String },
+    /// A structured review run completed and was persisted under `.jfc/reviews`.
+    ReviewCompleted {
+        review: crate::review::ReviewOutputEvent,
+    },
+    /// The model recorded one actionable review comment.
+    ReviewCommentAdded {
+        comment: crate::review::ReviewComment,
+    },
+    /// The model submitted a plan artifact through `SubmitPlan`.
+    ImplementationPlanSubmitted { plan: crate::review::SubmittedPlan },
+    /// The model proposed a commit message for the current diff.
+    CommitMessageSuggested {
+        suggestion: crate::review::CommitMessageSuggestion,
+    },
     /// Model-callable plan-mode entry. Dispatched by the `EnterPlanMode`
     /// tool — flips the permission mode to `PermissionMode::Plan`.
     PlanModeEntered { reason: String },
@@ -188,6 +204,7 @@ pub struct StreamRequestMetadata {
     pub advertised_tool_count: usize,
     pub action_expected: bool,
     pub tool_choice: StreamToolChoice,
+    pub resolved_model: Option<ResolvedModel>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -680,6 +680,12 @@ fn format_runtime_state(
     acct: &jfc_engine::providers::anthropic_accounts::Account,
     rt: &jfc_engine::providers::anthropic_accounts::RuntimeState,
 ) -> String {
+    if !acct.is_enabled() {
+        return match acct.disabled_reason.as_deref() {
+            Some(reason) if !reason.trim().is_empty() => format!("disabled: {reason}"),
+            _ => "disabled".into(),
+        };
+    }
     if !acct.is_disk_rate_limit_cleared() {
         return "rate-limited".into();
     }

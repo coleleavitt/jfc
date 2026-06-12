@@ -1575,9 +1575,12 @@ async fn execute_edit_whitespace_tolerant_on_indent_drift_normal() {
     // 4-space indentation. Exact match misses, whitespace fallback recovers it.
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("ws.rs");
-    tokio::fs::write(&path, "fn f() {\n        let a = 1;\n        let b = 2;\n}\n")
-        .await
-        .unwrap();
+    tokio::fs::write(
+        &path,
+        "fn f() {\n        let a = 1;\n        let b = 2;\n}\n",
+    )
+    .await
+    .unwrap();
 
     let result = execute_edit(
         path.to_str().unwrap(),
@@ -1586,7 +1589,11 @@ async fn execute_edit_whitespace_tolerant_on_indent_drift_normal() {
         ReplacementMode::FirstOnly,
     )
     .await;
-    assert!(!result.is_error(), "ws-tolerant edit should succeed: {}", result.output);
+    assert!(
+        !result.is_error(),
+        "ws-tolerant edit should succeed: {}",
+        result.output
+    );
     let content = tokio::fs::read_to_string(&path).await.unwrap();
     assert!(content.contains("let a = 100;"), "{content}");
     assert!(content.contains("let b = 200;"), "{content}");
@@ -1634,9 +1641,12 @@ async fn execute_edit_tolerates_unicode_punct_drift_normal() {
     // straight quotes. Exact match misses; the Unicode-folding tier recovers it.
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("uni.rs");
-    tokio::fs::write(&path, "let s = \u{201C}hello\u{201D}; // note \u{2014} aside\n")
-        .await
-        .unwrap();
+    tokio::fs::write(
+        &path,
+        "let s = \u{201C}hello\u{201D}; // note \u{2014} aside\n",
+    )
+    .await
+    .unwrap();
     let result = execute_edit(
         path.to_str().unwrap(),
         "let s = \"hello\"; // note - aside",
@@ -1644,7 +1654,11 @@ async fn execute_edit_tolerates_unicode_punct_drift_normal() {
         ReplacementMode::FirstOnly,
     )
     .await;
-    assert!(!result.is_error(), "unicode-tolerant edit should succeed: {}", result.output);
+    assert!(
+        !result.is_error(),
+        "unicode-tolerant edit should succeed: {}",
+        result.output
+    );
     let content = tokio::fs::read_to_string(&path).await.unwrap();
     assert!(content.contains("HELLO"), "{content}");
 }

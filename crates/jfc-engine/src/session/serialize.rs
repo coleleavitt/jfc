@@ -355,6 +355,9 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::ExitPlanMode { plan } => {
             SerializedToolInput::ExitPlanMode { plan: plan.clone() }
         }
+        ToolInput::SubmitPlan { .. }
+        | ToolInput::AddReviewComment { .. }
+        | ToolInput::SuggestCommitMessage { .. } => serialize_generic_tool_input_json(input),
         ToolInput::MultiEdit { file_path, edits } => SerializedToolInput::MultiEdit {
             file_path: file_path.clone(),
             edits: edits.clone(),

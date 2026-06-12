@@ -316,7 +316,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("indent.rs");
         let path_str = path.to_str().unwrap();
-        write_file(path_str, "fn f() {\n        let x = 1;\n        let y = 2;\n}\n").await;
+        write_file(
+            path_str,
+            "fn f() {\n        let x = 1;\n        let y = 2;\n}\n",
+        )
+        .await;
 
         let result = edit_file(
             path_str,
@@ -325,7 +329,11 @@ mod tests {
             false,
         )
         .await;
-        assert!(!result.is_error(), "ws-tolerant edit should succeed: {}", result.output);
+        assert!(
+            !result.is_error(),
+            "ws-tolerant edit should succeed: {}",
+            result.output
+        );
 
         let content = tokio::fs::read_to_string(&path).await.unwrap();
         assert!(content.contains("let x = 10;"));

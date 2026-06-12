@@ -21,7 +21,7 @@
 //! summaries) that a positional cut would have elided.
 
 use crate::transforms::{
-    content_detector::{detect_content_type, ContentType},
+    content_detector::{ContentType, detect_content_type},
     diff_compressor::{DiffCompressor, DiffCompressorConfig},
     log_compressor::{LogCompressor, LogCompressorConfig},
     search_compressor::{SearchCompressor, SearchCompressorConfig},
@@ -170,9 +170,7 @@ pub fn compress_tool_output(
     let all_tags_survived = blocks
         .iter()
         .all(|(placeholder, _)| compressed_clean.contains(placeholder.as_str()));
-    if compressed_chars >= original_chars
-        || compressed_chars > fallback_chars
-        || !all_tags_survived
+    if compressed_chars >= original_chars || compressed_chars > fallback_chars || !all_tags_survived
     {
         return head_tail_output(CompressionMethod::HeadTail);
     }
@@ -262,7 +260,8 @@ mod tests {
         log.push_str("\n<system-reminder>keep me verbatim</system-reminder>");
         let out = compress_tool_output(&log, 600, 400, "");
         assert!(
-            out.text.contains("<system-reminder>keep me verbatim</system-reminder>"),
+            out.text
+                .contains("<system-reminder>keep me verbatim</system-reminder>"),
             "protected workflow tag must survive; method {:?}",
             out.method
         );

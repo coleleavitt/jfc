@@ -13,6 +13,7 @@ use std::{borrow::Borrow, collections::HashMap, fmt, ops::Deref, pin::Pin};
 use async_trait::async_trait;
 use futures::Stream;
 use reqwest::header::HeaderMap;
+use sha2::{Digest, Sha256};
 
 pub mod http;
 pub mod retry;
@@ -268,6 +269,294 @@ impl fmt::Display for ModelSpecParseError {
 }
 
 impl std::error::Error for ModelSpecParseError {}
+
+/// Feature flags attached to a model, inspired by Koog's `LLMCapability`.
+///
+/// These are capability signals for request construction and routing policy,
+/// not a pricing or entitlement source of truth. Provider implementations may
+/// refine the inferred defaults with live catalog data over time.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCapability {
+    Tools,
+    ToolChoice,
+    ToolStreaming,
+    Vision,
+    Documents,
+    Audio,
+    JsonSchema,
+    StructuredOutput,
+    Reasoning,
+    PromptCaching,
+    Moderation,
+    Embeddings,
+    OpenAiChatCompletions,
+    OpenAiResponses,
+    ServerTools,
+}
+
+/// Small, sorted capability set with stable serialization.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct ModelCapabilities(Vec<ModelCapability>);
+
+impl ModelCapabilities {
+    pub fn new<I>(capabilities: I) -> Self
+    where
+        I: IntoIterator<Item = ModelCapability>,
+    {
+        let mut values = capabilities.into_iter().collect::<Vec<_>>();
+        values.sort();
+        values.dedup();
+        Self(values)
+    }
+
+    pub fn inferred(provider: &str, model: &str) -> Self {
+        let provider = provider.to_ascii_lowercase();
+        let model = model.to_ascii_lowercase();
+        let mut caps = vec![ModelCapability::Tools, ModelCapability::ToolChoice];
+
+        if matches!(
+            provider.as_str(),
+            "anthropic" | "anthropic-oauth" | "bedrock" | "vertex"
+        ) || model.contains("claude")
+            || model.contains("opus")
+            || model.contains("sonnet")
+            || model.contains("haiku")
+            || model.contains("fable")
+            || model.contains("mythos")
+        {
+            caps.extend([
+                ModelCapability::ToolStreaming,
+                ModelCapability::Vision,
+                ModelCapability::Documents,
+                ModelCapability::PromptCaching,
+                ModelCapability::JsonSchema,
+                ModelCapability::StructuredOutput,
+                ModelCapability::ServerTools,
+            ]);
+            if model.contains("opus")
+                || model.contains("sonnet")
+                || model.contains("fable")
+                || model.contains("mythos")
+            {
+                caps.push(ModelCapability::Reasoning);
+            }
+        }
+
+        if matches!(
+            provider.as_str(),
+            "openai" | "codex" | "openrouter" | "openwebui" | "litellm"
+        ) {
+            caps.extend([
+                ModelCapability::OpenAiChatCompletions,
+                ModelCapability::JsonSchema,
+                ModelCapability::StructuredOutput,
+            ]);
+        }
+
+        if matches!(provider.as_str(), "gemini" | "antigravity") || model.contains("gemini") {
+            caps.extend([
+                ModelCapability::ToolStreaming,
+                ModelCapability::Vision,
+                ModelCapability::JsonSchema,
+                ModelCapability::StructuredOutput,
+                ModelCapability::Reasoning,
+            ]);
+        }
+
+        if model.contains("embed") || model.contains("embedding") {
+            caps.push(ModelCapability::Embeddings);
+        }
+        if model.contains("moderation") {
+            caps.push(ModelCapability::Moderation);
+        }
+        if model.contains("audio") || model.contains("realtime") {
+            caps.push(ModelCapability::Audio);
+        }
+
+        Self::new(caps)
+    }
+
+    pub fn contains(&self, capability: ModelCapability) -> bool {
+        self.0.binary_search(&capability).is_ok()
+    }
+
+    pub fn insert(&mut self, capability: ModelCapability) {
+        if self.contains(capability) {
+            return;
+        }
+        self.0.push(capability);
+        self.0.sort();
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = ModelCapability> + '_ {
+        self.0.iter().copied()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl IntoIterator for ModelCapabilities {
+    type Item = ModelCapability;
+    type IntoIter = std::vec::IntoIter<ModelCapability>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl From<Vec<ModelCapability>> for ModelCapabilities {
+    fn from(value: Vec<ModelCapability>) -> Self {
+        Self::new(value)
+    }
+}
+
+impl<const N: usize> From<[ModelCapability; N]> for ModelCapabilities {
+    fn from(value: [ModelCapability; N]) -> Self {
+        Self::new(value)
+    }
+}
+
+/// Why a requested model resolved to the effective model JFC will call.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ModelResolutionReason {
+    Requested,
+    ExplicitProvider,
+    CatalogMatch,
+    Heuristic { rule: String },
+    Fallback { reason: String },
+    ProviderDefault { reason: String },
+}
+
+/// First-class model resolution record for runtime/council/economy/review
+/// accounting. This mirrors Koog's `ResolvedModel`: keep the requested identity,
+/// the effective identity, and the reason together instead of scattering that
+/// context through logs.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ResolvedModel {
+    pub requested: ModelSpec,
+    pub effective: ModelSpec,
+    pub reason: ModelResolutionReason,
+    pub capabilities: ModelCapabilities,
+    pub context_window_tokens: Option<usize>,
+    pub max_output_tokens: Option<usize>,
+}
+
+impl ResolvedModel {
+    pub fn new(
+        requested: ModelSpec,
+        effective: ModelSpec,
+        reason: ModelResolutionReason,
+        info: Option<&ModelInfo>,
+    ) -> Self {
+        let capabilities = info
+            .map(|info| info.capabilities.clone())
+            .unwrap_or_else(|| {
+                let provider = effective.provider().map(ProviderId::as_str).unwrap_or("");
+                ModelCapabilities::inferred(provider, effective.model().as_str())
+            });
+        Self {
+            requested,
+            effective,
+            reason,
+            capabilities,
+            context_window_tokens: info.and_then(|info| info.context_window_tokens),
+            max_output_tokens: info.and_then(|info| info.max_output_tokens),
+        }
+    }
+
+    pub fn effective_model_id(&self) -> &ModelId {
+        self.effective.model()
+    }
+
+    pub fn effective_provider(&self) -> Option<&ProviderId> {
+        self.effective.provider()
+    }
+}
+
+/// Stable cache-key material for future response/prompt caches.
+///
+/// Koog's cached executor resolves a model but does not include the effective
+/// model or full tool schema in the key. JFC's key material keeps those inputs
+/// mandatory so council/economy/advisor/review caches cannot cross-contaminate
+/// answers between models, endpoints, params, or tool schema versions.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PromptCacheKey {
+    pub prompt_version: String,
+    pub provider: ProviderId,
+    pub endpoint: Option<String>,
+    pub effective_model: ModelSpec,
+    pub params_hash: String,
+    pub prompt_hash: String,
+    pub tool_schema_hash: String,
+}
+
+impl PromptCacheKey {
+    pub fn new(
+        prompt_version: impl Into<String>,
+        provider: ProviderId,
+        endpoint: Option<String>,
+        effective_model: ModelSpec,
+        params: &serde_json::Value,
+        prompt: &str,
+        tools: &[ToolDef],
+    ) -> Self {
+        Self {
+            prompt_version: prompt_version.into(),
+            provider,
+            endpoint,
+            effective_model,
+            params_hash: stable_json_hash(params),
+            prompt_hash: stable_bytes_hash(prompt.as_bytes()),
+            tool_schema_hash: tool_schema_hash(tools),
+        }
+    }
+
+    pub fn stable_string(&self) -> String {
+        stable_json_hash(&serde_json::to_value(self).unwrap_or(serde_json::Value::Null))
+    }
+}
+
+pub fn tool_schema_hash(tools: &[ToolDef]) -> String {
+    let mut normalized = tools
+        .iter()
+        .map(|tool| {
+            serde_json::json!({
+                "name": &tool.name,
+                "description": &tool.description,
+                "input_schema": &tool.input_schema,
+            })
+        })
+        .collect::<Vec<_>>();
+    normalized.sort_by(|left, right| {
+        left.get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .cmp(
+                right
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or(""),
+            )
+    });
+    stable_json_hash(&serde_json::Value::Array(normalized))
+}
+
+fn stable_json_hash(value: &serde_json::Value) -> String {
+    stable_bytes_hash(value.to_string().as_bytes())
+}
+
+fn stable_bytes_hash(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(&hasher.finalize()[..16])
+}
 
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
@@ -749,6 +1038,7 @@ pub struct ModelInfo {
     pub id: ModelId,
     pub display_name: String,
     pub provider: ProviderId,
+    pub capabilities: ModelCapabilities,
     pub context_window_tokens: Option<usize>,
     pub max_output_tokens: Option<usize>,
     /// Cost per million input tokens (USD)
@@ -763,10 +1053,14 @@ impl ModelInfo {
         display_name: impl Into<String>,
         provider: impl Into<ProviderId>,
     ) -> Self {
+        let id = id.into();
+        let provider = provider.into();
+        let capabilities = ModelCapabilities::inferred(provider.as_str(), id.as_str());
         Self {
-            id: id.into(),
+            id,
             display_name: display_name.into(),
-            provider: provider.into(),
+            provider,
+            capabilities,
             context_window_tokens: None,
             max_output_tokens: None,
             input_cost: None,
@@ -782,6 +1076,20 @@ impl ModelInfo {
     pub fn with_max_output_tokens(mut self, tokens: impl Into<Option<usize>>) -> Self {
         self.max_output_tokens = tokens.into();
         self
+    }
+
+    pub fn with_capabilities(mut self, capabilities: impl Into<ModelCapabilities>) -> Self {
+        self.capabilities = capabilities.into();
+        self
+    }
+
+    pub fn with_added_capability(mut self, capability: ModelCapability) -> Self {
+        self.capabilities.insert(capability);
+        self
+    }
+
+    pub fn supports(&self, capability: ModelCapability) -> bool {
+        self.capabilities.contains(capability)
     }
 
     pub fn with_costs(mut self, input: Option<f64>, output: Option<f64>) -> Self {
@@ -1058,6 +1366,86 @@ mod tests {
         );
         assert!(labels[3].contains("access denied"));
         assert!(labels[4].contains("last-resort"));
+    }
+
+    #[test]
+    fn model_info_infers_capabilities_normal() {
+        let claude = ModelInfo::new("claude-opus-4-8", "Claude Opus", "anthropic");
+        assert!(claude.supports(ModelCapability::Tools));
+        assert!(claude.supports(ModelCapability::PromptCaching));
+        assert!(claude.supports(ModelCapability::Reasoning));
+        assert!(claude.supports(ModelCapability::JsonSchema));
+
+        let openai = ModelInfo::new("gpt-5.1", "GPT", "openai");
+        assert!(openai.supports(ModelCapability::OpenAiChatCompletions));
+        assert!(openai.supports(ModelCapability::StructuredOutput));
+    }
+
+    #[test]
+    fn resolved_model_keeps_requested_and_effective_normal() {
+        let info = ModelInfo::new("claude-sonnet-4-6", "Sonnet", "anthropic")
+            .with_context_window_tokens(Some(200_000usize))
+            .with_max_output_tokens(Some(128_000usize));
+        let resolved = ResolvedModel::new(
+            ModelSpec::qualified("openrouter", "anthropic/claude-sonnet-4-6"),
+            ModelSpec::qualified("anthropic", "claude-sonnet-4-6"),
+            ModelResolutionReason::Fallback {
+                reason: "primary provider unavailable".to_owned(),
+            },
+            Some(&info),
+        );
+        assert_eq!(
+            resolved.requested.to_string(),
+            "openrouter/anthropic/claude-sonnet-4-6"
+        );
+        assert_eq!(
+            resolved.effective.to_string(),
+            "anthropic/claude-sonnet-4-6"
+        );
+        assert_eq!(resolved.context_window_tokens, Some(200_000));
+        assert!(resolved.capabilities.contains(ModelCapability::Reasoning));
+    }
+
+    #[test]
+    fn prompt_cache_key_changes_with_model_and_tool_schema_robust() {
+        let params = serde_json::json!({"temperature": 0.2});
+        let tools = vec![ToolDef {
+            name: "Read".into(),
+            description: "Read a file".into(),
+            input_schema: serde_json::json!({"type": "object", "required": ["file_path"]}),
+        }];
+        let key_a = PromptCacheKey::new(
+            "system-v1",
+            ProviderId::new("anthropic"),
+            Some("https://api.anthropic.com".into()),
+            ModelSpec::qualified("anthropic", "claude-sonnet-4-6"),
+            &params,
+            "hello",
+            &tools,
+        );
+        let key_b = PromptCacheKey::new(
+            "system-v1",
+            ProviderId::new("anthropic"),
+            Some("https://api.anthropic.com".into()),
+            ModelSpec::qualified("anthropic", "claude-opus-4-8"),
+            &params,
+            "hello",
+            &tools,
+        );
+        assert_ne!(key_a.stable_string(), key_b.stable_string());
+
+        let mut changed_tools = tools.clone();
+        changed_tools[0].input_schema = serde_json::json!({"type": "object"});
+        let key_c = PromptCacheKey::new(
+            "system-v1",
+            ProviderId::new("anthropic"),
+            Some("https://api.anthropic.com".into()),
+            ModelSpec::qualified("anthropic", "claude-sonnet-4-6"),
+            &params,
+            "hello",
+            &changed_tools,
+        );
+        assert_ne!(key_a.tool_schema_hash, key_c.tool_schema_hash);
     }
 
     // ─── ModelSpec parsing ────────────────────────────────────────────────

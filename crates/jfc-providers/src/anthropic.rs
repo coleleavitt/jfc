@@ -30,8 +30,10 @@ pub(crate) fn maybe_warn_volatile_cache_content(body: &serde_json::Value) {
     if !enabled {
         return;
     }
-    let findings =
-        jfc_compress::volatile::detect_volatile_content(body, jfc_compress::volatile::ApiKind::Anthropic);
+    let findings = jfc_compress::volatile::detect_volatile_content(
+        body,
+        jfc_compress::volatile::ApiKind::Anthropic,
+    );
     if !findings.is_empty() {
         jfc_compress::volatile::emit_volatile_warnings(&findings, "anthropic.messages");
     }

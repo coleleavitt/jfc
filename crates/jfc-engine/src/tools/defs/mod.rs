@@ -4,6 +4,7 @@ mod design;
 mod economy;
 mod filesystem;
 mod interaction;
+mod review;
 mod tasks;
 
 use jfc_provider::ToolDef;
@@ -16,6 +17,7 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
     defs.extend(economy::economy_tool_defs());
     defs.extend(design::design_tool_defs());
     defs.extend(interaction::interaction_tool_defs());
+    defs.extend(review::review_tool_defs());
     defs.extend(daemon::daemon_tool_defs());
     defs
 }

@@ -394,6 +394,10 @@ pub struct EngineState {
     /// these paths so you can review one agentic step in isolation from the
     /// whole working tree.
     pub turn_edited_files: std::collections::BTreeSet<String>,
+    /// Background auto-review dispatch state. Keeps a per-session signature of
+    /// the last changed-file diff reviewed so repeated EndTurn cleanup passes
+    /// do not queue the same review again.
+    pub auto_review: crate::auto_review::AutoReviewState,
     /// Number of API round-trips in the current user turn (incremented each
     /// time `continue_agentic_loop` fires). Resets on each user submission.
     /// Used to enforce a max-turns safety limit (default 200, matching CC
@@ -1008,6 +1012,7 @@ impl EngineState {
             turn_started_at: None,
             turn_start_cost: 0.0,
             turn_edited_files: std::collections::BTreeSet::new(),
+            auto_review: crate::auto_review::AutoReviewState::default(),
             agentic_turn_count: 0,
             memory_nudge: crate::system_reminder::MemoryNudge::default(),
             self_continuation_count: 0,

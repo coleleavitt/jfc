@@ -579,17 +579,26 @@ impl AccountManager {
     /// `None` when no account is configured.
     pub async fn snapshot_for_ui(&self) -> Option<AccountSnapshot> {
         let acct = self.pick_next().await.or(self.active_account().await)?;
+        let now = now_ms();
         Some(AccountSnapshot {
             email: acct.email.clone(),
             name: acct.name.clone(),
             plan: acct.plan.clone(),
             rate_limit_tier: acct.rate_limit_tier.clone(),
-            utilization_5h: acct.utilization_5h,
-            utilization_7d: acct.utilization_7d,
+            utilization_5h: Self::current_utilization(
+                acct.utilization_5h,
+                acct.utilization_5h_reset_at,
+                now,
+            ),
+            utilization_7d: Self::current_utilization(
+                acct.utilization_7d,
+                acct.utilization_7d_reset_at,
+                now,
+            ),
             claim: acct.rate_limit_type.clone(),
             overage_disabled_reason: acct.overage_disabled_reason.clone(),
             is_using_overage: acct.is_using_overage.unwrap_or(false),
-            rate_limited_until_ms: acct.rate_limit_reset_time.filter(|ms| *ms > now_ms()),
+            rate_limited_until_ms: acct.rate_limit_reset_time.filter(|ms| *ms > now),
             daily_input_tokens: acct
                 .daily_usage
                 .as_ref()
@@ -631,14 +640,31 @@ impl AccountManager {
         true
     }
 
-    fn utilization_pressure(account: &Account) -> f64 {
-        account
-            .utilization_5h
-            .into_iter()
-            .chain(account.utilization_7d)
-            .filter(|v| v.is_finite())
-            .map(|v| v.clamp(0.0, 1.0))
-            .fold(0.0, f64::max)
+    fn current_utilization(
+        value: Option<f64>,
+        reset_at: Option<u64>,
+        now_ms_v: u64,
+    ) -> Option<f64> {
+        if reset_at.is_some_and(|ms| ms <= now_ms_v) {
+            return None;
+        }
+        value.filter(|v| v.is_finite()).map(|v| v.clamp(0.0, 1.0))
+    }
+
+    fn utilization_pressure(account: &Account, now_ms_v: u64) -> f64 {
+        Self::current_utilization(
+            account.utilization_5h,
+            account.utilization_5h_reset_at,
+            now_ms_v,
+        )
+        .into_iter()
+        .chain(Self::current_utilization(
+            account.utilization_7d,
+            account.utilization_7d_reset_at,
+            now_ms_v,
+        ))
+        .filter(|v| v.is_finite())
+        .fold(0.0, f64::max)
     }
 
     fn daily_token_total(account: &Account) -> u64 {
@@ -684,6 +710,7 @@ impl AccountManager {
         account: &Account,
         runtime: &RuntimeState,
         now: Instant,
+        now_ms_v: u64,
         max_daily_tokens: u64,
     ) -> f64 {
         let daily_pressure = if max_daily_tokens == 0 {
@@ -693,7 +720,7 @@ impl AccountManager {
         };
         let denominator = 1.0
             + (runtime.in_flight as f64 * 1.75)
-            + (Self::utilization_pressure(account) * 4.0)
+            + (Self::utilization_pressure(account, now_ms_v) * 4.0)
             + (daily_pressure * 2.0)
             + (runtime.consecutive_failures as f64 * 1.25)
             + Self::recent_success_penalty(runtime, now);
@@ -717,14 +744,15 @@ impl AccountManager {
             return None;
         }
         let now = Instant::now();
+        let now_ms_v = now_ms();
         let max_daily_tokens = usable
             .iter()
             .map(|(a, _)| Self::daily_token_total(a))
             .max()
             .unwrap_or(0);
         usable.sort_by(|(a1, r1), (a2, r2)| {
-            let s1 = Self::account_score(a1, r1, now, max_daily_tokens);
-            let s2 = Self::account_score(a2, r2, now, max_daily_tokens);
+            let s1 = Self::account_score(a1, r1, now, now_ms_v, max_daily_tokens);
+            let s2 = Self::account_score(a2, r2, now, now_ms_v, max_daily_tokens);
             s2.partial_cmp(&s1)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| match (r1.last_success_at, r2.last_success_at) {
@@ -819,14 +847,15 @@ impl AccountManager {
             return None;
         }
         let now = Instant::now();
+        let now_ms_v = now_ms();
         let max_daily_tokens = usable
             .iter()
             .map(|(a, _)| Self::daily_token_total(a))
             .max()
             .unwrap_or(0);
         usable.sort_by(|(a1, r1), (a2, r2)| {
-            let s1 = Self::account_score(a1, r1, now, max_daily_tokens);
-            let s2 = Self::account_score(a2, r2, now, max_daily_tokens);
+            let s1 = Self::account_score(a1, r1, now, now_ms_v, max_daily_tokens);
+            let s2 = Self::account_score(a2, r2, now, now_ms_v, max_daily_tokens);
             s2.partial_cmp(&s1)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| match (r1.last_success_at, r2.last_success_at) {
@@ -996,6 +1025,11 @@ impl AccountManager {
         // Only persist when at least one telemetry field is present — avoids
         // a write on every API-key request (which has none of these headers).
         let has_data = info.unified_status.is_some()
+            || info.claim.is_some()
+            || info.overage_status.is_some()
+            || info.overage_reset_ms.is_some()
+            || info.overage_disabled_reason.is_some()
+            || info.overage_in_use.is_some()
             || info.utilization_5h.is_some()
             || info.utilization_7d.is_some()
             || info.unified_reset_ms.is_some();
@@ -1023,6 +1057,15 @@ impl AccountManager {
                 }
                 if info.overage_reset_ms.is_some() {
                     account.overage_reset_time = info.overage_reset_ms;
+                }
+                if info.overage_disabled_reason.is_some() {
+                    account.overage_disabled_reason = info.overage_disabled_reason.clone();
+                }
+                if info.unified_status.is_some()
+                    || info.overage_status.is_some()
+                    || info.overage_in_use.is_some()
+                {
+                    account.is_using_overage = Some(info.is_using_overage);
                 }
                 if info.utilization_5h.is_some() {
                     account.utilization_5h = info.utilization_5h;
@@ -1115,7 +1158,7 @@ impl AccountManager {
                 .filter(|ms| *ms > now_ms_v)
                 .map(|ms| Duration::from_millis(ms - now_ms_v));
             let recovery = match (mem_remaining, disk_remaining) {
-                (Some(a), Some(b)) => Some(a.min(b)),
+                (Some(a), Some(b)) => Some(a.max(b)),
                 (a, b) => a.or(b),
             };
             if let Some(d) = recovery {
@@ -1716,6 +1759,32 @@ mod tests {
         assert_eq!(picked.name, "pro");
     }
 
+    // Robust: once a utilization window's reset timestamp has passed, its
+    // persisted value is stale and must not keep penalizing routing or the UI.
+    #[tokio::test]
+    async fn expired_utilization_ignored_for_selection_and_snapshot_robust() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+
+        let mut stale = mk_account("stale", Some("claude_max_20x"));
+        stale.utilization_5h = Some(1.01);
+        stale.utilization_5h_reset_at = Some(now_ms().saturating_sub(1_000));
+        stale.utilization_7d = Some(0.20);
+        stale.utilization_7d_reset_at = Some(now_ms().saturating_add(60_000));
+        mgr.atomic_add_account(stale).await.unwrap();
+
+        let mut fresh = mk_account("fresh", Some("claude_max_20x"));
+        fresh.utilization_5h = Some(0.50);
+        fresh.utilization_5h_reset_at = Some(now_ms().saturating_add(60_000));
+        mgr.atomic_add_account(fresh).await.unwrap();
+
+        let snapshot = mgr.snapshot_for_ui().await.unwrap();
+        assert_eq!(snapshot.name, "stale");
+        assert_eq!(snapshot.utilization_5h, None);
+        assert_eq!(snapshot.utilization_7d, Some(0.20));
+    }
+
     // Normal: same-tier accounts prefer the one with lower daily usage so
     // long sessions spread cost/quota consumption instead of hammering one
     // account until cooldown.
@@ -1965,6 +2034,27 @@ mod tests {
         );
     }
 
+    // Edge: a single account with both runtime and disk cooldowns is not
+    // usable until the later one clears.
+    #[tokio::test]
+    async fn recovery_wait_uses_later_cooldown_for_same_account_edge() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        mgr.atomic_add_account(mk_account("a", None)).await.unwrap();
+
+        mgr.mark_rate_limited("a", Some(30)).await;
+        mgr.atomic_set_rate_limit_reset("a", now_ms().saturating_add(120_000))
+            .await
+            .unwrap();
+
+        let wait = mgr.time_until_soonest_recovery().await.unwrap();
+        assert!(
+            wait <= Duration::from_secs(121) && wait >= Duration::from_secs(118),
+            "expected ~120s, got {wait:?}"
+        );
+    }
+
     // Robust: 529 counter increments per call and trips the threshold at
     // OVERLOADED_FALLBACK_THRESHOLD (CC v138's e65=3).
     #[tokio::test]
@@ -2009,6 +2099,33 @@ mod tests {
         // No cooldown.
         let runtime = mgr.list_with_runtime().await;
         assert!(runtime[0].1.cooldown_until.is_none());
+    }
+
+    // Robust: successful responses can carry only overage telemetry, including
+    // the newer overage-in-use flag. Persist it without requiring utilization.
+    #[tokio::test]
+    async fn record_routing_state_persists_overage_only_robust() {
+        use super::super::unified::RateLimitInfo;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path.clone()).await.unwrap();
+        mgr.atomic_add_account(mk_account("a", None)).await.unwrap();
+        let info = RateLimitInfo {
+            overage_disabled_reason: Some("org_level_disabled".to_owned()),
+            overage_in_use: Some(true),
+            is_using_overage: true,
+            ..Default::default()
+        };
+        mgr.record_routing_state("a", &info).await;
+
+        let raw = tokio::fs::read(&path).await.unwrap();
+        let v: Value = serde_json::from_slice(&raw).unwrap();
+        let acct = &v["accounts"][0];
+        assert_eq!(
+            acct["overageDisabledReason"].as_str(),
+            Some("org_level_disabled")
+        );
+        assert_eq!(acct["isUsingOverage"].as_bool(), Some(true));
     }
 
     // Robust: record_routing_state with no telemetry headers is a no-op

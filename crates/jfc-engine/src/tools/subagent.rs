@@ -1103,8 +1103,7 @@ mod tests {
         // The agent did substantive work, then its last turn was a preamble
         // before a tool call, after which the loop ended.
         let narrative = vec![
-            "## Findings\nThe bug is in foo.rs:42 where the lock is dropped early."
-                .to_string(),
+            "## Findings\nThe bug is in foo.rs:42 where the lock is dropped early.".to_string(),
             "Let me write the report:".to_string(),
         ];
         let final_text = "Let me write the report:";

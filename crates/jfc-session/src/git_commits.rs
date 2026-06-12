@@ -92,7 +92,12 @@ pub fn search(repo_root: &Path, query: &str, limit: usize, max_commits: usize) -
         } else {
             body_line.unwrap_or(&subject).to_string()
         };
-        hits.push(CommitHit { short_hash, date, subject, snippet });
+        hits.push(CommitHit {
+            short_hash,
+            date,
+            subject,
+            snippet,
+        });
         if hits.len() >= limit {
             break;
         }
@@ -124,10 +129,21 @@ mod tests {
         git(p, &["config", "user.name", "t"]);
         std::fs::write(p.join("a.txt"), "x").unwrap();
         git(p, &["add", "."]);
-        git(p, &["commit", "-q", "-m", "feat: add the widget parser\n\nHandles edge cases in parsing."]);
+        git(
+            p,
+            &[
+                "commit",
+                "-q",
+                "-m",
+                "feat: add the widget parser\n\nHandles edge cases in parsing.",
+            ],
+        );
         std::fs::write(p.join("b.txt"), "y").unwrap();
         git(p, &["add", "."]);
-        git(p, &["commit", "-q", "-m", "fix: correct off-by-one in loop"]);
+        git(
+            p,
+            &["commit", "-q", "-m", "fix: correct off-by-one in loop"],
+        );
         dir
     }
 

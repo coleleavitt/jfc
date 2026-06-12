@@ -373,6 +373,20 @@ impl Transport {
         &self.inner.server_name
     }
 
+    /// Instructions returned by the server in the MCP `initialize` result.
+    /// Hosts are expected to surface these to the model so servers can teach
+    /// their own tool-selection rules without writing AGENTS.md/CLAUDE.md.
+    pub fn server_instructions(&self) -> Option<String> {
+        self.inner
+            .client
+            .peer()
+            .peer_info()
+            .and_then(|info| info.instructions.as_deref())
+            .map(str::trim)
+            .filter(|instructions| !instructions.is_empty())
+            .map(str::to_owned)
+    }
+
     /// Spawn the transport selected by `cfg.kind` and run the `rmcp`
     /// handshake. Returns `None` on any failure (binary missing,
     /// handshake timeout, bad URL) so callers can keep going without that

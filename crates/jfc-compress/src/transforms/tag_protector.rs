@@ -706,8 +706,8 @@ pub fn restore_tags_with_request_id(
     // wraps for the lost placeholders fully discarded — never
     // appended back as orphan opens (Hotfix-A9).
     let _ = lost_count; // surfaced via the per-event log; aggregate
-                        // counters live on the stats sidecar in
-                        // callers that have one.
+    // counters live on the stats sidecar in
+    // callers that have one.
     result
 }
 

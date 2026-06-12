@@ -19,6 +19,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::RwLock;
 
@@ -29,12 +30,51 @@ use super::protocol::{self, McpTool, ToolCallOutcome};
 use super::transport::{RequestError, SpawnConfig, Transport, TransportKind};
 
 /// An MCP resource entry (from `resources/list`).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct McpResource {
     pub name: String,
     pub uri: String,
+    pub title: Option<String>,
     pub description: Option<String>,
     pub mime_type: Option<String>,
+    pub size: Option<u32>,
+    pub icons: Option<Value>,
+    pub meta: Option<Value>,
+    pub annotations: Option<Value>,
+}
+
+impl From<rmcp::model::Resource> for McpResource {
+    fn from(resource: rmcp::model::Resource) -> Self {
+        Self {
+            name: resource.raw.name,
+            uri: resource.raw.uri,
+            title: resource.raw.title,
+            description: resource.raw.description,
+            mime_type: resource.raw.mime_type,
+            size: resource.raw.size,
+            icons: resource.raw.icons.and_then(to_json_value),
+            meta: resource.raw.meta.and_then(to_json_value),
+            annotations: resource.annotations.and_then(to_json_value),
+        }
+    }
+}
+
+fn to_json_value<T: Serialize>(value: T) -> Option<Value> {
+    serde_json::to_value(value).ok()
+}
+
+/// Rich metadata for one MCP tool after namespacing for model advertisement.
+#[derive(Debug, Clone, PartialEq)]
+pub struct McpAdvertisedToolMetadata {
+    pub advertised_name: String,
+    pub server_name: String,
+    pub tool_name: String,
+    pub title: Option<String>,
+    pub output_schema: Option<Value>,
+    pub annotations: Option<Value>,
+    pub execution: Option<Value>,
+    pub icons: Option<Value>,
+    pub meta: Option<Value>,
 }
 
 /// Status of an MCP server entry. Drives the `/mcp list` display and
@@ -71,6 +111,10 @@ pub struct McpServer {
     pub tools: Vec<McpTool>,
     /// Cached resource list from `resources/list`. Empty when unsupported.
     pub resources: Vec<McpResource>,
+    /// Optional server instructions from the MCP `initialize` result. These
+    /// are separate from tool descriptions and should be surfaced in the
+    /// model prompt by hosts that support MCP.
+    pub instructions: Option<String>,
     /// `None` for `Failed` / `Disabled`. Otherwise the live transport.
     pub transport: Option<Transport>,
     /// Original spawn config — kept so `/mcp restart` can re-spawn
@@ -92,6 +136,23 @@ impl McpServer {
             })
             .collect()
     }
+
+    pub fn advertised_tool_metadata(&self) -> Vec<McpAdvertisedToolMetadata> {
+        self.tools
+            .iter()
+            .map(|tool| McpAdvertisedToolMetadata {
+                advertised_name: protocol::advertise_tool_name(&self.name, &tool.name),
+                server_name: self.name.clone(),
+                tool_name: tool.name.clone(),
+                title: tool.title.clone(),
+                output_schema: tool.output_schema.clone(),
+                annotations: tool.annotations.clone(),
+                execution: tool.execution.clone(),
+                icons: tool.icons.clone(),
+                meta: tool.meta.clone(),
+            })
+            .collect()
+    }
 }
 
 impl std::fmt::Debug for McpServer {
@@ -100,6 +161,8 @@ impl std::fmt::Debug for McpServer {
             .field("name", &self.name)
             .field("status", &self.status)
             .field("tool_count", &self.tools.len())
+            .field("resource_count", &self.resources.len())
+            .field("has_instructions", &self.instructions.is_some())
             .field("connected", &self.transport.is_some())
             .finish()
     }
@@ -182,6 +245,36 @@ impl McpRegistry {
         for s in active {
             out.extend(s.advertised_tool_defs());
         }
+        out
+    }
+
+    /// Rich metadata for every connected server's advertised tools.
+    pub async fn all_advertised_tool_metadata(&self) -> Vec<McpAdvertisedToolMetadata> {
+        let active = self.list_active().await;
+        let mut out = Vec::new();
+        for server in active {
+            out.extend(server.advertised_tool_metadata());
+        }
+        out
+    }
+
+    /// Instructions supplied by connected MCP servers during `initialize`.
+    /// The stream layer injects these once into the system prompt so servers
+    /// can explain their own tools and anti-patterns.
+    pub async fn all_server_instructions(&self) -> Vec<(String, String)> {
+        let active = self.list_active().await;
+        let mut out = Vec::new();
+        for server in active {
+            let Some(instructions) = server.instructions.as_deref() else {
+                continue;
+            };
+            let trimmed = instructions.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            out.push((server.name.clone(), trimmed.to_owned()));
+        }
+        out.sort_by(|(left, _), (right, _)| left.cmp(right));
         out
     }
 
@@ -333,6 +426,7 @@ pub async fn build_server(name: &str, cfg: &McpServerConfig) -> McpServer {
                 status: McpServerStatus::Failed,
                 tools: Vec::new(),
                 resources: Vec::new(),
+                instructions: None,
                 transport: None,
                 spawn_cfg: SpawnConfig {
                     server_name: name.to_owned(),
@@ -363,26 +457,50 @@ pub async fn build_server(name: &str, cfg: &McpServerConfig) -> McpServer {
             status: McpServerStatus::Failed,
             tools: Vec::new(),
             resources: Vec::new(),
+            instructions: None,
             transport: None,
             spawn_cfg,
         };
     };
 
-    // Discover tools.
+    // Discover tools and resources.
     let tools = fetch_all_tools(&transport).await;
+    let resources = fetch_all_resources(&transport).await;
+    let instructions = transport.server_instructions();
     tracing::info!(
         target: "jfc::mcp",
         server = %name,
         tool_count = tools.len(),
+        resource_count = resources.len(),
+        has_instructions = instructions.is_some(),
         "mcp server registered"
     );
     McpServer {
         name: name.to_owned(),
         status: McpServerStatus::Connected,
         tools,
-        resources: Vec::new(),
+        resources,
+        instructions,
         transport: Some(transport),
         spawn_cfg,
+    }
+}
+
+/// Discover every resource the server exposes. Errors mean the server does
+/// not support resources or the list failed; either way tool dispatch should
+/// still work.
+async fn fetch_all_resources(transport: &Transport) -> Vec<McpResource> {
+    match transport.list_resources().await {
+        Ok(resources) => resources.into_iter().map(McpResource::from).collect(),
+        Err(e) => {
+            tracing::debug!(
+                target: "jfc::mcp",
+                server = %transport.server_name(),
+                error = %e,
+                "resources/list failed"
+            );
+            Vec::new()
+        }
     }
 }
 
@@ -463,11 +581,21 @@ mod tests {
     use serde_json::json;
 
     fn fake_server(name: &str, status: McpServerStatus, tools: Vec<McpTool>) -> McpServer {
+        fake_server_with_instructions(name, status, tools, None)
+    }
+
+    fn fake_server_with_instructions(
+        name: &str,
+        status: McpServerStatus,
+        tools: Vec<McpTool>,
+        instructions: Option<&str>,
+    ) -> McpServer {
         McpServer {
             name: name.to_owned(),
             status,
             tools,
             resources: Vec::new(),
+            instructions: instructions.map(str::to_owned),
             transport: None,
             spawn_cfg: SpawnConfig {
                 server_name: name.to_owned(),
@@ -484,19 +612,22 @@ mod tests {
     #[tokio::test]
     async fn registry_insert_and_get_normal() {
         let reg = McpRegistry::new();
-        reg.insert(fake_server(
+        reg.insert(fake_server_with_instructions(
             "fs",
             McpServerStatus::Connected,
             vec![McpTool {
                 name: "read".into(),
                 description: "Read".into(),
                 input_schema: json!({"type":"object"}),
+                ..McpTool::default()
             }],
+            Some("Use fs carefully."),
         ))
         .await;
         let got = reg.get("fs").await.unwrap();
         assert_eq!(got.name, "fs");
         assert_eq!(got.tools.len(), 1);
+        assert_eq!(got.instructions.as_deref(), Some("Use fs carefully."));
     }
 
     #[tokio::test]
@@ -551,12 +682,78 @@ mod tests {
                 name: "status".into(),
                 description: "Show status".into(),
                 input_schema: json!({"type":"object"}),
+                ..McpTool::default()
             }],
         );
         let defs = s.advertised_tool_defs();
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "mcp__git__status");
         assert_eq!(defs[0].description, "Show status");
+    }
+
+    #[test]
+    fn advertised_tool_metadata_retains_rich_mcp_fields_normal() {
+        let server = fake_server(
+            "air",
+            McpServerStatus::Connected,
+            vec![McpTool {
+                name: "add_comment".into(),
+                title: Some("Add Comment".into()),
+                description: "Add review comment".into(),
+                input_schema: json!({"type":"object"}),
+                output_schema: Some(json!({
+                    "type": "object",
+                    "properties": {"ok": {"type": "boolean"}}
+                })),
+                annotations: Some(json!({"readOnlyHint": false})),
+                execution: Some(json!({"kind": "ui_event"})),
+                icons: Some(json!([{"src":"icon.svg"}])),
+                meta: Some(json!({"openai/outputTemplate":"ui://air/review.html"})),
+            }],
+        );
+        let metadata = server.advertised_tool_metadata();
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata[0].advertised_name, "mcp__air__add_comment");
+        assert_eq!(metadata[0].title.as_deref(), Some("Add Comment"));
+        assert_eq!(
+            metadata[0]
+                .meta
+                .as_ref()
+                .and_then(|value| value.get("openai/outputTemplate")),
+            Some(&json!("ui://air/review.html"))
+        );
+        assert_eq!(
+            metadata[0]
+                .annotations
+                .as_ref()
+                .and_then(|value| value.get("readOnlyHint")),
+            Some(&json!(false))
+        );
+    }
+
+    #[test]
+    fn mcp_resource_from_rmcp_resource_retains_metadata_normal() {
+        let raw = rmcp::model::RawResource {
+            uri: "ui://app/main".into(),
+            name: "main".into(),
+            title: Some("Main App".into()),
+            description: Some("Interactive app shell".into()),
+            mime_type: Some("text/html".into()),
+            size: Some(42),
+            icons: None,
+            meta: None,
+        };
+        let resource = rmcp::model::Annotated::new(raw, None).with_priority(0.75);
+        let mcp: McpResource = resource.into();
+        assert_eq!(mcp.uri, "ui://app/main");
+        assert_eq!(mcp.title.as_deref(), Some("Main App"));
+        assert_eq!(mcp.size, Some(42));
+        assert_eq!(
+            mcp.annotations
+                .as_ref()
+                .and_then(|value| value.get("priority")),
+            Some(&json!(0.75))
+        );
     }
 
     #[tokio::test]
@@ -659,6 +856,7 @@ mod tests {
                 name: "read".into(),
                 description: "".into(),
                 input_schema: json!({"type":"object"}),
+                ..McpTool::default()
             }],
         );
         s.transport = None;

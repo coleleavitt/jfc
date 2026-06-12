@@ -11,6 +11,7 @@
 //! 4. Churn tracking (git log frequency per file)
 //! 5. Complexity budget (LOC + nesting depth per function)
 //! 6. Test quality (implementation-coupling heuristics)
+//! 7. Rust security profile (unsafe/UB/codegen patterns routed to proof oracles)
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -28,6 +29,112 @@ pub struct SlopFinding {
     pub message: String,
     pub file: Option<String>,
     pub line: Option<usize>,
+}
+
+/// The research lane a finding should enter before an LLM tries to "fix" it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ResearchFindingClass {
+    MiriProvable,
+    SanitizerProvable,
+    FuzzerCandidate,
+    LlvmDiffCandidate,
+    IncrCacheCandidate,
+    UnsafeContractCandidate,
+    StaticReviewCandidate,
+}
+
+impl ResearchFindingClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MiriProvable => "miri_provable",
+            Self::SanitizerProvable => "sanitizer_provable",
+            Self::FuzzerCandidate => "fuzzer_candidate",
+            Self::LlvmDiffCandidate => "llvm_diff_candidate",
+            Self::IncrCacheCandidate => "incr_cache_candidate",
+            Self::UnsafeContractCandidate => "unsafe_contract_candidate",
+            Self::StaticReviewCandidate => "static_review_candidate",
+        }
+    }
+}
+
+impl std::fmt::Display for ResearchFindingClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Concrete proof artifact the agent should produce or ask for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProofArtifact {
+    MiriTest,
+    SanitizerRun,
+    FuzzReproducer,
+    LlvmDiff,
+    IncrementalCacheBundle,
+    UnsafeContractReview,
+    StaticReview,
+}
+
+impl ProofArtifact {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MiriTest => "focused Miri test",
+            Self::SanitizerRun => "sanitizer command",
+            Self::FuzzReproducer => "minimized fuzz/PoC input",
+            Self::LlvmDiff => "LLVM/rustc differential repro",
+            Self::IncrementalCacheBundle => "incremental cache + before/after diff",
+            Self::UnsafeContractReview => "unsafe contract review",
+            Self::StaticReview => "static code review",
+        }
+    }
+}
+
+impl std::fmt::Display for ProofArtifact {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl SlopFinding {
+    /// Classify this finding into the research lane that should validate it.
+    pub fn research_class(&self) -> ResearchFindingClass {
+        match self.rule.as_str() {
+            "miri_provable" => ResearchFindingClass::MiriProvable,
+            "sanitizer_provable" => ResearchFindingClass::SanitizerProvable,
+            "fuzzer_candidate" => ResearchFindingClass::FuzzerCandidate,
+            "llvm_diff_candidate" => ResearchFindingClass::LlvmDiffCandidate,
+            "incr_cache_candidate" => ResearchFindingClass::IncrCacheCandidate,
+            "unsafe_contract_candidate" => ResearchFindingClass::UnsafeContractCandidate,
+            "security_regression" | "guardrail_removal" => {
+                ResearchFindingClass::UnsafeContractCandidate
+            }
+            _ => ResearchFindingClass::StaticReviewCandidate,
+        }
+    }
+
+    /// Suggested concrete artifact(s) to request before treating a finding as fixed.
+    pub fn suggested_proof_artifacts(&self) -> Vec<ProofArtifact> {
+        match self.research_class() {
+            ResearchFindingClass::MiriProvable => {
+                vec![ProofArtifact::MiriTest, ProofArtifact::UnsafeContractReview]
+            }
+            ResearchFindingClass::SanitizerProvable => vec![ProofArtifact::SanitizerRun],
+            ResearchFindingClass::FuzzerCandidate => {
+                vec![ProofArtifact::FuzzReproducer, ProofArtifact::MiriTest]
+            }
+            ResearchFindingClass::LlvmDiffCandidate => vec![ProofArtifact::LlvmDiff],
+            ResearchFindingClass::IncrCacheCandidate => {
+                vec![ProofArtifact::IncrementalCacheBundle]
+            }
+            ResearchFindingClass::UnsafeContractCandidate => {
+                vec![
+                    ProofArtifact::UnsafeContractReview,
+                    ProofArtifact::StaticReview,
+                ]
+            }
+            ResearchFindingClass::StaticReviewCandidate => Vec::new(),
+        }
+    }
 }
 
 // ─── 1. Duplication Detection ───────────────────────────────────────────
@@ -431,7 +538,9 @@ pub fn check_borrow_clone(file_content: &str) -> Vec<SlopFinding> {
 fn clone_on_literal(line: &str) -> Option<&'static str> {
     let idx = line.find(".clone()")?;
     let before = line[..idx].trim_end();
-    let last = before.rsplit(|c: char| c.is_whitespace() || "([{,=".contains(c)).next()?;
+    let last = before
+        .rsplit(|c: char| c.is_whitespace() || "([{,=".contains(c))
+        .next()?;
     if last.is_empty() {
         return None;
     }
@@ -452,8 +561,19 @@ fn clone_on_literal(line: &str) -> Option<&'static str> {
         if suffix.is_empty()
             || matches!(
                 suffix,
-                "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
-                    | "u128" | "usize" | "f32" | "f64"
+                "i8" | "i16"
+                    | "i32"
+                    | "i64"
+                    | "i128"
+                    | "isize"
+                    | "u8"
+                    | "u16"
+                    | "u32"
+                    | "u64"
+                    | "u128"
+                    | "usize"
+                    | "f32"
+                    | "f64"
             )
         {
             return Some("number");
@@ -1203,7 +1323,199 @@ pub fn check_security_regression(old_content: Option<&str>, new_content: &str) -
     findings
 }
 
-// ─── 14. Premature Abstraction Detection ────────────────────────────────
+// ─── 14. Rust Security Profile ──────────────────────────────────────────
+
+fn is_comment_or_blank(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with('*')
+}
+
+fn code_before_line_comment(line: &str) -> &str {
+    line.split("//").next().unwrap_or(line).trim()
+}
+
+fn push_security_profile_finding(
+    findings: &mut Vec<SlopFinding>,
+    seen: &mut HashSet<&'static str>,
+    key: &'static str,
+    class: ResearchFindingClass,
+    line: usize,
+    message: impl Into<String>,
+) {
+    if seen.insert(key) {
+        findings.push(SlopFinding {
+            rule: class.as_str().into(),
+            message: message.into(),
+            file: None,
+            line: Some(line),
+        });
+    }
+}
+
+/// Detect Rust patterns that should be routed to a concrete verifier rather than
+/// reviewed only by prose. When `old_content` is present, unchanged matching
+/// lines are ignored so edits do not repeatedly report pre-existing unsafe code.
+pub fn check_rust_security_profile(
+    old_content: Option<&str>,
+    new_content: &str,
+    _file_path: &Path,
+) -> Vec<SlopFinding> {
+    let mut findings = Vec::new();
+    let mut seen: HashSet<&'static str> = HashSet::new();
+    let old = old_content.unwrap_or("");
+
+    for (idx, raw_line) in new_content.lines().enumerate() {
+        if is_comment_or_blank(raw_line) {
+            continue;
+        }
+        let line_no = idx + 1;
+        let code = code_before_line_comment(raw_line);
+        if code.is_empty() {
+            continue;
+        }
+        if old_content.is_some() && old.contains(code) {
+            continue;
+        }
+
+        if code.contains("unsafe {") || code.contains("unsafe fn") {
+            push_security_profile_finding(
+                &mut findings,
+                &mut seen,
+                "unsafe-boundary",
+                ResearchFindingClass::UnsafeContractCandidate,
+                line_no,
+                "Unsafe boundary changed or added - document caller/callee preconditions and validate them before self-fixing",
+            );
+        }
+
+        if code.contains("unsafe impl")
+            && (code.contains(" Send")
+                || code.contains(" Sync")
+                || code.contains("Send for")
+                || code.contains("Sync for"))
+        {
+            push_security_profile_finding(
+                &mut findings,
+                &mut seen,
+                "unsafe-send-sync",
+                ResearchFindingClass::SanitizerProvable,
+                line_no,
+                "Unsafe Send/Sync impl changed - run a concurrency-oriented proof such as loom/shuttle or sanitizer-backed tests where possible",
+            );
+        }
+
+        if code.contains("transmute")
+            || code.contains("MaybeUninit")
+            || code.contains("ManuallyDrop")
+            || code.contains(".set_len(")
+            || code.contains("set_len(")
+            || code.contains("get_unchecked")
+            || code.contains("from_raw_parts")
+        {
+            push_security_profile_finding(
+                &mut findings,
+                &mut seen,
+                "miri-ub-surface",
+                ResearchFindingClass::MiriProvable,
+                line_no,
+                "Potential UB surface changed (transmute/MaybeUninit/ManuallyDrop/set_len/get_unchecked/from_raw_parts) - require a focused Miri repro or safety proof",
+            );
+        }
+
+        let pointer_to_int_cast = (code.contains(" as usize") || code.contains(" as isize"))
+            && (code.contains("*const")
+                || code.contains("*mut")
+                || code.contains(".as_ptr()")
+                || code.contains(".as_mut_ptr()")
+                || code.contains("ptr::"));
+        if pointer_to_int_cast || code.contains("expose_addr") || code.contains("from_exposed_addr")
+        {
+            push_security_profile_finding(
+                &mut findings,
+                &mut seen,
+                "strict-provenance",
+                ResearchFindingClass::MiriProvable,
+                line_no,
+                "Pointer/integer provenance boundary changed - test under Miri strict provenance assumptions or preserve pointer provenance explicitly",
+            );
+        }
+
+        if code.contains("extern \"C\"")
+            || code.contains("extern \"system\"")
+            || code.contains("#[no_mangle]")
+            || code.contains("#[export_name")
+        {
+            push_security_profile_finding(
+                &mut findings,
+                &mut seen,
+                "ffi-boundary",
+                ResearchFindingClass::UnsafeContractCandidate,
+                line_no,
+                "FFI/export boundary changed - review ABI, ownership, unwind, and validity contracts",
+            );
+        }
+
+        if code.contains("#[target_feature")
+            || code.contains("asm!(")
+            || code.contains("global_asm!")
+        {
+            push_security_profile_finding(
+                &mut findings,
+                &mut seen,
+                "codegen-sensitive",
+                ResearchFindingClass::LlvmDiffCandidate,
+                line_no,
+                "Codegen-sensitive feature changed (target_feature/asm) - use differential compiler or target-specific repro before trusting the change",
+            );
+        }
+
+        if code.contains("read_volatile")
+            || code.contains("write_volatile")
+            || code.contains("static mut")
+            || code.contains("UnsafeCell")
+            || code.contains("AtomicPtr")
+        {
+            push_security_profile_finding(
+                &mut findings,
+                &mut seen,
+                "aliasing-concurrency",
+                ResearchFindingClass::UnsafeContractCandidate,
+                line_no,
+                "Aliasing/concurrency primitive changed - review Rust memory-model contracts and add an executable oracle when feasible",
+            );
+        }
+
+        if code.contains("catch_unwind") || code.contains("AssertUnwindSafe") {
+            push_security_profile_finding(
+                &mut findings,
+                &mut seen,
+                "panic-unwind",
+                ResearchFindingClass::FuzzerCandidate,
+                line_no,
+                "Unwind boundary changed - add a panic-injection or unusual trait-impl PoC to prove invariants survive unwinding",
+            );
+        }
+
+        if code.contains("HashStable") || code.contains("DepNode") || code.contains("eval_always") {
+            push_security_profile_finding(
+                &mut findings,
+                &mut seen,
+                "incremental-correctness",
+                ResearchFindingClass::IncrCacheCandidate,
+                line_no,
+                "Incremental/query-stability surface changed - preserve before/after source, diff, compiler version, and cache evidence",
+            );
+        }
+
+        if findings.len() >= 8 {
+            break;
+        }
+    }
+
+    findings
+}
+
+// ─── 15. Premature Abstraction Detection ────────────────────────────────
 
 /// Detect trait definitions that have exactly one implementor in the same file.
 pub fn check_premature_abstraction(file_content: &str) -> Vec<SlopFinding> {
@@ -1462,6 +1774,13 @@ pub async fn run_all_checks_with_old(
         // Resource leak patterns.
         findings.extend(check_resource_leaks(file_content));
 
+        // Rust security profile: route unsafe/UB/codegen surfaces to proof oracles.
+        findings.extend(check_rust_security_profile(
+            old_content,
+            file_content,
+            file_path,
+        ));
+
         // Premature abstraction.
         findings.extend(check_premature_abstraction(file_content));
 
@@ -1514,6 +1833,18 @@ pub fn format_report(report: &SlopReport) -> String {
             "  • [{}]{loc}: {}\n",
             finding.rule, finding.message
         ));
+        let artifacts = finding.suggested_proof_artifacts();
+        if !artifacts.is_empty() {
+            let proof = artifacts
+                .iter()
+                .map(|artifact| artifact.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!(
+                "    route: {}; proof: {proof}\n",
+                finding.research_class()
+            ));
+        }
     }
     out
 }
@@ -1612,7 +1943,9 @@ mod tests {
         let code = "fn f(x: &String) {\n    let y = &&x.clone();\n}\n";
         let findings = check_borrow_clone(code);
         assert!(
-            findings.iter().any(|f| f.message.contains("double reference")),
+            findings
+                .iter()
+                .any(|f| f.message.contains("double reference")),
             "got: {findings:?}"
         );
     }
@@ -1622,7 +1955,9 @@ mod tests {
         let code = "fn f(s: String) {\n    let y = s.clone().to_string();\n}\n";
         let findings = check_borrow_clone(code);
         assert!(
-            findings.iter().any(|f| f.message.contains("redundant double conversion")),
+            findings
+                .iter()
+                .any(|f| f.message.contains("redundant double conversion")),
             "got: {findings:?}"
         );
     }
@@ -1631,7 +1966,10 @@ mod tests {
     fn borrow_clone_skips_test_region_robust() {
         let code = "#[cfg(test)]\nmod tests {\n    fn t() { let x = 42.clone(); }\n}\n";
         let findings = check_borrow_clone(code);
-        assert!(findings.is_empty(), "test-region clone slop is ignored: {findings:?}");
+        assert!(
+            findings.is_empty(),
+            "test-region clone slop is ignored: {findings:?}"
+        );
     }
 
     #[test]
@@ -1775,6 +2113,49 @@ mod tests {
             findings.iter().any(|f| f.rule == "security_regression"),
             "expected security_regression finding, got: {findings:?}"
         );
+    }
+
+    #[test]
+    fn rust_security_profile_routes_ub_surface_to_miri_normal() {
+        let code = "fn widen(xs: &mut Vec<u8>) {\n    unsafe { xs.set_len(32); }\n}\n";
+        let findings = check_rust_security_profile(None, code, Path::new("src/lib.rs"));
+        let finding = findings
+            .iter()
+            .find(|f| f.rule == "miri_provable")
+            .expect("expected miri-provable security finding");
+        assert_eq!(finding.research_class(), ResearchFindingClass::MiriProvable);
+        assert!(
+            finding
+                .suggested_proof_artifacts()
+                .contains(&ProofArtifact::MiriTest)
+        );
+    }
+
+    #[test]
+    fn rust_security_profile_ignores_unchanged_line_when_old_content_known_robust() {
+        let old = "fn widen(xs: &mut Vec<u8>) {\n    unsafe { xs.set_len(32); }\n}\n";
+        let new = "fn widen(xs: &mut Vec<u8>) {\n    unsafe { xs.set_len(32); }\n    let _ = xs.len();\n}\n";
+        let findings = check_rust_security_profile(Some(old), new, Path::new("src/lib.rs"));
+        assert!(
+            findings.iter().all(|f| f.rule != "miri_provable"),
+            "unchanged unsafe line should not be reflagged: {findings:?}"
+        );
+    }
+
+    #[test]
+    fn format_report_includes_oracle_route_for_security_findings_normal() {
+        let report = SlopReport {
+            has_findings: true,
+            findings: vec![SlopFinding {
+                rule: "miri_provable".into(),
+                message: "potential UB".into(),
+                file: Some("src/lib.rs".into()),
+                line: Some(7),
+            }],
+        };
+        let formatted = format_report(&report);
+        assert!(formatted.contains("route: miri_provable"));
+        assert!(formatted.contains("focused Miri test"));
     }
 
     #[test]

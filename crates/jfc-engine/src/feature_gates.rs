@@ -28,9 +28,9 @@ pub enum FeatureGate {
     /// continuation prompts, no full redraws between turns. v132's primary
     /// interactive mode.
     Harbor,
-    /// Investigate-first nudge: the model spends up to ~1 minute on
-    /// read-only investigation (Read/Grep/Glob/git log) before asking the
-    /// user a clarifying question, when the task scope is bounded.
+    /// Targeted-investigation nudge: when scope is bounded and the model would
+    /// otherwise ask a clarifying question, it makes one focused CodeGraph or
+    /// search pass first.
     Harrier,
     /// Permission policy autopilot: when a tool's permission rule matches
     /// a non-interactive ALLOW or DENY, skip the prompt entirely and log
@@ -201,7 +201,7 @@ impl FeatureGate {
     pub fn description(self) -> &'static str {
         match self {
             Self::Harbor => "REPL mode: persistent context across turns",
-            Self::Harrier => "Investigate-first: explore before asking",
+            Self::Harrier => "Targeted investigation before asking",
             Self::Kestrel => "Permission autopilot: skip prompts on explicit rules",
             Self::Meadow => "Fleet UI: surface multi-agent dispatch",
             Self::Prism => "Live progress UI with per-tool status",

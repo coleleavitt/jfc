@@ -12,9 +12,7 @@ use crate::atomic_write::write_atomic_sync;
 
 /// Canonical path to the catch-up state file.
 pub fn catch_up_state_path(project_root: &Path) -> PathBuf {
-    project_root
-        .join(".claude")
-        .join("catch-up-state.json")
+    project_root.join(".claude").join("catch-up-state.json")
 }
 
 /// A single item the catch-up skill was tracking.
@@ -85,10 +83,7 @@ pub fn load_catch_up_state(project_root: &Path) -> CatchUpState {
 /// Persist the catch-up state to `<project_root>/.claude/catch-up-state.json`.
 ///
 /// Creates `.claude/` if needed. Uses atomic write to prevent corruption.
-pub fn save_catch_up_state(
-    project_root: &Path,
-    state: &CatchUpState,
-) -> std::io::Result<()> {
+pub fn save_catch_up_state(project_root: &Path, state: &CatchUpState) -> std::io::Result<()> {
     let path = catch_up_state_path(project_root);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

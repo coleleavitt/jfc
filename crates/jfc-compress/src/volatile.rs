@@ -568,10 +568,7 @@ mod tests {
     #[test]
     fn from_path_classifies_provider_shape() {
         assert_eq!(ApiKind::from_path("/v1/messages"), ApiKind::Anthropic);
-        assert_eq!(
-            ApiKind::from_path("/v1/chat/completions"),
-            ApiKind::OpenAi
-        );
+        assert_eq!(ApiKind::from_path("/v1/chat/completions"), ApiKind::OpenAi);
         assert_eq!(ApiKind::from_path("/v1/responses"), ApiKind::OpenAi);
     }
 }

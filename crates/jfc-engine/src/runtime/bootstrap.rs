@@ -5,7 +5,9 @@ use crate::providers::{
     CodexOAuthProvider, GeminiApiProvider, LiteLLMProvider, OpenAIProvider, OpenRouterProvider,
     OpenWebUIProvider, VertexProvider,
 };
-use jfc_provider::{ModelId, ModelSpec, Provider, ProviderId};
+use jfc_provider::{
+    ModelId, ModelResolutionReason, ModelSpec, Provider, ProviderId, ResolvedModel,
+};
 
 /// Result of `build_providers()`. We keep a typed `Arc<AnthropicOAuthProvider>` next
 /// to the trait-object list so the OAuth-specific profile fetch can run without
@@ -20,6 +22,7 @@ pub struct ProvidersInit {
 pub struct ProviderModelResolution {
     pub provider: Arc<dyn Provider>,
     pub model: ModelId,
+    pub resolved_model: ResolvedModel,
 }
 
 /// Build every provider that has usable config in this environment, plus pick which one
@@ -315,22 +318,27 @@ pub fn resolve_provider_model(
             .iter()
             .find(|p| p.name() == prefix.as_str())
             .cloned()
-            .map(|provider| ProviderModelResolution {
-                provider,
-                model: spec.model().clone(),
+            .map(|provider| {
+                provider_resolution(
+                    provider,
+                    spec.clone(),
+                    spec.model().clone(),
+                    ModelResolutionReason::ExplicitProvider,
+                )
             });
     }
     let model = ModelId::new(model_id);
     // Tier 2: static catalogue lookup
-    if let Some(p) = providers.iter().find(|p| {
-        p.available_models()
-            .iter()
-            .any(|m| m.id.as_str() == model_id)
-    }) {
-        return Some(ProviderModelResolution {
-            provider: Arc::clone(p),
-            model,
-        });
+    for p in providers {
+        let models = p.available_models();
+        if models.iter().any(|m| m.id.as_str() == model_id) {
+            return Some(provider_resolution(
+                Arc::clone(p),
+                ModelSpec::bare(model_id),
+                model,
+                ModelResolutionReason::CatalogMatch,
+            ));
+        }
     }
     // Tier 3: heuristic — OpenAI-looking ids route to OpenAI first, then
     // non-`claude-` ids route to OpenWebUI proxy.
@@ -340,7 +348,16 @@ pub fn resolve_provider_model(
             .iter()
             .find(|p| p.name() == "codex")
             .cloned()
-            .map(|provider| ProviderModelResolution { provider, model });
+            .map(|provider| {
+                provider_resolution(
+                    provider,
+                    ModelSpec::bare(model_id),
+                    model.clone(),
+                    ModelResolutionReason::Heuristic {
+                        rule: "codex-looking model id".to_owned(),
+                    },
+                )
+            });
     }
 
     let has_openai = providers.iter().any(|p| p.name() == "openai");
@@ -349,7 +366,16 @@ pub fn resolve_provider_model(
             .iter()
             .find(|p| p.name() == "openai")
             .cloned()
-            .map(|provider| ProviderModelResolution { provider, model });
+            .map(|provider| {
+                provider_resolution(
+                    provider,
+                    ModelSpec::bare(model_id),
+                    model.clone(),
+                    ModelResolutionReason::Heuristic {
+                        rule: "openai-looking model id".to_owned(),
+                    },
+                )
+            });
     }
 
     let has_openrouter = providers.iter().any(|p| p.name() == "openrouter");
@@ -358,7 +384,16 @@ pub fn resolve_provider_model(
             .iter()
             .find(|p| p.name() == "openrouter")
             .cloned()
-            .map(|provider| ProviderModelResolution { provider, model });
+            .map(|provider| {
+                provider_resolution(
+                    provider,
+                    ModelSpec::bare(model_id),
+                    model.clone(),
+                    ModelResolutionReason::Heuristic {
+                        rule: "openrouter vendor/model id".to_owned(),
+                    },
+                )
+            });
     }
 
     let has_litellm = providers.iter().any(|p| p.name() == "litellm");
@@ -367,7 +402,16 @@ pub fn resolve_provider_model(
             .iter()
             .find(|p| p.name() == "litellm")
             .cloned()
-            .map(|provider| ProviderModelResolution { provider, model });
+            .map(|provider| {
+                provider_resolution(
+                    provider,
+                    ModelSpec::bare(model_id),
+                    model.clone(),
+                    ModelResolutionReason::Heuristic {
+                        rule: "proxy-routed non-claude model id".to_owned(),
+                    },
+                )
+            });
     }
 
     let has_openwebui = providers.iter().any(|p| p.name() == "openwebui");
@@ -376,25 +420,61 @@ pub fn resolve_provider_model(
             .iter()
             .find(|p| p.name() == "openwebui")
             .cloned()
-            .map(|provider| ProviderModelResolution { provider, model });
+            .map(|provider| {
+                provider_resolution(
+                    provider,
+                    ModelSpec::bare(model_id),
+                    model.clone(),
+                    ModelResolutionReason::Heuristic {
+                        rule: "openwebui catch-all proxy model id".to_owned(),
+                    },
+                )
+            });
     }
 
     // Tier 3b: gemini-prefixed ids route to the gemini or antigravity provider.
     if model_id.starts_with("gemini") {
         if let Some(p) = providers.iter().find(|p| p.name() == "antigravity") {
-            return Some(ProviderModelResolution {
-                provider: Arc::clone(p),
-                model,
-            });
+            return Some(provider_resolution(
+                Arc::clone(p),
+                ModelSpec::bare(model_id),
+                model.clone(),
+                ModelResolutionReason::Heuristic {
+                    rule: "gemini-prefixed id routed to antigravity".to_owned(),
+                },
+            ));
         }
         if let Some(p) = providers.iter().find(|p| p.name() == "gemini") {
-            return Some(ProviderModelResolution {
-                provider: Arc::clone(p),
-                model,
-            });
+            return Some(provider_resolution(
+                Arc::clone(p),
+                ModelSpec::bare(model_id),
+                model.clone(),
+                ModelResolutionReason::Heuristic {
+                    rule: "gemini-prefixed id".to_owned(),
+                },
+            ));
         }
     }
     None
+}
+
+fn provider_resolution(
+    provider: Arc<dyn Provider>,
+    requested: ModelSpec,
+    model: ModelId,
+    reason: ModelResolutionReason,
+) -> ProviderModelResolution {
+    let info = provider
+        .available_models()
+        .into_iter()
+        .find(|info| info.id == model);
+    let effective = ModelSpec::qualified(ProviderId::new(provider.name()), model.clone());
+    let resolved_model = ResolvedModel::new(requested, effective, reason, info.as_ref());
+    ProviderModelResolution {
+        provider,
+        model,
+        resolved_model,
+    }
 }
 
 pub fn provider_for_model(

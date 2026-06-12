@@ -63,6 +63,29 @@ pub fn resolve_bash_workdir(cwd: &Path, workdir: Option<&str>) -> PathBuf {
     }
 }
 
+fn checkpoint_before_mutation(path: &Path, tool: &str) {
+    match crate::file_checkpoint::checkpoint_file(path) {
+        Ok(backup) => {
+            tracing::debug!(
+                target: "jfc::file_checkpoint",
+                tool,
+                path = %path.display(),
+                backup = %backup.display(),
+                "created file checkpoint before mutation"
+            );
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "jfc::file_checkpoint",
+                tool,
+                path = %path.display(),
+                error = %error,
+                "failed to create file checkpoint before mutation"
+            );
+        }
+    }
+}
+
 #[tracing::instrument(target = "jfc::tools", skip(input, cwd, dedup, task_store), fields(kind = ?kind))]
 pub async fn execute_tool(
     kind: ToolKind,
@@ -193,13 +216,22 @@ pub async fn execute_tool(
                 }
                 None => file_path.clone(),
             };
+            let old_content = tokio::fs::read_to_string(&target_path).await.ok();
+            checkpoint_before_mutation(Path::new(&target_path), "Write");
             let result = execute_write(&target_path, &content).await;
             if !result.is_error() {
                 if let Some(cache) = &dedup {
                     cache.lock().await.invalidate(Path::new(&file_path));
                 }
                 // Slop guard: check the written content for quality issues.
-                return maybe_run_slop_guard(result, Path::new(&file_path), &content, &cwd).await;
+                return maybe_run_slop_guard(
+                    result,
+                    Path::new(&file_path),
+                    &content,
+                    old_content.as_deref(),
+                    &cwd,
+                )
+                .await;
             }
             result
         }
@@ -212,6 +244,8 @@ pub async fn execute_tool(
                 replacement,
             },
         ) => {
+            let old_content = tokio::fs::read_to_string(&file_path).await.ok();
+            checkpoint_before_mutation(Path::new(&file_path), "Edit");
             let result = execute_edit(&file_path, &old_string, &new_string, replacement).await;
             if !result.is_error() {
                 if let Some(cache) = &dedup {
@@ -221,8 +255,14 @@ pub async fn execute_tool(
                 let post_content = tokio::fs::read_to_string(&file_path)
                     .await
                     .unwrap_or_default();
-                return maybe_run_slop_guard(result, Path::new(&file_path), &post_content, &cwd)
-                    .await;
+                return maybe_run_slop_guard(
+                    result,
+                    Path::new(&file_path),
+                    &post_content,
+                    old_content.as_deref(),
+                    &cwd,
+                )
+                .await;
             }
             result
         }
@@ -541,6 +581,8 @@ pub async fn execute_tool(
                     ));
                 }
             };
+            let old_content = content.clone();
+            checkpoint_before_mutation(&path, "MultiEdit");
             let edit_array =
                 match edits.as_array() {
                     Some(a) => a,
@@ -603,7 +645,14 @@ pub async fn execute_tool(
             let result =
                 ExecutionResult::success(format!("Applied {applied} edits to {file_path}."));
             // Slop guard: check the final content for quality issues.
-            maybe_run_slop_guard(result, Path::new(&file_path), &content, &cwd).await
+            maybe_run_slop_guard(
+                result,
+                Path::new(&file_path),
+                &content,
+                Some(&old_content),
+                &cwd,
+            )
+            .await
         }
         (ToolKind::AskUserQuestion, ToolInput::AskUserQuestion { questions }) => {
             // FALLBACK PATH ONLY. The normal route diverts AskUserQuestion
@@ -830,6 +879,92 @@ pub async fn execute_tool(
                 )
             }
         }
+        (
+            ToolKind::SubmitPlan,
+            ToolInput::SubmitPlan {
+                short_name,
+                summary,
+                plan,
+            },
+        ) => {
+            let submitted = crate::review::submitted_plan(short_name, summary, plan);
+            match crate::review::persist_submitted_plan(&cwd, &submitted).await {
+                Ok(()) => {
+                    if let Some(tx) = snapshot_event_sender() {
+                        let _ = tx
+                            .send(crate::runtime::EngineEvent::Frontend(
+                                crate::runtime::FrontendEvent::ImplementationPlanSubmitted {
+                                    plan: submitted.clone(),
+                                },
+                            ))
+                            .await;
+                    }
+                    ExecutionResult::success(format!(
+                        "Plan submitted and saved: {}",
+                        submitted.short_name
+                    ))
+                }
+                Err(err) => ExecutionResult::failure(format!("failed to save plan: {err}")),
+            }
+        }
+        (
+            ToolKind::AddReviewComment,
+            ToolInput::AddReviewComment {
+                file_path,
+                start_line,
+                end_line,
+                text,
+            },
+        ) => match crate::review::validate_review_comment(
+            &cwd, &file_path, start_line, end_line, &text,
+        ) {
+            Ok(comment) => match crate::review::persist_review_comment(&cwd, &comment).await {
+                Ok(()) => {
+                    if let Some(tx) = snapshot_event_sender() {
+                        let _ = tx
+                            .send(crate::runtime::EngineEvent::Frontend(
+                                crate::runtime::FrontendEvent::ReviewCommentAdded {
+                                    comment: comment.clone(),
+                                },
+                            ))
+                            .await;
+                    }
+                    ExecutionResult::success(format!(
+                        "Review comment saved: {}:{}-{}",
+                        comment.file_path.display(),
+                        comment.start_line,
+                        comment.end_line
+                    ))
+                }
+                Err(err) => {
+                    ExecutionResult::failure(format!("failed to save review comment: {err}"))
+                }
+            },
+            Err(reason) => ExecutionResult::failure(reason),
+        },
+        (ToolKind::SuggestCommitMessage, ToolInput::SuggestCommitMessage { message, scope }) => {
+            let suggestion = crate::review::commit_message_suggestion(scope, message);
+            match crate::review::persist_commit_message_suggestion(&cwd, &suggestion).await {
+                Ok(()) => {
+                    if let Some(tx) = snapshot_event_sender() {
+                        let _ = tx
+                            .send(crate::runtime::EngineEvent::Frontend(
+                                crate::runtime::FrontendEvent::CommitMessageSuggested {
+                                    suggestion: suggestion.clone(),
+                                },
+                            ))
+                            .await;
+                    }
+                    ExecutionResult::success(format!(
+                        "Commit message suggestion saved: {}",
+                        suggestion.message
+                    ))
+                }
+                Err(err) => {
+                    ExecutionResult::failure(format!("failed to save commit message: {err}"))
+                }
+            }
+        }
         (ToolKind::Mcp(advertised_name), ToolInput::Mcp { arguments, .. }) => {
             // Route through the global MCP registry. The registry is
             // populated at startup from `[mcp.<name>]` config blocks;
@@ -1035,12 +1170,26 @@ pub async fn execute_tool(
             // feedback (which field failed + re-emit instruction) so the agent's
             // next-turn retry converges instead of seeing a bare error.
             use crate::tools::structured_output::{format_retry_feedback, schema_outcome};
-            match format_retry_feedback(&schema_outcome(&data)) {
+            let processed =
+                crate::response_processor::deterministic_json_repair_chain().process(data);
+            let repair_note = if processed.findings.is_empty() {
+                String::new()
+            } else {
+                let notes = processed
+                    .findings
+                    .iter()
+                    .map(|finding| format!("{}: {}", finding.processor, finding.message))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                format!("Response processor notes: {notes}\n")
+            };
+            match format_retry_feedback(&schema_outcome(&processed.value)) {
                 None => ExecutionResult::success(format!(
-                    "Structured output provided successfully.\n{}",
-                    serde_json::to_string_pretty(&data).unwrap_or_else(|_| data.to_string())
+                    "{repair_note}Structured output provided successfully.\n{}",
+                    serde_json::to_string_pretty(&processed.value)
+                        .unwrap_or_else(|_| processed.value.to_string())
                 )),
-                Some(feedback) => ExecutionResult::failure(feedback),
+                Some(feedback) => ExecutionResult::failure(format!("{repair_note}{feedback}")),
             }
         }
         (ToolKind::WaitForMcpServers, ToolInput::WaitForMcpServers { timeout_ms }) => {
@@ -1103,7 +1252,34 @@ pub async fn execute_tool(
                 }
                 result.push_str(&format!("## {}\n", s.name));
                 for res in &s.resources {
-                    result.push_str(&format!("  - {} ({})\n", res.name, res.uri));
+                    let display_name = res.title.as_deref().unwrap_or(&res.name);
+                    let mut attrs = Vec::new();
+                    if let Some(mime) = res.mime_type.as_deref() {
+                        attrs.push(format!("mime={mime}"));
+                    }
+                    if let Some(size) = res.size {
+                        attrs.push(format!("size={size}"));
+                    }
+                    let suffix = if attrs.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" [{}]", attrs.join(", "))
+                    };
+                    result.push_str(&format!("  - {} ({}){}\n", display_name, res.uri, suffix));
+                    if let Some(description) = res.description.as_deref()
+                        && !description.trim().is_empty()
+                    {
+                        result.push_str(&format!("    description: {}\n", description.trim()));
+                    }
+                    if let Some(annotations) = res.annotations.as_ref() {
+                        result.push_str(&format!("    annotations: {annotations}\n"));
+                    }
+                    if let Some(icons) = res.icons.as_ref() {
+                        result.push_str(&format!("    icons: {icons}\n"));
+                    }
+                    if let Some(meta) = res.meta.as_ref() {
+                        result.push_str(&format!("    _meta: {meta}\n"));
+                    }
                 }
             }
             if result.is_empty() {

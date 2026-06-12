@@ -34,8 +34,8 @@
 //!   the output length matches CPython's libz at level=1 closely enough
 //!   that the 15% ratio-diff threshold absorbs any per-byte drift.
 
-use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use flate2::write::ZlibEncoder;
 use md5::{Digest, Md5};
 use std::collections::HashSet;
 use std::io::Write;

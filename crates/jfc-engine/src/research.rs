@@ -374,8 +374,25 @@ pub fn plan_subqueries(request: &ResearchRequest) -> Vec<String> {
 /// prefix verbatim and only rewrite the remainder, or routing breaks. Kept in
 /// sync with the `search()` dispatcher in `jfc-web`.
 pub const BACKEND_PREFIXES: &[&str] = &[
-    "arxiv", "scholar", "openalex", "crossref", "pubmed", "doaj", "core", "unpaywall", "papers",
-    "brave", "tavily", "exa", "ddg", "wiki", "primo", "uni", "edu", "cn", "gov",
+    "arxiv",
+    "scholar",
+    "openalex",
+    "crossref",
+    "pubmed",
+    "doaj",
+    "core",
+    "unpaywall",
+    "papers",
+    "brave",
+    "tavily",
+    "exa",
+    "ddg",
+    "wiki",
+    "primo",
+    "uni",
+    "edu",
+    "cn",
+    "gov",
 ];
 
 /// Split a leading `prefix:`/`prefix ` backend selector off a query, returning
@@ -731,7 +748,10 @@ async fn research_stream_to_completion(
     opts: &StreamOptions,
 ) -> Result<CompletionResponse, String> {
     use futures::StreamExt;
-    let mut stream = provider.stream(messages, opts).await.map_err(|e| e.to_string())?;
+    let mut stream = provider
+        .stream(messages, opts)
+        .await
+        .map_err(|e| e.to_string())?;
     let mut collected = String::new();
     let mut usage = TokenUsage::default();
     while let Some(event) = stream.next().await {
@@ -887,7 +907,10 @@ impl Planner for LlmPlanner {
 /// signals completion or `max_steps` is reached.
 ///
 /// Returns `Err` only when the question is empty or **every** search failed.
-#[tracing::instrument(target = "jfc::research", skip(request, planner, searcher, synthesizer))]
+#[tracing::instrument(
+    target = "jfc::research",
+    skip(request, planner, searcher, synthesizer)
+)]
 pub async fn run_research_agentic(
     request: ResearchRequest,
     planner: &dyn Planner,
@@ -915,14 +938,14 @@ pub async fn run_research_agentic(
         } else {
             sub_query.clone()
         };
-        let outcome = match searcher.search(&search_query, request.results_per_step).await {
+        let outcome = match searcher
+            .search(&search_query, request.results_per_step)
+            .await
+        {
             Ok(text) => StepOutcome::Found(text),
             Err(e) => StepOutcome::Failed(e),
         };
-        steps.push(ResearchStep {
-            sub_query,
-            outcome,
-        });
+        steps.push(ResearchStep { sub_query, outcome });
     }
 
     // If the planner never produced a usable query (e.g. model unavailable),
@@ -1123,7 +1146,6 @@ impl Searcher for CombinedSearcher {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1295,7 +1317,10 @@ mod tests {
             .await
             .expect("ok");
         // All three scripted queries ran, in order.
-        assert_eq!(report.plan, vec!["first query", "second query", "third query"]);
+        assert_eq!(
+            report.plan,
+            vec!["first query", "second query", "third query"]
+        );
         assert_eq!(report.steps.len(), 3);
         // The planner saw growing evidence each call: 0, 1, 2, then a 4th call
         // that returned None (3 steps visible) to stop.

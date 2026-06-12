@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 pub use protocol::ToolCallOutcome;
 pub use registry::{
-    DispatchError, McpRegistry, McpResource, McpServer, McpServerStatus,
+    DispatchError, McpAdvertisedToolMetadata, McpRegistry, McpResource, McpServer, McpServerStatus,
     register_servers_from_config, restart_server,
 };
 pub use tool_dispatch::{

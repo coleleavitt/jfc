@@ -276,6 +276,47 @@ pub async fn handle_engine_event(
         EngineEvent::Frontend(FrontendEvent::PlanReview { plan }) => {
             crate::runtime::event_loop::handlers::ui_actions::handle_exit_plan_mode(state, plan);
         }
+        EngineEvent::Frontend(FrontendEvent::ReviewCompleted { review }) => {
+            let findings = review.findings.len();
+            let duplicate_findings = review
+                .findings
+                .iter()
+                .filter(|finding| finding.duplicate)
+                .count();
+            crate::runtime::event_loop::handlers::ui_actions::handle_toast(
+                state,
+                crate::toast::ToastKind::Info,
+                format!(
+                    "Auto-review completed: {findings} finding(s), {duplicate_findings} duplicate(s)"
+                ),
+            );
+        }
+        EngineEvent::Frontend(FrontendEvent::ReviewCommentAdded { comment }) => {
+            crate::runtime::event_loop::handlers::ui_actions::handle_toast(
+                state,
+                crate::toast::ToastKind::Info,
+                format!(
+                    "Review comment saved: {}:{}-{}",
+                    comment.file_path.display(),
+                    comment.start_line,
+                    comment.end_line
+                ),
+            );
+        }
+        EngineEvent::Frontend(FrontendEvent::ImplementationPlanSubmitted { plan }) => {
+            crate::runtime::event_loop::handlers::ui_actions::handle_toast(
+                state,
+                crate::toast::ToastKind::Info,
+                format!("Plan submitted: {}", plan.short_name),
+            );
+        }
+        EngineEvent::Frontend(FrontendEvent::CommitMessageSuggested { suggestion }) => {
+            crate::runtime::event_loop::handlers::ui_actions::handle_toast(
+                state,
+                crate::toast::ToastKind::Info,
+                format!("Commit message suggested: {}", suggestion.message),
+            );
+        }
         EngineEvent::Frontend(FrontendEvent::GoalSet { condition }) => {
             crate::runtime::event_loop::handlers::ui_actions::handle_set_goal(state, condition);
         }

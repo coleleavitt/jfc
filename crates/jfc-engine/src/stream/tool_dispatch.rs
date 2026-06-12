@@ -14,8 +14,7 @@ use jfc_provider::{ModelId, Provider};
 
 #[derive(Clone)]
 pub struct LocalAdvisorDispatchContext {
-    pub provider: Arc<dyn Provider>,
-    pub advisor_model: ModelId,
+    pub targets: Vec<crate::advisor::LocalAdvisorProviderTarget>,
     pub transcript: Vec<ChatMessage>,
 }
 
@@ -25,13 +24,13 @@ impl LocalAdvisorDispatchContext {
             return None;
         }
         let advisor_model = state.local_advisor_model.clone()?;
-        let provider = match crate::advisor::resolve_local_advisor_provider(
+        let targets = match crate::advisor::resolve_local_advisor_provider_targets(
             &state.providers,
             Arc::clone(&state.provider),
             state.local_advisor_provider.as_ref(),
             &advisor_model,
         ) {
-            Ok(provider) => provider,
+            Ok(targets) => targets,
             Err(e) => {
                 tracing::warn!(
                     target: "jfc::advisor",
@@ -42,8 +41,7 @@ impl LocalAdvisorDispatchContext {
             }
         };
         Some(Self {
-            provider,
-            advisor_model,
+            targets,
             transcript: state.messages.clone(),
         })
     }
@@ -156,8 +154,7 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
                 result = async {
                     match context {
                         Some(context) => match crate::advisor::ask_local_advisor_tool(
-                            context.provider.as_ref(),
-                            context.advisor_model,
+                            &context.targets,
                             &context.transcript,
                         )
                         .await
@@ -387,62 +384,62 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
                 // model. Control then falls through (no done()/continue here).
                 task_input.run_in_background = false;
             } else {
-            match spawn_result {
-                Ok(pid) => {
-                    send_critical(
-                        &tx_task,
-                        EngineEvent::Task(TaskEvent::Started {
-                            task_id: crate::ids::TaskId::from(task_id.clone()),
-                            description: description.clone(),
-                            model_used: model_used.clone(),
-                            max_input_tokens,
-                            // True detached background worker: the worker
-                            // process already called
-                            // `record_background_agent_started_at` with its
-                            // own PID + launch_path. The UI's TaskStarted
-                            // handler must skip the registry write so it
-                            // doesn't clobber that record.
-                            is_detached: true,
-                            parent_task_id: task_input.parent_task_id.clone(),
-                        }),
-                    );
-                    let result_json = serde_json::json!({
-                        "status": "background_task_started",
-                        "task_id": task_id.clone(),
-                        "worker_pid": pid,
-                        "description": description.clone(),
-                        "message": "Task is running in a detached worker. Use `jfc daemon agents`, `jfc daemon attach <task_id>`, `jfc daemon wait <task_id>`, or `jfc daemon kill <task_id>`."
-                    });
-                    send_critical(
-                        &tx_task,
-                        EngineEvent::Tool(ToolEvent::Result {
-                            tool_id: crate::ids::ToolId::from(task_id.clone()),
-                            result: crate::runtime::ExecutionResult::success(
-                                serde_json::to_string_pretty(&result_json).unwrap_or_default(),
-                            ),
-                        }),
-                    );
+                match spawn_result {
+                    Ok(pid) => {
+                        send_critical(
+                            &tx_task,
+                            EngineEvent::Task(TaskEvent::Started {
+                                task_id: crate::ids::TaskId::from(task_id.clone()),
+                                description: description.clone(),
+                                model_used: model_used.clone(),
+                                max_input_tokens,
+                                // True detached background worker: the worker
+                                // process already called
+                                // `record_background_agent_started_at` with its
+                                // own PID + launch_path. The UI's TaskStarted
+                                // handler must skip the registry write so it
+                                // doesn't clobber that record.
+                                is_detached: true,
+                                parent_task_id: task_input.parent_task_id.clone(),
+                            }),
+                        );
+                        let result_json = serde_json::json!({
+                            "status": "background_task_started",
+                            "task_id": task_id.clone(),
+                            "worker_pid": pid,
+                            "description": description.clone(),
+                            "message": "Task is running in a detached worker. Use `jfc daemon agents`, `jfc daemon attach <task_id>`, `jfc daemon wait <task_id>`, or `jfc daemon kill <task_id>`."
+                        });
+                        send_critical(
+                            &tx_task,
+                            EngineEvent::Tool(ToolEvent::Result {
+                                tool_id: crate::ids::ToolId::from(task_id.clone()),
+                                result: crate::runtime::ExecutionResult::success(
+                                    serde_json::to_string_pretty(&result_json).unwrap_or_default(),
+                                ),
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        let error = format!("failed to spawn background worker: {e}");
+                        send_critical(
+                            &tx_task,
+                            EngineEvent::Task(TaskEvent::Failed {
+                                task_id: crate::ids::TaskId::from(task_id.clone()),
+                                error: error.clone(),
+                            }),
+                        );
+                        send_critical(
+                            &tx_task,
+                            EngineEvent::Tool(ToolEvent::Result {
+                                tool_id: crate::ids::ToolId::from(task_id.clone()),
+                                result: crate::runtime::ExecutionResult::failure(error),
+                            }),
+                        );
+                    }
                 }
-                Err(e) => {
-                    let error = format!("failed to spawn background worker: {e}");
-                    send_critical(
-                        &tx_task,
-                        EngineEvent::Task(TaskEvent::Failed {
-                            task_id: crate::ids::TaskId::from(task_id.clone()),
-                            error: error.clone(),
-                        }),
-                    );
-                    send_critical(
-                        &tx_task,
-                        EngineEvent::Tool(ToolEvent::Result {
-                            tool_id: crate::ids::ToolId::from(task_id.clone()),
-                            result: crate::runtime::ExecutionResult::failure(error),
-                        }),
-                    );
-                }
-            }
-            done();
-            continue;
+                done();
+                continue;
             } // end else (non-capacity spawn outcome)
             // Reached only on the ResourceBusy capacity fallback: fall through
             // to the in-process subagent path below (no done()/continue above).
@@ -969,10 +966,11 @@ where
             .unwrap_or(script_text.clone());
 
         let started = std::time::Instant::now();
+        let workflow_args = args.unwrap_or(serde_json::Value::Null);
         let outcome = crate::workflows::run_workflow(crate::workflows::WorkflowRunConfig {
             run_id: run_id.clone(),
             script_body: body,
-            args: args.unwrap_or(serde_json::Value::Null),
+            args: workflow_args.clone(),
             provider,
             model,
             session_dir: session_dir.clone(),
@@ -981,11 +979,31 @@ where
             tx: Some(tx.clone()),
             workflow_task_id: bg_task_id.clone(),
             depth: 0,
-            cwd: std::env::current_dir().unwrap_or_default(),
+            cwd: cwd.clone(),
             token_budget: None,
         })
         .await;
         let elapsed_ms = started.elapsed().as_millis() as u64;
+        if meta.name == "code-review" {
+            let source = if workflow_args
+                .get("auto")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
+                "auto"
+            } else {
+                "workflow"
+            };
+            crate::auto_review::persist_code_review_outcome(
+                &cwd,
+                &run_id,
+                source,
+                &workflow_args,
+                &outcome.result,
+                outcome.error.as_deref(),
+            )
+            .await;
+        }
 
         // ── mark the background task terminal ───────────────────────────
         // The notification body becomes the task summary so the standard
@@ -1190,12 +1208,10 @@ fn resolve_council_members(
 
     if requested.is_empty() {
         add(active_provider.clone(), active_model.clone(), &mut members);
-        if let Some(ctx) = advisor_ctx {
-            add(
-                ctx.provider.clone(),
-                ctx.advisor_model.clone(),
-                &mut members,
-            );
+        if let Some(ctx) = advisor_ctx
+            && let Some(target) = ctx.targets.first()
+        {
+            add(target.provider.clone(), target.model.clone(), &mut members);
         }
     } else {
         for id in requested {

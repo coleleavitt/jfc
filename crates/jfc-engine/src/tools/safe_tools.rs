@@ -26,12 +26,10 @@ pub async fn all_tool_defs_with_mcp() -> Vec<jfc_provider::ToolDef> {
         tools.iter().map(|t| t.name.clone()).collect();
     if let Some(registry) = snapshot_mcp_registry() {
         for tool in registry.all_advertised_tool_defs().await {
-            // Codegraph #284: external MCP servers occasionally advertise
-            // tool names that double our own prefix (e.g. an MCP server
-            // re-publishes a `graph_search` tool when we already host
-            // `graph_search` natively, producing a `mcp__jfc__graph_search`
-            // collision). Drop those: the agent gets a single, canonical
-            // implementation and shadowing surprises don't reach the model.
+            // External MCP servers may advertise names that collide with a
+            // builtin tool after namespacing. Drop those: the agent gets a
+            // single canonical implementation and shadowing surprises don't
+            // reach the model.
             if builtin_names.contains(&tool.name) {
                 tracing::warn!(
                     target: "jfc::tools::mcp",
@@ -303,6 +301,7 @@ pub async fn maybe_run_slop_guard(
     mut result: ExecutionResult,
     file_path: &Path,
     file_content: &str,
+    old_content: Option<&str>,
     cwd: &Path,
 ) -> ExecutionResult {
     use std::time::Duration;
@@ -310,10 +309,12 @@ pub async fn maybe_run_slop_guard(
     // Non-blocking: if slop_guard panics or exceeds 2s, skip silently.
     let path = file_path.to_path_buf();
     let content = file_content.to_string();
+    let old = old_content.map(str::to_owned);
     let workspace = cwd.to_path_buf();
 
     let handle = tokio::spawn(async move {
-        crate::slop_guard::run_all_checks(&path, &content, &workspace).await
+        crate::slop_guard::run_all_checks_with_old(&path, &content, old.as_deref(), &workspace)
+            .await
     });
 
     let guard_result = tokio::time::timeout(Duration::from_secs(2), handle).await;

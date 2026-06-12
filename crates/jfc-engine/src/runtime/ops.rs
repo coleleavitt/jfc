@@ -657,10 +657,7 @@ pub async fn submit_prompt(
                         completion.body.len(),
                         path.display()
                     ),
-                    None => format!(
-                        "{preview}... [truncated {} chars]",
-                        completion.body.len()
-                    ),
+                    None => format!("{preview}... [truncated {} chars]", completion.body.len()),
                 }
             } else {
                 completion.body.clone()

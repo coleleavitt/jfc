@@ -44,6 +44,9 @@ pub enum ToolKind {
     LearnKeyFilesList,
     LearnUserProfileShow,
     ExitPlanMode,
+    SubmitPlan,
+    AddReviewComment,
+    SuggestCommitMessage,
     MultiEdit,
     AskUserQuestion,
     WebFetch,
@@ -99,7 +102,9 @@ pub enum ToolKind {
     ServerCodeExecution,
     ServerAdvisor,
     Generic(String),
-    UnknownTool { advertised_name: String },
+    UnknownTool {
+        advertised_name: String,
+    },
 }
 
 fn tool_name_eq(candidate: &str, alias: &str) -> bool {
@@ -232,6 +237,9 @@ impl ToolKind {
             Self::LearnKeyFilesList => ["learn_key_files_list"],
             Self::LearnUserProfileShow => ["learn_user_profile_show"],
             Self::ExitPlanMode => ["exit_plan_mode"],
+            Self::SubmitPlan => ["submit_plan"],
+            Self::AddReviewComment => ["add_review_comment", "add_comment"],
+            Self::SuggestCommitMessage => ["suggest_commit_message"],
             Self::EnterPlanMode => ["enter_plan_mode"],
             Self::AskUserQuestion => ["ask_user_question"],
             Self::PostBounty => ["post_bounty"],
@@ -363,6 +371,9 @@ impl ToolKind {
     fn aux_label(&self) -> Option<&'static str> {
         Some(match self {
             Self::ExitPlanMode => "ExitPlanMode",
+            Self::SubmitPlan => "SubmitPlan",
+            Self::AddReviewComment => "AddReviewComment",
+            Self::SuggestCommitMessage => "SuggestCommitMessage",
             Self::EnterPlanMode => "EnterPlanMode",
             Self::AskUserQuestion => "AskUserQuestion",
             Self::WebFetch => "WebFetch",
@@ -491,6 +502,9 @@ impl ToolKind {
     fn aux_api_name(&self) -> Option<&'static str> {
         Some(match self {
             Self::ExitPlanMode => "ExitPlanMode",
+            Self::SubmitPlan => "SubmitPlan",
+            Self::AddReviewComment => "AddReviewComment",
+            Self::SuggestCommitMessage => "SuggestCommitMessage",
             Self::EnterPlanMode => "EnterPlanMode",
             Self::AskUserQuestion => "AskUserQuestion",
             Self::WebFetch => "WebFetch",

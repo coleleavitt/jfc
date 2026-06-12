@@ -27,8 +27,8 @@ pub mod transforms;
 pub mod volatile;
 
 pub use ccr::{CcrStore, InMemoryCcrStore};
-pub use content_aware::{compress_tool_output, CompressionMethod, CompressionOutput};
+pub use content_aware::{CompressionMethod, CompressionOutput, compress_tool_output};
 pub use transforms::{
-    detect_content_type, ContentType, DetectionResult, DiffCompressor, DiffCompressorConfig,
-    LogCompressor, LogCompressorConfig, SearchCompressor, SearchCompressorConfig,
+    ContentType, DetectionResult, DiffCompressor, DiffCompressorConfig, LogCompressor,
+    LogCompressorConfig, SearchCompressor, SearchCompressorConfig, detect_content_type,
 };

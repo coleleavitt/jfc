@@ -175,6 +175,14 @@ pub fn handle_tool_result(
                         | crate::types::ToolInput::Write { file_path, .. } => {
                             state.turn_edited_files.insert(file_path.clone());
                         }
+                        crate::types::ToolInput::MultiEdit { file_path, .. } => {
+                            state.turn_edited_files.insert(file_path.clone());
+                        }
+                        crate::types::ToolInput::ApplyPatch { patch } => {
+                            state
+                                .turn_edited_files
+                                .extend(crate::auto_review::apply_patch_paths(patch));
+                        }
                         _ => {}
                     }
                 }
@@ -931,14 +939,22 @@ mod tests {
     impl jfc_provider::seal::Sealed for TestProvider {}
 
     fn test_app_with_tool(status: ToolStatus) -> (EngineState, crate::ids::ToolId) {
-        let tool_id = crate::ids::ToolId::from("tool-1");
-        let mut tool = ToolCall::new_pending(
-            tool_id.clone(),
+        test_app_with_tool_call(
+            status,
             ToolKind::Bash,
             ToolInput::Generic {
                 summary: String::new(),
             },
-        );
+        )
+    }
+
+    fn test_app_with_tool_call(
+        status: ToolStatus,
+        kind: ToolKind,
+        input: ToolInput,
+    ) -> (EngineState, crate::ids::ToolId) {
+        let tool_id = crate::ids::ToolId::from("tool-1");
+        let mut tool = ToolCall::new_pending(tool_id.clone(), kind, input);
         tool.status = status;
 
         let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
@@ -950,6 +966,51 @@ mod tests {
         state.turn_started_at = Some(Instant::now());
         state.is_streaming = false;
         (state, tool_id)
+    }
+
+    #[test]
+    fn successful_apply_patch_records_turn_edited_files_normal() {
+        let patch = "*** Begin Patch\n*** Update File: src/lib.rs\n@@\n-old\n+new\n*** Add File: src/new.rs\n+new\n*** End Patch\n";
+        let (mut state, tool_id) = test_app_with_tool_call(
+            ToolStatus::Pending,
+            ToolKind::ApplyPatch,
+            ToolInput::ApplyPatch {
+                patch: patch.to_owned(),
+            },
+        );
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_tool_result(
+            &mut state,
+            &tx,
+            tool_id,
+            crate::runtime::ExecutionResult::success("ok"),
+        );
+
+        assert!(state.turn_edited_files.contains("src/lib.rs"));
+        assert!(state.turn_edited_files.contains("src/new.rs"));
+    }
+
+    #[test]
+    fn successful_multi_edit_records_turn_edited_file_normal() {
+        let (mut state, tool_id) = test_app_with_tool_call(
+            ToolStatus::Pending,
+            ToolKind::MultiEdit,
+            ToolInput::MultiEdit {
+                file_path: "src/lib.rs".to_owned(),
+                edits: serde_json::json!([]),
+            },
+        );
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_tool_result(
+            &mut state,
+            &tx,
+            tool_id,
+            crate::runtime::ExecutionResult::success("ok"),
+        );
+
+        assert!(state.turn_edited_files.contains("src/lib.rs"));
     }
 
     #[tokio::test]

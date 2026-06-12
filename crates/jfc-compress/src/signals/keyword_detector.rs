@@ -265,10 +265,10 @@ impl KeywordDetector {
                 .markdown_prefixes
                 .iter()
                 .find(|p| line.starts_with(*p))
-            {
-                let _ = prefix;
-                return Some((ImportanceCategory::Markdown, MARKDOWN_PRIORITY));
-            }
+        {
+            let _ = prefix;
+            return Some((ImportanceCategory::Markdown, MARKDOWN_PRIORITY));
+        }
         None
     }
 }

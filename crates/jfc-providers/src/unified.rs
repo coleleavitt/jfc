@@ -111,6 +111,10 @@ pub struct RateLimitInfo {
     /// servicing the request. Computed identically to opencode's
     /// `runtimeState.isUsingOverage`.
     pub is_using_overage: bool,
+    /// Explicit `anthropic-ratelimit-unified-overage-in-use` signal, when
+    /// present. Newer Claude Code builds keep this separate from
+    /// `isUsingOverage`; jfc folds it into `is_using_overage` for routing/UI.
+    pub overage_in_use: Option<bool>,
     /// `anthropic-ratelimit-unified-5h-utilization` in `[0, 1]`.
     pub utilization_5h: Option<f64>,
     pub utilization_5h_reset_ms: Option<u64>,
@@ -168,6 +172,18 @@ fn parse_f64(value: Option<&str>) -> Option<f64> {
     let raw = value?.trim();
     let parsed: f64 = raw.parse().ok()?;
     parsed.is_finite().then_some(parsed)
+}
+
+fn parse_utilization(value: Option<&str>) -> Option<f64> {
+    parse_f64(value).map(|v| v.clamp(0.0, 1.0))
+}
+
+fn parse_bool(value: Option<&str>) -> Option<bool> {
+    match value?.trim().to_ascii_lowercase().as_str() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
 }
 
 /// Parse a header that carries a unix-seconds timestamp (possibly fractional).
@@ -234,25 +250,30 @@ pub fn parse_rate_limit_headers(headers: &HeaderMap, now_ms: u64) -> RateLimitIn
     )
     .filter(|s| !s.is_empty())
     .map(str::to_owned);
+    let overage_in_use = parse_bool(header_str(
+        headers,
+        "anthropic-ratelimit-unified-overage-in-use",
+    ));
 
-    let utilization_5h = parse_f64(header_str(
+    let utilization_5h = parse_utilization(header_str(
         headers,
         "anthropic-ratelimit-unified-5h-utilization",
     ));
     let utilization_5h_reset_ms =
         parse_unix_seconds_ms(header_str(headers, "anthropic-ratelimit-unified-5h-reset"));
-    let utilization_7d = parse_f64(header_str(
+    let utilization_7d = parse_utilization(header_str(
         headers,
         "anthropic-ratelimit-unified-7d-utilization",
     ));
     let utilization_7d_reset_ms =
         parse_unix_seconds_ms(header_str(headers, "anthropic-ratelimit-unified-7d-reset"));
 
-    let is_using_overage = matches!(unified_status, Some(UnifiedStatus::Rejected))
+    let computed_overage = matches!(unified_status, Some(UnifiedStatus::Rejected))
         && matches!(
             overage_status,
             Some(UnifiedStatus::Allowed) | Some(UnifiedStatus::AllowedWarning)
         );
+    let is_using_overage = computed_overage || overage_in_use.unwrap_or(false);
 
     RateLimitInfo {
         retry_after: parse_retry_after(headers, now_ms),
@@ -264,6 +285,7 @@ pub fn parse_rate_limit_headers(headers: &HeaderMap, now_ms: u64) -> RateLimitIn
         overage_reset_ms,
         overage_disabled_reason,
         is_using_overage,
+        overage_in_use,
         utilization_5h,
         utilization_5h_reset_ms,
         utilization_7d,
@@ -355,6 +377,19 @@ mod tests {
         assert!(info.is_rate_limited());
     }
 
+    // Robust: Anthropic can report a value slightly over 1.0 at exhaustion;
+    // store the bounded fraction so UI and routing never exceed 100%.
+    #[test]
+    fn utilization_headers_are_clamped_robust() {
+        let h = hm(&[
+            ("anthropic-ratelimit-unified-5h-utilization", "1.01"),
+            ("anthropic-ratelimit-unified-7d-utilization", "-0.25"),
+        ]);
+        let info = parse_rate_limit_headers(&h, 0);
+        assert_eq!(info.utilization_5h, Some(1.0));
+        assert_eq!(info.utilization_7d, Some(0.0));
+    }
+
     // Edge: rejected primary + allowed_warning overage => is_using_overage.
     #[test]
     fn using_overage_detection() {
@@ -366,6 +401,16 @@ mod tests {
             ),
         ]);
         let info = parse_rate_limit_headers(&h, 0);
+        assert!(info.is_using_overage);
+    }
+
+    // Normal: newer Claude Code builds expose an explicit overage-in-use
+    // header; parse it so successful responses can refresh the UI state too.
+    #[test]
+    fn explicit_overage_in_use_header() {
+        let h = hm(&[("anthropic-ratelimit-unified-overage-in-use", "true")]);
+        let info = parse_rate_limit_headers(&h, 0);
+        assert_eq!(info.overage_in_use, Some(true));
         assert!(info.is_using_overage);
     }
 

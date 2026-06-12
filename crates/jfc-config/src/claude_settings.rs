@@ -131,7 +131,10 @@ pub struct ClaudeCompatibilityConfig {
     pub prefers_reduced_motion: Option<bool>,
     #[serde(rename = "hideVimModeIndicator", alias = "hide_vim_mode_indicator")]
     pub hide_vim_mode_indicator: Option<bool>,
-    #[serde(rename = "promptSuggestionEnabled", alias = "prompt_suggestion_enabled")]
+    #[serde(
+        rename = "promptSuggestionEnabled",
+        alias = "prompt_suggestion_enabled"
+    )]
     pub prompt_suggestion_enabled: Option<bool>,
 
     // ── Autonomous loop / memory ─────────────────────────────────────────────
@@ -198,7 +201,10 @@ pub struct ClaudeCompatibilityConfig {
     pub ssh_configs: Option<serde_json::Value>,
     #[serde(rename = "autoSubmit", alias = "auto_submit")]
     pub auto_submit: Option<bool>,
-    #[serde(rename = "fileCheckpointingEnabled", alias = "file_checkpointing_enabled")]
+    #[serde(
+        rename = "fileCheckpointingEnabled",
+        alias = "file_checkpointing_enabled"
+    )]
     pub file_checkpointing_enabled: Option<bool>,
     #[serde(rename = "teammateMode", alias = "teammate_mode")]
     pub teammate_mode: Option<String>,
@@ -336,7 +342,10 @@ impl ClaudeCompatibilityConfig {
             &mut self.terminal_title_from_rename,
             next.terminal_title_from_rename,
         );
-        overwrite_option(&mut self.prefers_reduced_motion, next.prefers_reduced_motion);
+        overwrite_option(
+            &mut self.prefers_reduced_motion,
+            next.prefers_reduced_motion,
+        );
         overwrite_option(
             &mut self.hide_vim_mode_indicator,
             next.hide_vim_mode_indicator,
@@ -349,10 +358,7 @@ impl ClaudeCompatibilityConfig {
         // Autonomous loop / memory
         overwrite_option(&mut self.auto_dream_enabled, next.auto_dream_enabled);
         overwrite_option(&mut self.auto_memory_enabled, next.auto_memory_enabled);
-        overwrite_option(
-            &mut self.auto_memory_directory,
-            next.auto_memory_directory,
-        );
+        overwrite_option(&mut self.auto_memory_directory, next.auto_memory_directory);
         overwrite_option(&mut self.away_summary_enabled, next.away_summary_enabled);
 
         // Compaction
@@ -927,20 +933,14 @@ fn push_hook(out: &mut ShellHooksConfig, event: &str, entry: crate::ShellHookEnt
         "UserPromptExpansion" | "userPromptExpansion" | "user_prompt_expansion" => {
             out.user_prompt_expansion.push(entry)
         }
-        "MessageDisplay" | "messageDisplay" | "message_display" => {
-            out.message_display.push(entry)
-        }
+        "MessageDisplay" | "messageDisplay" | "message_display" => out.message_display.push(entry),
         "Elicitation" | "elicitation" => out.elicitation.push(entry),
         "ElicitationResult" | "elicitationResult" | "elicitation_result" => {
             out.elicitation_result.push(entry)
         }
-        "PostToolBatch" | "postToolBatch" | "post_tool_batch" => {
-            out.post_tool_batch.push(entry)
-        }
+        "PostToolBatch" | "postToolBatch" | "post_tool_batch" => out.post_tool_batch.push(entry),
         "PostCompact" | "postCompact" | "post_compact" => out.post_compact.push(entry),
-        "SubagentStart" | "subagentStart" | "subagent_start" => {
-            out.subagent_start.push(entry)
-        }
+        "SubagentStart" | "subagentStart" | "subagent_start" => out.subagent_start.push(entry),
         "PermissionRequest" | "permissionRequest" | "permission_request" => {
             out.permission_request.push(entry)
         }
@@ -949,12 +949,8 @@ fn push_hook(out: &mut ShellHooksConfig, event: &str, entry: crate::ShellHookEnt
         }
         "TaskCreated" | "taskCreated" | "task_created" => out.task_created.push(entry),
         "TaskCompleted" | "taskCompleted" | "task_completed" => out.task_completed.push(entry),
-        "WorktreeCreate" | "worktreeCreate" | "worktree_create" => {
-            out.worktree_create.push(entry)
-        }
-        "WorktreeRemove" | "worktreeRemove" | "worktree_remove" => {
-            out.worktree_remove.push(entry)
-        }
+        "WorktreeCreate" | "worktreeCreate" | "worktree_create" => out.worktree_create.push(entry),
+        "WorktreeRemove" | "worktreeRemove" | "worktree_remove" => out.worktree_remove.push(entry),
         "ConfigChange" | "configChange" | "config_change" => out.config_change.push(entry),
         "InstructionsLoaded" | "instructionsLoaded" | "instructions_loaded" => {
             out.instructions_loaded.push(entry)
@@ -1216,12 +1212,18 @@ mod tests {
         // Must end with project + local; home path may or may not be present.
         let project_path = root.join(".claude").join("settings.json");
         let local_path = root.join(".claude").join("settings.local.json");
-        assert!(paths.contains(&project_path), "missing project settings.json");
+        assert!(
+            paths.contains(&project_path),
+            "missing project settings.json"
+        );
         assert!(paths.contains(&local_path), "missing settings.local.json");
         // local must come after project (last-wins merge)
         let proj_idx = paths.iter().position(|p| p == &project_path).unwrap();
         let local_idx = paths.iter().position(|p| p == &local_path).unwrap();
-        assert!(local_idx > proj_idx, "local must override project (wrong order)");
+        assert!(
+            local_idx > proj_idx,
+            "local must override project (wrong order)"
+        );
     }
 
     #[test]

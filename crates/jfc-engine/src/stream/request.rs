@@ -3,8 +3,8 @@ use std::sync::Arc;
 use crate::runtime::{StreamRequestMetadata, StreamRequestOverrides, StreamToolChoice};
 use crate::tools;
 use jfc_provider::{
-    ModelId, Provider, ProviderContent, ProviderMessage, ProviderRole, StreamConvention,
-    StreamOptions,
+    ModelId, ModelResolutionReason, ModelSpec, Provider, ProviderContent, ProviderId,
+    ProviderMessage, ProviderRole, ResolvedModel, StreamConvention, StreamOptions,
 };
 
 use super::model_policy::{max_output_tokens_for, thinking_mode_for};
@@ -343,6 +343,52 @@ fn fast_recall_model(provider: &Arc<dyn Provider>, main: &ModelId) -> ModelId {
         .unwrap_or_else(|| main.clone())
 }
 
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    let mut iter = text.chars();
+    let mut out: String = iter.by_ref().take(max_chars).collect();
+    if iter.next().is_some() {
+        out.push_str("\n...[truncated]");
+    }
+    out
+}
+
+async fn mcp_server_instructions_section() -> String {
+    const MAX_SERVERS: usize = 8;
+    const MAX_CHARS_PER_SERVER: usize = 6_000;
+    const MAX_TOTAL_CHARS: usize = 18_000;
+
+    let Some(registry) = tools::snapshot_mcp_registry() else {
+        return String::new();
+    };
+    let entries = registry.all_server_instructions().await;
+    if entries.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from(
+        "## MCP Server Instructions\n\n\
+         Connected MCP servers provided these usage instructions during the \
+         `initialize` handshake. Follow the instructions for a server when \
+         using tools from that server.\n",
+    );
+    let mut used = out.chars().count();
+    let mut included = 0usize;
+    for (name, instructions) in entries.into_iter().take(MAX_SERVERS) {
+        let body = truncate_chars(&instructions, MAX_CHARS_PER_SERVER);
+        let block = format!("\n### {name}\n{body}\n");
+        let block_chars = block.chars().count();
+        if used + block_chars > MAX_TOTAL_CHARS {
+            out.push_str("\n...[additional MCP instructions omitted]\n");
+            break;
+        }
+        out.push_str(&block);
+        used += block_chars;
+        included += 1;
+    }
+
+    if included == 0 { String::new() } else { out }
+}
+
 pub async fn prepare_stream_request(
     provider: Arc<dyn Provider>,
     messages: &[ProviderMessage],
@@ -359,19 +405,7 @@ pub async fn prepare_stream_request(
 
     // Build prompt sections (matching Claude Code's structure)
     let skills_listing = if let Ok(cwd_path) = std::env::current_dir() {
-        let skills = crate::agents::load_skills(&cwd_path);
-        let block = crate::agents::render_skills_section(&skills);
-        if block.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "{block}\nTo use a listed skill, call the Skill tool with \
-                 `name` set to the listed skill name and optional `args` for \
-                 extra context. On OpenAI-compatible routes the callable may \
-                 be advertised as lowercase `skill`; use the exact callable \
-                 name shown in the tool list."
-            )
-        }
+        crate::prompt_context_cache::skills_listing(&cwd_path)
     } else {
         String::new()
     };
@@ -387,8 +421,7 @@ pub async fn prepare_stream_request(
     let dispatch_section = {
         let cwd_for_agents =
             std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let agents = crate::agents::load_agents(&cwd_for_agents);
-        crate::agents::render_dispatch_section(&agents)
+        crate::prompt_context_cache::dispatch_section(&cwd_for_agents)
     };
 
     let diagnostics_block = {
@@ -406,16 +439,15 @@ If you need a capability that is not in the visible tool list, call `ToolSearch`
 Tools returned by those discovery calls are advertised on the next continuation, so you can invoke the exact matching tool after the result arrives. \
 Explicit managed/user allowlists still override this and expose only the allowed tools.\n\
 \n\
-### Code navigation — reach for the graph FIRST\n\
-The workspace is indexed into a code graph (auto-built for whatever directory you're in — it is NOT specific to this project). For anything about *code structure*, the graph tools are faster and more precise than grep/Read, and they return exact `file:start-end` ranges. Use this routing:\n\
-- **Find a symbol by name** (function, struct, enum, trait, type) → `graph_search` (add `include_code=true` to get the body inline — this replaces the search-then-Read/sed dance). Do NOT grep for an identifier like `SalesforceApi` or `from_sf_cli`; `graph_search` resolves it in one call and never needs regex-guessing.\n\
-- **\"How does X work\" / understand an area / a bug's blast radius** → `graph_context`.\n\
-- **Who calls this / what does it call** → `graph_callers` / `graph_callees` (never grep for call sites).\n\
-- **Impact of changing a symbol** → `graph_impact`.\n\
-- **A file's symbol map** (instead of reading the whole file or `nl`) → `graph_outline`.\n\
-- **One symbol's signature/body** → `graph_node`; **several related ones at once** → `graph_explore`.\n\
-- **A string the graph can't index** (log message, error text, config key, comment) → `graph_grep` (regex content search that also tells you the enclosing function), or plain `Grep` for non-code files.\n\
-Reserve **Read** for a file you're about to edit or a non-source file; reserve **Grep** for literal/non-identifier text. When you do Read a large source file for one symbol, pass `offset`/`limit` (from a `graph_search`/`graph_outline` range) instead of reading the whole thing.\n\
+### Code navigation — reach for CodeGraph FIRST\n\
+The workspace may be indexed into a CodeGraph MCP code graph. For anything about *code structure*, CodeGraph tools are faster and more precise than Grep/Read and should be your first lookup. Use the exact visible tool name shown in the catalog: MCP hosts usually expose names like `mcp__codegraph__codegraph_explore`, `mcp__codegraph__codegraph_search`, and `mcp__codegraph__codegraph_node`; raw MCP names are `codegraph_explore`, `codegraph_search`, and `codegraph_node`.\n\
+- **\"How does X work\" / understand an area / bug blast radius** → `codegraph_explore`.\n\
+- **Find a symbol by name** (function, struct, enum, trait, type) → `codegraph_search` (ask for code inline when the schema supports it). Do NOT grep for an identifier like `SalesforceApi` or `from_sf_cli`; CodeGraph resolves it in one call and never needs regex-guessing.\n\
+- **Who calls this / what does it call** → `codegraph_callers` / `codegraph_callees`.\n\
+- **Impact of changing a symbol** → `codegraph_impact`.\n\
+- **A file's symbol map** (instead of reading the whole file or `nl`) → `codegraph_files`.\n\
+- **One symbol's signature/body** → `codegraph_node`; **several related ones at once** → `codegraph_explore`.\n\
+Use **Read** mainly for a file you are about to edit, a precise range CodeGraph identified, or a non-source file. Use **Grep** mainly for literal strings the graph cannot index, such as log messages, config keys, comments, or non-code files. Do not start coding tasks with a broad file-reading survey when one CodeGraph query can identify the relevant symbols.\n\
 \n\
 Only use tools to complete tasks. All text you output outside of tool use is displayed to the user; tools are how you take action. Never use Bash echo or code comments as a way to communicate with the user during the session.\n\
 \n\
@@ -442,7 +474,7 @@ When reporting results, be accurate about what you verified vs. what you assumed
 
     let safety_instructions = "\
 ## Executing actions with care\n\
-Read, search, and investigate freely — looking is not acting. For actions that are hard to reverse, affect shared systems, or are otherwise risky (deleting data, force-pushing, sending messages, modifying shared infrastructure), confirm with the user before proceeding unless durably authorized. Approval in one context doesn't extend to the next.\n\
+Read, search, and investigate as needed — looking is not acting, but keep exploration proportionate to the edit. For straightforward coding tasks, make one targeted CodeGraph/search pass, then edit; do not survey many files first unless the first result shows the change crosses modules. For actions that are hard to reverse, affect shared systems, or are otherwise risky (deleting data, force-pushing, sending messages, modifying shared infrastructure), confirm with the user before proceeding unless durably authorized. Approval in one context doesn't extend to the next.\n\
 When you encounter an obstacle, do not use destructive actions as a shortcut. Try to identify root causes rather than bypassing safety checks. If you discover unexpected state like unfamiliar files or branches, investigate before deleting or overwriting — it may represent in-progress work.";
 
     let tone_style = "\
@@ -460,8 +492,9 @@ Do not use a colon before tool calls.";
         "You are jfc, a coding assistant running as a CLI in the user's terminal. \
          You have direct access to the user's filesystem and shell via tools \
          (Bash, Read, Write, Edit, Glob, Grep). You also have a code graph \
-         indexed over the workspace with tools for symbol search, callers/callees, \
-         outlines, and content grep — see 'Code navigation' below. When the user \
+         indexed over the workspace when CodeGraph MCP is connected, with tools \
+         for source-aware exploration, symbol search, callers/callees, impact, \
+         and file maps — see 'Code navigation' below. When the user \
          asks you to do something — read a file, run a command, write code — USE \
          the tools to do it directly. Don't describe how the user could do it \
          manually; you are the one doing it. Working directory: {cwd}\n\n\
@@ -487,28 +520,31 @@ Do not use a colon before tool calls.";
          {safety_instructions}\n\n\
          {tone_style}"
     );
+    let mcp_instructions = mcp_server_instructions_section().await;
+    if !mcp_instructions.is_empty() {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&mcp_instructions);
+    }
 
     // v126 CLAUDE.md hierarchy — managed → user → project → .claude/ → local
     // overrides. Each layer is appended with its origin labeled so the model
-    // can tell which rule came from which file. We load on every stream call
-    // so live edits to CLAUDE.md take effect on the next turn (matching CC).
+    // can tell which rule came from which file. A short-lived cache prevents
+    // agentic-loop continuations from repeatedly rereading the same files.
     let mut overrides = overrides;
     if let Ok(cwd_path) = std::env::current_dir() {
-        let hierarchy = crate::context::ClaudeMdHierarchy::load_with_extra_roots(
-            &cwd_path,
-            &overrides.extra_dirs,
-        );
-        if let Some(layered) = hierarchy.render() {
+        let hierarchy =
+            crate::prompt_context_cache::context_hierarchy(&cwd_path, &overrides.extra_dirs);
+        if let Some(layered) = hierarchy.rendered {
             system_prompt.push_str("\n\n");
             system_prompt.push_str(&layered);
         }
         // Extract disallowed-tools from frontmatter and merge with CLI ones.
-        let fm_disallowed = hierarchy.collect_disallowed_tools();
+        let fm_disallowed = hierarchy.disallowed_tools;
         if !fm_disallowed.is_empty() {
             overrides.disallowed_tools.extend(fm_disallowed);
         }
 
-        let memories = crate::memory::load_all_memories(&cwd_path);
+        let memories = crate::prompt_context_cache::memories(&cwd_path);
 
         let config = crate::config::load_arc();
         let recall_enabled = crate::memory_recall::is_enabled(config.memory_recall_enabled);
@@ -685,14 +721,13 @@ Do not use a colon before tool calls.";
         system_prompt.push_str(
             "\n\n## Investigate before asking\n\
              When the user's request is concrete and bounded (a specific \
-             file, a named symbol, a known feature area), spend up to ~1 \
-             minute on read-only investigation (Read / Grep / Glob / git \
-             log) **before** asking a clarifying question. The user almost \
-             always prefers a self-answered question over a back-and-forth \
-             — they brought the question to you to save themselves the \
-             investigation. Only escalate to AskUserQuestion when the \
-             investigation surfaces multiple incompatible interpretations \
-             that would meaningfully change the plan.",
+             file, a named symbol, a known feature area), do a small targeted \
+             investigation **only if you would otherwise ask a clarifying \
+             question**. Prefer one CodeGraph query or one precise search, \
+             then act. Do not use this as permission for a broad Read/Grep/Glob \
+             survey before routine edits. Escalate to AskUserQuestion only \
+             when that targeted check surfaces multiple incompatible \
+             interpretations that would meaningfully change the plan.",
         );
     }
 
@@ -844,7 +879,6 @@ Do not use a colon before tool calls.";
         effective_brief_mode,
         pewter_owl_tool,
     );
-    let system_prompt_tokens = system_prompt.len() / 4;
 
     #[cfg(feature = "permission-automation")]
     {
@@ -967,6 +1001,15 @@ Do not use a colon before tool calls.";
             "reduced tool catalog for non-action prompt"
         );
     }
+    let advertised_tool_names = advertised_tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect::<Vec<_>>();
+    if let Some(rules) = crate::review::tool_scoped_prompt_rules(&advertised_tool_names) {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&rules);
+    }
+    let system_prompt_tokens = system_prompt.len() / 4;
     let advertised_tool_count = advertised_tools.len();
 
     let mut base = StreamOptions::new(model.clone())
@@ -1046,6 +1089,15 @@ Do not use a colon before tool calls.";
             advertised_tool_count,
             action_expected,
             tool_choice: overrides.tool_choice,
+            resolved_model: Some(ResolvedModel::new(
+                ModelSpec::qualified(ProviderId::new(provider.name()), model.clone()),
+                ModelSpec::qualified(ProviderId::new(provider.name()), model.clone()),
+                ModelResolutionReason::Requested,
+                provider
+                    .available_models()
+                    .iter()
+                    .find(|info| info.id == *model),
+            )),
         },
         recalled_memory_chars,
     }

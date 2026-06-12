@@ -13,9 +13,7 @@ use crate::atomic_write::write_atomic_sync;
 
 /// Canonical path to the scheduled-tasks persistence file.
 pub fn scheduled_tasks_path(project_root: &Path) -> PathBuf {
-    project_root
-        .join(".claude")
-        .join("scheduled_tasks.json")
+    project_root.join(".claude").join("scheduled_tasks.json")
 }
 
 /// A single durable scheduled task, mirroring CC's persisted shape.
@@ -94,26 +92,18 @@ pub fn load_scheduled_tasks(project_root: &Path) -> Vec<ScheduledTask> {
 ///
 /// Uses an atomic write (write to a temp file, then rename) to avoid
 /// corruption on crash. Creates the `.claude/` directory if needed.
-pub fn save_scheduled_tasks(
-    project_root: &Path,
-    tasks: &[ScheduledTask],
-) -> std::io::Result<()> {
+pub fn save_scheduled_tasks(project_root: &Path, tasks: &[ScheduledTask]) -> std::io::Result<()> {
     let path = scheduled_tasks_path(project_root);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let json =
-        serde_json::to_string_pretty(tasks).map_err(|err| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, err)
-        })?;
+    let json = serde_json::to_string_pretty(tasks)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
     write_atomic_sync(&path, json.as_bytes())
 }
 
 /// Add a task to the persisted list (idempotent by `id`).
-pub fn upsert_scheduled_task(
-    project_root: &Path,
-    task: ScheduledTask,
-) -> std::io::Result<()> {
+pub fn upsert_scheduled_task(project_root: &Path, task: ScheduledTask) -> std::io::Result<()> {
     let mut tasks = load_scheduled_tasks(project_root);
     if let Some(pos) = tasks.iter().position(|t| t.id == task.id) {
         tasks[pos] = task;
@@ -171,7 +161,10 @@ mod tests {
         upsert_scheduled_task(root, updated.clone()).unwrap();
         let loaded = load_scheduled_tasks(root);
         assert_eq!(loaded.len(), 2);
-        assert_eq!(loaded.iter().find(|t| t.id == "a").unwrap().prompt, "updated");
+        assert_eq!(
+            loaded.iter().find(|t| t.id == "a").unwrap().prompt,
+            "updated"
+        );
     }
 
     #[test]

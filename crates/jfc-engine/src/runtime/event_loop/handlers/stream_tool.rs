@@ -674,7 +674,9 @@ mod tests {
 
     #[test]
     fn slash_command_allowlist_permits_productive_commands_normal() {
-        for c in ["research", "review", "commit", "workflow", "diff", "recall", "plan"] {
+        for c in [
+            "research", "review", "commit", "workflow", "diff", "recall", "plan",
+        ] {
             assert!(slash_command_is_agent_allowed(c), "{c} should be allowed");
         }
         // Leading slash is tolerated.
@@ -684,8 +686,18 @@ mod tests {
     #[test]
     fn slash_command_allowlist_blocks_destructive_commands_robust() {
         for c in [
-            "clear", "logout", "login", "mode", "sandbox", "undo", "rewind",
-            "permissions", "oauth-login", "install-github-app", "remote", "batch",
+            "clear",
+            "logout",
+            "login",
+            "mode",
+            "sandbox",
+            "undo",
+            "rewind",
+            "permissions",
+            "oauth-login",
+            "install-github-app",
+            "remote",
+            "batch",
         ] {
             assert!(
                 !slash_command_is_agent_allowed(c),

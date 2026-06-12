@@ -314,6 +314,9 @@ macro_rules! for_each_regular_tool_input {
             MarketStatus => { bounty_id: opt_str @ "bounty_id" }
             RunBounty => { bounty_id: req_str @ "bounty_id", max_solvers: opt_u64_as_u8 @ "max_solvers" }
             ExitPlanMode => { plan: req_str @ "plan" }
+            SubmitPlan => { short_name: req_str @ "short_name", summary: req_str @ "summary", plan: req_str @ "plan" }
+            AddReviewComment => { file_path: req_str @ "file_path", start_line: u32_or_0 @ "start_line", end_line: u32_or_0 @ "end_line", text: req_str @ "text" }
+            SuggestCommitMessage => { message: req_str @ "message", scope: opt_str @ "scope" }
             MultiEdit => { file_path: req_str @ "file_path", edits: raw_or_empty_array @ "edits" }
             AskUserQuestion => { questions: ask_user_questions @ "questions" }
             WebFetch => { url: req_str @ "url", prompt: opt_str @ "prompt" }
@@ -650,6 +653,21 @@ pub enum ToolInput {
     LearnUserProfileShow {},
     ExitPlanMode {
         plan: String,
+    },
+    SubmitPlan {
+        short_name: String,
+        summary: String,
+        plan: String,
+    },
+    AddReviewComment {
+        file_path: String,
+        start_line: u32,
+        end_line: u32,
+        text: String,
+    },
+    SuggestCommitMessage {
+        message: String,
+        scope: Option<String>,
     },
     MultiEdit {
         file_path: String,
@@ -995,6 +1013,17 @@ impl ToolInput {
             Self::ExitPlanMode { plan } => {
                 let head: String = plan.lines().next().unwrap_or("").chars().take(60).collect();
                 format!("exit plan mode: {head}")
+            }
+            Self::SubmitPlan { short_name, .. } => format!("submit plan: {short_name}"),
+            Self::AddReviewComment {
+                file_path,
+                start_line,
+                end_line,
+                ..
+            } => format!("review comment: {file_path}:{start_line}-{end_line}"),
+            Self::SuggestCommitMessage { message, .. } => {
+                let preview: String = message.chars().take(60).collect();
+                format!("commit message: {preview}")
             }
             Self::MultiEdit { file_path, edits } => {
                 let count = edits.as_array().map(|a| a.len()).unwrap_or(0);
@@ -2048,7 +2077,10 @@ mod macro_equivalence_tests {
             ),
             ("ScratchpadRead", json!({"key":"k"})),
             ("ScratchpadWrite", json!({"key":"k","value":"v"})),
-            ("SlashCommand", json!({"command":"research","args":"how do monads work"})),
+            (
+                "SlashCommand",
+                json!({"command":"research","args":"how do monads work"}),
+            ),
             ("DesignProjectCreate", json!({"title":"Deck"})),
             ("DesignProjectList", json!({})),
             (

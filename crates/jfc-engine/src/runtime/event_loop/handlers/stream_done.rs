@@ -549,6 +549,9 @@ pub async fn handle_stream_done(
     // boundaries always persist immediately (never debounced) — crash
     // safety for completed turns is non-negotiable.
     crate::runtime::session_save::force_save(state);
+    if turn_genuinely_done {
+        crate::auto_review::maybe_spawn_after_turn(state, tx).await;
+    }
     // v126 queued-prompt drain on plain end_turn: model finished
     // without tools to call → if anything's queued, fire it now.
     if stop_reason == jfc_provider::StopReason::EndTurn

@@ -36,15 +36,19 @@ pub fn dispatch_goal_evaluator_if_active(state: &mut app::EngineState, tx: &Even
     // advisor model is available, decide "is the goal met?" by Council (active
     // model + advisor) so a single model can't prematurely declare success.
     let council_members = if state.council_verdict_enabled {
-        let mut members = vec![crate::council::CouncilMember::new(
-            std::sync::Arc::clone(&state.provider),
-            model.clone(),
-        )
-        .with_label(model.as_str().to_owned())];
-        if let Some(ctx) = crate::stream::LocalAdvisorDispatchContext::from_state(state) {
+        let mut members = vec![
+            crate::council::CouncilMember::new(
+                std::sync::Arc::clone(&state.provider),
+                model.clone(),
+            )
+            .with_label(model.as_str().to_owned()),
+        ];
+        if let Some(ctx) = crate::stream::LocalAdvisorDispatchContext::from_state(state)
+            && let Some(target) = ctx.targets.first()
+        {
             members.push(
-                crate::council::CouncilMember::new(ctx.provider, ctx.advisor_model.clone())
-                    .with_label(ctx.advisor_model.as_str().to_owned()),
+                crate::council::CouncilMember::new(target.provider.clone(), target.model.clone())
+                    .with_label(target.model.as_str().to_owned()),
             );
         }
         members

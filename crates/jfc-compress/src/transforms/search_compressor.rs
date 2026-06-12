@@ -480,15 +480,18 @@ impl SearchCompressor {
 
             if self.config.always_keep_first
                 && let Some(first) = fm.first()
-                    && file_selected.len() < remaining_cap {
-                        push_unique(first, &mut file_selected, &mut seen);
-                    }
+                && file_selected.len() < remaining_cap
+            {
+                push_unique(first, &mut file_selected, &mut seen);
+            }
 
-            if self.config.always_keep_last && fm.matches.len() > 1
+            if self.config.always_keep_last
+                && fm.matches.len() > 1
                 && let Some(last) = fm.last()
-                    && file_selected.len() < remaining_cap {
-                        push_unique(last, &mut file_selected, &mut seen);
-                    }
+                && file_selected.len() < remaining_cap
+            {
+                push_unique(last, &mut file_selected, &mut seen);
+            }
 
             for m in &sorted {
                 if file_selected.len() >= remaining_cap {
@@ -529,12 +532,13 @@ impl SearchCompressor {
                 lines.push(format!("{}:{}:{}", m.file, m.line_number, m.content));
             }
             if let Some(orig_fm) = original.get(file)
-                && orig_fm.matches.len() > fm.matches.len() {
-                    let omitted = orig_fm.matches.len() - fm.matches.len();
-                    let summary = format!("[... and {} more matches in {}]", omitted, file);
-                    lines.push(summary.clone());
-                    summaries.insert(file.clone(), summary);
-                }
+                && orig_fm.matches.len() > fm.matches.len()
+            {
+                let omitted = orig_fm.matches.len() - fm.matches.len();
+                let summary = format!("[... and {} more matches in {}]", omitted, file);
+                lines.push(summary.clone());
+                summaries.insert(file.clone(), summary);
+            }
         }
 
         (lines.join("\n"), summaries)
@@ -801,10 +805,11 @@ src/main.py-44-context line";
         for fm in selected.values() {
             assert!(fm.matches.len() <= 2);
             // Survivors output in line order.
-            assert!(fm
-                .matches
-                .windows(2)
-                .all(|w| w[0].line_number < w[1].line_number));
+            assert!(
+                fm.matches
+                    .windows(2)
+                    .all(|w| w[0].line_number < w[1].line_number)
+            );
         }
     }
 

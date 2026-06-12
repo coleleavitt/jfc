@@ -331,13 +331,13 @@ pub(super) async fn cmd_advisor(
         // immutably while we're holding `&mut state.advisor_session`
         // mutably — borrow-check fails.
         let snapshot = state.messages.clone();
-        let provider = match crate::advisor::resolve_local_advisor_provider(
+        let targets = match crate::advisor::resolve_local_advisor_provider_targets(
             &state.providers,
             std::sync::Arc::clone(&state.provider),
             state.local_advisor_provider.as_ref(),
             &session.model,
         ) {
-            Ok(provider) => provider,
+            Ok(targets) => targets,
             Err(e) => {
                 state
                     .messages
@@ -347,18 +347,25 @@ pub(super) async fn cmd_advisor(
                 return;
             }
         };
-        match crate::advisor::ask_advisor(provider.as_ref(), session, query.clone(), &snapshot)
+        match crate::advisor::ask_advisor_with_fallback(&targets, session, query.clone(), &snapshot)
             .await
         {
             Ok(reply) => {
                 let remaining = session.tokens_remaining();
                 let total_budget = session.token_budget;
+                state.local_advisor_provider = Some(reply.provider.clone());
+                state.local_advisor_model = Some(reply.model.clone());
+                crate::advisor::set_active_local_advisor_provider(Some(reply.provider.clone()));
+                crate::advisor::set_active_local_advisor_model(Some(reply.model.clone()));
                 state
                     .messages
                     .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         format!(
-                            "{reply}\n\n_(advisor budget: {} of {} tokens remaining)_",
-                            remaining, total_budget
+                            "{}\n\n_({}; advisor budget: {} of {} tokens remaining)_",
+                            reply.content,
+                            reply.model_note(),
+                            remaining,
+                            total_budget
                         ),
                     )]));
             }

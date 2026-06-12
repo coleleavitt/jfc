@@ -33,8 +33,8 @@ use uuid::Uuid;
 
 use crate::types::{ChatMessage, MessagePart, Role, ToolCall, ToolOutput};
 use jfc_provider::{
-    CompletionResponse, ModelId, ModelSpec, Provider, ProviderContent, ProviderId, ProviderMessage,
-    ProviderRole, StreamEvent, StreamOptions,
+    CompletionResponse, ModelId, ModelSpec, Provider, ProviderContent, ProviderError,
+    ProviderErrorKind, ProviderId, ProviderMessage, ProviderRole, StreamEvent, StreamOptions,
 };
 
 /// Default per-session token budget. Conservative — about three round-trips
@@ -157,6 +157,24 @@ impl LocalAdvisorTarget {
     }
 }
 
+#[derive(Clone)]
+pub struct LocalAdvisorProviderTarget {
+    pub provider: Arc<dyn Provider>,
+    pub model: ModelId,
+}
+
+impl LocalAdvisorProviderTarget {
+    fn new(provider: Arc<dyn Provider>, model: ModelId) -> Self {
+        Self { provider, model }
+    }
+
+    fn same_provider_model(&self, provider: &dyn Provider, model: &ModelId) -> bool {
+        self.provider.name() == provider.name() && self.model == *model
+    }
+}
+
+pub const DEFAULT_LOCAL_ADVISOR_FALLBACK_MODEL_SPECS: &[&str] = &["openai/gpt-5.5", "gpt-5.5"];
+
 pub fn resolve_local_advisor_provider(
     providers: &[Arc<dyn Provider>],
     active_provider: Arc<dyn Provider>,
@@ -184,6 +202,43 @@ pub fn resolve_local_advisor_provider(
     Err(format!(
         "advisor model `{advisor_model}` does not match any configured provider"
     ))
+}
+
+pub fn resolve_local_advisor_provider_targets(
+    providers: &[Arc<dyn Provider>],
+    active_provider: Arc<dyn Provider>,
+    configured_provider: Option<&ProviderId>,
+    advisor_model: &ModelId,
+) -> Result<Vec<LocalAdvisorProviderTarget>, String> {
+    let primary = resolve_local_advisor_provider(
+        providers,
+        active_provider,
+        configured_provider,
+        advisor_model,
+    )?;
+    let mut targets = vec![LocalAdvisorProviderTarget::new(
+        primary,
+        advisor_model.clone(),
+    )];
+
+    for spec in DEFAULT_LOCAL_ADVISOR_FALLBACK_MODEL_SPECS {
+        let Some(resolved) = crate::runtime::bootstrap::resolve_provider_model(providers, spec)
+        else {
+            continue;
+        };
+        if targets
+            .iter()
+            .any(|target| target.same_provider_model(resolved.provider.as_ref(), &resolved.model))
+        {
+            continue;
+        }
+        targets.push(LocalAdvisorProviderTarget::new(
+            resolved.provider,
+            resolved.model,
+        ));
+    }
+
+    Ok(targets)
 }
 
 fn provider_can_run_model(provider: &dyn Provider, model: &str) -> bool {
@@ -363,32 +418,54 @@ pub fn resolve_server_advisor_model(
 
 pub const LOCAL_ADVISOR_TOOL_QUERY: &str = "Review my conversation so far. Flag anything I'm missing, any assumption I should verify, and any risk I'm overlooking. Be specific and terse.";
 
+pub struct AdvisorReply {
+    pub content: String,
+    pub provider: ProviderId,
+    pub model: ModelId,
+    pub fallback_from: Option<ModelId>,
+}
+
+impl AdvisorReply {
+    pub fn model_note(&self) -> String {
+        match &self.fallback_from {
+            Some(original) => format!(
+                "local advisor model: {} (fallback from {})",
+                self.model, original
+            ),
+            None => format!("local advisor model: {}", self.model),
+        }
+    }
+}
+
 pub async fn ask_local_advisor_tool(
-    provider: &dyn Provider,
-    advisor_model: ModelId,
+    targets: &[LocalAdvisorProviderTarget],
     main_transcript_snapshot: &[ChatMessage],
 ) -> Result<String> {
+    let primary = targets
+        .first()
+        .ok_or_else(|| anyhow!("local advisor has no provider target"))?;
     let mut guard = local_advisor_tool_session().lock().await;
     let reset = guard
         .as_ref()
-        .map(|session| session.model != advisor_model)
+        .map(|session| !targets.iter().any(|target| target.model == session.model))
         .unwrap_or(true);
     if reset {
-        *guard = Some(AdvisorSession::new(advisor_model.clone()));
+        *guard = Some(AdvisorSession::new(primary.model.clone()));
     }
     let session = guard
         .as_mut()
         .expect("advisor session should be initialized");
-    let reply = ask_advisor(
-        provider,
+    let reply = ask_advisor_with_fallback(
+        targets,
         session,
         LOCAL_ADVISOR_TOOL_QUERY.to_owned(),
         main_transcript_snapshot,
     )
     .await?;
     Ok(format!(
-        "{reply}\n\n_(local advisor model: {}; budget: {} of {} tokens remaining)_",
-        session.model,
+        "{}\n\n_({}; budget: {} of {} tokens remaining)_",
+        reply.content,
+        reply.model_note(),
         session.tokens_remaining(),
         session.token_budget
     ))
@@ -429,6 +506,15 @@ impl AdvisorSession {
     /// Tokens still available for new advisor calls.
     pub fn tokens_remaining(&self) -> u64 {
         self.token_budget.saturating_sub(self.tokens_used)
+    }
+
+    pub fn switch_model_preserving_budget(&mut self, model: impl Into<ModelId>) {
+        let model = model.into();
+        if self.model == model {
+            return;
+        }
+        self.model = model;
+        self.transcript.clear();
     }
 
     /// True when the budget has been spent and `ask_advisor` will refuse new
@@ -629,9 +715,6 @@ pub async fn ask_advisor(
         return Err(anyhow!("advisor query is empty"));
     }
     if session.is_exhausted() {
-        // tengu_advisor_tool_interrupted analog — surface a structured error
-        // so the UI can render a "budget exhausted" toast distinct from a
-        // network failure.
         return Err(anyhow!(
             "advisor token budget exhausted ({}/{} used)",
             session.tokens_used,
@@ -640,8 +723,78 @@ pub async fn ask_advisor(
     }
 
     let snapshot = render_snapshot(main_transcript_snapshot);
-    let messages = build_messages(&snapshot, trimmed);
+    ask_advisor_once(provider, session, trimmed, &snapshot).await
+}
 
+pub async fn ask_advisor_with_fallback(
+    targets: &[LocalAdvisorProviderTarget],
+    session: &mut AdvisorSession,
+    query: String,
+    main_transcript_snapshot: &[ChatMessage],
+) -> Result<AdvisorReply> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!("advisor query is empty"));
+    }
+    if session.is_exhausted() {
+        return Err(anyhow!(
+            "advisor token budget exhausted ({}/{} used)",
+            session.tokens_used,
+            session.token_budget
+        ));
+    }
+
+    let snapshot = render_snapshot(main_transcript_snapshot);
+    let mut last_err = None;
+    let original_model = session.model.clone();
+    let mut ordered_targets: Vec<&LocalAdvisorProviderTarget> = targets.iter().collect();
+    if let Some(pos) = ordered_targets
+        .iter()
+        .position(|target| target.model == original_model)
+    {
+        ordered_targets.swap(0, pos);
+    }
+    for target in ordered_targets {
+        session.switch_model_preserving_budget(target.model.clone());
+        let result = ask_advisor_once(target.provider.as_ref(), session, trimmed, &snapshot).await;
+        match result {
+            Ok(content) => {
+                let fallback_from = if target.model == original_model {
+                    None
+                } else {
+                    Some(original_model.clone())
+                };
+                return Ok(AdvisorReply {
+                    content,
+                    provider: ProviderId::new(target.provider.name()),
+                    model: target.model.clone(),
+                    fallback_from,
+                });
+            }
+            Err(e) if advisor_error_allows_model_fallback(&e) => {
+                tracing::warn!(
+                    target: "jfc::advisor",
+                    provider = %target.provider.name(),
+                    model = %target.model,
+                    error = %e,
+                    "local advisor model unavailable; trying fallback"
+                );
+                last_err = Some(e);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| anyhow!("local advisor has no provider target")))
+}
+
+async fn ask_advisor_once(
+    provider: &dyn Provider,
+    session: &mut AdvisorSession,
+    trimmed_query: &str,
+    snapshot: &str,
+) -> Result<String> {
+    let messages = build_messages(snapshot, trimmed_query);
     let opts = StreamOptions::new(session.model.clone())
         .system(ADVISOR_SYSTEM_PROMPT)
         .max_tokens(2048);
@@ -651,8 +804,6 @@ pub async fn ask_advisor(
         Err(e) => {
             let err_msg = e.to_string().to_lowercase();
             if err_msg.contains("not support") || err_msg.contains("unsupported") {
-                // Streaming fallback for OpenWebUI/LiteLLM-style providers.
-                // Mirrors compact.rs's `complete_or_stream` pattern.
                 stream_to_completion(provider, messages, &opts).await?
             } else {
                 return Err(e);
@@ -660,29 +811,23 @@ pub async fn ask_advisor(
         }
     };
 
-    // Account against the budget. Some providers report token usage,
-    // others don't — fall back to a char/4 estimate so the budget still
-    // moves and a misconfigured provider can't get the user infinite
-    // calls. Mirrors v126's `responseLength / 4` heuristic.
     let used = if resp.usage.input_tokens + resp.usage.output_tokens > 0 {
         (resp.usage.input_tokens + resp.usage.output_tokens) as u64
     } else {
-        ((snapshot.len() + trimmed.len() + resp.content.len()) / 4) as u64
+        ((snapshot.len() + trimmed_query.len() + resp.content.len()) / 4) as u64
     };
     session.record_usage(used);
-
-    // Append to the advisor's own transcript so a future /advisor follow-up
-    // can read prior turns. (Not surfaced to the user yet — but the session
-    // owns this state.)
     session
         .transcript
-        .push(ChatMessage::user(trimmed.to_owned()));
+        .push(ChatMessage::user(trimmed_query.to_owned()));
     session
         .transcript
         .push(ChatMessage::assistant(resp.content.clone()));
 
     tracing::info!(
         target: "jfc::advisor",
+        provider = %provider.name(),
+        model = %session.model,
         used,
         tokens_used_total = session.tokens_used,
         budget_remaining = session.tokens_remaining(),
@@ -691,6 +836,32 @@ pub async fn ask_advisor(
     );
 
     Ok(resp.content)
+}
+
+fn advisor_error_allows_model_fallback(error: &anyhow::Error) -> bool {
+    for cause in error.chain() {
+        if let Some(provider_error) = cause.downcast_ref::<ProviderError>() {
+            return matches!(
+                provider_error.kind,
+                ProviderErrorKind::Permission
+                    | ProviderErrorKind::RateLimit
+                    | ProviderErrorKind::Overloaded
+                    | ProviderErrorKind::NotFound
+                    | ProviderErrorKind::Server
+            );
+        }
+    }
+
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("all anthropic oauth accounts exhausted")
+        || message.contains("rate limit")
+        || message.contains("rate-limit")
+        || message.contains("rate_limited")
+        || message.contains("overloaded")
+        || message.contains("529")
+        || message.contains("model access denied")
+        || message.contains("not enabled on your anthropic account")
+        || message.contains("model not found")
 }
 
 /// Stream-to-completion fallback for providers that don't implement
@@ -779,13 +950,21 @@ mod tests {
         }
 
         fn catalog(name: &'static str, models: &[&str]) -> Self {
+            Self::with_result(name, models, Err(anyhow!("not used")))
+        }
+
+        fn with_result(
+            name: &'static str,
+            models: &[&str],
+            result: Result<CompletionResponse>,
+        ) -> Self {
             Self {
                 name,
                 models: models
                     .iter()
                     .map(|id| ModelInfo::new(*id, *id, name))
                     .collect(),
-                result: std::sync::Mutex::new(Some(Err(anyhow!("not used")))),
+                result: std::sync::Mutex::new(Some(result)),
             }
         }
     }
@@ -921,6 +1100,32 @@ mod tests {
         assert_eq!(target.config_value(), "openai/gpt-5.5");
     }
 
+    /// Normal: advisor provider targets include the configured primary model plus
+    /// a gpt-5.5 fallback when an OpenAI-compatible provider is configured.
+    #[test]
+    fn resolve_local_advisor_provider_targets_appends_gpt55_fallback_normal() {
+        let anthropic: Arc<dyn Provider> = Arc::new(FakeProvider::catalog(
+            "anthropic-oauth",
+            &["claude-opus-4-8"],
+        ));
+        let openai: Arc<dyn Provider> = Arc::new(FakeProvider::catalog("openai", &["gpt-5.5"]));
+        let providers = vec![anthropic.clone(), openai];
+
+        let targets = resolve_local_advisor_provider_targets(
+            &providers,
+            anthropic,
+            None,
+            &ModelId::new("claude-opus-4-8"),
+        )
+        .expect("targets should resolve");
+
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].provider.name(), "anthropic-oauth");
+        assert_eq!(targets[0].model.as_str(), "claude-opus-4-8");
+        assert_eq!(targets[1].provider.name(), "openai");
+        assert_eq!(targets[1].model.as_str(), "gpt-5.5");
+    }
+
     /// Normal: render_snapshot produces role-prefixed lines for text parts.
     #[test]
     fn render_snapshot_includes_user_and_assistant_text_normal() {
@@ -1043,6 +1248,69 @@ mod tests {
         let mut session = AdvisorSession::new("test-model");
         let result = ask_advisor(&provider, &mut session, "q".into(), &[]).await;
         assert!(result.is_err());
+        assert_eq!(session.tokens_used, 0);
+    }
+
+    /// Robust: a provider/model availability failure falls through to the next
+    /// configured advisor target instead of surfacing a hard Advisor error.
+    #[tokio::test]
+    async fn ask_advisor_falls_back_to_gpt55_when_primary_unavailable_robust() {
+        let primary: Arc<dyn Provider> = Arc::new(FakeProvider::with_result(
+            "anthropic-oauth",
+            &["claude-opus-4-8"],
+            Err(anyhow!(
+                "all Anthropic OAuth accounts exhausted with no successful response"
+            )),
+        ));
+        let fallback: Arc<dyn Provider> = Arc::new(FakeProvider::with_result(
+            "openai",
+            &["gpt-5.5"],
+            Ok(CompletionResponse {
+                content: "fallback advice".to_owned(),
+                usage: jfc_provider::TokenUsage {
+                    input_tokens: 20,
+                    output_tokens: 5,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
+                },
+            }),
+        ));
+        let targets = vec![
+            LocalAdvisorProviderTarget::new(primary, ModelId::new("claude-opus-4-8")),
+            LocalAdvisorProviderTarget::new(fallback, ModelId::new("gpt-5.5")),
+        ];
+        let mut session = AdvisorSession::new("claude-opus-4-8").with_budget(1_000);
+
+        let reply = ask_advisor_with_fallback(&targets, &mut session, "review".into(), &[])
+            .await
+            .expect("fallback advisor should reply");
+
+        assert_eq!(reply.content, "fallback advice");
+        assert_eq!(reply.model.as_str(), "gpt-5.5");
+        assert_eq!(
+            reply.fallback_from.as_ref().map(|m| m.as_str()),
+            Some("claude-opus-4-8")
+        );
+        assert_eq!(session.model.as_str(), "gpt-5.5");
+        assert_eq!(session.tokens_used, 25);
+    }
+
+    /// Robust: ordinary provider failures still surface instead of falling back,
+    /// so a bad network/path doesn't silently mask the root cause.
+    #[tokio::test]
+    async fn ask_advisor_does_not_fallback_on_plain_network_error_robust() {
+        let primary: Arc<dyn Provider> = Arc::new(FakeProvider::err());
+        let fallback: Arc<dyn Provider> = Arc::new(FakeProvider::echo("should not run"));
+        let targets = vec![
+            LocalAdvisorProviderTarget::new(primary, ModelId::new("test-model")),
+            LocalAdvisorProviderTarget::new(fallback, ModelId::new("gpt-5.5")),
+        ];
+        let mut session = AdvisorSession::new("test-model");
+
+        let result = ask_advisor_with_fallback(&targets, &mut session, "review".into(), &[]).await;
+
+        assert!(result.is_err());
+        assert_eq!(session.model.as_str(), "test-model");
         assert_eq!(session.tokens_used, 0);
     }
 

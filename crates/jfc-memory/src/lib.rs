@@ -7,14 +7,12 @@ pub mod recall;
 pub mod store;
 
 pub use recall::{
-    Fact, cached_recall, format_recall_block, is_enabled, run_recall,
-    run_recall_excluding_visible, select_relevant_memories, set_runtime_override,
-    synthesize_memories,
+    Fact, cached_recall, format_recall_block, is_enabled, run_recall, run_recall_excluding_visible,
+    select_relevant_memories, set_runtime_override, synthesize_memories,
 };
 pub use store::{
-    MemoryEntry, MemoryFrontmatter, MemoryLevel, MemoryScope, MemoryType, TeamMemoryConflict,
-    TeamMemorySyncReport, create_memory, delete_memory, format_existing_memories, is_memory_path,
-    create_memory_checked, CreateMemoryResult,
-    load_all_memories, project_memory_dir, render_memories_section, sync_team_memory,
-    team_memory_dir, user_memory_dir,
+    CreateMemoryResult, MemoryEntry, MemoryFrontmatter, MemoryLevel, MemoryScope, MemoryType,
+    TeamMemoryConflict, TeamMemorySyncReport, create_memory, create_memory_checked, delete_memory,
+    format_existing_memories, is_memory_path, load_all_memories, project_memory_dir,
+    render_memories_section, sync_team_memory, team_memory_dir, user_memory_dir,
 };

@@ -786,7 +786,10 @@ mod tests {
     #[tokio::test]
     async fn evaluate_with_council_parses_arbiter_verdict_normal() {
         let members = vec![
-            council_member("model-a", "{\"ok\": true, \"reason\": \"build + tests pass\"}"),
+            council_member(
+                "model-a",
+                "{\"ok\": true, \"reason\": \"build + tests pass\"}",
+            ),
             council_member("model-b", "{\"ok\": true, \"reason\": \"confirmed\"}"),
         ];
         let history = vec![ChatMessage::user("did the work".to_string())];

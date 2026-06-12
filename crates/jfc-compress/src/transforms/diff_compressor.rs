@@ -363,24 +363,27 @@ impl DiffCompressor {
             // emit. Includes `100755` (executable), `100600` (private),
             // `120000` (symlink), `160000` (gitlink/submodule), etc.
             if let Some(orig) = &file.original_new_file_mode_line
-                && orig != "new file mode 100644" {
-                    stats
-                        .file_mode_normalizations
-                        .push((label.clone(), orig.clone()));
-                }
+                && orig != "new file mode 100644"
+            {
+                stats
+                    .file_mode_normalizations
+                    .push((label.clone(), orig.clone()));
+            }
             if let Some(orig) = &file.original_deleted_file_mode_line
-                && orig != "deleted file mode 100644" {
-                    stats
-                        .file_mode_normalizations
-                        .push((label.clone(), orig.clone()));
-                }
+                && orig != "deleted file mode 100644"
+            {
+                stats
+                    .file_mode_normalizations
+                    .push((label.clone(), orig.clone()));
+            }
             // Binary detail: any line richer than the bare `Binary files
             // differ` (which is virtually all of them — git emits filenames)
             // gets simplified on emit.
             if let Some(orig) = &file.original_binary_line
-                && orig != "Binary files differ" {
-                    stats.binary_files_simplified.push(orig.clone());
-                }
+                && orig != "Binary files differ"
+            {
+                stats.binary_files_simplified.push(orig.clone());
+            }
         }
 
         // Compress each file's hunks: cap count, then trim context.
@@ -688,9 +691,10 @@ fn parse_diff(lines: &[&str]) -> ParsedDiff {
         // hunk-parsing path.
         if is_diff_header(line) {
             if let Some(h) = current_hunk.take()
-                && let Some(f) = current_file.as_mut() {
-                    f.hunks.push(h);
-                }
+                && let Some(f) = current_file.as_mut()
+            {
+                f.hunks.push(h);
+            }
             if let Some(f) = current_file.take() {
                 files.push(f);
             }
@@ -767,9 +771,10 @@ fn parse_diff(lines: &[&str]) -> ParsedDiff {
         // Hunk header.
         if hunk_header_regex().is_match(line) {
             if let Some(h) = current_hunk.take()
-                && let Some(f) = current_file.as_mut() {
-                    f.hunks.push(h);
-                }
+                && let Some(f) = current_file.as_mut()
+            {
+                f.hunks.push(h);
+            }
             current_hunk = Some(DiffHunk {
                 header: line.to_string(),
                 lines: Vec::new(),
@@ -803,9 +808,10 @@ fn parse_diff(lines: &[&str]) -> ParsedDiff {
     }
 
     if let Some(h) = current_hunk.take()
-        && let Some(f) = current_file.as_mut() {
-            f.hunks.push(h);
-        }
+        && let Some(f) = current_file.as_mut()
+    {
+        f.hunks.push(h);
+    }
     if let Some(f) = current_file.take() {
         files.push(f);
     }
@@ -945,9 +951,10 @@ fn extract_line_number(header: &str) -> usize {
     // diff regex, group(1) is the `@`-prefix.
     if let Some(caps) = hunk_new_range_regex().captures(header)
         && let Some(m) = caps.get(1)
-            && let Ok(n) = m.as_str().parse::<usize>() {
-                return n;
-            }
+        && let Ok(n) = m.as_str().parse::<usize>()
+    {
+        return n;
+    }
     0
 }
 

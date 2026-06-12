@@ -30,11 +30,7 @@ pub enum AgentMemoryScope {
 ///
 /// Respects `CLAUDE_CODE_REMOTE_MEMORY_DIR` for managed remote sessions:
 /// when set, project-scoped paths are rooted there instead of `<project>/.claude/`.
-pub fn agent_memory_path(
-    project_root: &Path,
-    scope: AgentMemoryScope,
-    namespace: &str,
-) -> PathBuf {
+pub fn agent_memory_path(project_root: &Path, scope: AgentMemoryScope, namespace: &str) -> PathBuf {
     match scope {
         AgentMemoryScope::User => dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("/home/claude"))
@@ -186,8 +182,7 @@ mod tests {
     #[test]
     fn agent_memory_path_project_normal() {
         let root = Path::new("/tmp/myproject");
-        let path =
-            agent_memory_path(root, AgentMemoryScope::Project, "default");
+        let path = agent_memory_path(root, AgentMemoryScope::Project, "default");
         assert!(path.ends_with("agent-memory/default"));
         assert!(path.starts_with("/tmp/myproject/.claude"));
     }
@@ -244,9 +239,6 @@ mod tests {
                 .ends_with(".session_ingress_token")
         );
         // All three should be in the same remote/ directory.
-        assert_eq!(
-            paths.oauth_token.parent(),
-            paths.api_key.parent()
-        );
+        assert_eq!(paths.oauth_token.parent(), paths.api_key.parent());
     }
 }

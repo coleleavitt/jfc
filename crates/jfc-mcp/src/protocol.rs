@@ -6,8 +6,8 @@
 //! `rmcp`'s protocol types into the lightweight shapes the registry
 //! caches and the streaming layer advertises:
 //!
-//! - [`McpTool`] — a cached tool entry (`{name, description, inputSchema}`)
-//!   built from [`rmcp::model::Tool`]. We keep our own struct so the
+//! - [`McpTool`] — a cached tool entry built from [`rmcp::model::Tool`].
+//!   We keep our own struct so the
 //!   registry's `ToolDef` mapping and `/mcp list` display don't depend on
 //!   `rmcp` types leaking through the public API.
 //! - [`ToolCallOutcome`] — the flattened result of a `tools/call`, built
@@ -18,16 +18,48 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-/// One tool exposed by a connected MCP server. Mirrors the fields jfc
-/// advertises to the model; richer `rmcp` metadata (annotations, output
-/// schema, icons) is dropped at this boundary.
+/// One tool exposed by a connected MCP server. The model-facing `ToolDef`
+/// path still uses name/description/input_schema, but the registry keeps
+/// richer MCP metadata so app/resource surfaces can inspect it later.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct McpTool {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     #[serde(default)]
     pub description: String,
     #[serde(default = "default_input_schema", rename = "inputSchema")]
     pub input_schema: Value,
+    #[serde(
+        default,
+        rename = "outputSchema",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub output_schema: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icons: Option<Value>,
+    #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Value>,
+}
+
+impl Default for McpTool {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            title: None,
+            description: String::new(),
+            input_schema: default_input_schema(),
+            output_schema: None,
+            annotations: None,
+            execution: None,
+            icons: None,
+            meta: None,
+        }
+    }
 }
 
 fn default_input_schema() -> Value {
@@ -49,12 +81,24 @@ impl From<rmcp::model::Tool> for McpTool {
     fn from(t: rmcp::model::Tool) -> Self {
         Self {
             name: t.name.into_owned(),
+            title: t.title,
             description: t.description.map(|d| d.into_owned()).unwrap_or_default(),
             // `input_schema` is an `Arc<Map<String, Value>>`; clone the
             // map out so we own a plain `Value::Object`.
             input_schema: normalize_input_schema(Value::Object((*t.input_schema).clone())),
+            output_schema: t
+                .output_schema
+                .map(|schema| Value::Object((*schema).clone())),
+            annotations: t.annotations.and_then(to_json_value),
+            execution: t.execution.and_then(to_json_value),
+            icons: t.icons.and_then(to_json_value),
+            meta: t.meta.and_then(to_json_value),
         }
     }
+}
+
+fn to_json_value<T: Serialize>(value: T) -> Option<Value> {
+    serde_json::to_value(value).ok()
 }
 
 /// Flattened result of a `tools/call`. `is_error` mirrors the MCP
@@ -151,6 +195,21 @@ mod tests {
         let tool = Tool::new_with_raw("noop", None, Arc::new(serde_json::Map::new()));
         let mcp: McpTool = tool.into();
         assert_eq!(mcp.description, "");
+    }
+
+    #[test]
+    fn mcp_tool_retains_rich_metadata_normal() {
+        let tool = Tool::new("search", "Search", schema_obj())
+            .with_raw_output_schema(schema_obj())
+            .with_annotations(rmcp::model::ToolAnnotations::new().read_only(true));
+        let mcp: McpTool = tool.into();
+        assert!(mcp.output_schema.is_some());
+        assert_eq!(
+            mcp.annotations
+                .as_ref()
+                .and_then(|value| value.get("readOnlyHint")),
+            Some(&json!(true))
+        );
     }
 
     #[test]

@@ -317,7 +317,8 @@ fn list_mcp_resources_def() -> ToolDef {
     ToolDef {
         name: "ListMcpResources".into(),
         description: "List resources exposed by connected MCP servers. Optionally \
-            filter by server name. Returns resource names and URIs grouped by server."
+            filter by server name. Returns resource names, URIs, MIME/size, \
+            descriptions, annotations, icons, and `_meta` grouped by server."
             .into(),
         input_schema: serde_json::json!({
             "type": "object",

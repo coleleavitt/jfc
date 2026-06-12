@@ -499,9 +499,9 @@ async fn search_google(query: &str, max_results: usize) -> Result<String, String
     if !status.is_success() {
         if status.as_u16() == 429 || status.is_server_error() {
             tracing::warn!(%status, "Google CSE HTTP {status}; falling back to an alternate backend");
-            return google_fallback(query, max_results)
-                .await
-                .map_err(|fb| format!("Google CSE returned HTTP {status} (and fallback failed: {fb})"));
+            return google_fallback(query, max_results).await.map_err(|fb| {
+                format!("Google CSE returned HTTP {status} (and fallback failed: {fb})")
+            });
         }
         return Err(format!("Google CSE returned HTTP {status}"));
     }
@@ -538,7 +538,10 @@ fn google_error_is_recoverable(code: i32, message: &str) -> bool {
         return true;
     }
     let m = message.to_ascii_lowercase();
-    m.contains("quota") || m.contains("rate limit") || m.contains("ratelimit") || m.contains("exceeded")
+    m.contains("quota")
+        || m.contains("rate limit")
+        || m.contains("ratelimit")
+        || m.contains("exceeded")
 }
 
 /// Fallback chain for a failed/throttled Google CSE search: try Brave, then
@@ -2340,7 +2343,10 @@ async fn search_searxng(query: &str, max_results: usize) -> Result<String, Strin
                 let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("?");
                 let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
                 let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                out.push_str(&format!("{}. {title}\n   URL: {url}\n   {content}\n\n", i + 1));
+                out.push_str(&format!(
+                    "{}. {title}\n   URL: {url}\n   {content}\n\n",
+                    i + 1
+                ));
             }
         }
         _ => out.push_str("No results found.\n"),
@@ -3765,7 +3771,10 @@ mod fallback_tests {
 
     #[test]
     fn google_429_and_quota_are_recoverable_normal() {
-        assert!(google_error_is_recoverable(429, "Quota exceeded for quota metric"));
+        assert!(google_error_is_recoverable(
+            429,
+            "Quota exceeded for quota metric"
+        ));
         assert!(google_error_is_recoverable(503, "backend error"));
         assert!(google_error_is_recoverable(200, "daily Limit Exceeded"));
         assert!(google_error_is_recoverable(200, "user rate limit"));
@@ -3781,7 +3790,10 @@ mod fallback_tests {
     #[test]
     fn searxng_prefix_routes_and_base_url_defaults_normal() {
         // Prefix parsing routes to the searxng backend.
-        assert_eq!(match_prefix("searxng: rust traits", "searxng"), Some("rust traits"));
+        assert_eq!(
+            match_prefix("searxng: rust traits", "searxng"),
+            Some("rust traits")
+        );
         // Default base URL is a non-empty https endpoint with no trailing slash.
         let base = searxng_base_url();
         assert!(base.starts_with("https://"), "{base}");

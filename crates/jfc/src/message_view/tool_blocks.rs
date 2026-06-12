@@ -772,7 +772,8 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::PostBounty | ToolKind::RunBounty | ToolKind::MarketStatus => {
             Color::Rgb(255, 215, 100)
         } // gold
-        ToolKind::ExitPlanMode => Color::Rgb(170, 200, 255),
+        ToolKind::ExitPlanMode | ToolKind::SubmitPlan => Color::Rgb(170, 200, 255),
+        ToolKind::AddReviewComment | ToolKind::SuggestCommitMessage => Color::Rgb(255, 190, 150),
         ToolKind::MultiEdit => Color::Rgb(160, 230, 170),
         ToolKind::AskUserQuestion => Color::Rgb(255, 200, 240),
         ToolKind::WebFetch | ToolKind::WebSearch => Color::Rgb(120, 200, 220),
@@ -796,14 +797,14 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::NotebookRead | ToolKind::NotebookEdit => Color::Rgb(255, 170, 100),
         ToolKind::ScratchpadRead | ToolKind::ScratchpadWrite => Color::Rgb(200, 200, 160), // warm grey
         ToolKind::Workflow | ToolKind::SlashCommand => Color::Rgb(255, 170, 220), // rose (orchestration)
-        ToolKind::SendUserMessage => Color::Rgb(100, 200, 255), // bright blue
-        ToolKind::SendUserFile => Color::Rgb(255, 200, 130), // amber
-        ToolKind::StructuredOutput => Color::Rgb(180, 230, 130), // lime
+        ToolKind::SendUserMessage => Color::Rgb(100, 200, 255),                   // bright blue
+        ToolKind::SendUserFile => Color::Rgb(255, 200, 130),                      // amber
+        ToolKind::StructuredOutput => Color::Rgb(180, 230, 130),                  // lime
         ToolKind::WaitForMcpServers => Color::Rgb(190, 170, 240), // purple (MCP family)
-        ToolKind::ListMcpResources => Color::Rgb(190, 170, 240), // purple (MCP family)
-        ToolKind::ReadMcpResource => Color::Rgb(190, 170, 240), // purple (MCP family)
-        ToolKind::Advisor => Color::Rgb(255, 215, 100),  // gold
-        ToolKind::ConnectGitHub => Color::Rgb(200, 200, 200), // grey
+        ToolKind::ListMcpResources => Color::Rgb(190, 170, 240),  // purple (MCP family)
+        ToolKind::ReadMcpResource => Color::Rgb(190, 170, 240),   // purple (MCP family)
+        ToolKind::Advisor => Color::Rgb(255, 215, 100),           // gold
+        ToolKind::ConnectGitHub => Color::Rgb(200, 200, 200),     // grey
         ToolKind::DesignProjectCreate
         | ToolKind::DesignProjectList
         | ToolKind::DesignProjectSetMeta

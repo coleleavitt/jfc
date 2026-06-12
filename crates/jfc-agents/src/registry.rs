@@ -498,16 +498,39 @@ fn strs(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| (*s).to_owned()).collect()
 }
 
+const CODE_NAVIGATION_TOOLS: &[&str] = &[
+    // CodeGraph MCP raw tool names.
+    "codegraph_search",
+    "codegraph_explore",
+    "codegraph_node",
+    "codegraph_callers",
+    "codegraph_callees",
+    "codegraph_impact",
+    "codegraph_files",
+    "codegraph_status",
+    // Host-prefixed CodeGraph MCP names. Built-in read-only agents use exact
+    // allowlists, so these must be present or the MCP tools are filtered out
+    // before the model can choose them.
+    "mcp__codegraph__codegraph_search",
+    "mcp__codegraph__codegraph_explore",
+    "mcp__codegraph__codegraph_node",
+    "mcp__codegraph__codegraph_callers",
+    "mcp__codegraph__codegraph_callees",
+    "mcp__codegraph__codegraph_impact",
+    "mcp__codegraph__codegraph_files",
+    "mcp__codegraph__codegraph_status",
+];
+
 /// Returns the built-in agent definitions that ship with jfc.
 pub fn built_in_agents() -> Vec<AgentDef> {
     // Read-only catalogue shared by Explore / Plan / verification.
-    // Includes the native graph + code-index tools so subagents can use
-    // the pre-built code graph instead of grep-looping through the tree
-    // (without these, the subagent's tool filter in
-    // `jfc/src/tools/subagent.rs::filter_tools_for_agent` drops the
-    // graph tools from the advertised catalogue and the model gets
-    // "unknown tool" if it tries to call them).
-    let read_only_tools = strs(&[
+    // Includes current CodeGraph MCP tool names so subagents can use the
+    // pre-built code graph instead of grep-looping through the tree. Without
+    // these, the exact allowlist in
+    // `jfc-engine/src/tools/subagent.rs::filter_tools_for_agent` drops the
+    // MCP tools from the advertised catalogue and the model gets "unknown
+    // tool" if it tries to call them.
+    let mut read_only_tools = strs(&[
         "Read",
         "Glob",
         "Grep",
@@ -518,18 +541,8 @@ pub fn built_in_agents() -> Vec<AgentDef> {
         // catalogue, so Explore/Plan/researcher couldn't search the web at all.
         "WebSearch",
         "WebFetch",
-        "code_index",
-        "graph_query",
-        "graph_context",
-        "graph_search",
-        "graph_callers",
-        "graph_callees",
-        "graph_impact",
-        "graph_node",
-        "graph_explore",
-        "graph_status",
-        "graph_files",
     ]);
+    read_only_tools.extend(strs(CODE_NAVIGATION_TOOLS));
     let no_write_tools = strs(&["Task", "Edit", "Write", "ApplyPatch"]);
     let no_write_only = strs(&["Edit", "Write", "ApplyPatch"]);
 
@@ -573,7 +586,7 @@ pub fn built_in_agents() -> Vec<AgentDef> {
         },
         {
             let mut a = builtin("Plan", include_str!("builtin_prompts/plan.txt"));
-            a.allowed_tools = read_only_tools;
+            a.allowed_tools = read_only_tools.clone();
             a.disallowed_tools = no_write_tools.clone();
             a.key_trigger = Some(
                 "multi-step / risky / cross-cutting change → fire Plan before any destructive edit"
@@ -597,29 +610,9 @@ pub fn built_in_agents() -> Vec<AgentDef> {
                 include_str!("builtin_prompts/verification.txt"),
             );
             a.skills = strs(&["verification-findings"]);
-            a.allowed_tools = strs(&[
-                "Read",
-                "Glob",
-                "Grep",
-                "Bash",
-                "WebSearch",
-                "WebFetch",
-                "code_index",
-                "graph_query",
-                "graph_context",
-                "graph_search",
-                "graph_callers",
-                "graph_callees",
-                "graph_impact",
-                "graph_node",
-                "graph_explore",
-                "graph_status",
-                "graph_files",
-                "TaskList",
-                "TaskGet",
-                "TaskUpdate",
-                "TaskDone",
-            ]);
+            let mut allowed_tools = read_only_tools.clone();
+            allowed_tools.extend(strs(&["TaskList", "TaskGet", "TaskUpdate", "TaskDone"]));
+            a.allowed_tools = allowed_tools;
             a.disallowed_tools = no_write_tools;
             a.background = Some(true);
             a.color = Some("red".into());
@@ -641,24 +634,8 @@ pub fn built_in_agents() -> Vec<AgentDef> {
                 "orchestrator",
                 include_str!("builtin_prompts/orchestrator.txt"),
             );
-            a.allowed_tools = strs(&[
-                "Read",
-                "Glob",
-                "Grep",
-                "Bash",
-                "WebSearch",
-                "WebFetch",
-                "code_index",
-                "graph_query",
-                "graph_context",
-                "graph_search",
-                "graph_callers",
-                "graph_callees",
-                "graph_impact",
-                "graph_node",
-                "graph_explore",
-                "graph_status",
-                "graph_files",
+            let mut allowed_tools = read_only_tools.clone();
+            allowed_tools.extend(strs(&[
                 "TaskCreate",
                 "TaskList",
                 "TaskGet",
@@ -668,7 +645,8 @@ pub fn built_in_agents() -> Vec<AgentDef> {
                 "AskUserQuestion",
                 "EnterPlanMode",
                 "ExitPlanMode",
-            ]);
+            ]));
+            a.allowed_tools = allowed_tools;
             a.disallowed_tools = no_write_only;
             a.color = Some("magenta".into());
             a.max_turns = Some(8);
@@ -960,6 +938,50 @@ mod tests {
             );
             // Web tools must not be accidentally disallowed.
             assert!(!a.disallowed_tools.iter().any(|t| t == "WebSearch"));
+        }
+    }
+
+    #[test]
+    fn read_only_agents_allow_current_codegraph_mcp_tools_regression() {
+        let agents = built_in_agents();
+        let required = [
+            "codegraph_explore",
+            "codegraph_search",
+            "codegraph_node",
+            "codegraph_callers",
+            "codegraph_callees",
+            "codegraph_impact",
+            "codegraph_files",
+            "codegraph_status",
+            "mcp__codegraph__codegraph_explore",
+            "mcp__codegraph__codegraph_search",
+            "mcp__codegraph__codegraph_node",
+            "mcp__codegraph__codegraph_callers",
+            "mcp__codegraph__codegraph_callees",
+            "mcp__codegraph__codegraph_impact",
+            "mcp__codegraph__codegraph_files",
+            "mcp__codegraph__codegraph_status",
+        ];
+
+        for name in ["Explore", "Plan", "verification", "orchestrator"] {
+            let a = agents
+                .iter()
+                .find(|a| a.name == name)
+                .unwrap_or_else(|| panic!("{name} agent missing"));
+            for tool in required {
+                assert!(
+                    a.allowed_tools.iter().any(|allowed| allowed == tool),
+                    "{name} must allow {tool} (allowlist: {:?})",
+                    a.allowed_tools
+                );
+            }
+            assert!(
+                !a.allowed_tools
+                    .iter()
+                    .any(|tool| tool.starts_with("graph_") || tool == "code_index"),
+                "{name} should not advertise legacy graph tools: {:?}",
+                a.allowed_tools
+            );
         }
     }
 

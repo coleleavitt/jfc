@@ -25,7 +25,7 @@
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 /// Content types recognized by the detector. String tags match Python's
 /// `ContentType` enum values 1:1.
@@ -227,25 +227,30 @@ pub fn detect_content_type(content: &str) -> DetectionResult {
         return r;
     }
     if let Some(r) = try_detect_diff(content)
-        && r.confidence >= 0.7 {
-            return r;
-        }
+        && r.confidence >= 0.7
+    {
+        return r;
+    }
     if let Some(r) = try_detect_html(content)
-        && r.confidence >= 0.7 {
-            return r;
-        }
+        && r.confidence >= 0.7
+    {
+        return r;
+    }
     if let Some(r) = try_detect_search(content)
-        && r.confidence >= 0.6 {
-            return r;
-        }
+        && r.confidence >= 0.6
+    {
+        return r;
+    }
     if let Some(r) = try_detect_log(content)
-        && r.confidence >= 0.5 {
-            return r;
-        }
+        && r.confidence >= 0.5
+    {
+        return r;
+    }
     if let Some(r) = try_detect_code(content)
-        && r.confidence >= 0.5 {
-            return r;
-        }
+        && r.confidence >= 0.5
+    {
+        return r;
+    }
     DetectionResult::plain_text(0.5)
 }
 

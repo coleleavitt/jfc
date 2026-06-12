@@ -633,7 +633,10 @@ fn filter_visible<'a>(available: &'a [MemoryEntry], visible_context: &str) -> Ve
 /// Collapse runs of whitespace to single spaces and lowercase, so the
 /// "already visible" check is robust to reflowing/indentation differences.
 fn normalize_ws(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 /// [`run_recall`] but first drops any memory already present in
@@ -824,26 +827,45 @@ mod tests {
     #[test]
     fn filter_visible_drops_already_present_normal() {
         let entries = vec![
-            make_entry("a.md", "The project pins the Rust toolchain in rust-toolchain.toml."),
-            make_entry("b.md", "Prefer snake_case for all module names across the workspace."),
+            make_entry(
+                "a.md",
+                "The project pins the Rust toolchain in rust-toolchain.toml.",
+            ),
+            make_entry(
+                "b.md",
+                "Prefer snake_case for all module names across the workspace.",
+            ),
         ];
         // The live prompt already contains a.md's content (reflowed/indented).
         let visible = "earlier context...\n   The project pins the Rust toolchain\n   in \
                        rust-toolchain.toml.\nmore context";
         let kept = filter_visible(&entries, visible);
         assert_eq!(kept.len(), 1);
-        assert!(kept[0].path.ends_with("b.md"), "only the not-yet-visible memory survives");
+        assert!(
+            kept[0].path.ends_with("b.md"),
+            "only the not-yet-visible memory survives"
+        );
     }
 
     // Robust: empty visible context keeps everything; a very short body is never
     // pruned (could coincidentally appear).
     #[test]
     fn filter_visible_edge_cases_robust() {
-        let entries = vec![make_entry("a.md", "x"), make_entry("b.md", "use serde for config")];
-        assert_eq!(filter_visible(&entries, "").len(), 2, "empty context prunes nothing");
+        let entries = vec![
+            make_entry("a.md", "x"),
+            make_entry("b.md", "use serde for config"),
+        ];
+        assert_eq!(
+            filter_visible(&entries, "").len(),
+            2,
+            "empty context prunes nothing"
+        );
         // Short body (<24 chars) is kept even if present.
         let kept = filter_visible(&entries, "x use serde for config");
-        assert!(kept.iter().any(|m| m.path.ends_with("a.md")), "short body never pruned");
+        assert!(
+            kept.iter().any(|m| m.path.ends_with("a.md")),
+            "short body never pruned"
+        );
     }
 
     // ── select_relevant_memories ─────────────────────────────────────────

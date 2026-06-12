@@ -16,8 +16,8 @@ use jfc_provider::{ModelId, Provider};
 
 use super::ExecutionResult;
 use crate::research::{
-    CombinedSearcher, LlmPlanner, LlmSynthesizer, LocalSynthesizer, ResearchRequest, WebSearcher,
-    run_research, run_research_agentic, DEFAULT_AGENTIC_STEPS,
+    CombinedSearcher, DEFAULT_AGENTIC_STEPS, LlmPlanner, LlmSynthesizer, LocalSynthesizer,
+    ResearchRequest, WebSearcher, run_research, run_research_agentic,
 };
 
 /// Deterministic, provider-free research pass (kept for callers without a

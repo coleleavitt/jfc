@@ -40,6 +40,15 @@ pub fn progressive_tool_defs(
         .map(|name| normalize_tool_name(name))
         .collect();
 
+    // CodeGraph is an MCP-provided code navigation surface in most JFC
+    // installs. Keep it model-visible on the first action turn so coding
+    // tasks start with symbol/impact context instead of broad Read/Grep sweeps.
+    for tool in &all {
+        if is_code_navigation_tool_name(&tool.name) {
+            selected.insert(normalize_tool_name(&tool.name));
+        }
+    }
+
     // Keep every tool name already present in replayed assistant history.
     // Anthropic sees historical `tool_use` blocks on every continuation; if a
     // previously-used tool is omitted from the current `tools` catalog, the
@@ -252,6 +261,24 @@ fn normalize_tool_name(name: &str) -> String {
     name.trim().to_ascii_lowercase()
 }
 
+fn is_code_navigation_tool_name(name: &str) -> bool {
+    let normalized = normalize_tool_name(name);
+    const DIRECT_NAMES: &[&str] = &[
+        "codegraph_search",
+        "codegraph_explore",
+        "codegraph_node",
+        "codegraph_callers",
+        "codegraph_callees",
+        "codegraph_impact",
+        "codegraph_files",
+        "codegraph_status",
+    ];
+
+    DIRECT_NAMES.contains(&normalized.as_str())
+        || normalized.starts_with("mcp__codegraph__")
+        || normalized.contains("__codegraph_")
+}
+
 fn dedup_preserve_order(values: Vec<String>) -> Vec<String> {
     let mut seen = HashSet::new();
     values
@@ -306,6 +333,10 @@ mod tests {
         let all = vec![
             tool("Read", "read files"),
             tool("ToolSearch", "search tools"),
+            tool(
+                "mcp__codegraph__codegraph_explore",
+                "Explore code graph context",
+            ),
             tool("run_coverage", "coverage reports"),
         ];
 
@@ -314,6 +345,27 @@ mod tests {
 
         assert!(names.contains(&"Read"));
         assert!(names.contains(&"ToolSearch"));
+        assert!(names.contains(&"mcp__codegraph__codegraph_explore"));
+        assert!(!names.contains(&"run_coverage"));
+    }
+
+    #[test]
+    fn progressive_catalog_keeps_codegraph_tools_visible_regression() {
+        let all = vec![
+            tool("Read", "read files"),
+            tool("mcp__codegraph__codegraph_search", "Search indexed symbols"),
+            tool(
+                "mcp__codegraph__codegraph_explore",
+                "Explore related symbols and code",
+            ),
+            tool("run_coverage", "coverage reports"),
+        ];
+
+        let selected = progressive_tool_defs(all, &[], Some("fix this bug"));
+        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
+
+        assert!(names.contains(&"mcp__codegraph__codegraph_search"));
+        assert!(names.contains(&"mcp__codegraph__codegraph_explore"));
         assert!(!names.contains(&"run_coverage"));
     }
 

@@ -57,31 +57,34 @@ pub fn tool_pair_indices(messages: &[Value]) -> Vec<ToolPair> {
         // OpenAI shape: role=tool, single tool_call_id.
         if role == Some("tool")
             && let Some(tcid) = msg.get("tool_call_id").and_then(Value::as_str)
-                && let Some(&assistant_index) = announced.get(tcid)
-                    && seen.insert((assistant_index, i)) {
-                        pairs.push(ToolPair {
-                            assistant_index,
-                            response_index: i,
-                        });
-                    }
+            && let Some(&assistant_index) = announced.get(tcid)
+            && seen.insert((assistant_index, i))
+        {
+            pairs.push(ToolPair {
+                assistant_index,
+                response_index: i,
+            });
+        }
 
         // Anthropic shape: role=user, content blocks may contain
         // multiple tool_result entries pointing back to multiple
         // tool_use ids on potentially different assistant messages.
         if role == Some("user")
-            && let Some(blocks) = msg.get("content").and_then(Value::as_array) {
-                for block in blocks {
-                    if block.get("type").and_then(Value::as_str) == Some("tool_result")
-                        && let Some(tuid) = block.get("tool_use_id").and_then(Value::as_str)
-                            && let Some(&assistant_index) = announced.get(tuid)
-                                && seen.insert((assistant_index, i)) {
-                                    pairs.push(ToolPair {
-                                        assistant_index,
-                                        response_index: i,
-                                    });
-                                }
+            && let Some(blocks) = msg.get("content").and_then(Value::as_array)
+        {
+            for block in blocks {
+                if block.get("type").and_then(Value::as_str) == Some("tool_result")
+                    && let Some(tuid) = block.get("tool_use_id").and_then(Value::as_str)
+                    && let Some(&assistant_index) = announced.get(tuid)
+                    && seen.insert((assistant_index, i))
+                {
+                    pairs.push(ToolPair {
+                        assistant_index,
+                        response_index: i,
+                    });
                 }
             }
+        }
     }
 
     pairs
@@ -106,9 +109,10 @@ fn collect_assistant_tool_call_ids(assistant: &Value) -> HashSet<String> {
     if let Some(blocks) = assistant.get("content").and_then(Value::as_array) {
         for block in blocks {
             if block.get("type").and_then(Value::as_str) == Some("tool_use")
-                && let Some(id) = block.get("id").and_then(Value::as_str) {
-                    ids.insert(id.to_string());
-                }
+                && let Some(id) = block.get("id").and_then(Value::as_str)
+            {
+                ids.insert(id.to_string());
+            }
         }
     }
 
