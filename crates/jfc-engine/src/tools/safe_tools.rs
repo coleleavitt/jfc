@@ -313,8 +313,9 @@ pub async fn maybe_run_slop_guard(
     let workspace = cwd.to_path_buf();
 
     let handle = tokio::spawn(async move {
-        crate::slop_guard::run_all_checks_with_old(&path, &content, old.as_deref(), &workspace)
-            .await
+        // Run the full guard pipeline (slop checks + static wiring guard), not
+        // slop alone, so post-edit reporting is one unified surface.
+        crate::guards::run_guard_pipeline(&path, &content, old.as_deref(), &workspace).await
     });
 
     let guard_result = tokio::time::timeout(Duration::from_secs(2), handle).await;

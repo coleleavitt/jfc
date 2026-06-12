@@ -55,6 +55,7 @@ pub mod file_checkpoint;
 pub mod git_context;
 pub mod github;
 pub mod goal;
+pub mod guards;
 #[cfg(feature = "hashline")]
 pub mod hashline;
 pub mod headless;
