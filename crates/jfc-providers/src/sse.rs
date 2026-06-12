@@ -811,6 +811,56 @@ pub fn translate(
     }
 }
 
+/// Emit terminal `*Done` events for still-open **display** blocks (text /
+/// thinking) when the stream aborts mid-flight — a parse error or byte-stream
+/// failure in the middle of a turn — so accumulated text isn't silently
+/// dropped: a `content_block_stop` was never going to arrive, so we synthesise
+/// it. The matching `ContentBlockStop` translate arm produces byte-identical
+/// Done payloads to the happy path.
+///
+/// Open **tool-use** blocks are intentionally *not* finalized: their
+/// `input_json` is partial on an abort, and emitting a `ToolDone` would
+/// dispatch an incomplete (malformed) tool call. They're dropped here so the
+/// turn errors cleanly and the retry re-issues the full call. All blocks are
+/// drained either way so a later finalize pass can't double-emit.
+pub fn finalize_open_blocks(
+    blocks: &mut Vec<Option<BlockState>>,
+    stop_reason: &mut Option<StopReason>,
+) -> Vec<StreamEvent> {
+    let mut out = Vec::new();
+    for (index, slot) in blocks.iter_mut().enumerate() {
+        match slot.take() {
+            Some(BlockState::Text { accumulated }) if !accumulated.is_empty() => {
+                out.push(StreamEvent::TextDone {
+                    index,
+                    text: accumulated,
+                });
+            }
+            Some(BlockState::Thinking { accumulated }) if !accumulated.is_empty() => {
+                out.push(StreamEvent::ThinkingDone {
+                    index,
+                    text: accumulated,
+                });
+            }
+            Some(BlockState::RedactedThinking { data }) => {
+                out.push(StreamEvent::RedactedThinkingDone { index, data });
+            }
+            // Open tool blocks (partial input) and already-empty/None blocks
+            // are dropped — see the doc comment.
+            _ => {}
+        }
+    }
+    let _ = stop_reason;
+    if !out.is_empty() {
+        tracing::warn!(
+            target: "jfc::provider::anthropic_sse",
+            finalized = out.len(),
+            "finalized open display blocks after mid-stream abort to avoid losing committed text"
+        );
+    }
+    out
+}
+
 /// Anthropic's Messages API requires `tool_use.input` to be a JSON object.
 /// Streamed deltas, Generic ToolInput fallbacks, and round-trip edge cases can
 /// produce a `Value::String` (stringified JSON) or `Value::Null`. This helper
@@ -1226,11 +1276,11 @@ pub fn into_event_stream(resp: reqwest::Response) -> EventStream {
                             // Claude Code's byte-watchdog which refreshes on
                             // every chunk pull — so a slow-but-alive stream is
                             // never mistaken for a dead one.
-                            return futures::future::ready(Some(Some(Ok(StreamEvent::Keepalive))));
+                            return futures::future::ready(Some(vec![Ok(StreamEvent::Keepalive)]));
                         }
                         if ev.data == "[DONE]" {
                             tracing::debug!(target: "jfc::provider::anthropic_sse", "sse [DONE]");
-                            return futures::future::ready(Some(None));
+                            return futures::future::ready(Some(Vec::new()));
                         }
                         // `context_hint` is a special SSE event type (not a JSON
                         // `type` field) that Anthropic sends when the model is
@@ -1244,17 +1294,19 @@ pub fn into_event_stream(resp: reqwest::Response) -> EventStream {
                                 data = %&ev.data[..ev.data.len().min(200)],
                                 "context_hint received — signalling auto-compact"
                             );
-                            return futures::future::ready(Some(Some(Ok(StreamEvent::Error {
+                            return futures::future::ready(Some(vec![Ok(StreamEvent::Error {
                                 message: format!(
                                     "auto-compact: context_hint from server ({})",
                                     &ev.data[..ev.data.len().min(120)]
                                 ),
-                            }))));
+                            })]));
                         }
                         match serde_json::from_str::<SseEvent>(&ev.data) {
                             Ok(parsed) => {
                                 log_parsed_event(&parsed);
-                                translate(parsed, blocks, stop_reason).map(Ok)
+                                translate(parsed, blocks, stop_reason)
+                                    .map(|ev| vec![Ok(ev)])
+                                    .unwrap_or_default()
                             }
                             Err(e) => {
                                 tracing::warn!(
@@ -1263,7 +1315,16 @@ pub fn into_event_stream(resp: reqwest::Response) -> EventStream {
                                     data = %&ev.data[..ev.data.len().min(200)],
                                     "sse parse error"
                                 );
-                                Some(Err(anyhow::anyhow!("SSE parse error: {e}")))
+                                // Flush any open text/thinking block before the
+                                // error so committed output isn't lost when a
+                                // malformed event lands mid-stream.
+                                let mut batch: Vec<anyhow::Result<StreamEvent>> =
+                                    finalize_open_blocks(blocks, stop_reason)
+                                        .into_iter()
+                                        .map(Ok)
+                                        .collect();
+                                batch.push(Err(anyhow::anyhow!("SSE parse error: {e}")));
+                                batch
                             }
                         }
                     }
@@ -1273,13 +1334,19 @@ pub fn into_event_stream(resp: reqwest::Response) -> EventStream {
                         } else {
                             "SSE stream failed before first event"
                         };
-                        Some(Err(anyhow::anyhow!("{prefix}: {e}")))
+                        let mut batch: Vec<anyhow::Result<StreamEvent>> =
+                            finalize_open_blocks(blocks, stop_reason)
+                                .into_iter()
+                                .map(Ok)
+                                .collect();
+                        batch.push(Err(anyhow::anyhow!("{prefix}: {e}")));
+                        batch
                     }
                 };
                 futures::future::ready(Some(out))
             },
         )
-        .filter_map(futures::future::ready);
+        .flat_map(futures::stream::iter);
 
     Box::pin(event_stream)
 }
@@ -2070,6 +2137,84 @@ mod tests {
             "expected ToolDone with server_tool_use: prefix, got: {out:?}"
         );
         assert!(blocks[0].is_none());
+    }
+
+    // Regression: a parse error mid-stream must flush an open text block as a
+    // TextDone so accumulated text isn't dropped before the error surfaces.
+    #[test]
+    fn finalize_open_blocks_flushes_open_text_normal() {
+        let (mut blocks, mut sr) = empty_state();
+        translate(
+            SseEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::Text {
+                    text: String::new(),
+                },
+            },
+            &mut blocks,
+            &mut sr,
+        );
+        translate(
+            SseEvent::ContentBlockDelta {
+                index: 0,
+                delta: Delta::TextDelta {
+                    text: "partial answer".into(),
+                },
+            },
+            &mut blocks,
+            &mut sr,
+        );
+
+        let flushed = finalize_open_blocks(&mut blocks, &mut sr);
+        assert!(
+            matches!(flushed.as_slice(), [StreamEvent::TextDone { index: 0, text }] if text == "partial answer"),
+            "expected a single TextDone carrying the accumulated text, got {flushed:?}"
+        );
+        // Block is drained so a later finalize pass can't double-emit it.
+        assert!(blocks[0].is_none());
+    }
+
+    // An open tool-use block has only partial input on an abort; finalizing it
+    // would dispatch a malformed call, so it is dropped (drained, not emitted).
+    #[test]
+    fn finalize_open_blocks_drops_partial_tool_robust() {
+        let (mut blocks, mut sr) = empty_state();
+        translate(
+            SseEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::ToolUse {
+                    id: "tool_1".into(),
+                    name: "Bash".into(),
+                    input: serde_json::json!({}),
+                },
+            },
+            &mut blocks,
+            &mut sr,
+        );
+        translate(
+            SseEvent::ContentBlockDelta {
+                index: 0,
+                delta: Delta::InputJsonDelta {
+                    partial_json: "{\"command\": \"ec".into(),
+                },
+            },
+            &mut blocks,
+            &mut sr,
+        );
+
+        let flushed = finalize_open_blocks(&mut blocks, &mut sr);
+        assert!(
+            flushed.is_empty(),
+            "partial tool block must not be finalized into a ToolDone, got {flushed:?}"
+        );
+        assert!(blocks[0].is_none(), "tool block should still be drained");
+    }
+
+    // No open blocks → nothing to flush.
+    #[test]
+    fn finalize_open_blocks_empty_is_noop_robust() {
+        let (mut blocks, mut sr) = empty_state();
+        assert!(finalize_open_blocks(&mut blocks, &mut sr).is_empty());
     }
 
     #[test]
