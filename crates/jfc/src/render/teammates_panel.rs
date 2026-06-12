@@ -141,7 +141,10 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
         };
 
         let right_side = format!("{status_str} · {elapsed_label}{token_label}{tools_label}");
-        let right_len = right_side.chars().count();
+        // Cell width, not codepoint count — `cell_width` is the mandated layout
+        // metric (visual.rs); the agents fan renders the same BackgroundTasks
+        // with it, so chars().count() here drifted one cell per wide glyph.
+        let right_len = super::visual::cell_width(&right_side);
         let selected = app
             .viewing_task_id
             .as_deref()
@@ -150,7 +153,7 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
         let pointer = if selected { "▶ " } else { "  " };
         let desc_budget = render_width.saturating_sub(5 + right_len + 2);
         let desc = super::truncate_str(&bt.description, desc_budget);
-        let pad_len = render_width.saturating_sub(5 + desc.chars().count() + right_len);
+        let pad_len = render_width.saturating_sub(5 + super::visual::cell_width(&desc) + right_len);
         let padding = " ".repeat(pad_len);
 
         let name_style = if bt.status.is_alive() {

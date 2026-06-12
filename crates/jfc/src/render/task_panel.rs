@@ -407,6 +407,9 @@ pub(super) fn task_model_badge(task: &Task) -> Option<String> {
     if model.is_empty() {
         None
     } else {
-        Some(super::truncate_str(model, 20))
+        // Route through the documented model-badge SSOT (`model_fqn`) so the
+        // Tasks table shows the same provider-trimmed, version-preserving id as
+        // the agents fan, instead of a raw char-truncated metadata string.
+        Some(super::truncate_str(&super::agents::model_fqn(model), 20))
     }
 }
