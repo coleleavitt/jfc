@@ -145,7 +145,18 @@ pub struct TokenLedger {
 /// `i64::MAX` keeps the sign correct so the worst case is an over-charge, not
 /// a free top-up.
 fn amount_as_i64(amount: u64) -> i64 {
-    i64::try_from(amount).unwrap_or(i64::MAX)
+    i64::try_from(amount).unwrap_or_else(|_| {
+        // Reaching here means a single ledger amount exceeded i64::MAX — a
+        // realistic token cost never does, so this signals a corrupted or
+        // hostile usage report. Clamp (keeps the sign correct) but log loudly
+        // so the corruption is diagnosable rather than silently absorbed.
+        tracing::error!(
+            target: "jfc::economy",
+            amount,
+            "ledger amount exceeds i64::MAX — clamping to i64::MAX (corrupt usage report?)"
+        );
+        i64::MAX
+    })
 }
 
 impl TokenLedger {
@@ -201,8 +212,8 @@ impl TokenLedger {
             });
         }
 
-        self.total_spent += self.spawn_fee;
-        self.today_spent += self.spawn_fee;
+        self.total_spent = self.total_spent.saturating_add(self.spawn_fee);
+        self.today_spent = self.today_spent.saturating_add(self.spawn_fee);
         let fee = amount_as_i64(self.spawn_fee);
         *self.balances.entry(agent_id.clone()).or_insert(0) -= fee;
 
@@ -228,8 +239,8 @@ impl TokenLedger {
         output_tokens: u64,
     ) {
         let cost = self.oracle.actual_cost(model, input_tokens, output_tokens);
-        self.total_spent += cost;
-        self.today_spent += cost;
+        self.total_spent = self.total_spent.saturating_add(cost);
+        self.today_spent = self.today_spent.saturating_add(cost);
         let cost_i64 = amount_as_i64(cost);
         *self.balances.entry(agent_id.clone()).or_insert(0) -= cost_i64;
 
