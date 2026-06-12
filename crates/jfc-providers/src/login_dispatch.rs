@@ -99,9 +99,7 @@ Claude Code OAuth (claudeai) sign-in:
 
   Multi-account rotation: when an account hits 429 / invalid_grant, jfc
   silently switches to the next-best account (tier-ranked, cooldown-aware).
-  The store is at ~/.config/jfc-anthropic-accounts.json. Set
-  JFC_ANTHROPIC_ACCOUNTS_PATH to use a custom path (e.g. opencode's store
-  at ~/.config/opencode/anthropic-accounts.json to share rotation state).";
+  The store is at ~/.config/jfc/anthropic-accounts.json.";
 
 const LITELLM_BODY: &str = "\
 LiteLLM proxy sign-in:

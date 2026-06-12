@@ -3142,47 +3142,28 @@ mod tests {
 
     // ─────────────────────────────────────────────────────────────────────────
     // resolve_store_path — DO-178B §6.4.2 demonstration
-    // Requirement: precedence is env override > canonical jfc-anthropic-accounts.json.
+    // Requirement: canonical jfc config directory is used deterministically.
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Normal: explicit env override wins over the canonical default.
+    // Normal: the canonical jfc path under $HOME/.config is used.
     #[test]
-    fn resolve_store_path_env_override_wins_normal() {
+    fn resolve_store_path_defaults_to_jfc_config_dir_normal() {
         let home = Path::new("/home/u");
-        let resolved = resolve_store_path(Some("/custom/path.json"), home);
-        assert_eq!(resolved, PathBuf::from("/custom/path.json"));
-    }
-
-    // Normal: with no override, the canonical jfc path under $HOME/.config is used.
-    #[test]
-    fn resolve_store_path_defaults_to_jfc_canonical_normal() {
-        let home = Path::new("/home/u");
-        let resolved = resolve_store_path(None, home);
+        let resolved = resolve_store_path(home);
         assert_eq!(
             resolved,
-            PathBuf::from("/home/u/.config/jfc-anthropic-accounts.json")
+            PathBuf::from("/home/u/.config/jfc/anthropic-accounts.json")
         );
-    }
-
-    // Robust: empty-string env override is *not* treated as unset — caller passed an
-    // explicit (if degenerate) value, so we honor it. Documents the contract; lets
-    // misconfiguration surface as a clear "file not found" later instead of silently
-    // reading some other store.
-    #[test]
-    fn resolve_store_path_empty_override_is_used_verbatim_robust() {
-        let home = Path::new("/home/u");
-        let resolved = resolve_store_path(Some(""), home);
-        assert_eq!(resolved, PathBuf::from(""));
     }
 
     // Robust: degenerate home path (root) still produces a deterministic, non-panicking
     // result so the caller can surface a clean error.
     #[test]
     fn resolve_store_path_root_home_no_panic_robust() {
-        let resolved = resolve_store_path(None, Path::new("/"));
+        let resolved = resolve_store_path(Path::new("/"));
         assert_eq!(
             resolved,
-            PathBuf::from("/.config/jfc-anthropic-accounts.json")
+            PathBuf::from("/.config/jfc/anthropic-accounts.json")
         );
     }
 
