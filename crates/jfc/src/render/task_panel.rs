@@ -373,6 +373,54 @@ fn render_task_detail(f: &mut Frame, app: &App, task: &Task, area: Rect) {
                 ),
             ]));
         }
+
+        // Recent transcript. The detached-agent sync reconstructs
+        // `chat_messages` from the worker log but nothing surfaced them — show
+        // the tail so a user can drill into a running agent's activity without
+        // leaving the panel (the t910 ask). Capped to the last few lines so a
+        // long run doesn't flood the detail view.
+        let transcript: Vec<&jfc_core::ChatMessage> = bt
+            .chat_messages
+            .iter()
+            .rev()
+            .take(6)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        if !transcript.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Recent activity",
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::BOLD),
+            )));
+            for msg in transcript {
+                let text = msg
+                    .parts
+                    .iter()
+                    .map(|p| p.text_only())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let text = text.trim();
+                if text.is_empty() {
+                    continue;
+                }
+                let (tag, tag_style) = match msg.role {
+                    jfc_core::Role::User => ("›", Style::default().fg(t.accent)),
+                    jfc_core::Role::Assistant => ("⟐", Style::default().fg(t.text_secondary)),
+                };
+                // One-line preview per message — collapse newlines, clip to the
+                // panel width so multi-paragraph replies don't blow up the row.
+                let preview = text.replace('\n', " ");
+                let preview = super::truncate_str(&preview, area.width.saturating_sub(6) as usize);
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {tag} "), tag_style),
+                    Span::styled(preview, Style::default().fg(t.text_secondary)),
+                ]));
+            }
+        }
     }
 
     // Blocked by

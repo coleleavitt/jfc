@@ -1486,4 +1486,62 @@ mod render_snapshot_tests {
         let text = buffer_text(&term);
         assert!(text.contains('✗'), "shared failed glyph missing:\n{text}");
     }
+
+    // t910 slice: the task-panel detail view now surfaces a running agent's
+    // reconstructed transcript ("Recent activity") — previously chat_messages
+    // were rebuilt from the worker log but never shown. Render the full panel
+    // in detail mode and assert the transcript text reaches the screen.
+    #[test]
+    fn task_detail_renders_agent_transcript_normal() {
+        use jfc_core::ChatMessage;
+        use jfc_session::DeletedFilter;
+
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        let task = app
+            .engine
+            .task_store
+            .create(
+                "audit the parser".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .expect("create task");
+
+        // A BackgroundTask correlated by task id, carrying a reconstructed
+        // transcript.
+        let mut bt = app_with_task(TaskLifecycle::Running, "audit the parser")
+            .engine
+            .background_tasks
+            .shift_remove("tx")
+            .unwrap();
+        bt.task_id = task.id.as_str().into();
+        bt.chat_messages = vec![
+            ChatMessage::user("scan lib.rs for unwraps".into()),
+            ChatMessage::assistant("found three unwraps in the lexer".into()),
+        ];
+        app.engine
+            .background_tasks
+            .insert(task.id.as_str().to_string(), bt);
+
+        // Enter detail mode on the first task.
+        app.task_panel_detail = true;
+        app.task_panel_selected = 0;
+        let _ = app.engine.task_store.list(DeletedFilter::Exclude);
+
+        let backend = TestBackend::new(100, 30);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| super::super::task_panel::task_panel(f, &mut app))
+            .expect("draw");
+        let text = buffer_text(&term);
+        assert!(
+            text.contains("Recent activity"),
+            "transcript section header missing:\n{text}"
+        );
+        assert!(
+            text.contains("found three unwraps") || text.contains("scan lib.rs"),
+            "agent transcript text missing:\n{text}"
+        );
+    }
 }
