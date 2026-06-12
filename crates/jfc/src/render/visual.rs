@@ -324,6 +324,46 @@ pub fn format_elapsed_secs(elapsed_secs: u64) -> String {
     }
 }
 
+/// Semantic colour role for a roster status glyph. The roster panels all show
+/// the same `BackgroundTask` primitive, so the glyph→meaning mapping lives here
+/// (one SSOT) while each panel resolves the role against its own `Theme` —
+/// keeping theme ownership in the view without re-duplicating the match arms
+/// that had already drifted between the agents fan and the teammates panel
+/// (the fan used `●` for any active state; the panel split `Running`→`●` /
+/// `Idle`→`○`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RosterColor {
+    /// An actively-running agent (amber/accent).
+    Active,
+    /// A quiescent but alive agent (muted).
+    Idle,
+    /// Successful terminal state (green).
+    Success,
+    /// Failed terminal state (red).
+    Error,
+    /// Cancelled / other muted terminal state.
+    Muted,
+}
+
+/// The status glyph + colour role for a background-agent lifecycle state.
+/// Single source of truth shared by every roster surface. `is_active` lets a
+/// caller distinguish a freshly-spawned `Running` agent (amber `●`) from one
+/// that is technically running but should read as secondary.
+pub fn roster_status_glyph(
+    status: jfc_core::TaskLifecycle,
+    is_active: bool,
+) -> (&'static str, RosterColor) {
+    use jfc_core::TaskLifecycle as L;
+    match status {
+        L::Failed => ("✗ ", RosterColor::Error),
+        L::Completed => ("✓ ", RosterColor::Success),
+        L::Cancelled => ("✗ ", RosterColor::Muted),
+        L::Idle => ("○ ", RosterColor::Idle),
+        L::Running | L::Pending if is_active => ("● ", RosterColor::Active),
+        _ => ("● ", RosterColor::Muted),
+    }
+}
+
 /// Display width of a string in terminal cells. Unlike `.len()` (bytes)
 /// or `.chars().count()` (codepoints), this counts the columns the text
 /// actually occupies — CJK / fullwidth / emoji glyphs are 2 cells, the
@@ -433,4 +473,46 @@ pub fn wrap_text_to_width(s: &str, width: usize) -> Vec<String> {
         out.push(String::new());
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{roster_status_glyph, RosterColor};
+    use jfc_core::TaskLifecycle as L;
+
+    // The shared roster glyph SSOT maps each lifecycle state to one glyph +
+    // colour role — the single mapping both the agents fan and teammates panel
+    // now consume (previously each hardcoded its own, drifting copy).
+    #[test]
+    fn roster_glyph_terminal_states_normal() {
+        assert_eq!(roster_status_glyph(L::Completed, false), ("✓ ", RosterColor::Success));
+        assert_eq!(roster_status_glyph(L::Failed, false), ("✗ ", RosterColor::Error));
+        assert_eq!(roster_status_glyph(L::Cancelled, false), ("✗ ", RosterColor::Muted));
+    }
+
+    #[test]
+    fn roster_glyph_active_vs_idle_normal() {
+        // An active running agent reads as a filled accent bullet.
+        assert_eq!(roster_status_glyph(L::Running, true), ("● ", RosterColor::Active));
+        // Idle is the hollow bullet regardless of active flag.
+        assert_eq!(roster_status_glyph(L::Idle, true), ("○ ", RosterColor::Idle));
+    }
+
+    // Robust: a non-active running/pending state still renders a bullet but in
+    // a muted role, so a stale row doesn't shout for attention.
+    #[test]
+    fn roster_glyph_inactive_running_is_muted_robust() {
+        assert_eq!(roster_status_glyph(L::Running, false), ("● ", RosterColor::Muted));
+        assert_eq!(roster_status_glyph(L::Pending, false), ("● ", RosterColor::Muted));
+    }
+
+    // The glyph is always a 1-cell box/bullet plus a trailing space (2 cells)
+    // so both panels reserve the same gutter width.
+    #[test]
+    fn roster_glyph_is_uniform_width_robust() {
+        for st in [L::Pending, L::Running, L::Idle, L::Completed, L::Failed, L::Cancelled] {
+            let (g, _) = roster_status_glyph(st, true);
+            assert_eq!(super::cell_width(g), 2, "glyph {g:?} for {st:?} not 2 cells");
+        }
+    }
 }

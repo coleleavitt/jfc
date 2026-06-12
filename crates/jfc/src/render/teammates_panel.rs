@@ -95,8 +95,6 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
     });
 
     for bt in &all_tasks {
-        use jfc_core::TaskLifecycle;
-
         let elapsed_label =
             super::visual::format_elapsed_secs(now.duration_since(bt.started_at).as_secs());
 
@@ -121,24 +119,21 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
             String::new()
         };
 
-        let (icon, icon_style) = match bt.status {
-            TaskLifecycle::Running => (
-                "● ",
-                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
-            ),
-            TaskLifecycle::Idle => ("○ ", Style::default().fg(t.text_muted)),
-            TaskLifecycle::Completed => ("✓ ", Style::default().fg(t.success)),
-            TaskLifecycle::Failed => ("✗ ", Style::default().fg(t.error)),
-            _ => ("○ ", Style::default().fg(t.text_muted)),
+        // Shared roster glyph SSOT (visual.rs) — same mapping the agents fan
+        // uses, resolved against this panel's theme. `Running` reads bold
+        // accent here, matching the panel's prior emphasis.
+        let (icon, role) = super::visual::roster_status_glyph(bt.status, bt.status.is_alive());
+        let icon_style = match role {
+            super::visual::RosterColor::Active => {
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
+            }
+            super::visual::RosterColor::Idle => Style::default().fg(t.text_muted),
+            super::visual::RosterColor::Success => Style::default().fg(t.success),
+            super::visual::RosterColor::Error => Style::default().fg(t.error),
+            super::visual::RosterColor::Muted => Style::default().fg(t.text_muted),
         };
 
-        let status_str = match bt.status {
-            TaskLifecycle::Running => "running",
-            TaskLifecycle::Idle => "idle",
-            TaskLifecycle::Completed => "completed",
-            TaskLifecycle::Failed => "failed",
-            _ => "pending",
-        };
+        let status_str = bt.status.label();
 
         let right_side = format!("{status_str} · {elapsed_label}{token_label}{tools_label}");
         // Cell width, not codepoint count — `cell_width` is the mandated layout

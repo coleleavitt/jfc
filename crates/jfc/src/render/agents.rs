@@ -260,14 +260,22 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
             .unwrap_or(false);
         let ptr = if is_selected { "▶ " } else { "  " };
 
-        // Status glyph column (semantic colour, never accent).
-        let (glyph, glyph_col) = match status {
-            TaskLifecycle::Failed => ("✗ ", t.error),
-            TaskLifecycle::Completed => ("✓ ", t.success),
-            TaskLifecycle::Cancelled => ("✗ ", t.text_muted),
-            TaskLifecycle::Idle => ("○ ", t.text_muted),
-            _ if is_active => ("● ", t.warning),
-            _ => ("● ", t.text_secondary),
+        // Status glyph column (semantic colour, never accent). Shared SSOT
+        // (visual.rs) — same mapping the teammates panel uses. The fan resolves
+        // `Active` to warning amber and the non-active fallback to a secondary
+        // tone, preserving its prior look.
+        let (glyph, role) = super::visual::roster_status_glyph(status, is_active);
+        let glyph_col = match role {
+            super::visual::RosterColor::Active => t.warning,
+            super::visual::RosterColor::Success => t.success,
+            super::visual::RosterColor::Error => t.error,
+            super::visual::RosterColor::Idle | super::visual::RosterColor::Muted => {
+                if matches!(status, TaskLifecycle::Cancelled | TaskLifecycle::Idle) {
+                    t.text_muted
+                } else {
+                    t.text_secondary
+                }
+            }
         };
 
         // Right-side metadata, highest-priority last (rightmost = where
