@@ -529,7 +529,7 @@ mod tests {
     //
     // This test is platform-conditional: we use a `#!/bin/sh` shebang which
     // requires a Unix shell. CI on macOS/Linux runs it; Windows skips.
-    #[serial_test::serial]
+    #[serial_test::serial(env)]
     #[test]
     #[cfg(unix)]
     fn fetch_gcloud_token_shells_out_normal() {
@@ -574,7 +574,7 @@ mod tests {
 
     // Robust: when gcloud exits non-zero, fetch_gcloud_token surfaces stderr
     // so the user learns why (typically "Reauth required").
-    #[serial_test::serial]
+    #[serial_test::serial(env)]
     #[test]
     #[cfg(unix)]
     fn fetch_gcloud_token_failure_propagates_stderr_robust() {

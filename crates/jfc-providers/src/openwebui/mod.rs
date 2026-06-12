@@ -2437,7 +2437,7 @@ mod tests {
     // the intermittent `detect_iana_timezone_strips_leading_colon` failure in
     // full-workspace runs.
     #[test]
-    #[serial_test::serial(tz_env)]
+    #[serial_test::serial(env)]
     fn detect_iana_timezone_falls_back_to_utc_when_empty_robust() {
         let _g = TzGuard::set(":");
         // /etc/timezone may exist with a real value on the CI host, so
@@ -2449,14 +2449,14 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial(tz_env)]
+    #[serial_test::serial(env)]
     fn detect_iana_timezone_uses_tz_env_when_set_normal() {
         let _g = TzGuard::set("America/Phoenix");
         assert_eq!(detect_iana_timezone(), "America/Phoenix");
     }
 
     #[test]
-    #[serial_test::serial(tz_env)]
+    #[serial_test::serial(env)]
     fn detect_iana_timezone_strips_leading_colon_normal() {
         // Posix `:Region/City` form — leading colon is a parser hint
         // to glibc, not part of the zone name.

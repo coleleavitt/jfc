@@ -531,6 +531,7 @@ mod tests {
 
     // Robust: from_env falls through to disk store when env vars are empty.
     #[test]
+    #[serial_test::serial(env)]
     fn from_env_falls_through_to_disk_with_empty_env_robust() {
         if std::env::var("JFC_LITELLM_API_KEY").is_ok() && std::env::var("JFC_LITELLM_API").is_ok()
         {
@@ -555,6 +556,7 @@ mod tests {
 
     // Robust: from_env returns None when env URL is empty AND no disk store.
     #[test]
+    #[serial_test::serial(env)]
     fn from_env_returns_none_with_empty_api_url_robust() {
         if std::env::var("JFC_LITELLM_API_KEY").is_ok() && std::env::var("JFC_LITELLM_API").is_ok()
         {

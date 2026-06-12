@@ -2997,6 +2997,7 @@ mod tests {
 
     // Normal: env values append after custom_betas. Mirrors CC's G36 behaviour.
     #[test]
+    #[serial_test::serial(env)]
     fn append_env_betas_appends_each_token_normal() {
         // SAFETY: process-wide env mutation is fine in tests when serialized.
         // This test owns the var key; no other test in this module reads it.
@@ -3012,6 +3013,7 @@ mod tests {
 
     // Robust: whitespace and empty entries are dropped, not appended as bare commas.
     #[test]
+    #[serial_test::serial(env)]
     fn append_env_betas_trims_and_drops_empties_robust() {
         unsafe {
             std::env::set_var("ANTHROPIC_BETAS", " , gamma-2099-03-03 , ,");
@@ -3026,6 +3028,7 @@ mod tests {
 
     // Robust: missing env var is a no-op (header unchanged).
     #[test]
+    #[serial_test::serial(env)]
     fn append_env_betas_noop_when_env_unset_robust() {
         unsafe { std::env::remove_var("ANTHROPIC_BETAS") };
         let mut header = String::from("base");

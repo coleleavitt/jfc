@@ -572,6 +572,7 @@ mod tests {
     //
     // NB: rust tests share an env, so unset on exit to avoid polluting siblings.
     #[test]
+    #[serial_test::serial(env)]
     #[cfg_attr(any(target_env = "msvc"), ignore)]
     fn custom_model_env_var_appends_row_normal() {
         unsafe { std::env::set_var("ANTHROPIC_CUSTOM_MODEL_OPTION", "claude-test-foo-bar") };
