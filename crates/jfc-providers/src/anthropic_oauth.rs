@@ -577,6 +577,17 @@ struct TokenState {
     account_name: String,
 }
 
+/// Result of a single token-refresh attempt. `adopted_peer_token` is `true`
+/// when another process had already rotated the token and we adopted it from
+/// disk instead of performing a network refresh — the sweeper uses this to
+/// count only real refreshes.
+struct RefreshOutcome {
+    access_token: String,
+    refresh_token: String,
+    expires_at: u64,
+    adopted_peer_token: bool,
+}
+
 /// Subset of `GET /api/oauth/profile` used by the model-access logic. Mirrors
 /// v126 cli.js (`GC$()`): Anthropic doesn't expose a model-ACL endpoint, so
 /// account tier is the source of truth for which Opus variant the picker should
@@ -783,13 +794,20 @@ impl AnthropicOAuthProvider {
                 .refresh_with_disable_on_invalid_grant(&name, &refresh_token)
                 .await
             {
-                Ok((access_token, new_refresh, expires_at)) => {
+                Ok(outcome) => {
+                    if outcome.adopted_peer_token {
+                        // A peer already had a fresh token on disk; it's already
+                        // persisted there, so don't rewrite it (avoids redundant
+                        // disk_lock contention) and don't count it as a refresh
+                        // this sweeper performed.
+                        continue;
+                    }
                     let _ = mgr
                         .atomic_update_tokens(
                             &name,
-                            access_token,
-                            expires_at,
-                            Some(new_refresh),
+                            outcome.access_token,
+                            outcome.expires_at,
+                            Some(outcome.refresh_token),
                         )
                         .await;
                     refreshed += 1;
@@ -935,8 +953,14 @@ impl AnthropicOAuthProvider {
                     (at.to_owned(), refresh_token.to_owned(), exp)
                 }
                 _ => {
-                    self.refresh_with_disable_on_invalid_grant(account_name, refresh_token)
-                        .await?
+                    let outcome = self
+                        .refresh_with_disable_on_invalid_grant(account_name, refresh_token)
+                        .await?;
+                    (
+                        outcome.access_token,
+                        outcome.refresh_token,
+                        outcome.expires_at,
+                    )
                 }
             };
 
@@ -994,11 +1018,15 @@ impl AnthropicOAuthProvider {
     ///    token / disables. Transient errors (network, 5xx) bubble up so the
     ///    caller/sweeper can retry later — they are recorded as audit failures
     ///    but never disable.
+    ///
+    /// The boolean in the success tuple is `true` when a peer's token was
+    /// adopted without a network refresh, so the caller can distinguish a real
+    /// refresh from an adoption (e.g. the sweeper only counts real refreshes).
     async fn refresh_with_disable_on_invalid_grant(
         &self,
         account_name: &str,
         refresh_token: &str,
-    ) -> anyhow::Result<(String, String, u64)> {
+    ) -> anyhow::Result<RefreshOutcome> {
         let mgr = self.account_manager().await.ok();
 
         // (1) Acquire the per-account single-flight lock (outside disk_lock).
@@ -1011,22 +1039,35 @@ impl AnthropicOAuthProvider {
             None => None,
         };
 
-        // (2) Re-read disk: a peer may have rotated the token while we waited
-        // for the lock. If a different, still-valid access token now exists,
-        // adopt it instead of refreshing again.
+        // (2) Re-read disk: a peer (opencode / another jfc) may have rotated the
+        // token while we waited for the lock. The reliable peer-rotation signal
+        // is an on-disk token that is BOTH genuinely fresh (beyond the refresh
+        // buffer) AND a different refresh token than the one we were about to
+        // spend — comparing against the input refresh_token works for every
+        // account, not just the one in our single-account in-memory cache.
         if let Some(mgr) = &mgr
             && let Some((disk_access, disk_refresh, disk_expires)) =
                 mgr.read_account_tokens_from_disk(account_name).await
-            && let (Some(access), Some(expires)) = (disk_access, disk_expires)
-            && now_ms() < expires
-            && access != self.cached_access_token_for(account_name).await
+            && let Some(access) = disk_access
+            && !access.is_empty()
+            && !super::anthropic_accounts::expiry_is_stale(disk_expires)
+            && disk_refresh != refresh_token
+            && !disk_refresh.is_empty()
         {
             tracing::info!(
                 target: "jfc::provider::anthropic_oauth::rotation",
                 account = %account_name,
                 "another process already refreshed this token — adopting it"
             );
-            return Ok((access, disk_refresh, expires));
+            // Adoption is a successful maintenance outcome: record it so the
+            // audit timestamps reflect that the account is now warm.
+            let _ = mgr.record_refresh_success(account_name).await;
+            return Ok(RefreshOutcome {
+                access_token: access,
+                refresh_token: disk_refresh,
+                expires_at: disk_expires.unwrap_or_else(now_ms),
+                adopted_peer_token: true,
+            });
         }
 
         // Record the attempt for audit before the network call.
@@ -1035,11 +1076,16 @@ impl AnthropicOAuthProvider {
         }
 
         match refresh_access_token(&self.client, refresh_token).await {
-            Ok(t) => {
+            Ok((access_token, new_refresh, expires_at)) => {
                 if let Some(mgr) = &mgr {
                     let _ = mgr.record_refresh_success(account_name).await;
                 }
-                Ok(t)
+                Ok(RefreshOutcome {
+                    access_token,
+                    refresh_token: new_refresh,
+                    expires_at,
+                    adopted_peer_token: false,
+                })
             }
             Err(e) => {
                 let msg = e.to_string().to_lowercase();
@@ -1070,19 +1116,6 @@ impl AnthropicOAuthProvider {
                 Err(e)
             }
         }
-    }
-
-    /// The currently cached access token for `account_name`, if the in-memory
-    /// `TokenState` belongs to it. Used to detect a peer-rotated on-disk token
-    /// (one that differs from what we last used).
-    async fn cached_access_token_for(&self, account_name: &str) -> String {
-        self.token
-            .read()
-            .await
-            .as_ref()
-            .filter(|t| t.account_name == account_name)
-            .map(|t| t.access_token.clone())
-            .unwrap_or_default()
     }
 
     /// Pre-rotation legacy path. Used when the manager is unavailable (e.g.,

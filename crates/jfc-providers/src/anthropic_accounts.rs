@@ -345,19 +345,26 @@ pub struct UsageDelta {
     pub cost_usd: f64,
 }
 
+/// Whether an `expiresAt` (unix-ms) is expired or within the refresh buffer.
+/// `None` → never-expires → not stale; `Some(0)` → always stale. Shared by
+/// [`Account::is_token_expired`] and the OAuth adopt-peer-token path so both
+/// use the identical buffer semantics.
+pub fn expiry_is_stale(expires_at: Option<u64>) -> bool {
+    match expires_at {
+        None => false,
+        Some(0) => true,
+        Some(ms) => {
+            let buffer = TOKEN_EXPIRY_BUFFER.as_millis() as u64;
+            now_ms() >= ms.saturating_sub(buffer)
+        }
+    }
+}
+
 impl Account {
     /// Whether the OAuth access token has expired (or is within the refresh
     /// buffer window). Never-expires (`expires_at = None`) → false.
     pub fn is_token_expired(&self) -> bool {
-        match self.expires_at {
-            None => false,
-            Some(0) => true,
-            Some(ms) => {
-                let now_ms = now_ms();
-                let buffer = TOKEN_EXPIRY_BUFFER.as_millis() as u64;
-                now_ms >= ms.saturating_sub(buffer)
-            }
-        }
+        expiry_is_stale(self.expires_at)
     }
 
     /// `enabled` defaults to `true` when missing — only `Some(false)` disables.
@@ -1896,6 +1903,23 @@ mod tests {
         a.enabled = Some(false);
         assert_eq!(a.auth_health(), AuthHealth::Stale);
         assert!(!a.needs_proactive_refresh());
+    }
+
+    // Normal: expiry_is_stale honors the refresh buffer and the None/zero
+    // sentinels — the shared predicate the OAuth adopt path reuses to tell a
+    // genuinely-fresh peer token from a still-stale one.
+    #[test]
+    fn expiry_is_stale_buffer_semantics_normal() {
+        assert!(!expiry_is_stale(None), "never-expires is not stale");
+        assert!(expiry_is_stale(Some(0)), "zero is always stale");
+        assert!(
+            !expiry_is_stale(Some(now_ms() + 60 * 60 * 1000)),
+            "1h out is fresh"
+        );
+        assert!(
+            expiry_is_stale(Some(now_ms() + 60 * 1000)),
+            "1min out is within the 5min buffer → stale"
+        );
     }
 
     // ── audit metadata ──────────────────────────────────────────────────────
