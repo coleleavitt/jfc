@@ -66,19 +66,15 @@ pub(crate) fn model_fqn(raw: &str) -> String {
 /// cycling moves in the same meaningful order the user sees in the fan,
 /// deterministically, instead of HashMap-iteration order.
 pub(crate) fn fleet_ordered_task_ids(app: &App) -> Vec<String> {
-    use jfc_core::TaskLifecycle;
     let now = std::time::Instant::now();
     let mut ids: Vec<(&str, u8)> = app
         .engine
         .background_tasks
         .values()
         .map(|bt| {
-            let is_active = !matches!(bt.status, TaskLifecycle::Idle)
-                && !bt.status.is_terminal()
-                && app.engine.last_active_agent_task.as_deref() == Some(bt.task_id.as_str());
             (
                 bt.task_id.as_str(),
-                fleet_rank(bt.status, is_active, failed_is_fresh(bt, now)),
+                fleet_rank(bt.status, roster_is_active(bt, app), failed_is_fresh(bt, now)),
             )
         })
         .collect();
@@ -112,6 +108,32 @@ const FRESH_FAILURE_WINDOW: std::time::Duration = std::time::Duration::from_secs
 fn failed_is_fresh(bt: &crate::app::BackgroundTask, now: std::time::Instant) -> bool {
     let finished_at = bt.completed_at.unwrap_or(bt.started_at);
     now.duration_since(finished_at) < FRESH_FAILURE_WINDOW
+}
+
+/// True when `bt` is the agent whose stream is live right now. Shared by every
+/// roster surface so "the active one floats to the top" means the same thing
+/// in each.
+pub(crate) fn roster_is_active(bt: &crate::app::BackgroundTask, app: &App) -> bool {
+    use jfc_core::TaskLifecycle;
+    !matches!(bt.status, TaskLifecycle::Idle)
+        && !bt.status.is_terminal()
+        && app.engine.last_active_agent_task.as_deref() == Some(bt.task_id.as_str())
+}
+
+/// Stable fleet-ordering key for a background task: active → live → fresh-fail
+/// → idle → done → cancelled → stale-fail, then a `started_at` tie-break. The
+/// agents fan and the teammates panel both sort by this so the same roster
+/// renders in the same order everywhere (they previously diverged — the fan
+/// used fleet rank, the panel a simpler alive-first-by-start sort).
+pub(crate) fn roster_sort_key(
+    bt: &crate::app::BackgroundTask,
+    app: &App,
+    now: std::time::Instant,
+) -> (u8, std::time::Instant) {
+    (
+        fleet_rank(bt.status, roster_is_active(bt, app), failed_is_fresh(bt, now)),
+        bt.started_at,
+    )
 }
 
 pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
@@ -165,22 +187,12 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
             _ => {}
         }
     }
-    let is_active_of = |bt: &crate::app::BackgroundTask| {
-        !matches!(bt.status, TaskLifecycle::Idle)
-            && !bt.status.is_terminal()
-            && app
-                .engine
-                .last_active_agent_task
-                .as_deref()
-                .map(|id| id == bt.task_id.as_str())
-                .unwrap_or(false)
-    };
-
     // Sort: active → running → fresh-failed → idle → done → stale-failed.
-    // Stable tie-break on id so rows don't jitter between frames.
+    // Stable tie-break on id so rows don't jitter between frames. Shared
+    // active-detection (roster_is_active) with the teammates panel.
     shown.sort_by(|a, b| {
-        fleet_rank(a.status, is_active_of(a), failed_is_fresh(a, now))
-            .cmp(&fleet_rank(b.status, is_active_of(b), failed_is_fresh(b, now)))
+        fleet_rank(a.status, roster_is_active(a, app), failed_is_fresh(a, now))
+            .cmp(&fleet_rank(b.status, roster_is_active(b, app), failed_is_fresh(b, now)))
             .then_with(|| a.task_id.as_str().cmp(b.task_id.as_str()))
     });
 
@@ -249,7 +261,7 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
         let status = bt.status;
         let is_terminal = status.is_terminal();
         let is_idle = matches!(status, TaskLifecycle::Idle);
-        let is_active = is_active_of(bt);
+        let is_active = roster_is_active(bt, app);
 
         // Selection pointer column (accent). Selected = the row whose
         // task_id matches viewing_task_id (what ↵ opens).

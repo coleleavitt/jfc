@@ -291,4 +291,24 @@ mod tests {
         let src = "line1 // c\n\"str\nstill str\"\ncode";
         assert_eq!(mask_source(src).lines().count(), src.lines().count());
     }
+    #[test]
+    fn tmp_byte_string_brace() {
+        let masked = mask_source(r#"let s = b"}"; let y = 2;"#);
+        assert!(!masked.contains('}'), "byte-string brace leaked: {masked:?}");
+        assert!(masked.contains("let y"));
+    }
+
+    #[test]
+    fn tmp_byte_char_brace() {
+        let masked = mask_source("let c = b'}'; let d = 1;");
+        assert!(!masked.contains('}'), "byte-char brace leaked: {masked:?}");
+        assert!(masked.contains("let d"));
+    }
+
+    #[test]
+    fn tmp_raw_byte_string_brace() {
+        let masked = mask_source(r##"let s = br#"a "}" b"#; let y = 2;"##);
+        assert!(!masked.contains('}'), "raw-byte-string brace leaked: {masked:?}");
+        assert!(masked.contains("let y"));
+    }
 }

@@ -1487,6 +1487,40 @@ mod render_snapshot_tests {
         assert!(text.contains('✗'), "shared failed glyph missing:\n{text}");
     }
 
+    // t918 slice: both roster surfaces order the same BackgroundTasks the
+    // same way (shared roster_sort_key) — a running agent ranks above a
+    // completed one. Insert both, render the teammates panel, assert the
+    // running row's description appears on an earlier line than the completed
+    // one's.
+    #[test]
+    fn teammates_panel_orders_running_before_completed_normal() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        for (id, status, desc) in [
+            ("done1", TaskLifecycle::Completed, "ZZZ_finished_work"),
+            ("run1", TaskLifecycle::Running, "AAA_active_work"),
+        ] {
+            let mut bt = app_with_task(status, desc)
+                .engine
+                .background_tasks
+                .shift_remove("tx")
+                .unwrap();
+            bt.task_id = id.into();
+            app.engine.background_tasks.insert(id.to_string(), bt);
+        }
+        let backend = TestBackend::new(80, 24);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| super::super::teammates_panel::teammates_panel(f, &mut app))
+            .expect("draw");
+        let text = buffer_text(&term);
+        let run_pos = text.find("AAA_active_work").expect("running row");
+        let done_pos = text.find("ZZZ_finished_work").expect("completed row");
+        assert!(
+            run_pos < done_pos,
+            "running agent must sort above completed:\n{text}"
+        );
+    }
+
     // t910 slice: the task-panel detail view now surfaces a running agent's
     // reconstructed transcript ("Recent activity") — previously chat_messages
     // were rebuilt from the worker log but never shown. Render the full panel

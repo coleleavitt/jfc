@@ -84,15 +84,11 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
     let now = std::time::Instant::now();
     let render_width = inner.width as usize;
 
-    // Sort: alive first (by start time), then terminal
+    // Shared fleet ordering (agents.rs): active → live → fresh-fail → idle →
+    // done → cancelled → stale-fail, started_at tie-break — so this modal and
+    // the inline agents fan list the same roster in the same order.
     let mut all_tasks: Vec<_> = app.engine.background_tasks.values().collect();
-    all_tasks.sort_by(|a, b| {
-        let a_alive = a.status.is_alive();
-        let b_alive = b.status.is_alive();
-        b_alive
-            .cmp(&a_alive)
-            .then_with(|| a.started_at.cmp(&b.started_at))
-    });
+    all_tasks.sort_by_key(|bt| super::agents::roster_sort_key(bt, app, now));
 
     for bt in &all_tasks {
         let elapsed_label =
