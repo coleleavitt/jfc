@@ -118,6 +118,18 @@ pub async fn drain_stream_events(
             }
         };
 
+        // Canonical frame-category telemetry: one provider-neutral classification
+        // per frame, regardless of which backend produced it. `commits_output`
+        // is the same predicate the per-arm `committed_output = true` writes
+        // below encode; tracing it here makes the cross-provider frame taxonomy
+        // observable in one place.
+        tracing::trace!(
+            target: "jfc::stream::frame",
+            category = ?event.category(),
+            commits_output = event.commits_output(),
+            "stream frame"
+        );
+
         match event {
             StreamEvent::TextDelta { delta, .. } => {
                 committed_output = true;

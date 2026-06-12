@@ -652,6 +652,72 @@ pub enum StreamEvent {
     FallbackTriggered(FallbackTriggered),
 }
 
+/// Canonical, provider-neutral category for a stream frame.
+///
+/// `StreamEvent` is already the wire-neutral frame enum every provider parses
+/// into, but its variants are fine-grained (separate delta/done/redacted
+/// variants, ping, response-metadata). Consumers that reason about a frame's
+/// *role* rather than its exact wire shape — telemetry, the idle watchdog, and
+/// the "did this frame commit billable output" check — want the coarse
+/// taxonomy the Koog-style canonical frame layer defines: text, reasoning,
+/// tool-call, tool-result, usage, model-resolution, finish, and control. This
+/// is that taxonomy, derived from a `StreamEvent` via [`StreamEvent::category`]
+/// so the mapping lives in one place instead of being re-derived ad hoc at
+/// each match site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameCategory {
+    /// Assistant-visible text (delta or completed block).
+    Text,
+    /// Model reasoning/thinking content (delta, completed, or redacted).
+    Reasoning,
+    /// A tool/function call the model is emitting (delta or completed).
+    ToolCall,
+    /// A server-side tool result block produced within the sampling loop.
+    ToolResult,
+    /// Token usage accounting (per-call or early input-token metadata).
+    Usage,
+    /// A change in the model that is serving the turn (e.g. a fallback).
+    ModelResolution,
+    /// A terminal frame ending the turn (carries a [`StopReason`]).
+    Finish,
+    /// Transport/error control with no assistant content: keepalive pings and
+    /// error frames.
+    Control,
+}
+
+impl StreamEvent {
+    /// Classify this frame into its canonical [`FrameCategory`]. One source of
+    /// truth for cross-provider frame-role reasoning.
+    pub fn category(&self) -> FrameCategory {
+        match self {
+            StreamEvent::TextDelta { .. } | StreamEvent::TextDone { .. } => FrameCategory::Text,
+            StreamEvent::ThinkingDelta { .. }
+            | StreamEvent::ThinkingDone { .. }
+            | StreamEvent::RedactedThinkingDone { .. } => FrameCategory::Reasoning,
+            StreamEvent::ToolDelta { .. } | StreamEvent::ToolDone { .. } => FrameCategory::ToolCall,
+            StreamEvent::ServerToolResult { .. } => FrameCategory::ToolResult,
+            StreamEvent::Usage { .. } | StreamEvent::ResponseMetadata { .. } => FrameCategory::Usage,
+            StreamEvent::FallbackTriggered(_) => FrameCategory::ModelResolution,
+            StreamEvent::Done { .. } => FrameCategory::Finish,
+            StreamEvent::Keepalive | StreamEvent::Error { .. } => FrameCategory::Control,
+        }
+    }
+
+    /// Whether this frame carries billable assistant output (text, reasoning,
+    /// a tool call, or a server tool result). Used by the runtime to decide
+    /// whether a turn produced committed output. Usage/metadata, finish,
+    /// model-resolution, and control frames do not commit output.
+    pub fn commits_output(&self) -> bool {
+        matches!(
+            self.category(),
+            FrameCategory::Text
+                | FrameCategory::Reasoning
+                | FrameCategory::ToolCall
+                | FrameCategory::ToolResult
+        )
+    }
+}
+
 /// Why a model fallback was triggered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FallbackReason {
@@ -2011,6 +2077,157 @@ mod tests {
         let (tokens, source) = TokenUsage::default().billable_tokens(0);
         assert_eq!(tokens, 0);
         assert_eq!(source, TokenSource::EstimatedFromChars);
+    }
+
+    // ─── FrameCategory taxonomy ─────────────────────────────────────────────
+
+    // Normal: every StreamEvent variant maps to the expected canonical category.
+    #[test]
+    fn frame_category_maps_each_variant_normal() {
+        use FrameCategory::*;
+        let cases: Vec<(StreamEvent, FrameCategory)> = vec![
+            (
+                StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "x".into(),
+                },
+                Text,
+            ),
+            (
+                StreamEvent::TextDone {
+                    index: 0,
+                    text: "x".into(),
+                },
+                Text,
+            ),
+            (
+                StreamEvent::ThinkingDelta {
+                    index: 0,
+                    delta: "x".into(),
+                    estimated_tokens: None,
+                },
+                Reasoning,
+            ),
+            (
+                StreamEvent::ThinkingDone {
+                    index: 0,
+                    text: "x".into(),
+                },
+                Reasoning,
+            ),
+            (
+                StreamEvent::RedactedThinkingDone {
+                    index: 0,
+                    data: "x".into(),
+                },
+                Reasoning,
+            ),
+            (
+                StreamEvent::ToolDelta {
+                    index: 0,
+                    delta: "x".into(),
+                },
+                ToolCall,
+            ),
+            (
+                StreamEvent::ToolDone {
+                    index: 0,
+                    tool_name: "t".into(),
+                    tool_use_id: "id".into(),
+                    input_json: "{}".into(),
+                    thought_signature: None,
+                },
+                ToolCall,
+            ),
+            (
+                StreamEvent::ServerToolResult {
+                    tool_use_id: "id".into(),
+                    tool_kind: ServerToolResultKind::WebSearch,
+                    content: serde_json::Value::Null,
+                },
+                ToolResult,
+            ),
+            (
+                StreamEvent::Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    cache_read_tokens: 0,
+                    cache_write_tokens: 0,
+                },
+                Usage,
+            ),
+            (
+                StreamEvent::ResponseMetadata {
+                    response_id: "r".into(),
+                    input_tokens: None,
+                },
+                Usage,
+            ),
+            (
+                StreamEvent::Done {
+                    stop_reason: StopReason::EndTurn,
+                },
+                Finish,
+            ),
+            (StreamEvent::Keepalive, Control),
+            (StreamEvent::Error { message: "e".into() }, Control),
+            (
+                StreamEvent::FallbackTriggered(FallbackTriggered {
+                    original_model: ModelId::new("a"),
+                    fallback_model: ModelId::new("b"),
+                    reason: FallbackReason::Overloaded,
+                }),
+                ModelResolution,
+            ),
+        ];
+        for (event, expected) in cases {
+            assert_eq!(event.category(), expected, "miscategorized: {event:?}");
+        }
+    }
+
+    // Normal: commits_output is true exactly for content-bearing categories
+    // (text, reasoning, tool call, tool result) and false otherwise — the same
+    // predicate the runtime's committed_output flag encodes per-arm.
+    #[test]
+    fn frame_commits_output_only_for_content_normal() {
+        assert!(
+            StreamEvent::TextDelta {
+                index: 0,
+                delta: "x".into()
+            }
+            .commits_output()
+        );
+        assert!(
+            StreamEvent::ToolDelta {
+                index: 0,
+                delta: "x".into()
+            }
+            .commits_output()
+        );
+        assert!(
+            StreamEvent::ServerToolResult {
+                tool_use_id: "id".into(),
+                tool_kind: ServerToolResultKind::WebSearch,
+                content: serde_json::Value::Null,
+            }
+            .commits_output()
+        );
+        assert!(
+            !StreamEvent::Usage {
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+            }
+            .commits_output()
+        );
+        assert!(!StreamEvent::Keepalive.commits_output());
+        assert!(
+            !StreamEvent::Done {
+                stop_reason: StopReason::EndTurn
+            }
+            .commits_output()
+        );
     }
 
     // Normal: a UsageReport pairs the resolved model with the call usage and
