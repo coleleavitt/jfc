@@ -76,24 +76,33 @@ impl PromptSearch {
 /// button-up so the next render extracts + copies the text exactly once.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TextSelection {
-    pub anchor: (u16, u16),
-    pub head: (u16, u16),
+    /// Anchor/head as `(screen column, absolute content line)`. The line is
+    /// scroll-invariant — captured as `scroll_offset + (screen_row − top)` at
+    /// mouse time — so the selection **survives scrolling**: each frame the
+    /// renderer maps lines back to screen rows and simply skips the parts that
+    /// are offscreen. (The old model stored raw screen rows and had to clear
+    /// the selection the instant the transcript scrolled.)
+    pub anchor: (u16, usize),
+    pub head: (u16, usize),
+    /// Transcript area width when the selection was anchored. A width change
+    /// re-wraps every line and remaps content lines, so the selection is
+    /// dropped when this no longer matches (sidebar toggles, terminal resize).
+    pub area_width: u16,
     pub dragged: bool,
     pub finalize: bool,
     /// Set once the selection has been extracted + copied. The highlight then
     /// persists (so the user sees what was copied) without re-copying, until
-    /// the next mouse-down, any scroll, Esc, or resize clears it. Safe under
-    /// the absolute-screen-cell model precisely because those clear points
-    /// fire the instant the cells could map to different content.
+    /// the next mouse-down, Esc, or a width change clears it. Scrolling no
+    /// longer clears it — content-line coords stay valid under scroll.
     pub copied: bool,
 }
 
 impl TextSelection {
-    /// Normalized (top-left, bottom-right) cell span in reading order, so the
-    /// renderer can walk rows top-to-bottom regardless of drag direction.
-    pub fn ordered(&self) -> ((u16, u16), (u16, u16)) {
+    /// Normalized (top-left, bottom-right) span in reading order, so the
+    /// renderer can walk lines top-to-bottom regardless of drag direction.
+    pub fn ordered(&self) -> ((u16, usize), (u16, usize)) {
         let (a, h) = (self.anchor, self.head);
-        // Order by row, then column.
+        // Order by line, then column.
         if (a.1, a.0) <= (h.1, h.0) {
             (a, h)
         } else {

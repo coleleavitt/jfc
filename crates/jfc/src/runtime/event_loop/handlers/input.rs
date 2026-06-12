@@ -187,11 +187,12 @@ async fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent, _tx: &
         MouseEventKind::Drag(MouseButton::Left) => {
             // Drag inside the transcript extends a text selection (copy-on-
             // select). The renderer paints the highlight and, on button-up,
-            // copies the covered cells. Drag-scroll is gone — the scroll
-            // wheel, scrollbar, and keyboard already cover scrolling, and
-            // selection is the higher-value gesture here.
+            // copies the covered content. Coordinates are (col, content line):
+            // the row is translated through the current scroll offset so the
+            // selection survives scrolling mid-drag and afterwards.
+            let content_line = selection_content_line(app, mouse.row);
             if let Some(sel) = app.text_selection.as_mut() {
-                sel.head = (mouse.column, mouse.row);
+                sel.head = (mouse.column, content_line);
                 // Only promote to a real selection once the cursor has moved
                 // a meaningful distance. A one-cell jitter on an ordinary
                 // click must NOT count as a drag — otherwise a shaky click
@@ -277,9 +278,15 @@ async fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent, _tx: &
                     // The request owns this frame; don't also start a drag.
                     app.text_selection = None;
                 } else {
+                    let line = selection_content_line(app, mouse.row);
                     app.text_selection = Some(TextSelection {
-                        anchor: (mouse.column, mouse.row),
-                        head: (mouse.column, mouse.row),
+                        anchor: (mouse.column, line),
+                        head: (mouse.column, line),
+                        area_width: app
+                            .messages_rect
+                            .borrow()
+                            .map(|r| r.width)
+                            .unwrap_or(0),
                         dragged: false,
                         finalize: false,
                         copied: false,
@@ -452,9 +459,21 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
 /// Whether a drag has moved far enough from its anchor to count as a real
 /// text selection rather than click jitter. Any row change, or ≥2 columns
 /// horizontally on the same row, qualifies.
-fn selection_started(anchor: (u16, u16), head: (u16, u16)) -> bool {
+fn selection_started(anchor: (u16, usize), head: (u16, usize)) -> bool {
     const MIN_DRAG_COLS: u16 = 2;
     anchor.1 != head.1 || anchor.0.abs_diff(head.0) >= MIN_DRAG_COLS
+}
+
+/// Translate a screen row inside the transcript into a scroll-invariant
+/// absolute content line: `scroll_offset + (row − area.top)`. Selections are
+/// stored in these coordinates so they survive scrolling.
+fn selection_content_line(app: &App, row: u16) -> usize {
+    let top = app
+        .messages_rect
+        .borrow()
+        .map(|r| r.y)
+        .unwrap_or(0);
+    app.scroll_offset + row.saturating_sub(top) as usize
 }
 
 #[cfg(test)]

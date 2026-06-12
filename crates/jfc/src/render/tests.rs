@@ -1572,6 +1572,59 @@ mod render_snapshot_tests {
         assert!(panel_row.contains('●'), "panel missing glyph: {panel_row}");
     }
 
+    // t919: content-backed selection extraction. Fill the transcript with
+    // more lines than the viewport holds, select a line range that includes
+    // content scrolled OFFSCREEN, and assert the extraction still returns the
+    // full text — the old frame-buffer extractor could only copy visible
+    // cells.
+    #[test]
+    fn selection_extracts_content_beyond_viewport_normal() {
+        use jfc_core::ChatMessage;
+
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        for i in 0..40 {
+            app.engine
+                .messages
+                .push(ChatMessage::assistant(format!("transcript line {i:02}")));
+        }
+
+        // Render once at a small viewport so messages_rect is recorded and
+        // heights are known.
+        let backend = TestBackend::new(60, 10);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::messages::messages(f, &mut app, area);
+        })
+        .expect("draw");
+        let area = app.messages_rect.borrow().expect("messages rect");
+
+        // Select content lines 2..=30 — far more than the 10-row viewport
+        // can show at once.
+        let text = super::super::frame::extract_selection_text(
+            &app,
+            (area.x + 1, 2),
+            (area.x + area.width - 2, 30),
+            area,
+        );
+        assert!(
+            text.contains("transcript line 01") || text.contains("transcript line 02"),
+            "selection start missing:\n{text}"
+        );
+        // A line that is far outside any 10-row window of the start must
+        // still be present (proves the copy reads content, not the screen).
+        assert!(
+            text.contains("transcript line 09"),
+            "offscreen line missing from copy:\n{text}"
+        );
+        assert!(
+            text.lines().count() >= 20,
+            "expected a multi-viewport span, got {} lines:\n{text}",
+            text.lines().count()
+        );
+    }
+
     // t910 merge: drilling into a detached agent (the task view reached via
     // viewing_task_id, fallback string-log path) now leads with the SAME
     // canonical detail body the Tasks pane shows (Progress header + stats).

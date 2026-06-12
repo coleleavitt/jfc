@@ -404,27 +404,91 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// Column span `[c0, c1)` of the selection on `row`, in terminal-selection
-/// semantics: the first row runs from the anchor column to the right edge,
-/// the last row from the left edge to the head column (inclusive), middle
-/// rows are full-width, and a single-row selection is just anchor→head.
-fn selection_row_span(
-    row: u16,
-    start: (u16, u16),
-    end: (u16, u16),
+/// Column span `[c0, c1)` of the selection on content `line`, in terminal-
+/// selection semantics: the first line runs from the anchor column to the
+/// right edge, the last line from the left edge to the head column
+/// (inclusive), middle lines are full-width, and a single-line selection is
+/// just anchor→head. Lines are absolute content lines (scroll-invariant), not
+/// screen rows.
+fn selection_line_span(
+    line: usize,
+    start: (u16, usize),
+    end: (u16, usize),
     left: u16,
     right: u16,
 ) -> (u16, u16) {
     let (c0, c1) = if start.1 == end.1 {
         (start.0, end.0.saturating_add(1))
-    } else if row == start.1 {
+    } else if line == start.1 {
         (start.0, right)
-    } else if row == end.1 {
+    } else if line == end.1 {
         (left, end.0.saturating_add(1))
     } else {
         (left, right)
     };
     (c0.clamp(left, right), c1.clamp(left, right))
+}
+
+/// Extract the selected text from the transcript CONTENT, not the visible
+/// frame buffer: the selected line range is re-rendered into an offscreen
+/// buffer through the same `MessageView` pipeline that paints the screen, so
+/// the copied text is byte-identical to what the rows show — including lines
+/// that have scrolled outside the viewport. (The old extractor read only the
+/// visible frame cells, so a selection that scrolled offscreen copied
+/// nothing.)
+pub(super) fn extract_selection_text(
+    app: &App,
+    start: (u16, usize),
+    end: (u16, usize),
+    area: Rect,
+) -> String {
+    use ratatui::widgets::Widget;
+    // Same width the live transcript renders at: area − 2 (padding) − 1
+    // (scrollbar gutter). Must match `render::messages` exactly or the
+    // offscreen wrap diverges from what the user selected.
+    let content_w = area.width.saturating_sub(3);
+    if content_w == 0 {
+        return String::new();
+    }
+    // Cap pathological spans so a stray drag can't allocate a giant buffer.
+    const MAX_COPY_LINES: usize = 2000;
+    let first = start.1;
+    let span = end.1.saturating_sub(first).saturating_add(1).min(MAX_COPY_LINES);
+
+    let inner_w = content_w as usize;
+    let ctx = crate::message_view::RenderCtx::from_app(app);
+    let items = crate::message_view::build_render_items_pub(&ctx, inner_w);
+    let total_h: usize = items.iter().map(|i| i.height(inner_w)).sum();
+    let tmp_area = Rect::new(0, 0, content_w, span as u16);
+    let mut tmp = ratatui::buffer::Buffer::empty(tmp_area);
+    crate::message_view::MessageView {
+        app,
+        prebuilt: Some(crate::message_view::PrebuiltItems {
+            items,
+            total_h,
+            scroll: first,
+        }),
+    }
+    .render(tmp_area, &mut tmp);
+
+    // Column mapping: the selection stores absolute screen columns; the
+    // offscreen buffer starts at the content's left edge (area.x + 1).
+    let left_screen = area.x.saturating_add(1);
+    let right_screen = area.x + area.width - 1; // exclusive (scrollbar column)
+    let mut rows: Vec<String> = Vec::new();
+    for off in 0..span {
+        let line = first + off;
+        let (c0, c1) = selection_line_span(line, start, end, left_screen, right_screen);
+        let mut s = String::new();
+        for col in c0..c1 {
+            let x = col.saturating_sub(left_screen);
+            if x < content_w && (off as u16) < tmp_area.height {
+                s.push_str(tmp[(x, off as u16)].symbol());
+            }
+        }
+        rows.push(s.trim_end().to_string());
+    }
+    rows.join("\n")
 }
 
 fn apply_text_selection(f: &mut Frame, app: &mut App) {
@@ -435,17 +499,14 @@ fn apply_text_selection(f: &mut Frame, app: &mut App) {
         app.text_selection = None;
         return;
     };
-    if area.width < 3 || area.height < 3 {
-        // Too small to extract or highlight; don't leave a finalize request
-        // (or a persisted post-copy highlight) stuck on the state forever.
-        if sel.finalize || sel.copied {
-            app.text_selection = None;
-        }
+    if area.width < 3 || area.height < 3 || sel.area_width != area.width {
+        // Too small to extract/highlight — or the transcript re-wrapped
+        // (width change from a sidebar toggle/resize), which remaps every
+        // content line. Either way the stored coordinates are stale.
+        app.text_selection = None;
         return;
     }
-    // Body bounds inside the rounded border (1-cell border + the scrollbar
-    // gutter on the right are excluded so we don't copy frame glyphs).
-    // The transcript is borderless now: content fills the area top-to-bottom,
+    // The transcript is borderless: content fills the area top-to-bottom,
     // inset 1 col by horizontal padding, with the scrollbar on the last column.
     let top = area.y;
     let bottom = area.y + area.height; // exclusive (last content row = bottom-1)
@@ -453,32 +514,12 @@ fn apply_text_selection(f: &mut Frame, app: &mut App) {
     let right = area.x + area.width - 1; // exclusive (scrollbar column)
 
     let (start, end) = sel.ordered();
-    let r0 = start.1.max(top);
-    let r1 = end.1.min(bottom.saturating_sub(1));
-    if r0 > r1 {
-        if sel.finalize || sel.copied {
-            app.text_selection = None;
-        }
-        return;
-    }
 
     if sel.finalize {
-        let mut rows: Vec<String> = Vec::new();
-        {
-            let buf = f.buffer_mut();
-            let bounds = *buf.area();
-            for row in r0..=r1 {
-                let (c0, c1) = selection_row_span(row, start, end, left, right);
-                let mut line = String::new();
-                for col in c0..c1 {
-                    if col < bounds.right() && row < bounds.bottom() {
-                        line.push_str(buf[(col, row)].symbol());
-                    }
-                }
-                rows.push(line.trim_end().to_string());
-            }
-        }
-        let text = rows.join("\n");
+        // Content-backed extraction: re-renders the selected line range
+        // offscreen, so the copy is complete even if part of the selection
+        // has scrolled out of the viewport.
+        let text = extract_selection_text(app, start, end, area);
         if text.trim().is_empty() {
             // Nothing to copy or keep highlighted (blank-area drag).
             app.text_selection = None;
@@ -493,8 +534,9 @@ fn apply_text_selection(f: &mut Frame, app: &mut App) {
             ),
         );
         // Persist the highlight (copied=true) so the user sees what was
-        // copied; cleared on the next mouse-down, scroll, Esc, or resize. Fall
-        // through to paint the highlight this same frame.
+        // copied; cleared on the next mouse-down, Esc, or width change —
+        // scrolling keeps it (content-line coords stay valid). Fall through
+        // to paint the highlight this same frame.
         app.text_selection = Some(crate::app::TextSelection {
             finalize: false,
             copied: true,
@@ -503,14 +545,24 @@ fn apply_text_selection(f: &mut Frame, app: &mut App) {
         });
     }
 
-    // Live highlight: paint the covered cells with the theme's selection
-    // background, leaving each cell's foreground intact (a solid bg reads as
-    // one contiguous band, whereas SGR reverse fragments over syntax colors).
+    // Live highlight: paint the VISIBLE slice of the selection — content
+    // lines are mapped through the current scroll offset to screen rows, so
+    // the highlight tracks the text as the transcript scrolls instead of
+    // dying on the first wheel tick. Offscreen parts simply don't paint.
     let sel_bg = app.theme.selection_bg();
+    let scroll = app.scroll_offset;
     let buf = f.buffer_mut();
     let bounds = *buf.area();
-    for row in r0..=r1 {
-        let (c0, c1) = selection_row_span(row, start, end, left, right);
+    for line in start.1..=end.1 {
+        if line < scroll {
+            continue;
+        }
+        let row = top as usize + (line - scroll);
+        if row >= bottom as usize {
+            break;
+        }
+        let row = row as u16;
+        let (c0, c1) = selection_line_span(line, start, end, left, right);
         for col in c0..c1 {
             if col < bounds.right() && row < bounds.bottom() {
                 let cell = &mut buf[(col, row)];
@@ -561,9 +613,12 @@ fn resolve_select_request(f: &mut Frame, app: &mut App) {
             (left + s as u16, left + e as u16)
         }
     };
+    // Store the selection in scroll-invariant content-line coordinates.
+    let line = app.scroll_offset + row.saturating_sub(top) as usize;
     app.text_selection = Some(crate::app::TextSelection {
-        anchor: (anchor_col, row),
-        head: (head_col, row),
+        anchor: (anchor_col, line),
+        head: (head_col, line),
+        area_width: area.width,
         dragged: true,
         finalize: true,
         copied: false,
@@ -599,42 +654,42 @@ fn word_span_in_row(chars: &[char], idx: usize) -> (usize, usize) {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_word_char, selection_row_span, word_span_in_row};
+    use super::{is_word_char, selection_line_span, word_span_in_row};
 
-    // Characterization tests for selection_row_span — the pure column-span
-    // computation behind drag-selection text extraction. These lock in the
-    // CURRENT absolute-screen-cell behavior so a future buffer-backed rework
-    // (logical-coord selection) has a regression net. left=1, right=40 model
-    // the padded message rect (col 0 padding, col 41 scrollbar).
+    // Characterization tests for selection_line_span — the pure column-span
+    // computation behind drag-selection extraction, now keyed on absolute
+    // CONTENT lines (scroll-invariant) instead of screen rows. left=1,
+    // right=40 model the padded message rect (col 0 padding, col 41
+    // scrollbar).
     const LEFT: u16 = 1;
     const RIGHT: u16 = 40;
 
     #[test]
-    fn selection_span_single_row_is_inclusive_normal() {
-        // Same-row drag from col 5 to col 9 → [5, 10) (end is inclusive, +1).
-        let span = selection_row_span(7, (5, 7), (9, 7), LEFT, RIGHT);
+    fn selection_span_single_line_is_inclusive_normal() {
+        // Same-line drag from col 5 to col 9 → [5, 10) (end is inclusive, +1).
+        let span = selection_line_span(7, (5, 7), (9, 7), LEFT, RIGHT);
         assert_eq!(span, (5, 10));
     }
 
     #[test]
-    fn selection_span_first_row_runs_to_right_edge_normal() {
-        // Multi-row drag: the first row selects from the anchor col to the
+    fn selection_span_first_line_runs_to_right_edge_normal() {
+        // Multi-line drag: the first line selects from the anchor col to the
         // right edge.
-        let span = selection_row_span(3, (12, 3), (8, 6), LEFT, RIGHT);
+        let span = selection_line_span(3, (12, 3), (8, 6), LEFT, RIGHT);
         assert_eq!(span, (12, RIGHT));
     }
 
     #[test]
-    fn selection_span_last_row_runs_from_left_edge_normal() {
-        // The last row selects from the left edge to the head col (inclusive).
-        let span = selection_row_span(6, (12, 3), (8, 6), LEFT, RIGHT);
+    fn selection_span_last_line_runs_from_left_edge_normal() {
+        // The last line selects from the left edge to the head col (inclusive).
+        let span = selection_line_span(6, (12, 3), (8, 6), LEFT, RIGHT);
         assert_eq!(span, (LEFT, 9));
     }
 
     #[test]
-    fn selection_span_middle_row_is_full_width_robust() {
-        // A fully-spanned middle row covers the whole content width.
-        let span = selection_row_span(4, (12, 3), (8, 6), LEFT, RIGHT);
+    fn selection_span_middle_line_is_full_width_robust() {
+        // A fully-spanned middle line covers the whole content width.
+        let span = selection_line_span(4, (12, 3), (8, 6), LEFT, RIGHT);
         assert_eq!(span, (LEFT, RIGHT));
     }
 
@@ -642,8 +697,18 @@ mod tests {
     fn selection_span_clamps_out_of_bounds_columns_robust() {
         // Columns past the right edge clamp into [left, right] so extraction
         // never indexes outside the padded rect.
-        let span = selection_row_span(2, (0, 2), (99, 2), LEFT, RIGHT);
+        let span = selection_line_span(2, (0, 2), (99, 2), LEFT, RIGHT);
         assert_eq!(span, (LEFT, RIGHT));
+    }
+
+    // The selection is scroll-invariant: the span for a content line is the
+    // same regardless of any scroll offset (scroll only affects which rows
+    // paint, not what is selected). Lines far past any viewport still span.
+    #[test]
+    fn selection_span_is_scroll_invariant_robust() {
+        let span_near = selection_line_span(5, (3, 5), (9, 5), LEFT, RIGHT);
+        let span_far = selection_line_span(10_005, (3, 10_005), (9, 10_005), LEFT, RIGHT);
+        assert_eq!(span_near, span_far);
     }
 
     #[test]

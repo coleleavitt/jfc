@@ -105,39 +105,30 @@ impl App {
         );
     }
 
-    /// Drop any persisted post-copy text-selection highlight. The selection is
-    /// anchored to absolute screen cells, so once the transcript scrolls those
-    /// cells map to different content — invalidate it the instant that happens.
-    fn clear_selection_on_scroll(&mut self) {
-        if self.text_selection.is_some() {
-            self.text_selection = None;
-        }
-    }
+    // (clear_selection_on_scroll is gone: selections are stored in
+    // scroll-invariant content-line coordinates now, so scrolling no longer
+    // invalidates them — the renderer just paints the visible slice.)
 
     #[tracing::instrument(target = "jfc::app", skip(self), fields(scroll_offset = self.scroll_offset))]
     pub fn scroll_to_bottom(&mut self) {
-        self.clear_selection_on_scroll();
         self.scroll_offset = self.max_scroll();
         self.follow_bottom = true;
     }
 
     #[tracing::instrument(target = "jfc::app", skip(self), fields(scroll_offset = self.scroll_offset))]
     pub fn scroll_to_top(&mut self) {
-        self.clear_selection_on_scroll();
         self.scroll_offset = 0;
         self.follow_bottom = false;
     }
 
     #[tracing::instrument(target = "jfc::app", skip(self), fields(scroll_offset = self.scroll_offset, lines))]
     pub fn scroll_up(&mut self, lines: usize) {
-        self.clear_selection_on_scroll();
         self.scroll_offset = self.scroll_offset.saturating_sub(lines);
         self.follow_bottom = false;
     }
 
     #[tracing::instrument(target = "jfc::app", skip(self), fields(scroll_offset = self.scroll_offset, lines))]
     pub fn scroll_down(&mut self, lines: usize) {
-        self.clear_selection_on_scroll();
         let max = self.max_scroll();
         self.scroll_offset = (self.scroll_offset + lines).min(max);
         if self.scroll_offset >= max {
