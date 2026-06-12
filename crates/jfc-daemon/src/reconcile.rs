@@ -40,9 +40,6 @@ pub(crate) fn reconcile_background_agents(paths: &DaemonPaths) -> std::io::Resul
                 continue;
             }
             let owner_alive = agent.pid.map(process_is_running).unwrap_or(false);
-            if owner_alive {
-                continue;
-            }
             let previous_pid = agent.pid;
             if owner_alive {
                 if !agent.cancel_requested

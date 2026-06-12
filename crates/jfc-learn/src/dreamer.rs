@@ -378,24 +378,8 @@ impl Dreamer {
 
 /// Acquire a lease. Returns the lease on success.
 pub fn acquire_lease(lease_path: &Path) -> Result<DreamerLease, LearnError> {
-    // Check if an existing lease is still valid
-    if lease_path.exists() {
-        let content = fs::read_to_string(lease_path)?;
-        if let Ok(existing) = serde_json::from_str::<DreamerLease>(&content)
-            && existing.expiry_ms > now_ms()
-        {
-            return Err(LearnError::LeaseConflict {
-                message: format!(
-                    "Lease held by {} until {}",
-                    existing.holder_id, existing.expiry_ms
-                ),
-            });
-        }
-    }
-
-    let holder_id = uuid::Uuid::new_v4().to_string();
     let lease = DreamerLease {
-        holder_id,
+        holder_id: uuid::Uuid::new_v4().to_string(),
         expiry_ms: now_ms() + DEFAULT_LEASE_DURATION_MS,
     };
 
@@ -403,9 +387,56 @@ pub fn acquire_lease(lease_path: &Path) -> Result<DreamerLease, LearnError> {
         fs::create_dir_all(parent)?;
     }
     let json = serde_json::to_string(&lease)?;
-    fs::write(lease_path, json)?;
 
-    Ok(lease)
+    // `create_new` (O_EXCL) makes creation atomic: exactly one of N racing
+    // processes wins. A plain exists()-then-write check would let two
+    // processes both believe they hold the lease.
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(lease_path)
+    {
+        Ok(mut file) => {
+            use std::io::Write;
+            file.write_all(json.as_bytes())?;
+            Ok(lease)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let content = fs::read_to_string(lease_path)?;
+            if let Ok(existing) = serde_json::from_str::<DreamerLease>(&content)
+                && existing.expiry_ms > now_ms()
+            {
+                return Err(LearnError::LeaseConflict {
+                    message: format!(
+                        "Lease held by {} until {}",
+                        existing.holder_id, existing.expiry_ms
+                    ),
+                });
+            }
+            // Expired or corrupt lease: remove it and retry the exclusive
+            // create once. If another process beats us to the recreate, treat
+            // that as a conflict rather than clobbering its lease.
+            let _ = fs::remove_file(lease_path);
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(lease_path)
+            {
+                Ok(mut file) => {
+                    use std::io::Write;
+                    file.write_all(json.as_bytes())?;
+                    Ok(lease)
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    Err(LearnError::LeaseConflict {
+                        message: "lease re-acquired by another process".to_owned(),
+                    })
+                }
+                Err(e) => Err(e.into()),
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Release a lease (only the holder can release).

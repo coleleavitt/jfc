@@ -77,7 +77,12 @@ impl PriceOracle {
             .get(model)
             .copied()
             .unwrap_or(self.default_output);
-        (estimated_input * input_rate + estimated_output * output_rate) / 1_000_000
+        // Saturating: token counts come from provider responses; an absurd
+        // value must clamp at u64::MAX rather than wrap into a tiny cost
+        // that slips past the budget gate.
+        (estimated_input.saturating_mul(input_rate))
+            .saturating_add(estimated_output.saturating_mul(output_rate))
+            / 1_000_000
     }
 
     /// Calculate actual cost from a completed LLM response.
@@ -92,7 +97,9 @@ impl PriceOracle {
             .get(model)
             .copied()
             .unwrap_or(self.default_output);
-        (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
+        (input_tokens.saturating_mul(input_rate))
+            .saturating_add(output_tokens.saturating_mul(output_rate))
+            / 1_000_000
     }
 }
 

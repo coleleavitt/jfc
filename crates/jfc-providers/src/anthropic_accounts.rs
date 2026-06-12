@@ -1913,6 +1913,11 @@ async fn write_store(path: &Path, store: &AccountStore) -> anyhow::Result<()> {
         .unwrap_or(0);
     let tmp = path.with_extension(format!("json.tmp-{}-{nonce}", std::process::id()));
     fs::write(&tmp, &body).await?;
+    // fsync before the rename publishes the file: tokens lost to a crash
+    // between buffered write and rename force a re-login.
+    if let Ok(f) = fs::File::open(&tmp).await {
+        let _ = f.sync_all().await;
+    }
     // Tokens are secrets — restrict to owner read/write before the rename
     // publishes the file at its final path.
     #[cfg(unix)]

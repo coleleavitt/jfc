@@ -562,8 +562,15 @@ impl TaskStore {
                 return false;
             }
         }
+        // Hold the cross-process lock for the whole load → prune → write-back
+        // cycle so a concurrent writer can't land between our read and our
+        // persist and get silently overwritten (lost update).
+        let _file_lock = self.acquire_file_lock();
         let now_ms = now_ms();
         let mut fresh = Self::load_inner(&self.path);
+        // Re-read mtime under the lock: it names exactly the revision we
+        // loaded, not whatever was on disk before we blocked on the lock.
+        let loaded_mtime = Self::file_mtime(&self.path);
         let deleted = Self::delete_legacy_placeholders_from_inner(&mut fresh);
         let archived =
             Self::prune_terminal_tasks_from_inner(&mut fresh, MAX_TERMINAL_TASKS, now_ms);
@@ -573,7 +580,7 @@ impl TaskStore {
         drop(inner);
         if deleted > 0 || pruned > 0 {
             if let Ok(inner) = self.inner.lock() {
-                self.persist(&inner);
+                self.persist_unlocked(&inner);
             }
             self.archive_history(&archived, now_ms);
             tracing::warn!(
@@ -584,7 +591,7 @@ impl TaskStore {
                 "compacted task store after external reload (pruned rows archived to history)"
             );
         } else {
-            *self.disk_mtime.lock().unwrap() = current;
+            *self.disk_mtime.lock().unwrap() = loaded_mtime;
         }
         tracing::debug!(
             target: "jfc::tasks",
@@ -618,7 +625,36 @@ impl TaskStore {
         TaskStoreInner::default()
     }
 
+    /// Cross-process advisory lock guarding read-modify-write cycles on the
+    /// backing file (UI process vs detached background workers). Best-effort:
+    /// returns `None` when the lock file can't be created, in which case the
+    /// caller proceeds unlocked (the pre-lock behavior). The lock releases
+    /// when the returned handle drops.
+    fn acquire_file_lock(&self) -> Option<std::fs::File> {
+        if self.path.as_os_str().is_empty() {
+            return None;
+        }
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(self.path.with_extension("lock"))
+            .ok()?;
+        fs2::FileExt::lock_exclusive(&lock).ok()?;
+        Some(lock)
+    }
+
     fn persist(&self, inner: &TaskStoreInner) {
+        let _file_lock = self.acquire_file_lock();
+        self.persist_unlocked(inner);
+    }
+
+    /// Write the store to disk. Caller must hold the cross-process file lock
+    /// (or accept the pre-lock lost-update semantics).
+    fn persist_unlocked(&self, inner: &TaskStoreInner) {
         if self.path.as_os_str().is_empty() {
             return;
         }

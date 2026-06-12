@@ -363,6 +363,13 @@ fn extra_memory_dirs() -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 /// Load memory entries from a single directory.
 fn load_from_dir(dir: &Path, level: MemoryLevel, out: &mut Vec<MemoryEntry>) {
     let read_dir = match std::fs::read_dir(dir) {
@@ -376,7 +383,22 @@ fn load_from_dir(dir: &Path, level: MemoryLevel, out: &mut Vec<MemoryEntry>) {
             continue;
         }
         match parse_memory_file(&path, level) {
-            Ok(mem) => out.push(mem),
+            Ok(mem) => {
+                // Enforce the TTL the frontmatter declares: expired memories
+                // are skipped (not deleted — the dreamer owns cleanup) so
+                // recall never surfaces stale facts.
+                if let Some(expires) = mem.frontmatter.expires_at
+                    && expires <= now_ms()
+                {
+                    tracing::debug!(
+                        target: "jfc::memory",
+                        path = %path.display(),
+                        "skipping expired memory"
+                    );
+                    continue;
+                }
+                out.push(mem);
+            }
             Err(e) => {
                 tracing::warn!(
                     target: "jfc::memory",

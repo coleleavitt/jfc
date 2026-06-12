@@ -492,7 +492,11 @@ async fn refresh_access_token(
         .refresh_token
         .unwrap_or_else(|| refresh_token.to_owned());
     let expires_in = json.expires_in.unwrap_or(3600);
-    let expires_at = now_ms() + expires_in * 1000 - 30_000;
+    // Saturating: `expires_in` is server-supplied — a huge value must not wrap
+    // and a value < 30s must not underflow into a far-future expiry.
+    let expires_at = now_ms()
+        .saturating_add(expires_in.saturating_mul(1000))
+        .saturating_sub(30_000);
 
     tracing::info!(
         target: "jfc::provider::anthropic_oauth",
@@ -1162,6 +1166,7 @@ impl AnthropicOAuthProvider {
 
         match refresh_access_token(&self.client, refresh_token).await {
             Ok((access_token, new_refresh, expires_at)) => {
+                let mut persisted = false;
                 if let Some(mgr) = &mgr {
                     let applied = mgr
                         .atomic_update_tokens_if_refresh_matches(
@@ -1183,13 +1188,14 @@ impl AnthropicOAuthProvider {
                         record_refresh_success_unlocked_best_effort(mgr, account_name).await;
                         return Ok(outcome);
                     }
+                    persisted = applied;
                 }
                 Ok(RefreshOutcome {
                     access_token,
                     refresh_token: new_refresh,
                     expires_at,
                     adopted_peer_token: false,
-                    persisted: mgr.is_some(),
+                    persisted,
                 })
             }
             Err(e) => {

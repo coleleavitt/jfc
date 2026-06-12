@@ -2952,6 +2952,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
+ "fs2",
  "futures",
  "jfc-core",
  "serde",

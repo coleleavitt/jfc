@@ -4,7 +4,6 @@ use tokio::process::Command;
 use tracing::{debug, warn};
 
 use super::ExecutionResult;
-use super::bash::execute_bash;
 use super::safe_tools::{configure_tool_command, terminal_safe_text};
 
 pub async fn execute_glob(pattern: &str, path: Option<&str>, cwd: &Path) -> ExecutionResult {
@@ -29,12 +28,27 @@ pub async fn execute_glob(pattern: &str, path: Option<&str>, cwd: &Path) -> Exec
             }
         }
         Err(_) => {
-            let cmd_str = format!(
-                "find '{}' -name '{}' 2>/dev/null | sort",
-                base.display(),
-                pattern
-            );
-            execute_bash(&cmd_str, Some(10_000), cwd).await
+            // Fallback when rg is unavailable. Arguments are passed directly
+            // to `find` (no shell), so quotes/metacharacters in `pattern` or
+            // `base` cannot inject commands.
+            let mut find_cmd = Command::new("find");
+            find_cmd.arg(&base).arg("-name").arg(pattern);
+            configure_tool_command(&mut find_cmd);
+            match find_cmd.output().await {
+                Ok(out) => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    let mut lines: Vec<&str> =
+                        stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+                    lines.sort_unstable();
+                    let joined = terminal_safe_text(&lines.join("\n"));
+                    if joined.is_empty() {
+                        ExecutionResult::success("No files matched")
+                    } else {
+                        ExecutionResult::success(joined)
+                    }
+                }
+                Err(e) => ExecutionResult::failure(format!("glob fallback failed: {e}")),
+            }
         }
     }
 }

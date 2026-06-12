@@ -181,6 +181,11 @@ impl ChangeStore {
         }
         tmp.flush()
             .map_err(|e| ChangeSetError::io(e, "flushing changes.jsonl.tmp"))?;
+        // fsync before the rename: flush() only reaches OS buffers, so a
+        // crash after rename could otherwise publish a truncated file.
+        tmp.sync_all()
+            .map_err(|e| ChangeSetError::io(e, "syncing changes.jsonl.tmp"))?;
+        drop(tmp);
         // Atomic replace so a crash mid-write never truncates the real file.
         fs::rename(&tmp_path, &self.changes_path)
             .map_err(|e| ChangeSetError::io(e, "atomically replacing changes.jsonl"))?;

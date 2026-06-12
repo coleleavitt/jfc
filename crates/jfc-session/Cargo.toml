@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 chrono = { workspace = true }
 dirs = "5"
+fs2 = "0.4"
 futures = { workspace = true }
 jfc-core = { path = "../jfc-core" }
 serde = { workspace = true }

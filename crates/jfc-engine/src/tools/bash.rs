@@ -833,6 +833,9 @@ fn format_completed_task(
     })
 }
 
+// Production callers go through `execute_bash_with_options`; this thin wrapper
+// remains the test-suite entry point.
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> ExecutionResult {
     execute_bash_with_options(command, timeout_ms, cwd, None, false).await
 }
