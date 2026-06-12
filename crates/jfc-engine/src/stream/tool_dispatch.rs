@@ -1212,9 +1212,16 @@ fn resolve_council_members(
 
     let mut add =
         |provider: Arc<dyn Provider>, model: ModelId, members: &mut Vec<CouncilMember>| {
-            if seen.insert(model.as_str().to_owned()) {
-                let label = model.as_str().to_owned();
-                members.push(CouncilMember::new(provider, model).with_label(label));
+            // Dedup on the fully-qualified provider/model, not the bare model
+            // id: a council's whole point is fanning out to genuinely distinct
+            // models, and two providers can legitimately serve the same id
+            // (e.g. an OpenRouter `claude-opus` vs a first-party one). Keying on
+            // the bare id collapsed those into one member. The label is
+            // qualified too so the report shows which provider answered.
+            let qualified =
+                crate::runtime::bootstrap::qualified_model_id(provider.as_ref(), &model);
+            if seen.insert(qualified.clone()) {
+                members.push(CouncilMember::new(provider, model).with_label(qualified));
             }
         };
 
@@ -1346,7 +1353,7 @@ mod council_member_tests {
     }
 
     #[test]
-    fn explicit_models_are_deduped_robust() {
+    fn same_model_id_distinct_providers_are_kept_normal() {
         let (ap, am) = active();
         let (members, _unresolved) = resolve_council_members(
             &["alpha/dup".to_owned(), "beta/dup".to_owned()],
@@ -1355,7 +1362,29 @@ mod council_member_tests {
             None,
             &registry(),
         );
-        // Same model id `dup` from two providers collapses to one member.
+        // Same bare id `dup` from two *different* providers is the whole point
+        // of a council fan-out: both members are kept, distinguished by their
+        // qualified labels.
+        assert_eq!(members.len(), 2);
+        let labels: Vec<&str> = members
+            .iter()
+            .map(|m| m.label.as_deref().unwrap_or(""))
+            .collect();
+        assert!(labels.contains(&"alpha/dup"), "{labels:?}");
+        assert!(labels.contains(&"beta/dup"), "{labels:?}");
+    }
+
+    #[test]
+    fn same_provider_model_is_deduped_robust() {
+        let (ap, am) = active();
+        // The identical qualified spec listed twice still collapses to one.
+        let (members, _unresolved) = resolve_council_members(
+            &["alpha/dup".to_owned(), "alpha/dup".to_owned()],
+            &ap,
+            &am,
+            None,
+            &registry(),
+        );
         assert_eq!(members.len(), 1);
     }
 
