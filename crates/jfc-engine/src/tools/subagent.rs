@@ -215,6 +215,55 @@ pub fn selected_subagent_model(
     Ok(spec.into_model())
 }
 
+/// Like [`selected_subagent_model`], but resolves provider-qualified specs
+/// (`openai/gpt-5.2`, `anthropic/haiku`) against the full provider registry
+/// instead of rejecting them. Returns the (possibly switched) provider along
+/// with the model. The council already routes this way
+/// (`runtime::bootstrap::resolve_provider_model`); subagents previously
+/// hard-errored, so `Task(model: "openai/…")` failed under an Anthropic
+/// session even when an OpenAI provider was configured.
+pub fn selected_subagent_provider_model(
+    task_input: &crate::types::TaskInput,
+    agent_def: Option<&crate::agents::AgentDef>,
+    parent_provider: std::sync::Arc<dyn jfc_provider::Provider>,
+    parent_model: jfc_provider::ModelId,
+    registry: &[std::sync::Arc<dyn jfc_provider::Provider>],
+) -> Result<(std::sync::Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId), String> {
+    match selected_subagent_model(
+        task_input,
+        agent_def,
+        parent_model.clone(),
+        parent_provider.name(),
+    ) {
+        Ok(model) => Ok((parent_provider, model)),
+        Err(same_provider_error) => {
+            // Cross-provider spec: re-derive the raw request and route it
+            // through the registry. Resolution failure reports the original
+            // error so the message still names the missing provider.
+            let raw = std::env::var("CLAUDE_CODE_SUBAGENT_MODEL")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .or_else(|| task_input.model.clone())
+                .or_else(|| agent_def.and_then(|a| a.model.clone()));
+            if let Some(raw) = raw
+                && let Some(resolution) =
+                    crate::runtime::bootstrap::resolve_provider_model(registry, &raw)
+            {
+                tracing::info!(
+                    target: "jfc::tools",
+                    requested = %raw,
+                    provider = %resolution.provider.name(),
+                    model = %resolution.model.as_str(),
+                    "subagent model routed to a different provider"
+                );
+                return Ok((resolution.provider, resolution.model));
+            }
+            Err(same_provider_error)
+        }
+    }
+}
+
 /// Run a subagent. The agent gets its own system prompt, tool catalogue
 /// (filtered by the agent's allow/disallow lists), an optional cwd
 /// override (used for worktree isolation), and a turn cap from
@@ -1200,6 +1249,78 @@ mod tests {
         .unwrap();
 
         assert_eq!(model.as_str(), "bedrock-claude-4-5-haiku");
+    }
+
+    struct NamedTestProvider(&'static str);
+
+    #[async_trait::async_trait]
+    impl jfc_provider::Provider for NamedTestProvider {
+        fn name(&self) -> &str {
+            self.0
+        }
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
+            Vec::new()
+        }
+        async fn stream(
+            &self,
+            _messages: Vec<jfc_provider::ProviderMessage>,
+            _options: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for NamedTestProvider {}
+
+    // Regression: a provider-qualified model on Task ("openai/gpt-x") must
+    // switch to that provider via the registry, not hard-error as it did
+    // before selected_subagent_provider_model existed.
+    #[test]
+    fn selected_subagent_provider_model_switches_provider_regression() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let anthropic: std::sync::Arc<dyn jfc_provider::Provider> =
+            std::sync::Arc::new(NamedTestProvider("anthropic-oauth"));
+        let openai: std::sync::Arc<dyn jfc_provider::Provider> =
+            std::sync::Arc::new(NamedTestProvider("openai"));
+        let registry = vec![anthropic.clone(), openai.clone()];
+
+        let Ok((resolved_provider, resolved_model)) = selected_subagent_provider_model(
+            &task_input(Some("openai/gpt-5.2")),
+            None,
+            anthropic.clone(),
+            jfc_provider::ModelId::new("claude-opus-4-6"),
+            &registry,
+        ) else {
+            panic!("qualified spec should switch providers");
+        };
+
+        assert_eq!(resolved_provider.name(), "openai");
+        assert_eq!(resolved_model.as_str(), "gpt-5.2");
+    }
+
+    // Robust: a qualified spec naming a provider that is NOT configured
+    // still errors, and the error names the missing provider.
+    #[test]
+    fn selected_subagent_provider_model_unknown_provider_errors_robust() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let anthropic: std::sync::Arc<dyn jfc_provider::Provider> =
+            std::sync::Arc::new(NamedTestProvider("anthropic-oauth"));
+        let registry = vec![anthropic.clone()];
+
+        let Err(err) = selected_subagent_provider_model(
+            &task_input(Some("zai/glm-5")),
+            None,
+            anthropic.clone(),
+            jfc_provider::ModelId::new("claude-opus-4-6"),
+            &registry,
+        ) else {
+            panic!("unknown provider must error");
+        };
+        assert!(err.contains("zai"), "{err}");
     }
 
     #[test]

@@ -308,6 +308,7 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
 
         // ─── Normal subagent path ────────────────────────────────────────
         let tx_task = tx.clone();
+        let task_registry = providers.clone();
         let provider_task = provider.clone();
         let model_task = model.clone();
         let task_id = tc.id.as_str().to_owned();
@@ -332,14 +333,25 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
             .as_deref()
             .and_then(|t| agents.iter().find(|a| a.name.eq_ignore_ascii_case(t)))
             .cloned();
-        let model_used = crate::tools::selected_subagent_model(
+        // Provider-qualified specs ("openai/gpt-5.2") route through the
+        // registry and may switch providers — same addressing the council
+        // uses. Resolved here (not inside execute_task) so the background
+        // launch record and the Started event both carry the real target.
+        let resolved_spawn = crate::tools::selected_subagent_provider_model(
             &task_input,
             agent_def.as_ref(),
+            provider.clone(),
             model.clone(),
-            provider.name(),
-        )
-        .ok()
-        .map(|model| model.as_str().to_string());
+            &task_registry,
+        );
+        let (provider_task, model_task) = match &resolved_spawn {
+            Ok((p, m)) => (p.clone(), m.clone()),
+            Err(_) => (provider_task, model_task),
+        };
+        let model_used = resolved_spawn
+            .as_ref()
+            .ok()
+            .map(|(_, model)| model.as_str().to_string());
         let max_input_tokens = agent_def.as_ref().and_then(|a| a.max_input_tokens);
         if agent_def.is_none()
             && let Some(t) = task_input.subagent_type.as_deref()
