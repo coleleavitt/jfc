@@ -424,9 +424,8 @@ async fn execute_task_inner(
     active_team_name: Option<String>,
     depth: u8,
 ) -> ExecutionResult {
-    use futures::StreamExt;
     use jfc_provider::{
-        ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, StreamOptions,
+        ProviderContent, ProviderMessage, ProviderRole, StreamOptions,
     };
 
     let model = match selected_subagent_model(task_input, agent_def, model_id, provider.name()) {
@@ -689,71 +688,47 @@ async fn execute_task_inner(
                     return ExecutionResult::failure(format!("Subagent stream error: {e}"));
                 }
             };
-            tokio::pin!(stream);
 
-            let mut turn_text = String::new();
-            // (id, name, input_json, thought_signature)
-            // thought_signature is the Gemini 3.x signature captured from the
-            // SSE stream; round-tripped on next turn to keep multi-turn agentic
-            // tool calls coherent (https://ai.google.dev/gemini-api/docs/thought-signatures).
-            let mut tool_uses: Vec<(String, String, String, Option<String>)> = Vec::new();
-            let mut stop_reason: Option<StopReason> = None;
-            let mut usage_baseline = (0u32, 0u32, 0u32, 0u32);
-            let mut reported_input_for_turn = false;
-            let mut retryable_stream_error: Option<String> = None;
-
-            while let Some(event) = stream.next().await {
-                if task_id
+            // Shared per-turn drain (stream/agent_drain.rs) — the same driver
+            // the teammate loop uses. The sink pipes text deltas to the task
+            // panel and forwards usage to the parent fan UI.
+            use crate::stream::agent_drain::{
+                AgentDrainEvent, AgentDrainOutcome, DrainCancel, drain_agent_stream,
+            };
+            let cancelled = || {
+                task_id
                     .map(crate::daemon::background_agent_cancel_requested)
                     .unwrap_or(false)
-                {
-                    return ExecutionResult::failure(
-                        "cancelled: background agent cancellation requested",
-                    );
-                }
-                match event {
-                    Ok(StreamEvent::TextDelta { delta, .. }) => {
+            };
+            let mut reported_input_for_turn = false;
+            let mut sink = |ev: AgentDrainEvent| -> futures::future::BoxFuture<'static, ()> {
+                match ev {
+                    AgentDrainEvent::TextDelta(delta) => {
                         // Pipe deltas through to the task panel so the user
-                        // sees the subagent's prose stream live.
+                        // sees the subagent's prose stream live. Blocking send
+                        // — try_send would drop deltas under backpressure and
+                        // permanently lose subagent prose.
                         if let (Some(tx), Some(id)) = (tx, task_id) {
-                            let _ = tx
-                                .send(crate::runtime::EngineEvent::Task(
-                                    crate::runtime::TaskEvent::AgentChunk {
-                                        task_id: crate::ids::TaskId::from(id),
-                                        text: delta.clone(),
-                                    },
-                                ))
-                                .await;
-                        }
-                        turn_text.push_str(&delta);
-                    }
-                    Ok(StreamEvent::TextDone { text: t, .. }) => {
-                        if turn_text.is_empty() {
-                            turn_text = t;
+                            let tx = tx.clone();
+                            let task_id = crate::ids::TaskId::from(id);
+                            return Box::pin(async move {
+                                let _ = tx
+                                    .send(crate::runtime::EngineEvent::Task(
+                                        crate::runtime::TaskEvent::AgentChunk {
+                                            task_id,
+                                            text: delta,
+                                        },
+                                    ))
+                                    .await;
+                            });
                         }
                     }
-                    Ok(StreamEvent::ToolDone {
-                        tool_name,
-                        tool_use_id,
-                        input_json,
-                        thought_signature,
-                        ..
-                    }) => {
-                        tool_uses.push((tool_use_id, tool_name, input_json, thought_signature));
-                    }
-                    Ok(StreamEvent::Usage {
+                    AgentDrainEvent::Usage {
                         input_tokens,
-                        output_tokens,
                         cache_read_tokens,
                         cache_write_tokens,
-                    }) => {
-                        let output_delta = output_tokens.saturating_sub(usage_baseline.1);
-                        usage_baseline = (
-                            input_tokens,
-                            output_tokens,
-                            cache_read_tokens,
-                            cache_write_tokens,
-                        );
+                        output_delta,
+                    } => {
                         // Surface this turn's input + output tokens to the
                         // parent fan UI. Input/cache are sent once per API
                         // round-trip so the session cost ledger can add the
@@ -762,11 +737,7 @@ async fn execute_task_inner(
                             None
                         } else {
                             reported_input_for_turn = true;
-                            Some((
-                                input_tokens as u64,
-                                cache_read_tokens as u64,
-                                cache_write_tokens as u64,
-                            ))
+                            Some((input_tokens, cache_read_tokens, cache_write_tokens))
                         };
                         emit_progress(
                             tx,
@@ -776,62 +747,62 @@ async fn execute_task_inner(
                             input_update.map(|(input, _, _)| input),
                             input_update.map(|(_, cache_read, _)| cache_read),
                             input_update.map(|(_, _, cache_write)| cache_write),
-                            Some(output_delta as u64),
+                            Some(output_delta),
                         );
                     }
-                    Ok(StreamEvent::Done { stop_reason: sr }) => {
-                        stop_reason = Some(sr);
-                    }
-                    Ok(StreamEvent::Error { message }) => {
-                        if jfc_provider::retry::retryable_stream_error(&message).is_some() {
-                            retryable_stream_error = Some(message);
-                            break;
-                        }
-                        last_error = Some(message);
-                        break 'outer;
-                    }
-                    Err(e) => {
-                        let message = e.to_string();
-                        if jfc_provider::retry::retryable_stream_error(&message).is_some() {
-                            retryable_stream_error = Some(message);
-                            break;
-                        }
-                        last_error = Some(message);
-                        break 'outer;
-                    }
-                    Ok(_) => {}
+                    AgentDrainEvent::ToolUse { .. } => {}
                 }
-            }
+                Box::pin(async {})
+            };
+            let outcome =
+                drain_agent_stream(stream, DrainCancel::Poll(&cancelled), &mut sink).await;
 
-            if let Some(message) = retryable_stream_error {
-                let Some(retry) = jfc_provider::retry::retryable_stream_error(&message) else {
-                    unreachable!("message was classified above");
-                };
-                let delay = jfc_provider::retry::stream_retry_delay(stream_retry_attempt);
-                tracing::warn!(
-                    target: "jfc::tools::subagent",
-                    task_id = ?task_id,
-                    turn,
-                    retry_attempt = stream_retry_attempt + 1,
-                    provider = retry.provider,
-                    delay_ms = delay.as_millis() as u64,
-                    error = %retry.message,
-                    "subagent stream event hit retryable provider error"
-                );
-                stream_retry_attempt = stream_retry_attempt.saturating_add(1);
-                tokio::time::sleep(delay).await;
-                if task_id
-                    .map(crate::daemon::background_agent_cancel_requested)
-                    .unwrap_or(false)
-                {
+            match outcome {
+                AgentDrainOutcome::Completed(drained) => {
+                    break (
+                        drained.text,
+                        drained
+                            .tool_uses
+                            .into_iter()
+                            .map(|tu| (tu.id, tu.name, tu.input_json, tu.thought_signature))
+                            .collect::<Vec<_>>(),
+                        drained.stop_reason,
+                    );
+                }
+                AgentDrainOutcome::Cancelled => {
                     return ExecutionResult::failure(
                         "cancelled: background agent cancellation requested",
                     );
                 }
-                continue;
+                AgentDrainOutcome::Fatal(message) => {
+                    last_error = Some(message);
+                    break 'outer;
+                }
+                AgentDrainOutcome::Retryable(message) => {
+                    let Some(retry) = jfc_provider::retry::retryable_stream_error(&message) else {
+                        unreachable!("message was classified by the drain");
+                    };
+                    let delay = jfc_provider::retry::stream_retry_delay(stream_retry_attempt);
+                    tracing::warn!(
+                        target: "jfc::tools::subagent",
+                        task_id = ?task_id,
+                        turn,
+                        retry_attempt = stream_retry_attempt + 1,
+                        provider = retry.provider,
+                        delay_ms = delay.as_millis() as u64,
+                        error = %retry.message,
+                        "subagent stream event hit retryable provider error"
+                    );
+                    stream_retry_attempt = stream_retry_attempt.saturating_add(1);
+                    tokio::time::sleep(delay).await;
+                    if cancelled() {
+                        return ExecutionResult::failure(
+                            "cancelled: background agent cancellation requested",
+                        );
+                    }
+                    continue;
+                }
             }
-
-            break (turn_text, tool_uses, stop_reason);
         };
 
         // Append the assistant turn (text + tool_uses, if any) so the

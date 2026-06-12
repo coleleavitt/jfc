@@ -1,3 +1,4 @@
+pub mod agent_drain;
 mod compaction;
 mod continuation;
 mod live_events;

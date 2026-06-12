@@ -58,9 +58,8 @@ pub async fn run_single_turn(
 ) -> TurnResult {
     use crate::tools;
     use crate::types::{ToolInput, ToolKind};
-    use futures::StreamExt;
     use jfc_provider::{
-        ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, StreamOptions,
+        ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamOptions,
     };
 
     let identity = &config.identity;
@@ -131,17 +130,7 @@ pub async fn run_single_turn(
         }
 
         let mut stream_retry_attempt = 0u32;
-        let (
-            response_text,
-            tool_calls,
-            stop_reason,
-            saw_usage_this_turn,
-            estimated_turn_tokens,
-            turn_input_tokens,
-            turn_cache_read_tokens,
-            turn_cache_write_tokens,
-            turn_output_tokens,
-        ) = loop {
+        let (turn_result, tool_calls) = loop {
             let stream = match crate::stream::open_stream_with_bedrock_retries(
                 provider.as_ref(),
                 std::sync::Arc::new(history.clone()),
@@ -174,11 +163,58 @@ pub async fn run_single_turn(
                 }
             };
 
-            let mut response_text = String::new();
-            // (id, name, kind, input, raw_input, validation_error)
-            // — `validation_error` is `Some` when the model's JSON failed
-            // shape validation; we then skip execution and ship the error
-            // back as a tool_result so the model sees what went wrong.
+            // Shared per-turn drain (stream/agent_drain.rs) — the same driver
+            // the subagent loop uses. The sink forwards text deltas to the
+            // leader so the task panel shows live output.
+            use crate::stream::agent_drain::{
+                AgentDrainEvent, AgentDrainOutcome, DrainCancel, drain_agent_stream,
+            };
+            let mut sink = |ev: AgentDrainEvent| -> futures::future::BoxFuture<'static, ()> {
+                if let AgentDrainEvent::TextDelta(delta) = ev {
+                    let _ = event_tx.send(TeammateEvent::TextDelta {
+                        task_id: task_id.to_owned(),
+                        agent_id: identity.agent_id.clone(),
+                        delta,
+                    });
+                }
+                Box::pin(async {})
+            };
+            let outcome =
+                drain_agent_stream(stream, DrainCancel::Watch(abort_rx), &mut sink).await;
+
+            let drained = match outcome {
+                AgentDrainOutcome::Completed(turn_data) => turn_data,
+                AgentDrainOutcome::Cancelled => return TurnResult::Aborted,
+                AgentDrainOutcome::Fatal(message) => {
+                    return TurnResult::Error(format!("stream error: {message}"));
+                }
+                AgentDrainOutcome::Retryable(message) => {
+                    let Some(retry) = jfc_provider::retry::retryable_stream_error(&message) else {
+                        unreachable!("message was classified by the drain");
+                    };
+                    let delay = jfc_provider::retry::stream_retry_delay(stream_retry_attempt);
+                    warn!(
+                        target: "jfc::swarm::executor",
+                        task_id,
+                        turn,
+                        retry_attempt = stream_retry_attempt + 1,
+                        provider = retry.provider,
+                        delay_ms = delay.as_millis() as u64,
+                        error = %retry.message,
+                        "teammate stream event hit retryable provider error"
+                    );
+                    stream_retry_attempt = stream_retry_attempt.saturating_add(1);
+                    if !sleep_retry_or_abort(delay, abort_rx).await {
+                        return TurnResult::Aborted;
+                    }
+                    continue;
+                }
+            };
+
+            // Parse the raw tool uses into (id, name, kind, input, raw_input,
+            // validation_error) — the teammate validates shape here so a bad
+            // input becomes an error tool_result the model can self-correct
+            // from, instead of executing a stub.
             let mut tool_calls: Vec<(
                 String,
                 String,
@@ -187,173 +223,50 @@ pub async fn run_single_turn(
                 serde_json::Value,
                 Option<String>,
             )> = Vec::new();
-            let mut stop_reason = StopReason::EndTurn;
-            let mut saw_usage_this_turn = false;
-            let mut estimated_turn_tokens: u64 = 0;
-            let mut usage_baseline = (0u32, 0u32, 0u32, 0u32);
-            let mut turn_input_tokens = 0u64;
-            let mut turn_cache_read_tokens = 0u64;
-            let mut turn_cache_write_tokens = 0u64;
-            let mut turn_output_tokens = 0u64;
-            let mut retryable_stream_error: Option<String> = None;
-
-            futures::pin_mut!(stream);
-            loop {
-                if *abort_rx.borrow() {
-                    return TurnResult::Aborted;
-                }
-
-                let event_result = tokio::select! {
-                    biased;
-                    changed = abort_rx.changed() => {
-                        if changed.is_err() || *abort_rx.borrow() {
-                            return TurnResult::Aborted;
+            for tu in &drained.tool_uses {
+                let input_value: serde_json::Value =
+                    serde_json::from_str(&tu.input_json).unwrap_or_default();
+                let kind = ToolKind::from_name(&tu.name);
+                let (parsed_input, validation_err) =
+                    match ToolInput::from_value(&tu.name, input_value.clone()) {
+                        Ok(parsed) => (parsed, None),
+                        Err(err) => {
+                            let msg = err.to_string();
+                            warn!(
+                                target: "jfc::swarm::executor",
+                                tool_name = %tu.name,
+                                error = %msg,
+                                "tool input shape validation failed — failing tool"
+                            );
+                            (
+                                crate::types::ToolInput::Generic {
+                                    summary: input_value.to_string(),
+                                },
+                                Some(msg),
+                            )
                         }
-                        continue;
-                    }
-                    event_result = stream.next() => event_result,
-                };
-
-                let Some(event_result) = event_result else {
-                    break;
-                };
-
-                let event = match event_result {
-                    Ok(e) => e,
-                    Err(e) => {
-                        let message = e.to_string();
-                        if jfc_provider::retry::retryable_stream_error(&message).is_some() {
-                            retryable_stream_error = Some(message);
-                            break;
-                        }
-                        return TurnResult::Error(format!("stream error: {e}"));
-                    }
-                };
-                match event {
-                    StreamEvent::TextDelta { delta, .. } => {
-                        if !saw_usage_this_turn {
-                            estimated_turn_tokens += (delta.len() / 4) as u64;
-                        }
-                        // Forward to the leader so the task panel for this
-                        // teammate shows live output. The handler translates
-                        // to `TaskEvent::AgentChunk` keyed by `task_id`.
-                        let _ = event_tx.send(TeammateEvent::TextDelta {
-                            task_id: task_id.to_owned(),
-                            agent_id: identity.agent_id.clone(),
-                            delta: delta.clone(),
-                        });
-                        response_text.push_str(&delta);
-                    }
-                    StreamEvent::ToolDone {
-                        tool_name,
-                        tool_use_id,
-                        input_json,
-                        ..
-                    } => {
-                        let input_value: serde_json::Value =
-                            serde_json::from_str(&input_json).unwrap_or_default();
-                        let kind = ToolKind::from_name(&tool_name);
-                        let (parsed_input, validation_err) =
-                            match ToolInput::from_value(&tool_name, input_value.clone()) {
-                                Ok(parsed) => (parsed, None),
-                                Err(err) => {
-                                    let msg = err.to_string();
-                                    warn!(
-                                        target: "jfc::swarm::executor",
-                                        tool_name = %tool_name,
-                                        error = %msg,
-                                        "tool input shape validation failed — failing tool"
-                                    );
-                                    // Stub the parsed input with a Generic so
-                                    // the assistant turn we replay to the
-                                    // provider still echoes a coherent shape;
-                                    // the validation_err flag short-circuits
-                                    // execution below.
-                                    (
-                                        crate::types::ToolInput::Generic {
-                                            summary: input_value.to_string(),
-                                        },
-                                        Some(msg),
-                                    )
-                                }
-                            };
-                        tool_calls.push((
-                            tool_use_id,
-                            tool_name.clone(),
-                            kind,
-                            parsed_input,
-                            input_value,
-                            validation_err,
-                        ));
-                        last_tool_name = Some(tool_name);
-                    }
-                    StreamEvent::Usage {
-                        input_tokens,
-                        output_tokens,
-                        cache_read_tokens,
-                        cache_write_tokens,
-                    } => {
-                        let output_delta = output_tokens.saturating_sub(usage_baseline.1) as u64;
-                        usage_baseline = (
-                            input_tokens,
-                            output_tokens,
-                            cache_read_tokens,
-                            cache_write_tokens,
-                        );
-                        saw_usage_this_turn = true;
-                        turn_input_tokens = input_tokens as u64;
-                        turn_cache_read_tokens = cache_read_tokens as u64;
-                        turn_cache_write_tokens = cache_write_tokens as u64;
-                        turn_output_tokens = turn_output_tokens.saturating_add(output_delta);
-                    }
-                    StreamEvent::Done { stop_reason: r } => {
-                        stop_reason = r;
-                    }
-                    StreamEvent::Error { message } => {
-                        if jfc_provider::retry::retryable_stream_error(&message).is_some() {
-                            retryable_stream_error = Some(message);
-                            break;
-                        }
-                        return TurnResult::Error(format!("stream error: {message}"));
-                    }
-                    _ => {}
-                }
+                    };
+                tool_calls.push((
+                    tu.id.clone(),
+                    tu.name.clone(),
+                    kind,
+                    parsed_input,
+                    input_value,
+                    validation_err,
+                ));
+                last_tool_name = Some(tu.name.clone());
             }
 
-            if let Some(message) = retryable_stream_error {
-                let Some(retry) = jfc_provider::retry::retryable_stream_error(&message) else {
-                    unreachable!("message was classified above");
-                };
-                let delay = jfc_provider::retry::stream_retry_delay(stream_retry_attempt);
-                warn!(
-                    target: "jfc::swarm::executor",
-                    task_id,
-                    turn,
-                    retry_attempt = stream_retry_attempt + 1,
-                    provider = retry.provider,
-                    delay_ms = delay.as_millis() as u64,
-                    error = %retry.message,
-                    "teammate stream event hit retryable provider error"
-                );
-                stream_retry_attempt = stream_retry_attempt.saturating_add(1);
-                if !sleep_retry_or_abort(delay, abort_rx).await {
-                    return TurnResult::Aborted;
-                }
-                continue;
-            }
-
-            break (
-                response_text,
-                tool_calls,
-                stop_reason,
-                saw_usage_this_turn,
-                estimated_turn_tokens,
-                turn_input_tokens,
-                turn_cache_read_tokens,
-                turn_cache_write_tokens,
-                turn_output_tokens,
-            );
+            break (drained, tool_calls);
         };
+        let response_text = turn_result.text;
+        let stop_reason = turn_result.stop_reason.unwrap_or(StopReason::EndTurn);
+        let saw_usage_this_turn = turn_result.saw_usage;
+        let estimated_turn_tokens = turn_result.estimated_tokens;
+        let turn_input_tokens = turn_result.input_tokens;
+        let turn_cache_read_tokens = turn_result.cache_read_tokens;
+        let turn_cache_write_tokens = turn_result.cache_write_tokens;
+        let turn_output_tokens = turn_result.output_tokens;
 
         cumulative_output_tokens = cumulative_output_tokens.saturating_add(turn_output_tokens);
 
