@@ -1172,6 +1172,12 @@ pub async fn execute_tool(
             use crate::tools::structured_output::{format_retry_feedback, schema_outcome};
             let processed =
                 crate::response_processor::deterministic_json_repair_chain().process(data);
+            // Telemetry half of finding persistence: every repair is traced;
+            // the same notes are echoed back to the model in the result body.
+            crate::response_processor::record_processor_findings(
+                "structured_output",
+                &processed.findings,
+            );
             let repair_note = if processed.findings.is_empty() {
                 String::new()
             } else {

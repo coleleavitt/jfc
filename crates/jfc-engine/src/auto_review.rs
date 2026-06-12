@@ -483,6 +483,13 @@ async fn persist_code_review_outcome_inner(
     let dir = cwd.join(".jfc").join("reviews");
     tokio::fs::create_dir_all(&dir).await?;
     let created_at_ms = now_ms();
+    // Deterministic review-output repair: parse a stringified body and
+    // canonicalize review key synonyms (final_report/summary/confidence) before
+    // extraction/normalization, so an off-spec-but-recoverable review payload
+    // isn't dropped. Findings are traced for observability.
+    let repaired = crate::response_processor::review_repair_chain().process(result.clone());
+    crate::response_processor::record_processor_findings(run_id, &repaired.findings);
+    let result = &repaired.value;
     let existing = load_existing_fingerprints(&dir).await;
     let (findings, duplicates) = extract_finding_records(run_id, created_at_ms, result, &existing);
     let finding_fingerprints = findings
