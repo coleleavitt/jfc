@@ -149,7 +149,15 @@ pub(super) async fn run_print_mode(
 
     while let Some(ev) = rx.recv().await {
         // ── 1. Wire emission (before dispatch consumes the event) ──
-        match &ev {
+        let scoped_wire_event;
+        let wire_ev = match &ev {
+            EngineEvent::ScopedStream { event, .. } if !engine.state.is_stale_stream_event(&ev) => {
+                scoped_wire_event = EngineEvent::Stream(event.clone());
+                &scoped_wire_event
+            }
+            _ => &ev,
+        };
+        match wire_ev {
             EngineEvent::Stream(EngineStreamEvent::Chunk { text, reasoning }) => {
                 if let Some(delta) = text {
                     accumulated.push_str(delta);

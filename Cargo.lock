@@ -2759,6 +2759,7 @@ dependencies = [
  "indexmap 2.14.0",
  "jfc-agents",
  "jfc-anthropic-sdk",
+ "jfc-audit",
  "jfc-auth",
  "jfc-bridge",
  "jfc-changeset",

@@ -58,9 +58,7 @@ pub async fn run_single_turn(
 ) -> TurnResult {
     use crate::tools;
     use crate::types::{ToolInput, ToolKind};
-    use jfc_provider::{
-        ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamOptions,
-    };
+    use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamOptions};
 
     let identity = &config.identity;
     let provider = &config.provider;
@@ -179,8 +177,7 @@ pub async fn run_single_turn(
                 }
                 Box::pin(async {})
             };
-            let outcome =
-                drain_agent_stream(stream, DrainCancel::Watch(abort_rx), &mut sink).await;
+            let outcome = drain_agent_stream(stream, DrainCancel::Watch(abort_rx), &mut sink).await;
 
             let drained = match outcome {
                 AgentDrainOutcome::Completed(turn_data) => turn_data,

@@ -841,12 +841,20 @@ Do not use a colon before tool calls.";
     // stream/messages/provider_messages.rs — time gap markers (<!-- +Nm -->)
     // are prepended to user messages when the gap exceeds 1 minute.
 
-    // NOTE: Sprint budget injection was removed from here because the
-    // char-based token estimate (system_prompt.len()/4 + messages.len()/4)
-    // massively overestimates on large system prompts, causing false warnings
-    // at 15% actual utilization. The real sprint budget is injected via the
-    // CLAUDE.md system prompt section which uses actual API-reported token
-    // counts from `app.engine.last_usage_input` / `app.engine.max_context_tokens`.
+    let system_prompt_tokens_before_total_reminder = system_prompt.len() / 4;
+    let total_tokens_reminder_mode = overrides
+        .total_tokens_reminder_mode
+        .unwrap_or_else(crate::total_tokens_reminder::active_mode);
+    if let Some(reminder) = crate::total_tokens_reminder::render_for_request_with_mode(
+        total_tokens_reminder_mode,
+        messages,
+        system_prompt_tokens_before_total_reminder,
+        overrides.last_usage_input_tokens,
+        overrides.context_window_tokens,
+    ) {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&reminder);
+    }
 
     let thinking_mode = thinking_mode_for(model.as_str());
     tracing::debug!(
@@ -1421,7 +1429,9 @@ mod tests {
     // contradicted the prompt and pushed the model back to Read/Bash.
     #[test]
     fn preserve_non_action_keeps_codegraph_tools_regression() {
-        assert!(preserve_non_action_tool("mcp__codegraph__codegraph_explore"));
+        assert!(preserve_non_action_tool(
+            "mcp__codegraph__codegraph_explore"
+        ));
         assert!(preserve_non_action_tool("mcp__codegraph__codegraph_search"));
         assert!(preserve_non_action_tool("codegraph_node"));
         assert!(!preserve_non_action_tool("mcp__github__create_issue"));
@@ -1451,6 +1461,39 @@ mod tests {
         assert!(tool_names.contains(&"ToolSuggest"));
         assert!(!tool_names.contains(&"Bash"));
         assert!(!tool_names.contains(&"Read"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn prepare_injects_total_tokens_reminder_countdown_normal() {
+        let provider = Arc::new(TestProvider {
+            name: "openai-test",
+            convention: StreamConvention::OpenAiNative,
+        });
+        let overrides = crate::runtime::StreamRequestOverrides {
+            last_usage_input_tokens: Some(150),
+            context_window_tokens: Some(200),
+            total_tokens_reminder_mode: Some(
+                crate::total_tokens_reminder::TotalTokensReminderMode::Countdown,
+            ),
+            ..Default::default()
+        };
+        let request = prepare_stream_request(
+            provider,
+            &[user_text("write a small function")],
+            &ModelId::new("test-model"),
+            overrides,
+        )
+        .await;
+
+        assert!(
+            request
+                .opts
+                .system
+                .as_deref()
+                .unwrap_or_default()
+                .contains("<total_tokens>50 tokens left</total_tokens>")
+        );
     }
 
     #[tokio::test]

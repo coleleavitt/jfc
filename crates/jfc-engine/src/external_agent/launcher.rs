@@ -210,12 +210,13 @@ impl ExternalAgentSession {
                 source,
             })?;
 
-        let mut child = spec.to_command().spawn().map_err(|source| {
-            ExternalAgentLaunchError::Spawn {
-                program: spec.program.clone(),
-                source,
-            }
-        })?;
+        let mut child =
+            spec.to_command()
+                .spawn()
+                .map_err(|source| ExternalAgentLaunchError::Spawn {
+                    program: spec.program.clone(),
+                    source,
+                })?;
 
         // Drain stderr to tracing so handshake/crash output is visible under
         // RUST_LOG=jfc::external_agent=warn, mirroring the LSP client.
@@ -353,10 +354,7 @@ mod tests {
             ..ctx()
         };
         let err = ExternalAgentSpec::resolve(&profile, &context).unwrap_err();
-        assert!(matches!(
-            err,
-            ExternalAgentLaunchError::MissingProxyUrl(_)
-        ));
+        assert!(matches!(err, ExternalAgentLaunchError::MissingProxyUrl(_)));
     }
 
     // Normal: spawning a real trivial process tracks Running then Exited(0),

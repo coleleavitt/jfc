@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::app::{ANIM_TICK_MS, App, IDLE_TICK_MS};
 use crate::runtime::{
-    APP_EVENT_BUFFER, EngineEvent, EventReceiver, EventSender, ProviderEvent, StreamEvent,
+    APP_EVENT_BUFFER, EngineEvent, EventReceiver, EventSender, ProviderEvent,
     StreamRequestOverrides, TeamEvent, draw_synchronized, restore_persistent_background_agents,
     set_terminal_title,
 };
@@ -137,6 +137,14 @@ pub(crate) async fn run(
             jfc_engine::sandbox::install_bash_sandbox_config(bash_sandbox.clone());
         }
         app.engine.bash_sandbox = bash_sandbox;
+    }
+    // Local prompt-rewrite / over-refusal gate: default-OFF. Only carried onto
+    // the engine when `[prompt_rewrite] enabled = true`, so absent/false config
+    // leaves `submit_prompt` on its unchanged path.
+    if let Some(pr) = startup_config.prompt_rewrite.as_ref()
+        && pr.enabled
+    {
+        app.engine.prompt_rewrite = Some(pr.clone());
     }
 
     // Remote-control auto-start: from --remote-control flag or config.
@@ -791,7 +799,6 @@ pub(crate) async fn run(
         };
         let cfg = jfc_engine::config::load_arc();
         app.engine.exploration_state.begin_turn(&prompt, &cfg);
-        let tx_clone = tx.clone();
         let interrupt = app.engine.interrupt_flag.clone();
         // wg-async: --prompt startup spawns a stream that holds critical
         // state (SSE conn + tx). Wire the cancel token in so an early
@@ -817,38 +824,17 @@ pub(crate) async fn run(
             brief_mode: app.engine.brief_mode,
             ..Default::default()
         };
-        let tx_guard = tx.clone();
-        // Inner task's abort handle parked on App so the watchdog can
-        // forcefully abort the actual stream_response task (see
-        // App::active_stream_handle). Aborting the outer supervisor would
-        // only drop its JoinHandle to the inner task, detaching rather than
-        // cancelling it.
-        let inner = tokio::spawn(async move {
-            stream::stream_response(
-                provider,
-                messages,
-                model,
-                tx_clone,
-                interrupt,
-                cancel,
-                prev_msg_id,
-                overrides,
-            )
-            .await;
-        });
-        app.engine.active_stream_handle = Some(inner.abort_handle());
-        tokio::spawn(async move {
-            if let Err(join_err) = inner.await {
-                let msg = if join_err.is_panic() {
-                    format!("stream task panicked: {join_err}")
-                } else {
-                    format!("stream task cancelled: {join_err}")
-                };
-                _ = tx_guard
-                    .send(EngineEvent::Stream(StreamEvent::Error(msg)))
-                    .await;
-            }
-        });
+        jfc_engine::runtime::spawn_stream_response_scoped(
+            &mut app.engine,
+            &tx,
+            provider,
+            messages,
+            model,
+            interrupt,
+            cancel,
+            prev_msg_id,
+            overrides,
+        );
     }
 
     // Track when we last drew to implement frame-rate limiting.
@@ -944,6 +930,7 @@ pub(crate) async fn run(
             // returns early when remote control is inactive. Frontend-local
             // events (keys, ticks) are never mirrored.
             if let AppEvent::Engine(ref engine_ev) = ev
+                && !app.engine.is_stale_stream_event(engine_ev)
                 && let Some(ref rc) = app.remote_host
                 && let Some(envelope) = jfc_engine::remote_host::mirror_event(engine_ev)
             {
@@ -1203,6 +1190,25 @@ pub(crate) fn apply_engine_effects(app: &mut App) {
                     app.model_picker_models = crate::input::collect_all_models(app);
                 }
             }
+            crate::app::EngineEffect::PromptRewriteProposed {
+                rewrite,
+                rationale,
+                ..
+            } => {
+                // Surface the proposal — never apply silently. Prefill the
+                // composer with the reworded prompt so the user can accept
+                // (resubmit), edit, or clear it, and explain why via a toast.
+                app.textarea = ratatui_textarea::TextArea::from(
+                    rewrite.lines().map(|l| l.to_string()).collect::<Vec<_>>(),
+                );
+                jfc_engine::toast::push_with_cap(
+                    &mut app.engine.toasts,
+                    jfc_engine::toast::Toast::new(
+                        jfc_engine::toast::ToastKind::Info,
+                        format!("Prompt reworded to reduce a likely false refusal: {rationale}"),
+                    ),
+                );
+            }
         }
     }
 }
@@ -1343,6 +1349,7 @@ mod event_priority_tests {
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
+    use crate::runtime::StreamEvent;
 
     #[test]
     fn terminal_events_are_prioritized_within_burst_robust() {

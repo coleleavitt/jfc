@@ -169,10 +169,7 @@ impl JsonResponseProcessor for ReviewOutputProcessor {
             if map.contains_key(*canonical) {
                 continue;
             }
-            let Some(source_key) = synonyms
-                .iter()
-                .find(|syn| map.contains_key(**syn))
-                .copied()
+            let Some(source_key) = synonyms.iter().find(|syn| map.contains_key(**syn)).copied()
             else {
                 continue;
             };
@@ -318,16 +315,18 @@ impl<'a> LlmRepairStage<'a> {
             content: vec![jfc_provider::ProviderContent::Text(prompt)],
         }];
 
-        let resp =
-            match crate::prompt_executor::complete_once(self.provider, messages, &opts).await {
-                Ok(resp) => resp,
-                Err(e) => return LlmRepairOutcome::Failed(format!("repair call failed: {e}")),
-            };
+        let resp = match crate::prompt_executor::complete_once(self.provider, messages, &opts).await
+        {
+            Ok(resp) => resp,
+            Err(e) => return LlmRepairOutcome::Failed(format!("repair call failed: {e}")),
+        };
 
         // The model may still wrap the JSON; reuse the deterministic
         // string-parse processor to unwrap a stringified body.
         let parsed = ParseJsonStringProcessor
-            .process(ProcessorOutput::new(Value::String(resp.content.trim().to_owned())))
+            .process(ProcessorOutput::new(Value::String(
+                resp.content.trim().to_owned(),
+            )))
             .value;
         match (self.validate)(&parsed) {
             Ok(()) => LlmRepairOutcome::Repaired(parsed),
@@ -338,8 +337,7 @@ impl<'a> LlmRepairStage<'a> {
     }
 }
 
-const LLM_REPAIR_SYSTEM_PROMPT: &str =
-    "You repair malformed JSON so it satisfies a schema. Output only the corrected \
+const LLM_REPAIR_SYSTEM_PROMPT: &str = "You repair malformed JSON so it satisfies a schema. Output only the corrected \
      JSON value — no explanation, no markdown fences.";
 const LLM_REPAIR_MAX_TOKENS: u32 = 2048;
 

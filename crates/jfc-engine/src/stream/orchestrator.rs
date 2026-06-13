@@ -55,6 +55,9 @@ pub async fn stream_response(
     let prepared = prepare_stream_request(provider.clone(), &messages, &model, overrides).await;
     let mut opts = prepared.opts;
     if let Some(id) = previous_message_id {
+        // Claude Code 2.1.177 pairs diagnostics.previous_message_id with the
+        // cache-diagnosis beta so cache-read drops can be attributed by the API.
+        opts.cache_diagnosis = true;
         opts.previous_message_id = Some(id);
     }
 
@@ -228,43 +231,119 @@ pub async fn stream_response(
         }
     };
 
-    let stop_reason = match live_events::drain_stream_events(stream, &tx, interrupt, cancel).await {
-        live_events::DrainOutcome::Done(stop_reason) => stop_reason,
-        live_events::DrainOutcome::Cancelled(message) => {
-            let _ = tx
-                .send(EngineEvent::Stream(StreamEvent::Error(message)))
-                .await;
-            return;
-        }
-        live_events::DrainOutcome::Error {
-            message,
-            committed_output,
-        } => {
-            if !committed_output {
-                if try_nonstreaming_fallback(
-                    provider.as_ref(),
-                    Arc::clone(&messages),
-                    &opts,
-                    &tx,
-                    &message,
-                    prepared.metadata.advertised_tool_count,
-                    prepared.metadata.action_expected,
-                )
-                .await
-                {
-                    return;
-                }
-            } else {
-                tracing::warn!(
-                    target: "jfc::stream::fallback",
-                    error = %message,
-                    "stream failed after output was committed; skipping non-streaming fallback to avoid duplicate transcript text"
-                );
+    // Drive the stream to completion. A connection that dies *before any event
+    // arrived* (dead socket through a NAT/LB, proxy buffering forever) is
+    // re-opened in place up to MAX_PRE_FIRST_EVENT_STREAM_RETRIES before we
+    // degrade the whole turn to non-streaming — mirrors Claude 2.1.177's
+    // stale-connection (`o$`) and watchdog (`z6`) pre-first-event retry
+    // counters. Once output has streamed, re-opening would duplicate
+    // transcript text, so a committed-output error never re-opens.
+    let mut current_stream = stream;
+    let mut pre_first_event_attempt = 0u32;
+    let stop_reason = loop {
+        match live_events::drain_stream_events(
+            current_stream,
+            &tx,
+            interrupt.clone(),
+            cancel.clone(),
+        )
+        .await
+        {
+            live_events::DrainOutcome::Done(stop_reason) => break stop_reason,
+            live_events::DrainOutcome::Cancelled(message) => {
+                let _ = tx
+                    .send(EngineEvent::Stream(StreamEvent::Error(message)))
+                    .await;
+                return;
             }
-            let _ = tx
-                .send(EngineEvent::Stream(StreamEvent::Error(message)))
-                .await;
-            return;
+            live_events::DrainOutcome::Error {
+                message,
+                committed_output,
+            } => {
+                if should_retry_pre_first_event(&message, committed_output, pre_first_event_attempt)
+                {
+                    pre_first_event_attempt += 1;
+                    let cause = classify_fallback_cause(&message, committed_output);
+                    tracing::warn!(
+                        target: "jfc::stream::fallback",
+                        retry_attempt = pre_first_event_attempt,
+                        max = MAX_PRE_FIRST_EVENT_STREAM_RETRIES,
+                        fallback_cause = cause,
+                        error = %message,
+                        "tengu_streaming_stale_connection_retry: stream died before first event — re-opening streaming connection"
+                    );
+                    let _ = tx.try_send(EngineEvent::Stream(StreamEvent::Lifecycle(
+                        StreamLifecycleStatus::new(
+                            StreamLifecyclePhase::WaitingForFirstByte,
+                            Some(format!(
+                                "reconnecting ({pre_first_event_attempt}/{MAX_PRE_FIRST_EVENT_STREAM_RETRIES})"
+                            )),
+                        ),
+                    )));
+                    // Linear backoff (100ms * attempt) before re-opening, the
+                    // same shape as upstream's `l8(100 * e$)`.
+                    tokio::time::sleep(Duration::from_millis(
+                        100 * u64::from(pre_first_event_attempt),
+                    ))
+                    .await;
+                    match open_stream_with_cancel_and_timeout(
+                        provider.as_ref(),
+                        Arc::clone(&messages),
+                        &opts,
+                        cancel.clone(),
+                    )
+                    .await
+                    {
+                        Ok(s) => {
+                            current_stream = s;
+                            continue;
+                        }
+                        Err(reopen_err) => {
+                            tracing::warn!(
+                                target: "jfc::stream::fallback",
+                                error = %reopen_err,
+                                "stream re-open failed after pre-first-event retry — degrading to non-streaming"
+                            );
+                            // Fall through to the non-streaming fallback below
+                            // using the ORIGINAL error message/cause.
+                        }
+                    }
+                }
+
+                if !committed_output {
+                    let cause = classify_fallback_cause(&message, committed_output);
+                    tracing::warn!(
+                        target: "jfc::stream::fallback",
+                        fallback_cause = cause,
+                        error = %message,
+                        "tengu_nonstreaming_fallback_started: degrading to non-streaming completion"
+                    );
+                    if try_nonstreaming_fallback(
+                        provider.as_ref(),
+                        Arc::clone(&messages),
+                        &opts,
+                        &tx,
+                        &message,
+                        prepared.metadata.advertised_tool_count,
+                        prepared.metadata.action_expected,
+                    )
+                    .await
+                    {
+                        return;
+                    }
+                } else {
+                    tracing::warn!(
+                        target: "jfc::stream::fallback",
+                        fallback_cause = "partial_yield",
+                        error = %message,
+                        "stream failed after output was committed; skipping non-streaming fallback to avoid duplicate transcript text"
+                    );
+                }
+                let _ = tx
+                    .send(EngineEvent::Stream(StreamEvent::Error(message)))
+                    .await;
+                return;
+            }
         }
     };
 
@@ -362,6 +441,54 @@ fn error_looks_stream_stale_or_idle(error: &str) -> bool {
         || lower.contains("decode")
 }
 
+/// Maximum number of pre-first-event stream re-opens before degrading to the
+/// non-streaming fallback. Mirrors Claude 2.1.177's stale-connection /
+/// watchdog pre-first-event retry counters (`o$` / `z6`): a connection that
+/// dies *before any event arrived* is almost always a dead socket through a
+/// NAT/LB, so re-opening the stream is cheaper and cleaner than immediately
+/// degrading the whole turn to non-streaming. Bounded so a persistently
+/// failing route still falls back instead of looping.
+const MAX_PRE_FIRST_EVENT_STREAM_RETRIES: u32 = 2;
+
+/// Classify why a stream is degrading to non-streaming, mirroring Claude
+/// 2.1.177's `fallback_cause` field on `tengu_nonstreaming_fallback_started`.
+/// Used purely for telemetry/observability.
+fn classify_fallback_cause(error: &str, committed_output: bool) -> &'static str {
+    if committed_output {
+        return "partial_yield";
+    }
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("before first event")
+        || lower.contains("before first byte")
+        || lower.contains("first provider response")
+        || lower.contains("first sse")
+        || lower.contains("ended before")
+        || lower.contains("without receiving")
+    {
+        "stream_no_events"
+    } else if lower.contains("connection closed")
+        || lower.contains("connection reset")
+        || lower.contains("broken pipe")
+        || lower.contains("unexpected eof")
+    {
+        "stale_connection"
+    } else if lower.contains("idle") || lower.contains("stalled") || lower.contains("timed out") {
+        "watchdog"
+    } else {
+        "other"
+    }
+}
+
+/// Whether a pre-first-event stream error is eligible for an in-place stream
+/// re-open (vs. degrading straight to non-streaming). Only stale/idle-shaped
+/// errors qualify, and only when nothing was committed — once output streamed,
+/// re-opening would duplicate transcript text.
+fn should_retry_pre_first_event(error: &str, committed_output: bool, attempt: u32) -> bool {
+    !committed_output
+        && attempt < MAX_PRE_FIRST_EVENT_STREAM_RETRIES
+        && error_looks_stream_stale_or_idle(error)
+}
+
 async fn try_nonstreaming_fallback(
     provider: &dyn Provider,
     messages: Arc<Vec<ProviderMessage>>,
@@ -433,4 +560,65 @@ async fn try_nonstreaming_fallback(
         .send(EngineEvent::Stream(StreamEvent::Done(StopReason::EndTurn)))
         .await;
     true
+}
+
+#[cfg(test)]
+mod fallback_tests {
+    use super::*;
+
+    // Normal: committed output always classifies as partial_yield regardless of
+    // the error shape — we must never re-stream over text the user already saw.
+    #[test]
+    fn classify_fallback_cause_partial_yield_when_committed_normal() {
+        assert_eq!(
+            classify_fallback_cause("connection reset", true),
+            "partial_yield"
+        );
+        assert_eq!(classify_fallback_cause("idle timeout", true), "partial_yield");
+    }
+
+    // Normal: the pre-first-event causes map to their upstream-equivalent labels.
+    #[test]
+    fn classify_fallback_cause_maps_pre_first_event_shapes_normal() {
+        assert_eq!(
+            classify_fallback_cause("Stream ended before receiving any events", false),
+            "stream_no_events"
+        );
+        assert_eq!(
+            classify_fallback_cause("connection closed before first event", false),
+            "stream_no_events"
+        );
+        assert_eq!(
+            classify_fallback_cause("connection reset by peer", false),
+            "stale_connection"
+        );
+        assert_eq!(
+            classify_fallback_cause("stream timed out (watchdog)", false),
+            "watchdog"
+        );
+        assert_eq!(classify_fallback_cause("some 500 error", false), "other");
+    }
+
+    // Robust: a pre-first-event retry only fires for stale/idle errors with no
+    // committed output and within the attempt budget.
+    #[test]
+    fn should_retry_pre_first_event_respects_gates_robust() {
+        // Eligible: stale error, nothing committed, under budget.
+        assert!(should_retry_pre_first_event("connection closed", false, 0));
+        assert!(should_retry_pre_first_event(
+            "stream timed out before first event",
+            false,
+            MAX_PRE_FIRST_EVENT_STREAM_RETRIES - 1
+        ));
+        // Ineligible: committed output (would duplicate transcript).
+        assert!(!should_retry_pre_first_event("connection closed", true, 0));
+        // Ineligible: attempts exhausted.
+        assert!(!should_retry_pre_first_event(
+            "connection closed",
+            false,
+            MAX_PRE_FIRST_EVENT_STREAM_RETRIES
+        ));
+        // Ineligible: not a stale/idle shape (e.g. a hard 400).
+        assert!(!should_retry_pre_first_event("invalid_request_error", false, 0));
+    }
 }

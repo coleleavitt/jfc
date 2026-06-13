@@ -282,11 +282,7 @@ async fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent, _tx: &
                     app.text_selection = Some(TextSelection {
                         anchor: (mouse.column, line),
                         head: (mouse.column, line),
-                        area_width: app
-                            .messages_rect
-                            .borrow()
-                            .map(|r| r.width)
-                            .unwrap_or(0),
+                        area_width: app.messages_rect.borrow().map(|r| r.width).unwrap_or(0),
                         dragged: false,
                         finalize: false,
                         copied: false,
@@ -468,11 +464,7 @@ fn selection_started(anchor: (u16, usize), head: (u16, usize)) -> bool {
 /// absolute content line: `scroll_offset + (row − area.top)`. Selections are
 /// stored in these coordinates so they survive scrolling.
 fn selection_content_line(app: &App, row: u16) -> usize {
-    let top = app
-        .messages_rect
-        .borrow()
-        .map(|r| r.y)
-        .unwrap_or(0);
+    let top = app.messages_rect.borrow().map(|r| r.y).unwrap_or(0);
     app.scroll_offset + row.saturating_sub(top) as usize
 }
 

@@ -11,6 +11,7 @@ mod factory;
 mod goal_loop;
 mod network;
 pub mod ops;
+pub mod prompt_rewrite_gate;
 mod queue;
 pub mod session_save;
 mod stream_control;
@@ -25,7 +26,8 @@ pub use events::{
     APP_EVENT_BUFFER, CompactionEvent, ControlEvent, EngineEvent, EventReceiver, EventSender,
     FrontendEvent, GoalEvent, ProviderEvent, StreamEvent, StreamLifecyclePhase,
     StreamLifecycleStatus, StreamRequestMetadata, StreamRequestOverrides, StreamToolChoice,
-    TaskEvent, TeamEvent, ToolEvent, VoiceEvent, WorkflowProgressEvent, send_critical,
+    TaskEvent, TeamEvent, ToolEvent, VoiceEvent, WorkflowProgressEvent, scoped_stream_sender,
+    send_critical, stream_event,
 };
 pub use execution::{ExecutionResult, ToolProvenance, ToolSource};
 pub use factory::{factory_mode_enabled, maybe_continue_task_factory};
@@ -38,5 +40,5 @@ pub use jfc_core::{
 pub use jfc_core::{DiagnosticLevel, ToolOutcome};
 pub use network::record_network_recovery;
 pub use queue::drain_queued_prompts;
-pub use stream_control::restart_stream_in_place;
+pub use stream_control::{restart_stream_in_place, spawn_stream_response_scoped};
 pub use task_activity::{task_drift_reminder, update_task_activities};

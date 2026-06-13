@@ -158,6 +158,9 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
         }
 
         if !user_tool_results.is_empty() {
+            if let Some(reminder) = crate::total_tokens_reminder::render_for_tool_results(&out) {
+                append_total_tokens_reminder_to_tool_results(&mut user_tool_results, &reminder);
+            }
             out.push(ProviderMessage {
                 role: ProviderRole::User,
                 content: user_tool_results,
@@ -190,6 +193,22 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
         "build_assistant_and_tool_result_messages"
     );
     out
+}
+
+fn append_total_tokens_reminder_to_tool_results(
+    user_tool_results: &mut [ProviderContent],
+    reminder: &str,
+) {
+    if let Some(ProviderContent::ToolResult { content, .. }) = user_tool_results
+        .iter_mut()
+        .rev()
+        .find(|content| matches!(content, ProviderContent::ToolResult { .. }))
+    {
+        if !content.trim().is_empty() {
+            content.push_str("\n\n");
+        }
+        content.push_str(reminder);
+    }
 }
 
 #[cfg(test)]
@@ -372,6 +391,64 @@ mod tests {
             }
             _ => panic!("expected ToolResult"),
         }
+    }
+
+    #[test]
+    fn append_total_tokens_reminder_targets_last_tool_result_normal() {
+        let mut tool_results = vec![
+            ProviderContent::ToolResult {
+                tool_use_id: "toolu_a".to_owned(),
+                content: "first".to_owned(),
+                is_error: false,
+            },
+            ProviderContent::ToolResult {
+                tool_use_id: "toolu_b".to_owned(),
+                content: "second".to_owned(),
+                is_error: false,
+            },
+        ];
+
+        append_total_tokens_reminder_to_tool_results(
+            &mut tool_results,
+            "<total_tokens>5000000 tokens left</total_tokens>",
+        );
+
+        assert!(matches!(
+            &tool_results[0],
+            ProviderContent::ToolResult { content, .. } if content == "first"
+        ));
+        assert!(matches!(
+            &tool_results[1],
+            ProviderContent::ToolResult { content, .. }
+                if content.contains("second")
+                    && content.contains("<total_tokens>5000000 tokens left</total_tokens>")
+        ));
+    }
+
+    #[test]
+    fn build_with_tool_results_does_not_append_total_tokens_by_default_normal() {
+        let tool = make_tool_call(
+            "toolu_tokens",
+            ToolKind::Bash,
+            ToolStatus::Completed,
+            ToolOutput::Text("hello world".into()),
+        );
+        let msgs = vec![
+            user_msg("run ls"),
+            assistant_with_parts(vec![MessagePart::tool(tool)]),
+        ];
+
+        let out = build_provider_messages_with_tool_results(&msgs);
+        let tool_result = out
+            .iter()
+            .flat_map(|message| &message.content)
+            .find_map(|content| match content {
+                ProviderContent::ToolResult { content, .. } => Some(content),
+                _ => None,
+            })
+            .expect("tool result");
+
+        assert!(!tool_result.contains("<total_tokens>"));
     }
 
     // Trust rewrite: a *completed* AskUserQuestion is replayed as a plain user

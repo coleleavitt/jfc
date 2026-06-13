@@ -8,8 +8,8 @@
 //! glyphs and ordering. Now the row builder lives here and the panels only
 //! decide *which* rows fit and what chrome (border/title) wraps them.
 
-use super::*;
 use super::visual::{RosterColor, cell_width, roster_status_glyph, truncate_cells};
+use super::*;
 
 /// True when `bt` is the agent whose stream is live right now. Shared by every
 /// roster surface so "the active one floats to the top" means the same thing
@@ -57,7 +57,11 @@ pub(crate) fn roster_sort_key(
     now: std::time::Instant,
 ) -> (u8, std::time::Instant) {
     (
-        fleet_rank(bt.status, roster_is_active(bt, app), failed_is_fresh(bt, now)),
+        fleet_rank(
+            bt.status,
+            roster_is_active(bt, app),
+            failed_is_fresh(bt, now),
+        ),
         bt.started_at,
     )
 }
@@ -306,11 +310,7 @@ pub(crate) fn agent_detail_lines(
 /// reconstructs `chat_messages` from the worker log; show the last few
 /// entries (role-tagged one-line previews, width-clipped) so a user can drill
 /// into a running agent's activity without leaving the panel.
-fn transcript_lines(
-    bt: &crate::app::BackgroundTask,
-    t: &Theme,
-    width: u16,
-) -> Vec<Line<'static>> {
+fn transcript_lines(bt: &crate::app::BackgroundTask, t: &Theme, width: u16) -> Vec<Line<'static>> {
     let transcript: Vec<&jfc_core::ChatMessage> = bt
         .chat_messages
         .iter()

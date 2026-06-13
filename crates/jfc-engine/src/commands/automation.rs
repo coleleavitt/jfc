@@ -93,7 +93,6 @@ Use the MemoryCreate tool for new memories and MemoryDelete for stale ones.{cron
     let provider = state.provider.clone();
     let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
     let model = state.model.clone();
-    let tx_stream = tx.clone();
     let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
     state.cancel_token = tokio_util::sync::CancellationToken::new();
@@ -109,14 +108,13 @@ Use the MemoryCreate tool for new memories and MemoryDelete for stale ones.{cron
         max_thinking_tokens: state.cli_max_thinking_tokens,
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
+        last_usage_input_tokens: Some(state.last_usage_input as u64),
+        context_window_tokens: Some(state.max_context_tokens as u64),
         ..Default::default()
     };
-    tokio::spawn(async move {
-        crate::stream::stream_response(
-            provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
-        )
-        .await;
-    });
+    crate::runtime::spawn_stream_response_scoped(
+        state, tx, provider, messages, model, interrupt, cancel, None, overrides,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +283,6 @@ Then immediately execute the prompt now (do not wait for the first cron fire)."
     let provider = state.provider.clone();
     let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
     let model = state.model.clone();
-    let tx_stream = tx.clone();
     let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
     state.cancel_token = tokio_util::sync::CancellationToken::new();
@@ -301,14 +298,13 @@ Then immediately execute the prompt now (do not wait for the first cron fire)."
         max_thinking_tokens: state.cli_max_thinking_tokens,
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
+        last_usage_input_tokens: Some(state.last_usage_input as u64),
+        context_window_tokens: Some(state.max_context_tokens as u64),
         ..Default::default()
     };
-    tokio::spawn(async move {
-        crate::stream::stream_response(
-            provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
-        )
-        .await;
-    });
+    crate::runtime::spawn_stream_response_scoped(
+        state, tx, provider, messages, model, interrupt, cancel, None, overrides,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -422,7 +418,6 @@ and display the results in a readable table with columns: id, schedule, command,
     let provider = state.provider.clone();
     let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
     let model = state.model.clone();
-    let tx_stream = tx.clone();
     let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
     state.cancel_token = tokio_util::sync::CancellationToken::new();
@@ -438,14 +433,13 @@ and display the results in a readable table with columns: id, schedule, command,
         max_thinking_tokens: state.cli_max_thinking_tokens,
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
+        last_usage_input_tokens: Some(state.last_usage_input as u64),
+        context_window_tokens: Some(state.max_context_tokens as u64),
         ..Default::default()
     };
-    tokio::spawn(async move {
-        crate::stream::stream_response(
-            provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
-        )
-        .await;
-    });
+    crate::runtime::spawn_stream_response_scoped(
+        state, tx, provider, messages, model, interrupt, cancel, None, overrides,
+    );
 }
 
 /// `/schedule tasks [list|archived|add <cron> <prompt>|pause|resume|archive <id>]`

@@ -779,6 +779,7 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
         state.streaming_reasoning.clear();
         state.streaming_response_bytes = 0;
         state.streaming_assistant_idx = None;
+        state.clear_active_stream_scope();
         state.current_stream_request = None;
         state.stream_lifecycle = None;
         state.turn_started_at = None;

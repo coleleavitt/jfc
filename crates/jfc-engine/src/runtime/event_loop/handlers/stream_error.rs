@@ -170,20 +170,14 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     // Uniform rate-limit / overload handling. A retryable error (429, 529,
     // overloaded, 5xx, "too many requests", …) should auto-retry with backoff
     // regardless of whether the provider tagged it with an `auto-retry-*`
-    // sentinel. Some paths *don't* tag it — a proxy 503 HTML page the parser
-    // can't classify, or a transport-cancellation wrapper — and those used to
-    // fall straight to the hard "Ctrl+R to retry" banner with no backoff,
-    // producing the inconsistent UX where one rate-limit silently recovered
-    // and another stranded the turn. The subagent runner already classifies
-    // bare transients via `retryable_stream_error`; do the same here so the
-    // main turn loop matches. Bounded by MAX_NETWORK_RECOVERY_ATTEMPTS so a
-    // persistent outage eventually surfaces instead of looping forever.
-    let bare_transient_retryable = !sentinel_signal
-        && jfc_provider::retry::retryable_stream_error(&e).is_some()
+    // sentinel. The retry cap is shared across sentinel-tagged and bare
+    // transients; otherwise a persistent provider-side rate limit can restart
+    // forever and never surface a hard error.
+    let retryable_stream_error = jfc_provider::retry::retryable_stream_error(&e).is_some();
+    let auto_retry_signal = retryable_stream_error
         && state.network_recovery_attempts < crate::app::MAX_NETWORK_RECOVERY_ATTEMPTS
         && state.streaming_assistant_idx.is_some();
 
-    let auto_retry_signal = sentinel_signal || bare_transient_retryable;
     let visible_error = if auto_retry_openwebui_signal {
         e.trim_start_matches(crate::providers::openwebui::AUTO_RETRY_SENTINEL)
     } else if auto_retry_anthropic_signal {
@@ -194,25 +188,25 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
         e.as_str()
     }
     .trim();
-    if auto_retry_openwebui_signal {
+    if auto_retry_signal && auto_retry_openwebui_signal {
         record_network_recovery(
             state,
             NetworkRecoveryProvider::OpenWebUI,
             e.trim_start_matches(crate::providers::openwebui::AUTO_RETRY_SENTINEL),
         );
-    } else if auto_retry_anthropic_signal {
+    } else if auto_retry_signal && auto_retry_anthropic_signal {
         record_network_recovery(
             state,
             NetworkRecoveryProvider::Anthropic,
             e.trim_start_matches(crate::providers::anthropic::AUTO_RETRY_SENTINEL),
         );
-    } else if auto_retry_anthropic_oauth_signal {
+    } else if auto_retry_signal && auto_retry_anthropic_oauth_signal {
         record_network_recovery(
             state,
             NetworkRecoveryProvider::AnthropicOAuth,
             e.trim_start_matches(crate::providers::anthropic_oauth::AUTO_RETRY_SENTINEL),
         );
-    } else if bare_transient_retryable {
+    } else if auto_retry_signal && !sentinel_signal {
         // No provider sentinel, but the bare text is a recognized transient
         // (429/529/overloaded/5xx). Record it under the generic provider so the
         // recovery banner + backoff behave identically to the sentinel path.
@@ -315,6 +309,7 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     state.streaming_response_bytes = 0;
     state.streaming_assistant_idx = None;
     state.active_stream_handle = None;
+    state.clear_active_stream_scope();
     state.current_stream_request = None;
     state.stream_lifecycle = None;
     // Clear the turn clock and any pending tool calls so the
@@ -363,9 +358,7 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
             state.network_recovery_status = None;
             state.network_recovery_attempts = 0;
             state.turn_started_at = None;
-            state.messages.push(ChatMessage::assistant(format!(
-                "**Error:** {visible_error}\n\n_Press Ctrl+R to retry the last prompt._"
-            )));
+            push_hard_stream_error(state, visible_error);
             let mut preview_cap = visible_error.len().min(120);
             while preview_cap > 0 && !visible_error.is_char_boundary(preview_cap) {
                 preview_cap -= 1;
@@ -377,18 +370,21 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
             );
         }
     } else if !auto_compact_signal && !interrupted_by_user {
-        state.messages.push(ChatMessage::assistant(format!(
-            "**Error:** {e}\n\n_Press Ctrl+R to retry the last prompt._"
-        )));
+        let hard_error = if sentinel_signal {
+            visible_error
+        } else {
+            e.as_str()
+        };
+        push_hard_stream_error(state, hard_error);
         // Surface as a toast too so the user sees the failure
         // even if they aren't looking at the bottom of the
         // transcript when it lands. Cap to 120 chars so a
         // multi-paragraph error stays readable in the strip.
-        let mut preview_cap = e.len().min(120);
-        while preview_cap > 0 && !e.is_char_boundary(preview_cap) {
+        let mut preview_cap = hard_error.len().min(120);
+        while preview_cap > 0 && !hard_error.is_char_boundary(preview_cap) {
             preview_cap -= 1;
         }
-        let preview = &e[..preview_cap];
+        let preview = &hard_error[..preview_cap];
         toast::push_with_cap(
             &mut state.toasts,
             toast::Toast::new(toast::ToastKind::Error, format!("Stream error: {preview}")),
@@ -471,6 +467,37 @@ fn recoverable_requeue_text(m: &ChatMessage) -> Option<String> {
         .collect::<Vec<_>>()
         .join("\n\n");
     (!joined.trim().is_empty()).then_some(joined)
+}
+
+fn hard_stream_error_text(error: &str) -> String {
+    format!("**Error:** {error}\n\n_Press Ctrl+R to retry the last prompt._")
+}
+
+fn push_hard_stream_error(state: &mut EngineState, error: &str) -> bool {
+    let body = hard_stream_error_text(error);
+    let duplicate_last = state.messages.last().is_some_and(|msg| {
+        msg.role == Role::Assistant
+            && msg
+                .parts
+                .iter()
+                .filter_map(|part| match part {
+                    types::MessagePart::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<String>()
+                == body
+    });
+    if duplicate_last {
+        tracing::debug!(
+            target: "jfc::stream",
+            error = %error,
+            "deduping repeated hard stream error"
+        );
+        false
+    } else {
+        state.messages.push(ChatMessage::assistant(body));
+        true
+    }
 }
 
 #[cfg(test)]
@@ -676,6 +703,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stale_scoped_provider_error_is_dropped_robust() {
+        let mut state = test_app();
+        state.messages.push(ChatMessage::user("new prompt".into()));
+        state.messages.push(ChatMessage::assistant(String::new()));
+        state.is_streaming = true;
+        state.streaming_assistant_idx = Some(1);
+        let old_stream_id = state.begin_stream_scope();
+        let current_stream_id = state.begin_stream_scope();
+        assert_ne!(old_stream_id, current_stream_id);
+        let (tx, _rx) = mpsc::channel(8);
+
+        crate::runtime::handle_engine_event(
+            &mut state,
+            &tx,
+            crate::runtime::EngineEvent::ScopedStream {
+                stream_id: old_stream_id,
+                event: crate::runtime::StreamEvent::Error("Rate limited".to_owned()),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(state.is_streaming, "current stream must keep running");
+        assert_eq!(state.streaming_assistant_idx, Some(1));
+        assert_eq!(state.messages.len(), 2, "stale error must not append");
+        assert_eq!(state.active_stream_id, Some(current_stream_id));
+    }
+
+    #[tokio::test]
+    async fn duplicate_hard_stream_error_is_deduped_robust() {
+        let mut state = test_app();
+        state.messages.push(ChatMessage::user("prompt".into()));
+        state.messages.push(ChatMessage::assistant(String::new()));
+        state.is_streaming = true;
+        state.streaming_assistant_idx = Some(1);
+        state.network_recovery_attempts = crate::app::MAX_NETWORK_RECOVERY_ATTEMPTS;
+        let (tx, _rx) = mpsc::channel(8);
+
+        handle_stream_error(&mut state, &tx, "Rate limited".to_owned()).await;
+        handle_stream_error(&mut state, &tx, "Rate limited".to_owned()).await;
+
+        let hard_errors = state
+            .messages
+            .iter()
+            .filter(|msg| {
+                msg.role == Role::Assistant
+                    && msg.parts.iter().any(|part| {
+                        matches!(part, MessagePart::Text(text) if text.contains("**Error:** Rate limited"))
+                    })
+            })
+            .count();
+        assert_eq!(hard_errors, 1, "same hard error should render once");
+    }
+
+    #[tokio::test]
     async fn stream_error_clears_active_stream_handle_robust() {
         let mut state = test_app();
         state.messages.push(ChatMessage::user("only prompt".into()));
@@ -693,6 +775,83 @@ mod tests {
         assert!(state.active_stream_handle.is_none());
         assert!(!state.has_interruptible_work());
         handle.abort();
+    }
+
+    #[tokio::test]
+    async fn sentinel_retry_under_cap_restarts_without_hard_error_robust() {
+        let mut state = test_app();
+        state.messages.push(ChatMessage::user("only prompt".into()));
+        state.messages.push(ChatMessage::assistant(String::new()));
+        state.is_streaming = true;
+        state.streaming_assistant_idx = Some(1);
+        let (tx, _rx) = mpsc::channel(8);
+
+        handle_stream_error(
+            &mut state,
+            &tx,
+            format!(
+                "{}Rate limited",
+                crate::providers::anthropic::AUTO_RETRY_SENTINEL
+            ),
+        )
+        .await;
+
+        assert!(state.is_streaming, "retry under cap should restart stream");
+        assert_eq!(state.streaming_assistant_idx, Some(1));
+        assert_eq!(state.network_recovery_attempts, 1);
+        assert!(
+            state.network_recovery_status.is_some(),
+            "retry banner should stay armed"
+        );
+        assert_eq!(state.messages.len(), 2, "no hard error should append");
+        assert!(
+            state.active_stream_id.is_some(),
+            "new stream should be scoped"
+        );
+    }
+
+    #[tokio::test]
+    async fn sentinel_retry_respects_max_attempts_robust() {
+        let mut state = test_app();
+        state.messages.push(ChatMessage::user("only prompt".into()));
+        state.messages.push(ChatMessage::assistant(String::new()));
+        state.is_streaming = true;
+        state.streaming_assistant_idx = Some(1);
+        state.network_recovery_attempts = crate::app::MAX_NETWORK_RECOVERY_ATTEMPTS;
+        let (tx, _rx) = mpsc::channel(8);
+
+        handle_stream_error(
+            &mut state,
+            &tx,
+            format!(
+                "{}Rate limited",
+                crate::providers::anthropic::AUTO_RETRY_SENTINEL
+            ),
+        )
+        .await;
+
+        assert!(!state.is_streaming, "cap exhaustion should stop streaming");
+        assert_eq!(
+            state.messages.len(),
+            3,
+            "cap exhaustion should surface a hard error"
+        );
+        let text: String = state
+            .messages
+            .last()
+            .expect("hard error appended")
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                MessagePart::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(text.contains("**Error:** Rate limited"));
+        assert!(
+            !text.contains(crate::providers::anthropic::AUTO_RETRY_SENTINEL),
+            "provider retry sentinel must not leak into the user-visible error"
+        );
     }
 
     // Robust: a GENUINE pre-open cancel (no fresh turn took over —

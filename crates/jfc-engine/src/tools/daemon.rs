@@ -97,15 +97,38 @@ pub fn execute_schedule_wakeup(delay_seconds: u32, prompt: &str, reason: &str) -
         Ok(d) => d,
         Err(e) => return ExecutionResult::failure(format!("daemon state init failed: {e}")),
     };
-    let delay = std::time::Duration::from_secs(u64::from(delay_seconds));
+    // Clamp the model-chosen delay into the supported dynamic-wakeup window for
+    // autonomous-loop sentinels only. A bare `<<autonomous-loop-dynamic>>`
+    // keepalive or an over-eager 5s reschedule would otherwise hammer the loop;
+    // a multi-day delay would silently age it out. Non-loop wakeups (explicit
+    // user reminders) keep the exact requested delay. Mirrors Claude 2.1.177's
+    // `Zz5` clamp of `delaySeconds` to `[ZT$, yJ8]`.
+    let (effective_seconds, was_clamped) = if crate::autonomous_loop::is_loop_sentinel(prompt) {
+        crate::autonomous_loop::clamp_wakeup_delay_seconds(delay_seconds)
+    } else {
+        (delay_seconds, false)
+    };
+    if was_clamped {
+        tracing::info!(
+            target: "jfc::autonomous_loop",
+            requested_seconds = delay_seconds,
+            clamped_seconds = effective_seconds,
+            "tengu_loop_dynamic_wakeup_scheduled: clamped dynamic-wakeup delay into supported window"
+        );
+    }
+    let delay = std::time::Duration::from_secs(u64::from(effective_seconds));
     let id = daemon.schedule_wakeup(delay, &resolved_prompt, reason);
     let note = if crate::autonomous_loop::is_loop_sentinel(prompt) {
-        " (autonomous loop sentinel expanded)"
+        if was_clamped {
+            " (autonomous loop sentinel expanded; delay clamped)"
+        } else {
+            " (autonomous loop sentinel expanded)"
+        }
     } else {
         ""
     };
     ExecutionResult::success(format!(
-        "Scheduled wakeup `{id}` in {delay_seconds}s: {reason}{note}"
+        "Scheduled wakeup `{id}` in {effective_seconds}s: {reason}{note}"
     ))
 }
 

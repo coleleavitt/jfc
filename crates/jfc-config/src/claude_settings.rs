@@ -8,6 +8,9 @@ use crate::{
     SandboxConfig, ShellHooksConfig, WorktreeConfig,
 };
 
+const CLAUDE_IN_CHROME_MCP_SERVER: &str = "claude-in-chrome";
+const CLAUDE_IN_CHROME_MCP_ARG: &str = "--claude-in-chrome-mcp";
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ClaudeCompatibilityConfig {
@@ -53,6 +56,13 @@ pub struct ClaudeCompatibilityConfig {
     pub denied_mcp_servers: Vec<String>,
     #[serde(rename = "enabledPlugins", alias = "enabled_plugins")]
     pub enabled_plugins: HashMap<String, bool>,
+    #[serde(
+        rename = "claudeInChromeDefaultEnabled",
+        alias = "claude_in_chrome_default_enabled"
+    )]
+    pub claude_in_chrome_default_enabled: Option<bool>,
+    #[serde(rename = "chromeExtension", alias = "chrome_extension")]
+    pub chrome_extension: Option<ClaudeChromeExtensionConfig>,
     #[serde(rename = "skillOverrides", alias = "skill_overrides")]
     pub skill_overrides: HashMap<String, serde_json::Value>,
     #[serde(default, deserialize_with = "deserialize_hooks")]
@@ -213,6 +223,13 @@ pub struct ClaudeCompatibilityConfig {
     pub extra: HashMap<String, serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ClaudeChromeExtensionConfig {
+    #[serde(rename = "pairedDeviceId", alias = "paired_device_id")]
+    pub paired_device_id: Option<String>,
+}
+
 impl ClaudeCompatibilityConfig {
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
@@ -278,6 +295,12 @@ impl ClaudeCompatibilityConfig {
         extend_unique(&mut self.allowed_mcp_servers, next.allowed_mcp_servers);
         extend_unique(&mut self.denied_mcp_servers, next.denied_mcp_servers);
         merge_map(&mut self.enabled_plugins, next.enabled_plugins);
+        overwrite_option(
+            &mut self.claude_in_chrome_default_enabled,
+            next.claude_in_chrome_default_enabled,
+        );
+        self.chrome_extension =
+            merge_chrome_extension(self.chrome_extension.take(), next.chrome_extension);
         merge_map(&mut self.skill_overrides, next.skill_overrides);
         self.hooks = merge_hooks(self.hooks.take(), next.hooks);
         overwrite_option(&mut self.disable_all_hooks, next.disable_all_hooks);
@@ -492,7 +515,7 @@ pub fn apply_to_config(cfg: &mut Config, project_root: &Path) {
 }
 
 pub fn apply_settings(cfg: &mut Config, settings: ClaudeCompatibilityConfig) {
-    if settings.is_empty() {
+    if settings.is_empty() && !chrome_mcp_auto_enable_enabled(&settings) {
         return;
     }
 
@@ -592,6 +615,7 @@ pub fn apply_settings(cfg: &mut Config, settings: ClaudeCompatibilityConfig) {
     for (name, server) in &settings.mcp_servers {
         cfg.mcp.insert(name.clone(), server.clone());
     }
+    apply_chrome_mcp_auto_enable(cfg, &settings);
     if let Some(worktree) = settings.worktree.clone() {
         cfg.worktree = merge_worktree(cfg.worktree.take(), Some(worktree));
     }
@@ -671,6 +695,114 @@ fn normalize_permission_mode(mode: &str) -> Option<&'static str> {
     }
 }
 
+fn apply_chrome_mcp_auto_enable(cfg: &mut Config, settings: &ClaudeCompatibilityConfig) {
+    if !chrome_mcp_auto_enable_enabled(settings) {
+        return;
+    }
+    if cfg.mcp.contains_key(CLAUDE_IN_CHROME_MCP_SERVER) {
+        return;
+    }
+    if !mcp_server_allowed_by_settings(settings, CLAUDE_IN_CHROME_MCP_SERVER) {
+        tracing::info!(
+            target: "jfc::config::claude_settings",
+            server = CLAUDE_IN_CHROME_MCP_SERVER,
+            "skipping Claude in Chrome MCP auto-enable because settings deny it"
+        );
+        return;
+    }
+
+    cfg.mcp.insert(
+        CLAUDE_IN_CHROME_MCP_SERVER.to_owned(),
+        McpServerConfig {
+            server_type: Some("stdio".to_owned()),
+            command: Some(chrome_mcp_command()),
+            args: chrome_mcp_args(),
+            env: HashMap::new(),
+            headers: HashMap::new(),
+            url: None,
+        },
+    );
+}
+
+fn chrome_mcp_auto_enable_enabled(settings: &ClaudeCompatibilityConfig) -> bool {
+    if env_truthy("JFC_DISABLE_CHROME")
+        || env_truthy("JFC_NO_CHROME")
+        || env_truthy("CLAUDE_CODE_DISABLE_CFC")
+    {
+        return false;
+    }
+    if env_truthy("JFC_CHROME")
+        || env_truthy("JFC_ENABLE_CHROME")
+        || env_truthy("CLAUDE_CODE_ENABLE_CFC")
+    {
+        return true;
+    }
+    settings.claude_in_chrome_default_enabled == Some(true)
+}
+
+#[cfg(test)]
+fn chrome_mcp_command() -> String {
+    "claude".to_owned()
+}
+
+#[cfg(not(test))]
+fn chrome_mcp_command() -> String {
+    std::env::var("JFC_CHROME_MCP_COMMAND")
+        .ok()
+        .or_else(|| std::env::var("CLAUDE_CODE_CHROME_MCP_COMMAND").ok())
+        .filter(|command| !command.trim().is_empty())
+        .unwrap_or_else(|| "claude".to_owned())
+}
+
+#[cfg(test)]
+fn chrome_mcp_args() -> Vec<String> {
+    vec![CLAUDE_IN_CHROME_MCP_ARG.to_owned()]
+}
+
+#[cfg(not(test))]
+fn chrome_mcp_args() -> Vec<String> {
+    let raw = std::env::var("JFC_CHROME_MCP_ARGS")
+        .ok()
+        .or_else(|| std::env::var("CLAUDE_CODE_CHROME_MCP_ARGS").ok());
+    raw.map(|args| {
+        args.split_whitespace()
+            .filter(|arg| !arg.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    })
+    .filter(|args| !args.is_empty())
+    .unwrap_or_else(|| vec![CLAUDE_IN_CHROME_MCP_ARG.to_owned()])
+}
+
+fn mcp_server_allowed_by_settings(settings: &ClaudeCompatibilityConfig, server: &str) -> bool {
+    if string_list_contains(&settings.denied_mcp_servers, server) {
+        return false;
+    }
+    settings.allowed_mcp_servers.is_empty()
+        || string_list_contains(&settings.allowed_mcp_servers, server)
+}
+
+fn string_list_contains(values: &[String], needle: &str) -> bool {
+    values
+        .iter()
+        .any(|value| value.trim().eq_ignore_ascii_case(needle))
+}
+
+#[cfg(test)]
+fn env_truthy(_key: &str) -> bool {
+    false
+}
+
+#[cfg(not(test))]
+fn env_truthy(key: &str) -> bool {
+    std::env::var(key).ok().is_some_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
 fn merge_hooks(
     current: Option<ShellHooksConfig>,
     next: Option<ShellHooksConfig>,
@@ -721,6 +853,20 @@ fn merge_hooks(
             current.file_changed.append(&mut next.file_changed);
             current.teammate_idle.append(&mut next.teammate_idle);
             current.stop_failure.append(&mut next.stop_failure);
+            Some(current)
+        }
+    }
+}
+
+fn merge_chrome_extension(
+    current: Option<ClaudeChromeExtensionConfig>,
+    next: Option<ClaudeChromeExtensionConfig>,
+) -> Option<ClaudeChromeExtensionConfig> {
+    match (current, next) {
+        (None, None) => None,
+        (Some(extension), None) | (None, Some(extension)) => Some(extension),
+        (Some(mut current), Some(next)) => {
+            overwrite_option(&mut current.paired_device_id, next.paired_device_id);
             Some(current)
         }
     }
@@ -1114,6 +1260,10 @@ mod tests {
               "skillOverrides": {
                 "verify": "off"
               },
+              "claudeInChromeDefaultEnabled": true,
+              "chromeExtension": {
+                "pairedDeviceId": "device-123"
+              },
               "disableWorkflows": true,
               "disableRemoteControl": true,
               "disableAllHooks": true
@@ -1143,6 +1293,14 @@ mod tests {
         assert_eq!(sandbox.filesystem.deny_write, vec!["~/.ssh"]);
         assert_eq!(sandbox.ripgrep.args, vec!["--pcre2"]);
         assert_eq!(settings.skill_overrides["verify"], "off");
+        assert_eq!(settings.claude_in_chrome_default_enabled, Some(true));
+        assert_eq!(
+            settings
+                .chrome_extension
+                .as_ref()
+                .and_then(|chrome| chrome.paired_device_id.as_deref()),
+            Some("device-123")
+        );
     }
 
     #[test]
@@ -1168,6 +1326,7 @@ mod tests {
                     fail_if_unavailable: Some(true),
                     ..Default::default()
                 }),
+                claude_in_chrome_default_enabled: Some(true),
                 disable_remote_control: Some(true),
                 disable_workflows: Some(true),
                 ..Default::default()
@@ -1203,6 +1362,53 @@ mod tests {
         assert_eq!(cfg.sandbox.as_ref().and_then(|s| s.enabled), Some(true));
         assert!(cfg.remote_control.as_ref().is_some_and(|rc| rc.disabled));
         assert!(cfg.disabled_tools.iter().any(|tool| tool == "Workflow"));
+        let chrome = cfg
+            .mcp
+            .get(CLAUDE_IN_CHROME_MCP_SERVER)
+            .expect("chrome MCP server");
+        assert_eq!(chrome.server_type.as_deref(), Some("stdio"));
+        assert_eq!(chrome.command.as_deref(), Some("claude"));
+        assert_eq!(chrome.args, vec![CLAUDE_IN_CHROME_MCP_ARG]);
+    }
+
+    #[test]
+    fn chrome_auto_enable_respects_denied_mcp_servers_normal() {
+        let mut cfg = Config::default();
+        apply_settings(
+            &mut cfg,
+            ClaudeCompatibilityConfig {
+                claude_in_chrome_default_enabled: Some(true),
+                denied_mcp_servers: vec![CLAUDE_IN_CHROME_MCP_SERVER.to_owned()],
+                ..Default::default()
+            },
+        );
+
+        assert!(!cfg.mcp.contains_key(CLAUDE_IN_CHROME_MCP_SERVER));
+    }
+
+    #[test]
+    fn chrome_auto_enable_preserves_explicit_mcp_config_normal() {
+        let mut cfg = Config::default();
+        cfg.mcp.insert(
+            CLAUDE_IN_CHROME_MCP_SERVER.to_owned(),
+            McpServerConfig {
+                server_type: Some("stdio".to_owned()),
+                command: Some("custom-claude".to_owned()),
+                args: vec!["custom".to_owned()],
+                ..Default::default()
+            },
+        );
+        apply_settings(
+            &mut cfg,
+            ClaudeCompatibilityConfig {
+                claude_in_chrome_default_enabled: Some(true),
+                ..Default::default()
+            },
+        );
+
+        let chrome = cfg.mcp.get(CLAUDE_IN_CHROME_MCP_SERVER).unwrap();
+        assert_eq!(chrome.command.as_deref(), Some("custom-claude"));
+        assert_eq!(chrome.args, vec!["custom"]);
     }
 
     #[test]

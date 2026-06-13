@@ -247,9 +247,7 @@ impl DaemonService for ReconcileService {
         }
         let due = self
             .last_compaction
-            .map(|at| {
-                now.duration_since(at).unwrap_or_default() >= Self::COMPACTION_INTERVAL
-            })
+            .map(|at| now.duration_since(at).unwrap_or_default() >= Self::COMPACTION_INTERVAL)
             .unwrap_or(true);
         if due {
             self.last_compaction = Some(now);

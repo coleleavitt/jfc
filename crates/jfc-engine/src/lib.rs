@@ -197,6 +197,7 @@ pub mod system_reminder;
 pub mod team_onboarding;
 pub mod toast;
 pub mod tools;
+pub mod total_tokens_reminder;
 pub mod ultraplan;
 pub mod web_cache;
 pub mod web_search;

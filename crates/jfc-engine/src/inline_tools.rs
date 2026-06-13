@@ -51,6 +51,8 @@ pub struct ParsedToolCall {
 
 const OPEN_CALL: &str = "<tool_call>";
 const CLOSE_CALL: &str = "</tool_call>";
+const OPEN_USE: &str = "<tool_use>";
+const CLOSE_USE: &str = "</tool_use>";
 const OPEN_RESULT: &str = "<tool_result>";
 const CLOSE_RESULT: &str = "</tool_result>";
 
@@ -67,14 +69,25 @@ pub fn parse(input: &str) -> Vec<Segment> {
         // Find the earliest opening tag from position i. Manual byte scan keeps
         // us off regex; the tag set is small and fixed.
         let next_call = input[i..].find(OPEN_CALL);
+        let next_use = input[i..].find(OPEN_USE);
         let next_result = input[i..].find(OPEN_RESULT);
 
-        let (offset, tag_kind) = match (next_call, next_result) {
-            (Some(a), Some(b)) if a <= b => (a, TagKind::Call),
-            (Some(_), Some(b)) => (b, TagKind::Result),
-            (Some(a), None) => (a, TagKind::Call),
-            (None, Some(b)) => (b, TagKind::Result),
-            (None, None) => {
+        let mut next: Option<(usize, TagKind)> = None;
+        for (candidate, kind) in [
+            (next_call, TagKind::Call),
+            (next_use, TagKind::Use),
+            (next_result, TagKind::Result),
+        ] {
+            if let Some(offset) = candidate
+                && next.is_none_or(|(best, _)| offset < best)
+            {
+                next = Some((offset, kind));
+            }
+        }
+
+        let (offset, tag_kind) = match next {
+            Some(next) => next,
+            None => {
                 text_buf.push_str(&input[i..]);
                 break;
             }
@@ -87,10 +100,12 @@ pub fn parse(input: &str) -> Vec<Segment> {
 
         let open = match tag_kind {
             TagKind::Call => OPEN_CALL,
+            TagKind::Use => OPEN_USE,
             TagKind::Result => OPEN_RESULT,
         };
         let close = match tag_kind {
             TagKind::Call => CLOSE_CALL,
+            TagKind::Use => CLOSE_USE,
             TagKind::Result => CLOSE_RESULT,
         };
 
@@ -105,7 +120,7 @@ pub fn parse(input: &str) -> Vec<Segment> {
                 }
                 let body = input[body_start..body_start + rel].trim().to_owned();
                 match tag_kind {
-                    TagKind::Call => {
+                    TagKind::Call | TagKind::Use => {
                         let parsed = parse_tool_call_body(&body);
                         out.push(Segment::ToolCall {
                             raw_body: body,
@@ -137,6 +152,7 @@ pub fn parse(input: &str) -> Vec<Segment> {
 #[derive(Debug, Clone, Copy)]
 enum TagKind {
     Call,
+    Use,
     Result,
 }
 
@@ -165,7 +181,7 @@ fn summarize_args(args: Option<&Value>) -> String {
 /// Returns `true` if `text` contains any inline tool tag — a quick test the
 /// renderer uses to decide whether to invoke the parser at all.
 pub fn contains_inline_tools(text: &str) -> bool {
-    text.contains(OPEN_CALL) || text.contains(OPEN_RESULT) || text.contains("<tool_use>")
+    text.contains(OPEN_CALL) || text.contains(OPEN_USE) || text.contains(OPEN_RESULT)
 }
 
 #[cfg(test)]
@@ -199,6 +215,23 @@ mod tests {
             _ => panic!("expected ToolCall, got {:?}", segs[1]),
         }
         assert_eq!(segs[2], Segment::Text(" suffix".into()));
+    }
+
+    // Normal: Anthropic-style inline `<tool_use>` tags are equivalent to
+    // OpenWebUI-style `<tool_call>` tags for detection and warning paths.
+    #[test]
+    fn complete_tool_use_extracted_normal() {
+        let s = r#"prefix <tool_use> {"name": "Read", "arguments": {"path": "src/lib.rs"}} </tool_use> suffix"#;
+        let segs = parse(s);
+        assert_eq!(segs.len(), 3);
+        match &segs[1] {
+            Segment::ToolCall { parsed, .. } => {
+                let p = parsed.as_ref().expect("parsed tool use");
+                assert_eq!(p.name, "Read");
+                assert_eq!(p.summary, "src/lib.rs");
+            }
+            _ => panic!("expected ToolCall, got {:?}", segs[1]),
+        }
     }
 
     // Normal: a complete tool_result is extracted as a single segment.
@@ -316,6 +349,7 @@ mod tests {
     fn contains_inline_tools_smoke_normal() {
         assert!(!contains_inline_tools("just text"));
         assert!(contains_inline_tools("foo <tool_call> bar"));
+        assert!(contains_inline_tools("foo <tool_use> bar"));
         assert!(contains_inline_tools("foo <tool_result>"));
     }
 

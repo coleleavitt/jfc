@@ -46,6 +46,16 @@ pub fn send_critical(tx: &mpsc::Sender<EngineEvent>, ev: EngineEvent) {
 /// wraps it in [`AppEvent`] alongside its own terminal events; headless and
 /// remote frontends consume it directly.
 pub enum EngineEvent {
+    /// Stream event emitted by a specific model-stream task.
+    ///
+    /// Model streams can be superseded by retry, watchdog, interrupt-on-submit,
+    /// or a fresh user turn while the old task is still unwinding. The stream id
+    /// lets the dispatcher reject stale terminal/provider events before they
+    /// mutate the current transcript.
+    ScopedStream {
+        stream_id: u64,
+        event: StreamEvent,
+    },
     Stream(StreamEvent),
     Tool(ToolEvent),
     Compaction(CompactionEvent),
@@ -197,6 +207,15 @@ pub struct StreamRequestOverrides {
     /// the hint is only meaningful on the turn immediately following a
     /// compaction. `None` when no compaction happened since the last send.
     pub context_hint_tokens_saved: Option<u64>,
+    /// Last API-reported input-token count for this conversation, when known.
+    /// Used by the optional `<total_tokens>... tokens left</total_tokens>`
+    /// prompt attachment in countdown mode.
+    pub last_usage_input_tokens: Option<u64>,
+    /// Context window for the active model, when known.
+    pub context_window_tokens: Option<u64>,
+    /// Test/explicit override for the optional total-token reminder mode.
+    /// Production callers leave this as `None`, so env/config controls apply.
+    pub total_tokens_reminder_mode: Option<crate::total_tokens_reminder::TotalTokensReminderMode>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -245,6 +264,7 @@ impl StreamLifecycleStatus {
     }
 }
 
+#[derive(Clone)]
 pub enum StreamEvent {
     Chunk {
         text: Option<String>,
@@ -324,6 +344,29 @@ pub enum StreamEvent {
     /// during long no-delta phases (extended thinking, big tool-input streams).
     /// It mutates nothing else: no text, tokens, or message parts.
     Keepalive,
+}
+
+pub fn stream_event(ev: &EngineEvent) -> Option<&StreamEvent> {
+    match ev {
+        EngineEvent::Stream(event) | EngineEvent::ScopedStream { event, .. } => Some(event),
+        _ => None,
+    }
+}
+
+pub fn scoped_stream_sender(tx: EventSender, stream_id: u64) -> EventSender {
+    let (scoped_tx, mut scoped_rx) = mpsc::channel(APP_EVENT_BUFFER);
+    tokio::spawn(async move {
+        while let Some(ev) = scoped_rx.recv().await {
+            let ev = match ev {
+                EngineEvent::Stream(event) => EngineEvent::ScopedStream { stream_id, event },
+                other => other,
+            };
+            if tx.send(ev).await.is_err() {
+                break;
+            }
+        }
+    });
+    scoped_tx
 }
 pub enum ToolEvent {
     Result {

@@ -13,15 +13,20 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use tokio_util::sync::CancellationToken;
 
 use crate::app::EngineState;
 use crate::runtime::{EngineEvent, EventSender, FrontendEvent, TaskEvent};
 
-#[derive(Debug, Default)]
+/// Background auto-review dispatch state.
+///
+/// The dedup signature lives behind a shared `Arc<Mutex<_>>` so the
+/// background task that actually runs the review can *clear* it when the run
+/// fails. Without that feedback loop a single failed run (e.g. every agent
+/// hitting a 401) would poison the signature forever and silently suppress all
+/// future auto-reviews of the same file-set for the rest of the session.
+#[derive(Debug, Default, Clone)]
 pub struct AutoReviewState {
-    pub last_dispatched_signature: Option<String>,
-    pub last_dispatched_at: Option<Instant>,
+    last_dispatched_signature: Arc<parking_lot::Mutex<Option<String>>>,
 }
 
 pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
@@ -69,7 +74,8 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
     }
 
     let signature = review_signature(&cwd, &files).await;
-    if state.auto_review.last_dispatched_signature.as_deref() == Some(signature.as_str()) {
+    let signature_slot = state.auto_review.last_dispatched_signature.clone();
+    if signature_slot.lock().as_deref() == Some(signature.as_str()) {
         tracing::debug!(
             target: "jfc::auto_review",
             signature,
@@ -77,8 +83,6 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
         );
         return;
     }
-    state.auto_review.last_dispatched_signature = Some(signature.clone());
-    state.auto_review.last_dispatched_at = Some(Instant::now());
 
     let Ok((_meta, body)) = crate::workflows::parse_meta(&workflow.script) else {
         tracing::warn!(
@@ -87,6 +91,11 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
         );
         return;
     };
+
+    // Commit the dedup signature only after every early-return path has passed,
+    // so a parse/permission skip never poisons the slot. The background task
+    // clears it again if the run ends in error.
+    *signature_slot.lock() = Some(signature.clone());
 
     let run_id = crate::workflows::generate_run_id();
     let task_id = format!("bgauto_review_{run_id}");
@@ -98,6 +107,9 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
     let provider = Arc::clone(&state.provider);
     let model = state.model.clone();
     let tx_bg = tx.clone();
+    // Derive a child token from the session so a user Ctrl+C / shutdown aborts
+    // the background review instead of letting its agents keep hitting the API.
+    let cancel = state.cancel_token.child_token();
     let target = auto_review_target(&files);
     let level = std::env::var("JFC_AUTO_REVIEW_LEVEL").unwrap_or_else(|_| "high".to_owned());
     let args = serde_json::json!({
@@ -149,11 +161,14 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
         // findings to the workflow args, so the review runs with real
         // compiler/test evidence rather than guessing whether the code builds.
         // Only for cargo projects, and only when enabled (default on).
+        // Oracles respect the cancellation token: if interrupted by the user,
+        // they early-exit and record findings as "not run" rather than blocking.
         let mut args = args;
         if auto_review_proof_oracles_enabled()
             && crate::proof_oracles::is_cargo_project(&cwd)
+            && !cancel.is_cancelled()
         {
-            let findings = crate::proof_oracles::run_all(&cwd).await;
+            let findings = crate::proof_oracles::run_all(&cwd, &cancel).await;
             let block = crate::proof_oracles::render_findings_block(&findings);
             if let serde_json::Value::Object(map) = &mut args {
                 map.insert(
@@ -177,7 +192,7 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
             model,
             session_dir,
             resume_from_run_id: None,
-            cancel: CancellationToken::new(),
+            cancel,
             tx: Some(tx_bg.clone()),
             workflow_task_id: task_id.clone(),
             depth: 0,
@@ -198,6 +213,17 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
         .await;
 
         if let Some(error) = outcome.error {
+            // The run failed (e.g. provider auth/transient errors). Clear the
+            // dedup signature so an identical follow-up edit set can re-trigger
+            // the review instead of being permanently suppressed. Only clear if
+            // it still holds *our* signature — a newer dispatch may have already
+            // claimed the slot.
+            {
+                let mut slot = signature_slot.lock();
+                if slot.as_deref() == Some(signature.as_str()) {
+                    *slot = None;
+                }
+            }
             jfc_daemon::record_background_agent_finished(
                 &task_id,
                 jfc_daemon::BackgroundAgentStatus::Failed,

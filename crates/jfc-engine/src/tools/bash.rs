@@ -963,6 +963,39 @@ pub async fn execute_bash_output(
         Err(err) if err.kind() == ErrorKind::NotFound && retrieval_status == "timeout" => {
             Vec::new()
         }
+        // Unknown task id: not in the live registry, no persisted metadata, and no
+        // log on disk. Almost always a hallucinated id — the model invented a
+        // plausible `bash_<hex>` or a semantic name instead of using the id the Bash
+        // tool actually returned. The old message leaked the raw OS error
+        // ("No such file or directory") and didn't say the id was bogus, so the model
+        // retried with *new* fabricated ids. Name the failure and list the real ids so
+        // it can self-correct in one round-trip.
+        Err(err) if err.kind() == ErrorKind::NotFound && info.is_none() => {
+            let mut known: Vec<(u128, String)> = bash_tasks()
+                .lock()
+                .await
+                .values()
+                .map(|task| (task.started_at_ms, task.id.clone()))
+                .collect();
+            known.sort_unstable_by_key(|entry| std::cmp::Reverse(entry.0));
+            let hint = if known.is_empty() {
+                "no background Bash tasks exist in this session".to_owned()
+            } else {
+                let ids = known
+                    .iter()
+                    .take(10)
+                    .map(|(_, id)| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("known task ids: {ids}")
+            };
+            return ExecutionResult::failure(format!(
+                "Unknown Bash task id '{task_id}': no such background task. Task ids are \
+                 issued by the Bash tool (run_in_background=true, or a command \
+                 auto-backgrounded after exceeding the foreground budget) — copy the exact \
+                 id from that tool's output verbatim; do not invent or guess one. ({hint})"
+            ));
+        }
         Err(err) => {
             return ExecutionResult::failure(format!(
                 "No output available for Bash task {task_id}: {err}"

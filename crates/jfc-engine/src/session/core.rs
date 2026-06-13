@@ -318,9 +318,9 @@ mod disk_io_tests {
         list_sessions, list_sessions_filtered, load_session_metadata, most_recent_session,
         most_recent_session_for_cwd,
     };
+    use serial_test::serial;
     use std::sync::Mutex;
     use tempfile::TempDir;
-    use serial_test::serial;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 

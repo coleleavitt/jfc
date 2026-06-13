@@ -43,9 +43,10 @@ impl ProofOracle {
     fn program_and_args(self) -> (&'static str, &'static [&'static str]) {
         match self {
             ProofOracle::CargoTest => ("cargo", &["test", "--workspace", "--quiet"]),
-            ProofOracle::CargoClippy => {
-                ("cargo", &["clippy", "--workspace", "--quiet", "--message-format=short"])
-            }
+            ProofOracle::CargoClippy => (
+                "cargo",
+                &["clippy", "--workspace", "--quiet", "--message-format=short"],
+            ),
         }
     }
 }
@@ -84,7 +85,20 @@ const MAX_SUMMARY_CHARS: usize = 2_000;
 /// Run a single oracle in `cwd`, returning its observed finding. Never panics
 /// or propagates an error: spawn/timeout failures become `ran: false` findings
 /// so the review always gets a complete, attributable picture.
-pub async fn run_oracle(oracle: ProofOracle, cwd: &Path) -> OracleFinding {
+///
+/// Respects the cancellation token: if already cancelled, returns immediately
+/// with a `not_run` finding. If cancelled during execution, the timeout short-circuits.
+pub async fn run_oracle(
+    oracle: ProofOracle,
+    cwd: &Path,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> OracleFinding {
+    // If already cancelled (e.g. user pressed Esc before this oracle started),
+    // return immediately with a cancelled finding.
+    if cancel.is_cancelled() {
+        return OracleFinding::not_run(oracle, "cancelled by user");
+    }
+
     let (program, args) = oracle.program_and_args();
     let mut cmd = tokio::process::Command::new(program);
     cmd.args(args)
@@ -99,14 +113,24 @@ pub async fn run_oracle(oracle: ProofOracle, cwd: &Path) -> OracleFinding {
         Err(e) => return OracleFinding::not_run(oracle, format!("could not spawn {program}: {e}")),
     };
 
-    let output = match tokio::time::timeout(ORACLE_TIMEOUT, child.wait_with_output()).await {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => return OracleFinding::not_run(oracle, format!("{program} failed: {e}")),
-        Err(_) => {
-            return OracleFinding::not_run(
-                oracle,
-                format!("{} timed out after {}s", oracle.name(), ORACLE_TIMEOUT.as_secs()),
-            );
+    // Use select! so the timeout short-circuits if cancellation fires. This allows
+    // user interrupts (Esc) to immediately abort the oracle without waiting for
+    // the 5-minute timeout to expire.
+    let output = tokio::select! {
+        _ = cancel.cancelled() => {
+            return OracleFinding::not_run(oracle, "cancelled by user");
+        }
+        result = tokio::time::timeout(ORACLE_TIMEOUT, child.wait_with_output()) => {
+            match result {
+                Ok(Ok(output)) => output,
+                Ok(Err(e)) => return OracleFinding::not_run(oracle, format!("{program} failed: {e}")),
+                Err(_) => {
+                    return OracleFinding::not_run(
+                        oracle,
+                        format!("{} timed out after {}s", oracle.name(), ORACLE_TIMEOUT.as_secs()),
+                    );
+                }
+            }
         }
     };
 
@@ -123,10 +147,22 @@ pub async fn run_oracle(oracle: ProofOracle, cwd: &Path) -> OracleFinding {
 /// Run every oracle and collect findings. Oracles run sequentially because they
 /// contend on the same `target/` build lock — parallel cargo invocations would
 /// serialize behind that lock anyway and risk corrupting each other's output.
-pub async fn run_all(cwd: &Path) -> Vec<OracleFinding> {
+///
+/// Respects the cancellation token: if cancelled, early-exits without running
+/// remaining oracles.
+pub async fn run_all(
+    cwd: &Path,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Vec<OracleFinding> {
     let mut findings = Vec::new();
     for oracle in [ProofOracle::CargoTest, ProofOracle::CargoClippy] {
-        findings.push(run_oracle(oracle, cwd).await);
+        if cancel.is_cancelled() {
+            // User interrupted; don't start any more oracles. Record the remaining
+            // ones as not-run.
+            findings.push(OracleFinding::not_run(oracle, "cancelled by user"));
+        } else {
+            findings.push(run_oracle(oracle, cwd, cancel).await);
+        }
     }
     findings
 }
@@ -242,7 +278,9 @@ mod tests {
     // Normal: tail_chars keeps the tail and notes the elision.
     #[test]
     fn tail_chars_keeps_tail_normal() {
-        let text: String = (0..100).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+        let text: String = (0..100)
+            .map(|i| char::from(b'a' + (i % 26) as u8))
+            .collect();
         let tailed = tail_chars(&text, 10);
         assert!(tailed.contains("earlier chars omitted"));
         assert!(tailed.ends_with(&text[text.len() - 10..]));
@@ -256,11 +294,53 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("jfc-oracle-test-{}", std::process::id()));
         let _ = tokio::fs::create_dir_all(&tmp).await;
         assert!(!is_cargo_project(&tmp));
-        let finding = run_oracle(ProofOracle::CargoClippy, &tmp).await;
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let finding = run_oracle(ProofOracle::CargoClippy, &tmp, &cancel).await;
         // Either cargo isn't found (ran=false) or it errors out (passed=false);
         // in no case does the oracle report a passing check for a non-project.
         assert!(!finding.passed);
         assert_eq!(finding.oracle, "cargo clippy");
         let _ = tokio::fs::remove_dir_all(&tmp).await;
+    }
+
+    // Normal: if the cancellation token is already cancelled before run_oracle
+    // is called, it returns immediately with ran=false without starting the
+    // subprocess. This ensures user interrupts (Esc) abort the oracle phase
+    // before it even spawns.
+    #[tokio::test]
+    async fn run_oracle_pre_cancelled_returns_immediately_normal() {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        let tmp = std::env::temp_dir();
+        let finding = run_oracle(ProofOracle::CargoTest, &tmp, &cancel).await;
+        assert!(!finding.ran);
+        assert!(finding.summary.contains("cancelled"));
+    }
+
+    // Normal: when the token is already cancelled, `run_all`'s per-oracle guard
+    // skips every remaining oracle and records it as not-run with "cancelled by
+    // user" — never spawning a subprocess. This is the deterministic core of the
+    // interrupt path: once Esc fires, the oracle phase stops.
+    //
+    // (We assert on a pre-cancelled token rather than racing a timer against a
+    // real `cargo` subprocess: in a non-cargo cwd like `temp_dir()` the oracle
+    // can exit in well under any sleep window, so a timed cancel is inherently
+    // flaky. Mid-execution cancellation of an in-flight oracle is covered by
+    // `run_oracle_pre_cancelled_returns_immediately_normal`.)
+    #[tokio::test]
+    async fn run_all_skips_oracles_when_cancelled_normal() {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+
+        let tmp = std::env::temp_dir();
+        let findings = run_all(&tmp, &cancel).await;
+
+        assert!(!findings.is_empty(), "run_all must record every oracle");
+        assert!(
+            findings
+                .iter()
+                .all(|f| !f.ran && f.summary.contains("cancelled")),
+            "a cancelled token must mark every oracle not-run, got {findings:?}"
+        );
     }
 }

@@ -70,7 +70,9 @@ pub enum AgentDrainEvent {
     },
     /// A completed tool-use block (name only — the full call lands in
     /// [`AgentTurn::tool_uses`]).
-    ToolUse { name: String },
+    ToolUse {
+        name: String,
+    },
 }
 
 /// How the caller wants cancellation observed.
@@ -152,8 +154,7 @@ where
             }
         };
 
-        if let Some(outcome) =
-            apply_event(event, &mut turn, &mut usage_output_baseline, sink).await
+        if let Some(outcome) = apply_event(event, &mut turn, &mut usage_output_baseline, sink).await
         {
             return outcome;
         }
@@ -268,7 +269,6 @@ mod tests {
         |_| Box::pin(async {})
     }
 
-
     // The driver accumulates text, tool uses, stop reason, and per-turn usage
     // deltas exactly like both inlined drains did.
     #[tokio::test(flavor = "current_thread")]
@@ -381,7 +381,10 @@ mod tests {
             &mut noop_sink(),
         )
         .await;
-        assert!(matches!(fatal, AgentDrainOutcome::Fatal(_)), "got {fatal:?}");
+        assert!(
+            matches!(fatal, AgentDrainOutcome::Fatal(_)),
+            "got {fatal:?}"
+        );
     }
 
     // The watch-channel cancel aborts even while events keep flowing.

@@ -213,8 +213,17 @@ pub async fn skill_fallthrough(
 ) {
     let name = parts[0].trim_start_matches('/');
     let cwd = PathBuf::from(&state.cwd);
-    let markdown_commands = markdown::load_markdown_commands(&cwd);
-    if let Some(command) = markdown::find_markdown_command(&markdown_commands, name) {
+    let mut markdown_commands = markdown::load_markdown_commands(&cwd);
+    let mut skills = crate::agents::load_skills(&cwd);
+    if markdown::find_markdown_command(&markdown_commands, name).is_none()
+        && crate::agents::find_skill_by_name(&skills, name).is_none()
+        && refresh_plugins_on_miss(&cwd, name).await
+    {
+        markdown_commands = markdown::load_markdown_commands(&cwd);
+        skills = crate::agents::load_skills(&cwd);
+    }
+
+    if let Some(command) = markdown::find_markdown_command(&markdown_commands, name).cloned() {
         let echo = if let Some(rest) = parts.get(1) {
             let trimmed = rest.trim();
             if trimmed.is_empty() {
@@ -234,7 +243,7 @@ pub async fn skill_fallthrough(
             return;
         };
         let args = parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty());
-        let body = markdown::render_markdown_command(command, args);
+        let body = markdown::render_markdown_command(&command, args);
 
         // CC 2.1.167 UserPromptExpansion hook for markdown commands.
         {
@@ -257,8 +266,7 @@ pub async fn skill_fallthrough(
         return;
     }
 
-    let skills = crate::agents::load_skills(&cwd);
-    if let Some(skill) = crate::agents::find_skill_by_name(&skills, name) {
+    if let Some(skill) = crate::agents::find_skill_by_name(&skills, name).cloned() {
         if !skill.is_user_invocable() {
             state.messages.push(ChatMessage::assistant(format!(
                 "Skill `/{name}` is installed but is not user-invocable."
@@ -286,7 +294,7 @@ pub async fn skill_fallthrough(
         let memory_root = jfc_memory::project_memory_dir(&cwd);
         let render_context = crate::agents::SkillRenderContext::new(Some(&cwd), Some(&memory_root));
         let args = parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty());
-        let body = crate::agents::render_skill_invocation(skill, render_context, args);
+        let body = crate::agents::render_skill_invocation(&skill, render_context, args);
 
         // CC 2.1.167 UserPromptExpansion hook — fires after the skill body is
         // rendered but before it is submitted to the model. Fire-and-forget;
@@ -381,6 +389,135 @@ pub async fn skill_fallthrough(
     )));
 }
 
+async fn refresh_plugins_on_miss(cwd: &std::path::Path, command_name: &str) -> bool {
+    if !plugin_refresh_on_miss_enabled() {
+        return false;
+    }
+    if crate::config::load_managed_settings()
+        .as_ref()
+        .is_some_and(|settings| settings.disable_plugin_updates)
+    {
+        tracing::debug!(
+            target: "jfc::plugins",
+            command = command_name,
+            "plugin refresh-on-miss skipped by managed settings"
+        );
+        return false;
+    }
+
+    let roots = git_plugin_roots(cwd);
+    if roots.is_empty() {
+        return false;
+    }
+    let mut changed = false;
+    for root in roots {
+        let status = tokio::time::timeout(
+            std::time::Duration::from_secs(8),
+            tokio::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .arg("pull")
+                .arg("--ff-only")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status(),
+        )
+        .await;
+        match status {
+            Ok(Ok(status)) if status.success() => {
+                changed = true;
+                tracing::info!(
+                    target: "jfc::plugins",
+                    command = command_name,
+                    plugin = %root.display(),
+                    "refreshed git plugin after slash-command miss"
+                );
+            }
+            Ok(Ok(status)) => {
+                tracing::warn!(
+                    target: "jfc::plugins",
+                    command = command_name,
+                    plugin = %root.display(),
+                    %status,
+                    "plugin refresh-on-miss git pull failed"
+                );
+            }
+            Ok(Err(error)) => {
+                tracing::warn!(
+                    target: "jfc::plugins",
+                    command = command_name,
+                    plugin = %root.display(),
+                    %error,
+                    "plugin refresh-on-miss could not run git"
+                );
+            }
+            Err(_) => {
+                tracing::warn!(
+                    target: "jfc::plugins",
+                    command = command_name,
+                    plugin = %root.display(),
+                    "plugin refresh-on-miss timed out"
+                );
+            }
+        }
+    }
+    changed
+}
+
+fn plugin_refresh_on_miss_enabled() -> bool {
+    [
+        "JFC_PLUGIN_REFRESH_ON_MISS",
+        "JFC_PLUGIN_AUTOUPDATE",
+        "CLAUDE_CODE_PLUGIN_REFRESH_ON_MISS",
+        "CLAUDE_CODE_ENABLE_BACKGROUND_PLUGIN_REFRESH",
+    ]
+    .iter()
+    .find_map(|key| std::env::var(key).ok())
+    .map(|value| {
+        let normalized = value.trim().to_ascii_lowercase();
+        matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
+    })
+    .unwrap_or(false)
+}
+
+fn git_plugin_roots(project_root: &std::path::Path) -> Vec<PathBuf> {
+    let settings = crate::config::claude_settings::load_merged(project_root);
+    let mut plugin_dirs = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        plugin_dirs.push(home.join(".claude/plugins"));
+    }
+    if let Some(config) = dirs::config_dir() {
+        plugin_dirs.push(config.join("jfc/plugins"));
+    }
+    plugin_dirs.push(project_root.join("plugins"));
+    plugin_dirs.push(project_root.join(".claude/plugins"));
+    plugin_dirs.push(project_root.join(".agents/plugins"));
+    plugin_dirs.push(project_root.join(".codex/plugins"));
+
+    let mut roots = Vec::new();
+    for plugin_dir in plugin_dirs {
+        let Ok(entries) = std::fs::read_dir(plugin_dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.join(".git").is_dir() {
+                continue;
+            }
+            let plugin_name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+            if settings.plugin_enabled(plugin_name) {
+                roots.push(path);
+            }
+        }
+    }
+    roots.sort();
+    roots.dedup();
+    roots
+}
+
 fn start_synthetic_user_turn(
     state: &mut EngineState,
     body: String,
@@ -432,7 +569,6 @@ fn start_synthetic_user_turn(
     let provider = state.provider.clone();
     let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
     let model = state.model.clone();
-    let tx_stream = tx.clone();
     let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
     state.cancel_token = tokio_util::sync::CancellationToken::new();
@@ -448,12 +584,68 @@ fn start_synthetic_user_turn(
         max_thinking_tokens: state.cli_max_thinking_tokens,
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
+        last_usage_input_tokens: Some(state.last_usage_input as u64),
+        context_window_tokens: Some(state.max_context_tokens as u64),
         ..Default::default()
     };
-    tokio::spawn(async move {
-        crate::stream::stream_response(
-            provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
-        )
-        .await;
-    });
+    crate::runtime::spawn_stream_response_scoped(
+        state, tx, provider, messages, model, interrupt, cancel, None, overrides,
+    );
+}
+
+#[cfg(test)]
+mod plugin_refresh_tests {
+    use super::*;
+
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prev = std::env::var(key).ok();
+            unsafe { std::env::set_var(key, value) };
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.prev {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn plugin_refresh_gate_accepts_background_refresh_alias_normal() {
+        let _jfc = EnvGuard::set("JFC_PLUGIN_REFRESH_ON_MISS", "0");
+        unsafe { std::env::remove_var("JFC_PLUGIN_REFRESH_ON_MISS") };
+        let _alias = EnvGuard::set("CLAUDE_CODE_ENABLE_BACKGROUND_PLUGIN_REFRESH", "true");
+        assert!(plugin_refresh_on_miss_enabled());
+    }
+
+    #[test]
+    fn git_plugin_roots_discovers_project_git_plugin_normal() {
+        let root = std::env::temp_dir().join(format!(
+            "jfc_plugin_roots_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let plugin = root.join("plugins").join("demo");
+        std::fs::create_dir_all(plugin.join(".git")).unwrap();
+
+        let roots = git_plugin_roots(&root);
+
+        assert!(roots.iter().any(|path| path == &plugin));
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

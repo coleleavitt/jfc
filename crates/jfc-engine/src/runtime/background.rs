@@ -64,12 +64,9 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
         // hold 100+ such agents, so this is the bulk of the per-second sync
         // cost the render-thread poll was paying. Non-terminal, transitioning,
         // or not-yet-seen agents still read (the log may have grown).
-        let log_is_frozen = state
-            .background_tasks
-            .get(id)
-            .is_some_and(|e| {
-                new_status.is_terminal() && e.status == new_status && e.status.is_terminal()
-            });
+        let log_is_frozen = state.background_tasks.get(id).is_some_and(|e| {
+            new_status.is_terminal() && e.status == new_status && e.status.is_terminal()
+        });
         let messages = if log_is_frozen {
             None
         } else {
@@ -492,7 +489,12 @@ mod tests {
         let task_id = "task-frozen";
         let mut state = app_for_session(session_id);
 
-        let agent = agent_info(&paths, task_id, session_id, BackgroundAgentStatus::Completed);
+        let agent = agent_info(
+            &paths,
+            task_id,
+            session_id,
+            BackgroundAgentStatus::Completed,
+        );
         let log_path = agent.log_path.clone();
         std::fs::create_dir_all(log_path.parent().expect("log parent")).expect("mkdir");
         std::fs::write(&log_path, "first output\n").expect("write log");

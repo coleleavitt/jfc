@@ -1,6 +1,6 @@
 use crate::app::EngineState;
 use crate::{
-    runtime::{EngineEvent, EventSender, StreamEvent, StreamRequestOverrides},
+    runtime::{EngineEvent, EventSender, StreamRequestOverrides},
     stream,
     types::{ChatMessage, MessagePart, Role},
 };
@@ -142,11 +142,9 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     } else {
         state.model.clone()
     };
-    let tx_spawn = tx.clone();
     let interrupt = state.interrupt_flag.clone();
     state.cancel_token = tokio_util::sync::CancellationToken::new();
     let cancel = state.cancel_token.clone();
-    let tx_guard = tx.clone();
     // Refresh CLAUDE.md frontmatter disallowed tools before each turn.
     if let Ok(cwd_path) = std::env::current_dir() {
         let hierarchy =
@@ -166,30 +164,13 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
         context_hint_tokens_saved: state.take_context_hint_tokens_saved(),
+        last_usage_input_tokens: Some(state.last_usage_input as u64),
+        context_window_tokens: Some(state.max_context_tokens as u64),
         ..Default::default()
     };
-    // Park the *inner* task's abort handle on App so the watchdog can
-    // forcefully abort the actual stream_response task (see
-    // App::active_stream_handle). Aborting the outer supervisor would only
-    // drop its JoinHandle to the inner task, detaching rather than cancelling
-    // it.
-    let inner = tokio::spawn(async move {
-        stream::stream_response(
-            provider, messages, model, tx_spawn, interrupt, cancel, None, overrides,
-        )
-        .await;
-    });
-    state.active_stream_handle = Some(inner.abort_handle());
-    tokio::spawn(async move {
-        if let Err(join_err) = inner.await {
-            let msg = if join_err.is_panic() {
-                format!("stream task panicked: {join_err}")
-            } else {
-                format!("stream task cancelled: {join_err}")
-            };
-            let _ = tx_guard
-                .send(EngineEvent::Stream(StreamEvent::Error(msg)))
-                .await;
-        }
-    });
+    // Scope stream events so stale provider errors from superseded tasks cannot
+    // append duplicate hard-error assistant turns.
+    crate::runtime::spawn_stream_response_scoped(
+        state, tx, provider, messages, model, interrupt, cancel, None, overrides,
+    );
 }

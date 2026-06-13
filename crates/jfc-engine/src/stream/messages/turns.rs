@@ -114,6 +114,10 @@ pub fn prepare_for_pause_turn_resume(msgs: Vec<ProviderMessage>) -> Vec<Provider
 /// server-side sampling loop.
 pub fn repair_tool_result_pairing(msgs: Vec<ProviderMessage>) -> Vec<ProviderMessage> {
     let original_len = msgs.len();
+    // Forensic snapshot of the pre-repair message structure. Cheap to build
+    // (one pass over block kinds) and only formatted into a string when a
+    // repair or strict-mode abort actually fires.
+    let pre_structure = describe_message_structure(&msgs);
     let mut out = Vec::with_capacity(original_len);
     let mut repaired = false;
     let mut seen_tool_use_ids: HashSet<String> = HashSet::new();
@@ -278,14 +282,112 @@ pub fn repair_tool_result_pairing(msgs: Vec<ProviderMessage>) -> Vec<ProviderMes
     }
 
     if repaired {
+        let post_structure = describe_message_structure(&out);
+        if strict_tool_result_pairing() {
+            // Claude 2.1.177 strict mode (inc-4977): refuse to silently inject
+            // synthetic placeholders into the model's context. Repairing would
+            // mask an upstream bug, so surface it loudly. We log rather than
+            // panic — the send path has no Result here and a panic would kill
+            // the turn — but the message mirrors upstream's strict-mode error.
+            tracing::error!(
+                target: "jfc::stream::invariants",
+                strict = true,
+                original_message_count = original_len,
+                repaired_message_count = out.len(),
+                pre_normalized_sequence = %pre_structure,
+                normalized_sequence = %post_structure,
+                "STRICT tool_use/tool_result pairing mismatch detected — repair would inject synthetic placeholders into model context (see inc-4977); set JFC_STRICT_TOOL_RESULT_PAIRING=0 to silence"
+            );
+        }
         tracing::error!(
             target: "jfc::stream::invariants",
             original_message_count = original_len,
             repaired_message_count = out.len(),
-            "ensure_tool_result_pairing repaired provider message history before send"
+            pre_normalized_sequence = %pre_structure,
+            normalized_sequence = %post_structure,
+            "tengu_tool_result_pairing_repaired: repaired provider message history before send"
         );
     }
     out
+}
+
+/// Strict tool-result pairing mode. When enabled, a detected pairing mismatch
+/// is logged as a hard strict-mode violation in addition to the normal repair.
+///
+/// Mirrors Claude 2.1.177's `strictToolResultPairing` flag (env-gated). Default
+/// off so production behavior is unchanged; set `JFC_STRICT_TOOL_RESULT_PAIRING`
+/// to a truthy value to opt in (CI / debugging contexts).
+pub fn strict_tool_result_pairing() -> bool {
+    std::env::var("JFC_STRICT_TOOL_RESULT_PAIRING")
+        .ok()
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+/// Build a compact, forensic description of a provider message sequence —
+/// per-message role plus the kind of each content block (and tool ids for
+/// `tool_use` / `tool_result`). Mirrors the `messageTypes` / `normalizedSequence`
+/// strings Claude 2.1.177 emits with its pairing telemetry so a 400 can be
+/// debugged from logs without reconstructing the request body.
+/// Count how many times a tool id appears as a `tool_use` (or server variant)
+/// vs a `tool_result` across the entire message sequence. Returns
+/// `(tool_use_occurrences, tool_result_occurrences)`. Used by the pairing
+/// mismatch forensics to distinguish a duplicate from a true orphan.
+fn count_tool_id_occurrences(msgs: &[ProviderMessage], id: &str) -> (usize, usize) {
+    let mut uses = 0usize;
+    let mut results = 0usize;
+    for msg in msgs {
+        for content in &msg.content {
+            match content {
+                ProviderContent::ToolUse { id: cid, .. }
+                | ProviderContent::ServerToolUse { id: cid, .. }
+                    if cid == id =>
+                {
+                    uses += 1;
+                }
+                ProviderContent::ToolResult { tool_use_id, .. }
+                | ProviderContent::ServerToolResult { tool_use_id, .. }
+                    if tool_use_id == id =>
+                {
+                    results += 1;
+                }
+                _ => {}
+            }
+        }
+    }
+    (uses, results)
+}
+
+fn describe_message_structure(msgs: &[ProviderMessage]) -> String {
+    msgs.iter()
+        .enumerate()
+        .map(|(i, msg)| {
+            let role = match msg.role {
+                ProviderRole::User => "user",
+                ProviderRole::Assistant => "assistant",
+            };
+            let blocks = msg
+                .content
+                .iter()
+                .map(|c| match c {
+                    ProviderContent::ToolUse { id, .. } => format!("tool_use:{id}"),
+                    ProviderContent::ToolResult { tool_use_id, .. } => {
+                        format!("tool_result:{tool_use_id}")
+                    }
+                    ProviderContent::ServerToolUse { id, .. } => format!("server_tool_use:{id}"),
+                    ProviderContent::ServerToolResult { tool_use_id, .. } => {
+                        format!("server_tool_result:{tool_use_id}")
+                    }
+                    ProviderContent::Text(_) => "text".to_owned(),
+                    ProviderContent::Attachment(_) => "attachment".to_owned(),
+                    ProviderContent::RedactedThinking { .. } => "redacted_thinking".to_owned(),
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("[{i}] {role}([{blocks}])")
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn fold_system_reminders_into_tool_results(
@@ -561,12 +663,26 @@ pub fn validate_provider_messages(msgs: &[ProviderMessage]) {
                     let unmatched: Vec<&str> =
                         tool_use_ids.difference(&tool_result_ids).copied().collect();
                     if !missing.is_empty() || !unmatched.is_empty() {
+                        // Claude 2.1.177 `tengu_tool_use_tool_result_mismatch_error`
+                        // forensics: count how many times each offending id appears
+                        // as a tool_use vs a tool_result across the whole request so
+                        // a duplicate/orphan can be told apart from a true mismatch.
+                        let offending_id = unmatched
+                            .first()
+                            .copied()
+                            .or_else(|| missing.first().copied());
+                        let (tool_use_occurrences, tool_result_occurrences) = offending_id
+                            .map(|id| count_tool_id_occurrences(msgs, id))
+                            .unwrap_or((0, 0));
                         tracing::warn!(
                             target: "jfc::stream::invariants",
                             msg_index = i,
                             tool_result_without_use = ?missing,
                             tool_use_without_result = ?unmatched,
-                            "provider message invariant violation: tool_use ↔ tool_result IDs do not match"
+                            offending_tool_use_id = offending_id.unwrap_or(""),
+                            tool_use_occurrences,
+                            tool_result_occurrences,
+                            "tengu_tool_use_tool_result_mismatch_error: tool_use ↔ tool_result IDs do not match"
                         );
                     }
                 }
@@ -858,5 +974,60 @@ mod tests {
         assert_eq!(out[0].content.len(), 2); // merged
         assert_eq!(out[1].role, ProviderRole::Assistant);
         assert_eq!(out[2].role, ProviderRole::User); // synthetic
+    }
+
+    // Normal: the forensic structure description names each message's role and
+    // block kinds, with tool ids inlined — the format Claude 2.1.177 logs for
+    // pairing diagnostics.
+    #[test]
+    fn describe_message_structure_names_blocks_and_ids_normal() {
+        let msgs = vec![
+            user_text("hi"),
+            assistant_tool_use("toolu_1"),
+            ProviderMessage {
+                role: ProviderRole::User,
+                content: vec![user_tool_result("toolu_1", "ok")],
+            },
+        ];
+        let desc = describe_message_structure(&msgs);
+        assert_eq!(
+            desc,
+            "[0] user([text]); [1] assistant([tool_use:toolu_1]); [2] user([tool_result:toolu_1])"
+        );
+    }
+
+    // Normal: occurrence counts distinguish a use from its paired result.
+    #[test]
+    fn count_tool_id_occurrences_counts_use_and_result_normal() {
+        let msgs = vec![
+            assistant_tool_use("toolu_1"),
+            ProviderMessage {
+                role: ProviderRole::User,
+                content: vec![user_tool_result("toolu_1", "ok")],
+            },
+        ];
+        assert_eq!(count_tool_id_occurrences(&msgs, "toolu_1"), (1, 1));
+        assert_eq!(count_tool_id_occurrences(&msgs, "toolu_missing"), (0, 0));
+    }
+
+    // Robust: a duplicated tool_use id is reflected as 2 occurrences so an
+    // orphan (1,0) can be told apart from a duplicate (2,_).
+    #[test]
+    fn count_tool_id_occurrences_reflects_duplicates_robust() {
+        let msgs = vec![assistant_tool_use("toolu_dup"), assistant_tool_use("toolu_dup")];
+        assert_eq!(count_tool_id_occurrences(&msgs, "toolu_dup"), (2, 0));
+    }
+
+    // Robust: strict-mode flag parsing only trips on explicit truthy values.
+    #[test]
+    fn strict_tool_result_pairing_defaults_off_robust() {
+        // SAFETY: single-threaded test; we set then clear the var.
+        unsafe { std::env::remove_var("JFC_STRICT_TOOL_RESULT_PAIRING") };
+        assert!(!strict_tool_result_pairing());
+        unsafe { std::env::set_var("JFC_STRICT_TOOL_RESULT_PAIRING", "1") };
+        assert!(strict_tool_result_pairing());
+        unsafe { std::env::set_var("JFC_STRICT_TOOL_RESULT_PAIRING", "off") };
+        assert!(!strict_tool_result_pairing());
+        unsafe { std::env::remove_var("JFC_STRICT_TOOL_RESULT_PAIRING") };
     }
 }

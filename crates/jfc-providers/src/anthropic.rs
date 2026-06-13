@@ -10,6 +10,8 @@ use super::sse;
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const ANTHROPIC_BETA: &str = "interleaved-thinking-2025-05-14";
+const CACHE_DIAGNOSIS_BETA: &str = "cache-diagnosis-2026-04-07";
+const CONTEXT_MANAGEMENT_BETA: &str = "context-management-2025-06-27";
 const NARRATION_SUMMARIES_BETA: &str = jfc_anthropic_sdk::beta::NARRATION_SUMMARIES;
 // `mid-conversation-system-2026-04-07` is gated per-model via
 // `super::anthropic_oauth::mid_conversation_system_enabled` (mirrors CC's `XH8`).
@@ -180,6 +182,13 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
         }
         body["thinking"] = thinking;
     }
+    // Claude Code 2.1.177 sends a context-management edit while thinking is
+    // active so old thinking blocks do not accumulate in the model context.
+    if has_thinking {
+        body["context_management"] = json!({
+            "edits": [{ "type": "clear_thinking_20251015", "keep": "all" }]
+        });
+    }
     {
         let mut oc = serde_json::Map::new();
         // Gate `effort` by model — see anthropic_oauth.rs build_body for the
@@ -199,6 +208,11 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
         if !oc.is_empty() {
             body["output_config"] = serde_json::Value::Object(oc);
         }
+    }
+    if opts.cache_diagnosis
+        && let Some(ref msg_id) = opts.previous_message_id
+    {
+        body["diagnostics"] = json!({ "previous_message_id": msg_id });
     }
     for (key, value) in &opts.provider_options {
         body[key] = value.clone();
@@ -409,6 +423,14 @@ fn build_beta_header(options: &StreamOptions) -> String {
     if options.task_budget_tokens.is_some() {
         betas.push_str(",task-budgets-2026-03-13");
     }
+    if options.adaptive_thinking || options.thinking_budget.is_some() {
+        betas.push(',');
+        betas.push_str(CONTEXT_MANAGEMENT_BETA);
+    }
+    if options.cache_diagnosis {
+        betas.push(',');
+        betas.push_str(CACHE_DIAGNOSIS_BETA);
+    }
     if options.advisor_model.is_some() {
         betas.push_str(",advisor-tool-2026-03-01");
     }
@@ -481,6 +503,20 @@ mod tests {
     fn build_beta_header_includes_thinking_token_count_normal() {
         let header = build_beta_header(&opts("claude-opus-4-7").thinking_token_count(true));
         assert!(header.contains("thinking-token-count-2026-05-13"));
+    }
+
+    #[test]
+    fn build_beta_header_includes_context_management_for_thinking_normal() {
+        let header = build_beta_header(&opts("claude-opus-4-7").adaptive());
+        assert!(header.contains(CONTEXT_MANAGEMENT_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_includes_cache_diagnosis_when_enabled_normal() {
+        let mut options = opts("claude-opus-4-7");
+        options.cache_diagnosis = true;
+        let header = build_beta_header(&options);
+        assert!(header.contains(CACHE_DIAGNOSIS_BETA));
     }
 
     #[test]
@@ -742,12 +778,23 @@ mod tests {
         assert!(body["thinking"].get("budget_tokens").is_none());
     }
 
+    #[test]
+    fn build_body_thinking_clears_old_thinking_context_normal() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("m").adaptive());
+        assert_eq!(
+            body["context_management"]["edits"][0]["type"],
+            "clear_thinking_20251015"
+        );
+        assert_eq!(body["context_management"]["edits"][0]["keep"], "all");
+    }
+
     // Robust: with neither budget nor adaptive set, the field must be absent.
     // Sending an empty `thinking: {}` block yields a 400 from Anthropic.
     #[test]
     fn build_body_thinking_absent_when_unset_robust() {
         let body = build_body(vec![make_user_msg("hi")], &opts("m"));
         assert!(body.get("thinking").is_none());
+        assert!(body.get("context_management").is_none());
     }
 
     #[test]
@@ -859,6 +906,23 @@ mod tests {
             "display key must be absent when thinking_display is not set, got: {}",
             body["thinking"]
         );
+    }
+
+    #[test]
+    fn build_body_cache_diagnosis_sends_previous_message_id_normal() {
+        let mut options = opts("m");
+        options.cache_diagnosis = true;
+        options.previous_message_id = Some("msg_123".to_owned());
+        let body = build_body(vec![make_user_msg("hi")], &options);
+        assert_eq!(body["diagnostics"]["previous_message_id"], "msg_123");
+    }
+
+    #[test]
+    fn build_body_omits_diagnostics_without_cache_diagnosis_robust() {
+        let mut options = opts("m");
+        options.previous_message_id = Some("msg_123".to_owned());
+        let body = build_body(vec![make_user_msg("hi")], &options);
+        assert!(body.get("diagnostics").is_none());
     }
 
     // Normal: task_budget(50_000) produces the correct output_config shape

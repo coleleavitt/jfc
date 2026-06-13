@@ -1755,8 +1755,9 @@ pub fn check_blocking_in_async(file_content: &str) -> Vec<SlopFinding> {
     let mut i = 0;
     while i < lines.len() {
         let t = lines[i].trim_start();
-        let is_async_fn =
-            t.starts_with("async fn ") || t.starts_with("pub async fn ") || t.contains(" async fn ");
+        let is_async_fn = t.starts_with("async fn ")
+            || t.starts_with("pub async fn ")
+            || t.contains(" async fn ");
         if !is_async_fn {
             i += 1;
             continue;

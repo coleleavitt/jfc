@@ -15,6 +15,7 @@ pub mod dispatcher;
 pub mod enumerator;
 pub mod error;
 pub mod orchestrator;
+pub mod prompt_rewrite;
 pub mod reachability;
 pub mod store;
 pub mod suspicious_point;
@@ -25,3 +26,6 @@ pub use error::{AuditError, Result};
 pub use orchestrator::{AuditConfig, AuditOrchestrator, AuditReport, AuditStats};
 pub use store::{FindingFilter, FindingStore};
 pub use types::{Finding, FindingKind, Granularity, PocStatus, Severity, SourceSpan};
+pub use prompt_rewrite::{
+    PolicyGate, Rewrite, RewriteDecision, RewriteModel, RewritePipeline, RiskFlag,
+};

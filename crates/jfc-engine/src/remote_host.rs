@@ -307,18 +307,30 @@ fn translate_inbound(envelope: &RemoteEnvelope) -> Option<EngineEvent> {
 pub fn mirror_event(ev: &EngineEvent) -> Option<RemoteEnvelope> {
     use crate::runtime::*;
 
-    match ev {
-        EngineEvent::Stream(StreamEvent::Chunk { text, reasoning }) => {
-            Some(RemoteEnvelope::AssistantDelta {
+    if let Some(stream_ev) = stream_event(ev) {
+        return match stream_ev {
+            StreamEvent::Chunk { text, reasoning } => Some(RemoteEnvelope::AssistantDelta {
                 text: text.clone(),
                 reasoning: reasoning.clone(),
-            })
-        }
-        EngineEvent::Stream(StreamEvent::Tool(tool)) => Some(RemoteEnvelope::ToolUse {
-            id: tool.id.to_string(),
-            name: tool.kind.label().to_string(),
-            input_preview: Some(tool.input.summary()),
-        }),
+            }),
+            StreamEvent::Tool(tool) => Some(RemoteEnvelope::ToolUse {
+                id: tool.id.to_string(),
+                name: tool.kind.label().to_string(),
+                input_preview: Some(tool.input.summary()),
+            }),
+            // Done/Idle transitions are derived post-burst from
+            // `app.engine.is_streaming` in the event loop (see
+            // `mirror_status`). Errors carry a message, so they're mirrored
+            // directly here.
+            StreamEvent::Error(e) => Some(RemoteEnvelope::SessionStatus {
+                status: SessionState::Error,
+                message: Some(e.clone()),
+            }),
+            _ => None,
+        };
+    }
+
+    match ev {
         EngineEvent::Tool(ToolEvent::Result { tool_id, result }) => {
             Some(RemoteEnvelope::ToolResult {
                 id: tool_id.to_string(),
@@ -350,13 +362,6 @@ pub fn mirror_event(ev: &EngineEvent) -> Option<RemoteEnvelope> {
             summary: summary.clone(),
             preceding_tool_use_ids: preceding_tool_use_ids.clone(),
             timestamp: Some(chrono::Utc::now().to_rfc3339()),
-        }),
-        // Done/Idle transitions are derived post-burst from `app.engine.is_streaming`
-        // in the event loop (see `mirror_status`). Errors carry a message, so
-        // they're mirrored directly here.
-        EngineEvent::Stream(StreamEvent::Error(e)) => Some(RemoteEnvelope::SessionStatus {
-            status: SessionState::Error,
-            message: Some(e.clone()),
         }),
         EngineEvent::Control(ControlEvent::Notice { kind, text }) => Some(RemoteEnvelope::Toast {
             kind: format!("{kind:?}").to_lowercase(),

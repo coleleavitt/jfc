@@ -1210,20 +1210,20 @@ fn resolve_council_members(
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut unresolved: Vec<String> = Vec::new();
 
-    let mut add =
-        |provider: Arc<dyn Provider>, model: ModelId, members: &mut Vec<CouncilMember>| {
-            // Dedup on the fully-qualified provider/model, not the bare model
-            // id: a council's whole point is fanning out to genuinely distinct
-            // models, and two providers can legitimately serve the same id
-            // (e.g. an OpenRouter `claude-opus` vs a first-party one). Keying on
-            // the bare id collapsed those into one member. The label is
-            // qualified too so the report shows which provider answered.
-            let qualified =
-                crate::runtime::bootstrap::qualified_model_id(provider.as_ref(), &model);
-            if seen.insert(qualified.clone()) {
-                members.push(CouncilMember::new(provider, model).with_label(qualified));
-            }
-        };
+    let mut add = |provider: Arc<dyn Provider>,
+                   model: ModelId,
+                   members: &mut Vec<CouncilMember>| {
+        // Dedup on the fully-qualified provider/model, not the bare model
+        // id: a council's whole point is fanning out to genuinely distinct
+        // models, and two providers can legitimately serve the same id
+        // (e.g. an OpenRouter `claude-opus` vs a first-party one). Keying on
+        // the bare id collapsed those into one member. The label is
+        // qualified too so the report shows which provider answered.
+        let qualified = crate::runtime::bootstrap::qualified_model_id(provider.as_ref(), &model);
+        if seen.insert(qualified.clone()) {
+            members.push(CouncilMember::new(provider, model).with_label(qualified));
+        }
+    };
 
     if requested.is_empty() {
         add(active_provider.clone(), active_model.clone(), &mut members);

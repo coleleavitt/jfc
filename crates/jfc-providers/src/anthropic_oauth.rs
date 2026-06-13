@@ -596,7 +596,9 @@ struct RefreshOutcome {
     persisted: bool,
 }
 
-fn existing_access_token_still_valid(tokens: Option<(Option<String>, String, Option<u64>)>) -> bool {
+fn existing_access_token_still_valid(
+    tokens: Option<(Option<String>, String, Option<u64>)>,
+) -> bool {
     tokens
         .and_then(|(access, _refresh, expires)| access.zip(expires))
         .is_some_and(|(access, expires)| !access.is_empty() && now_ms() < expires)
@@ -1149,7 +1151,10 @@ impl AnthropicOAuthProvider {
         };
 
         let disk_before = match &mgr {
-            Some(mgr) => mgr.read_account_tokens_from_disk_unlocked(account_name).await,
+            Some(mgr) => {
+                mgr.read_account_tokens_from_disk_unlocked(account_name)
+                    .await
+            }
             None => None,
         };
         if let Some(outcome) = adopt_peer_refresh(account_name, refresh_token, disk_before.clone())
@@ -1183,7 +1188,8 @@ impl AnthropicOAuthProvider {
                     } else if let Some(outcome) = adopt_peer_refresh(
                         account_name,
                         refresh_token,
-                        mgr.read_account_tokens_from_disk_unlocked(account_name).await,
+                        mgr.read_account_tokens_from_disk_unlocked(account_name)
+                            .await,
                     ) {
                         record_refresh_success_unlocked_best_effort(mgr, account_name).await;
                         return Ok(outcome);
@@ -1202,8 +1208,12 @@ impl AnthropicOAuthProvider {
                 let msg = e.to_string().to_lowercase();
                 if msg.contains("invalid_grant") {
                     if let Some(mgr) = &mgr {
-                        let latest = mgr.read_account_tokens_from_disk_unlocked(account_name).await;
-                        if let Some(outcome) = adopt_peer_refresh(account_name, refresh_token, latest.clone()) {
+                        let latest = mgr
+                            .read_account_tokens_from_disk_unlocked(account_name)
+                            .await;
+                        if let Some(outcome) =
+                            adopt_peer_refresh(account_name, refresh_token, latest.clone())
+                        {
                             record_refresh_success_unlocked_best_effort(mgr, account_name).await;
                             return Ok(outcome);
                         }
@@ -1230,7 +1240,8 @@ impl AnthropicOAuthProvider {
                         }
                     }
                 } else if let Some(mgr) = &mgr {
-                    record_refresh_attempt_unlocked_best_effort(mgr, account_name, Some(&msg)).await;
+                    record_refresh_attempt_unlocked_best_effort(mgr, account_name, Some(&msg))
+                        .await;
                     tracing::warn!(
                         target: "jfc::provider::anthropic_oauth::rotation",
                         account = %account_name,
@@ -1812,7 +1823,11 @@ impl Provider for AnthropicOAuthProvider {
         let user_agent = build_user_agent(&version);
         let body_value = build_body(messages, options, &billing_header_text);
         crate::anthropic::maybe_warn_volatile_cache_content(&body_value);
-        let body_str = serde_json::to_string(&body_value)?;
+        // `mut` because the centralized error-recovery controller re-serializes
+        // a body-mutated retry into it (media strip, thinking strip, etc.) so a
+        // subsequent fallback/model-swap patches the recovered body, not the
+        // original.
+        let mut body_str = serde_json::to_string(&body_value)?;
         let attested_body = {
             #[cfg(feature = "anthropic-oauth-sensitive")]
             {
@@ -1853,6 +1868,11 @@ impl Provider for AnthropicOAuthProvider {
         // user-selected model; swapped to the fallback-model body after the
         // 529 threshold is crossed.
         let mut effective_body = attested_body.clone();
+        // Per-turn sticky latches for the centralized error-recovery controller
+        // (media strip, cache-diagnosis drop, thinking toggle/strip, mid-conv
+        // system fallback). Persisted across rotation attempts so each recovery
+        // fires at most once — mirrors Claude 2.1.177's `onError` latches.
+        let mut recovery_latches = crate::anthropic_recovery::RecoveryLatches::default();
 
         'outer: loop {
             let mut tried: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -2175,6 +2195,49 @@ impl Provider for AnthropicOAuthProvider {
                                 account.name
                             ));
                             continue;
+                        }
+                        // Centralized error-recovery controller: classify the
+                        // 400, mutate the request body in place (media-block
+                        // strip, cache-diagnosis drop, thinking-type toggle,
+                        // thinking-signature strip, mid-conv system fallback),
+                        // re-attest, and retry the SAME account. Each recovery
+                        // is sticky-latched so it fires at most once per turn —
+                        // mirrors Claude 2.1.177's `onError` retry classifier.
+                        if status.as_u16() == 400 {
+                            let mut patched: Value = serde_json::from_str(&body_str)?;
+                            let action = crate::anthropic_recovery::classify_and_recover(
+                                400,
+                                &body,
+                                &mut patched,
+                                &mut recovery_latches,
+                            );
+                            if let crate::anthropic_recovery::RecoveryAction::Retry(kind) = action {
+                                let patched_str = serde_json::to_string(&patched)?;
+                                body_str = patched_str.clone();
+                                effective_body = {
+                                    #[cfg(feature = "anthropic-oauth-sensitive")]
+                                    {
+                                        compute_body_attestation(&patched_str)
+                                    }
+                                    #[cfg(not(feature = "anthropic-oauth-sensitive"))]
+                                    {
+                                        patched_str
+                                    }
+                                };
+                                tracing::warn!(
+                                    target: "jfc::provider::anthropic_oauth::rotation",
+                                    account = %account.name,
+                                    recovery = kind.as_str(),
+                                    "error-recovery controller mutated request — retrying same account"
+                                );
+                                tried.remove(&account.name);
+                                last_err = Some(anyhow::anyhow!(
+                                    "Anthropic API 400 on account '{}' ({}, retrying): {body}",
+                                    account.name,
+                                    kind.as_str()
+                                ));
+                                continue;
+                            }
                         }
                         if let Some(model) = parse_model_not_found(&body) {
                             anyhow::bail!(
@@ -3970,11 +4033,7 @@ mod tests {
         ));
         assert!(should_disable_after_invalid_grant(
             "old-rt",
-            Some((
-                None,
-                "old-rt".to_owned(),
-                Some(now_ms().saturating_sub(1)),
-            )),
+            Some((None, "old-rt".to_owned(), Some(now_ms().saturating_sub(1)),)),
         ));
     }
 

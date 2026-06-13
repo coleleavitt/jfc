@@ -24,9 +24,14 @@ enum S {
     /// Block comment with nesting depth (Rust allows nested `/* */`).
     Block(usize),
     /// String literal. `raw` is `Some(hash_count)` for `r#"..."#` forms.
-    Str { raw: Option<usize>, esc: bool },
+    Str {
+        raw: Option<usize>,
+        esc: bool,
+    },
     /// Char literal.
-    Chr { esc: bool },
+    Chr {
+        esc: bool,
+    },
 }
 
 /// Per-step outcome: how many input chars were consumed, what to emit, and the
@@ -100,19 +105,34 @@ fn step_code(cur: &Cur<'_>) -> Step {
     let c = cur.c();
     let n = cur.peek(1);
     if c == '\n' {
-        return Step { consumed: 1, emit: "nl", next: S::Code };
+        return Step {
+            consumed: 1,
+            emit: "nl",
+            next: S::Code,
+        };
     }
     if c == '/' && n == Some('/') {
-        return Step { consumed: 2, emit: "blank", next: S::Line };
+        return Step {
+            consumed: 2,
+            emit: "blank",
+            next: S::Line,
+        };
     }
     if c == '/' && n == Some('*') {
-        return Step { consumed: 2, emit: "blank", next: S::Block(1) };
+        return Step {
+            consumed: 2,
+            emit: "blank",
+            next: S::Block(1),
+        };
     }
     if c == '"' {
         return Step {
             consumed: 1,
             emit: "blank",
-            next: S::Str { raw: None, esc: false },
+            next: S::Str {
+                raw: None,
+                esc: false,
+            },
         };
     }
     if c == 'r' && (n == Some('"') || n == Some('#')) {
@@ -127,30 +147,61 @@ fn step_code(cur: &Cur<'_>) -> Step {
             return Step {
                 consumed: (k - cur.i) + 1,
                 emit: "blank",
-                next: S::Str { raw: Some(h), esc: false },
+                next: S::Str {
+                    raw: Some(h),
+                    esc: false,
+                },
             };
         }
-        return Step { consumed: 1, emit: "code", next: S::Code };
+        return Step {
+            consumed: 1,
+            emit: "code",
+            next: S::Code,
+        };
     }
     if c == '\'' {
         // Char literal vs lifetime. `'\x'` (escape) and `'x'` (char-then-quote)
         // are literals; anything else is a lifetime like `'a` and stays code.
         if n == Some('\\') {
-            return Step { consumed: 1, emit: "blank", next: S::Chr { esc: true } };
+            return Step {
+                consumed: 1,
+                emit: "blank",
+                next: S::Chr { esc: true },
+            };
         }
         if cur.peek(2) == Some('\'') {
-            return Step { consumed: 1, emit: "blank", next: S::Chr { esc: false } };
+            return Step {
+                consumed: 1,
+                emit: "blank",
+                next: S::Chr { esc: false },
+            };
         }
-        return Step { consumed: 1, emit: "code", next: S::Code };
+        return Step {
+            consumed: 1,
+            emit: "code",
+            next: S::Code,
+        };
     }
-    Step { consumed: 1, emit: "code", next: S::Code }
+    Step {
+        consumed: 1,
+        emit: "code",
+        next: S::Code,
+    }
 }
 
 fn step_line(cur: &Cur<'_>) -> Step {
     if cur.c() == '\n' {
-        Step { consumed: 1, emit: "nl", next: S::Code }
+        Step {
+            consumed: 1,
+            emit: "nl",
+            next: S::Code,
+        }
     } else {
-        Step { consumed: 1, emit: "blank", next: S::Line }
+        Step {
+            consumed: 1,
+            emit: "blank",
+            next: S::Line,
+        }
     }
 }
 
@@ -158,16 +209,36 @@ fn step_block(cur: &Cur<'_>, depth: usize) -> Step {
     let c = cur.c();
     let n = cur.peek(1);
     if c == '\n' {
-        return Step { consumed: 1, emit: "nl", next: S::Block(depth) };
+        return Step {
+            consumed: 1,
+            emit: "nl",
+            next: S::Block(depth),
+        };
     }
     if c == '/' && n == Some('*') {
-        return Step { consumed: 2, emit: "blank", next: S::Block(depth + 1) };
+        return Step {
+            consumed: 2,
+            emit: "blank",
+            next: S::Block(depth + 1),
+        };
     }
     if c == '*' && n == Some('/') {
-        let next = if depth <= 1 { S::Code } else { S::Block(depth - 1) };
-        return Step { consumed: 2, emit: "blank", next };
+        let next = if depth <= 1 {
+            S::Code
+        } else {
+            S::Block(depth - 1)
+        };
+        return Step {
+            consumed: 2,
+            emit: "blank",
+            next,
+        };
     }
-    Step { consumed: 1, emit: "blank", next: S::Block(depth) }
+    Step {
+        consumed: 1,
+        emit: "blank",
+        next: S::Block(depth),
+    }
 }
 
 fn step_str(cur: &Cur<'_>, raw: Option<usize>, esc: bool) -> Step {
@@ -181,24 +252,63 @@ fn step_str_normal(cur: &Cur<'_>, esc: bool) -> Step {
     let c = cur.c();
     if c == '\n' {
         // Normal strings may span lines (escaped newline); preserve it.
-        return Step { consumed: 1, emit: "nl", next: S::Str { raw: None, esc: false } };
+        return Step {
+            consumed: 1,
+            emit: "nl",
+            next: S::Str {
+                raw: None,
+                esc: false,
+            },
+        };
     }
     if esc {
-        return Step { consumed: 1, emit: "blank", next: S::Str { raw: None, esc: false } };
+        return Step {
+            consumed: 1,
+            emit: "blank",
+            next: S::Str {
+                raw: None,
+                esc: false,
+            },
+        };
     }
     if c == '\\' {
-        return Step { consumed: 1, emit: "blank", next: S::Str { raw: None, esc: true } };
+        return Step {
+            consumed: 1,
+            emit: "blank",
+            next: S::Str {
+                raw: None,
+                esc: true,
+            },
+        };
     }
     if c == '"' {
-        return Step { consumed: 1, emit: "blank", next: S::Code };
+        return Step {
+            consumed: 1,
+            emit: "blank",
+            next: S::Code,
+        };
     }
-    Step { consumed: 1, emit: "blank", next: S::Str { raw: None, esc: false } }
+    Step {
+        consumed: 1,
+        emit: "blank",
+        next: S::Str {
+            raw: None,
+            esc: false,
+        },
+    }
 }
 
 fn step_str_raw(cur: &Cur<'_>, hashes: usize) -> Step {
     let c = cur.c();
     if c == '\n' {
-        return Step { consumed: 1, emit: "nl", next: S::Str { raw: Some(hashes), esc: false } };
+        return Step {
+            consumed: 1,
+            emit: "nl",
+            next: S::Str {
+                raw: Some(hashes),
+                esc: false,
+            },
+        };
     }
     if c == '"' {
         // Closes only at `"` followed by exactly `hashes` hashes.
@@ -209,27 +319,58 @@ fn step_str_raw(cur: &Cur<'_>, hashes: usize) -> Step {
             k += 1;
         }
         if cnt == hashes {
-            return Step { consumed: k - cur.i, emit: "blank", next: S::Code };
+            return Step {
+                consumed: k - cur.i,
+                emit: "blank",
+                next: S::Code,
+            };
         }
     }
-    Step { consumed: 1, emit: "blank", next: S::Str { raw: Some(hashes), esc: false } }
+    Step {
+        consumed: 1,
+        emit: "blank",
+        next: S::Str {
+            raw: Some(hashes),
+            esc: false,
+        },
+    }
 }
 
 fn step_chr(cur: &Cur<'_>, esc: bool) -> Step {
     let c = cur.c();
     if c == '\n' {
-        return Step { consumed: 1, emit: "nl", next: S::Code };
+        return Step {
+            consumed: 1,
+            emit: "nl",
+            next: S::Code,
+        };
     }
     if esc {
-        return Step { consumed: 1, emit: "blank", next: S::Chr { esc: false } };
+        return Step {
+            consumed: 1,
+            emit: "blank",
+            next: S::Chr { esc: false },
+        };
     }
     if c == '\\' {
-        return Step { consumed: 1, emit: "blank", next: S::Chr { esc: true } };
+        return Step {
+            consumed: 1,
+            emit: "blank",
+            next: S::Chr { esc: true },
+        };
     }
     if c == '\'' {
-        return Step { consumed: 1, emit: "blank", next: S::Code };
+        return Step {
+            consumed: 1,
+            emit: "blank",
+            next: S::Code,
+        };
     }
-    Step { consumed: 1, emit: "blank", next: S::Chr { esc: false } }
+    Step {
+        consumed: 1,
+        emit: "blank",
+        next: S::Chr { esc: false },
+    }
 }
 
 #[cfg(test)]
@@ -282,7 +423,10 @@ mod tests {
     #[test]
     fn masks_char_literal_brace_robust() {
         let masked = mask_source("let c = '}'; let d = 1;");
-        assert!(!masked.contains('}'), "char-literal brace leaked: {masked:?}");
+        assert!(
+            !masked.contains('}'),
+            "char-literal brace leaked: {masked:?}"
+        );
         assert!(masked.contains("let d"));
     }
 
@@ -294,7 +438,10 @@ mod tests {
     #[test]
     fn tmp_byte_string_brace() {
         let masked = mask_source(r#"let s = b"}"; let y = 2;"#);
-        assert!(!masked.contains('}'), "byte-string brace leaked: {masked:?}");
+        assert!(
+            !masked.contains('}'),
+            "byte-string brace leaked: {masked:?}"
+        );
         assert!(masked.contains("let y"));
     }
 
@@ -308,7 +455,10 @@ mod tests {
     #[test]
     fn tmp_raw_byte_string_brace() {
         let masked = mask_source(r##"let s = br#"a "}" b"#; let y = 2;"##);
-        assert!(!masked.contains('}'), "raw-byte-string brace leaked: {masked:?}");
+        assert!(
+            !masked.contains('}'),
+            "raw-byte-string brace leaked: {masked:?}"
+        );
         assert!(masked.contains("let y"));
     }
 }

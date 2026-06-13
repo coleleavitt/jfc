@@ -48,6 +48,7 @@ pub(super) async fn cmd_clear(
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
     state.streaming_assistant_idx = None;
+    state.clear_active_stream_scope();
     // Mint a fresh session id and wipe per-session state (tasks,
     // completion timers). v126 cli.js:271511 keys todos by sessionId
     // so a new session inherently has an empty list — match that.
@@ -85,6 +86,7 @@ pub(super) async fn cmd_continue(
             state.streaming_reasoning.clear();
             state.streaming_response_bytes = 0;
             state.streaming_assistant_idx = None;
+            state.clear_active_stream_scope();
             state.push_effect(crate::app::EngineEffect::ScrollToBottom);
             let scope = if want_global { "any cwd" } else { "this cwd" };
             state.messages.push(ChatMessage::assistant(format!(
@@ -180,6 +182,7 @@ pub(super) async fn cmd_resume(
             state.streaming_reasoning.clear();
             state.streaming_response_bytes = 0;
             state.streaming_assistant_idx = None;
+            state.clear_active_stream_scope();
             state.push_effect(crate::app::EngineEffect::ScrollToBottom);
             state.messages.push(ChatMessage::assistant(format!(
                 "**Resumed session `{typed_session_id}`** — {msg_count} message(s) loaded."
@@ -278,6 +281,7 @@ pub(super) async fn cmd_fork(
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
     state.streaming_assistant_idx = None;
+    state.clear_active_stream_scope();
     // Mint a fresh session id (same flow as /clear) — the next
     // turn will save under the new id, and `state.current_session_id`
     // becomes the fork's anchor.

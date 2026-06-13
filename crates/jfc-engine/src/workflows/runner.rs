@@ -246,7 +246,25 @@ impl Orchestrator {
         let cancel = self.cancel.clone();
         let tokens_spent = self.tokens_spent.clone();
         self.agent_tasks.spawn(async move {
-            let _permit = permit_sem.acquire().await;
+            // Race the permit acquire against cancellation. A bare
+            // `acquire().await` would wedge a queued agent until a permit frees
+            // even after the workflow is cancelled, so the run can't abort
+            // promptly. On cancel, reply with an error and bail.
+            let _permit = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    let _ = req.reply.send(Err("workflow cancelled".to_owned()));
+                    return;
+                }
+                permit = permit_sem.acquire() => match permit {
+                    Ok(p) => p,
+                    // Semaphore closed — treat as cancellation.
+                    Err(_) => {
+                        let _ = req.reply.send(Err("workflow cancelled".to_owned()));
+                        return;
+                    }
+                },
+            };
             run_one_agent(
                 req,
                 key,
@@ -444,7 +462,13 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
                         workflow_task_id: orch.workflow_task_id.clone(),
                         depth: depth + 1,
                         cwd: cwd.clone(),
-                        token_budget: None,
+                        // Propagate the parent's remaining budget so a child
+                        // workflow can't bypass a token cap. `None` stays
+                        // unlimited; otherwise pass what's left after the
+                        // parent's spend so far (saturating at 0).
+                        token_budget: orch.token_budget.map(|budget| {
+                            budget.saturating_sub(orch.tokens_spent.load(Ordering::Relaxed))
+                        }),
                     };
                     // Run the child workflow and reply.
                     let sub_outcome = Box::pin(run_workflow(child_config)).await;

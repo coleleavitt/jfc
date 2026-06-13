@@ -1218,8 +1218,8 @@ mod pure_helper_tests {
 
 #[cfg(test)]
 mod subagent_counter_tests {
-    use super::*;
     use super::agents::format_token_count;
+    use super::*;
     use crate::app::BackgroundTask;
     use jfc_core::TaskLifecycle;
 
@@ -1394,9 +1394,7 @@ mod render_snapshot_tests {
             workflow_progress: None,
             last_activity_at: std::time::Instant::now(),
         };
-        app.engine
-            .background_tasks
-            .insert("tx".to_string(), bt);
+        app.engine.background_tasks.insert("tx".to_string(), bt);
         app
     }
 
@@ -1568,7 +1566,10 @@ mod render_snapshot_tests {
             panel_row.contains("↓1.5k"),
             "panel missing tokens: {panel_row}"
         );
-        assert!(panel_row.contains("Bash"), "panel missing tool: {panel_row}");
+        assert!(
+            panel_row.contains("Bash"),
+            "panel missing tool: {panel_row}"
+        );
         assert!(panel_row.contains('●'), "panel missing glyph: {panel_row}");
     }
 

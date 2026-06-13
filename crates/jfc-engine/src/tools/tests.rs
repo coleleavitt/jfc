@@ -2520,6 +2520,36 @@ async fn execute_bash_output_offset_past_eof_errors_robust() {
     assert!(output.output.contains("valid offsets"), "{}", output.output);
 }
 
+// Robust: an unknown (hallucinated) task id — one the Bash tool never issued —
+// returns an actionable "unknown task id, do not invent one" error, not the raw
+// "No such file or directory (os error 2)". Regression for the observed failure mode
+// where the model fired BashOutput with fabricated `bash_<hex>`/semantic ids and the
+// opaque OS error made it retry with *more* fabricated ids.
+#[tokio::test]
+#[serial_test::serial]
+async fn execute_bash_output_unknown_task_id_is_actionable_robust() {
+    crate::sandbox::reset_active_bash_sandbox_for_test();
+    let output =
+        execute_bash_output("bash_d2da789f9f50", None, None, Some(false), None).await;
+    assert!(output.is_error(), "{}", output.output);
+    assert!(
+        output.output.contains("Unknown Bash task id"),
+        "{}",
+        output.output
+    );
+    assert!(
+        output.output.contains("do not invent"),
+        "{}",
+        output.output
+    );
+    // Must NOT leak the raw OS error that triggered the retry loop.
+    assert!(
+        !output.output.contains("os error 2"),
+        "{}",
+        output.output
+    );
+}
+
 #[tokio::test]
 async fn execute_tool_task_kind_rejects_with_streaming_message_robust() {
     // The Task tool can't be dispatched through the normal executor;

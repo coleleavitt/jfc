@@ -117,7 +117,9 @@ pub fn check_tool_wiring(cwd: &Path, edited: &Path) -> Vec<SlopFinding> {
 
 /// True when `edited` resolves to the enum or one of the dispatch files.
 fn edited_is_trigger_file(cwd: &Path, edited: &Path) -> bool {
-    let edited = edited.canonicalize().unwrap_or_else(|_| edited.to_path_buf());
+    let edited = edited
+        .canonicalize()
+        .unwrap_or_else(|_| edited.to_path_buf());
     trigger_files().into_iter().any(|rel| {
         let abs = cwd.join(rel);
         let abs = abs.canonicalize().unwrap_or(abs);
@@ -140,7 +142,9 @@ fn read_kinds(cwd: &Path, rel: &str) -> Option<BTreeSet<String>> {
 /// enum body early and drop the variants that follow it.
 fn read_enum_variants(cwd: &Path, rel: &str) -> Option<BTreeSet<String>> {
     let content = std::fs::read_to_string(cwd.join(rel)).ok()?;
-    Some(extract_enum_variants(&crate::rust_lex::mask_source(&content)))
+    Some(extract_enum_variants(&crate::rust_lex::mask_source(
+        &content,
+    )))
 }
 
 /// Pull the variant identifiers out of the `pub enum ToolKind { … }` body.
@@ -198,10 +202,7 @@ fn variant_decl_on_line(line: &str) -> Option<String> {
 /// expression like `Foo::Bar` or `Foo = 1`.
 fn variant_follows(line: &str, ident: &str) -> bool {
     let rest = line[ident.len()..].trim_start();
-    rest.is_empty()
-        || rest.starts_with(',')
-        || rest.starts_with('(')
-        || rest.starts_with('{')
+    rest.is_empty() || rest.starts_with(',') || rest.starts_with('(') || rest.starts_with('{')
 }
 
 /// Pull every `ToolKind::Identifier` occurrence out of source text.
@@ -292,7 +293,10 @@ pub enum ToolKind {\n\
 }\n";
         let v = extract_enum_variants(&crate::rust_lex::mask_source(src));
         assert!(v.contains("Edit"));
-        assert!(v.contains("Write"), "variant after doc-brace dropped: {v:?}");
+        assert!(
+            v.contains("Write"),
+            "variant after doc-brace dropped: {v:?}"
+        );
         assert!(v.contains("Bash"), "variant after doc-brace dropped: {v:?}");
     }
 

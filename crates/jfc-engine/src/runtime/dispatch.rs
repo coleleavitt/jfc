@@ -30,6 +30,23 @@ pub async fn handle_engine_event(
     tx: &EventSender,
     ev: EngineEvent,
 ) -> anyhow::Result<Option<FrontendDirective>> {
+    if state.is_stale_stream_event(&ev) {
+        if let EngineEvent::ScopedStream { stream_id, .. } = &ev {
+            tracing::debug!(
+                target: "jfc::stream",
+                stream_id,
+                active_stream_id = ?state.active_stream_id,
+                "dropping stale scoped stream event"
+            );
+        }
+        return Ok(None);
+    }
+
+    let ev = match ev {
+        EngineEvent::ScopedStream { event, .. } => EngineEvent::Stream(event),
+        ev => ev,
+    };
+
     match ev {
         // ── Team events ─────────────────────────────────────────
         EngineEvent::Team(ev) => {
@@ -453,6 +470,7 @@ pub async fn handle_engine_event(
                 }
             }
         }
+        EngineEvent::ScopedStream { .. } => unreachable!("scoped stream events are normalized"),
     }
     Ok(None)
 }

@@ -693,6 +693,8 @@ prefix for a general web search):\n\
 - `crossref:` DOI metadata for published papers. e.g. `crossref: attention is all you need`\n\
 - `pubmed:` biomedical / life-sciences literature. e.g. `pubmed: CRISPR off-target`\n\
 - `scholar:` Semantic Scholar (citations, TLDRs). e.g. `scholar: retrieval augmented generation`\n\
+- `dblp:` computer-science bibliography (authors, venue, DOI, links). e.g. `dblp: attention is all you need`\n\
+- `gscholar:` Google Scholar query autocomplete (expand a term into canonical phrasings). e.g. `gscholar: large language model`\n\
 - `papers:` arXiv + Semantic Scholar + OpenAlex merged + deduped (best for a broad academic sweep). e.g. `papers: mixture of experts`\n\
 - `doaj:` open-access journals. `core:` 290M+ OA full texts. `unpaywall:` resolve a DOI to a free PDF.\n\
 - `uni:` a named university's research output (any country), e.g. `uni: Tsinghua University: quantum computing`\n\

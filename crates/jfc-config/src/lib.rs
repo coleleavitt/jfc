@@ -39,6 +39,8 @@ pub struct Config {
     pub background_task: Option<BackgroundTaskConfig>,
     #[serde(default)]
     pub argus_auto_review: Option<ArgusAutoReviewConfig>,
+    #[serde(default, alias = "promptRewrite")]
+    pub prompt_rewrite: Option<PromptRewriteConfig>,
     #[serde(default)]
     pub mcp: HashMap<String, McpServerConfig>,
     #[serde(default)]
@@ -363,6 +365,7 @@ impl Default for Config {
             permission_automation: None,
             background_task: None,
             argus_auto_review: None,
+            prompt_rewrite: None,
             mcp: HashMap::new(),
             disabled_agents: Vec::new(),
             disabled_tools: Vec::new(),
@@ -601,6 +604,28 @@ pub struct ArgusAutoReviewConfig {
     pub threshold: Option<u32>,
     #[serde(default)]
     pub model: Option<String>,
+}
+
+/// Local prompt-rewriter / over-refusal-mitigation configuration.
+///
+/// Default-OFF: when absent or `enabled = false` the engine must treat the
+/// rewrite pipeline as a no-op pass-through. When enabled, an outgoing prompt is
+/// screened locally and — only for ambiguous/charged prompts — sent to `model`
+/// (defaulting to the advisor/local model) for a semantic-preserving rewrite the
+/// user explicitly accepts. `constitution` overrides the built-in policy text.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PromptRewriteConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Model used by the LLM-backed stages. Falls back to `advisor_model`.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Intent-preservation acceptance threshold τ in [0, 1].
+    #[serde(default)]
+    pub threshold: Option<f64>,
+    /// Inline natural-language constitution; overrides the built-in default.
+    #[serde(default)]
+    pub constitution: Option<String>,
 }
 
 /// Experimental feature flags.
@@ -1408,6 +1433,39 @@ model = "x"
         );
         assert_eq!(cfg.default.model.as_deref(), Some("x"));
         assert!(cfg.agents.is_empty());
+    }
+
+    #[test]
+    fn prompt_rewrite_defaults_off() {
+        let cfg = parse(
+            r#"
+[default]
+model = "x"
+"#,
+        );
+        // Absent section → None → engine treats as no-op pass-through.
+        assert!(cfg.prompt_rewrite.is_none());
+    }
+
+    #[test]
+    fn prompt_rewrite_parses_when_present() {
+        let cfg = parse(
+            r#"
+[default]
+model = "x"
+
+[prompt_rewrite]
+enabled = true
+model = "local-judge"
+threshold = 0.8
+constitution = "PERMITTED: coding. DISALLOWED: harm."
+"#,
+        );
+        let pr = cfg.prompt_rewrite.expect("section present");
+        assert!(pr.enabled);
+        assert_eq!(pr.model.as_deref(), Some("local-judge"));
+        assert_eq!(pr.threshold, Some(0.8));
+        assert!(pr.constitution.unwrap().contains("PERMITTED"));
     }
 
     #[test]

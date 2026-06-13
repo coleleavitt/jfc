@@ -14,6 +14,8 @@
 //! | `uni:` | OpenAlex — a named university's research output (any country) | no | `uni: Tsinghua University: quantum computing` |
 //! | `arxiv:` | arXiv API | no | `arxiv: transformer attention` |
 //! | `scholar:` | Semantic Scholar (Graph API → BFF) | optional | `scholar: attention is all you need` |
+//! | `dblp:` | DBLP computer-science bibliography (full metadata + DOIs) | no | `dblp: attention is all you need` |
+//! | `gscholar:` | Google Scholar query autocomplete (suggestion expansion) | no | `gscholar: large language model` |
 //! | `openalex:` | OpenAlex (250M+ works, institutions + countries) | no | `openalex: graph neural networks` |
 //! | `crossref:` | Crossref (160M+ DOIs) | no | `crossref: attention is all you need` |
 //! | `pubmed:` | PubMed / NCBI E-utilities (biomedical) | optional | `pubmed: CRISPR off-target` |
@@ -80,6 +82,10 @@ pub async fn search(query: &str, max_results: usize) -> Result<String, String> {
         search_arxiv(q, max_results).await
     } else if let Some(q) = match_prefix(query, "scholar") {
         search_semantic_scholar(q, max_results).await
+    } else if let Some(q) = match_prefix(query, "dblp") {
+        search_dblp(q, max_results).await
+    } else if let Some(q) = match_prefix(query, "gscholar") {
+        search_gscholar_complete(q, max_results).await
     } else if let Some(q) = match_prefix(query, "openalex") {
         search_openalex(q, max_results).await
     } else if let Some(q) = match_prefix(query, "crossref") {
@@ -1320,6 +1326,224 @@ fn polite_pool_email(env_vars: &[&str]) -> Option<String> {
         }
     }
     None
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DBLP — computer-science bibliography (key-free)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Search the DBLP publication API. Key-free, returns rich metadata (authors,
+/// venue, year, type, DOI, electronic-edition URL) for CS papers. The public
+/// endpoint is `https://dblp.org/search/publ/api?format=json`.
+async fn search_dblp(query: &str, max_results: usize) -> Result<String, String> {
+    let limit = max_results.clamp(1, 30);
+    let limit_str = limit.to_string();
+    let client = http_client()?;
+
+    let resp = client
+        .get("https://dblp.org/search/publ/api")
+        .query(&[
+            ("q", query),
+            ("format", "json"),
+            ("h", limit_str.as_str()),
+            ("f", "0"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("DBLP request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("DBLP returned HTTP {}", resp.status()));
+    }
+    let parsed: serde_json::Value = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))
+        .and_then(|b| serde_json::from_str(&b).map_err(|e| format!("JSON parse: {e}")))?;
+
+    let hits = parsed.pointer("/result/hits");
+    let total = hits
+        .and_then(|h| h.get("@total"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    let mut out = format!("DBLP: \"{query}\" — {total} total results\n\n");
+
+    // `hit` can be a single object or an array depending on result count.
+    let hit_list: Vec<serde_json::Value> = match hits.and_then(|h| h.get("hit")) {
+        Some(serde_json::Value::Array(a)) => a.clone(),
+        Some(obj @ serde_json::Value::Object(_)) => vec![obj.clone()],
+        _ => Vec::new(),
+    };
+
+    if hit_list.is_empty() {
+        out.push_str("No results found.\n");
+        return Ok(out);
+    }
+
+    for (i, hit) in hit_list.iter().enumerate() {
+        out.push_str(&format_dblp_hit(i + 1, hit));
+    }
+
+    Ok(out)
+}
+
+/// Render one DBLP `hit` (its `info` block) into a numbered display entry.
+fn format_dblp_hit(rank: usize, hit: &serde_json::Value) -> String {
+    let info = hit.get("info").cloned().unwrap_or(serde_json::Value::Null);
+    let title = decode_basic_entities(
+        info.get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?")
+            .trim_end_matches('.'),
+    );
+    let year = info.get("year").and_then(|v| v.as_str()).unwrap_or("?");
+    let venue = info
+        .get("venue")
+        .and_then(value_to_joined_string)
+        .unwrap_or_default();
+    let ptype = info.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    // Authors: `info.authors.author` is an object or an array of objects/strings.
+    let authors = info
+        .pointer("/authors/author")
+        .map(format_dblp_authors)
+        .unwrap_or_default();
+
+    let mut out = format!("{rank}. [{year}] {title}\n");
+    if !authors.is_empty() {
+        out.push_str(&format!(
+            "   Authors: {}\n",
+            decode_basic_entities(&authors)
+        ));
+    }
+    let mut meta = Vec::new();
+    if !venue.is_empty() {
+        meta.push(format!("Venue: {venue}"));
+    }
+    if !ptype.is_empty() {
+        meta.push(ptype.to_string());
+    }
+    if !meta.is_empty() {
+        out.push_str(&format!("   {}\n", meta.join(" | ")));
+    }
+    if let Some(doi) = info.get("doi").and_then(|v| v.as_str()) {
+        out.push_str(&format!("   DOI: {doi}\n"));
+    }
+    if let Some(ee) = info.get("ee").and_then(|v| v.as_str()) {
+        out.push_str(&format!("   Link: {ee}\n"));
+    }
+    out.push('\n');
+    out
+}
+
+/// Decode the handful of XML/HTML entities DBLP emits in titles and names
+/// (`&amp;`, `&apos;`, `&quot;`, `&lt;`, `&gt;`). DBLP returns XML-escaped text
+/// even in its JSON API, so raw titles otherwise show `don&apos;t`.
+fn decode_basic_entities(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&apos;", "'")
+        .replace("&quot;", "\"")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+}
+
+/// Format DBLP's `authors.author` node (object, string, or array of either)
+/// into a comma-separated author list.
+fn format_dblp_authors(node: &serde_json::Value) -> String {
+    let one = |v: &serde_json::Value| -> Option<String> {
+        match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Object(_) => {
+                v.get("text").and_then(|t| t.as_str()).map(str::to_string)
+            }
+            _ => None,
+        }
+    };
+    match node {
+        serde_json::Value::Array(arr) => arr.iter().filter_map(one).collect::<Vec<_>>().join(", "),
+        other => one(other).unwrap_or_default(),
+    }
+}
+
+/// DBLP occasionally returns a field (e.g. `venue`) as either a string or an
+/// array of strings; join either form into a single display string.
+fn value_to_joined_string(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Array(arr) => Some(
+            arr.iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+        _ => None,
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Google Scholar query autocomplete (key-free)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Expand a query via Google Scholar's `/scholar_complete` suggestion endpoint.
+/// This is the public autocomplete the Scholar search box uses; it returns a
+/// JSON `{"l":[...]}` list of refined query strings. It is NOT full-text paper
+/// search (Scholar has no public results API and gates `/scholar?q=` behind a
+/// CAPTCHA) — it is a fast, key-free way to discover the canonical phrasings
+/// and adjacent subtopics for a term, which then feed `dblp:`/`scholar:` etc.
+async fn search_gscholar_complete(query: &str, max_results: usize) -> Result<String, String> {
+    let client = http_client()?;
+    let resp = client
+        .get("https://scholar.google.com/scholar_complete")
+        .query(&[
+            ("q", query),
+            ("hl", "en"),
+            ("client", "scholar"),
+            ("json", "1"),
+        ])
+        // Scholar 403s requests without a browser UA + Referer.
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+        )
+        .header("Referer", "https://scholar.google.com/")
+        .header("Accept", "application/json, text/javascript, */*")
+        .send()
+        .await
+        .map_err(|e| format!("Google Scholar request failed: {e}"))?;
+    if resp.status() == 403 || resp.status() == 429 {
+        return Err(format!(
+            "Google Scholar autocomplete blocked (HTTP {}) — Scholar rate-limits \
+             datacenter IPs. Use `dblp:` or `scholar:` for paper search.",
+            resp.status()
+        ));
+    }
+    if !resp.status().is_success() {
+        return Err(format!("Google Scholar returned HTTP {}", resp.status()));
+    }
+    let parsed: serde_json::Value = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))
+        .and_then(|b| serde_json::from_str(&b).map_err(|e| format!("JSON parse: {e}")))?;
+
+    let suggestions: Vec<&str> = parsed
+        .get("l")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|s| s.as_str()).collect())
+        .unwrap_or_default();
+
+    let mut out = format!("Google Scholar suggestions: \"{query}\"\n\n");
+    if suggestions.is_empty() {
+        out.push_str(
+            "No suggestions (term may be too specific or novel). \
+             Try `dblp:` / `scholar:` / `papers:` for paper search.\n",
+        );
+        return Ok(out);
+    }
+    for s in suggestions.iter().take(max_results.clamp(1, 20)) {
+        out.push_str(&format!("- {s}\n"));
+    }
+    Ok(out)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3798,5 +4022,101 @@ mod fallback_tests {
         let base = searxng_base_url();
         assert!(base.starts_with("https://"), "{base}");
         assert!(!base.ends_with('/'), "{base}");
+    }
+
+    #[test]
+    fn dblp_and_gscholar_prefixes_parse_normal() {
+        assert_eq!(
+            match_prefix("dblp: attention is all you need", "dblp"),
+            Some("attention is all you need")
+        );
+        assert_eq!(
+            match_prefix("gscholar: large language model", "gscholar"),
+            Some("large language model")
+        );
+        // Space form also works.
+        assert_eq!(
+            match_prefix("dblp transformers", "dblp"),
+            Some("transformers")
+        );
+    }
+}
+
+#[cfg(test)]
+mod scholar_parse_tests {
+    use super::{
+        decode_basic_entities, format_dblp_authors, format_dblp_hit, value_to_joined_string,
+    };
+
+    #[test]
+    fn decode_basic_entities_unescapes_dblp_xml_normal() {
+        assert_eq!(decode_basic_entities("don&apos;t"), "don't");
+        assert_eq!(decode_basic_entities("a &amp; b"), "a & b");
+        assert_eq!(decode_basic_entities("&quot;quoted&quot;"), "\"quoted\"");
+        assert_eq!(decode_basic_entities("&lt;tag&gt;"), "<tag>");
+    }
+
+    #[test]
+    fn format_dblp_hit_renders_title_authors_and_links_normal() {
+        let hit = serde_json::json!({
+            "info": {
+                "title": "Attention Is All You Need.",
+                "year": "2017",
+                "venue": "NIPS",
+                "type": "Conference and Workshop Papers",
+                "doi": "10.5555/3295222",
+                "ee": "https://example.org/p.pdf",
+                "authors": { "author": [
+                    {"@pid": "1/2", "text": "Ashish Vaswani"},
+                    {"@pid": "3/4", "text": "Noam Shazeer"}
+                ]}
+            }
+        });
+        let out = format_dblp_hit(1, &hit);
+        assert!(
+            out.contains("1. [2017] Attention Is All You Need\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("Authors: Ashish Vaswani, Noam Shazeer"),
+            "{out}"
+        );
+        assert!(
+            out.contains("Venue: NIPS | Conference and Workshop Papers"),
+            "{out}"
+        );
+        assert!(out.contains("DOI: 10.5555/3295222"), "{out}");
+        assert!(out.contains("Link: https://example.org/p.pdf"), "{out}");
+    }
+
+    #[test]
+    fn dblp_authors_handles_array_object_and_string_normal() {
+        // Array of {text} objects (the common DBLP shape).
+        let v = serde_json::json!([
+            {"@pid": "1/2", "text": "Ashish Vaswani"},
+            {"@pid": "3/4", "text": "Noam Shazeer"}
+        ]);
+        assert_eq!(format_dblp_authors(&v), "Ashish Vaswani, Noam Shazeer");
+
+        // Single object (one-author paper) — DBLP unwraps the array.
+        let one = serde_json::json!({"@pid": "5/6", "text": "Solo Author"});
+        assert_eq!(format_dblp_authors(&one), "Solo Author");
+
+        // Bare string fallback.
+        let s = serde_json::json!("Plain Name");
+        assert_eq!(format_dblp_authors(&s), "Plain Name");
+    }
+
+    #[test]
+    fn value_to_joined_string_handles_string_and_array_robust() {
+        assert_eq!(
+            value_to_joined_string(&serde_json::json!("NeurIPS")).as_deref(),
+            Some("NeurIPS")
+        );
+        assert_eq!(
+            value_to_joined_string(&serde_json::json!(["ML4H", "PMLR"])).as_deref(),
+            Some("ML4H, PMLR")
+        );
+        assert_eq!(value_to_joined_string(&serde_json::json!(42)), None);
     }
 }

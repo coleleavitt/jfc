@@ -2,7 +2,7 @@ use jfc_provider::ProviderMessage;
 use tokio::sync::mpsc;
 
 use crate::app::EngineState;
-use crate::runtime::{EngineEvent, StreamEvent, StreamRequestOverrides};
+use crate::runtime::{EngineEvent, StreamRequestOverrides};
 use crate::types::*;
 
 use super::{
@@ -12,7 +12,6 @@ use super::{
     messages::{
         build_provider_messages_for_pause_turn_resume, build_provider_messages_with_tool_results,
     },
-    stream_response,
 };
 
 pub fn should_continue_loop(messages: &[ChatMessage]) -> bool {
@@ -250,7 +249,6 @@ fn spawn_substream(
 ) {
     let provider = state.provider.clone();
     let model = state.model.clone();
-    let tx = tx.clone();
     let interrupt = state.interrupt_flag.clone();
     let cancel = state.cancel_token.clone();
     let overrides = StreamRequestOverrides {
@@ -265,33 +263,13 @@ fn spawn_substream(
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
         context_hint_tokens_saved: state.take_context_hint_tokens_saved(),
+        last_usage_input_tokens: Some(state.last_usage_input as u64),
+        context_window_tokens: Some(state.max_context_tokens as u64),
         ..Default::default()
     };
-    let tx_guard = tx.clone();
-    // Park the *inner* task's abort handle on App so the watchdog can
-    // forcefully abort the actual stream_response task (see
-    // App::active_stream_handle). Aborting the outer supervisor would only
-    // drop its JoinHandle to the inner task, detaching rather than cancelling
-    // it.
-    let inner = tokio::spawn(async move {
-        stream_response(
-            provider, messages, model, tx, interrupt, cancel, None, overrides,
-        )
-        .await;
-    });
-    state.active_stream_handle = Some(inner.abort_handle());
-    tokio::spawn(async move {
-        if let Err(join_err) = inner.await {
-            let msg = if join_err.is_panic() {
-                format!("stream task panicked: {join_err}")
-            } else {
-                format!("stream task cancelled: {join_err}")
-            };
-            let _ = tx_guard
-                .send(EngineEvent::Stream(StreamEvent::Error(msg)))
-                .await;
-        }
-    });
+    crate::runtime::spawn_stream_response_scoped(
+        state, tx, provider, messages, model, interrupt, cancel, None, overrides,
+    );
 }
 
 /// Resume an Anthropic server-side sampling loop after `stop_reason: "pause_turn"`.

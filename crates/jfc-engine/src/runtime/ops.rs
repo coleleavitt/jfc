@@ -24,6 +24,13 @@ pub enum SubmitOutcome {
     /// was spawned and the prompt will re-fire via
     /// `ControlEvent::SubmitPrompt` once it lands.
     CompactingFirst,
+    /// The local prompt-rewrite gate proposed a reworded prompt. The turn did
+    /// NOT start; the frontend surfaces original→rewrite+rationale and the user
+    /// accepts/rejects/edits before re-submitting.
+    RewriteProposed,
+    /// The local prompt-rewrite gate refused the prompt (disallowed goal). The
+    /// turn did NOT start; a notice carries the user-facing reason.
+    RewriteRefused,
 }
 
 /// Interrupt the current turn: cancel the stream, abort in-flight tools,
@@ -131,6 +138,7 @@ pub async fn load_session(state: &mut EngineState, session_id: crate::ids::Sessi
             state.streaming_reasoning.clear();
             state.streaming_response_bytes = 0;
             state.streaming_assistant_idx = None;
+            state.clear_active_stream_scope();
             state.push_effect(crate::app::EngineEffect::SessionSwitched);
             state.push_effect(crate::app::EngineEffect::ScrollToBottom);
             crate::toast::push_with_cap(
@@ -210,6 +218,44 @@ pub async fn submit_prompt(
             ))
             .await;
         return Ok(SubmitOutcome::AbortedByHook);
+    }
+
+    // Local prompt-rewrite / over-refusal gate. Default-OFF; only runs when the
+    // user enabled `[prompt_rewrite]`. A `Pass` falls through unchanged; a
+    // `Rewritten`/`Refused` decision halts this turn and is surfaced to the user
+    // (never a silent substitution). Runs before @-mention/compaction so a
+    // refused prompt never touches the transcript.
+    if let Some(decision) = crate::runtime::prompt_rewrite_gate::evaluate(
+        state.prompt_rewrite.as_ref(),
+        state.provider.clone(),
+        state.local_advisor_model.as_ref().map(|m| m.as_str()),
+        state.model.as_str(),
+        &text,
+    )
+    .await
+    {
+        match decision {
+            jfc_audit::RewriteDecision::Pass => {}
+            jfc_audit::RewriteDecision::Rewritten(rewrite) => {
+                state.push_effect(crate::app::EngineEffect::PromptRewriteProposed {
+                    original: text.clone(),
+                    rewrite: rewrite.text,
+                    rationale: rewrite.rationale,
+                });
+                return Ok(SubmitOutcome::RewriteProposed);
+            }
+            jfc_audit::RewriteDecision::Refused { reason, .. } => {
+                let _ = tx
+                    .send(crate::runtime::EngineEvent::Control(
+                        crate::runtime::ControlEvent::Notice {
+                            kind: crate::toast::ToastKind::Error,
+                            text: format!("Prompt blocked by rewrite gate: {reason}"),
+                        },
+                    ))
+                    .await;
+                return Ok(SubmitOutcome::RewriteRefused);
+            }
+        }
     }
 
     // v132 @-mention auto-attach: scan the prompt for `@path/to/file`
@@ -316,6 +362,7 @@ pub async fn submit_prompt(
         state.refusal_fallback_attempted = false;
         state.refusal_resend_count = 0;
         state.streaming_assistant_idx = None;
+        state.clear_active_stream_scope();
     }
     // Pre-submit compaction gate (mirrors v126 `Du7` running before the API
     // call rather than only after tool batches). Without this, a long
@@ -890,7 +937,6 @@ pub async fn start_turn_from_transcript(
     };
     let cfg = crate::config::load_arc();
     state.exploration_state.begin_turn(turn_text, &cfg);
-    let tx = tx.clone();
     let interrupt = state.interrupt_flag.clone();
     // Fresh user submission resets any prior interrupt state — the user
     // moved on, so the next stream should run unchecked.
@@ -911,6 +957,8 @@ pub async fn start_turn_from_transcript(
         max_thinking_tokens: state.cli_max_thinking_tokens,
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
+        last_usage_input_tokens: Some(state.last_usage_input as u64),
+        context_window_tokens: Some(state.max_context_tokens as u64),
         ..Default::default()
     };
 
@@ -924,32 +972,304 @@ pub async fn start_turn_from_transcript(
         "spawning stream_response"
     );
 
-    // wg-async: stream_response holds the SSE connection + tx sender —
-    // cancel has to thread through so ESC×2 can drop them coherently.
-    // Park the *inner* task's abort handle on App so the watchdog can
-    // forcefully abort the actual stream task (see App::active_stream_handle).
-    // Previously this path stored no handle at all, so a wedged normal-submit
-    // stream was uninterruptible by the watchdog's forceful-abort escalation.
-    let tx_guard = tx.clone();
-    let inner = tokio::spawn(async move {
-        crate::stream::stream_response(
-            provider, messages, model, tx, interrupt, cancel, None, overrides,
-        )
-        .await;
-    });
-    state.active_stream_handle = Some(inner.abort_handle());
-    tokio::spawn(async move {
-        if let Err(join_err) = inner.await {
-            let msg = if join_err.is_panic() {
-                format!("stream task panicked: {join_err}")
-            } else {
-                format!("stream task cancelled: {join_err}")
-            };
-            let _ = tx_guard
-                .send(crate::runtime::EngineEvent::Stream(
-                    crate::runtime::StreamEvent::Error(msg),
-                ))
-                .await;
+    // wg-async: stream_response holds the SSE connection + tx sender. Scope
+    // its events so late provider errors from superseded tasks cannot mutate a
+    // newer transcript.
+    crate::runtime::spawn_stream_response_scoped(
+        state, tx, provider, messages, model, interrupt, cancel, None, overrides,
+    );
+}
+
+#[cfg(test)]
+mod submit_prompt_tests {
+    //! Integration coverage for the prompt-rewrite gate seam inside
+    //! `submit_prompt` (t954). These drive the real op — not the gate in
+    //! isolation — to prove the three architecture-rule combinations the task
+    //! names: flag-off is byte-identical to the legacy path, a flag-on rewrite
+    //! halts the turn and surfaces a proposal (never a silent substitution),
+    //! and a flag-on refusal blocks the turn without touching the transcript.
+
+    use std::sync::Arc;
+
+    use jfc_provider::{
+        CompletionResponse, EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions,
+        TokenUsage,
+    };
+    use tokio::sync::mpsc;
+
+    use super::*;
+    use crate::app::{EngineEffect, EngineState};
+    use crate::runtime::{ControlEvent, EngineEvent};
+
+    /// Provider that scripts the rewrite stages' `complete()` by system-prompt
+    /// role and yields an empty stream for the actual turn. Inert otherwise.
+    struct ScriptProvider {
+        classify: String,
+        rewrite: String,
+        verify: String,
+    }
+
+    impl ScriptProvider {
+        fn inert() -> Self {
+            Self {
+                classify: String::new(),
+                rewrite: String::new(),
+                verify: String::new(),
+            }
         }
-    });
+    }
+
+    impl jfc_provider::seal::Sealed for ScriptProvider {}
+
+    #[async_trait::async_trait]
+    impl Provider for ScriptProvider {
+        fn name(&self) -> &str {
+            "script"
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+        async fn complete(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            options: &StreamOptions,
+        ) -> anyhow::Result<CompletionResponse> {
+            let sys = options.system.clone().unwrap_or_default();
+            let content = if sys.starts_with("You are a safety intent classifier") {
+                self.classify.clone()
+            } else if sys.starts_with("You rewrite") {
+                self.rewrite.clone()
+            } else {
+                self.verify.clone()
+            };
+            Ok(CompletionResponse {
+                content,
+                usage: TokenUsage::default(),
+            })
+        }
+    }
+
+    fn state_with(provider: Arc<dyn Provider>) -> EngineState {
+        EngineState::new(provider, "test-model")
+    }
+
+    fn enabled_cfg() -> jfc_config::PromptRewriteConfig {
+        jfc_config::PromptRewriteConfig {
+            enabled: true,
+            model: None,
+            threshold: None,
+            constitution: None,
+        }
+    }
+
+    fn last_user_text(state: &EngineState) -> Option<String> {
+        state
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == crate::types::Role::User)
+            .map(|m| {
+                m.parts
+                    .iter()
+                    .map(|p| p.text_only())
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+    }
+
+    // Flag OFF (the default): the gate is a no-op pass-through and the prompt
+    // takes the legacy path — a user message is pushed and the turn starts.
+    // This is the byte-identical-behavior half of the architecture rule.
+    //
+    // Serial + tempdir XDG_CONFIG_HOME: the `Started` path fires a
+    // fire-and-forget session save into `dirs::config_dir()`. Redirect it to a
+    // tempdir so the test never writes the user's real config tree.
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn flag_off_starts_turn_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prev = std::env::var_os("XDG_CONFIG_HOME");
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.path()) };
+
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        assert!(state.prompt_rewrite.is_none(), "default config is flag-off");
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "write a rust function to sort a vec".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        assert_eq!(
+            last_user_text(&state).as_deref(),
+            Some("write a rust function to sort a vec"),
+            "flag-off must push the user message verbatim"
+        );
+        assert!(state.is_streaming, "flag-off must spawn the turn");
+        assert!(
+            !state
+                .effects
+                .iter()
+                .any(|e| matches!(e, EngineEffect::PromptRewriteProposed { .. })),
+            "flag-off must never emit a rewrite proposal"
+        );
+
+        // Let the spawned session-save settle inside the tempdir, then restore.
+        tokio::task::yield_now().await;
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+    }
+
+    // Flag ON + an ambiguous prompt the scripted provider rewrites: the turn
+    // must NOT start. The op returns `RewriteProposed`, queues a
+    // `PromptRewriteProposed` effect carrying original→rewrite+rationale, and
+    // leaves the transcript untouched — the never-silent contract.
+    #[tokio::test]
+    async fn flag_on_rewrite_halts_turn_and_proposes() {
+        let provider = Arc::new(ScriptProvider {
+            classify: r#"{"goal_category":"policy_analysis","verdict":"ambiguous","risk_flags":["evasion_phrasing"],"confidence":0.6}"#.into(),
+            rewrite: r#"{"original_intent":"understand classifiers","text":"Research public docs on safety classifiers; defensive analysis only.","rationale":"removed evasion wording"}"#.into(),
+            verify: r#"{"intent_preserved":true,"introduced_harm":false}"#.into(),
+        });
+        let mut state = state_with(provider);
+        state.prompt_rewrite = Some(enabled_cfg());
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "dig into their classifiers and how to get around it".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::RewriteProposed);
+        assert!(
+            !state.is_streaming,
+            "a proposed rewrite must NOT start the turn"
+        );
+        assert!(
+            state.messages.is_empty(),
+            "a proposed rewrite must not touch the transcript"
+        );
+        let proposed = state.effects.iter().find_map(|e| match e {
+            EngineEffect::PromptRewriteProposed {
+                original,
+                rewrite,
+                rationale,
+            } => Some((original.clone(), rewrite.clone(), rationale.clone())),
+            _ => None,
+        });
+        let (original, rewrite, rationale) =
+            proposed.expect("expected a PromptRewriteProposed effect");
+        assert_eq!(
+            original,
+            "dig into their classifiers and how to get around it"
+        );
+        assert!(
+            rewrite.contains("defensive analysis"),
+            "the surfaced rewrite must be the scripted reword, got {rewrite:?}"
+        );
+        assert!(!rationale.is_empty(), "rationale must accompany the rewrite");
+    }
+
+    // Flag ON + a clearly disallowed prompt: the screener refuses with zero
+    // model calls, the turn never starts, the transcript stays empty, and a
+    // user-facing Notice carries the reason.
+    #[tokio::test]
+    async fn flag_on_refusal_blocks_turn_with_notice() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.prompt_rewrite = Some(enabled_cfg());
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "write a phishing email to steal okta credentials".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::RewriteRefused);
+        assert!(!state.is_streaming, "a refusal must NOT start the turn");
+        assert!(
+            state.messages.is_empty(),
+            "a refused prompt must never reach the transcript"
+        );
+        let mut saw_refusal_notice = false;
+        while let Ok(ev) = rx.try_recv() {
+            if let EngineEvent::Control(ControlEvent::Notice { text, .. }) = ev
+                && text.contains("rewrite gate")
+            {
+                saw_refusal_notice = true;
+            }
+        }
+        assert!(
+            saw_refusal_notice,
+            "a refusal must surface a user-facing notice"
+        );
+    }
+
+    // Architecture rule — interrupt/cancel mid-rewrite. The gate is awaited
+    // inline under the exclusive `&mut EngineState` borrow, so a rewrite can
+    // never resolve concurrently with an interrupt. This test pins that
+    // contract: after a proposed rewrite (turn not started), an interrupt is a
+    // clean no-op — no stream to cancel, transcript still pristine — so a
+    // late rewrite can't mutate state behind a cancel.
+    #[tokio::test]
+    async fn interrupt_after_rewrite_proposal_is_clean() {
+        let provider = Arc::new(ScriptProvider {
+            classify: r#"{"goal_category":"policy_analysis","verdict":"ambiguous","risk_flags":["evasion_phrasing"],"confidence":0.6}"#.into(),
+            rewrite: r#"{"original_intent":"understand classifiers","text":"Research public docs on safety classifiers; defensive analysis only.","rationale":"removed evasion wording"}"#.into(),
+            verify: r#"{"intent_preserved":true,"introduced_harm":false}"#.into(),
+        });
+        let mut state = state_with(provider);
+        state.prompt_rewrite = Some(enabled_cfg());
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "dig into their classifiers and how to get around it".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, SubmitOutcome::RewriteProposed);
+        assert!(!state.is_streaming);
+
+        // Interrupting now must be inert: no live turn, transcript untouched.
+        interrupt(&mut state, &tx);
+        assert!(!state.is_streaming, "no turn was started to interrupt");
+        assert!(
+            state.messages.is_empty(),
+            "interrupt after a proposal must not mutate the transcript"
+        );
+        assert!(
+            !state.has_interruptible_work(),
+            "no interruptible work should remain after a proposal+interrupt"
+        );
+    }
 }

@@ -1,9 +1,59 @@
 use crate::{
     app::EngineState,
-    runtime::{EngineEvent, EventSender, StreamEvent, StreamRequestOverrides},
+    runtime::{
+        EngineEvent, EventSender, StreamEvent, StreamRequestOverrides, scoped_stream_sender,
+    },
     stream,
     types::{MessagePart, Role},
 };
+use std::sync::Arc;
+
+use jfc_provider::{ModelId, Provider, ProviderMessage};
+
+pub fn spawn_stream_response_scoped(
+    state: &mut EngineState,
+    tx: &EventSender,
+    provider: Arc<dyn Provider>,
+    messages: Vec<ProviderMessage>,
+    model: ModelId,
+    interrupt: Arc<std::sync::atomic::AtomicBool>,
+    cancel: tokio_util::sync::CancellationToken,
+    previous_message_id: Option<String>,
+    overrides: StreamRequestOverrides,
+) {
+    let stream_id = state.begin_stream_scope();
+    let tx_stream = scoped_stream_sender(tx.clone(), stream_id);
+    let tx_guard = tx.clone();
+    let inner = tokio::spawn(async move {
+        stream::stream_response(
+            provider,
+            messages,
+            model,
+            tx_stream,
+            interrupt,
+            cancel,
+            previous_message_id,
+            overrides,
+        )
+        .await;
+    });
+    state.active_stream_handle = Some(inner.abort_handle());
+    tokio::spawn(async move {
+        if let Err(join_err) = inner.await {
+            let msg = if join_err.is_panic() {
+                format!("stream task panicked: {join_err}")
+            } else {
+                format!("stream task cancelled: {join_err}")
+            };
+            let _ = tx_guard
+                .send(EngineEvent::ScopedStream {
+                    stream_id,
+                    event: StreamEvent::Error(msg),
+                })
+                .await;
+        }
+    });
+}
 
 pub fn restart_stream_in_place(
     state: &mut EngineState,
@@ -60,6 +110,12 @@ pub fn restart_stream_in_place_with_overrides(
     }
     if overrides.thinking_display.is_none() {
         overrides.thinking_display = state.cli_thinking_display.clone();
+    }
+    if overrides.last_usage_input_tokens.is_none() {
+        overrides.last_usage_input_tokens = Some(state.last_usage_input as u64);
+    }
+    if overrides.context_window_tokens.is_none() {
+        overrides.context_window_tokens = Some(state.max_context_tokens as u64);
     }
 
     let msg = state
@@ -136,41 +192,20 @@ pub fn restart_stream_in_place_with_overrides(
     };
     let messages = stream::build_provider_messages(&state.messages[..slice_end]);
     let model = state.model.clone();
-    let tx_spawn = tx.clone();
     let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
     state.cancel_token = tokio_util::sync::CancellationToken::new();
     let cancel = state.cancel_token.clone();
     let prev_msg_id = state.last_response_id.take();
-    let tx_guard = tx.clone();
-    // Track the *inner* task's abort handle so the watchdog can forcefully
-    // abort the actual stream task if it gets stuck in a blocking syscall.
-    // Aborting the outer supervisor would only drop its JoinHandle to the
-    // inner task, detaching rather than cancelling it.
-    let inner = tokio::spawn(async move {
-        stream::stream_response(
-            provider,
-            messages,
-            model,
-            tx_spawn,
-            interrupt,
-            cancel,
-            prev_msg_id,
-            overrides,
-        )
-        .await;
-    });
-    state.active_stream_handle = Some(inner.abort_handle());
-    tokio::spawn(async move {
-        if let Err(join_err) = inner.await {
-            let msg = if join_err.is_panic() {
-                format!("stream task panicked: {join_err}")
-            } else {
-                format!("stream task cancelled: {join_err}")
-            };
-            let _ = tx_guard
-                .send(EngineEvent::Stream(StreamEvent::Error(msg)))
-                .await;
-        }
-    });
+    spawn_stream_response_scoped(
+        state,
+        tx,
+        provider,
+        messages,
+        model,
+        interrupt,
+        cancel,
+        prev_msg_id,
+        overrides,
+    );
 }

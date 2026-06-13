@@ -330,7 +330,13 @@ pub fn selected_subagent_provider_model(
     parent_provider: std::sync::Arc<dyn jfc_provider::Provider>,
     parent_model: jfc_provider::ModelId,
     registry: &[std::sync::Arc<dyn jfc_provider::Provider>],
-) -> Result<(std::sync::Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId), String> {
+) -> Result<
+    (
+        std::sync::Arc<dyn jfc_provider::Provider>,
+        jfc_provider::ModelId,
+    ),
+    String,
+> {
     match selected_subagent_model(task_input, agent_def, parent_model, parent_provider.name()) {
         Ok(model) => Ok((parent_provider, model)),
         Err(same_provider_error) => {
@@ -424,9 +430,7 @@ async fn execute_task_inner(
     active_team_name: Option<String>,
     depth: u8,
 ) -> ExecutionResult {
-    use jfc_provider::{
-        ProviderContent, ProviderMessage, ProviderRole, StreamOptions,
-    };
+    use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole, StreamOptions};
 
     let model = match selected_subagent_model(task_input, agent_def, model_id, provider.name()) {
         Ok(model) => model,
@@ -1555,7 +1559,10 @@ mod tests {
         .unwrap();
 
         // Mechanical lookup → haiku tier, not the inherited opus parent.
-        assert_eq!(model.as_str(), crate::providers::anthropic_models::ALIAS_HAIKU);
+        assert_eq!(
+            model.as_str(),
+            crate::providers::anthropic_models::ALIAS_HAIKU
+        );
     }
 
     // The cost-AND-quality safety net: a genuinely ambiguous category-less
@@ -1608,7 +1615,10 @@ mod tests {
         .unwrap();
 
         // category=explore → haiku wins; the opus-leaning prompt is ignored.
-        assert_eq!(model.as_str(), crate::providers::anthropic_models::ALIAS_HAIKU);
+        assert_eq!(
+            model.as_str(),
+            crate::providers::anthropic_models::ALIAS_HAIKU
+        );
     }
 
     #[test]

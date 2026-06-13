@@ -696,7 +696,9 @@ impl StreamEvent {
             | StreamEvent::RedactedThinkingDone { .. } => FrameCategory::Reasoning,
             StreamEvent::ToolDelta { .. } | StreamEvent::ToolDone { .. } => FrameCategory::ToolCall,
             StreamEvent::ServerToolResult { .. } => FrameCategory::ToolResult,
-            StreamEvent::Usage { .. } | StreamEvent::ResponseMetadata { .. } => FrameCategory::Usage,
+            StreamEvent::Usage { .. } | StreamEvent::ResponseMetadata { .. } => {
+                FrameCategory::Usage
+            }
             StreamEvent::FallbackTriggered(_) => FrameCategory::ModelResolution,
             StreamEvent::Done { .. } => FrameCategory::Finish,
             StreamEvent::Keepalive | StreamEvent::Error { .. } => FrameCategory::Control,
@@ -2170,7 +2172,12 @@ mod tests {
                 Finish,
             ),
             (StreamEvent::Keepalive, Control),
-            (StreamEvent::Error { message: "e".into() }, Control),
+            (
+                StreamEvent::Error {
+                    message: "e".into(),
+                },
+                Control,
+            ),
             (
                 StreamEvent::FallbackTriggered(FallbackTriggered {
                     original_model: ModelId::new("a"),

@@ -123,6 +123,10 @@ fn web_search_def() -> ToolDef {
             • `gov: <query>` — Google scoped to government domains (.gov, .gov.uk, …).\n\
             • `arxiv: <query>` — arXiv papers (free, no key).\n\
             • `scholar: <query>` — Semantic Scholar (optional key, BFF fallback).\n\
+            • `dblp: <query>` — DBLP computer-science bibliography; rich metadata \
+            (authors, venue, year, DOI, links) for CS papers (free, no key).\n\
+            • `gscholar: <query>` — Google Scholar query autocomplete; expands a \
+            term into canonical phrasings/subtopics to feed paper search (free, no key).\n\
             • `openalex: <query>` — OpenAlex; 250M+ works with author \
             institutions + country codes (free, no key).\n\
             • `crossref: <query>` — Crossref DOI metadata (free, no key).\n\

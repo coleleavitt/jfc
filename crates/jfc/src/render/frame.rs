@@ -453,7 +453,11 @@ pub(super) fn extract_selection_text(
     // Cap pathological spans so a stray drag can't allocate a giant buffer.
     const MAX_COPY_LINES: usize = 2000;
     let first = start.1;
-    let span = end.1.saturating_sub(first).saturating_add(1).min(MAX_COPY_LINES);
+    let span = end
+        .1
+        .saturating_sub(first)
+        .saturating_add(1)
+        .min(MAX_COPY_LINES);
 
     let inner_w = content_w as usize;
     let ctx = crate::message_view::RenderCtx::from_app(app);

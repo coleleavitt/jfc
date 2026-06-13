@@ -1436,7 +1436,8 @@ impl AccountManager {
         account_name: &str,
     ) -> Option<(Option<String>, String, Option<u64>)> {
         let _store_lock = self.lock_store_file().await.ok()?;
-        self.read_account_tokens_from_disk_unlocked(account_name).await
+        self.read_account_tokens_from_disk_unlocked(account_name)
+            .await
     }
 
     /// Same as [`Self::read_account_tokens_from_disk`], intended for callers
@@ -2134,7 +2135,10 @@ mod tests {
         let a2 = mgr.refresh_lock_for("a").await;
         let b = mgr.refresh_lock_for("b").await;
         assert!(Arc::ptr_eq(&a1, &a2), "same account shares one lock");
-        assert!(!Arc::ptr_eq(&a1, &b), "different accounts get distinct locks");
+        assert!(
+            !Arc::ptr_eq(&a1, &b),
+            "different accounts get distinct locks"
+        );
     }
 
     // Robust: begin_sweep is single-entry — a second concurrent begin_sweep
@@ -2147,7 +2151,10 @@ mod tests {
         let guard = mgr.begin_sweep().expect("first sweep starts");
         assert!(mgr.begin_sweep().is_none(), "overlapping sweep is rejected");
         drop(guard);
-        assert!(mgr.begin_sweep().is_some(), "after drop a new sweep can start");
+        assert!(
+            mgr.begin_sweep().is_some(),
+            "after drop a new sweep can start"
+        );
     }
 
     // Normal: accounts_needing_refresh returns only enabled, stale accounts.
@@ -2184,12 +2191,16 @@ mod tests {
         mgr.atomic_add_account(mk_account("a", None)).await.unwrap();
 
         // Simulate a peer (opencode) rotating the token on disk.
-        mgr.atomic_update_tokens("a", "peer-rotated-at".to_owned(), now_ms() + 9_999_999, Some("peer-rt".to_owned()))
-            .await
-            .unwrap();
+        mgr.atomic_update_tokens(
+            "a",
+            "peer-rotated-at".to_owned(),
+            now_ms() + 9_999_999,
+            Some("peer-rt".to_owned()),
+        )
+        .await
+        .unwrap();
 
-        let (access, refresh, expires) =
-            mgr.read_account_tokens_from_disk("a").await.unwrap();
+        let (access, refresh, expires) = mgr.read_account_tokens_from_disk("a").await.unwrap();
         assert_eq!(access.as_deref(), Some("peer-rotated-at"));
         assert_eq!(refresh, "peer-rt");
         assert!(expires.unwrap() > now_ms());
@@ -2215,7 +2226,10 @@ mod tests {
             .await
             .unwrap();
         assert!(applied);
-        let (access, refresh, _) = mgr.read_account_tokens_from_disk_unlocked("a").await.unwrap();
+        let (access, refresh, _) = mgr
+            .read_account_tokens_from_disk_unlocked("a")
+            .await
+            .unwrap();
         assert_eq!(access.as_deref(), Some("new-access"));
         assert_eq!(refresh, "new-refresh");
     }
@@ -2228,9 +2242,14 @@ mod tests {
         let path = dir.path().join("accounts.json");
         let mgr = AccountManager::load(path).await.unwrap();
         mgr.atomic_add_account(mk_account("a", None)).await.unwrap();
-        mgr.atomic_update_tokens("a", "peer-access".to_owned(), now_ms() + 10_000, Some("peer-refresh".to_owned()))
-            .await
-            .unwrap();
+        mgr.atomic_update_tokens(
+            "a",
+            "peer-access".to_owned(),
+            now_ms() + 10_000,
+            Some("peer-refresh".to_owned()),
+        )
+        .await
+        .unwrap();
         let _lock = mgr.lock_store_file().await.unwrap();
         let applied = mgr
             .atomic_update_tokens_if_refresh_matches(
@@ -2243,7 +2262,10 @@ mod tests {
             .await
             .unwrap();
         assert!(!applied);
-        let (access, refresh, _) = mgr.read_account_tokens_from_disk_unlocked("a").await.unwrap();
+        let (access, refresh, _) = mgr
+            .read_account_tokens_from_disk_unlocked("a")
+            .await
+            .unwrap();
         assert_eq!(access.as_deref(), Some("peer-access"));
         assert_eq!(refresh, "peer-refresh");
     }

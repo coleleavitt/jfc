@@ -243,7 +243,6 @@ pub(super) async fn handle_pr_autofix(
     let provider = state.provider.clone();
     let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
     let model = state.model.clone();
-    let tx_stream = tx.clone();
     let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
     state.cancel_token = tokio_util::sync::CancellationToken::new();
@@ -259,14 +258,13 @@ pub(super) async fn handle_pr_autofix(
         max_thinking_tokens: state.cli_max_thinking_tokens,
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
+        last_usage_input_tokens: Some(state.last_usage_input as u64),
+        context_window_tokens: Some(state.max_context_tokens as u64),
         ..Default::default()
     };
-    tokio::spawn(async move {
-        crate::stream::stream_response(
-            provider, messages, model, tx_stream, interrupt, cancel, None, overrides,
-        )
-        .await;
-    });
+    crate::runtime::spawn_stream_response_scoped(
+        state, tx, provider, messages, model, interrupt, cancel, None, overrides,
+    );
 }
 
 pub(super) async fn handle_setup_github_actions(state: &mut EngineState, arg: &str) {

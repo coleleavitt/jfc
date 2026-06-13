@@ -848,18 +848,83 @@ pub(super) async fn cmd_market(
     state.messages.push(ChatMessage::assistant(report_str));
 }
 
+fn recall_query_text(text: &str) -> &str {
+    let trimmed = text.trim();
+    let Some(idx) = trimmed.find(char::is_whitespace) else {
+        return "";
+    };
+    trimmed[idx..].trim()
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    let mut chars = text.chars();
+    let mut out: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        out.push('…');
+    }
+    out
+}
+
+fn render_session_tail(session_id: &str, messages: &[jfc_session::SessionMessage]) -> String {
+    if messages.is_empty() {
+        return format!("No session found for `{session_id}`.");
+    }
+
+    const MAX_MESSAGE_CHARS: usize = 2_000;
+    const MAX_TOTAL_CHARS: usize = 14_000;
+
+    let mut body = format!(
+        "Session `{session_id}` transcript tail \
+         (tool outputs omitted; tool command/input text only):\n"
+    );
+    let mut rendered = 0usize;
+    for msg in messages {
+        let text = msg.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let text = truncate_chars(text, MAX_MESSAGE_CHARS);
+        let entry = format!("\n[{} #{}]\n{}\n", msg.role, msg.index, text);
+        if body.len() + entry.len() > MAX_TOTAL_CHARS {
+            body.push_str("\n… [session recall truncated]\n");
+            break;
+        }
+        body.push_str(&entry);
+        rendered += 1;
+    }
+
+    if rendered == 0 {
+        body.push_str("\n(no searchable text in the recalled slice)\n");
+    }
+    body
+}
+
+fn try_render_session_by_id(query: &str) -> Option<String> {
+    if query.split_whitespace().count() != 1 {
+        return None;
+    }
+    let id = jfc_core::SessionId::new(query);
+    let messages = jfc_session::scroll_session(&id, usize::MAX, 12);
+    if messages.is_empty() {
+        None
+    } else {
+        Some(render_session_tail(query, &messages))
+    }
+}
+
 /// `/recall <query>` — zero-LLM cross-session + commit search. Searches past
 /// session transcripts (and this repo's commit messages) for `query` and prints
-/// the top hits. With no query, browses the most recent sessions. Ported from
-/// Hermes' session_search + magic-context's commit source.
+/// the top hits. With no query, browses the most recent sessions. With a single
+/// session id, opens that session's tail directly. Ported from Hermes'
+/// session_search + magic-context's commit source.
 pub(super) async fn cmd_recall(
     state: &mut EngineState,
-    parts: &[&str],
+    _parts: &[&str],
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     state.messages.push(ChatMessage::user(text.to_owned()));
-    let query = parts.get(1).map(|s| s.trim()).unwrap_or("");
+    let query = recall_query_text(text);
 
     let body = if query.is_empty() {
         // BROWSE mode: most recent sessions.
@@ -878,6 +943,8 @@ pub(super) async fn cmd_recall(
             }
             s
         }
+    } else if let Some(session) = try_render_session_by_id(query) {
+        session
     } else {
         // Exclude the *current* session — its transcript is already live in the
         // prompt, so returning hits from it would re-inject text the model can
@@ -918,4 +985,42 @@ pub(super) async fn cmd_recall(
         }
     };
     state.messages.push(ChatMessage::assistant(body));
+}
+
+#[cfg(test)]
+mod recall_command_tests {
+    use super::*;
+
+    #[test]
+    fn recall_query_preserves_spaces_normal() {
+        assert_eq!(
+            recall_query_text("/recall cache and resume"),
+            "cache and resume"
+        );
+        assert_eq!(
+            recall_query_text("  /search-sessions   claude cache  "),
+            "claude cache"
+        );
+    }
+
+    #[test]
+    fn render_session_tail_omits_empty_and_labels_tool_policy_normal() {
+        let messages = vec![
+            jfc_session::SessionMessage {
+                index: 7,
+                role: "user".into(),
+                text: "continue the work".into(),
+            },
+            jfc_session::SessionMessage {
+                index: 8,
+                role: "assistant".into(),
+                text: String::new(),
+            },
+        ];
+        let out = render_session_tail("ses_test", &messages);
+        assert!(out.contains("tool outputs omitted"));
+        assert!(out.contains("[user #7]"));
+        assert!(out.contains("continue the work"));
+        assert!(!out.contains("[assistant #8]"));
+    }
 }

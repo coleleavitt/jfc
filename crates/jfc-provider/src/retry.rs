@@ -138,8 +138,6 @@ pub fn stream_retry_delay(attempt: u32) -> Duration {
 
 fn is_transient_stream_message(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
-    let has_status_context =
-        lower.contains("http") || lower.contains("api error") || lower.contains("status");
     lower.contains("overloaded_error")
         || lower.contains("rate_limit_error")
         || lower.contains("rate limited")
@@ -160,23 +158,75 @@ fn is_transient_stream_message(message: &str) -> bool {
         || lower.contains("connection closed")
         || lower.contains("upstream closed the connection")
         || lower.contains("incomplete message")
-        || has_status_context
-            && retryable_status_code_in_text(&lower)
-                .is_some_and(|code| should_retry_status(code, None))
+        || status_codes_imply_retry(&lower)
 }
 
-fn retryable_status_code_in_text(message: &str) -> Option<u16> {
-    message
-        .split(|ch: char| !ch.is_ascii_digit())
-        .find_map(|part| {
-            if part.len() == 3 {
-                part.parse::<u16>()
-                    .ok()
-                    .filter(|code| (100..=599).contains(code))
-            } else {
-                None
+/// Decide retryability from HTTP status codes named in an error string.
+///
+/// Only codes *anchored* to a status keyword ("http", "status", "code", or
+/// "error") are considered, so a stray 3-digit number elsewhere in the message
+/// (a token count, a port, an id) can't fake a status. Retry only when at least
+/// one anchored code is retryable AND none is a non-retryable code — so a
+/// message naming both a retryable and a hard-fail status (e.g. "429 … 401")
+/// does not retry. This anchoring is what keeps "Anthropic API error 401
+/// Unauthorized" from being misclassified as transient.
+fn status_codes_imply_retry(lower: &str) -> bool {
+    let codes = anchored_status_codes(lower);
+    if codes.is_empty() {
+        return false;
+    }
+    let mut any_retryable = false;
+    for code in codes {
+        if should_retry_status(code, None) {
+            any_retryable = true;
+        } else {
+            // A definitively non-retryable status (e.g. 400/401/403/413) wins.
+            return false;
+        }
+    }
+    any_retryable
+}
+
+/// Collect 3-digit HTTP-range status codes that immediately follow a status
+/// keyword. "http 529", "status 503", "error 401", "code: 500" all match; a
+/// bare "500 tokens" does not.
+fn anchored_status_codes(lower: &str) -> Vec<u16> {
+    const ANCHORS: &[&str] = &["http", "status", "code", "error"];
+    let bytes = lower.as_bytes();
+    let mut codes = Vec::new();
+    for anchor in ANCHORS {
+        let mut from = 0;
+        while let Some(rel) = lower[from..].find(anchor) {
+            let after = from + rel + anchor.len();
+            // Skip non-digit separators (space, colon, '#', etc.) up to the
+            // first digit, but only across a short gap so we stay "adjacent".
+            let mut i = after;
+            let mut gap = 0;
+            while i < bytes.len() && !bytes[i].is_ascii_digit() {
+                // Stop scanning if the gap grows past a small separator run —
+                // the digit then isn't really attached to this keyword.
+                gap += 1;
+                if gap > 3 {
+                    break;
+                }
+                i += 1;
             }
-        })
+            if i < bytes.len() && bytes[i].is_ascii_digit() && gap <= 3 {
+                let start = i;
+                while i < bytes.len() && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
+                if i - start == 3
+                    && let Ok(code) = lower[start..i].parse::<u16>()
+                    && (100..=599).contains(&code)
+                {
+                    codes.push(code);
+                }
+            }
+            from = after;
+        }
+    }
+    codes
 }
 
 /// User-friendly error message for common HTTP errors.
@@ -454,5 +504,29 @@ mod tests {
         // But a genuine client/semantic error still does NOT auto-retry.
         assert!(retryable_stream_error("invalid_request_error: bad tool").is_none());
         assert!(retryable_stream_error("401 unauthorized").is_none());
+    }
+
+    // Status codes only count when anchored to a status keyword, and a
+    // non-retryable code anywhere vetoes the retry. Guards the "Anthropic API
+    // error 401 Unauthorized on account …" auth flood from being misread as a
+    // transient overload.
+    #[test]
+    fn retryable_stream_error_anchors_status_codes_robust() {
+        // The exact 401 shape from the auth-failure screenshot.
+        assert!(
+            retryable_stream_error(
+                "Anthropic API error 401 Unauthorized on account 'x@y.com': \
+                 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\"}}"
+            )
+            .is_none()
+        );
+        // A retryable code anchored to a keyword still retries.
+        assert!(retryable_stream_error("Anthropic API error 529: overloaded").is_some());
+        assert!(retryable_stream_error("status 503 service unavailable").is_some());
+        // A bare 3-digit number not attached to a status keyword is ignored.
+        assert!(retryable_stream_error("prompt is too long: 500 tokens").is_none());
+        assert!(retryable_stream_error("listening on port 529 failed").is_none());
+        // Mixed: a retryable + a non-retryable code → do NOT retry.
+        assert!(retryable_stream_error("api error 429 then auth error 401 on retry").is_none());
     }
 }

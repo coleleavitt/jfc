@@ -6,6 +6,12 @@ use crate::runtime::{EventSender, drain_queued_prompts};
 use crate::types::*;
 use crate::{config, stream, types};
 
+const MALFORMED_TOOL_USE_RETRY_MARKER: &str = "jfc_malformed_tool_use_clean_retry";
+const MALFORMED_TOOL_USE_RETRY_REMINDER: &str = "The previous assistant response ended with a \
+tool-use stop reason but did not produce a valid tool call. Treat that assistant response as \
+invalid and retry cleanly now. If a tool is needed, emit it through the provider tool-use channel \
+with valid JSON input. Do not repeat malformed XML or text-form tool calls.";
+
 /// Handle `StreamEvent::Done(stop_reason)`.
 pub async fn handle_stream_done(
     state: &mut EngineState,
@@ -109,6 +115,7 @@ pub async fn handle_stream_done(
                 // Teardown mirrors the empty-billed DiscardAndResend path below.
                 state.is_streaming = false;
                 state.active_stream_handle = None;
+                state.clear_active_stream_scope();
                 state.last_stream_event_at = None;
                 state.push_effect(crate::app::EngineEffect::StreamingFinalized);
                 state.streaming_text = String::new();
@@ -160,6 +167,7 @@ pub async fn handle_stream_done(
                 );
                 state.is_streaming = false;
                 state.active_stream_handle = None;
+                state.clear_active_stream_scope();
                 state.last_stream_event_at = None;
                 state.push_effect(crate::app::EngineEffect::StreamingFinalized);
                 state.streaming_text = String::new();
@@ -205,6 +213,7 @@ pub async fn handle_stream_done(
                 // re-sends the (now-clean) conversation.
                 state.is_streaming = false;
                 state.active_stream_handle = None;
+                state.clear_active_stream_scope();
                 state.last_stream_event_at = None;
                 state.push_effect(crate::app::EngineEffect::StreamingFinalized);
                 state.streaming_text = String::new();
@@ -256,6 +265,7 @@ pub async fn handle_stream_done(
 
     state.is_streaming = false;
     state.active_stream_handle = None;
+    state.clear_active_stream_scope();
     state.last_stream_event_at = None;
     state.push_effect(crate::app::EngineEffect::StreamingFinalized);
 
@@ -674,8 +684,8 @@ pub async fn handle_stream_done(
         // Upstream returned finish_reason="tool_calls" but sent
         // zero tool_call delta chunks (transient LiteLLM/Bedrock
         // failure). The assistant message that was pre-pushed to
-        // history is empty and un-replyable; strip it so the
-        // next user turn doesn't send a broken conversation turn.
+        // history is empty/malformed and un-replyable; strip it so the
+        // retry/next user turn doesn't send a broken conversation turn.
         tracing::warn!(
             target: "jfc::stream",
             streaming_idx = ?state.streaming_assistant_idx,
@@ -690,7 +700,33 @@ pub async fn handle_stream_done(
                     .parts
                     .iter()
                     .all(|p| matches!(p, MessagePart::Text(t) if t.trim().is_empty()));
-            if is_empty {
+            if malformed_tool_use_clean_retry_enabled()
+                && malformed_tool_use_retry_candidate(msg)
+                && !malformed_tool_use_retry_already_attempted(&state.messages)
+            {
+                tracing::warn!(
+                    target: "jfc::stream::tool_use",
+                    assistant_idx = idx,
+                    "malformed tool-use turn — tombstoning assistant response and retrying cleanly"
+                );
+                crate::toast::push_with_cap(
+                    &mut state.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Warning,
+                        "Malformed tool call — retrying cleanly".to_owned(),
+                    ),
+                );
+                state.messages.remove(idx);
+                state.streaming_assistant_idx = None;
+                state.current_stream_request = None;
+                state.stream_lifecycle = None;
+                let body = crate::system_reminder::format(&format!(
+                    "{MALFORMED_TOOL_USE_RETRY_REMINDER}\n\n<{MALFORMED_TOOL_USE_RETRY_MARKER}/>"
+                ));
+                state.messages.push(types::ChatMessage::user(body));
+                stream::continue_agentic_loop(state, tx).await;
+                return;
+            } else if is_empty {
                 state.messages.remove(idx);
             } else if stream::should_continue_loop(&state.messages) {
                 // The assistant DID emit tool_use blocks, but every one was
@@ -807,7 +843,27 @@ pub async fn handle_stream_done(
         maybe_self_continue(state, tx, truncated).await;
     }
     if needs_dynamic_loop_keepalive && !state.is_streaming {
-        schedule_dynamic_loop_keepalive();
+        // Keepalive budget gate: the model declined to reschedule the dynamic
+        // loop. Fire the fallback heartbeat only while budget remains; once
+        // exhausted, end the loop rather than firing forever. Mirrors Claude
+        // 2.1.177's `hc$() >= Wz5` guard (`tengu_loop_keepalive_fired` vs
+        // `tengu_loop_ended` model_stopped).
+        let budget_available = state
+            .autonomous_loop
+            .as_ref()
+            .is_some_and(crate::autonomous_loop::AutonomousLoopState::keepalive_budget_available);
+        if budget_available {
+            schedule_dynamic_loop_keepalive();
+            if let Some(loop_state) = state.autonomous_loop.as_mut() {
+                loop_state.record_keepalive_fired();
+            }
+        } else {
+            tracing::info!(
+                target: "jfc::autonomous_loop",
+                "tengu_loop_ended: keepalive budget exhausted (model declined to reschedule) — ending dynamic loop"
+            );
+            state.autonomous_loop = None;
+        }
     }
 }
 
@@ -830,6 +886,63 @@ fn assistant_turn_has_no_content(msg: &types::ChatMessage) -> bool {
         | MessagePart::Tool(_)
         | MessagePart::TaskStatus(_)
         | MessagePart::CompactBoundary { .. } => true,
+    })
+}
+
+fn malformed_tool_use_clean_retry_enabled() -> bool {
+    for key in [
+        "JFC_MALFORMED_TOOL_USE_CLEAN_RETRY",
+        "CLAUDE_CODE_MALFORMED_TOOL_USE_CLEAN_RETRY",
+    ] {
+        if let Ok(value) = std::env::var(key) {
+            let normalized = value.trim().to_ascii_lowercase();
+            return !matches!(normalized.as_str(), "0" | "false" | "no" | "off");
+        }
+    }
+    true
+}
+
+fn malformed_tool_use_retry_candidate(msg: &types::ChatMessage) -> bool {
+    if msg
+        .parts
+        .iter()
+        .any(|part| matches!(part, MessagePart::Tool(_)))
+    {
+        return false;
+    }
+    if assistant_turn_has_no_content(msg) {
+        return true;
+    }
+    let text = assistant_turn_text(msg);
+    crate::inline_tools::contains_inline_tools(&text) || !text.trim().is_empty()
+}
+
+fn malformed_tool_use_retry_already_attempted(messages: &[types::ChatMessage]) -> bool {
+    messages.iter().rev().take(8).any(|message| {
+        message.role == Role::User
+            && message_text_contains(message, MALFORMED_TOOL_USE_RETRY_MARKER)
+    })
+}
+
+fn assistant_turn_text(msg: &types::ChatMessage) -> String {
+    msg.parts
+        .iter()
+        .filter_map(|part| match part {
+            MessagePart::Text(text) | MessagePart::Reasoning(text) | MessagePart::Advisor(text) => {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn message_text_contains(msg: &types::ChatMessage, needle: &str) -> bool {
+    msg.parts.iter().any(|part| match part {
+        MessagePart::Text(text) | MessagePart::Reasoning(text) | MessagePart::Advisor(text) => {
+            text.contains(needle)
+        }
+        _ => false,
     })
 }
 
@@ -1035,6 +1148,18 @@ mod stream_done_lifecycle_tests {
         assert!(cap <= 5, "must stay small so a real refusal isn't hammered");
     }
 
+    #[test]
+    fn malformed_tool_retry_guard_detects_marker_normal() {
+        let body = crate::system_reminder::format(&format!(
+            "retrying\n\n<{MALFORMED_TOOL_USE_RETRY_MARKER}/>"
+        ));
+        let messages = vec![
+            ChatMessage::user("run a tool".into()),
+            ChatMessage::user(body),
+        ];
+        assert!(malformed_tool_use_retry_already_attempted(&messages));
+    }
+
     // Robust: JFC_REFUSAL_RESEND_CAP overrides the default, and a bad value
     // falls back to the default (env is restored so parallel tests are safe).
     #[serial_test::serial]
@@ -1077,6 +1202,52 @@ mod stream_done_lifecycle_tests {
     }
 
     impl jfc_provider::seal::Sealed for TestProvider {}
+
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn malformed_tool_use_is_tombstoned_and_retried_once_normal() {
+        const KEY: &str = "JFC_MALFORMED_TOOL_USE_CLEAN_RETRY";
+        let prev = std::env::var(KEY).ok();
+        unsafe { std::env::set_var(KEY, "1") };
+
+        let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
+        state.task_store = jfc_session::TaskStore::in_memory();
+        state.messages.push(ChatMessage::user("run ls".into()));
+        state
+            .messages
+            .push(ChatMessage::assistant("<tool_use>bad</tool_use>".into()));
+        state.streaming_assistant_idx = Some(1);
+        state.is_streaming = true;
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_stream_done(&mut state, &tx, jfc_provider::StopReason::ToolUse).await;
+
+        assert!(
+            !state
+                .messages
+                .iter()
+                .any(|message| message_text_contains(message, "<tool_use>bad</tool_use>")),
+            "malformed assistant turn must be removed before retry"
+        );
+        assert!(
+            state
+                .messages
+                .iter()
+                .any(|message| message_text_contains(message, MALFORMED_TOOL_USE_RETRY_MARKER)),
+            "retry marker user reminder must be present"
+        );
+        assert!(
+            state.is_streaming,
+            "clean retry should stage a fresh stream"
+        );
+
+        unsafe {
+            match prev {
+                Some(value) => std::env::set_var(KEY, value),
+                None => std::env::remove_var(KEY),
+            }
+        }
+    }
 
     #[tokio::test]
     async fn pending_classifier_keeps_turn_clock_active_robust() {

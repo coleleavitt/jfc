@@ -19,7 +19,7 @@ use tokio::sync::Mutex;
 use crate::auto_mode::AutoModeConfig;
 use crate::context::{ReadDedupCache, ToolContext};
 use crate::runtime::{
-    DEFERRED_TOOL_USES_CAP, DeferredToolUse, MessageQueue, StreamLifecycleStatus,
+    DEFERRED_TOOL_USES_CAP, DeferredToolUse, EngineEvent, MessageQueue, StreamLifecycleStatus,
     StreamRequestMetadata, TOOL_USE_SUMMARIES_CAP, ToolUseSummary,
 };
 use crate::slate::SlateRouter;
@@ -258,7 +258,7 @@ pub struct BackgroundAgentCompletion {
 /// push effects here and the frontend drains them after each dispatch.
 /// Headless frontends ignore most of these. Generalizes the
 /// `compact/engine.rs` progress-callback pattern to the whole engine.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EngineEffect {
     /// Streamed content was appended to the transcript. Frontends that are
     /// following the bottom should re-pin their viewport.
@@ -278,6 +278,14 @@ pub enum EngineEffect {
     /// The engine switched sessions (load/clear/continue) — frontends reset
     /// per-session view state (task panel selection, drill-down, token gauge).
     SessionSwitched,
+    /// The local prompt-rewrite gate proposed a reworded prompt. Frontends show
+    /// original→rewrite + rationale and let the user accept/reject/edit before
+    /// re-submitting. Never applied silently.
+    PromptRewriteProposed {
+        original: String,
+        rewrite: String,
+        rationale: String,
+    },
 }
 
 pub struct EngineState {
@@ -369,6 +377,11 @@ pub struct EngineState {
     pub claude_status: Option<crate::claude_status::ClaudeStatusSnapshot>,
     pub claude_status_error: Option<String>,
     pub streaming_assistant_idx: Option<usize>,
+    /// Active model-stream id. Stream tasks stamp their events with this id so
+    /// late events from superseded tasks can be dropped before they mutate the
+    /// current transcript.
+    pub active_stream_id: Option<u64>,
+    next_stream_id: u64,
     /// Last message ID from the API response, for `diagnostics.previous_message_id`.
     pub last_response_id: Option<String>,
     pub is_streaming: bool,
@@ -877,6 +890,10 @@ pub struct EngineState {
     /// Bash sandbox configuration (bwrap network/filesystem isolation).
     /// When `enabled = true` and bwrap is present, bash commands are wrapped.
     pub bash_sandbox: crate::sandbox::BashSandboxConfig,
+    /// Local prompt-rewriter / over-refusal mitigation. `None` (the default)
+    /// means the feature is off and `submit_prompt` sends prompts unchanged;
+    /// see `crate::runtime::prompt_rewrite_gate`.
+    pub prompt_rewrite: Option<jfc_config::PromptRewriteConfig>,
     /// v137 `/goal <condition>` — session-scoped stop condition. When
     /// `Some`, the agentic loop will not let the agent settle on
     /// `EndTurn` until the evaluator (see `crate::goal::evaluate`)
@@ -1017,6 +1034,8 @@ impl EngineState {
             claude_status: None,
             claude_status_error: None,
             streaming_assistant_idx: None,
+            active_stream_id: None,
+            next_stream_id: 0,
             last_response_id: None,
             streaming_started_at: None,
             streaming_last_token_at: None,
@@ -1150,6 +1169,7 @@ impl EngineState {
             active_speculation_id: None,
             speculation_stats: crate::speculation::SpeculationStats::default(),
             bash_sandbox: crate::sandbox::BashSandboxConfig::default(),
+            prompt_rewrite: None,
             goal: None,
             goal_evaluator_in_flight: false,
             pinned_files: Vec::new(),
@@ -1282,6 +1302,25 @@ impl EngineState {
 impl EngineState {
     pub fn record_stream_activity(&mut self) {
         self.last_stream_event_at = Some(Instant::now());
+    }
+
+    pub fn begin_stream_scope(&mut self) -> u64 {
+        let next = self.next_stream_id.wrapping_add(1);
+        self.next_stream_id = if next == 0 { 1 } else { next };
+        self.active_stream_id = Some(self.next_stream_id);
+        self.next_stream_id
+    }
+
+    pub fn clear_active_stream_scope(&mut self) {
+        self.active_stream_id = None;
+    }
+
+    pub fn is_stale_stream_event(&self, ev: &EngineEvent) -> bool {
+        matches!(
+            ev,
+            EngineEvent::ScopedStream { stream_id, .. }
+                if self.active_stream_id != Some(*stream_id)
+        )
     }
 
     pub fn pipeline_busy_for_submit(&self) -> bool {
@@ -1496,6 +1535,7 @@ impl EngineState {
         );
         self.cancel_token = tokio_util::sync::CancellationToken::new();
         self.is_streaming = false;
+        self.clear_active_stream_scope();
         self.streaming_started_at = None;
         self.last_stream_event_at = None;
         self.streaming_last_token_at = None;
@@ -1590,6 +1630,7 @@ impl EngineState {
             "switch_session"
         );
         self.current_session_id = Some(new_id.clone());
+        self.clear_active_stream_scope();
         // Mirror the constructor's store choice: inside a git repo the
         // project-level store (<root>/.jfc/tasks.json) survives across ALL
         // sessions; only fall back to the per-session file without one.

@@ -70,7 +70,11 @@ pub(crate) fn fleet_ordered_task_ids(app: &App) -> Vec<String> {
         .map(|bt| {
             (
                 bt.task_id.as_str(),
-                fleet_rank(bt.status, roster_is_active(bt, app), failed_is_fresh(bt, now)),
+                fleet_rank(
+                    bt.status,
+                    roster_is_active(bt, app),
+                    failed_is_fresh(bt, now),
+                ),
             )
         })
         .collect();
@@ -137,7 +141,11 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     // active-detection (roster_is_active) with the teammates panel.
     shown.sort_by(|a, b| {
         fleet_rank(a.status, roster_is_active(a, app), failed_is_fresh(a, now))
-            .cmp(&fleet_rank(b.status, roster_is_active(b, app), failed_is_fresh(b, now)))
+            .cmp(&fleet_rank(
+                b.status,
+                roster_is_active(b, app),
+                failed_is_fresh(b, now),
+            ))
             .then_with(|| a.task_id.as_str().cmp(b.task_id.as_str()))
     });
 
