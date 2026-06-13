@@ -15,7 +15,12 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+criterion = { version = "4.7.0", features = ["html_reports"], package = "codspeed-criterion-compat" }
 tempfile = "3"
+
+[[bench]]
+name = "changeset"
+harness = false
 
 [lints]
 workspace = true
