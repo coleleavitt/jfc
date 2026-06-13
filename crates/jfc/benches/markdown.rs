@@ -53,14 +53,14 @@ fn sample_tool_xml() -> String {
 fn bench_has_unclosed_fence(c: &mut Criterion) {
     let md = sample_markdown();
     c.bench_function("has_unclosed_fence", |b| {
-        b.iter(|| has_unclosed_fence(black_box(&md)))
+        b.iter(|| black_box(has_unclosed_fence(black_box(&md))))
     });
 }
 
 fn bench_strip_inline_tool_xml(c: &mut Criterion) {
     let xml = sample_tool_xml();
     c.bench_function("strip_inline_tool_xml", |b| {
-        b.iter(|| strip_inline_tool_xml(black_box(&xml)))
+        b.iter(|| black_box(strip_inline_tool_xml(black_box(&xml))))
     });
 }
 
@@ -70,7 +70,11 @@ fn bench_hard_wrap_str(c: &mut Criterion) {
         "The quick brown fox jumps over the lazy dog 日本語のテキストもここに含まれています "
             .repeat(16);
     c.bench_function("hard_wrap_str/width_80", |b| {
-        b.iter(|| hard_wrap_str(black_box(&line), black_box(80)))
+        b.iter(|| {
+            for chunk in hard_wrap_str(black_box(&line), black_box(80)) {
+                black_box(chunk);
+            }
+        })
     });
 }
 
