@@ -57,10 +57,7 @@ impl PromptStage for Verifier {
         let Some(proposal) = ctx.proposal.clone() else {
             return Ok(StageOutcome::Pass);
         };
-        let user = format!(
-            "ORIGINAL:\n{}\n\nREWRITE:\n{}",
-            ctx.original, proposal.text
-        );
+        let user = format!("ORIGINAL:\n{}\n\nREWRITE:\n{}", ctx.original, proposal.text);
         let raw = ctx.model.complete(SYSTEM, &user).await?;
         if verdict_approves(&raw) {
             // Keep the proposal in the context; the pipeline emits it.
@@ -75,8 +72,8 @@ impl PromptStage for Verifier {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::{Rewrite, RewriteModel};
+    use super::*;
 
     #[test]
     fn approves_preserved_and_harmless() {
@@ -146,7 +143,10 @@ mod tests {
         let model = Canned(r#"{"intent_preserved":true,"introduced_harm":false}"#);
         let ex: Vec<Rewrite> = Vec::new();
         let mut ctx = ctx_with(&model, &ex, Some(proposal()));
-        assert_eq!(Verifier.run(&mut ctx).await.unwrap(), StageOutcome::Continue);
+        assert_eq!(
+            Verifier.run(&mut ctx).await.unwrap(),
+            StageOutcome::Continue
+        );
         assert!(ctx.proposal.is_some());
     }
 

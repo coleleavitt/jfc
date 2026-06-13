@@ -24,8 +24,8 @@ pub mod types;
 
 pub use error::{AuditError, Result};
 pub use orchestrator::{AuditConfig, AuditOrchestrator, AuditReport, AuditStats};
-pub use store::{FindingFilter, FindingStore};
-pub use types::{Finding, FindingKind, Granularity, PocStatus, Severity, SourceSpan};
 pub use prompt_rewrite::{
     PolicyGate, Rewrite, RewriteDecision, RewriteModel, RewritePipeline, RiskFlag,
 };
+pub use store::{FindingFilter, FindingStore};
+pub use types::{Finding, FindingKind, Granularity, PocStatus, Severity, SourceSpan};

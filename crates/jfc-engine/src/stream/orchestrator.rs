@@ -574,7 +574,10 @@ mod fallback_tests {
             classify_fallback_cause("connection reset", true),
             "partial_yield"
         );
-        assert_eq!(classify_fallback_cause("idle timeout", true), "partial_yield");
+        assert_eq!(
+            classify_fallback_cause("idle timeout", true),
+            "partial_yield"
+        );
     }
 
     // Normal: the pre-first-event causes map to their upstream-equivalent labels.
@@ -619,6 +622,10 @@ mod fallback_tests {
             MAX_PRE_FIRST_EVENT_STREAM_RETRIES
         ));
         // Ineligible: not a stale/idle shape (e.g. a hard 400).
-        assert!(!should_retry_pre_first_event("invalid_request_error", false, 0));
+        assert!(!should_retry_pre_first_event(
+            "invalid_request_error",
+            false,
+            0
+        ));
     }
 }

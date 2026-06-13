@@ -298,7 +298,10 @@ mod tests {
             clamp_wakeup_delay_seconds(100_000),
             (LOOP_WAKEUP_MAX_DELAY_SECONDS, true)
         );
-        assert_eq!(clamp_wakeup_delay_seconds(0), (LOOP_WAKEUP_MIN_DELAY_SECONDS, true));
+        assert_eq!(
+            clamp_wakeup_delay_seconds(0),
+            (LOOP_WAKEUP_MIN_DELAY_SECONDS, true)
+        );
     }
 
     // Normal: keepalive budget allows exactly LOOP_KEEPALIVE_BUDGET fires, then

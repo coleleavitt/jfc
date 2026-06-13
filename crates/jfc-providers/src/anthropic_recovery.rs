@@ -463,9 +463,7 @@ mod tests {
         assert_eq!(latches.media_blocks_stripped, 1);
         let content = body["messages"][0]["content"].as_array().unwrap();
         assert!(
-            content
-                .iter()
-                .all(|b| b["type"].as_str() != Some("image")),
+            content.iter().all(|b| b["type"].as_str() != Some("image")),
             "image block must be stripped"
         );
     }
@@ -483,7 +481,10 @@ mod tests {
     #[test]
     fn thinking_type_toggle_adaptive_to_enabled_normal() {
         let mut body = body_with_thinking("adaptive");
-        body["thinking"].as_object_mut().unwrap().remove("budget_tokens");
+        body["thinking"]
+            .as_object_mut()
+            .unwrap()
+            .remove("budget_tokens");
         let mut latches = RecoveryLatches::default();
         let action = classify_and_recover(
             400,
@@ -508,7 +509,10 @@ mod tests {
             &mut body,
             &mut latches,
         );
-        assert_eq!(action, RecoveryAction::Retry(RetryKind::ThinkingSignatureStrip));
+        assert_eq!(
+            action,
+            RecoveryAction::Retry(RetryKind::ThinkingSignatureStrip)
+        );
         let assistant = &body["messages"][1]["content"].as_array().unwrap();
         assert!(
             assistant
@@ -601,8 +605,7 @@ mod tests {
         }
         assert!(latches.media_strip_done);
         let mut body = image_body();
-        let action =
-            classify_and_recover(400, "could not process image", &mut body, &mut latches);
+        let action = classify_and_recover(400, "could not process image", &mut body, &mut latches);
         assert_eq!(action, RecoveryAction::Surface);
     }
 
@@ -621,7 +624,10 @@ mod tests {
             &mut body,
             &mut latches,
         );
-        assert_eq!(action, RecoveryAction::Retry(RetryKind::FallbackCreditStrip));
+        assert_eq!(
+            action,
+            RecoveryAction::Retry(RetryKind::FallbackCreditStrip)
+        );
         assert!(body.get("fallback_credit_token").is_none());
         assert!(latches.fallback_credit_stripped);
     }

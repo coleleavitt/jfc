@@ -99,16 +99,13 @@ impl PromptStage for PolicyGate {
     }
 
     async fn run(&self, ctx: &mut RewriteContext<'_>) -> Result<StageOutcome> {
-        let assessment = ctx
-            .assessment
-            .clone()
-            .unwrap_or_else(|| IntentAssessment {
-                goal_category: super::types::GoalCategory::Other,
-                verdict: GateVerdict::Ambiguous,
-                risk_flags: vec![RiskFlag::AmbiguousIntent],
-                trigger_terms: Vec::new(),
-                confidence: 0.0,
-            });
+        let assessment = ctx.assessment.clone().unwrap_or_else(|| IntentAssessment {
+            goal_category: super::types::GoalCategory::Other,
+            verdict: GateVerdict::Ambiguous,
+            risk_flags: vec![RiskFlag::AmbiguousIntent],
+            trigger_terms: Vec::new(),
+            confidence: 0.0,
+        });
         let verdict = self.decide(&assessment);
         ctx.gate = Some(verdict);
         Ok(match verdict {
@@ -123,8 +120,8 @@ impl PromptStage for PolicyGate {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::{GoalCategory, Rewrite, RewriteModel, ScreenVerdict};
+    use super::*;
 
     fn assess(verdict: GateVerdict, flags: Vec<RiskFlag>) -> IntentAssessment {
         IntentAssessment {
@@ -150,7 +147,10 @@ mod tests {
         let gate = PolicyGate::default();
         // Classifier said "ambiguous" but raised a credential-theft flag → block.
         assert_eq!(
-            gate.decide(&assess(GateVerdict::Ambiguous, vec![RiskFlag::CredentialTheft])),
+            gate.decide(&assess(
+                GateVerdict::Ambiguous,
+                vec![RiskFlag::CredentialTheft]
+            )),
             GateVerdict::Disallowed
         );
     }
@@ -163,7 +163,10 @@ mod tests {
             GateVerdict::Allowed
         );
         assert_eq!(
-            gate.decide(&assess(GateVerdict::Ambiguous, vec![RiskFlag::SensitiveKeyword])),
+            gate.decide(&assess(
+                GateVerdict::Ambiguous,
+                vec![RiskFlag::SensitiveKeyword]
+            )),
             GateVerdict::Ambiguous
         );
     }

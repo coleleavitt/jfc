@@ -154,7 +154,10 @@ pub enum RewriteDecision {
     /// accept/reject/edit — never silently substitute it.
     Rewritten(Rewrite),
     /// The goal is disallowed; do not send. `reason` is user-facing.
-    Refused { reason: String, flags: Vec<RiskFlag> },
+    Refused {
+        reason: String,
+        flags: Vec<RiskFlag>,
+    },
 }
 
 impl RewriteDecision {
@@ -221,7 +224,10 @@ pub enum StageOutcome {
     /// Short-circuit: the prompt is fine, send unchanged.
     Pass,
     /// Short-circuit with a refusal.
-    Refuse { reason: String, flags: Vec<RiskFlag> },
+    Refuse {
+        reason: String,
+        flags: Vec<RiskFlag>,
+    },
 }
 
 /// One stage of the rewrite pipeline. Mirrors the [`crate::Guard`]-style shape:

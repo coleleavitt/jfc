@@ -1189,7 +1189,10 @@ mod submit_prompt_tests {
             rewrite.contains("defensive analysis"),
             "the surfaced rewrite must be the scripted reword, got {rewrite:?}"
         );
-        assert!(!rationale.is_empty(), "rationale must accompany the rewrite");
+        assert!(
+            !rationale.is_empty(),
+            "rationale must accompany the rewrite"
+        );
     }
 
     // Flag ON + a clearly disallowed prompt: the screener refuses with zero

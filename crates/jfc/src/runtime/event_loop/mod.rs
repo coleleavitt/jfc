@@ -1191,9 +1191,7 @@ pub(crate) fn apply_engine_effects(app: &mut App) {
                 }
             }
             crate::app::EngineEffect::PromptRewriteProposed {
-                rewrite,
-                rationale,
-                ..
+                rewrite, rationale, ..
             } => {
                 // Surface the proposal — never apply silently. Prefill the
                 // composer with the reworded prompt so the user can accept

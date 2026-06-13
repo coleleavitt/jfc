@@ -142,9 +142,15 @@ mod tests {
         // explicit prompt_rewrite.model wins
         let mut c = cfg(true);
         c.model = Some("explicit".into());
-        assert_eq!(resolve_model(Some(&c), Some("advisor"), "active"), "explicit");
+        assert_eq!(
+            resolve_model(Some(&c), Some("advisor"), "active"),
+            "explicit"
+        );
         // else advisor
-        assert_eq!(resolve_model(Some(&cfg(true)), Some("advisor"), "active"), "advisor");
+        assert_eq!(
+            resolve_model(Some(&cfg(true)), Some("advisor"), "active"),
+            "advisor"
+        );
         // else active
         assert_eq!(resolve_model(Some(&cfg(true)), None, "active"), "active");
     }

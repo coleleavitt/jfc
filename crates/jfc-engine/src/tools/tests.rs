@@ -2529,25 +2529,16 @@ async fn execute_bash_output_offset_past_eof_errors_robust() {
 #[serial_test::serial]
 async fn execute_bash_output_unknown_task_id_is_actionable_robust() {
     crate::sandbox::reset_active_bash_sandbox_for_test();
-    let output =
-        execute_bash_output("bash_d2da789f9f50", None, None, Some(false), None).await;
+    let output = execute_bash_output("bash_d2da789f9f50", None, None, Some(false), None).await;
     assert!(output.is_error(), "{}", output.output);
     assert!(
         output.output.contains("Unknown Bash task id"),
         "{}",
         output.output
     );
-    assert!(
-        output.output.contains("do not invent"),
-        "{}",
-        output.output
-    );
+    assert!(output.output.contains("do not invent"), "{}", output.output);
     // Must NOT leak the raw OS error that triggered the retry loop.
-    assert!(
-        !output.output.contains("os error 2"),
-        "{}",
-        output.output
-    );
+    assert!(!output.output.contains("os error 2"), "{}", output.output);
 }
 
 #[tokio::test]

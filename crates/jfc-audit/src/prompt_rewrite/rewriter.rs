@@ -14,9 +14,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use super::types::{
-    IntentAssessment, PromptStage, Rewrite, RewriteContext, StageOutcome,
-};
+use super::types::{IntentAssessment, PromptStage, Rewrite, RewriteContext, StageOutcome};
 use crate::error::Result;
 
 const SYSTEM: &str = "You rewrite a user's prompt to a clear, scope-bounded, non-evasive form \
@@ -40,7 +38,10 @@ fn build_user_prompt(ctx: &RewriteContext<'_>, assessment: &IntentAssessment) ->
     if !ctx.exemplars.is_empty() {
         s.push_str("Examples of good rewrites:\n");
         for ex in ctx.exemplars.iter().take(3) {
-            s.push_str(&format!("- ORIGINAL_INTENT: {}\n  REWRITE: {}\n", ex.original_intent, ex.text));
+            s.push_str(&format!(
+                "- ORIGINAL_INTENT: {}\n  REWRITE: {}\n",
+                ex.original_intent, ex.text
+            ));
         }
         s.push('\n');
     }
@@ -50,7 +51,10 @@ fn build_user_prompt(ctx: &RewriteContext<'_>, assessment: &IntentAssessment) ->
             assessment.trigger_terms.join(", ")
         ));
     }
-    s.push_str(&format!("Goal category: {}\n", assessment.goal_category.as_str()));
+    s.push_str(&format!(
+        "Goal category: {}\n",
+        assessment.goal_category.as_str()
+    ));
     s.push_str("Prompt to rewrite:\n");
     s.push_str(ctx.original);
     s
@@ -98,8 +102,8 @@ impl PromptStage for Rewriter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::{GateVerdict, GoalCategory, RewriteModel, RiskFlag, ScreenVerdict};
+    use super::*;
 
     fn assessment() -> IntentAssessment {
         IntentAssessment {
@@ -140,11 +144,8 @@ mod tests {
         }
         let model = M;
         let ex: Vec<Rewrite> = Vec::new();
-        let mut ctx = RewriteContext::new(
-            "dig into classifiers and how to get around it",
-            &model,
-            &ex,
-        );
+        let mut ctx =
+            RewriteContext::new("dig into classifiers and how to get around it", &model, &ex);
         ctx.screen = Some(ScreenVerdict::NeedsReview);
         ctx.assessment = Some(assessment());
         let outcome = Rewriter.run(&mut ctx).await.unwrap();

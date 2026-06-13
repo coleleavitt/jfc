@@ -69,8 +69,7 @@ fn is_clearly_disallowed(lower: &str) -> bool {
             || lower.contains("nerve agent")
             || lower.contains("explosive device")
             || lower.contains("dirty bomb"));
-    let csam = lower.contains("csam")
-        || (lower.contains("child") && lower.contains("sexual"));
+    let csam = lower.contains("csam") || (lower.contains("child") && lower.contains("sexual"));
     steal_creds || build_weapon || csam
 }
 

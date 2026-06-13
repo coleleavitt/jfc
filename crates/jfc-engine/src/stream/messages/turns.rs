@@ -320,7 +320,12 @@ pub fn repair_tool_result_pairing(msgs: Vec<ProviderMessage>) -> Vec<ProviderMes
 pub fn strict_tool_result_pairing() -> bool {
     std::env::var("JFC_STRICT_TOOL_RESULT_PAIRING")
         .ok()
-        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -1014,7 +1019,10 @@ mod tests {
     // orphan (1,0) can be told apart from a duplicate (2,_).
     #[test]
     fn count_tool_id_occurrences_reflects_duplicates_robust() {
-        let msgs = vec![assistant_tool_use("toolu_dup"), assistant_tool_use("toolu_dup")];
+        let msgs = vec![
+            assistant_tool_use("toolu_dup"),
+            assistant_tool_use("toolu_dup"),
+        ];
         assert_eq!(count_tool_id_occurrences(&msgs, "toolu_dup"), (2, 0));
     }
 

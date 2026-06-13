@@ -152,9 +152,21 @@ pub fn parse_assessment(text: &str) -> IntentAssessment {
     };
 
     IntentAssessment {
-        goal_category: raw.goal_category.as_deref().map(parse_goal).unwrap_or(GoalCategory::Other),
-        verdict: raw.verdict.as_deref().map(parse_verdict).unwrap_or(GateVerdict::Ambiguous),
-        risk_flags: raw.risk_flags.iter().filter_map(|s| parse_flag(s)).collect(),
+        goal_category: raw
+            .goal_category
+            .as_deref()
+            .map(parse_goal)
+            .unwrap_or(GoalCategory::Other),
+        verdict: raw
+            .verdict
+            .as_deref()
+            .map(parse_verdict)
+            .unwrap_or(GateVerdict::Ambiguous),
+        risk_flags: raw
+            .risk_flags
+            .iter()
+            .filter_map(|s| parse_flag(s))
+            .collect(),
         trigger_terms: raw.trigger_terms,
         confidence: raw.confidence.unwrap_or(0.0).clamp(0.0, 1.0),
     }
@@ -184,8 +196,8 @@ impl PromptStage for IntentClassifier {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::{Rewrite, RewriteModel};
+    use super::*;
 
     struct CannedModel(String);
     #[async_trait]
