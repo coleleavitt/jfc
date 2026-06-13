@@ -13,6 +13,10 @@
 //! offline; the lexical screener does most of the work and the scripted
 //! classifier stands in for the LLM judge on escalated prompts.
 
+// Wrapped in `mod eval` so the harness's documented verification command,
+// `cargo test -p jfc-audit eval`, actually selects these tests by path
+// (`eval::*`) — a filter that matched nothing would be a silent no-op.
+mod eval {
 use async_trait::async_trait;
 
 use jfc_audit::prompt_rewrite::types::RewriteModel;
@@ -163,4 +167,5 @@ async fn mutated_benign_prompts_stay_served() {
         let d = pipeline.run(&variant, &model).await.unwrap();
         assert!(served(&d), "mutation over-refused: {variant:?} -> {d:?}");
     }
+}
 }
