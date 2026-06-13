@@ -4,6 +4,7 @@ A high-performance AI coding agent for the terminal. Built in Rust with a ratatu
 
 ![Rust](https://img.shields.io/badge/rust-nightly-orange)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/coleleavitt/jfc?utm_source=badge)
 
 <p align="center">
   <img src="resources/image.png" alt="jfc" width="600"/>
