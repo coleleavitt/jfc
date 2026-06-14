@@ -151,17 +151,15 @@ impl Provider for OpenAIProvider {
     fn warmup_url(&self) -> Option<String> {
         // Extract just the origin from the configured base URL so we hit
         // the same host even when OPENAI_BASE_URL points at a local proxy.
-        reqwest::Url::parse(&self.base_url).ok().map(|u| {
-            let origin = format!(
-                "{}://{}",
-                u.scheme(),
-                u.host_str().unwrap_or("api.openai.com")
-            );
-            if let Some(port) = u.port() {
-                format!("{origin}:{port}")
-            } else {
-                origin
-            }
+        // Preserve the configured origin (host honors OPENAI_BASE_URL proxies).
+        // A hostless URL (e.g. `file://`) yields no meaningful origin to warm,
+        // so skip warmup rather than fabricate a wrong host.
+        let u = reqwest::Url::parse(&self.base_url).ok()?;
+        let host = u.host_str()?;
+        let origin = format!("{}://{host}", u.scheme());
+        Some(match u.port() {
+            Some(port) => format!("{origin}:{port}"),
+            None => origin,
         })
     }
 

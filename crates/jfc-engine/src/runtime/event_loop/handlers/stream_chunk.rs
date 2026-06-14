@@ -18,13 +18,13 @@ pub fn handle_chunk(state: &mut EngineState, text: Option<String>, reasoning: Op
     // superseded-cancel logic keys off. One line per turn (gated on
     // `streaming_response_bytes == 0`), so it's cheap even on long streams.
     if state.streaming_response_bytes == 0 {
-        // Time-to-first-token: gap from stream open (request send) to this
-        // first content delta. Captured once per turn; rendered in the
-        // stream-done footer. Falls back to `turn_started_at` if the stream
-        // baseline is missing (resends reuse the turn clock).
-        if state.ttft_ms.is_none()
-            && let Some(start) = state.streaming_started_at.or(state.turn_started_at)
-        {
+        // Time-to-first-token: gap from this stream round's open to its first
+        // content delta. Re-captured each round (this block only runs when
+        // `streaming_response_bytes == 0`, i.e. on the round's first byte), so
+        // the footer always reflects the current round and no stale value can
+        // leak across turn-start paths. Falls back to `turn_started_at` if the
+        // per-round stream baseline is missing (resends reuse the turn clock).
+        if let Some(start) = state.streaming_started_at.or(state.turn_started_at) {
             state.ttft_ms =
                 Some(std::time::Instant::now().duration_since(start).as_millis() as u64);
         }

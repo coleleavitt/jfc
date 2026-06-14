@@ -30,3 +30,26 @@ pub fn format_ttft(ttft_ms: u64) -> String {
         format!("{ttft_ms}ms")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_ttft_boundaries_normal() {
+        assert_eq!(format_ttft(0), "0ms");
+        assert_eq!(format_ttft(420), "420ms");
+        assert_eq!(format_ttft(999), "999ms");
+        assert_eq!(format_ttft(1000), "1.0s");
+        assert_eq!(format_ttft(1400), "1.4s");
+        assert_eq!(format_ttft(9999), "10.0s");
+    }
+
+    #[test]
+    fn fmt_elapsed_minute_boundary_normal() {
+        assert_eq!(fmt_elapsed(Duration::from_secs(5)), "5s");
+        assert_eq!(fmt_elapsed(Duration::from_secs(59)), "59s");
+        assert_eq!(fmt_elapsed(Duration::from_secs(60)), "1m00s");
+        assert_eq!(fmt_elapsed(Duration::from_secs(124)), "2m04s");
+    }
+}
