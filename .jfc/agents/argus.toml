@@ -1,0 +1,11 @@
+[agent]
+name = "argus"
+description = "Security-focused code review agent"
+
+[tools]
+allowed = ["Read", "Grep", "Glob", "Lsp"]
+denied = ["Edit", "Write", "Bash"]
+
+[review]
+methodology = "P0-P3 priority"
+output_format = "structured"

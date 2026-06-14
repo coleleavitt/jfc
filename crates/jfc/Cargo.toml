@@ -1,0 +1,146 @@
+[package]
+name = "jfc"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "jfc"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+chrono = { workspace = true }
+dirs = "5"
+notify = "8"
+toml = "0.8"
+url = "2"
+uuid = { workspace = true }
+# `unstable-rendered-line-info` opts into `Paragraph::line_count(width)` which
+# we need for accurate scroll math. ratatui's word-wrap can produce more rows
+# than `div_ceil(width)` for the same line, so without this feature the
+# message-area total height was undercounted and `follow_bottom` left the
+# real last row offscreen until the next chunk's recompute caught up.
+ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
+ratatui-textarea = "0.9"
+tokio = { workspace = true, features = ["full"] }
+# CancellationToken for coordinated cancellation across spawn sites that hold
+# critical state. Per the wg-async pattern (a spawned task holding state must
+# be explicitly cancelled, not just dropped via a polled AtomicBool), we use
+# this to thread cancel signals into stream_response, tool dispatch, compact,
+# and session-save tasks. The transitive dep is already present via reqwest /
+# tokio-util in our Cargo.lock; declaring it directly so the rt feature is
+# explicit and the API is stable for our use.
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = { workspace = true }
+anyhow = { workspace = true }
+# Cell-width aware string measurement. Used by the input wrap to
+# correctly handle CJK / emoji / full-width chars (those occupy 2
+# terminal cells per char). Without it `hard_wrap_str` was wrapping
+# at character count, so 60 chars of CJK rendered as 120 cells —
+# overshot the textarea width and got clipped by `LineTruncator`,
+# making typed text disappear at the right edge.
+unicode-width = "0.2"
+tracing = { workspace = true }
+thiserror = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+arboard = { version = "3", default-features = false, features = ["wayland-data-control", "image-data"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+serde_json = { workspace = true }
+unicode-segmentation = { workspace = true }
+serde = { workspace = true }
+reqwest = { workspace = true }
+parking_lot = { workspace = true }
+pulldown-cmark = "0.12"
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
+# two-face bundles ~250 language grammars + 32 themes on top of syntect's
+# defaults. Codex CLI's renderer (research/openai-codex/codex-rs/tui/src/
+# render/highlight.rs:33-44) uses the same primitive — gives us Zig, Nix,
+# Fish, Hare, Roc, etc. without hand-rolling .sublime-syntax files. Themes
+# include Catppuccin variants used as adaptive defaults.
+two-face = "0.5"
+ansi-to-tui = "8"
+itertools = "0.14"
+clap = { version = "4", features = ["derive"] }
+jfc-engine = { path = "../jfc-engine" }
+jfc-voice = { path = "../jfc-voice" }
+jfc-config = { path = "../jfc-config" }
+jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
+jfc-auth = { path = "../jfc-auth" }
+jfc-bridge = { path = "../jfc-bridge" }
+jfc-agents = { path = "../jfc-agents" }
+jfc-core = { path = "../jfc-core" }
+jfc-changeset = { path = "../jfc-changeset" }
+jfc-provider = { path = "../jfc-provider" }
+jfc-session = { path = "../jfc-session" }
+jfc-tools = { path = "../jfc-tools" }
+# OS-level desktop notifications. Fire-and-forget: when a long-running
+# turn completes or a tool fails while jfc isn't focused, the user gets
+# a tray bubble instead of having to refocus to check. Disabled when
+# `JFC_DISABLE_NOTIFICATIONS=1` so headless / SSH sessions don't error.
+# Used by the Monitor tool's `until` matcher and the CronSchedule
+# parser. Default features include unicode + perl classes which is
+# overkill for our needs but the binary already pulls regex through
+# `tracing-subscriber`'s env-filter, so this is essentially free.
+regex = "1"
+indexmap = "2"
+jfc-theme = { path = "../jfc-theme" }
+jfc-markdown = { path = "../jfc-markdown" }
+jfc-economy = { path = "../jfc-economy" }
+jfc-mcp = { path = "../jfc-mcp" }
+jfc-providers = { path = "../jfc-providers" }
+jfc-daemon = { path = "../jfc-daemon" }
+jfc-learn = { path = "../jfc-learn" }
+jfc-memory = { path = "../jfc-memory" }
+jfc-web = { path = "../jfc-web" }
+jfc-design = { path = "../jfc-design" }
+jfc-remote = { path = "../jfc-remote" }
+
+# Optional profiling deps (enable via --features dhat-heap or --features profiling)
+dhat = { version = "0.3.3", optional = true }
+pprof = { version = "0.14", features = ["flamegraph", "criterion"], optional = true }
+console-subscriber = { version = "0.4", optional = true }
+
+[build-dependencies]
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-onig", "yaml-load", "dump-create", "dump-load"] }
+
+[dev-dependencies]
+criterion = { version = "4.7.0", features = ["html_reports"], package = "codspeed-criterion-compat" }
+divan = "0.1"
+proptest = "1"
+serial_test = "3"
+tempfile = "3.27.0"
+
+[features]
+default = ["hooks", "permission-automation", "anthropic-oauth-sensitive", "intent-gate", "vad-neural"]
+# Compile the neural (Silero) VAD backend into the binary and make it the
+# default hands-free engine. Pulls in ort + ONNX Runtime. Disable with
+# `--no-default-features` (plus the other defaults) for a lighter build that
+# uses the energy VAD; at runtime `JFC_VAD_ENGINE=energy` opts out without a
+# rebuild.
+vad-neural = ["jfc-voice/vad-neural"]
+# Feature-gated Anthropic OAuth sensitive implementation (CCH, billing attestation,
+# OAuth PKCE client id, etc.). Public builds can disable this via
+# `--no-default-features --features hooks,permission-automation` or similar.
+# Every gate forwards to the engine crate, which carries the gated code.
+anthropic-oauth-sensitive = ["jfc-engine/anthropic-oauth-sensitive"]
+hashline = ["jfc-engine/hashline"]
+permission-automation = ["jfc-engine/permission-automation"]
+hooks = ["jfc-engine/hooks"]
+background-agents = ["jfc-engine/background-agents"]
+intent-gate = ["jfc-engine/intent-gate"]
+landlock-sandbox = ["jfc-engine/landlock-sandbox"]
+dhat-heap = ["dhat"]
+profiling = ["pprof", "console-subscriber"]
+
+[[bench]]
+name = "hooks"
+harness = false
+
+[[bench]]
+name = "markdown"
+harness = false
+
+[lints]
+workspace = true

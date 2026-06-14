@@ -1,0 +1,40 @@
+[package]
+name = "jfc-design"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+description = "Design-artifact workspace for JFC: projects, native exporters (standalone-HTML inliner, dev handoff), a design-system indexer, and a local preview server. Ports the Claude Design product layer."
+
+[[bin]]
+name = "jfc-design"
+path = "src/main.rs"
+
+[[bin]]
+name = "jfc-design-server"
+path = "src/server_main.rs"
+required-features = ["server-api"]
+
+[features]
+default = []
+server-api = ["dep:async-stream", "dep:axum", "dep:futures-util", "dep:tokio"]
+
+[dependencies]
+async-stream = { version = "0.3", optional = true }
+axum = { version = "0.7", optional = true }
+futures-util = { version = "0.3", optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"], optional = true }
+tracing = { workspace = true }
+regex = "1"
+base64 = "0.21"
+walkdir = "2"
+mime_guess = "2"
+
+[lints]
+workspace = true

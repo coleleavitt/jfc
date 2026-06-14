@@ -1,0 +1,184 @@
+═══════════════════════════════════════════════════════════════════════════════
+JFC STREAMING PATH — QUICK INDEX (file:line)
+═══════════════════════════════════════════════════════════════════════════════
+
+USER ENTERS → STREAMING STARTS:
+  input.rs:2585, 4548, 5774, 6809, 6876, 7258, 7478, 7496 — set app.is_streaming = true
+  event_loop.rs:193, 600 — set app.is_streaming = true
+  stream.rs:2330 — set app.is_streaming = true
+
+STREAM INITIALIZATION:
+  stream.rs:1457 — stream_response() called with provider, messages, model
+  stream.rs:1057-1105 — open_stream_with_bedrock_retries() retries on transient 400s
+    └─ line 1086-1099: backoff = 250ms * 2^attempt * jitter, sleep(delay)
+
+ANTHROPIC API CALL (POST /v1/messages with stream=true):
+  anthropic.rs:192 — async fn stream(&self, messages, options)
+  anthropic.rs:197 — body = build_body(messages, options)
+  anthropic.rs:200-210 — send_with_retry("anthropic.messages", || {
+    anthropic.rs:202 — client.post(API_URL) where API_URL = "https://api.anthropic.com/v1/messages"
+    anthropic.rs:207 — .json(&body) with "stream": true in body
+
+HTTP RETRY WRAPPER (connection-level errors ONLY):
+  http.rs:47-102 — async fn send_with_retry<F, Fut>()
+    http.rs:71 — is_retriable_error(&e)
+    http.rs:85 — tokio::time::sleep(delay).await
+
+RETRY POLICY:
+  retry.rs:76-78 — is_retriable_error() checks .is_connect() || .is_timeout() || .is_request()
+  retry.rs:45-50 — delay_for_attempt(attempt) formula
+  retry.rs:24-30 — RetryConfig: max_retries=2, base=0.5s, max=8.0s
+
+RESPONSE STATUS CHECK:
+  anthropic.rs:244-293 — if !status.is_success() { ... handle error }
+  anthropic.rs:265-266 — anthropic_error_type(&text) + friendly_error_message(status, &text)
+
+429 / RATE LIMIT DETECTION:
+  anthropic.rs:276 — Some("rate_limit_error") => anyhow::bail!(...)
+  anthropic.rs:277 — "Rate limited — wait a moment and retry. {friendly}"
+  
+  retry.rs:124-130 — 429 => "Rate limited — too many requests. Retrying with backoff."
+  retry.rs:54,72 — should_retry_status(429) → true (determines retriability)
+
+ERROR PROPAGATION:
+  stream.rs:1521 — tx.send(AppEvent::StreamError(e.to_string()))
+  stream.rs:1569 — tx.send(AppEvent::StreamError(e.to_string()))
+  stream.rs:1516 — tx.send(AppEvent::StreamError(format!("auto-compact: {e}")))
+
+EVENT LOOP HANDLER:
+  event_loop.rs:2067-2176 — AppEvent::StreamError(e) => { ... }
+  event_loop.rs:2068 — app.record_stream_activity()
+  event_loop.rs:2081-2090 — auto_compact_signal check (special "auto-compact:" prefix)
+
+ERROR MESSAGE RENDERING:
+  event_loop.rs:2141-2143 — app.messages.push(ChatMessage::assistant(
+                             format!("**Error:** {e}\n\n_Press Ctrl+R to retry the last prompt._")))
+  
+TOAST NOTIFICATION:
+  event_loop.rs:2153-2159 — toast::push_with_cap(&mut app.toasts,
+                             toast::Toast::new(toast::ToastKind::Error,
+                             format!("Stream error: {preview}")))
+
+TOAST RENDERING:
+  render.rs:292 — if !app.toasts.is_empty() { ... render_toast_strip() }
+  render.rs:3375-3494 — render_toast_strip() full implementation
+    render.rs:3380 — count = app.toasts.len()
+    render.rs:3381 — body_h = count.min(5)
+    render.rs:3391-3407 — slide-in animation (200ms ease-out-cubic)
+    render.rs:3439-3455 — border color per highest-severity kind
+    render.rs:3471-3476 — icon per kind (ℹ, ✓, ⚠, ✘)
+
+TOAST MODEL:
+  toast.rs:12-18 — enum ToastKind { Info, Success, Warning, Error }
+  toast.rs:21-45 — struct Toast { kind, text, created_at, ttl }
+  toast.rs:51-58 — default_ttl_for(kind): Error=8s, Warning=6s, Info=4s, Success=3s
+  toast.rs:63-65 — prune_expired(toasts, now)
+
+UI HELP TEXT:
+  render.rs:3784 — ("Ctrl+R", "retry last prompt")
+  input.rs:6838 — // Ctrl+R retry
+
+═══════════════════════════════════════════════════════════════════════════════
+ALL 429 / 529 / 5xx MATCHES:
+═══════════════════════════════════════════════════════════════════════════════
+
+FILE:LINE | CODE | MEANING
+──────────────────────────────────────────────────────────────────────────────
+
+jfc-anthropic-sdk/src/error.rs:44 | matches!(code, 408 | 409 | 425 | 429) || code >= 500 | SDK retry check
+
+jfc-anthropic-sdk/src/retry.rs:3 | //! Retryable: 408, 409, 425, 429, 500+ | Doc comment
+jfc-anthropic-sdk/src/retry.rs:79 | matches!(code, 408 | 409 | 425 | 429) || code >= 500 | SDK should_retry_status()
+jfc-anthropic-sdk/src/retry.rs:104 | assert!(should_retry_status(429)) | Test case
+jfc-anthropic-sdk/src/retry.rs:57-75 | parse_retry_after() reads retry-after-ms and retry-after headers | Retry-After parsing
+jfc-anthropic-sdk/src/client.rs:118 | if attempt + 1 >= retry::MAX_ATTEMPTS | Retry exhaustion check
+jfc-anthropic-sdk/src/client.rs:132,147 | tokio::time::sleep(delay).await | SDK sleep on retry
+
+jfc-anthropic-sdk/src/lib.rs:32-34 | //! exponential backoff + 5 attempts + Retry-After | Doc
+jfc-anthropic-sdk/src/messages.rs:1 | //! `POST /v1/messages` streaming | Module doc
+
+jfc/src/providers/retry.rs:4 | //! Retries on: 408, 409, 429, 500+ | Doc
+jfc/src/providers/retry.rs:68-72 | matches!(status, 408 | 409 | 425 | 429 | 500..=599) | should_retry_status()
+jfc/src/providers/retry.rs:85-86 | 401, 403, 408, 409, 413, 425, 429, 500, ... 520-526, 529 | Doc list
+jfc/src/providers/retry.rs:124-130 | 429 => "Rate limited — too many requests. Retrying with backoff." | friendly_error_message()
+jfc/src/providers/retry.rs:145 | 529 => "Provider is overloaded (529). Retrying." | 529-specific message
+jfc/src/providers/retry.rs:224 | assert!(should_retry_status(429, None)) | Test
+jfc/src/providers/retry.rs:249 | assert!(friendly_error_message(429, "rate_limit").contains("Rate limited")) | Test
+jfc/src/providers/retry.rs:265-266 | 400, 401, 403, 408, 409, 413, 425, 429, 500, 502, 503, 504, 520, ..., 529 | Test enumeration
+jfc/src/providers/retry.rs:287-292 | 408 / 425 / 520-526 / 529 must all retry | Doc + test
+
+jfc/src/providers/anthropic.rs:276 | Some("rate_limit_error") => | Check error.type
+jfc/src/providers/anthropic.rs:277 | anyhow::bail!("Rate limited — wait a moment and retry. {friendly}") | Bail on rate limit
+
+jfc/src/event_loop.rs:2142 | "**Error:** {e}\n\n_Press Ctrl+R to retry the last prompt._" | Error message with hint
+
+jfc/src/providers/anthropic_oauth.rs:375 | //! to a different account on 429 / invalid_grant | Doc
+jfc/src/providers/anthropic_oauth.rs:645 | 429: rotate to the next account. `retry_after_secs` carries any | Doc
+jfc/src/providers/anthropic_oauth.rs:657 | } else if status.as_u16() == 429 { | 429 check
+jfc/src/providers/anthropic_oauth.rs:918 | for attempt in 0..ROTATION_MAX_ATTEMPTS { | Rotation retry loop
+
+jfc/src/providers/anthropic_accounts.rs:52 | /// Maximum cooldown after a 429 — clamps malicious `retry-after` headers. | Doc
+jfc/src/providers/anthropic_accounts.rs:424 | /// Mark the account as having received a 429. Sets a cooldown using | Doc
+jfc/src/providers/anthropic_accounts.rs:545 | /// Atomically persist a rate-limit reset time to disk. Used when a 429 | Doc
+
+jfc/src/compact.rs:403 | // prompt_too_long / 529 responses. Mirrors v126 `ol$` → `To1` in | Comment
+
+jfc/src/github/client.rs:31 | /// The GitHub API returned 403/429 with `X-RateLimit-Remaining: 0`. | Doc
+jfc/src/github/client.rs:210 | return Err(GhError::RateLimited { | 429 → RateLimited variant
+jfc/src/github/client.rs:368,372 | Err(GhError::RateLimited { reminder }) | Test case
+
+jfc/src/web_search.rs:634 | if e.contains("429") || e.contains("rate") | Error classification
+jfc/src/web_search.rs:667-668 | if resp.status() == 429 { return Err("S2 public API rate limited (429)") | S2 API 429
+jfc/src/web_search.rs:760 | // When the public Graph API is rate-limited (429), fall back | Doc
+
+═══════════════════════════════════════════════════════════════════════════════
+TOKIO SLEEP / TIMEOUT LOCATIONS:
+═══════════════════════════════════════════════════════════════════════════════
+
+SLEEP (blocking backoff):
+  jfc-anthropic-sdk/src/client.rs:132 — SDK retry sleep
+  jfc-anthropic-sdk/src/client.rs:147 — SDK transport error sleep
+  jfc/src/providers/http.rs:85 — send_with_retry() sleep
+  jfc/src/providers/retry.rs:178 — with_retry() generic sleep
+  jfc/src/providers/file_lock.rs:126 — file lock backoff sleep
+  jfc/src/stream.rs:1099 — Bedrock transient 400 backoff sleep
+  jfc/src/stream.rs:1557 — interrupt polling loop sleep
+  jfc/src/event_loop.rs:2108 — auto-compact requeue delay
+
+TIMEOUT (deadline):
+  jfc/src/providers/http.rs:16-21 — HTTP streaming client: 600s read timeout
+  jfc/src/stream.rs:3677-3688 — spawn join with 500ms timeout
+
+═══════════════════════════════════════════════════════════════════════════════
+MODEL SELECTION & FALLBACK:
+═══════════════════════════════════════════════════════════════════════════════
+
+SELECTION:
+  anthropic.rs:81 — "model": opts.model (user-selected model)
+  anthropic.rs:167-179 — fetch_models() from models.dev or embedded catalog
+  anthropic_models.rs — Static anthropic_first_party_models() catalog
+  slate.rs:208-231 — fallback_model field (A/B test experiments)
+
+FALLBACK ON 404:
+  anthropic_oauth.rs:183-200 — parse_model_not_found(body)
+  anthropic.rs:252-256 — Bail with "{model} is not enabled on your Anthropic account"
+  anthropic_oauth.rs:1042-1048 — Account rotation on model unavailability
+
+🚨 NO fallback chain on 429 (e.g., opus → sonnet)
+
+═══════════════════════════════════════════════════════════════════════════════
+STREAMERROR & RATELIMIT* VARIANTS:
+═══════════════════════════════════════════════════════════════════════════════
+
+USED:
+  app.rs:36 — AppEvent::StreamError(String) — Generic error variant (ALL errors use this)
+  stream.rs:1521 — from stream open failure
+  stream.rs:1569 — from stream event parse error
+  stream.rs:1516 — "auto-compact:" prefix for prompt-too-long
+  
+DEFINED BUT NOT USED FOR MAIN ANTHROPIC PATH:
+  jfc-anthropic-sdk/src/error.rs:29 — Error::RateLimited { retry_after_ms } — SDK only
+  github/client.rs:35 — GhError::RateLimited { reminder } — GitHub only
+  anthropic_oauth.rs:647 — RotationDecision::RateLimited { retry_after_secs } — Account rotation
+
+═══════════════════════════════════════════════════════════════════════════════

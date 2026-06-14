@@ -1,0 +1,21 @@
+[package]
+name = "jfc-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+# context.rs: CLAUDE.md frontmatter parsing + config-dir discovery.
+serde_yaml = { package = "serde_norway", version = "0.9" }
+dirs = "5"
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = "3"
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "jfc-markdown"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+jfc-theme = { path = "../jfc-theme" }
+itertools = "0.14"
+pulldown-cmark = "0.12"
+ratatui = { version = "0.30", default-features = false }
+regex = "1"
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
+two-face = "0.5"
+unicode-width = "0.2"
+
+[lints]
+workspace = true

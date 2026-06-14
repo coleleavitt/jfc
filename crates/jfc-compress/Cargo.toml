@@ -1,0 +1,27 @@
+[package]
+name = "jfc-compress"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Content-aware context compression for jfc (log/search/diff/importance), ported from headroom-core (Apache-2.0)."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+# Hunk-header parsing + priority-pattern matching in the compressors.
+regex = "1"
+# Tier-3 KeywordDetector — single DFA scan finds every keyword in a line.
+aho-corasick = "1"
+# CCR cache_key (MD5[:24], parity with the Python compression_store).
+md-5 = "0.10"
+# `_validate_with_zlib` in adaptive_sizer (DEFLATE level-1 ratio check).
+flate2 = "1"
+# Sharded concurrent map for the in-memory CCR store.
+dashmap = "6"
+
+[dev-dependencies]
+tempfile = "3"
+proptest = "1"

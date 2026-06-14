@@ -1,7 +1,41 @@
 /target/
 target/
-/references/*
-!/references/wgpui/
+node_modules/
+apps/*/node_modules/
+apps/*/dist/
+apps/*/.vite/
+*.tsbuildinfo
+/research/
 .env
 .env.*
 !.env.example
+.claude/
+CLAUDE.local.md
+.jfc-worktrees/
+.sisyphus/
+dhat-heap.json
+profiling-results/
+
+# Local tool state
+.antigravitycli/
+.codegraph/
+.idea/
+*.bak
+core
+core.*
+
+# jfc runtime state (caches, task store, pending learning, skills usage,
+# audit ledgers, change-sets, …) is all per-run noise — ignore the whole
+# .jfc/ tree by default, then re-include only the deliberately-tracked
+# project config dirs (agents, memory, workflows, plans). This catches new
+# runtime subdirs (e.g. .jfc/skills/) automatically without growing the list.
+.jfc/*
+!.jfc/agents/
+!.jfc/memory/
+!.jfc/workflows/
+!.jfc/plans/
+# Per-crate runtime state dirs created when running jfc from a subdir.
+crates/**/.jfc/
+
+# Agent runtime state (exec-call captures)
+.code/

@@ -1,0 +1,22 @@
+[package]
+name = "jfc-agents"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+jfc-core = { path = "../jfc-core" }
+jfc-config = { path = "../jfc-config" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { package = "serde_norway", version = "0.9" }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+dirs = "5"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

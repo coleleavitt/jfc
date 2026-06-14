@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+reviews:
+  auto_review:
+    enabled: true
+    # Default branch is always reviewed; this EXTENDS the set so the
+    # standing full-codebase PR (master -> code-review-base) gets
+    # auto-reviewed too. Accepts regex.
+    base_branches:
+      - "code-review-base"

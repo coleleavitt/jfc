@@ -1,0 +1,26 @@
+[package]
+name = "jfc-auth"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+urlencoding = "2"
+base64 = "0.22"
+dirs = "5"
+rand = "0.10.1"
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt"] }
+toml = "0.8"
+
+[dev-dependencies]
+serial_test = "3"
+tempfile = "3.27.0"
+
+[lints]
+workspace = true
