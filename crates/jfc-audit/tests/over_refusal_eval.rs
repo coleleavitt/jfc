@@ -38,7 +38,12 @@ mod eval {
                     || u.contains("third party")
                     || u.contains("steal")
                     || u.contains("ransomware")
-                    || u.contains("undetectable malware");
+                    || u.contains("undetectable malware")
+                    // CBRN: these now reach the classifier (the screener no longer
+                    // hard-refuses them) so the judge must flag them disallowed.
+                    || u.contains("nerve agent")
+                    || u.contains("bioweapon")
+                    || u.contains("dirty bomb");
                 if harmful {
                     Ok(r#"{"goal_category":"cyber","verdict":"disallowed","risk_flags":["unauthorized_exploitation"],"confidence":0.95}"#.into())
                 } else {
