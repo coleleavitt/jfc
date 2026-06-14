@@ -1,0 +1,625 @@
+# Instincts generated from https://github.com/coleleavitt/jfc
+# Generated: 2026-06-14T20:34:33.329Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: jfc-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Commit Length
+
+## Action
+
+Write moderate-length commit messages (~57 characters)
+
+## Evidence
+
+- Average commit message length: 57 chars
+- Based on 100 commits
+
+---
+id: jfc-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: jfc-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: jfc-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Test Naming
+
+## Action
+
+Name test files using the pattern: *.test.ts
+
+## Evidence
+
+- File pattern: *.test.ts
+- Consistent across test files
+
+---
+id: jfc-workflow-feature-development
+trigger: "when implementing a new feature"
+confidence: 0.85
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Workflow Feature Development
+
+## Action
+
+Follow the feature-development workflow:
+1. Add feature implementation
+2. Add tests for feature
+3. Update documentation
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~7x per month
+- Files: 
+
+---
+id: jfc-workflow-refactoring
+trigger: "when refactoring code"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Workflow Refactoring
+
+## Action
+
+Follow the refactoring workflow:
+1. Ensure tests pass before refactor
+2. Refactor code structure
+3. Verify tests still pass
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: src/**/*
+
+---
+id: jfc-workflow-submodule-update-wgpui
+trigger: "when doing submodule update wgpui"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Workflow Submodule Update Wgpui
+
+## Action
+
+Follow the submodule-update-wgpui workflow:
+1. Update the references/wgpui submodule.
+2. Optionally update related integration code in crates/jfc-ui/src/main.rs or other UI files.
+3. Commit with a message referencing the wgpui update or fix.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: references/wgpui, crates/jfc-ui/src/main.rs
+
+---
+id: jfc-workflow-feature-addition-multi-module
+trigger: "when doing feature addition multi module"
+confidence: 0.7
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Workflow Feature Addition Multi Module
+
+## Action
+
+Follow the feature-addition-multi-module workflow:
+1. Add or update types in crates/jfc-ui/src/types.rs.
+2. Update or create main logic in crates/jfc-ui/src/main.rs and/or feature-specific modules (e.g., tools.rs, agents.rs, tasks.rs).
+3. Update rendering logic in crates/jfc-ui/src/render.rs or message_view.rs.
+4. Update or create input handling in crates/jfc-ui/src/input.rs.
+5. Optionally update tests or harnesses.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~4x per month
+- Files: crates/jfc-ui/src/types.rs, crates/jfc-ui/src/main.rs, crates/jfc-ui/src/render.rs
+
+---
+id: jfc-workflow-agent-or-skill-system-extension
+trigger: "when doing agent or skill system extension"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Workflow Agent Or Skill System Extension
+
+## Action
+
+Follow the agent-or-skill-system-extension workflow:
+1. Create or update crates/jfc-ui/src/agents.rs and/or skills/tasks modules.
+2. Update types in crates/jfc-ui/src/types.rs.
+3. Update main.rs, input.rs, and possibly scheduler.rs to wire up new commands or agent logic.
+4. Add or update YAML/frontmatter parsing logic.
+5. Update help text and documentation as needed.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: crates/jfc-ui/src/agents.rs, crates/jfc-ui/src/tasks.rs, crates/jfc-ui/src/types.rs
+
+---
+id: jfc-workflow-session-or-config-enhancement
+trigger: "when doing session or config enhancement"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Workflow Session Or Config Enhancement
+
+## Action
+
+Follow the session-or-config-enhancement workflow:
+1. Update crates/jfc-ui/src/session.rs and/or config.rs.
+2. Update main.rs and input.rs to handle new session/config features.
+3. Update Cargo.toml if new dependencies are needed.
+4. Add or update tests for session/config behavior.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: crates/jfc-ui/src/session.rs, crates/jfc-ui/src/config.rs, crates/jfc-ui/src/main.rs
+
+---
+id: jfc-workflow-merge-worktree-or-agent-branch
+trigger: "when doing merge worktree or agent branch"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Workflow Merge Worktree Or Agent Branch
+
+## Action
+
+Follow the merge-worktree-or-agent-branch workflow:
+1. Merge changes from worktree or agent branch.
+2. Resolve conflicts, especially in frequently modified files like agents.rs, input.rs, tools.rs, render.rs, session.rs.
+3. Retain or merge tests from both branches.
+4. Commit with a merge message referencing the agent or feature.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: crates/jfc-ui/src/agents.rs, crates/jfc-ui/src/input.rs, crates/jfc-ui/src/tools.rs
+
+---
+id: jfc-workflow-syntax-theme-bundle-extension
+trigger: "when doing syntax theme bundle extension"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/coleleavitt/jfc
+---
+
+# Jfc Workflow Syntax Theme Bundle Extension
+
+## Action
+
+Follow the syntax-theme-bundle-extension workflow:
+1. Add new .sublime-syntax files to crates/jfc-ui/syntaxes/.
+2. Update crates/jfc-ui/src/markdown.rs or related files to register new grammars/themes.
+3. Update Cargo.toml if new dependencies are required.
+4. Commit with a message referencing the new languages/themes.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: crates/jfc-ui/syntaxes/*.sublime-syntax, crates/jfc-ui/src/markdown.rs, crates/jfc-ui/Cargo.toml
+
+---
+id: jfc-instinct-file-naming-camelCase
+trigger: "When creating or renaming source files in Rust modules"
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct File Naming CamelCase
+
+## Action
+
+Use camelCase for file names
+
+## Evidence
+
+- Pattern in namingConventions.files: camelCase
+- Seen in crates/jfc-ui/src/main.rs, crates/jfc-ui/src/input.rs
+
+---
+id: jfc-instinct-function-naming-camelCase
+trigger: "When defining new functions"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Function Naming CamelCase
+
+## Action
+
+Use camelCase for function names
+
+## Evidence
+
+- Pattern in namingConventions.functions: camelCase
+- Seen in crates/jfc-ui/src/*.rs
+
+---
+id: jfc-instinct-class-naming-PascalCase
+trigger: "When defining new classes or structs"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Class Naming PascalCase
+
+## Action
+
+Use PascalCase for class/struct names
+
+## Evidence
+
+- Pattern in namingConventions.classes: PascalCase
+- Seen in crates/jfc-ui/src/types.rs
+
+---
+id: jfc-instinct-constant-naming-screaming-snake-case
+trigger: "When defining constants"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Constant Naming Screaming Snake Case
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for constant names
+
+## Evidence
+
+- Pattern in namingConventions.constants: SCREAMING_SNAKE_CASE
+- Seen in crates/jfc-ui/src/types.rs
+
+---
+id: jfc-instinct-import-style-mixed
+trigger: "When importing modules or dependencies"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Import Style Mixed
+
+## Action
+
+Use both absolute and relative imports as appropriate
+
+## Evidence
+
+- Pattern in importStyle: mixed
+- Seen in crates/jfc-ui/src/*.rs
+
+---
+id: jfc-instinct-export-style-named
+trigger: "When exporting functions, types, or modules"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Export Style Named
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle: named
+- Seen in crates/jfc-ui/src/types.rs
+
+---
+id: jfc-instinct-test-file-pattern
+trigger: "When adding new test files for TypeScript code"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Test File Pattern
+
+## Action
+
+Name test files with the pattern *.test.ts
+
+## Evidence
+
+- Pattern in testing.filePattern: *.test.ts
+- Seen in apps/design-web/
+
+---
+id: jfc-instinct-unit-test-type
+trigger: "When writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Unit Test Type
+
+## Action
+
+Write unit tests as the primary test type
+
+## Evidence
+
+- Pattern in testing.testTypes: unit
+- Seen in apps/design-web/
+
+---
+id: jfc-instinct-test-coverage-config
+trigger: "When setting up or updating tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Test Coverage Config
+
+## Action
+
+Ensure test coverage configuration is present and up to date
+
+## Evidence
+
+- Pattern in testing.coverageConfig: true
+- Seen in apps/design-web/
+
+---
+id: jfc-instinct-commit-prefix-format
+trigger: "When writing a commit message"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Commit Prefix Format
+
+## Action
+
+Start the commit message with a prefix such as fix, feat, agent, test, compact, or merge, followed by a colon
+
+## Evidence
+
+- Pattern in commits.prefixes
+- Seen in commit: fix: update wgpui to disable partial redraw (fixes invisible typed text)
+
+---
+id: jfc-instinct-commit-length
+trigger: "When composing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Commit Length
+
+## Action
+
+Keep the commit message concise, around 57 characters on average
+
+## Evidence
+
+- Pattern in commits.averageLength: 57
+- Seen in multiple commit examples
+
+---
+id: jfc-instinct-submodule-update-wgpui
+trigger: "When upstream wgpui changes need to be integrated or a bugfix is required"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Submodule Update Wgpui
+
+## Action
+
+Update references/wgpui submodule and optionally update integration code in crates/jfc-ui/src/main.rs or other UI files; commit with a message referencing the wgpui update or fix
+
+## Evidence
+
+- Workflow: submodule-update-wgpui
+- Seen in commits: Update wgpui submodule
+
+---
+id: jfc-instinct-feature-addition-multi-module
+trigger: "When adding a significant new feature, tool, or capability to the UI"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Feature Addition Multi Module
+
+## Action
+
+Update types, main logic, rendering, input handling, and optionally tests/harnesses across multiple modules
+
+## Evidence
+
+- Workflow: feature-addition-multi-module
+- Seen in commits and files: crates/jfc-ui/src/types.rs, main.rs, render.rs, input.rs, etc.
+
+---
+id: jfc-instinct-agent-skill-system-extension
+trigger: "When expanding agent/skill/task capabilities or introducing new agent features"
+confidence: 0.88
+domain: workflow
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Agent Skill System Extension
+
+## Action
+
+Create or update agents, skills, tasks modules; update types, main, input, scheduler, and YAML/frontmatter parsing; update docs as needed
+
+## Evidence
+
+- Workflow: agent-or-skill-system-extension
+- Seen in commits and files: crates/jfc-ui/src/agents.rs, tasks.rs, types.rs, etc.
+
+---
+id: jfc-instinct-session-config-enhancement
+trigger: "When improving session persistence, configuration, or CLI interface"
+confidence: 0.85
+domain: workflow
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Session Config Enhancement
+
+## Action
+
+Update session.rs, config.rs, main.rs, input.rs, Cargo.toml, and related tests
+
+## Evidence
+
+- Workflow: session-or-config-enhancement
+- Seen in commits and files: crates/jfc-ui/src/session.rs, config.rs, main.rs, etc.
+
+---
+id: jfc-instinct-merge-worktree-agent-branch
+trigger: "When agent or feature work is completed in a branch/worktree and needs to be merged"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Merge Worktree Agent Branch
+
+## Action
+
+Merge changes, resolve conflicts (especially in agents.rs, input.rs, tools.rs, render.rs, session.rs), retain/merge tests, and commit with a merge message referencing the agent or feature
+
+## Evidence
+
+- Workflow: merge-worktree-or-agent-branch
+- Seen in commits and files: crates/jfc-ui/src/agents.rs, input.rs, tools.rs, etc.
+
+---
+id: jfc-instinct-syntax-theme-bundle-extension
+trigger: "When supporting new languages or improving syntax highlighting"
+confidence: 0.87
+domain: workflow
+source: repo-analysis
+source_repo: coleleavitt/jfc
+---
+
+# Jfc Instinct Syntax Theme Bundle Extension
+
+## Action
+
+Add new .sublime-syntax files, update markdown.rs or related files, update Cargo.toml if needed, and commit referencing new languages/themes
+
+## Evidence
+
+- Workflow: syntax-theme-bundle-extension
+- Seen in commits and files: crates/jfc-ui/syntaxes/*.sublime-syntax, src/markdown.rs
+
