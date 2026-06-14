@@ -600,6 +600,11 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
             let window = state.max_context_tokens;
             let tx_compact = tx.clone();
             let progress_tx = tx_compact.clone();
+            let session_id_for_compact = state
+                .current_session_id
+                .as_ref()
+                .map(|s| s.as_str().to_owned())
+                .unwrap_or_else(|| "<no-session>".to_owned());
             let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
                 // CompactionProgress is non-critical; next progress update supersedes.
                 let _ = progress_tx.try_send(EngineEvent::Compaction(CompactionEvent::Progress {
@@ -627,6 +632,11 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
                     model = %compact_model_id,
                     window,
                     "spawned post-response compaction task"
+                );
+                // Fire BeforeCompact hook
+                crate::hooks::fire(
+                    crate::hooks::HookPoint::BeforeCompact,
+                    &crate::hooks::HookContext::for_session(&session_id_for_compact),
                 );
                 let result = tokio::select! {
                     biased;
@@ -740,6 +750,11 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
                             .await;
                     }
                 }
+                // Fire AfterCompact hook
+                crate::hooks::fire(
+                    crate::hooks::HookPoint::AfterCompact,
+                    &crate::hooks::HookContext::for_session(&session_id_for_compact),
+                );
             });
         }
     }

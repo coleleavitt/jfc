@@ -356,6 +356,86 @@ pub(super) async fn cmd_undo(
     }
 }
 
+pub(super) async fn cmd_recap(
+    state: &mut EngineState,
+    _parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    // Generate a one-line session recap from all messages.
+    // Mirrors the auto-generation in ui_actions.rs that fires on
+    // idle return (>5 min inactivity). Reuses the same recap generator
+    // so the logic is consistent across both paths.
+    state.messages.push(ChatMessage::user("/recap".into()));
+
+    // Collect RecapMessage from all current messages, same as
+    // the idle-return handler does (but with all messages, not
+    // just those since last interaction).
+    let recap_messages: Vec<crate::session_recap::RecapMessage> = state
+        .messages
+        .iter()
+        .map(|m| {
+            let text_preview = m
+                .parts
+                .iter()
+                .find_map(|p| match p {
+                    jfc_core::MessagePart::Text(t) if !t.is_empty() => {
+                        Some(t.chars().take(160).collect::<String>())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default();
+            let tool_calls: Vec<String> = m
+                .parts
+                .iter()
+                .filter_map(|p| match p {
+                    jfc_core::MessagePart::Tool(t) => Some(t.kind.label().to_string()),
+                    _ => None,
+                })
+                .collect();
+            let files_changed: Vec<String> = m
+                .parts
+                .iter()
+                .filter_map(|p| match p {
+                    jfc_core::MessagePart::Tool(t) => match &t.input {
+                        jfc_core::ToolInput::Edit { file_path, .. }
+                        | jfc_core::ToolInput::Write { file_path, .. } => Some(file_path.clone()),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect();
+            let had_error = m.parts.iter().any(|p| {
+                matches!(
+                    p,
+                    jfc_core::MessagePart::Tool(t)
+                        if t.status == jfc_core::ExecutionStatus::Failed
+                )
+            });
+            crate::session_recap::RecapMessage {
+                is_assistant: m.role == jfc_core::Role::Assistant,
+                tool_calls,
+                had_error,
+                files_changed,
+                text_preview,
+            }
+        })
+        .collect();
+
+    // Generate the recap from collected messages.
+    match crate::session_recap::generate_recap(&recap_messages) {
+        Some(recap) => {
+            state.messages.push(ChatMessage::assistant(recap));
+        }
+        None => {
+            state.messages.push(ChatMessage::assistant(
+                "No meaningful activity to recap — no tool calls, file changes, or errors detected."
+                    .into(),
+            ));
+        }
+    }
+}
+
 pub(super) async fn cmd_export(
     state: &mut EngineState,
     parts: &[&str],

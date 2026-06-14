@@ -460,6 +460,7 @@ pub async fn submit_prompt(
         let tx_pre = tx.clone();
         let user_text = text.clone();
         let is_blocked = matches!(level, crate::compact::CompactLevel::Blocked);
+        let session_id_for_compact = session_id_for_hook.clone();
         let _ = tx_pre
             .send(crate::runtime::EngineEvent::Compaction(
                 crate::runtime::CompactionEvent::Started,
@@ -485,6 +486,11 @@ pub async fn submit_prompt(
                 model = %model,
                 window,
                 "spawned pre-submit compaction task"
+            );
+            // Fire BeforeCompact hook
+            crate::hooks::fire(
+                crate::hooks::HookPoint::BeforeCompact,
+                &crate::hooks::HookContext::for_session(&session_id_for_compact),
             );
             let result = crate::compact::compact(
                 &messages,
@@ -594,6 +600,11 @@ pub async fn submit_prompt(
                     }
                 }
             }
+            // Fire AfterCompact hook
+            crate::hooks::fire(
+                crate::hooks::HookPoint::AfterCompact,
+                &crate::hooks::HookContext::for_session(&session_id_for_compact),
+            );
         });
         return Ok(SubmitOutcome::CompactingFirst);
     }
@@ -913,6 +924,8 @@ pub async fn start_turn_from_transcript(
     // a stale `thought for Ns` from the previous turn.
     state.thinking_started_at = None;
     state.thinking_ended_at = None;
+    // Fresh turn → re-arm the time-to-first-token capture.
+    state.ttft_ms = None;
     state.last_usage_output = 0;
     state.usage_apply_baseline = (0, 0, 0, 0);
     state.push_effect(crate::app::EngineEffect::ScrollToBottom);

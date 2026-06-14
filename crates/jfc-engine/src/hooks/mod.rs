@@ -47,8 +47,10 @@ pub enum HookPoint {
     /// When a session ends (user exit or programmatic).
     OnSessionEnd,
     /// Before context compaction happens.
+    /// Maps to CC's `PreCompact` hook event.
     BeforeCompact,
     /// After context compaction completes.
+    /// Maps to CC's `PostCompact` hook event.
     AfterCompact,
     /// Periodic heartbeat (for health monitoring / keep-alive).
     OnHeartbeat,
@@ -664,6 +666,16 @@ impl HookRegistry {
         for entry in &hooks_cfg.post_tool_batch {
             self.register(
                 HookPoint::PostToolBatch,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.pre_compact {
+            self.register(
+                HookPoint::BeforeCompact,
                 HookHandler::Shell {
                     command: entry.command.clone(),
                     async_mode: entry.async_mode,

@@ -91,6 +91,7 @@ macro_rules! engine_commands {
 engine_commands! {
         "/rename" [] "set a custom title on the current session" => cmd_rename,
         "/clear" [] "clear the conversation and start fresh" => cmd_clear,
+        "/recap" [] "generate a one-line session recap now" => cmd_recap,
         "/check" [] "re-run cargo-check diagnostics" => cmd_check,
         "/compact" [] "summarize earlier messages to free context" => cmd_compact,
         "/advisor" [] "ask a parallel advisor without disturbing the main agent" => cmd_advisor,

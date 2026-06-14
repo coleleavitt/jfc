@@ -468,6 +468,9 @@ pub struct ShellHooksConfig {
     /// Fires after a batch of tools completes (PostToolBatch).
     #[serde(rename = "PostToolBatch", default)]
     pub post_tool_batch: Vec<ShellHookEntry>,
+    /// Fires before context compaction begins.
+    #[serde(rename = "PreCompact", default)]
+    pub pre_compact: Vec<ShellHookEntry>,
     /// Fires after context compaction completes.
     #[serde(rename = "PostCompact", default)]
     pub post_compact: Vec<ShellHookEntry>,
