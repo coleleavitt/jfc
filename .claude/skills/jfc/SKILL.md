@@ -167,10 +167,10 @@ pub fn load_config() { /* ... */ }
 
 ## Testing Patterns
 
-- **Framework:** Unknown (no explicit Rust test framework detected, but test files follow a `.test.ts` pattern, suggesting some TypeScript-based harness or integration).
-- **File Pattern:** `*.test.ts`
+- **Framework:** Rust's built-in test harness (`#[test]`). The workspace is predominantly Rust; the `apps/design-web/` TypeScript sub-app uses Vitest-style `*.test.ts` files.
+- **File Pattern:** Rust unit tests live in `#[cfg(test)]` modules co-located in source files; integration tests live under each crate's `tests/` directory (e.g. `crates/jfc-audit/tests/`). Only `apps/design-web/` uses `*.test.ts`.
 - **Best Practices:**
-  - Place tests alongside the module or in a dedicated `tests/` directory.
+  - Run `cargo test` from the workspace root; co-locate unit tests in `#[cfg(test)]` modules and put cross-module tests in `tests/`.
   - Use descriptive test names and cover both positive and negative cases.
   - If adding new features or config/session changes, ensure corresponding tests are updated or created.
 

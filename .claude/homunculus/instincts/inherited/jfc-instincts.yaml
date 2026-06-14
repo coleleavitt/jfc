@@ -77,12 +77,12 @@ source_repo: https://github.com/coleleavitt/jfc
 
 ## Action
 
-Name test files using the pattern: *.test.ts
+Write Rust tests as `#[cfg(test)]` modules in the source file, or as integration tests under the crate's `tests/` directory (files end in `.rs`). The `*.test.ts` pattern applies only to the `apps/design-web/` TypeScript sub-app.
 
 ## Evidence
 
-- File pattern: *.test.ts
-- Consistent across test files
+- Rust is the primary language; tests use `#[test]` / `#[cfg(test)]` (e.g. crates/jfc-audit/tests/).
+- `*.test.ts` is confined to apps/design-web/.
 
 ---
 id: jfc-workflow-feature-development
@@ -416,12 +416,12 @@ source_repo: coleleavitt/jfc
 
 ## Action
 
-Name test files with the pattern *.test.ts
+Rust crates are the primary surface: write `#[cfg(test)]` modules or `tests/*.rs` integration tests. Reserve the `*.test.ts` pattern for the `apps/design-web/` TypeScript sub-app.
 
 ## Evidence
 
-- Pattern in testing.filePattern: *.test.ts
-- Seen in apps/design-web/
+- testing.filePattern `*.test.ts` only applies under apps/design-web/.
+- Rust crates use cargo's built-in test harness.
 
 ---
 id: jfc-instinct-unit-test-type

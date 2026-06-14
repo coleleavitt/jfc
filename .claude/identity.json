@@ -7,7 +7,6 @@
     "explanations": true
   },
   "domains": [
-    "rust",
     "rust"
   ],
   "suggestedBy": "ecc-tools-repo-analysis",
