@@ -90,8 +90,11 @@ pub struct DriftMonitor {
     window: usize,
     tolerance: f64,
     recent: VecDeque<bool>,
-    total: u64,
-    refused_total: u64,
+    /// Baseline counts over samples that have **aged out** of the recent window
+    /// only — so a sustained regime change in the window can't contaminate the
+    /// baseline it is being compared against.
+    baseline_total: u64,
+    baseline_refused: u64,
 }
 
 /// The result of feeding one decision to the monitor.
@@ -111,27 +114,30 @@ impl DriftMonitor {
             window: window.max(1),
             tolerance: tolerance.clamp(0.0, 1.0),
             recent: VecDeque::new(),
-            total: 0,
-            refused_total: 0,
+            baseline_total: 0,
+            baseline_refused: 0,
         }
     }
 
-    /// Record one decision (refused or not) and report drift status.
+    /// Record one decision (refused or not) and report drift status. A sample
+    /// pushed out of the recent window is folded into the baseline, so the
+    /// baseline reflects the historical regime *before* the current window.
     pub fn record(&mut self, refused: bool) -> DriftStatus {
-        self.total += 1;
-        if refused {
-            self.refused_total += 1;
-        }
         self.recent.push_back(refused);
-        if self.recent.len() > self.window {
-            self.recent.pop_front();
+        if self.recent.len() > self.window
+            && let Some(aged_out) = self.recent.pop_front()
+        {
+            self.baseline_total += 1;
+            if aged_out {
+                self.baseline_refused += 1;
+            }
         }
-        if self.recent.len() < self.window {
+        if self.recent.len() < self.window || self.baseline_total == 0 {
             return DriftStatus::Warmup;
         }
         let recent_rate =
             self.recent.iter().filter(|&&r| r).count() as f64 / self.recent.len() as f64;
-        let baseline = self.refused_total as f64 / self.total as f64;
+        let baseline = self.baseline_refused as f64 / self.baseline_total as f64;
         if (recent_rate - baseline).abs() > self.tolerance {
             DriftStatus::Drift {
                 recent: recent_rate,
@@ -183,11 +189,15 @@ mod tests {
     }
 
     #[test]
-    fn drift_monitor_warmup_then_stable() {
+    fn drift_monitor_warmup_until_baseline_exists() {
         let mut m = DriftMonitor::new(4, 0.3);
+        // Window not yet full → warmup.
         assert_eq!(m.record(false), DriftStatus::Warmup);
         assert_eq!(m.record(false), DriftStatus::Warmup);
         assert_eq!(m.record(false), DriftStatus::Warmup);
+        // Window full but no sample has aged into the baseline yet → still warmup.
+        assert_eq!(m.record(false), DriftStatus::Warmup);
+        // 5th sample ages one out → baseline exists → stable.
         assert_eq!(m.record(false), DriftStatus::Stable);
     }
 
@@ -207,5 +217,29 @@ mod tests {
         };
         assert!(recent > baseline);
         assert!((recent - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn drift_monitor_baseline_excludes_recent_window() {
+        // A SUSTAINED shift must keep flagging: because the baseline only counts
+        // samples that aged out of the window, a long run of refusals after a
+        // benign history stays flagged instead of self-contaminating.
+        let mut m = DriftMonitor::new(4, 0.3);
+        for _ in 0..20 {
+            m.record(false);
+        }
+        // 50 sustained refusals — the buggy cumulative baseline would drift up
+        // and stop flagging; the windowed baseline keeps the prefix near 0.
+        let mut last = DriftStatus::Warmup;
+        for _ in 0..50 {
+            last = m.record(true);
+        }
+        let DriftStatus::Drift { recent, baseline } = last else {
+            panic!("sustained shift must still flag drift, got {last:?}");
+        };
+        assert!((recent - 1.0).abs() < f64::EPSILON);
+        // Baseline stays well under the recent rate (it's the aged-out prefix,
+        // which is mostly the original benign run).
+        assert!(baseline < 0.7, "baseline self-contaminated: {baseline}");
     }
 }

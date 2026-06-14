@@ -285,6 +285,9 @@ pub enum EngineEffect {
         original: String,
         rewrite: String,
         rationale: String,
+        /// One-line restatement of the legitimate goal, persisted as a few-shot
+        /// exemplar when the user accepts (experience replay).
+        original_intent: String,
     },
 }
 

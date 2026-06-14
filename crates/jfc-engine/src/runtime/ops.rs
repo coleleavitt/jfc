@@ -225,12 +225,34 @@ pub async fn submit_prompt(
     // `Rewritten`/`Refused` decision halts this turn and is surfaced to the user
     // (never a silent substitution). Runs before @-mention/compaction so a
     // refused prompt never touches the transcript.
+    // Recent conversation context (last few user/assistant turns, oldest→newest)
+    // so the gate judges a prompt in light of the dialogue, not in isolation.
+    let rewrite_history: Vec<String> = state
+        .messages
+        .iter()
+        .filter(|m| matches!(m.role, crate::types::Role::User | crate::types::Role::Assistant))
+        .rev()
+        .take(6)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|m| {
+            let role = if m.role == crate::types::Role::User {
+                "user"
+            } else {
+                "assistant"
+            };
+            let body: String = m.parts.iter().map(|p| p.text_only()).collect::<Vec<_>>().join("");
+            format!("{role}: {body}")
+        })
+        .collect();
     if let Some(decision) = crate::runtime::prompt_rewrite_gate::evaluate(
         state.prompt_rewrite.as_ref(),
         state.provider.clone(),
         state.local_advisor_model.as_ref().map(|m| m.as_str()),
         state.model.as_str(),
         &text,
+        &rewrite_history,
     )
     .await
     {
@@ -241,6 +263,7 @@ pub async fn submit_prompt(
                     original: text.clone(),
                     rewrite: rewrite.text,
                     rationale: rewrite.rationale,
+                    original_intent: rewrite.original_intent,
                 });
                 return Ok(SubmitOutcome::RewriteProposed);
             }
@@ -1176,6 +1199,7 @@ mod submit_prompt_tests {
                 original,
                 rewrite,
                 rationale,
+                ..
             } => Some((original.clone(), rewrite.clone(), rationale.clone())),
             _ => None,
         });

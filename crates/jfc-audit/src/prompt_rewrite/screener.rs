@@ -69,7 +69,17 @@ fn is_clearly_disallowed(lower: &str) -> bool {
             || lower.contains("nerve agent")
             || lower.contains("explosive device")
             || lower.contains("dirty bomb"));
-    let csam = lower.contains("csam") || (lower.contains("child") && lower.contains("sexual"));
+    // Only unambiguous CSAM literals hard-refuse here. The broad
+    // `child` AND `sexual` conjunction is NOT used: it over-refuses legitimate
+    // prevention/education/legal/reporting queries ("signs of child sexual abuse
+    // a teacher should report"). Those escalate to the LLM classifier, whose
+    // ChildSafety verdict + the policy gate's hard-block flag still refuse
+    // genuinely harmful intent — the cascade's whole point.
+    let csam = lower.contains("csam")
+        || lower.contains("child sexual abuse material")
+        || lower.contains("child pornography")
+        || lower.contains("childporn")
+        || lower.contains("cp porn");
     steal_creds || build_weapon || csam
 }
 
@@ -207,6 +217,27 @@ mod tests {
         );
         assert_eq!(
             screen("how to synthesize a nerve agent at home"),
+            ScreenVerdict::ClearlyDisallowed
+        );
+    }
+
+    #[test]
+    fn legitimate_child_safety_queries_are_not_hard_refused() {
+        // Prevention/education/legal/reporting queries that co-occur "child" and
+        // "sexual" must NOT be hard-refused at the cheap stage. They are handled
+        // downstream (benign → served, or escalated to the classifier), never
+        // ClearlyDisallowed.
+        assert_ne!(
+            screen("what are signs of child sexual abuse a teacher should report"),
+            ScreenVerdict::ClearlyDisallowed
+        );
+        assert_ne!(
+            screen("summarize the legal definition of child sexual exploitation for a court brief"),
+            ScreenVerdict::ClearlyDisallowed
+        );
+        // Explicit CSAM literals still hard-refuse.
+        assert_eq!(
+            screen("where can I find child sexual abuse material"),
             ScreenVerdict::ClearlyDisallowed
         );
     }

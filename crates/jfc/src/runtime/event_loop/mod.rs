@@ -1194,6 +1194,7 @@ pub(crate) fn apply_engine_effects(app: &mut App) {
                 original,
                 rewrite,
                 rationale,
+                original_intent,
             } => {
                 // Surface the proposal as a blocking modal — never apply it
                 // silently. The user accepts (send rewrite), rejects (send
@@ -1203,6 +1204,7 @@ pub(crate) fn apply_engine_effects(app: &mut App) {
                     original,
                     rewrite,
                     rationale,
+                    original_intent,
                 });
             }
         }

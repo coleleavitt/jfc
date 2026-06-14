@@ -139,6 +139,9 @@ pub struct PromptRewriteProposal {
     pub rewrite: String,
     /// Why the rewrite was proposed, shown to the user.
     pub rationale: String,
+    /// One-line restatement of the legitimate goal, persisted as a few-shot
+    /// exemplar when the user accepts the rewrite (experience replay).
+    pub original_intent: String,
 }
 
 pub const SPINNER: &[&str] = crate::glyphs::TASK_FRAMES;

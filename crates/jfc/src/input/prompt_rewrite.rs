@@ -38,6 +38,13 @@ pub(super) async fn handle_prompt_rewrite_key(
     match key.code {
         KeyCode::Char('a') | KeyCode::Char('A') | KeyCode::Enter => {
             let proposal = app.pending_rewrite_proposal.take().expect("checked above");
+            // Persist the accepted rewrite for experience replay (few-shot
+            // exemplars on future pipeline builds).
+            jfc_engine::runtime::prompt_rewrite_gate::record_accepted(
+                proposal.original_intent.clone(),
+                proposal.rewrite.clone(),
+                proposal.rationale.clone(),
+            );
             send_prompt(proposal.rewrite, tx).await;
         }
         KeyCode::Char('r') | KeyCode::Char('R') => {
@@ -107,6 +114,7 @@ mod tests {
             original: "ORIGINAL".into(),
             rewrite: "REWRITE".into(),
             rationale: "removed evasion wording".into(),
+            original_intent: "understand classifiers".into(),
         });
         app
     }

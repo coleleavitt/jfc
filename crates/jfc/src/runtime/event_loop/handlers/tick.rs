@@ -238,6 +238,7 @@ pub(crate) async fn handle_tick(
         && !app.engine.is_streaming
         && app.engine.turn_started_at.is_none()
         && app.engine.pending_question.is_none()
+        && app.pending_rewrite_proposal.is_none()
         && !app.engine.pipeline_busy_for_submit()
     {
         tracing::warn!(

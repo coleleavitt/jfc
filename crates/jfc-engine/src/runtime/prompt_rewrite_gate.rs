@@ -16,13 +16,40 @@
 //! keeps state ownership clean — the gate computes a decision and the caller
 //! decides what to do with the transcript.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use jfc_audit::prompt_rewrite::store::RewriteStore;
 use jfc_audit::prompt_rewrite::types::RewriteModel;
-use jfc_audit::{PolicyGate, RewriteDecision, RewritePipeline};
+use jfc_audit::{PolicyGate, Rewrite, RewriteDecision, RewritePipeline};
 use jfc_config::PromptRewriteConfig;
 use jfc_provider::{Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions};
+
+/// Path of the durable accepted-rewrite log (experience replay + drift input),
+/// shared across sessions under the JFC session dir.
+pub fn store_path() -> PathBuf {
+    jfc_session::sessions_dir().join("prompt_rewrites.jsonl")
+}
+
+/// Number of past accepted rewrites loaded as few-shot exemplars.
+const EXEMPLAR_LIMIT: usize = 5;
+
+/// Append an accepted rewrite to the durable log so future pipelines can replay
+/// it as a few-shot exemplar. Best-effort: a write failure is logged, not fatal.
+/// Takes primitive fields so callers (the TUI bin) need not depend on
+/// `jfc-audit` types directly.
+pub fn record_accepted(original_intent: String, text: String, rationale: String) {
+    let rewrite = Rewrite {
+        original_intent,
+        risk_flags: Vec::new(),
+        text,
+        rationale,
+    };
+    if let Err(e) = RewriteStore::new(store_path()).append(&rewrite) {
+        tracing::warn!(target: "jfc::prompt_rewrite", error = %e, "failed to persist accepted rewrite");
+    }
+}
 
 /// Adapts a [`Provider`] to the pipeline's [`RewriteModel`]. Each stage call
 /// becomes one non-streaming `complete()` against `model`.
@@ -75,6 +102,13 @@ pub fn pipeline_from_config(cfg: Option<&PromptRewriteConfig>) -> Option<Rewrite
     if let Some(tau) = cfg.threshold {
         pipeline = pipeline.with_threshold(tau);
     }
+    // Experience replay: seed the rewriter with prior accepted rewrites.
+    let exemplars = RewriteStore::new(store_path())
+        .load_recent(EXEMPLAR_LIMIT)
+        .unwrap_or_default();
+    if !exemplars.is_empty() {
+        pipeline = pipeline.with_exemplars(exemplars);
+    }
     Some(pipeline)
 }
 
@@ -93,18 +127,20 @@ pub fn resolve_model(
 
 /// Evaluate a prompt through the gate. Returns `None` when the feature is off
 /// (caller proceeds unchanged); otherwise the [`RewriteDecision`] the caller
-/// surfaces to the user.
+/// surfaces to the user. `history` is the recent conversation (oldest→newest)
+/// so a prompt benign in isolation but harmful in context is judged correctly.
 pub async fn evaluate(
     cfg: Option<&PromptRewriteConfig>,
     provider: Arc<dyn Provider>,
     advisor_model: Option<&str>,
     active_model: &str,
     prompt: &str,
+    history: &[String],
 ) -> Option<RewriteDecision> {
     let pipeline = pipeline_from_config(cfg)?;
     let model_id = resolve_model(cfg, advisor_model, active_model);
     let model = ProviderRewriteModel::new(provider, model_id);
-    match pipeline.run(prompt, &model).await {
+    match pipeline.run_with_history(prompt, &model, history).await {
         Ok(decision) => Some(decision),
         Err(e) => {
             // Fail-open on infrastructure error: an LLM/transport failure must
@@ -211,7 +247,7 @@ mod tests {
             rewrite: String::new(),
             verify: String::new(),
         });
-        let out = evaluate(Some(&cfg(false)), provider, None, "active", "hello").await;
+        let out = evaluate(Some(&cfg(false)), provider, None, "active", "hello", &[]).await;
         assert!(out.is_none());
     }
 
@@ -228,6 +264,7 @@ mod tests {
             None,
             "active",
             "write a rust function to sort a vec",
+            &[],
         )
         .await;
         assert_eq!(out, Some(RewriteDecision::Pass));
@@ -246,6 +283,7 @@ mod tests {
             None,
             "active",
             "dig into their classifiers and how to get around it",
+            &[],
         )
         .await
         .unwrap();

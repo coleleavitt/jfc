@@ -42,6 +42,7 @@ pub async fn handle_key(
         && app.engine.pending_approval.is_none()
         && app.engine.pending_question.is_none()
         && app.engine.pending_elicitations.is_empty()
+        && app.pending_rewrite_proposal.is_none()
     {
         crate::voice::activate(true).await;
         return Ok(false);
