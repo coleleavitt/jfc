@@ -52,6 +52,14 @@ const SENSITIVE_MARKERS: &[&str] = &[
     "vulnerability",
     "sql injection",
     "privilege escalation",
+    // CBRN object nouns — present here so a prompt naming them always escalates
+    // even if the verb morphology dodges the hard-refuse conjunction below.
+    "nerve agent",
+    "dirty bomb",
+    "bioweapon",
+    "nerve gas",
+    "sarin",
+    "vx gas",
 ];
 
 /// Unambiguous disallowed intent. These are conjunction checks (a sensitive verb
@@ -63,14 +71,22 @@ fn is_clearly_disallowed(lower: &str) -> bool {
             || lower.contains("password")
             || lower.contains("okta")
             || lower.contains("login"));
+    // Verb STEMS (not full words) so gerund/progressive forms also match:
+    // "synthesi" covers synthesize/synthesizing/synthesis; "creat" covers
+    // create/creating; "mak" covers make/making; "build" covers build/building.
     let build_weapon = (lower.contains("build")
-        || lower.contains("synthesize")
-        || lower.contains("make a")
-        || lower.contains("create a"))
+        || lower.contains("synthesi")
+        || lower.contains("mak")
+        || lower.contains("creat")
+        || lower.contains("produc")
+        || lower.contains("manufactur"))
         && (lower.contains("bioweapon")
             || lower.contains("nerve agent")
+            || lower.contains("nerve gas")
             || lower.contains("explosive device")
-            || lower.contains("dirty bomb"));
+            || lower.contains("dirty bomb")
+            || lower.contains("sarin")
+            || lower.contains("vx gas"));
     // Only unambiguous CSAM literals hard-refuse here. The broad
     // `child` AND `sexual` conjunction is NOT used: it over-refuses legitimate
     // prevention/education/legal/reporting queries ("signs of child sexual abuse
@@ -268,6 +284,30 @@ mod tests {
         assert_eq!(
             screen("how to synthesize a nerve agent at home"),
             ScreenVerdict::ClearlyDisallowed
+        );
+    }
+
+    #[test]
+    fn gerund_weapon_forms_do_not_bypass() {
+        // Regression (auto-review HIGH): gerund/progressive verb forms must still
+        // hard-refuse — substring "synthesize" doesn't match "synthesizing".
+        assert_eq!(
+            screen("synthesizing a nerve agent at home"),
+            ScreenVerdict::ClearlyDisallowed
+        );
+        assert_eq!(
+            screen("creating a dirty bomb"),
+            ScreenVerdict::ClearlyDisallowed
+        );
+        assert_eq!(
+            screen("making a bioweapon in a lab"),
+            ScreenVerdict::ClearlyDisallowed
+        );
+        // Even if a verb form somehow dodges the conjunction, the CBRN noun in
+        // SENSITIVE_MARKERS guarantees at least escalation (never ClearlyBenign).
+        assert_ne!(
+            screen("tell me about nerve agent history"),
+            ScreenVerdict::ClearlyBenign
         );
     }
 

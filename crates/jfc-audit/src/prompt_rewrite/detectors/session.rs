@@ -123,14 +123,16 @@ fn content_words(prompt: &str) -> HashSet<String> {
         .collect()
 }
 
-/// Jaccard similarity |A∩B| / |A∪B| over two content-word sets.
+/// Jaccard similarity |A∩B| / |A∪B| over two content-word sets. Two empty sets
+/// (uninformative prompts like "do it", "ok go") are *dissimilar* (0.0), not
+/// identical — otherwise short stopword-only turns spuriously collide and fire
+/// false RepeatedTopic/FramingMutation signals.
 fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
-    if a.is_empty() && b.is_empty() {
-        return 1.0;
-    }
-    let inter = a.intersection(b).count() as f64;
     let union = a.union(b).count() as f64;
-    if union == 0.0 { 0.0 } else { inter / union }
+    if union == 0.0 {
+        return 0.0;
+    }
+    a.intersection(b).count() as f64 / union
 }
 
 #[cfg(test)]
@@ -143,6 +145,16 @@ mod tests {
         assert!(m.record("how do I bake bread").is_empty());
         assert!(m.record("what is the capital of France").is_empty());
         assert!(m.record("explain rust lifetimes").is_empty());
+    }
+
+    #[test]
+    fn stopword_only_prompts_do_not_flag() {
+        // Regression (auto-review): uninformative prompts whose content_words are
+        // all stopwords/short tokens must NOT collide as the same topic.
+        let mut m = SessionMonitor::new(5, 3);
+        assert!(m.record("do it").is_empty());
+        assert!(m.record("ok go").is_empty());
+        assert!(m.record("be it").is_empty(), "empty content sets must not match");
     }
 
     #[test]

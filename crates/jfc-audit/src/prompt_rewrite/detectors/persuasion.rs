@@ -89,13 +89,16 @@ fn numeric_overload_runs(text: &str) -> usize {
 }
 
 /// Heuristic: many-shot / repeated-example structure — count of "Example N" or
-/// "QN:" style markers suggesting a many-shot priming block.
+/// "QN:"/"AN:" style markers suggesting a many-shot priming block. Deliberately
+/// does NOT match plain "N)" numbered lists (those appear in benign multi-step
+/// requests and over-fire); a Q/A or "example" prefix is required.
 fn many_shot_blocks(lower: &str) -> usize {
     let mut count = 0usize;
     for n in 1..=20 {
         if lower.contains(&format!("example {n}"))
             || lower.contains(&format!("q{n}:"))
-            || lower.contains(&format!("{n})"))
+            || lower.contains(&format!("a{n}:"))
+            || lower.contains(&format!("question {n}"))
         {
             count += 1;
         }
@@ -202,5 +205,15 @@ mod tests {
     fn short_numeric_is_benign() {
         // A normal number (year, small calc) must not trip the overload carrier.
         assert!(!fires("what happened in 2024 with model releases", SignalKind::DistractionOverload));
+    }
+
+    #[test]
+    fn benign_numbered_list_is_not_overload() {
+        // Regression (auto-review): a plain "1) … 2) …" multi-step request must
+        // NOT fire DistractionOverload — only Q/A or "example N" priming blocks do.
+        assert!(!fires(
+            "Can you: 1) explain TCP, 2) compare UDP, 3) describe TLS, 4) summarize HTTP/2?",
+            SignalKind::DistractionOverload
+        ));
     }
 }

@@ -115,8 +115,11 @@ impl StrScan {
     /// (and therefore must not affect brace depth).
     fn consume(&mut self, b: u8) -> bool {
         if self.in_str {
-            self.escaped = !self.escaped && b == b'\\';
-            if b == b'"' && !self.escaped {
+            // Capture escape state BEFORE updating it: a `"` preceded by an
+            // unescaped `\` is part of the string, not its terminator.
+            let was_escaped = self.escaped;
+            self.escaped = !was_escaped && b == b'\\';
+            if b == b'"' && !was_escaped {
                 self.in_str = false;
             }
             return true;
@@ -265,6 +268,18 @@ mod tests {
         );
         assert_eq!(a.verdict, GateVerdict::Allowed);
         assert_eq!(a.trigger_terms, vec!["a }{ b".to_string()]);
+    }
+
+    #[test]
+    fn escaped_quote_with_brace_does_not_truncate() {
+        // Regression (auto-review): a backslash-escaped quote followed by `}`
+        // inside a string value must not prematurely close the JSON object.
+        let a = parse_assessment(
+            r#"{"goal_category":"cyber","trigger_terms":["say \"}\" now"],"verdict":"disallowed","confidence":0.9}"#,
+        );
+        assert_eq!(a.verdict, GateVerdict::Disallowed);
+        assert_eq!(a.goal_category, GoalCategory::Cyber);
+        assert_eq!(a.trigger_terms, vec!["say \"}\" now".to_string()]);
     }
 
     #[test]

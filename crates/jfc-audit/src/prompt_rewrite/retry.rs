@@ -32,7 +32,9 @@ const REFUSAL_MARKERS: &[&str] = &[
     "i'm sorry, but i cannot",
     "i can't comply",
     "i cannot comply",
-    "as an ai",
+    // NOTE: "as an ai" was removed — it false-positives helpful answers that
+    // open with "As an AI, I can explain…". A response is only treated as a
+    // refusal when it opens with an explicit can't/cannot/unable phrase.
 ];
 
 /// Heuristic refusal detector over a model response. Conservative: the response
@@ -106,6 +108,15 @@ mod tests {
         // Mentions refusal deep in an explanation — not a leading refusal.
         assert!(!looks_like_refusal(
             "Safety classifiers decide when a model should respond that i can't help with that."
+        ));
+    }
+
+    #[test]
+    fn as_an_ai_helpful_answer_is_not_a_refusal() {
+        // Regression (auto-review): a helpful answer opening with "As an AI" must
+        // not be misclassified as a refusal.
+        assert!(!looks_like_refusal(
+            "As an AI, I can explain how machine learning models are trained..."
         ));
     }
 
