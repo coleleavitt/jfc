@@ -1514,3 +1514,109 @@ fn produce_text_block_line_count(
 
     count
 }
+
+#[cfg(test)]
+mod provider_attribution_tests {
+    use super::*;
+    use jfc_core::{ChatMessage, Role, ToolCall, ToolInput, ToolKind, ToolOutput};
+
+    // Normal: each known model id maps to its expected provider family.
+    #[test]
+    fn classify_known_families_normal() {
+        assert_eq!(ProviderFamily::classify("claude-opus-4-7"), ProviderFamily::Anthropic);
+        assert_eq!(ProviderFamily::classify("anthropic/claude-x"), ProviderFamily::Anthropic);
+        assert_eq!(ProviderFamily::classify("fable-5"), ProviderFamily::Anthropic);
+        assert_eq!(ProviderFamily::classify("gpt-5.5"), ProviderFamily::OpenAI);
+        assert_eq!(ProviderFamily::classify("openai/gpt-5.5"), ProviderFamily::OpenAI);
+        assert_eq!(ProviderFamily::classify("o3-mini"), ProviderFamily::OpenAI);
+        assert_eq!(ProviderFamily::classify("gemini-2.5-pro"), ProviderFamily::Gemini);
+    }
+
+    // Robust: an unknown id falls back to Other.
+    #[test]
+    fn classify_unknown_is_other_robust() {
+        assert_eq!(ProviderFamily::classify("mystery-7"), ProviderFamily::Other);
+        assert_eq!(ProviderFamily::classify(""), ProviderFamily::Other);
+    }
+
+    // Normal: each family's style channels are distinct (color + glyph + bar),
+    // so attribution survives monochrome (glyph/bar differ, not just color).
+    #[test]
+    fn provider_styles_are_redundantly_distinct_normal() {
+        let a = ProviderFamily::Anthropic.style();
+        let o = ProviderFamily::OpenAI.style();
+        assert_ne!(a.label, o.label);
+        assert_ne!(a.glyph, o.glyph);
+        assert_ne!(a.bar, o.bar);
+        assert_ne!(a.color, o.color);
+    }
+
+    fn ask_tool(model: &str, prompt: &str, reply: &str) -> ToolCall {
+        ToolCall {
+            id: jfc_engine::ids::ToolId::from("t1"),
+            kind: ToolKind::AskModel,
+            status: jfc_core::ToolStatus::Completed,
+            input: ToolInput::AskModel {
+                model: model.to_owned(),
+                prompt: prompt.to_owned(),
+                system: None,
+            },
+            output: ToolOutput::Text(reply.to_owned()),
+            display: jfc_core::ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: None,
+            thought_signature: None,
+        }
+    }
+
+    // Normal: an AskModel exchange renders the asked provider's gutter bar on
+    // every reply line, plus the provider label in the header.
+    #[test]
+    fn ask_model_exchange_uses_provider_gutter_normal() {
+        let t = crate::theme::Theme::dark();
+        let tool = ask_tool("gpt-5.5", "why is the sky blue?", "Rayleigh scattering.");
+        let lines = tool_body_lines_themed(&tool, 60, t, None);
+        let rendered: Vec<String> = lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .collect();
+        let gpt_bar = ProviderFamily::OpenAI.style().bar;
+        assert!(rendered.iter().any(|l| l.contains("You → GPT")), "header missing: {rendered:?}");
+        assert!(rendered.iter().any(|l| l.contains("Rayleigh scattering")));
+        assert!(
+            rendered.iter().any(|l| l.starts_with(gpt_bar)),
+            "reply lines must carry the GPT gutter bar: {rendered:?}"
+        );
+    }
+
+    // Normal: line-count helper matches the actual rendered line count.
+    #[test]
+    fn ask_model_line_count_matches_render_normal() {
+        let t = crate::theme::Theme::dark();
+        let tool = ask_tool("claude-opus-4-7", "hi", "hello there");
+        let count = tool_body_line_count(&tool, 60);
+        let actual = tool_body_lines_themed(&tool, 60, t, None).len();
+        assert_eq!(count, actual);
+    }
+
+    // Normal: a teammate message gets provider attribution (name + style).
+    #[test]
+    fn teammate_message_attribution_normal() {
+        let mut msg = ChatMessage::user("ignored".to_owned());
+        msg.role = Role::Assistant;
+        msg.agent_name = Some("gpt-teammate".to_owned());
+        msg.model_name = Some("gpt-5.5".to_owned());
+        let attr = super::super::core::attribution_for_message_for_test(&msg);
+        let (style, who) = attr.expect("teammate should be attributed");
+        assert_eq!(who, "gpt-teammate");
+        assert_eq!(style.label, ProviderFamily::OpenAI.style().label);
+    }
+
+    // Robust: an ordinary assistant message (no agent/model) is not attributed.
+    #[test]
+    fn plain_assistant_not_attributed_robust() {
+        let mut msg = ChatMessage::user("x".to_owned());
+        msg.role = Role::Assistant;
+        assert!(super::super::core::attribution_for_message_for_test(&msg).is_none());
+    }
+}

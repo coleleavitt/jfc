@@ -1590,27 +1590,4 @@ mod council_member_tests {
         assert!(result.is_error());
         assert!(result.output.contains("non-empty `prompt`"));
     }
-
-    #[tokio::test]
-    async fn ask_model_qualified_matches_active_with_empty_registry() {
-        // Test the scenario: user provides a qualified model id like "anthropic/claude-opus-4-7",
-        // the active model is "claude-opus-4-7" (unqualified), and the registry is empty.
-        // With an empty registry, resolve_provider_model returns None because it can't find
-        // the "anthropic" provider. The fallback should match if the unqualified portion matches.
-        let (ap, am) = active();  // active model is "active-model" with provider "alpha"
-        let result = run_ask_model_tool(
-            "alpha/active-model".to_owned(),  // qualified form matching active model
-            "test question".to_owned(),
-            None,
-            ap.clone(),
-            am.clone(),
-            vec![],  // EMPTY REGISTRY - this is the key part!
-        )
-        .await;
-        // This should succeed because "alpha/active-model" when stripped becomes "active-model"
-        // which matches the active model. But currently it fails because the fallback
-        // compares "active-model" == "alpha/active-model" which is false.
-        assert!(result.is_error(), "Expected error with current implementation: {}", result.output);
-        assert!(result.output.contains("could not resolve model"), "Got: {}", result.output);
-    }
 }

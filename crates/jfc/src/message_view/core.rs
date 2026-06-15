@@ -15,8 +15,46 @@ use crate::theme::Theme;
 use jfc_core::*;
 
 use super::assistant_parts::{push_advisor_lines, push_reasoning_lines, push_task_status_lines};
-use super::tool_blocks::{render_tool_block, tool_kind_color};
+use super::tool_blocks::{ProviderFamily, ProviderStyle, render_tool_block, tool_kind_color};
 use super::tool_height::tool_block_height;
+
+/// Test-only accessor for [`attribution_for_message`] (private fn, exercised by
+/// the tool_blocks provider-attribution tests).
+#[cfg(test)]
+pub(super) fn attribution_for_message_for_test(
+    msg: &ChatMessage,
+) -> Option<(ProviderStyle, String)> {
+    attribution_for_message(msg)
+}
+
+/// Provider attribution for an assistant message, when it represents a distinct
+/// cross-model voice. Returns `(style, display_name)` for messages from a named
+/// teammate or a model whose family is identifiable; `None` for an ordinary
+/// single-model assistant turn (which renders the plain "assistant" label).
+fn attribution_for_message(msg: &ChatMessage) -> Option<(ProviderStyle, String)> {
+    // A named teammate is always a distinct voice. Prefer the model's provider
+    // family for the visual identity (so a "gpt-5.5" teammate shows the GPT
+    // gutter), and label it with the teammate name.
+    if let Some(name) = msg.agent_name.as_deref().filter(|n| !n.trim().is_empty()) {
+        let style = msg
+            .model_name
+            .as_deref()
+            .map(ProviderFamily::classify)
+            .unwrap_or(ProviderFamily::Other)
+            .style();
+        return Some((style, name.to_owned()));
+    }
+    // No teammate name, but a model is recorded: attribute by provider family
+    // only when it resolves to a known family (else fall back to plain label).
+    if let Some(model) = msg.model_name.as_deref().filter(|m| !m.trim().is_empty()) {
+        let family = ProviderFamily::classify(model);
+        if family != ProviderFamily::Other {
+            let style = family.style();
+            return Some((style, style.label.to_owned()));
+        }
+    }
+    None
+}
 
 /// Columns reserved at the left of a user message for the `▌` ribbon + a
 /// space. User text is *wrapped* this much narrower (in the item builder)
@@ -904,7 +942,28 @@ pub(crate) fn build_message_items<'a>(
                 if is_streaming_placeholder {
                     spans.push(Span::styled("● ", Style::default().fg(t.accent)));
                 }
-                spans.push(Span::styled("assistant", t.asst_label()));
+                // Cross-model attribution: when this assistant message came
+                // from a named teammate or a non-default model, label it with
+                // the provider's identity (color + glyph + label) so a
+                // heterogeneous exchange (e.g. a GPT teammate replying in a
+                // Claude-led session) reads as a distinct voice. Redundant
+                // attribution (glyph + label + color) survives monochrome /
+                // color-vision deficiency. Falls back to plain "assistant".
+                match attribution_for_message(msg) {
+                    Some((style, who)) => {
+                        spans.push(Span::styled(
+                            format!("{} {}", style.glyph, style.bar),
+                            Style::default().fg(style.color),
+                        ));
+                        spans.push(Span::styled(
+                            who,
+                            Style::default()
+                                .fg(style.color)
+                                .add_modifier(Modifier::BOLD),
+                        ));
+                    }
+                    None => spans.push(Span::styled("assistant", t.asst_label())),
+                }
                 Line::from(spans)
             }
         };
