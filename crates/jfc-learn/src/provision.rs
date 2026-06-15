@@ -105,6 +105,52 @@ pub fn files_to_scaffold(exists: &dyn Fn(&str) -> bool) -> Vec<&'static str> {
         .collect()
 }
 
+/// Outcome of a provisioning run: which files were written and which were
+/// skipped (already present).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProvisionResult {
+    pub written: Vec<String>,
+    pub skipped: Vec<String>,
+}
+
+/// Provision a project root: for each standard config file that does NOT already
+/// exist, generate its scaffold and write it — but only after `confirm` returns
+/// true (the caller supplies the user-confirmation gate). Existing files are
+/// never touched. Returns which files were written vs skipped.
+///
+/// This is the thin glue over the tested generators: a CLI/first-launch flow
+/// calls it with a real confirm prompt; tests call it with a closure.
+pub fn provision_project(
+    root: &std::path::Path,
+    summary: &ProjectSummary,
+    confirm: &dyn Fn(&[&str]) -> bool,
+) -> std::io::Result<ProvisionResult> {
+    let exists = |f: &str| root.join(f).exists();
+    let to_make = files_to_scaffold(&exists);
+    let mut result = ProvisionResult::default();
+
+    if to_make.is_empty() {
+        return Ok(result);
+    }
+    if !confirm(&to_make) {
+        // User declined: everything stays skipped.
+        result.skipped = to_make.iter().map(|s| (*s).to_owned()).collect();
+        return Ok(result);
+    }
+
+    for file in to_make {
+        let body = match file {
+            "CLAUDE.md" => scaffold_claude_md(summary),
+            "AGENTS.md" => scaffold_agents_md(summary),
+            "MEMORY.md" => scaffold_memory_md(summary),
+            _ => continue,
+        };
+        std::fs::write(root.join(file), body)?;
+        result.written.push(file.to_owned());
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,5 +221,43 @@ mod tests {
     fn files_to_scaffold_none_when_all_exist_robust() {
         let to_make = files_to_scaffold(&|_| true);
         assert!(to_make.is_empty());
+    }
+
+    #[test]
+    fn provision_project_writes_missing_files_when_confirmed_normal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let res = provision_project(root, &summary(), &|_| true).unwrap();
+        assert_eq!(res.written, vec!["CLAUDE.md", "AGENTS.md", "MEMORY.md"]);
+        assert!(root.join("CLAUDE.md").exists());
+        assert!(root.join("AGENTS.md").exists());
+        assert!(root.join("MEMORY.md").exists());
+        let claude = std::fs::read_to_string(root.join("CLAUDE.md")).unwrap();
+        assert!(claude.contains("jfc Project Context"));
+    }
+
+    #[test]
+    fn provision_project_skips_existing_files_robust() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("CLAUDE.md"), "PRE-EXISTING").unwrap();
+        let res = provision_project(root, &summary(), &|_| true).unwrap();
+        assert!(!res.written.contains(&"CLAUDE.md".to_owned()));
+        // The pre-existing file is untouched.
+        assert_eq!(
+            std::fs::read_to_string(root.join("CLAUDE.md")).unwrap(),
+            "PRE-EXISTING"
+        );
+        assert!(res.written.contains(&"AGENTS.md".to_owned()));
+    }
+
+    #[test]
+    fn provision_project_writes_nothing_when_declined_robust() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let res = provision_project(root, &summary(), &|_| false).unwrap();
+        assert!(res.written.is_empty());
+        assert!(!root.join("CLAUDE.md").exists());
+        assert_eq!(res.skipped.len(), 3);
     }
 }
