@@ -9,6 +9,7 @@
 //! - `auto_hints` — auto-search hint formatting
 //! - `verifier` — ASG-SI contract verification for memory promotion
 
+pub mod arch_graph;
 pub mod auto_hints;
 pub mod curator;
 pub mod digest;
