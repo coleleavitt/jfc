@@ -4,9 +4,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use jfc_provider::{
-    CompletionResponse, EventStream, ModelId, ModelInfo, Provider, ProviderContent, ProviderId,
-    ProviderMessage, ProviderRole, StopReason, StreamConvention, StreamEvent, StreamOptions,
-    TokenUsage, ToolDef,
+    CompletionResponse, EventStream, ModelId, ModelInfo, ModelRequestPolicy, ModelRequestProfile,
+    Provider, ProviderContent, ProviderId, ProviderMessage, ProviderRole, StopReason,
+    StreamConvention, StreamEvent, StreamOptions, TokenUsage, ToolDef,
 };
 
 const PROVIDER_ID: &str = "openai";
@@ -451,25 +451,6 @@ fn is_anthropic_base_url(url: &str) -> bool {
         .is_some_and(|host| host == "api.anthropic.com" || host.ends_with(".anthropic.com"))
 }
 
-/// Clamp a requested reasoning effort to what OpenAI's Responses API
-/// accepts. OpenAI supports `none | minimal | low | medium | high | xhigh`
-/// (the `reasoning.effort` field). It does NOT accept Anthropic's `max`
-/// tier — sending it 400s with
-/// `Invalid value: 'max'. Supported values are: 'none', 'minimal', 'low',
-/// 'medium', 'high', and 'xhigh'`. Our `ReasoningEffort` enum can emit
-/// `max` (it's the global pin shared across providers), so a session pinned
-/// to `max` then routed to a gpt-5/o-series model would otherwise fail.
-/// We map `max -> xhigh` (OpenAI's deepest tier) and pass the rest through;
-/// unknown values pass through unchanged so future OpenAI tiers aren't
-/// silently dropped. Mirrors `anthropic_models::effort_for_model`, which
-/// does the analogous per-model clamp on the Anthropic side.
-fn clamp_effort_for_openai(requested: &str) -> &str {
-    match requested.trim().to_ascii_lowercase().as_str() {
-        "max" => "xhigh",
-        _ => requested,
-    }
-}
-
 pub(crate) fn build_responses_body(
     messages: Vec<ProviderMessage>,
     options: &StreamOptions,
@@ -495,8 +476,16 @@ pub(crate) fn build_responses_body(
     }
 
     if let Some(ref effort) = options.reasoning_effort {
-        body["reasoning"] = json!({ "effort": clamp_effort_for_openai(effort) });
-        body["include"] = json!(["reasoning.encrypted_content"]);
+        let profile = ModelRequestProfile::from_provider_model(
+            PROVIDER_ID,
+            options.model.as_str(),
+            None,
+            None,
+        );
+        if let Some(effort) = profile.normalized_reasoning_effort(effort) {
+            body["reasoning"] = json!({ "effort": effort.as_ref() });
+            body["include"] = json!(["reasoning.encrypted_content"]);
+        }
     }
     if let Some(temp) = options.temperature {
         body["temperature"] = Value::from(temp);
@@ -980,19 +969,29 @@ mod tests {
         assert_eq!(body["reasoning"]["effort"], "xhigh");
     }
 
-    // Robust: OpenAI-supported tiers pass through verbatim; the helper only
-    // rewrites `max`.
+    // Robust: OpenAI-supported tiers pass through verbatim for reasoning
+    // models; only Anthropic's `max` alias is rewritten.
     #[test]
-    fn openai_effort_clamp_passthrough_robust() {
+    fn openai_effort_policy_passthrough_robust() {
         for tier in ["none", "minimal", "low", "medium", "high", "xhigh"] {
+            let options = StreamOptions::new("gpt-5.5").reasoning_effort(tier);
+            let body = build_responses_body(Vec::new(), &options, false);
             assert_eq!(
-                clamp_effort_for_openai(tier),
-                tier,
+                body["reasoning"]["effort"], tier,
                 "{tier} must pass through"
             );
         }
-        assert_eq!(clamp_effort_for_openai("max"), "xhigh");
-        assert_eq!(clamp_effort_for_openai("MAX"), "xhigh");
+        let options = StreamOptions::new("gpt-5.5").reasoning_effort("MAX");
+        let body = build_responses_body(Vec::new(), &options, false);
+        assert_eq!(body["reasoning"]["effort"], "xhigh");
+    }
+
+    #[test]
+    fn drops_reasoning_effort_for_non_reasoning_openai_model_robust() {
+        let options = StreamOptions::new("gpt-4.1").reasoning_effort("high");
+        let body = build_responses_body(Vec::new(), &options, false);
+        assert!(body.get("reasoning").is_none());
+        assert!(body.get("include").is_none());
     }
 
     #[test]

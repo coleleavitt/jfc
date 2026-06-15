@@ -85,6 +85,51 @@ pub fn frame_for(tick: usize) -> &'static str {
     FRAMES[tick % FRAMES.len()]
 }
 
+// ─── Spinner tips (CC 177 parity) ─────────────────────────────────────
+/// Contextual tips shown in the spinner row during streaming. Rotated
+/// every ~12 seconds. Mirrors CC 177's `spinnerTipsEnabled` feature.
+const SPINNER_TIPS: &[&str] = &[
+    "Use /clear to start fresh when switching topics",
+    "Use Esc Esc to interrupt the current turn",
+    "Press ? for keybindings",
+    "Ctrl+P opens the command palette",
+    "Press o to expand collapsed tool output",
+    "Use /cost to check session token usage",
+];
+
+/// Whether spinner tips are enabled. Respects env var and config.
+pub fn spinner_tips_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        if matches!(
+            std::env::var("JFC_SPINNER_TIPS").as_deref(),
+            Ok("0") | Ok("false") | Ok("no") | Ok("off")
+        ) {
+            return false;
+        }
+        jfc_engine::config::load_arc()
+            .claude
+            .spinner_tips_enabled
+            .unwrap_or(true)
+    })
+}
+
+/// Returns a tip for the current frame, cycling every ~12 seconds (at 4 Hz
+/// tick rate). Returns `None` if tips are disabled or not enough time has
+/// passed to show one yet (avoids showing a tip in the first few seconds).
+pub fn spinner_tip(frame: usize) -> Option<&'static str> {
+    if !spinner_tips_enabled() {
+        return None;
+    }
+    // Show a tip after ~5 seconds of streaming, then rotate every ~12s.
+    // At 4 Hz (250ms ticks), frame 20 = 5s, cycle every 48 frames = 12s.
+    if frame < 20 {
+        return None;
+    }
+    let tip_idx = ((frame - 20) / 48) % SPINNER_TIPS.len();
+    Some(SPINNER_TIPS[tip_idx])
+}
+
 /// Format an elapsed duration compactly: `4s`, `47s`, `1m04s`, `61m01s`.
 /// Seconds are zero-padded in the minutes case so the clock doesn't jump
 /// width as it ticks (`1m09s` → `1m10s`, not `1m9s` → `1m10s`).

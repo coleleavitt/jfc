@@ -1098,38 +1098,47 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
     let row0 = Rect { height: 1, ..area };
     f.render_widget(Paragraph::new(line).style(Style::default().bg(t.bg)), row0);
 
-    // Row 1: "Next: <task subject>" — only when there's a real next task.
-    // The old rotating-tip fallback was decorative filler (a keybinding
-    // carousel shown when nothing was queued); dropping it keeps the row
-    // honest — it appears iff there's actual upcoming work to name. The
-    // row collapses to nothing otherwise, so the spinner sits one line
-    // closer to the prompt when idle of tasks.
-    if area.height >= 2
-        && let Some(subj) = next_open_task_subject(app)
-    {
+    // Row 1: "Next: <task subject>" when a task is queued, otherwise a
+    // rotating tip if streaming (CC 177 parity). The tip only shows during
+    // streaming — idle screens stay quiet.
+    if area.height >= 2 {
         let row1 = Rect {
             x: area.x,
             y: area.y + 1,
             width: area.width,
             height: 1,
         };
-        let prefix = "  □ Next: ";
-        let max_body = (area.width as usize).saturating_sub(prefix.chars().count() + 1);
-        let trimmed: String = if subj.chars().count() > max_body && max_body > 1 {
-            let mut out: String = subj.chars().take(max_body.saturating_sub(1)).collect();
-            out.push('…');
-            out
-        } else {
-            subj
-        };
-        let row1_line = Line::from(vec![
-            Span::styled(prefix, Style::default().fg(t.text_muted)),
-            Span::styled(trimmed, Style::default().fg(t.text_muted)),
-        ]);
-        f.render_widget(
-            Paragraph::new(row1_line).style(Style::default().bg(t.bg)),
-            row1,
-        );
+        if let Some(subj) = next_open_task_subject(app) {
+            let prefix = "  □ Next: ";
+            let max_body = (area.width as usize).saturating_sub(prefix.chars().count() + 1);
+            let trimmed: String = if subj.chars().count() > max_body && max_body > 1 {
+                let mut out: String = subj.chars().take(max_body.saturating_sub(1)).collect();
+                out.push('…');
+                out
+            } else {
+                subj
+            };
+            let row1_line = Line::from(vec![
+                Span::styled(prefix, Style::default().fg(t.text_muted)),
+                Span::styled(trimmed, Style::default().fg(t.text_muted)),
+            ]);
+            f.render_widget(
+                Paragraph::new(row1_line).style(Style::default().bg(t.bg)),
+                row1,
+            );
+        } else if app.engine.is_streaming || app.engine.turn_started_at.is_some() {
+            // Show a spinner tip during streaming when no task is queued
+            if let Some(tip) = crate::spinner::spinner_tip(app.spinner_frame) {
+                let row1_line = Line::from(vec![Span::styled(
+                    format!("  💡 {tip}"),
+                    Style::default().fg(t.text_muted),
+                )]);
+                f.render_widget(
+                    Paragraph::new(row1_line).style(Style::default().bg(t.bg)),
+                    row1,
+                );
+            }
+        }
     }
 
     // The agent fan moved below the input — see `agent_fan_below_input`.

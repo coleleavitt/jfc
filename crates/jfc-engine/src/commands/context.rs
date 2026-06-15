@@ -591,6 +591,114 @@ pub(super) async fn cmd_research(
     }
 }
 
+/// `/btw <question>` — ask a quick side question without interrupting current work.
+/// CC 177 parity: spawns a separate lightweight agent with NO tools, gets one
+/// response only, and doesn't disturb the main agent's work.
+pub(super) async fn cmd_btw(
+    state: &mut EngineState,
+    _parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole, StreamOptions};
+
+    let question = text
+        .trim()
+        .strip_prefix("/btw")
+        .unwrap_or("")
+        .trim()
+        .to_owned();
+    if question.is_empty() {
+        state.messages.push(ChatMessage::user(text.to_owned()));
+        state
+            .messages
+            .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                "Usage: `/btw <your question>` — ask a quick side question without interrupting current work.".into(),
+            )]));
+        return;
+    }
+
+    // Echo the question in the transcript
+    state
+        .messages
+        .push(ChatMessage::user(format!("/btw {question}")));
+
+    // Build a snapshot of recent context for the side agent
+    let context = render_btw_context(&state.messages);
+    let prompt = format!(
+        "<system-reminder>This is a side question from the user. Answer directly in a single response.
+
+IMPORTANT CONTEXT:
+- You are a separate, lightweight agent spawned to answer this one question
+- The main agent is NOT interrupted — it continues working independently
+- You share the conversation context but are a completely separate instance
+
+CRITICAL CONSTRAINTS:
+- You have NO tools available — you cannot read files, run commands, or take any actions
+- This is a one-off response — there will be no follow-up turns
+- NEVER say things like \"Let me try...\", \"I'll now...\", or promise to take any action
+- If you don't know the answer from the context, say so
+
+Simply answer the question with the information you have.</system-reminder>
+
+Context from the conversation:
+{context}
+
+Question: {question}"
+    );
+
+    let messages = vec![ProviderMessage {
+        role: ProviderRole::User,
+        content: vec![ProviderContent::Text(prompt)],
+    }];
+
+    let opts = StreamOptions::new(state.model.clone()).max_tokens(2048);
+    match state.provider.complete(messages, &opts).await {
+        Ok(response) => {
+            // Surface the answer with a distinctive visual style
+            state
+                .messages
+                .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                    format!("**BTW:** {}", response.content),
+                )]));
+        }
+        Err(e) => {
+            state
+                .messages
+                .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                    format!("Side question error: {e}"),
+                )]));
+        }
+    }
+}
+
+/// Render a compact context snapshot for `/btw` side questions.
+fn render_btw_context(messages: &[ChatMessage]) -> String {
+    const MAX_CHARS: usize = 4_000;
+    let mut out = String::new();
+    for msg in messages.iter().rev() {
+        let role = match msg.role {
+            Role::User => "User",
+            Role::Assistant => "Assistant",
+        };
+        let text = msg
+            .parts
+            .iter()
+            .map(|p| p.text_only())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if text.trim().is_empty() {
+            continue;
+        }
+        let line = format!("{role}: {text}\n");
+        if out.len() + line.len() > MAX_CHARS {
+            break;
+        }
+        out.insert_str(0, &line);
+    }
+    out
+}
+
 pub(super) async fn cmd_config(
     state: &mut EngineState,
     parts: &[&str],

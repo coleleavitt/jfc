@@ -365,6 +365,14 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
             let reason = outcome
                 .error
                 .unwrap_or_else(|| "workflow cancelled".to_owned());
+            // Mark the daemon entry as Cancelled so has_interruptible_work()
+            // stops returning true — otherwise Ctrl+C freezes the UI waiting
+            // for a "Running" task that will never finish.
+            jfc_daemon::record_background_agent_finished(
+                &task_id,
+                jfc_daemon::BackgroundAgentStatus::Cancelled,
+                &format!("cancelled: {reason}"),
+            );
             let _ = tx_bg
                 .send(EngineEvent::Task(TaskEvent::Failed {
                     task_id: crate::ids::TaskId::from(task_id),

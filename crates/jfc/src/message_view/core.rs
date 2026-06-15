@@ -650,12 +650,20 @@ pub(super) fn severity_rank(s: jfc_engine::diagnostics::Severity) -> u8 {
 /// row. These are the "search-pattern" kinds — running 5 Reads or 5
 /// Greps individually drowns out the next user prompt; collapsing
 /// them keeps the transcript scannable while preserving the option
-/// to drill in. Edit/Write/Bash never group because each one's
-/// behavior matters per-call.
+/// to drill in. Edit/Write never group because each one's
+/// behavior matters per-call. Bash groups when there are 3+
+/// parallel calls (CC 177's `grouped_tool_use` pattern).
 pub(super) fn is_groupable(kind: &ToolKind) -> bool {
     matches!(
         kind,
-        ToolKind::Read | ToolKind::Glob | ToolKind::Grep | ToolKind::Search
+        ToolKind::Read
+            | ToolKind::Glob
+            | ToolKind::Grep
+            | ToolKind::Search
+            | ToolKind::Bash
+            | ToolKind::BashOutput
+            | ToolKind::WebFetch
+            | ToolKind::WebSearch
     )
 }
 

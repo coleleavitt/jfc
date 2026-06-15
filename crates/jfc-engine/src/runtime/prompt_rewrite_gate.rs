@@ -8,7 +8,7 @@
 //!    [`RewriteModel`] trait through a [`jfc_provider::Provider`];
 //! 2. building a [`RewritePipeline`] from [`jfc_config::PromptRewriteConfig`]
 //!    (default-OFF: absent/`enabled = false` ⇒ no-op pass-through); and
-//! 3. [`evaluate`], the single entry `submit_prompt` calls.
+//! 3. prompt/response evaluation helpers used by refusal recovery.
 //!
 //! The gate NEVER rewrites silently: a `Rewritten` outcome is returned to the
 //! caller, which surfaces original→rewrite+rationale and requires the user to
@@ -150,8 +150,11 @@ fn resolve_rewrite_target(
 
 /// Evaluate a prompt through the gate. Returns `None` when the feature is off
 /// (caller proceeds unchanged); otherwise the [`RewriteDecision`] the caller
-/// surfaces to the user. `history` is the recent conversation (oldest→newest)
-/// so a prompt benign in isolation but harmful in context is judged correctly.
+/// handles. This is not used as a pre-submit blocker; the live app uses
+/// [`evaluate_with_feedback`] after an actual/likely provider refusal so normal
+/// submissions are sent first. `history` is the recent conversation
+/// (oldest→newest) so a prompt benign in isolation but harmful in context is
+/// judged correctly.
 pub async fn evaluate(
     cfg: Option<&PromptRewriteConfig>,
     provider: Arc<dyn Provider>,

@@ -9,33 +9,14 @@
 //! Listing order is most-capable-first within each family (Opus → Sonnet → Haiku) and
 //! newest-first within a family, which is what the picker renders top-to-bottom.
 
-use jfc_provider::ModelInfo;
+use jfc_provider::{AnthropicModelKind, ModelInfo, ModelRequestPolicy, ModelThinkingMode};
 
 fn limits_for_anthropic_model(id: &str) -> (usize, Option<usize>) {
-    let id = id.to_ascii_lowercase();
-    if id.contains("fable")
-        || id.contains("mythos")
-        || id.contains("opus-4-8")
-        || id.contains("opus-4-7")
-        || id.contains("opus-4-6")
-        || id.contains("sonnet-4-6")
-    {
-        // CC 2.1.170: fable-5/mythos-5 share the opus-4-8 bucket
-        // (`fable-5"||mythos-5")$=64000,q=128000` with 1M context).
-        (1_000_000, Some(128_000))
-    } else if id.contains("opus-4-5") {
-        (1_000_000, Some(64_000))
-    } else if id.contains("opus-4-1") || id.contains("opus-4-") {
-        (200_000, Some(32_000))
-    } else if id.contains("sonnet-4-5") || id.contains("3-7-sonnet") || id.contains("sonnet-4-") {
-        (200_000, Some(64_000))
-    } else if id.contains("haiku-4-5") {
-        (200_000, Some(32_000))
-    } else if id.contains("3-5-haiku") {
-        (200_000, Some(8_192))
-    } else {
-        (200_000, None)
-    }
+    let model = AnthropicModelKind::from_model_id(id);
+    (
+        model.context_window_tokens().unwrap_or(200_000),
+        model.max_output_tokens().map(|tokens| tokens as usize),
+    )
 }
 
 /// Canonical "latest" alias targets — mirrors v126 cli.js alias resolution.
@@ -268,14 +249,10 @@ pub fn merge_live_into_canonical(
 /// use `thinking.type = "enabled"` with an explicit `budget_tokens`.
 #[allow(dead_code)]
 pub fn supports_adaptive_thinking(model_id: &str) -> bool {
-    let id = model_id.to_lowercase();
-    // Opus 4.6+, Sonnet 4.6+, and the 2.1.170 fable-5/mythos-5 family support adaptive.
-    id.contains("opus-4-6")
-        || id.contains("opus-4-7")
-        || id.contains("opus-4-8")
-        || id.contains("sonnet-4-6")
-        || id.contains("fable")
-        || id.contains("mythos")
+    matches!(
+        AnthropicModelKind::from_model_id(model_id).thinking_mode(),
+        ModelThinkingMode::AnthropicAdaptive
+    )
 }
 
 /// Whether `output_config.effort` may be sent to `model_id`.
@@ -298,49 +275,21 @@ pub fn supports_adaptive_thinking(model_id: &str) -> bool {
 ///     can't take `effort` would 400, and the cost of a missing `effort`
 ///     on a model that *could* take it is just default depth)
 pub fn model_supports_effort(model_id: &str) -> bool {
-    if std::env::var("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT")
-        .ok()
-        .is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
-    {
-        return true;
-    }
-    let id = model_id.to_ascii_lowercase();
-    // Explicit deny — pre-effort families (mirrors CC's A2 deny list).
-    if id.contains("claude-3-")
-        || id.contains("opus-4-0")
-        || id.contains("opus-4-1")
-        || id.contains("sonnet-4-0")
-        || id.contains("sonnet-4-5")
-        || id.contains("haiku")
-    {
-        return false;
-    }
-    // Explicit allow — effort-capable families (2.1.170 adds fable-5/mythos-5,
-    // both in the cli effort allowlist: `$.includes("fable-5")||h8H(H)`).
-    id.contains("opus-4-5")
-        || id.contains("opus-4-6")
-        || id.contains("opus-4-7")
-        || id.contains("opus-4-8")
-        || id.contains("sonnet-4-6")
-        || id.contains("fable")
-        || id.contains("mythos")
+    AnthropicModelKind::from_model_id(model_id)
+        .normalized_effort("high")
+        .is_some()
 }
 
-/// Whether the `"max"` / `"xhigh"` effort tiers are valid for `model_id`.
-/// Both are Opus-tier only (Opus 4.6+ for `max`; Opus 4.7+ added `xhigh`).
-/// Sonnet 4.6 supports effort but caps at `high` — sending `max`/`xhigh`
-/// there 400s. This lets callers clamp rather than drop. Mirrors the skill
-/// doc: "`max` is Opus-tier only … will error on Sonnet/Haiku".
-pub fn model_supports_high_effort_tier(model_id: &str) -> bool {
-    let id = model_id.to_ascii_lowercase();
-    // Opus-tier max/xhigh. CC 2.1.170 groups fable-5/mythos-5 with opus-4-7/4-8
-    // in the high-tier set, so they accept max/xhigh too.
-    id.contains("opus-4-5")
-        || id.contains("opus-4-6")
-        || id.contains("opus-4-7")
-        || id.contains("opus-4-8")
-        || id.contains("fable")
-        || id.contains("mythos")
+/// Whether `model_id` supports effort="max".
+/// Supported on: Opus 4.6+, Sonnet 4.6, Fable5, Mythos5.
+pub fn model_supports_max_effort(model_id: &str) -> bool {
+    AnthropicModelKind::from_model_id(model_id).supports_max_effort()
+}
+
+/// Whether `model_id` supports effort="xhigh" (Claude Code internal).
+/// Supported on: Opus 4.7+, Fable5, Mythos5.
+pub fn model_supports_xhigh_effort(model_id: &str) -> bool {
+    AnthropicModelKind::from_model_id(model_id).supports_xhigh_effort()
 }
 
 /// Resolve the effort value actually safe to send for `model_id`, given the
@@ -349,14 +298,7 @@ pub fn model_supports_high_effort_tier(model_id: &str) -> bool {
 /// or `Some(clamped)` where `max`/`xhigh` are clamped to `high` on
 /// effort-capable-but-not-Opus models (e.g. Sonnet 4.6).
 pub fn effort_for_model<'a>(model_id: &str, requested: &'a str) -> Option<&'a str> {
-    if !model_supports_effort(model_id) {
-        return None;
-    }
-    if matches!(requested, "max" | "xhigh") && !model_supports_high_effort_tier(model_id) {
-        // Effort-capable but Sonnet-tier: clamp the Opus-only tiers to high.
-        return Some("high");
-    }
-    Some(requested)
+    AnthropicModelKind::from_model_id(model_id).normalized_effort(requested)
 }
 
 #[cfg(test)]
@@ -403,20 +345,27 @@ mod tests {
         assert_eq!(effort_for_model("claude-haiku-4-5", "high"), None);
     }
 
-    // Normal: effort-capable Opus keeps the requested value verbatim,
-    // including the Opus-only max/xhigh tiers.
+    // Normal: Opus 4.6+ supports max effort; xhigh maps to max on 4.7+.
     #[test]
-    fn effort_passthrough_on_opus_normal() {
+    fn effort_on_opus_normal() {
+        // Opus 4.8/4.7 support xhigh (maps to max) and max
         assert_eq!(effort_for_model("claude-opus-4-8", "max"), Some("max"));
-        assert_eq!(effort_for_model("claude-opus-4-7", "xhigh"), Some("xhigh"));
+        assert_eq!(effort_for_model("claude-opus-4-8", "xhigh"), Some("max"));
+        assert_eq!(effort_for_model("claude-opus-4-7", "max"), Some("max"));
+        assert_eq!(effort_for_model("claude-opus-4-7", "xhigh"), Some("max"));
+        // Opus 4.6 supports max but not xhigh
+        assert_eq!(effort_for_model("claude-opus-4-6", "max"), Some("max"));
+        assert_eq!(effort_for_model("claude-opus-4-6", "xhigh"), Some("high"));
+        // low/medium/high pass through
+        assert_eq!(effort_for_model("claude-opus-4-8", "low"), Some("low"));
+        assert_eq!(effort_for_model("claude-opus-4-7", "medium"), Some("medium"));
         assert_eq!(effort_for_model("claude-opus-4-6", "high"), Some("high"));
     }
 
-    // Robust: Sonnet 4.6 supports effort but not the Opus-only max/xhigh
-    // tiers — those clamp to high; low/medium/high pass through.
+    // Robust: Sonnet 4.6 supports effort including max; xhigh clamps to high.
     #[test]
-    fn effort_clamped_on_sonnet_robust() {
-        assert_eq!(effort_for_model("claude-sonnet-4-6", "max"), Some("high"));
+    fn effort_on_sonnet_robust() {
+        assert_eq!(effort_for_model("claude-sonnet-4-6", "max"), Some("max"));
         assert_eq!(effort_for_model("claude-sonnet-4-6", "xhigh"), Some("high"));
         assert_eq!(effort_for_model("claude-sonnet-4-6", "low"), Some("low"));
         assert_eq!(
@@ -634,15 +583,19 @@ mod tests {
         }
     }
 
-    // Robust: Fable 5 / Mythos 5 are effort + adaptive-thinking capable, and
-    // accept the Opus-tier max/xhigh effort (grouped with opus-4-7/4-8 in CC).
+    // Robust: Fable 5 / Mythos 5 are effort + adaptive-thinking capable.
+    // They support max and xhigh (xhigh maps to max).
     #[test]
     fn fable_and_mythos_5_capabilities_robust() {
         for id in ["claude-fable-5", "claude-mythos-5"] {
             assert!(model_supports_effort(id), "{id} effort");
             assert!(supports_adaptive_thinking(id), "{id} adaptive thinking");
-            assert!(model_supports_high_effort_tier(id), "{id} high-effort tier");
+            assert!(model_supports_max_effort(id), "{id} supports max");
+            assert!(model_supports_xhigh_effort(id), "{id} supports xhigh");
+            // xhigh maps to max, max stays max
             assert_eq!(effort_for_model(id, "max"), Some("max"), "{id} keeps max");
+            assert_eq!(effort_for_model(id, "xhigh"), Some("max"), "{id} xhigh→max");
+            assert_eq!(effort_for_model(id, "high"), Some("high"), "{id} keeps high");
         }
     }
 

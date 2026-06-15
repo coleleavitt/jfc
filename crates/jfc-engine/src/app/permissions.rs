@@ -84,7 +84,20 @@ impl PermissionMode {
             return PermissionDecision::NeedsPrompt;
         }
         match self {
-            Self::Default => PermissionDecision::NeedsPrompt,
+            Self::Default => {
+                // CC 177 parity: auto-approve read-only bash commands even in
+                // Default mode. This covers ls, cat, git status, etc. — the
+                // commands that never prompt in CC 177 regardless of mode.
+                // Non-bash tools still need explicit approval in Default mode.
+                if let ToolKind::Bash = tool.kind {
+                    if let ToolInput::Bash { command, .. } = &tool.input {
+                        if super::shell_safety::is_readonly_bash(command) {
+                            return PermissionDecision::Approved;
+                        }
+                    }
+                }
+                PermissionDecision::NeedsPrompt
+            }
             Self::Plan => match tool.kind {
                 ToolKind::Read
                 | ToolKind::Glob

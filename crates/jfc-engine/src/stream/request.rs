@@ -3,11 +3,10 @@ use std::sync::Arc;
 use crate::runtime::{StreamRequestMetadata, StreamRequestOverrides, StreamToolChoice};
 use crate::tools;
 use jfc_provider::{
-    ModelId, ModelResolutionReason, ModelSpec, Provider, ProviderContent, ProviderId,
-    ProviderMessage, ProviderRole, ResolvedModel, StreamConvention, StreamOptions,
+    DEFAULT_MAX_OUTPUT_TOKENS, ModelId, ModelRequestPolicy, ModelRequestProfile,
+    ModelResolutionReason, ModelSpec, Provider, ProviderContent, ProviderId, ProviderMessage,
+    ProviderRole, ResolvedModel, StreamConvention, StreamOptions,
 };
-
-use super::model_policy::{max_output_tokens_for, thinking_mode_for};
 
 pub struct PreparedStreamRequest {
     pub opts: StreamOptions,
@@ -856,7 +855,22 @@ Do not use a colon before tool calls.";
         system_prompt.push_str(&reminder);
     }
 
-    let thinking_mode = thinking_mode_for(model.as_str());
+    let provider_name = provider.name().to_owned();
+    let selected_model_info = provider
+        .available_models()
+        .into_iter()
+        .find(|info| info.id == *model);
+    let model_profile = ModelRequestProfile::from_provider_model(
+        &provider_name,
+        model.as_str(),
+        selected_model_info
+            .as_ref()
+            .and_then(|info| info.context_window_tokens),
+        selected_model_info
+            .as_ref()
+            .and_then(|info| info.max_output_tokens),
+    );
+    let thinking_mode = model_profile.thinking_mode();
     tracing::debug!(
         target: "jfc::stream::budget",
         skills_chars,
@@ -875,7 +889,9 @@ Do not use a colon before tool calls.";
         tool_count = tools::all_tool_defs().len(),
         "preparing stream request"
     );
-    let max_out = max_output_tokens_for(model.as_str());
+    let max_out = model_profile
+        .max_output_tokens()
+        .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS);
     let pewter_owl_header = crate::feature_gates::pewter_owl_header_enabled(model.as_str(), false);
     let pewter_owl_tool = crate::feature_gates::pewter_owl_tool_enabled(model.as_str(), false);
     let pewter_owl_brief = crate::feature_gates::pewter_owl_brief_enabled(model.as_str(), false);
@@ -1106,6 +1122,7 @@ Do not use a colon before tool calls.";
         provider.name(),
         provider.stream_convention(),
     );
+    opts = model_profile.clamp_options(opts);
     if let Some(max) = overrides.max_thinking_tokens
         && let Some(budget) = opts.thinking_budget.as_mut()
     {
@@ -1131,10 +1148,7 @@ Do not use a colon before tool calls.";
                 ModelSpec::qualified(ProviderId::new(provider.name()), model.clone()),
                 ModelSpec::qualified(ProviderId::new(provider.name()), model.clone()),
                 ModelResolutionReason::Requested,
-                provider
-                    .available_models()
-                    .iter()
-                    .find(|info| info.id == *model),
+                selected_model_info.as_ref(),
             )),
         },
         recalled_memory_chars,

@@ -1510,11 +1510,20 @@ mod helper_tests {
 
     #[test]
     fn is_groupable_destructive_kinds_robust() {
-        // Edit/Write/Bash never group — each call's behavior matters.
+        // Edit/Write never group — each call's behavior matters.
         assert!(!is_groupable(&ToolKind::Edit));
         assert!(!is_groupable(&ToolKind::Write));
-        assert!(!is_groupable(&ToolKind::Bash));
         assert!(!is_groupable(&ToolKind::Generic("foo".into())));
+    }
+
+    #[test]
+    fn is_groupable_parallel_callable_kinds_normal() {
+        // Bash/BashOutput/WebFetch/WebSearch group when 3+ parallel calls
+        // to reduce visual noise (CC 177's grouped_tool_use pattern).
+        assert!(is_groupable(&ToolKind::Bash));
+        assert!(is_groupable(&ToolKind::BashOutput));
+        assert!(is_groupable(&ToolKind::WebFetch));
+        assert!(is_groupable(&ToolKind::WebSearch));
     }
 
     // --- tool_status_icon_animated -----------------------------------

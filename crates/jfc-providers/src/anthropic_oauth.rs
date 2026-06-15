@@ -2925,11 +2925,17 @@ mod tests {
         );
     }
 
-    // Robust: Sonnet 4.6 supports effort but not the Opus-only max/xhigh
-    // tiers — max clamps to high rather than 400ing.
+    // Robust: Sonnet 4.6 supports max effort (per CC 177 ohH), but xhigh
+    // clamps to high since xhigh is Opus 4.7+/Fable5/Mythos5 only.
     #[test]
-    fn build_body_clamps_max_to_high_on_sonnet_robust() {
+    fn build_body_sonnet_46_effort_levels_robust() {
+        // Sonnet 4.6 supports max
         let o = opts("claude-sonnet-4-6").reasoning_effort("max");
+        let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
+        assert_eq!(body["output_config"]["effort"], "max");
+
+        // Sonnet 4.6 does NOT support xhigh — clamps to high
+        let o = opts("claude-sonnet-4-6").reasoning_effort("xhigh");
         let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
         assert_eq!(body["output_config"]["effort"], "high");
     }

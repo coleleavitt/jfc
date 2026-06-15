@@ -16,7 +16,14 @@ use reqwest::header::HeaderMap;
 use sha2::{Digest, Sha256};
 
 pub mod http;
+pub mod model_policy;
 pub mod retry;
+
+pub use model_policy::{
+    AnthropicModelKind, DEFAULT_MAX_OUTPUT_TOKENS, KnownModel,
+    LEGACY_ANTHROPIC_THINKING_BUDGET_TOKENS, ModelRequestPolicy, ModelRequestProfile,
+    ModelThinkingMode, OpenAiModelKind, ProviderFamily,
+};
 
 macro_rules! string_id {
     ($name:ident) => {

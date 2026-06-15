@@ -179,6 +179,7 @@ engine_commands! {
         "/teleport-export" [] "export current plan/context as importable JSON" => cmd_teleport_export,
         "/babysit-prs" [] "watch open PRs (optional schedule arg, `/babysit-prs stop` to cancel)" => cmd_babysit_prs,
         "/morning-checkin" [] "daily brief of PRs, issues, and recent commits" => cmd_morning_checkin,
+        "/btw" [] "ask a quick side question without interrupting current work" => cmd_btw,
 }
 
 /// Run one slash-command line against the engine. Unknown names resolve as

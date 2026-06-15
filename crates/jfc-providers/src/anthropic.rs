@@ -822,11 +822,19 @@ mod tests {
 
     #[test]
     fn build_body_reasoning_effort_uses_output_config_normal() {
+        // xhigh maps to max on models that support it (Opus 4.7+)
         let body = build_body(
             vec![make_user_msg("hi")],
             &opts("claude-opus-4-8").reasoning_effort("xhigh"),
         );
-        assert_eq!(body["output_config"]["effort"], "xhigh");
+        assert_eq!(body["output_config"]["effort"], "max");
+
+        // max stays max on models that support it
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-opus-4-6").reasoning_effort("max"),
+        );
+        assert_eq!(body["output_config"]["effort"], "max");
     }
 
     // Normal — REGRESSION (the haiku 400): effort is dropped for a model that

@@ -22,6 +22,24 @@ use super::{live_events, open_stream_with_bedrock_retries, prepare_stream_reques
 // trade-off, and (c) re-introduce a chain-id store keyed by conversation —
 // not a single process-global slot.
 
+fn is_output_token_limit_error(err_lower: &str) -> bool {
+    (err_lower.contains("max_tokens:") || err_lower.contains("max_output_tokens"))
+        && (err_lower.contains("maximum allowed number of output tokens")
+            || err_lower.contains("maximum output tokens")
+            || err_lower.contains("output token"))
+}
+
+fn is_prompt_too_long_error(err_lower: &str) -> bool {
+    if is_output_token_limit_error(err_lower) {
+        return false;
+    }
+    err_lower.contains("prompt is too long")
+        || err_lower.contains("prompt_too_long")
+        || err_lower.contains("input length")
+        || err_lower.contains("context window")
+        || (err_lower.contains("max_tokens") && err_lower.contains("context limit"))
+}
+
 #[tracing::instrument(
     target = "jfc::stream",
     skip_all,
@@ -184,12 +202,7 @@ pub async fn stream_response(
                         return;
                     }
                 }
-            } else if err_lower.contains("prompt is too long")
-                || err_lower.contains("prompt_too_long")
-                || err_lower.contains("input length")
-                || err_lower.contains("max_tokens")
-                || err_lower.contains("context window")
-            {
+            } else if is_prompt_too_long_error(&err_lower) {
                 // v132 mid-stream compaction trigger. The pre-submit
                 // path catches the obvious cases via `compact_level`,
                 // but estimator drift means the API can still reject
@@ -565,6 +578,23 @@ async fn try_nonstreaming_fallback(
 #[cfg(test)]
 mod fallback_tests {
     use super::*;
+
+    #[test]
+    fn output_token_cap_error_is_not_prompt_too_long_regression() {
+        let err = "invalid request: max_tokens: 128000 > 64000, which is the maximum allowed number of output tokens for claude-sonnet-4-5-20250929";
+        assert!(is_output_token_limit_error(err));
+        assert!(!is_prompt_too_long_error(err));
+    }
+
+    #[test]
+    fn input_context_errors_still_trigger_compaction_normal() {
+        assert!(is_prompt_too_long_error(
+            "input length and `max_tokens` exceed context limit: 350000 + 4096 > 200000"
+        ));
+        assert!(is_prompt_too_long_error("prompt is too long"));
+        assert!(is_prompt_too_long_error("prompt_too_long"));
+        assert!(is_prompt_too_long_error("context window exceeded"));
+    }
 
     // Normal: committed output always classifies as partial_yield regardless of
     // the error shape — we must never re-stream over text the user already saw.
