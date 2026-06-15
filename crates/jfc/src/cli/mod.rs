@@ -20,10 +20,12 @@ mod debug;
 mod headless;
 mod logging;
 mod memory;
+mod pair;
 mod plugin;
 mod policy;
 
 mod rc;
+mod redteam;
 mod terminal;
 
 // Provider bootstrap moved to the engine side (runtime/bootstrap.rs) so the
@@ -43,9 +45,11 @@ use headless::{
 use jfc_provider::ModelId;
 use logging::init_tracing;
 use memory::{MemorySubcommand, run_memory_subcommand};
+use pair::{PairSubcommand, run_pair_subcommand};
 use plugin::{PluginSubcommand, run_plugin_subcommand};
 use policy::{PolicySubcommand, run_policy_subcommand};
 use rc::{RcSubcommand, run_rc_subcommand};
+use redteam::{RedTeamSubcommand, run_redteam_subcommand};
 use terminal::{enable_keyboard_enhancement, install_terminal_panic_hook};
 
 /// JFC - A TUI assistant for code exploration and development
@@ -331,6 +335,16 @@ enum Command {
     Memory {
         #[command(subcommand)]
         sub: MemorySubcommand,
+    },
+    /// Run controlled PAIR red-team evaluations.
+    Pair {
+        #[command(subcommand)]
+        sub: PairSubcommand,
+    },
+    /// Run controlled post-PAIR red-team algorithms.
+    Redteam {
+        #[command(subcommand)]
+        sub: RedTeamSubcommand,
     },
     /// Run or inspect the self-hosted worker bridge.
     Bridge {
@@ -920,6 +934,8 @@ async fn run_subcommand(cmd: Command) -> anyhow::Result<()> {
         Command::Plugin { sub } => run_plugin_subcommand(sub).await,
         Command::Policy { sub } => run_policy_subcommand(sub).await,
         Command::Memory { sub } => run_memory_subcommand(sub).await,
+        Command::Pair { sub } => run_pair_subcommand(sub).await,
+        Command::Redteam { sub } => run_redteam_subcommand(sub).await,
         Command::Bridge { sub } => run_bridge_subcommand(sub).await,
         Command::Debug { sub } => run_debug_subcommand(sub).await,
     }

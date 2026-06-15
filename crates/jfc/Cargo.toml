@@ -70,6 +70,7 @@ jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
 jfc-auth = { path = "../jfc-auth" }
 jfc-bridge = { path = "../jfc-bridge" }
 jfc-agents = { path = "../jfc-agents" }
+jfc-audit = { path = "../jfc-audit" }
 jfc-core = { path = "../jfc-core" }
 jfc-changeset = { path = "../jfc-changeset" }
 jfc-provider = { path = "../jfc-provider" }

@@ -15,8 +15,8 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::error::{AuditError, Result};
 use super::types::Rewrite;
+use crate::error::{AuditError, Result};
 
 /// Append-only store of accepted rewrites, one JSON object per line.
 pub struct RewriteStore {
@@ -151,8 +151,8 @@ impl DriftMonitor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::RiskFlag;
+    use super::*;
 
     fn rw(text: &str) -> Rewrite {
         Rewrite {

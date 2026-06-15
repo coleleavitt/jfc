@@ -251,7 +251,11 @@ fn list_providers() -> anyhow::Result<()> {
         return Ok(());
     }
     for (i, p) in init.providers.iter().enumerate() {
-        let active = if i == init.active_idx { " (active)" } else { "" };
+        let active = if i == init.active_idx {
+            " (active)"
+        } else {
+            ""
+        };
         println!("{}{}", p.name(), active);
         let models = p.available_models();
         if models.is_empty() {

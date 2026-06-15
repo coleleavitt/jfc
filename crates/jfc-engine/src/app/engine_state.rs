@@ -346,6 +346,26 @@ pub struct EngineState {
     /// before surfacing the dead-stop. Reset at each new user turn and when a
     /// turn produces a normal (non-refusal) result.
     pub refusal_resend_count: u32,
+    /// Bounded counter for the opt-in refusal→rewrite→resend loop: how many times
+    /// this turn's prompt has been rephrased by the over-refusal rewrite gate and
+    /// resent after a provider refusal. Gated by `refusal_rewrite_retry_enabled`
+    /// and capped by `refusal_rewrite_retry_max`. Reset at each new user turn and
+    /// on a normal (non-refusal) result, exactly like `refusal_resend_count`.
+    pub refusal_rewrite_retry_count: u32,
+    /// Per-turn rewrite history for the loop above: index 0 is the *pristine*
+    /// original user prompt (pinned at the first retry so every round rewrites the
+    /// true intent, not a prior rewrite — avoiding intent drift), and later
+    /// entries are the rewrites already tried (fed back as `prior_attempts` so the
+    /// rewriter doesn't repeat itself). Cleared on every reset of
+    /// `refusal_rewrite_retry_count`.
+    pub refusal_rewrite_attempts: Vec<String>,
+    /// Opt-in master switch for the refusal→rewrite→resend loop, mirrored from
+    /// `Config::refusal_rewrite_retry_enabled` at startup. Lives on state (not read
+    /// live from `load_arc`) so the refusal handler is unit-testable. Default off.
+    pub refusal_rewrite_retry_enabled: bool,
+    /// Configured cap for the loop (`Config::refusal_rewrite_retry_max`); `None` ⇒
+    /// the accessor's default (3). Hard-clamped to 20 in `refusal_rewrite_retry_cap`.
+    pub refusal_rewrite_retry_max: Option<u32>,
     /// Cumulative thinking-token estimate for the turn, summed across all
     /// thinking blocks. Populated during extended-thinking phases (live thinking)
     /// or redacted-thinking blocks. Reset at the start of each streaming turn.
@@ -1035,6 +1055,10 @@ impl EngineState {
             turn_output_tokens: 0,
             refusal_fallback_attempted: false,
             refusal_resend_count: 0,
+            refusal_rewrite_retry_count: 0,
+            refusal_rewrite_attempts: Vec::new(),
+            refusal_rewrite_retry_enabled: false,
+            refusal_rewrite_retry_max: None,
             streaming_thinking_tokens: 0,
             last_thinking_estimate: 0,
             pending_context_hint_tokens_saved: None,

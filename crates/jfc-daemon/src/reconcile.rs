@@ -28,23 +28,47 @@ use super::worker::{
 };
 
 pub(crate) fn reconcile_background_agents(paths: &DaemonPaths) -> std::io::Result<DaemonState> {
-    let (state, stale_logs, respawns, pruned_logs) =
-        with_state_lock(paths, || -> std::io::Result<_> {
-        let mut state = load_state_for_update(paths)?;
-        let now = SystemTime::now();
-        let mut changed = false;
-        let mut stale_logs: Vec<(PathBuf, String)> = Vec::new();
-        let mut respawns: Vec<(String, PathBuf, BackgroundAgentLaunch)> = Vec::new();
+    let (state, stale_logs, respawns, pruned_logs) = with_state_lock(
+        paths,
+        || -> std::io::Result<_> {
+            let mut state = load_state_for_update(paths)?;
+            let now = SystemTime::now();
+            let mut changed = false;
+            let mut stale_logs: Vec<(PathBuf, String)> = Vec::new();
+            let mut respawns: Vec<(String, PathBuf, BackgroundAgentLaunch)> = Vec::new();
 
-        for agent in state.background_agents.values_mut() {
-            if agent.status != BackgroundAgentStatus::Running {
-                continue;
-            }
-            let owner_alive = agent.pid.map(process_is_running).unwrap_or(false);
-            let previous_pid = agent.pid;
-            if owner_alive {
+            for agent in state.background_agents.values_mut() {
+                if agent.status != BackgroundAgentStatus::Running {
+                    continue;
+                }
+                let owner_alive = agent.pid.map(process_is_running).unwrap_or(false);
+                let previous_pid = agent.pid;
+                if owner_alive {
+                    if !agent.cancel_requested
+                        && heartbeat_is_stale(agent, now)
+                        && agent.respawn_count < worker_respawn_limit()
+                        && !low_memory_respawn_blocked()
+                        && let Some(launch_path) = agent.launch_path.clone()
+                        && let Ok(launch_json) = std::fs::read_to_string(&launch_path)
+                        && let Ok(launch) =
+                            serde_json::from_str::<BackgroundAgentLaunch>(&launch_json)
+                    {
+                        agent.respawn_count = agent.respawn_count.saturating_add(1);
+                        agent.updated_at = now;
+                        agent.pid = None;
+                        stale_logs.push((
+                        agent.log_path.clone(),
+                        format!(
+                            "[takeover-requested] pid {:?} heartbeat stale; starting replacement worker",
+                            previous_pid
+                        ),
+                    ));
+                        respawns.push((agent.id.clone(), launch_path, launch));
+                        changed = true;
+                    }
+                    continue;
+                }
                 if !agent.cancel_requested
-                    && heartbeat_is_stale(agent, now)
                     && agent.respawn_count < worker_respawn_limit()
                     && !low_memory_respawn_blocked()
                     && let Some(launch_path) = agent.launch_path.clone()
@@ -57,70 +81,51 @@ pub(crate) fn reconcile_background_agents(paths: &DaemonPaths) -> std::io::Resul
                     stale_logs.push((
                         agent.log_path.clone(),
                         format!(
-                            "[takeover-requested] pid {:?} heartbeat stale; starting replacement worker",
+                            "[respawn-requested] previous pid {:?} exited; restarting worker",
                             previous_pid
                         ),
                     ));
                     respawns.push((agent.id.clone(), launch_path, launch));
                     changed = true;
+                    continue;
                 }
-                continue;
-            }
-            if !agent.cancel_requested
-                && agent.respawn_count < worker_respawn_limit()
-                && !low_memory_respawn_blocked()
-                && let Some(launch_path) = agent.launch_path.clone()
-                && let Ok(launch_json) = std::fs::read_to_string(&launch_path)
-                && let Ok(launch) = serde_json::from_str::<BackgroundAgentLaunch>(&launch_json)
-            {
-                agent.respawn_count = agent.respawn_count.saturating_add(1);
+                agent.status = BackgroundAgentStatus::Failed;
                 agent.updated_at = now;
-                agent.pid = None;
-                stale_logs.push((
-                    agent.log_path.clone(),
-                    format!(
-                        "[respawn-requested] previous pid {:?} exited; restarting worker",
-                        previous_pid
-                    ),
-                ));
-                respawns.push((agent.id.clone(), launch_path, launch));
-                changed = true;
-                continue;
-            }
-            agent.status = BackgroundAgentStatus::Failed;
-            agent.updated_at = now;
-            agent.completed_at = Some(now);
-            agent.cancel_requested = false;
-            let reason = match agent.pid {
-                Some(pid) => {
-                    if low_memory_respawn_blocked() {
-                        format!(
-                            "stale: owning process {pid} exited before reporting completion; respawn suppressed by low-memory threshold"
-                        )
-                    } else {
-                        format!("stale: owning process {pid} exited before reporting completion")
+                agent.completed_at = Some(now);
+                agent.cancel_requested = false;
+                let reason = match agent.pid {
+                    Some(pid) => {
+                        if low_memory_respawn_blocked() {
+                            format!(
+                                "stale: owning process {pid} exited before reporting completion; respawn suppressed by low-memory threshold"
+                            )
+                        } else {
+                            format!(
+                                "stale: owning process {pid} exited before reporting completion"
+                            )
+                        }
                     }
-                }
-                None => "stale: no owning process recorded".to_owned(),
-            };
-            agent.error = Some(reason.clone());
-            stale_logs.push((agent.log_path.clone(), format!("[Failed] {reason}")));
-            changed = true;
-        }
+                    None => "stale: no owning process recorded".to_owned(),
+                };
+                agent.error = Some(reason.clone());
+                stale_logs.push((agent.log_path.clone(), format!("[Failed] {reason}")));
+                changed = true;
+            }
 
-        // Retention: bound the number of terminal background-agent rows kept
-        // in the state file. Workflow sub-agents (`bgwf_*:agent_N`) finish in
-        // large bursts, and without a cap the `background_agents` map grew
-        // without bound (the audit found 203 rows / 1 MB state, ~half phantom).
-        // Keep the most recent `max_terminal_agents()` terminal rows; prune the
-        // rest and delete their log files outside the lock.
-        let pruned_logs = prune_terminal_agents(&mut state, &mut changed);
+            // Retention: bound the number of terminal background-agent rows kept
+            // in the state file. Workflow sub-agents (`bgwf_*:agent_N`) finish in
+            // large bursts, and without a cap the `background_agents` map grew
+            // without bound (the audit found 203 rows / 1 MB state, ~half phantom).
+            // Keep the most recent `max_terminal_agents()` terminal rows; prune the
+            // rest and delete their log files outside the lock.
+            let pruned_logs = prune_terminal_agents(&mut state, &mut changed);
 
-        if changed {
-            save_state(paths, &state)?;
-        }
-        Ok((state, stale_logs, respawns, pruned_logs))
-    })?;
+            if changed {
+                save_state(paths, &state)?;
+            }
+            Ok((state, stale_logs, respawns, pruned_logs))
+        },
+    )?;
 
     for (path, reason) in stale_logs {
         append_log_line(&path, &reason);

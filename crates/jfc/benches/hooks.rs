@@ -55,10 +55,7 @@ fn bench_continue_only(c: &mut Criterion) {
         let ctx = make_ctx();
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
             b.iter(|| {
-                black_box(reg.fire(
-                    black_box(HookPoint::BeforeToolDispatch),
-                    black_box(&ctx),
-                ))
+                black_box(reg.fire(black_box(HookPoint::BeforeToolDispatch), black_box(&ctx)))
             });
         });
     }
@@ -72,10 +69,7 @@ fn bench_early_abort(c: &mut Criterion) {
         let ctx = make_ctx();
         group.bench_with_input(BenchmarkId::from_parameter(prefix), &prefix, |b, _| {
             b.iter(|| {
-                black_box(reg.fire(
-                    black_box(HookPoint::BeforeToolDispatch),
-                    black_box(&ctx),
-                ))
+                black_box(reg.fire(black_box(HookPoint::BeforeToolDispatch), black_box(&ctx)))
             });
         });
     }
@@ -87,14 +81,14 @@ fn bench_miss_path(c: &mut Criterion) {
     let reg = registry_all_miss(100);
     let ctx = make_ctx();
     c.bench_function("hook_dispatch/miss_100", |b| {
-        b.iter(|| {
-            black_box(reg.fire(
-                black_box(HookPoint::BeforeToolDispatch),
-                black_box(&ctx),
-            ))
-        });
+        b.iter(|| black_box(reg.fire(black_box(HookPoint::BeforeToolDispatch), black_box(&ctx))));
     });
 }
 
-criterion_group!(benches, bench_continue_only, bench_early_abort, bench_miss_path);
+criterion_group!(
+    benches,
+    bench_continue_only,
+    bench_early_abort,
+    bench_miss_path
+);
 criterion_main!(benches);

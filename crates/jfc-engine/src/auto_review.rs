@@ -24,9 +24,21 @@ use crate::runtime::{EngineEvent, EventSender, FrontendEvent, TaskEvent};
 /// fails. Without that feedback loop a single failed run (e.g. every agent
 /// hitting a 401) would poison the signature forever and silently suppress all
 /// future auto-reviews of the same file-set for the rest of the session.
+///
+/// The remaining fields implement the event-triggered control loop from
+/// `docs/auto-review-design.md`:
+/// - `accumulated_risk` buffers a scalar risk score across turns so a review
+///   fires when buffered risk crosses a barrier (not once per edit).
+/// - `last_reviewed_head` records the commit HEAD at the last dispatch so a new
+///   commit acts as an upper-bound forcing trigger.
+/// - `in_flight` holds the cancel token of a running review so a superseding
+///   edit set can abort the stale run (debounce/supersession).
 #[derive(Debug, Default, Clone)]
 pub struct AutoReviewState {
     last_dispatched_signature: Arc<parking_lot::Mutex<Option<String>>>,
+    accumulated_risk: Arc<parking_lot::Mutex<u32>>,
+    last_reviewed_head: Arc<parking_lot::Mutex<Option<String>>>,
+    in_flight: Arc<parking_lot::Mutex<Option<Arc<tokio_util::sync::CancellationToken>>>>,
 }
 
 pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
@@ -40,20 +52,63 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
 
     let cwd = PathBuf::from(&state.cwd);
     let files: Vec<String> = state.turn_edited_files.iter().cloned().collect();
-    let trigger = match mode {
-        AutoReviewMode::Always => "mode=always".to_owned(),
-        AutoReviewMode::Smart => {
-            let Some(reason) = smart_auto_review_trigger(&cwd, &files).await else {
+
+    // Level 1 — deterministic monitor (free): score the diff and bucket it.
+    let signal = RiskSignal::measure(&cwd, &files).await;
+    let monitor = signal.monitor_outcome();
+
+    // Risk-barrier + commit forcing trigger (step 5): buffer risk across turns
+    // and detect a new commit. A review fires when the monitor says Review, OR
+    // buffered risk crosses the barrier, OR HEAD moved since the last review.
+    let head = current_head(&cwd).await;
+    let committed = {
+        let last = state.auto_review.last_reviewed_head.lock();
+        match (&*last, &head) {
+            (Some(prev), Some(now)) => prev != now,
+            _ => false,
+        }
+    };
+    let buffered = {
+        let mut acc = state.auto_review.accumulated_risk.lock();
+        *acc = acc.saturating_add(signal.score);
+        *acc
+    };
+    let barrier = risk_barrier();
+
+    let decision = review_decision(mode, monitor, buffered, barrier, committed);
+    let trigger = match decision {
+        ReviewDecision::Skip => {
+            tracing::debug!(
+                target: "jfc::auto_review",
+                file_count = files.len(),
+                risk = signal.score,
+                buffered,
+                "auto-review monitor: skip (no review-worthy signal)"
+            );
+            return;
+        }
+        ReviewDecision::Fire(reason) => reason,
+        ReviewDecision::AskGate => {
+            // Level 2 — ambiguous: a single cheap LLM gate decides. Fail-safe
+            // (gate error / unparseable) returns Review, never silently drops.
+            let gate = review_gate(
+                state.provider.as_ref(),
+                &gate_model(&state.model),
+                &cwd,
+                &files,
+                &signal,
+            )
+            .await;
+            if !gate.should_review {
                 tracing::debug!(
                     target: "jfc::auto_review",
-                    file_count = files.len(),
-                    "smart auto-review found no review-worthy signal"
+                    reason = %gate.reason,
+                    "auto-review gate: skip"
                 );
                 return;
-            };
-            reason
+            }
+            format!("gate: {}", gate.reason)
         }
-        AutoReviewMode::Off | AutoReviewMode::Manual => return,
     };
 
     let Some(workflow) = crate::workflows::resolve(&cwd, "code-review") else {
@@ -63,9 +118,9 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
         );
         return;
     };
-    let decision =
+    let perm =
         crate::workflows::permissions::decide(&crate::config::load_arc(), Some("code-review"));
-    if decision == crate::workflows::permissions::WorkflowPermission::Deny {
+    if perm == crate::workflows::permissions::WorkflowPermission::Deny {
         tracing::debug!(
             target: "jfc::auto_review",
             "code-review workflow denied by permission rules; skipping auto-review"
@@ -96,6 +151,10 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
     // so a parse/permission skip never poisons the slot. The background task
     // clears it again if the run ends in error.
     *signature_slot.lock() = Some(signature.clone());
+    // We are dispatching: reset the buffered risk and record the HEAD so the
+    // next forcing trigger is the *next* commit, not this one.
+    *state.auto_review.accumulated_risk.lock() = 0;
+    *state.auto_review.last_reviewed_head.lock() = head;
 
     let run_id = crate::workflows::generate_run_id();
     let task_id = format!("bgauto_review_{run_id}");
@@ -110,8 +169,26 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
     // Derive a child token from the session so a user Ctrl+C / shutdown aborts
     // the background review instead of letting its agents keep hitting the API.
     let cancel = state.cancel_token.child_token();
+    // Debounce/supersession (step 4): a fresh dispatch supersedes any review
+    // still in flight, so a burst of edit-bearing turns collapses to the latest
+    // review instead of stacking N concurrent fan-outs. Swap our token in and
+    // cancel the previous one. The token is `Arc`-wrapped so the completion path
+    // can clear the slot iff it still holds *this* run's handle.
+    let cancel_handle = Arc::new(cancel.clone());
+    {
+        let mut slot = state.auto_review.in_flight.lock();
+        if let Some(prev) = slot.replace(Arc::clone(&cancel_handle)) {
+            prev.cancel();
+        }
+    }
+    let in_flight_slot = state.auto_review.in_flight.clone();
     let target = auto_review_target(&cwd, &files);
-    let level = std::env::var("JFC_AUTO_REVIEW_LEVEL").unwrap_or_else(|_| "high".to_owned());
+    // Adaptive level (step 1): the risk signal picks the level unless the env
+    // var pins one explicitly.
+    let level = std::env::var("JFC_AUTO_REVIEW_LEVEL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| signal.adaptive_level().to_owned());
     let args = serde_json::json!({
         "level": level,
         "target": target,
@@ -184,6 +261,50 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
             }
         }
 
+        // Finding memoization (step 6): hash each edited file's current content
+        // and skip review entirely if every edited file is byte-identical to the
+        // last reviewed snapshot (nothing semantically new to verify). Otherwise
+        // attach the prior content-hash map so synthesis can mark which findings
+        // are *marginal* (newly introduced) vs. carried over.
+        let content_hashes = content_hash_map(&cwd, &files).await;
+        let memo_dir = cwd.join(".jfc").join("reviews");
+        let prior_hashes = load_content_hashes(&memo_dir).await;
+        let all_unchanged = !content_hashes.is_empty()
+            && content_hashes
+                .iter()
+                .all(|(file, hash)| prior_hashes.get(file) == Some(hash));
+        if all_unchanged && !cancel.is_cancelled() {
+            tracing::debug!(
+                target: "jfc::auto_review",
+                "auto-review memoization: all edited files unchanged since last review; skipping"
+            );
+            clear_in_flight(&in_flight_slot, &cancel_handle);
+            {
+                let mut slot = signature_slot.lock();
+                if slot.as_deref() == Some(signature.as_str()) {
+                    *slot = None;
+                }
+            }
+            jfc_daemon::record_background_agent_finished(
+                &task_id,
+                jfc_daemon::BackgroundAgentStatus::Completed,
+                "auto-review skipped: no content change since last review",
+            );
+            let _ = tx_bg
+                .send(EngineEvent::Task(TaskEvent::Completed {
+                    task_id: crate::ids::TaskId::from(task_id),
+                    summary: "auto-review skipped: no content change since last review".to_owned(),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                }))
+                .await;
+            return;
+        }
+        if let serde_json::Value::Object(map) = &mut args {
+            if let Ok(prior) = serde_json::to_value(&prior_hashes) {
+                map.insert("prior_content_hashes".to_owned(), prior);
+            }
+        }
+
         let outcome = crate::workflows::run_workflow(crate::workflows::WorkflowRunConfig {
             run_id: run_id.clone(),
             script_body: body,
@@ -192,7 +313,7 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
             model,
             session_dir,
             resume_from_run_id: None,
-            cancel,
+            cancel: cancel.clone(),
             tx: Some(tx_bg.clone()),
             workflow_task_id: task_id.clone(),
             depth: 0,
@@ -201,6 +322,12 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
         })
         .await;
         let elapsed_ms = started.elapsed().as_millis() as u64;
+        // Persist the content-hash snapshot so the next run can memoize against
+        // it and compute the marginal finding set.
+        if !outcome.cancelled {
+            save_content_hashes(&memo_dir, &content_hashes).await;
+        }
+        clear_in_flight(&in_flight_slot, &cancel_handle);
 
         let review = persist_code_review_outcome_event(
             &cwd,
@@ -292,6 +419,369 @@ pub async fn maybe_spawn_after_turn(state: &mut EngineState, tx: &EventSender) {
     });
 }
 
+/// Clear the in-flight slot iff it still holds *our* cancel handle. A superseding
+/// dispatch may have already replaced it; in that case we must not stomp the
+/// newer run's token. `Arc::ptr_eq` gives reliable identity across the clones.
+fn clear_in_flight(
+    slot: &Arc<parking_lot::Mutex<Option<Arc<tokio_util::sync::CancellationToken>>>>,
+    ours: &Arc<tokio_util::sync::CancellationToken>,
+) {
+    let mut guard = slot.lock();
+    if guard.as_ref().is_some_and(|tok| Arc::ptr_eq(tok, ours)) {
+        *guard = None;
+    }
+}
+
+/// Three buckets the deterministic monitor sorts an edit set into.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReviewMonitorOutcome {
+    /// Clearly trivial — skip with no LLM and no review.
+    Skip,
+    /// Clearly review-worthy — dispatch directly.
+    Review,
+    /// Neither clearly trivial nor clearly risky — escalate to the LLM gate.
+    Ambiguous,
+}
+
+/// Final decision after folding monitor + risk-barrier + commit + mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReviewDecision {
+    Skip,
+    Fire(String),
+    AskGate,
+}
+
+/// Cheap, deterministic risk score for an edit set. Pure given its inputs (the
+/// async constructor reads files/git, but `monitor_outcome`/`adaptive_level`/
+/// `score` are pure), so the bucketing and level mapping are fully testable.
+#[derive(Debug, Clone, Default)]
+struct RiskSignal {
+    /// Number of edited files.
+    file_count: usize,
+    /// Added+removed lines across the edited diff (git numstat).
+    changed_lines: u64,
+    /// A high-signal risk token (unsafe/auth/Mcp/...) is present in content/diff.
+    risky_token: bool,
+    /// At least one edited file is a Rust/Cargo/workflow-sensitive path.
+    code_sensitive: bool,
+    /// Aggregate scalar score used for the cross-turn risk barrier.
+    score: u32,
+}
+
+impl RiskSignal {
+    async fn measure(cwd: &Path, files: &[String]) -> Self {
+        let file_count = files.len();
+        let changed_lines = git_numstat_changed_lines(cwd, files).await;
+        let code_sensitive = files.iter().any(|file| is_code_sensitive(cwd, file));
+        let mut risky_token = git_diff_has_review_signal(cwd, files).await;
+        if !risky_token {
+            for file in files {
+                if file_content_has_review_signal(&cwd.join(file)).await {
+                    risky_token = true;
+                    break;
+                }
+            }
+        }
+        // Score: tokens dominate, then size, then breadth. Tuned so a lone
+        // comment/doc tweak scores ~0-1 and a multi-file unsafe/auth diff scores
+        // well over the barrier in one turn.
+        let mut score = 0u32;
+        if risky_token {
+            score += 6;
+        }
+        if code_sensitive {
+            score += 2;
+        }
+        score += (file_count.min(20) as u32) / 2;
+        score += (changed_lines.min(2000) / 40) as u32;
+        Self {
+            file_count,
+            changed_lines,
+            risky_token,
+            code_sensitive,
+            score,
+        }
+    }
+
+    /// Bucket this edit set deterministically.
+    fn monitor_outcome(&self) -> ReviewMonitorOutcome {
+        // Clear review: any high-signal risk token, or a large/broad code diff.
+        if self.risky_token
+            || self.file_count >= 5
+            || (self.code_sensitive && self.changed_lines >= 80)
+        {
+            return ReviewMonitorOutcome::Review;
+        }
+        // Clear skip: no code-sensitive file and a tiny diff (docs/prose/config
+        // touch-ups). Nothing the reviewer would meaningfully act on.
+        if !self.code_sensitive && self.changed_lines <= 5 && self.file_count <= 1 {
+            return ReviewMonitorOutcome::Skip;
+        }
+        // Everything else is genuinely uncertain — let the gate decide.
+        ReviewMonitorOutcome::Ambiguous
+    }
+
+    /// Map the signal to a `code-review` effort level (step 1).
+    fn adaptive_level(&self) -> &'static str {
+        if self.risky_token && (self.file_count >= 4 || self.changed_lines >= 400) {
+            "xhigh"
+        } else if self.risky_token || self.file_count >= 4 || self.changed_lines >= 300 {
+            "high"
+        } else if self.code_sensitive || self.changed_lines >= 60 {
+            "medium"
+        } else {
+            "low"
+        }
+    }
+}
+
+/// Fold the monitor bucket with mode, the cross-turn risk barrier, and the
+/// commit forcing trigger into one decision. Pure for testability.
+fn review_decision(
+    mode: AutoReviewMode,
+    monitor: ReviewMonitorOutcome,
+    buffered_risk: u32,
+    barrier: u32,
+    committed: bool,
+) -> ReviewDecision {
+    // `Always` ignores the monitor entirely.
+    if matches!(mode, AutoReviewMode::Always) {
+        return ReviewDecision::Fire("mode=always".to_owned());
+    }
+    // A new commit is an upper-bound forcing trigger regardless of bucket.
+    if committed {
+        return ReviewDecision::Fire("commit boundary".to_owned());
+    }
+    match monitor {
+        ReviewMonitorOutcome::Review => ReviewDecision::Fire("risk monitor".to_owned()),
+        ReviewMonitorOutcome::Ambiguous => {
+            if buffered_risk >= barrier {
+                ReviewDecision::Fire(format!("risk barrier ({buffered_risk}>={barrier})"))
+            } else {
+                ReviewDecision::AskGate
+            }
+        }
+        ReviewMonitorOutcome::Skip => {
+            if buffered_risk >= barrier {
+                ReviewDecision::Fire(format!("risk barrier ({buffered_risk}>={barrier})"))
+            } else {
+                ReviewDecision::Skip
+            }
+        }
+    }
+}
+
+/// Buffered-risk barrier above which accumulated trivial/ambiguous edits force a
+/// review even without a commit. Overridable via `JFC_AUTO_REVIEW_RISK_BARRIER`.
+fn risk_barrier() -> u32 {
+    std::env::var("JFC_AUTO_REVIEW_RISK_BARRIER")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(12)
+}
+
+/// Pick the cheap model for the gate: reuse the configured fast tier when the
+/// session model is itself a big model, else just reuse the session model. Kept
+/// simple — the gate is one short structured call.
+fn gate_model(session_model: &jfc_provider::ModelId) -> String {
+    let m = session_model.as_str();
+    if m.contains("haiku") {
+        m.to_owned()
+    } else if m.starts_with("anthropic/") || m.contains("claude") {
+        "claude-haiku-4-5".to_owned()
+    } else {
+        m.to_owned()
+    }
+}
+
+/// Outcome of the cheap LLM review gate.
+#[derive(Debug, Clone)]
+struct GateResult {
+    should_review: bool,
+    reason: String,
+}
+
+/// Level 2 — the cheap LLM gate. Mirrors `auto_mode::classify`: a small model
+/// with a forced classifier tool returns `{should_review, level, reason}`. Any
+/// provider/parse error fails *open* (review), so an errored gate never silently
+/// drops a possibly-risky change.
+async fn review_gate(
+    provider: &dyn jfc_provider::Provider,
+    model: &str,
+    cwd: &Path,
+    files: &[String],
+    signal: &RiskSignal,
+) -> GateResult {
+    use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole, StreamOptions, ToolDef};
+
+    let rels: Vec<String> = files
+        .iter()
+        .take(20)
+        .map(|f| normalize_repo_relative(cwd, f))
+        .collect();
+    let user = format!(
+        "An agent just edited these files in a turn:\n{}\n\n\
+         Heuristic signal: files={}, changed_lines={}, code_sensitive={}, risky_token={}.\n\n\
+         Decide whether this change warrants a background code review. Review when there is \
+         real correctness, security, API, or regression risk. Skip pure formatting, comments, \
+         docs, or trivial mechanical edits. Call `review_decision`.",
+        rels.join("\n"),
+        signal.file_count,
+        signal.changed_lines,
+        signal.code_sensitive,
+        signal.risky_token,
+    );
+    let tool = ToolDef {
+        name: "review_decision".into(),
+        description: "Decide whether the edit set warrants a background code review.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "should_review": { "type": "boolean", "description": "true = run review, false = skip." },
+                "level": { "type": "string", "enum": ["low", "medium", "high", "xhigh"], "description": "Suggested review depth." },
+                "reason": { "type": "string", "description": "One-sentence rationale." }
+            },
+            "required": ["should_review", "reason"]
+        }),
+    };
+    let messages = vec![ProviderMessage {
+        role: ProviderRole::User,
+        content: vec![ProviderContent::Text(user)],
+    }];
+    let opts = StreamOptions::new(model)
+        .system(
+            "You are a fast, conservative gate deciding whether an edit set needs a code review. \
+             Prefer skipping trivial edits; review anything with real defect or security risk.",
+        )
+        .max_tokens(512)
+        .tools(vec![tool]);
+    match provider.complete(messages, &opts).await {
+        Ok(resp) => parse_gate(&resp).unwrap_or_else(|| GateResult {
+            should_review: true,
+            reason: "gate returned no parseable decision (fail-open)".to_owned(),
+        }),
+        Err(e) => GateResult {
+            should_review: true,
+            reason: format!("gate error (fail-open): {e}"),
+        },
+    }
+}
+
+fn parse_gate(resp: &jfc_provider::CompletionResponse) -> Option<GateResult> {
+    let s = resp.content.trim();
+    let v: serde_json::Value = serde_json::from_str(s).ok().or_else(|| {
+        let start = s.find('{')?;
+        let end = s.rfind('}')?;
+        if start < end {
+            serde_json::from_str(&s[start..=end]).ok()
+        } else {
+            None
+        }
+    })?;
+    let obj = v.get("input").or_else(|| v.get("arguments")).unwrap_or(&v);
+    let should_review = obj.get("should_review")?.as_bool()?;
+    let reason = obj
+        .get("reason")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("(no reason)")
+        .to_owned();
+    Some(GateResult {
+        should_review,
+        reason,
+    })
+}
+
+/// Whether a repo-relative path is code/build/workflow sensitive.
+fn is_code_sensitive(cwd: &Path, file: &str) -> bool {
+    let rel = normalize_repo_relative(cwd, file);
+    rel.ends_with(".rs")
+        || rel == "Cargo.toml"
+        || rel == "Cargo.lock"
+        || rel.ends_with("/Cargo.toml")
+        || rel.ends_with("/Cargo.lock")
+        || rel.starts_with("crates/")
+        || rel.starts_with(".github/workflows/")
+}
+
+/// Added+removed lines across the edited diff via `git diff --numstat`.
+async fn git_numstat_changed_lines(cwd: &Path, files: &[String]) -> u64 {
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.current_dir(cwd)
+        .args(["diff", "--numstat", "HEAD", "--"])
+        .args(files);
+    let Ok(output) = cmd.output().await else {
+        return 0;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut total = 0u64;
+    for line in text.lines() {
+        let mut cols = line.split_whitespace();
+        let added = cols.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        let removed = cols.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        total += added + removed;
+    }
+    total
+}
+
+/// Current commit HEAD (short hash), or None outside a git repo.
+async fn current_head(cwd: &Path) -> Option<String> {
+    let output = tokio::process::Command::new("git")
+        .current_dir(cwd)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// SHA-256 (first 16 bytes) of each edited file's current on-disk content, keyed
+/// by repo-relative path. Missing/unreadable files are skipped.
+async fn content_hash_map(
+    cwd: &Path,
+    files: &[String],
+) -> std::collections::BTreeMap<String, String> {
+    let mut map = std::collections::BTreeMap::new();
+    for file in files {
+        let rel = normalize_repo_relative(cwd, file);
+        if let Ok(body) = tokio::fs::read(&cwd.join(file)).await {
+            let mut hasher = Sha256::new();
+            hasher.update(&body);
+            map.insert(rel, hex::encode(&hasher.finalize()[..16]));
+        }
+    }
+    map
+}
+
+async fn load_content_hashes(dir: &Path) -> std::collections::BTreeMap<String, String> {
+    let path = dir.join("content-hashes.json");
+    match tokio::fs::read(&path).await {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        Err(_) => std::collections::BTreeMap::new(),
+    }
+}
+
+async fn save_content_hashes(dir: &Path, hashes: &std::collections::BTreeMap<String, String>) {
+    if hashes.is_empty() {
+        return;
+    }
+    if tokio::fs::create_dir_all(dir).await.is_err() {
+        return;
+    }
+    // Merge into any existing snapshot so unrelated files stay memoized.
+    let mut merged = load_content_hashes(dir).await;
+    for (k, v) in hashes {
+        merged.insert(k.clone(), v.clone());
+    }
+    if let Ok(json) = serde_json::to_vec_pretty(&merged) {
+        let _ = tokio::fs::write(dir.join("content-hashes.json"), json).await;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AutoReviewMode {
     Off,
@@ -356,37 +846,6 @@ fn normalize_repo_relative(cwd: &Path, file: &str) -> String {
     let path = Path::new(file);
     let rel = path.strip_prefix(cwd).unwrap_or(path);
     rel.to_string_lossy().replace('\\', "/")
-}
-
-async fn smart_auto_review_trigger(cwd: &Path, files: &[String]) -> Option<String> {
-    if files.len() >= 3 {
-        return Some(format!("changed {} files", files.len()));
-    }
-
-    if files.iter().any(|file| {
-        let rel = normalize_repo_relative(cwd, file);
-        rel.ends_with(".rs")
-            || rel == "Cargo.toml"
-            || rel == "Cargo.lock"
-            || rel.ends_with("/Cargo.toml")
-            || rel.ends_with("/Cargo.lock")
-            || rel.starts_with("crates/")
-            || rel.starts_with(".github/workflows/")
-    }) {
-        return Some("rust/workflow-sensitive file changed".to_owned());
-    }
-
-    for file in files {
-        if file_content_has_review_signal(&cwd.join(file)).await {
-            return Some(format!("risk token in {file}"));
-        }
-    }
-
-    if git_diff_has_review_signal(cwd, files).await {
-        return Some("risk token in edited diff".to_owned());
-    }
-
-    None
 }
 
 async fn file_content_has_review_signal(path: &Path) -> bool {
@@ -874,48 +1333,189 @@ mod tests {
         assert_eq!(normalize_repo_relative(cwd, "/etc/hosts"), "/etc/hosts");
     }
 
-    #[tokio::test]
-    async fn smart_trigger_fires_on_absolute_rust_paths_robust() {
+    #[test]
+    fn is_code_sensitive_recognizes_rust_and_build_paths_robust() {
         let cwd = Path::new("/home/u/proj");
-        // Single absolute .rs path must still trigger the rust branch.
-        let files = vec!["/home/u/proj/crates/x/src/lib.rs".to_owned()];
-        assert!(smart_auto_review_trigger(cwd, &files).await.is_some());
-
-        // Absolute Cargo.toml under a crate dir must trigger (was dead code
-        // before path normalization).
-        let files = vec!["/home/u/proj/crates/x/Cargo.toml".to_owned()];
-        assert!(smart_auto_review_trigger(cwd, &files).await.is_some());
-
-        // Absolute workspace-root Cargo.toml must trigger.
-        let files = vec!["/home/u/proj/Cargo.toml".to_owned()];
-        assert!(smart_auto_review_trigger(cwd, &files).await.is_some());
-
-        // Absolute path under crates/ that isn't .rs must trigger via prefix.
-        let files = vec!["/home/u/proj/crates/x/README.md".to_owned()];
-        assert!(smart_auto_review_trigger(cwd, &files).await.is_some());
+        for p in [
+            "/home/u/proj/crates/x/src/lib.rs",
+            "/home/u/proj/crates/x/Cargo.toml",
+            "/home/u/proj/Cargo.toml",
+            "/home/u/proj/crates/x/README.md", // under crates/ prefix
+            "/home/u/proj/.github/workflows/ci.yml",
+        ] {
+            assert!(is_code_sensitive(cwd, p), "should be sensitive: {p}");
+        }
+        for p in [
+            "/home/u/proj/docs/notes.md",
+            "/home/u/proj/README.md",
+            "/home/u/proj/note.txt",
+        ] {
+            assert!(!is_code_sensitive(cwd, p), "should be benign: {p}");
+        }
     }
 
-    #[tokio::test]
-    async fn smart_trigger_count_branch_fires_on_three_files_normal() {
-        let cwd = Path::new("/home/u/proj");
-        let files = vec![
-            "/home/u/proj/a.txt".to_owned(),
-            "/home/u/proj/b.txt".to_owned(),
-            "/home/u/proj/c.txt".to_owned(),
-        ];
-        let reason = smart_auto_review_trigger(cwd, &files).await;
-        assert_eq!(reason.as_deref(), Some("changed 3 files"));
+    // Normal: a tiny prose/doc edit buckets to Skip (no LLM, no review).
+    #[test]
+    fn monitor_skips_trivial_doc_edit_normal() {
+        let signal = RiskSignal {
+            file_count: 1,
+            changed_lines: 3,
+            risky_token: false,
+            code_sensitive: false,
+            score: 0,
+        };
+        assert_eq!(signal.monitor_outcome(), ReviewMonitorOutcome::Skip);
+        assert_eq!(signal.adaptive_level(), "low");
     }
 
+    // Normal: a risk-token diff buckets to Review and escalates the level.
+    #[test]
+    fn monitor_reviews_risky_diff_normal() {
+        let signal = RiskSignal {
+            file_count: 1,
+            changed_lines: 10,
+            risky_token: true,
+            code_sensitive: true,
+            score: 9,
+        };
+        assert_eq!(signal.monitor_outcome(), ReviewMonitorOutcome::Review);
+        assert_eq!(signal.adaptive_level(), "high");
+    }
+
+    // Robust: a mid-size code edit with no risk token is genuinely uncertain →
+    // Ambiguous, deferring to the gate.
+    #[test]
+    fn monitor_ambiguous_on_small_code_edit_robust() {
+        let signal = RiskSignal {
+            file_count: 1,
+            changed_lines: 20,
+            risky_token: false,
+            code_sensitive: true,
+            score: 2,
+        };
+        assert_eq!(signal.monitor_outcome(), ReviewMonitorOutcome::Ambiguous);
+    }
+
+    // Normal: review_decision honors Always, commit forcing, and the barrier.
+    #[test]
+    fn review_decision_folds_signals_normal() {
+        // Always ignores the monitor.
+        assert!(matches!(
+            review_decision(
+                AutoReviewMode::Always,
+                ReviewMonitorOutcome::Skip,
+                0,
+                12,
+                false
+            ),
+            ReviewDecision::Fire(_)
+        ));
+        // Commit forces even a Skip bucket.
+        assert!(matches!(
+            review_decision(
+                AutoReviewMode::Smart,
+                ReviewMonitorOutcome::Skip,
+                0,
+                12,
+                true
+            ),
+            ReviewDecision::Fire(_)
+        ));
+        // Review bucket fires.
+        assert!(matches!(
+            review_decision(
+                AutoReviewMode::Smart,
+                ReviewMonitorOutcome::Review,
+                0,
+                12,
+                false
+            ),
+            ReviewDecision::Fire(_)
+        ));
+        // Ambiguous below barrier asks the gate.
+        assert_eq!(
+            review_decision(
+                AutoReviewMode::Smart,
+                ReviewMonitorOutcome::Ambiguous,
+                5,
+                12,
+                false
+            ),
+            ReviewDecision::AskGate
+        );
+        // Ambiguous at/above barrier fires.
+        assert!(matches!(
+            review_decision(
+                AutoReviewMode::Smart,
+                ReviewMonitorOutcome::Ambiguous,
+                12,
+                12,
+                false
+            ),
+            ReviewDecision::Fire(_)
+        ));
+        // Skip below barrier skips.
+        assert_eq!(
+            review_decision(
+                AutoReviewMode::Smart,
+                ReviewMonitorOutcome::Skip,
+                3,
+                12,
+                false
+            ),
+            ReviewDecision::Skip
+        );
+        // Buffered trivial edits eventually cross the barrier.
+        assert!(matches!(
+            review_decision(
+                AutoReviewMode::Smart,
+                ReviewMonitorOutcome::Skip,
+                12,
+                12,
+                false
+            ),
+            ReviewDecision::Fire(_)
+        ));
+    }
+
+    // Robust: the gate parser accepts a bare object and a tool-wrapped object,
+    // and the should_review field drives the decision.
+    #[test]
+    fn parse_gate_accepts_object_and_wrapped_robust() {
+        let bare = jfc_provider::CompletionResponse {
+            content: r#"{"should_review": false, "reason": "doc only"}"#.to_owned(),
+            usage: jfc_provider::TokenUsage::default(),
+        };
+        let g = parse_gate(&bare).unwrap();
+        assert!(!g.should_review);
+
+        let wrapped = jfc_provider::CompletionResponse {
+            content: r#"prefix {"input": {"should_review": true, "reason": "api change"}} suffix"#
+                .to_owned(),
+            usage: jfc_provider::TokenUsage::default(),
+        };
+        let g = parse_gate(&wrapped).unwrap();
+        assert!(g.should_review);
+        assert_eq!(g.reason, "api change");
+    }
+
+    // Robust: content-hash memoization round-trips and merges.
     #[tokio::test]
-    async fn smart_trigger_skips_single_benign_file_robust() {
-        // A lone non-rust, non-sensitive file in a non-git temp dir should not
-        // trigger (no risk tokens, no git diff signal).
+    async fn content_hashes_save_and_load_merge_robust() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let note = tmp.path().join("note.md");
-        tokio::fs::write(&note, "just some prose\n").await.unwrap();
-        let files = vec![note.to_string_lossy().into_owned()];
-        assert!(smart_auto_review_trigger(tmp.path(), &files).await.is_none());
+        let dir = tmp.path();
+        let mut a = std::collections::BTreeMap::new();
+        a.insert("src/lib.rs".to_owned(), "hash1".to_owned());
+        save_content_hashes(dir, &a).await;
+        let mut b = std::collections::BTreeMap::new();
+        b.insert("src/other.rs".to_owned(), "hash2".to_owned());
+        save_content_hashes(dir, &b).await;
+        let loaded = load_content_hashes(dir).await;
+        assert_eq!(loaded.get("src/lib.rs").map(String::as_str), Some("hash1"));
+        assert_eq!(
+            loaded.get("src/other.rs").map(String::as_str),
+            Some("hash2")
+        );
     }
 
     #[test]

@@ -146,6 +146,10 @@ pub(crate) async fn run(
     {
         app.engine.prompt_rewrite = Some(pr.clone());
     }
+    // Opt-in refusal→rewrite→resend loop (mirrored onto engine state so the
+    // refusal handler reads it without a live config load, and stays testable).
+    app.engine.refusal_rewrite_retry_enabled = startup_config.refusal_rewrite_retry_enabled;
+    app.engine.refusal_rewrite_retry_max = startup_config.refusal_rewrite_retry_max;
 
     // Remote-control auto-start: from --remote-control flag or config.
     let rc_disabled = startup_config

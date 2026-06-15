@@ -2640,6 +2640,7 @@ dependencies = [
  "itertools 0.14.0",
  "jfc-agents",
  "jfc-anthropic-sdk",
+ "jfc-audit",
  "jfc-auth",
  "jfc-bridge",
  "jfc-changeset",
@@ -2729,6 +2730,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "fs2",
+ "futures",
  "regex",
  "serde",
  "serde_json",

@@ -208,7 +208,11 @@ impl PromptStage for IntentClassifier {
         // Honor a hard screen short-circuit if the orchestrator routed it here.
         if ctx.screen == Some(ScreenVerdict::ClearlyBenign) {
             ctx.assessment = Some(IntentAssessment::benign(GoalCategory::Other));
-            return Ok(StageOutcome::Pass);
+            return Ok(if ctx.is_retry() {
+                StageOutcome::Continue
+            } else {
+                StageOutcome::Pass
+            });
         }
         let user = build_user_prompt(ctx);
         let raw = ctx.model.complete(SYSTEM, &user).await?;

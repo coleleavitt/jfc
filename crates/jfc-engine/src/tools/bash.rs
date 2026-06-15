@@ -401,7 +401,7 @@ fn clamp_timeout(timeout_ms: Option<u64>, max_bound: u64) -> u64 {
     match timeout_ms {
         None => DEFAULT_TIMEOUT_MS,
         Some(0) | Some(1..=999) => MIN_TIMEOUT_MS, // Reject tiny explicit timeouts
-        Some(t) => t.min(max_bound), // Clamp to max_bound
+        Some(t) => t.min(max_bound),               // Clamp to max_bound
     }
 }
 
@@ -883,13 +883,22 @@ pub async fn execute_bash_with_options(
         user_timeout
     };
 
-    let mut task = match start_bash_task(command, Some(effective_timeout_for_watcher), cwd, progress, !run_in_background, run_in_background).await {
-            Ok(task) => task,
-            Err(err) => {
-                warn!(target: "jfc::tools", error = %err, "bash: failed to start task");
-                return ExecutionResult::failure(err);
-            }
-        };
+    let mut task = match start_bash_task(
+        command,
+        Some(effective_timeout_for_watcher),
+        cwd,
+        progress,
+        !run_in_background,
+        run_in_background,
+    )
+    .await
+    {
+        Ok(task) => task,
+        Err(err) => {
+            warn!(target: "jfc::tools", error = %err, "bash: failed to start task");
+            return ExecutionResult::failure(err);
+        }
+    };
 
     if run_in_background {
         return ExecutionResult::success(background_started_message(
@@ -1116,22 +1125,32 @@ mod timeout_tests {
     fn test_clamp_timeout_with_none() {
         // When timeout_ms is None, default is used
         assert_eq!(clamp_timeout(None, DEFAULT_TIMEOUT_MS), DEFAULT_TIMEOUT_MS);
-        assert_eq!(clamp_timeout(None, BACKGROUNDED_TIMEOUT_MS), DEFAULT_TIMEOUT_MS);
+        assert_eq!(
+            clamp_timeout(None, BACKGROUNDED_TIMEOUT_MS),
+            DEFAULT_TIMEOUT_MS
+        );
     }
 
     #[test]
     fn test_clamp_timeout_rejects_zero() {
         // Zero timeout is rejected and replaced with MIN_TIMEOUT_MS
         assert_eq!(clamp_timeout(Some(0), DEFAULT_TIMEOUT_MS), MIN_TIMEOUT_MS);
-        assert_eq!(clamp_timeout(Some(0), BACKGROUNDED_TIMEOUT_MS), MIN_TIMEOUT_MS);
+        assert_eq!(
+            clamp_timeout(Some(0), BACKGROUNDED_TIMEOUT_MS),
+            MIN_TIMEOUT_MS
+        );
     }
 
     #[test]
     fn test_clamp_timeout_rejects_tiny_timeouts() {
         // Sub-1000ms timeouts are rejected
         for tiny in 1..=999 {
-            assert_eq!(clamp_timeout(Some(tiny), DEFAULT_TIMEOUT_MS), MIN_TIMEOUT_MS, 
-                       "timeout {} should be clamped to MIN_TIMEOUT_MS", tiny);
+            assert_eq!(
+                clamp_timeout(Some(tiny), DEFAULT_TIMEOUT_MS),
+                MIN_TIMEOUT_MS,
+                "timeout {} should be clamped to MIN_TIMEOUT_MS",
+                tiny
+            );
         }
     }
 
@@ -1146,17 +1165,29 @@ mod timeout_tests {
     #[test]
     fn test_clamp_timeout_respects_upper_bound() {
         // Timeouts exceeding the max_bound are clamped
-        assert_eq!(clamp_timeout(Some(DEFAULT_TIMEOUT_MS + 1), DEFAULT_TIMEOUT_MS), DEFAULT_TIMEOUT_MS);
-        assert_eq!(clamp_timeout(Some(700_000), BACKGROUNDED_TIMEOUT_MS), BACKGROUNDED_TIMEOUT_MS);
-        assert_eq!(clamp_timeout(Some(1_000_000), BACKGROUNDED_TIMEOUT_MS), BACKGROUNDED_TIMEOUT_MS);
+        assert_eq!(
+            clamp_timeout(Some(DEFAULT_TIMEOUT_MS + 1), DEFAULT_TIMEOUT_MS),
+            DEFAULT_TIMEOUT_MS
+        );
+        assert_eq!(
+            clamp_timeout(Some(700_000), BACKGROUNDED_TIMEOUT_MS),
+            BACKGROUNDED_TIMEOUT_MS
+        );
+        assert_eq!(
+            clamp_timeout(Some(1_000_000), BACKGROUNDED_TIMEOUT_MS),
+            BACKGROUNDED_TIMEOUT_MS
+        );
     }
 
     #[test]
     fn test_backgrounded_timeout_is_generous() {
         // BACKGROUNDED_TIMEOUT_MS should be >= DEFAULT_TIMEOUT_MS (600s >= 120s)
-        assert!(BACKGROUNDED_TIMEOUT_MS >= DEFAULT_TIMEOUT_MS,
-                "backgrounded timeout {} should be >= default timeout {}",
-                BACKGROUNDED_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
+        assert!(
+            BACKGROUNDED_TIMEOUT_MS >= DEFAULT_TIMEOUT_MS,
+            "backgrounded timeout {} should be >= default timeout {}",
+            BACKGROUNDED_TIMEOUT_MS,
+            DEFAULT_TIMEOUT_MS
+        );
         // Verify the actual values match schema ("max 600000")
         assert_eq!(BACKGROUNDED_TIMEOUT_MS, 600_000);
         assert_eq!(DEFAULT_TIMEOUT_MS, 120_000);
@@ -1169,17 +1200,17 @@ mod timeout_tests {
         // uses the generous bound.
         let foreground_budget = foreground_budget_ms();
         let user_timeout = clamp_timeout(Some(50_000), DEFAULT_TIMEOUT_MS); // 50s user timeout
-        
+
         // For an explicitly backgrounded task:
         let effective_for_bg_true = if true || user_timeout > foreground_budget {
             clamp_timeout(Some(50_000), BACKGROUNDED_TIMEOUT_MS)
         } else {
             user_timeout
         };
-        
+
         // Should use BACKGROUNDED_TIMEOUT_MS bound
         assert_eq!(effective_for_bg_true, 50_000);
-        
+
         // But if the timeout exceeds backgrounded bound (unlikely), it would be clamped:
         let user_timeout_high = clamp_timeout(Some(700_000), DEFAULT_TIMEOUT_MS); // 700s clamped to 120s
         let effective_high = if true || user_timeout_high > foreground_budget {
@@ -1196,17 +1227,20 @@ mod timeout_tests {
         // so it should get BACKGROUNDED_TIMEOUT_MS to survive the transition.
         let foreground_budget = foreground_budget_ms();
         let user_timeout = clamp_timeout(Some(30_000), DEFAULT_TIMEOUT_MS); // 30s, > 15s budget
-        
+
         // For a foreground task with timeout > budget:
         let effective = if false || user_timeout > foreground_budget {
             clamp_timeout(Some(30_000), BACKGROUNDED_TIMEOUT_MS)
         } else {
             user_timeout
         };
-        
+
         // Should use BACKGROUNDED_TIMEOUT_MS bound (30s < 600s, so 30s is kept)
         assert_eq!(effective, 30_000);
-        assert!(effective > foreground_budget, "timeout should exceed foreground budget");
+        assert!(
+            effective > foreground_budget,
+            "timeout should exceed foreground budget"
+        );
     }
 
     #[tokio::test]
@@ -1215,16 +1249,19 @@ mod timeout_tests {
         // so it keeps its specified timeout.
         let foreground_budget = foreground_budget_ms();
         let user_timeout = clamp_timeout(Some(5_000), DEFAULT_TIMEOUT_MS); // 5s, < 15s budget
-        
+
         // For a foreground task with timeout < budget:
         let effective = if false || user_timeout > foreground_budget {
             clamp_timeout(Some(5_000), BACKGROUNDED_TIMEOUT_MS)
         } else {
             user_timeout
         };
-        
+
         // Should keep the user timeout
         assert_eq!(effective, 5_000);
-        assert!(effective < foreground_budget, "timeout should be < foreground budget");
+        assert!(
+            effective < foreground_budget,
+            "timeout should be < foreground budget"
+        );
     }
 }

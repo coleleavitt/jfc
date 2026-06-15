@@ -41,6 +41,10 @@ pub struct Config {
     pub argus_auto_review: Option<ArgusAutoReviewConfig>,
     #[serde(default, alias = "promptRewrite")]
     pub prompt_rewrite: Option<PromptRewriteConfig>,
+    #[serde(default, alias = "pairEval", alias = "pair_eval")]
+    pub pair: Option<PairEvalConfig>,
+    #[serde(default, alias = "redTeam", alias = "red_team")]
+    pub redteam: Option<RedTeamEvalConfig>,
     #[serde(default)]
     pub mcp: HashMap<String, McpServerConfig>,
     #[serde(default)]
@@ -131,6 +135,24 @@ pub struct Config {
     /// ⇒ no fallback (the refusal is left as-is). The user opts in by setting it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refusal_fallback_model: Option<String>,
+    /// OPT-IN: on a provider refusal, run the prompt back through the local
+    /// over-refusal rewrite gate and, if it produces a scope-bounded
+    /// clarification (policy gate + verifier still gate it), resend the rewritten
+    /// prompt. Bounded by `refusal_rewrite_retry_max`. Off by default — this only
+    /// helps when a *legitimate* request trips a provider false-positive; a
+    /// genuinely-disallowed prompt is `Refused` by the gate and never resent.
+    #[serde(default, alias = "refusalRewriteRetryEnabled")]
+    pub refusal_rewrite_retry_enabled: bool,
+    /// Max rewrite-and-resend rounds per turn for the loop above. `None` ⇒ a small
+    /// default (3); hard-clamped to 20 in the accessor regardless of value, since
+    /// each round is a full extra request and a real refusal won't clear after a
+    /// few tries.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "refusalRewriteRetryMax"
+    )]
+    pub refusal_rewrite_retry_max: Option<u32>,
 }
 
 /// Controls what happens when an agent requested worktree isolation but the
@@ -366,6 +388,8 @@ impl Default for Config {
             background_task: None,
             argus_auto_review: None,
             prompt_rewrite: None,
+            pair: None,
+            redteam: None,
             mcp: HashMap::new(),
             disabled_agents: Vec::new(),
             disabled_tools: Vec::new(),
@@ -397,6 +421,8 @@ impl Default for Config {
             copy_on_select: default_true(),
             refusal_fallback_enabled: default_true(),
             refusal_fallback_model: None,
+            refusal_rewrite_retry_enabled: false,
+            refusal_rewrite_retry_max: None,
         }
     }
 }
@@ -629,6 +655,82 @@ pub struct PromptRewriteConfig {
     /// Inline natural-language constitution; overrides the built-in default.
     #[serde(default)]
     pub constitution: Option<String>,
+}
+
+/// Controlled PAIR red-team evaluation configuration.
+///
+/// Default-OFF: callers should require either `enabled = true` here or an
+/// explicit per-run opt-in flag before making provider calls.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct PairEvalConfig {
+    pub enabled: bool,
+    pub attacker_model: Option<String>,
+    pub target_model: Option<String>,
+    pub judge_model: Option<String>,
+    pub attacker_provider: Option<String>,
+    pub target_provider: Option<String>,
+    pub judge_provider: Option<String>,
+    pub judge: Option<String>,
+    pub n_streams: Option<usize>,
+    pub n_iterations: Option<usize>,
+    pub keep_last_n: Option<usize>,
+    pub max_attack_attempts: Option<usize>,
+    pub success_threshold: Option<f64>,
+    pub parallel_streams: Option<bool>,
+    pub attack_max_tokens: Option<u32>,
+    pub target_max_tokens: Option<u32>,
+    pub judge_max_tokens: Option<u32>,
+    pub attack_temperature: Option<f64>,
+    pub target_temperature: Option<f64>,
+    pub judge_temperature: Option<f64>,
+    pub attack_top_p: Option<f64>,
+    pub target_top_p: Option<f64>,
+    pub judge_top_p: Option<f64>,
+}
+
+/// `[redteam]` configuration for post-PAIR controlled red-team methods.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct RedTeamEvalConfig {
+    pub enabled: bool,
+    pub method: Option<String>,
+    pub attacker_model: Option<String>,
+    pub target_model: Option<String>,
+    pub judge_model: Option<String>,
+    pub attacker_provider: Option<String>,
+    pub target_provider: Option<String>,
+    pub judge_provider: Option<String>,
+    pub judge: Option<String>,
+    pub n_streams: Option<usize>,
+    pub n_iterations: Option<usize>,
+    pub branch_factor: Option<usize>,
+    pub prune_width: Option<usize>,
+    pub population_size: Option<usize>,
+    pub generations: Option<usize>,
+    pub max_turns: Option<usize>,
+    pub success_threshold: Option<f64>,
+    pub proact_defense: Option<bool>,
+    pub robot_context: Option<String>,
+    pub beta0: Option<f64>,
+    pub casp_drift: Option<f64>,
+    pub embedding_dim: Option<usize>,
+    pub bo_candidates: Option<usize>,
+    pub jrl_learning_rate: Option<f64>,
+    pub jrl_gamma: Option<f64>,
+    pub sinkhorn_epsilon: Option<f64>,
+    pub sinkhorn_iterations: Option<usize>,
+    pub control_grid: Option<usize>,
+    pub control_cost: Option<f64>,
+    pub attack_max_tokens: Option<u32>,
+    pub target_max_tokens: Option<u32>,
+    pub judge_max_tokens: Option<u32>,
+    pub attack_temperature: Option<f64>,
+    pub target_temperature: Option<f64>,
+    pub judge_temperature: Option<f64>,
+    pub attack_top_p: Option<f64>,
+    pub target_top_p: Option<f64>,
+    pub judge_top_p: Option<f64>,
 }
 
 /// Experimental feature flags.

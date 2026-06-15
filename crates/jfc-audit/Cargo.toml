@@ -9,6 +9,7 @@ description = "Graph-driven recursive bug auditor for jfc"
 [dependencies]
 async-trait = { workspace = true }
 fs2 = "0.4"
+futures = { workspace = true }
 regex = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }

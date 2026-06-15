@@ -61,7 +61,9 @@ pub(super) fn prompt_rewrite(f: &mut Frame, app: &App) {
         Line::from(label("Proposed rewrite:")),
         Line::from(Span::styled(
             proposal.rewrite.clone(),
-            Style::default().fg(t.text_primary).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
         )),
     ])
     .wrap(Wrap { trim: true });
@@ -69,7 +71,10 @@ pub(super) fn prompt_rewrite(f: &mut Frame, app: &App) {
 
     let rationale = Paragraph::new(Line::from(vec![
         label("Why: "),
-        Span::styled(proposal.rationale.clone(), Style::default().fg(t.text_primary)),
+        Span::styled(
+            proposal.rationale.clone(),
+            Style::default().fg(t.text_primary),
+        ),
     ]))
     .wrap(Wrap { trim: true });
     f.render_widget(rationale, rows[1]);
@@ -85,11 +90,20 @@ pub(super) fn prompt_rewrite(f: &mut Frame, app: &App) {
     f.render_widget(original, rows[2]);
 
     let footer = Paragraph::new(Line::from(vec![
-        Span::styled("[A]", Style::default().fg(accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[A]",
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ),
         label("ccept  "),
-        Span::styled("[R]", Style::default().fg(accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[R]",
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ),
         label("eject (send original)  "),
-        Span::styled("[E]", Style::default().fg(accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[E]",
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ),
         label("dit"),
     ]));
     f.render_widget(footer, rows[3]);

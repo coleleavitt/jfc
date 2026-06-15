@@ -156,6 +156,8 @@ pub fn restart_stream_in_place_with_overrides(
     state.turn_output_tokens = 0;
     state.refusal_fallback_attempted = false;
     state.refusal_resend_count = 0;
+    state.refusal_rewrite_retry_count = 0;
+    state.refusal_rewrite_attempts.clear();
     state.streaming_thinking_tokens = 0;
     state.last_thinking_estimate = 0;
     state.streaming_assistant_idx = Some(assistant_idx);

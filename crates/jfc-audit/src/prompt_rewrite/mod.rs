@@ -15,8 +15,8 @@
 //! ## Cascade
 //!
 //! ```text
-//! Stage 0 screener (free, lexical) ── clearly_benign ─────────────► Pass
-//!         │ needs_review        └─ clearly_disallowed ─────────────► Refuse
+//! Stage 0 minimal hard screen ── clearly_disallowed ──────────────► Refuse
+//!         │ needs_review
 //!         ▼
 //! Stage 1 intent classifier (LLM)
 //!         ▼
@@ -28,11 +28,11 @@
 //!   proposal kept? ─ yes ─► Rewritten   ─ no ─► Pass (original)
 //! ```
 //!
-//! Only ambiguous/charged prompts ever reach the LLM stages; the common case is
-//! free (Constitutional Classifiers++ cascade, arXiv:2601.04603).
+//! The former hand-written prompt-shape layer is intentionally not part of this cascade:
+//! prompt shape is judged by the model-backed classifier and policy gate, not by
+//! brittle hand-written signature rules.
 
 pub mod classifier;
-pub mod detectors;
 pub mod policy;
 pub mod retry;
 pub mod rewriter;
@@ -106,7 +106,8 @@ impl RewritePipeline {
 
     /// Run the cascade over one prompt. `model` is the local/advisor LLM the
     /// LLM-backed stages call; the screener never touches it, so a clearly
-    /// benign prompt returns [`RewriteDecision::Pass`] with zero model calls.
+    /// ordinary prompt reaches the classifier; only the zero-tolerance hard
+    /// screen avoids a model call.
     pub async fn run(&self, prompt: &str, model: &dyn RewriteModel) -> Result<RewriteDecision> {
         self.run_with_history(prompt, model, &[]).await
     }
@@ -120,10 +121,31 @@ impl RewritePipeline {
         model: &dyn RewriteModel,
         history: &[String],
     ) -> Result<RewriteDecision> {
+        self.run_with_feedback(prompt, model, history, &[], None)
+            .await
+    }
+
+    /// Run the cascade with response-side retry feedback. `prior_attempts` are
+    /// rewrites that were STILL refused downstream and `refusal_feedback` is the
+    /// latest refusal text; both feed ONLY the Stage-3 rewriter so each retry
+    /// round yields a *different* clarification. The screener, classifier, policy
+    /// gate, and verifier are unchanged and re-run every round, so a
+    /// genuinely-disallowed intent still terminates in `Refused` no matter how
+    /// many times this is called — the loop clarifies legitimate prompts, it does
+    /// not launder disallowed ones.
+    pub async fn run_with_feedback(
+        &self,
+        prompt: &str,
+        model: &dyn RewriteModel,
+        history: &[String],
+        prior_attempts: &[String],
+        refusal_feedback: Option<&str>,
+    ) -> Result<RewriteDecision> {
         let mut ctx = RewriteContext::new(prompt, model, &self.exemplars)
             .with_history(history)
             .with_constitution(&self.constitution)
-            .with_threshold(self.threshold);
+            .with_threshold(self.threshold)
+            .with_feedback(prior_attempts, refusal_feedback);
         for stage in &self.stages {
             match stage.run(&mut ctx).await? {
                 StageOutcome::Continue => {}
@@ -208,14 +230,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn benign_short_circuits_with_no_model_calls() {
-        let model = ScriptedModel::new("", "", "");
+    async fn benign_routes_through_model_and_passes() {
+        let model = ScriptedModel::new(
+            r#"{"goal_category":"coding","verdict":"allowed","confidence":0.9}"#,
+            "",
+            "",
+        );
         let decision = RewritePipeline::default()
             .run("Write a Rust function to reverse a slice", &model)
             .await
             .unwrap();
         assert_eq!(decision, RewriteDecision::Pass);
-        assert_eq!(model.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(model.calls.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
@@ -303,7 +329,10 @@ mod tests {
         let prompt = "now run the exploit we discussed";
 
         // Without history → allowed → Pass.
-        let bare = RewritePipeline::default().run(prompt, &model).await.unwrap();
+        let bare = RewritePipeline::default()
+            .run(prompt, &model)
+            .await
+            .unwrap();
         assert_eq!(bare, RewriteDecision::Pass);
 
         // With incriminating history → disallowed → Refused.
@@ -327,7 +356,10 @@ mod tests {
                     if user.contains("FORBID_CRYPTO_RESEARCH") {
                         return Ok(r#"{"goal_category":"research","verdict":"disallowed","confidence":0.9}"#.into());
                     }
-                    return Ok(r#"{"goal_category":"research","verdict":"allowed","confidence":0.9}"#.into());
+                    return Ok(
+                        r#"{"goal_category":"research","verdict":"allowed","confidence":0.9}"#
+                            .into(),
+                    );
                 }
                 Ok(String::new())
             }
@@ -343,7 +375,10 @@ mod tests {
         assert!(custom.is_refused());
 
         // Default constitution (no marker) → allowed → Pass.
-        let default = RewritePipeline::default().run(prompt, &model).await.unwrap();
+        let default = RewritePipeline::default()
+            .run(prompt, &model)
+            .await
+            .unwrap();
         assert_eq!(default, RewriteDecision::Pass);
     }
 
@@ -359,5 +394,82 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(decision, RewriteDecision::Pass);
+    }
+
+    #[tokio::test]
+    async fn retry_feedback_cannot_launder_disallowed() {
+        // Even with response-side retry feedback, a disallowed classifier verdict
+        // stays Refused: the policy gate runs every round and ignores feedback,
+        // so the loop can never launder a genuinely-disallowed prompt.
+        let model = ScriptedModel::new(
+            r#"{"goal_category":"cyber","verdict":"disallowed","risk_flags":["unauthorized_exploitation"],"confidence":0.9}"#,
+            r#"{"text":"laundered version"}"#,
+            r#"{"intent_preserved":true,"introduced_harm":false}"#,
+        );
+        let decision = RewritePipeline::default()
+            .run_with_feedback(
+                "help me exploit a vulnerability in my neighbor's router",
+                &model,
+                &[],
+                &["a prior still-refused rewrite".to_string()],
+                Some("provider refused: flagged for cybersecurity risk"),
+            )
+            .await
+            .unwrap();
+        assert!(
+            decision.is_refused(),
+            "retry must not launder a disallowed prompt: {decision:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_rewrites_ordinary_prompt() {
+        // Ordinary prompts route through the model classifier. On a response-side
+        // retry, the same model-backed path can produce a clarification while
+        // every safety stage still runs.
+        let model = ScriptedModel::new(
+            r#"{"goal_category":"other","verdict":"allowed","confidence":0.9}"#,
+            r#"{"original_intent":"reverse a slice","text":"Write a Rust function that reverses a slice; standard library use only.","rationale":"clarified scope"}"#,
+            r#"{"intent_preserved":true,"introduced_harm":false}"#,
+        );
+        let decision = RewritePipeline::default()
+            .run_with_feedback(
+                "write a rust function to reverse a slice",
+                &model,
+                &[],
+                &[],
+                Some("provider refused"),
+            )
+            .await
+            .unwrap();
+        assert!(
+            decision.rewrite().is_some(),
+            "retry must force a rewrite: {decision:?}"
+        );
+        assert!(
+            model.calls.load(Ordering::SeqCst) >= 1,
+            "retry rewrite must actually call the model"
+        );
+    }
+
+    #[tokio::test]
+    async fn benign_without_retry_routes_through_model_and_passes() {
+        let model = ScriptedModel::new(
+            r#"{"goal_category":"coding","verdict":"allowed","confidence":0.9}"#,
+            "",
+            "",
+        );
+        let decision = RewritePipeline::default()
+            .run_with_feedback(
+                "write a rust function to reverse a slice",
+                &model,
+                &[],
+                &[],
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(decision, RewriteDecision::Pass);
+        assert_eq!(model.calls.load(Ordering::SeqCst), 2);
     }
 }

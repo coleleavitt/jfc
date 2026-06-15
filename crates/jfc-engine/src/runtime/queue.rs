@@ -109,6 +109,8 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     state.turn_output_tokens = 0;
     state.refusal_fallback_attempted = false;
     state.refusal_resend_count = 0;
+    state.refusal_rewrite_retry_count = 0;
+    state.refusal_rewrite_attempts.clear();
     state.network_recovery_status = None;
     state.network_recovery_attempts = 0;
     state.stream_lifecycle = None;

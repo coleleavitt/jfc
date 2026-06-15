@@ -127,6 +127,30 @@ impl OpenWebUIProvider {
         // 60 s skew lets a request that's currently in flight finish before
         // we proactively refresh.
         if is_token_expired(&account.token, 60_000) {
+            // Refresh needs OWUI_USERNAME (+ password/Duo). When it's absent the
+            // refresh can only ever fail, so don't attempt it — and don't warn on
+            // every single request. Warn once (actionable), then stay quiet at
+            // debug; continue with the stale token (the request may 401).
+            if std::env::var("OWUI_USERNAME").is_err() {
+                static WARNED: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    tracing::warn!(
+                        target: "jfc::provider::openwebui",
+                        account = %account.name,
+                        "OpenWebUI token expired and OWUI_USERNAME is not set — cannot \
+                         auto-refresh. Set OWUI_USERNAME/OWUI_PASSWORD (and OWUI_DUO_PASSCODE) \
+                         or re-authenticate; requests may 401 until then."
+                    );
+                } else {
+                    tracing::debug!(
+                        target: "jfc::provider::openwebui",
+                        account = %account.name,
+                        "OpenWebUI token expired; auto-refresh skipped (no OWUI_USERNAME)"
+                    );
+                }
+                return Ok(account);
+            }
             tracing::info!(
                 target: "jfc::provider::openwebui",
                 account = %account.name,

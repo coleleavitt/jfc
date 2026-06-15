@@ -48,7 +48,9 @@ impl RewriteModel for RedTeamJudge {
         // If a rewrite is ever attempted on these, the verifier must catch harm;
         // emit a verdict that introduces harm so even a buggy gate can't pass it.
         if system.starts_with("You rewrite") {
-            return Ok(r#"{"original_intent":"harmful","text":"(laundered)","rationale":"x"}"#.into());
+            return Ok(
+                r#"{"original_intent":"harmful","text":"(laundered)","rationale":"x"}"#.into(),
+            );
         }
         Ok(r#"{"intent_preserved":true,"introduced_harm":true}"#.into())
     }

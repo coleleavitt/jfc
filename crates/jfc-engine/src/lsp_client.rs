@@ -268,18 +268,31 @@ impl LspClient {
         let stdout = child.stdout.take()?;
         let stderr = child.stderr.take()?;
 
-        // 1. Stderr drain. Critical — see module docs. Read line-by-line,
-        // forward each non-empty line to tracing::warn! so the user can
-        // see crashes / handshake errors via RUST_LOG=jfc::lsp=debug.
+        // 1. Stderr drain. Critical — see module docs. Read line-by-line.
+        // rust-analyzer is extremely chatty on stderr (cache priming, GC,
+        // "overly long loop turn", notify warnings); forwarding every line at
+        // WARN floods jfc's own WARN stream and bloated session logs to GBs.
+        // So surface genuine errors/crashes at WARN and demote routine RA
+        // chatter to DEBUG (still visible via RUST_LOG=jfc::lsp=debug). Each
+        // line is length-capped so a pathological giant line can't blow up the log.
         tokio::spawn(async move {
+            const MAX_LEN: usize = 2000;
             let mut reader = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                if !line.trim().is_empty() {
-                    tracing::warn!(
-                        target: "jfc::lsp",
-                        stderr = %line,
-                        "lsp stderr"
-                    );
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let shown: String = trimmed.chars().take(MAX_LEN).collect();
+                let looks_error = trimmed.contains("ERROR")
+                    || trimmed.contains("error[")
+                    || trimmed.contains("panic")
+                    || trimmed.contains("thread '")
+                    || trimmed.contains("fatal");
+                if looks_error {
+                    tracing::warn!(target: "jfc::lsp", stderr = %shown, "lsp stderr");
+                } else {
+                    tracing::debug!(target: "jfc::lsp", stderr = %shown, "lsp stderr");
                 }
             }
         });

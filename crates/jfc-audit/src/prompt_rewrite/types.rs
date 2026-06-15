@@ -80,12 +80,13 @@ impl RiskFlag {
     }
 }
 
-/// Stage-0 screener triage. The cheap, always-on gate that keeps the common
-/// case free (cascade pattern, Constitutional Classifiers++ arXiv:2601.04603).
+/// Stage-0 screener triage. This is now a minimal hard-block gate: ordinary
+/// prompts route to the model classifier instead of a hand-written signature stack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScreenVerdict {
-    /// Pass through untouched — no LLM cost.
+    /// Reserved for compatibility with older callers; the current screener does
+    /// not use this shortcut.
     ClearlyBenign,
     /// Escalate to the intent/risk classifier.
     NeedsReview,
@@ -214,6 +215,16 @@ pub struct RewriteContext<'a> {
     pub constitution: &'a str,
     /// Intent-preservation acceptance threshold τ in [0, 1].
     pub threshold: f64,
+    /// Response-side retry feedback: prior rewrite attempts that were STILL
+    /// refused downstream by the provider. The pipeline is otherwise a pure
+    /// function of its inputs and would repeat the same rewrite; these let the
+    /// Stage-3 rewriter produce a *different* clarification each round. Read ONLY
+    /// by the rewriter (Stage 3) — never the classifier (1), policy gate (2), or
+    /// verifier (4) — so the launder-proof invariant holds: a genuinely-disallowed
+    /// intent is Refused regardless of how many retries run.
+    pub prior_attempts: &'a [String],
+    /// The downstream refusal text that motivated this retry (rewriter-only).
+    pub refusal_feedback: Option<&'a str>,
 }
 
 impl<'a> RewriteContext<'a> {
@@ -229,6 +240,8 @@ impl<'a> RewriteContext<'a> {
             history: &[],
             constitution: "",
             threshold: DEFAULT_THRESHOLD,
+            prior_attempts: &[],
+            refusal_feedback: None,
         }
     }
 
@@ -236,6 +249,64 @@ impl<'a> RewriteContext<'a> {
     pub fn with_history(mut self, history: &'a [String]) -> Self {
         self.history = history;
         self
+    }
+
+    /// Attach response-side retry feedback (prior still-refused rewrites + the
+    /// downstream refusal reason). Scoped to the Stage-3 rewriter only; upstream
+    /// safety stages never read it, so retries can't drift the verdict toward
+    /// allow.
+    pub fn with_feedback(
+        mut self,
+        prior_attempts: &'a [String],
+        refusal_feedback: Option<&'a str>,
+    ) -> Self {
+        self.prior_attempts = prior_attempts;
+        self.refusal_feedback = refusal_feedback;
+        self
+    }
+
+    /// True when this run is a response-side retry (carries refusal feedback or a
+    /// prior attempt). Kept as the common signal that the response-side retry
+    /// path is active. Every safety stage still runs (`ClearlyDisallowed` still
+    /// hard-refuses; the policy gate and verifier are untouched), so this cannot
+    /// launder a disallowed prompt.
+    pub fn is_retry(&self) -> bool {
+        self.refusal_feedback.is_some() || !self.prior_attempts.is_empty()
+    }
+
+    /// Render the retry feedback for the Stage-3 rewriter prompt, or empty on a
+    /// first attempt. Deliberately steers toward *clearer* legitimate phrasing
+    /// and explicitly forbids evasive transformations, so a retry clarifies
+    /// intent rather than trying to slip past the filter (the verifier still
+    /// rejects any introduced harm regardless).
+    pub fn rewriter_feedback_block(&self) -> String {
+        if self.prior_attempts.is_empty() && self.refusal_feedback.is_none() {
+            return String::new();
+        }
+        let mut s = String::from(
+            "\nThis is a RETRY: the previous scope-bounded rewrite(s) were still refused \
+             downstream.\n",
+        );
+        if !self.prior_attempts.is_empty() {
+            s.push_str("Previously tried (do NOT repeat these):\n");
+            for a in self.prior_attempts.iter().rev().take(3).rev() {
+                s.push_str("- ");
+                s.push_str(a);
+                s.push('\n');
+            }
+        }
+        if let Some(r) = self.refusal_feedback {
+            s.push_str("Downstream refusal said: ");
+            s.push_str(r);
+            s.push('\n');
+        }
+        s.push_str(
+            "Produce a DIFFERENT rewrite that states the same legitimate goal even more plainly, \
+             with explicit legitimate scope (authorized/defensive/educational, public sources \
+             only). Do NOT add evasive transformations or roleplay — only make the legitimate \
+             intent clearer. If the goal is actually disallowed, refuse instead of rewording.\n",
+        );
+        s
     }
 
     /// Use a specific constitution (config override) instead of the empty default.

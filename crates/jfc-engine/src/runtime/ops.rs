@@ -230,7 +230,12 @@ pub async fn submit_prompt(
     let rewrite_history: Vec<String> = state
         .messages
         .iter()
-        .filter(|m| matches!(m.role, crate::types::Role::User | crate::types::Role::Assistant))
+        .filter(|m| {
+            matches!(
+                m.role,
+                crate::types::Role::User | crate::types::Role::Assistant
+            )
+        })
         .rev()
         .take(6)
         .collect::<Vec<_>>()
@@ -242,13 +247,19 @@ pub async fn submit_prompt(
             } else {
                 "assistant"
             };
-            let body: String = m.parts.iter().map(|p| p.text_only()).collect::<Vec<_>>().join("");
+            let body: String = m
+                .parts
+                .iter()
+                .map(|p| p.text_only())
+                .collect::<Vec<_>>()
+                .join("");
             format!("{role}: {body}")
         })
         .collect();
     if let Some(decision) = crate::runtime::prompt_rewrite_gate::evaluate(
         state.prompt_rewrite.as_ref(),
         state.provider.clone(),
+        &state.providers,
         state.local_advisor_model.as_ref().map(|m| m.as_str()),
         state.model.as_str(),
         &text,
@@ -384,6 +395,8 @@ pub async fn submit_prompt(
         state.turn_output_tokens = 0;
         state.refusal_fallback_attempted = false;
         state.refusal_resend_count = 0;
+        state.refusal_rewrite_retry_count = 0;
+        state.refusal_rewrite_attempts.clear();
         state.streaming_assistant_idx = None;
         state.clear_active_stream_scope();
     }
@@ -890,6 +903,8 @@ pub async fn start_turn_from_transcript(
     state.turn_output_tokens = 0;
     state.refusal_fallback_attempted = false;
     state.refusal_resend_count = 0;
+    state.refusal_rewrite_retry_count = 0;
+    state.refusal_rewrite_attempts.clear();
     state.network_recovery_status = None;
     state.network_recovery_attempts = 0;
     state.streaming_assistant_idx = Some(assistant_idx);

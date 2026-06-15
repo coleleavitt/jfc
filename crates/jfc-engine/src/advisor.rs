@@ -357,7 +357,12 @@ pub fn resolve_local_advisor_model(
 
 pub fn supports_server_advisor_model(model: &str) -> bool {
     let lower = model.to_ascii_lowercase();
-    lower.contains("opus-4-7") || lower.contains("opus-4-6") || lower.contains("sonnet-4-6")
+    lower.contains("opus-4-8")
+        || lower.contains("opus-4-7")
+        || lower.contains("opus-4-6")
+        || lower.contains("sonnet-4-6")
+        || lower.contains("fable")
+        || lower.contains("mythos")
 }
 
 pub fn server_advisor_env_enabled() -> bool {
@@ -395,9 +400,8 @@ pub fn resolve_server_advisor_model(
     }
 
     if !supports_server_advisor_model(base_model.as_str()) {
-        let msg = format!(
-            "advisor requires a base model containing opus-4-7, opus-4-6, or sonnet-4-6; active model is {base_model}"
-        );
+        let msg =
+            format!("advisor requires a current Opus/Sonnet model; active model is {base_model}");
         if strict || force_enable {
             return Err(msg);
         }
@@ -408,7 +412,7 @@ pub fn resolve_server_advisor_model(
     let advisor = normalize_server_advisor_model(raw.as_deref().unwrap_or("opus"))?;
     if !supports_server_advisor_model(advisor.as_str()) {
         return Err(format!(
-            "advisor model must contain opus-4-7, opus-4-6, or sonnet-4-6; got {advisor}"
+            "advisor model must be a current Opus/Sonnet model; got {advisor}"
         ));
     }
 
@@ -1046,6 +1050,17 @@ mod tests {
         assert_eq!(target.provider.as_ref().map(|p| p.as_str()), Some("openai"));
         assert_eq!(target.model.as_str(), "gpt-5.5");
         assert_eq!(target.config_value(), "openai/gpt-5.5");
+    }
+
+    /// Regression: the server-side advisor gate must track current Anthropic
+    /// model families. Opus 4.8 is the default Opus alias, so rejecting it hides
+    /// the `advisor` AI tool on the most common current configuration.
+    #[test]
+    fn server_advisor_supports_current_opus_normal() {
+        assert!(supports_server_advisor_model("claude-opus-4-8"));
+        assert!(supports_server_advisor_model("anthropic/claude-opus-4-8"));
+        assert!(supports_server_advisor_model("claude-sonnet-4-6"));
+        assert!(!supports_server_advisor_model("claude-haiku-4-5"));
     }
 
     /// Normal: advisor provider targets include the configured primary model plus

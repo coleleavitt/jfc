@@ -15,8 +15,10 @@ pub mod dispatcher;
 pub mod enumerator;
 pub mod error;
 pub mod orchestrator;
+pub mod pair;
 pub mod prompt_rewrite;
 pub mod reachability;
+pub mod redteam;
 pub mod store;
 pub mod suspicious_point;
 pub mod taint;
@@ -24,8 +26,16 @@ pub mod types;
 
 pub use error::{AuditError, Result};
 pub use orchestrator::{AuditConfig, AuditOrchestrator, AuditReport, AuditStats};
+pub use pair::{
+    PairAttempt, PairConfig, PairHeuristicJudge, PairJudgment, PairRun, PairRunner, PairVerdict,
+    safe_attacker_system_prompts,
+};
 pub use prompt_rewrite::{
     PolicyGate, Rewrite, RewriteDecision, RewriteModel, RewritePipeline, RiskFlag,
+};
+pub use redteam::{
+    RedTeamAttempt, RedTeamConfig, RedTeamFormalism, RedTeamHeuristicJudge, RedTeamMethod,
+    RedTeamRun, RedTeamRunner,
 };
 pub use store::{FindingFilter, FindingStore};
 pub use types::{Finding, FindingKind, Granularity, PocStatus, Severity, SourceSpan};

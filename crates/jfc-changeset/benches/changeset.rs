@@ -12,7 +12,9 @@
 //!   - `ledger_query` — filtered query over a 2 000-event store (10% selectivity).
 
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
-use jfc_changeset::{AgentChangeSet, ChangeStore, EventKind, LedgerEvent, LedgerFilter, LedgerStore};
+use jfc_changeset::{
+    AgentChangeSet, ChangeStore, EventKind, LedgerEvent, LedgerFilter, LedgerStore,
+};
 use tempfile::TempDir;
 
 fn bench_changeset_upsert(c: &mut Criterion) {
@@ -23,12 +25,8 @@ fn bench_changeset_upsert(c: &mut Criterion) {
             |dir| {
                 let mut store = ChangeStore::open_project(dir.path()).expect("open store");
                 for i in 0..200u64 {
-                    let cs = AgentChangeSet::open(
-                        "base",
-                        format!("jfc/b{i}"),
-                        format!("/tmp/w{i}"),
-                        i,
-                    );
+                    let cs =
+                        AgentChangeSet::open("base", format!("jfc/b{i}"), format!("/tmp/w{i}"), i);
                     store.upsert(cs).expect("upsert");
                 }
                 black_box(store.len());

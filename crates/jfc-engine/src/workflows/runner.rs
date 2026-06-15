@@ -627,7 +627,10 @@ async fn run_one_agent(
             // than silently stringifying (which used to hide schema breaches
             // and surprise scripts expecting object fields).
             emit_agent_failed(&tx, &workflow_task_id, req.index, error.clone());
-            finalize_agent_row(&agent_id, agent_error_outcome(cancel.is_cancelled(), &error));
+            finalize_agent_row(
+                &agent_id,
+                agent_error_outcome(cancel.is_cancelled(), &error),
+            );
             let _ = journal_writer
                 .append(&JournalEntry::Result {
                     key,

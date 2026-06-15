@@ -30,6 +30,7 @@ pub async fn handle_stream_done(
         approval_queue = state.approval_queue.len(),
         "StreamEvent::Done received"
     );
+    let mut empty_billed_refusal_cap_reached = false;
 
     // Bug A — the "$-charged blank turn". Detect an assistant turn that
     // finished with NO meaningful content (no text, no tool calls, no
@@ -85,12 +86,65 @@ pub async fn handle_stream_done(
             streaming_response_bytes = state.streaming_response_bytes,
             "stream turn finalized"
         );
+        let stop_reason_refusal = stop_reason_is_refusal(&stop_reason);
+        let assistant_response_text = if idx < state.messages.len() {
+            message_text_parts(&state.messages[idx])
+        } else {
+            String::new()
+        };
+        let refusal_candidate_uidx = state.messages[..idx.min(state.messages.len())]
+            .iter()
+            .rposition(|m| matches!(m.role, crate::types::Role::User));
+        let mut model_refusal_assessment = None;
+        if !state.refusal_fallback_attempted
+            && !stop_reason_refusal
+            && state.refusal_rewrite_retry_enabled
+            && state.refusal_rewrite_retry_count
+                < refusal_rewrite_retry_cap(state.refusal_rewrite_retry_max)
+            && state.prompt_rewrite.is_some()
+            && !assistant_response_text.trim().is_empty()
+            && let Some(uidx) = refusal_candidate_uidx
+        {
+            let original_prompt = message_text_parts(&state.messages[uidx]);
+            if !original_prompt.trim().is_empty() {
+                let provider = state.provider.clone();
+                let providers = state.providers.clone();
+                let advisor = state.local_advisor_model.clone();
+                let active = state.model.to_string();
+                let pr = state.prompt_rewrite.clone();
+                model_refusal_assessment =
+                    crate::runtime::prompt_rewrite_gate::classify_response_refusal(
+                        pr.as_ref(),
+                        provider,
+                        &providers,
+                        advisor.as_ref().map(|m| m.as_str()),
+                        &active,
+                        &original_prompt,
+                        &assistant_response_text,
+                    )
+                    .await;
+            }
+        }
+        let model_refusal = model_refusal_assessment
+            .as_ref()
+            .is_some_and(|assessment| assessment.is_refusal());
+        let refusal_detected = stop_reason_refusal || model_refusal;
+        if model_refusal {
+            if let Some(assessment) = &model_refusal_assessment {
+                tracing::warn!(
+                    target: "jfc::stream::lifecycle",
+                    confidence = assessment.confidence,
+                    rationale = %assessment.rationale,
+                    "assistant response classified as a refusal despite non-refusal stop reason"
+                );
+            }
+        }
         // Refusal fallback (adapts Claude Code 2.1.160's "switch models when a
         // message is flagged"): if this turn ended in a refusal and the user
         // configured a fallback model, switch to it and resend once. INERT by
         // default — `refusal_fallback_model` is `None` unless the user opts in
         // — and loop-guarded by `refusal_fallback_attempted` (one swap/turn).
-        if !state.refusal_fallback_attempted && stop_reason_is_refusal(&stop_reason) {
+        if !state.refusal_fallback_attempted && refusal_detected {
             let cfg = crate::config::load_arc();
             if cfg.refusal_fallback_enabled
                 && let Some(fb) = cfg.refusal_fallback_model.clone()
@@ -144,6 +198,130 @@ pub async fn handle_stream_done(
             // budget + teardown), so we must not intercept it here.
             let refusal_has_content =
                 idx < state.messages.len() && !assistant_turn_has_no_content(&state.messages[idx]);
+
+            // Opt-in refusal→rewrite→resend (over-refusal mitigation). When a
+            // *legitimate* request trips a provider false-positive, run it back
+            // through the local rewrite gate and resend a scope-bounded
+            // clarification. Bounded by `refusal_rewrite_retry_max`. The gate's
+            // policy stage refuses genuinely-disallowed intent, so a real refusal
+            // returns `Refused` and is NOT resent — only legitimate prompts get
+            // rephrased. Requires the prompt-rewrite gate (`state.prompt_rewrite`)
+            // to be configured; otherwise the gate returns `None` and we fall
+            // through to the existing resend/dead-stop.
+            //
+            // NOT gated on `refusal_has_content`: an EMPTY (blank) refusal — the
+            // provider returning `stop_reason=Refusal` with no body, which renders
+            // as a blank bubble and otherwise only gets the same prompt
+            // plain-resent by the empty-billed ladder below — is exactly the case
+            // a rephrase is meant to break, so it routes through here too.
+            if state.refusal_rewrite_retry_enabled
+                && state.refusal_rewrite_retry_count
+                    < refusal_rewrite_retry_cap(state.refusal_rewrite_retry_max)
+                && let Some(uidx) = refusal_candidate_uidx
+            {
+                // Pin the pristine original at index 0 on the first retry so every
+                // round rewrites the TRUE user intent (and the verifier checks
+                // intent against it), not a prior rewrite — avoiding drift.
+                if state.refusal_rewrite_attempts.is_empty() {
+                    let orig = message_text_parts(&state.messages[uidx]);
+                    state.refusal_rewrite_attempts.push(orig);
+                }
+                let original_prompt = state.refusal_rewrite_attempts[0].clone();
+                // Rewrites already tried this turn (fed back so the rewriter
+                // produces a *different* clarification each round).
+                let prior_attempts: Vec<String> = state.refusal_rewrite_attempts[1..].to_vec();
+                // Refusal body for the rewriter's feedback; empty/blank refusals
+                // get a synthetic reason so the rewriter still has context.
+                let refusal_text: String = if assistant_response_text.trim().is_empty() {
+                    "(provider returned an empty/blank refusal — no content)".to_string()
+                } else {
+                    let mut text: String = assistant_response_text.chars().take(500).collect();
+                    if let Some(assessment) = &model_refusal_assessment {
+                        if !assessment.rationale.trim().is_empty() {
+                            text.push_str("\nClassifier rationale: ");
+                            text.push_str(assessment.rationale.trim());
+                        }
+                        text.push_str(&format!(
+                            "\nClassifier confidence: {:.2}",
+                            assessment.confidence
+                        ));
+                    }
+                    text
+                };
+                if !original_prompt.trim().is_empty() {
+                    let provider = state.provider.clone();
+                    let providers = state.providers.clone();
+                    let advisor = state.local_advisor_model.clone();
+                    let active = state.model.to_string();
+                    let pr = state.prompt_rewrite.clone();
+                    let decision = crate::runtime::prompt_rewrite_gate::evaluate_with_feedback(
+                        pr.as_ref(),
+                        provider,
+                        &providers,
+                        advisor.as_ref().map(|m| m.as_str()),
+                        &active,
+                        &original_prompt,
+                        &[],
+                        &prior_attempts,
+                        Some(&refusal_text),
+                    )
+                    .await;
+                    if let Some(jfc_audit::RewriteDecision::Rewritten(rw)) = decision {
+                        state.refusal_rewrite_retry_count += 1;
+                        state.refusal_rewrite_attempts.push(rw.text.clone());
+                        tracing::warn!(
+                            target: "jfc::stream::lifecycle",
+                            attempt = state.refusal_rewrite_retry_count,
+                            max = refusal_rewrite_retry_cap(state.refusal_rewrite_retry_max),
+                            original = %original_prompt,
+                            rewrite = %rw.text,
+                            "refusal — rephrased via rewrite gate (auto-applied, opt-in) and resending"
+                        );
+                        crate::toast::push_with_cap(
+                            &mut state.toasts,
+                            crate::toast::Toast::new(
+                                crate::toast::ToastKind::Warning,
+                                format!(
+                                    "Refused — auto-rephrased & retrying ({}/{})",
+                                    state.refusal_rewrite_retry_count,
+                                    refusal_rewrite_retry_cap(state.refusal_rewrite_retry_max)
+                                ),
+                            ),
+                        );
+                        // Substitute the user turn's text with the rephrase (other
+                        // parts, e.g. attachments, are preserved). Unlike the
+                        // PRE-FLIGHT gate (which proposes a rewrite for the user to
+                        // accept/reject), this response-side retry AUTO-APPLIES —
+                        // intentionally, since it is opt-in and the whole point is
+                        // to recover from a provider false-positive without
+                        // blocking. It is surfaced, not silent: the toast above
+                        // announces each attempt and the pristine original is
+                        // recorded in the warn log. Teardown mirrors the resend
+                        // paths.
+                        set_message_text_parts(&mut state.messages[uidx], rw.text);
+                        state.is_streaming = false;
+                        state.active_stream_handle = None;
+                        state.clear_active_stream_scope();
+                        state.last_stream_event_at = None;
+                        state.push_effect(crate::app::EngineEffect::StreamingFinalized);
+                        state.streaming_text = String::new();
+                        state.streaming_reasoning = String::new();
+                        state.streaming_assistant_idx = None;
+                        state.current_stream_request = None;
+                        state.stream_lifecycle = None;
+                        if idx < state.messages.len() {
+                            state.messages.remove(idx);
+                        }
+                        stream::continue_agentic_loop(state, tx).await;
+                        return;
+                    }
+                    // Refused / Pass / None (incl. gate-off or infra error) → fall
+                    // through to the existing same-model resend / dead-stop. A
+                    // genuinely-disallowed prompt returns Refused and lands here,
+                    // so it is never rephrased-and-resent.
+                }
+            }
+
             if refusal_has_content && state.refusal_resend_count < refusal_resend_cap() {
                 state.refusal_resend_count += 1;
                 tracing::warn!(
@@ -228,6 +406,7 @@ pub async fn handle_stream_done(
                 return;
             }
             EmptyBilledAction::CapReached => {
+                empty_billed_refusal_cap_reached = stop_reason_is_refusal(&stop_reason);
                 tracing::warn!(
                     target: "jfc::stream::lifecycle",
                     assistant_idx = idx,
@@ -258,6 +437,8 @@ pub async fn handle_stream_done(
                 // (non-refusal) result also clears the refusal retry budget.
                 state.empty_billed_resend_count = 0;
                 state.refusal_resend_count = 0;
+                state.refusal_rewrite_retry_count = 0;
+                state.refusal_rewrite_attempts.clear();
             }
             EmptyBilledAction::None => {}
         }
@@ -410,7 +591,10 @@ pub async fn handle_stream_done(
             // API-responsiveness signal CC surfaces as `ttft_ms`. e.g.
             // `took 2m04s · $0.04 · ttft 420ms`.
             let label = match state.ttft_ms {
-                Some(ttft) => format!("{label} · ttft {}", crate::runtime::durations::format_ttft(ttft)),
+                Some(ttft) => format!(
+                    "{label} · ttft {}",
+                    crate::runtime::durations::format_ttft(ttft)
+                ),
                 None => label,
             };
             // Pull the assistant's text body for the
@@ -805,6 +989,10 @@ pub async fn handle_stream_done(
                     "Reply hit the max output-token limit — continuing it automatically."
                         .to_string()
                 }
+                jfc_provider::StopReason::Refusal if empty_billed_refusal_cap_reached => {
+                    "Provider returned blank refusal responses repeatedly — waiting for you."
+                        .to_string()
+                }
                 jfc_provider::StopReason::Refusal => "The model refused this request.".to_string(),
                 jfc_provider::StopReason::Other(s) if looks_like_refusal_stop_reason(s) => {
                     "The model refused this request.".to_string()
@@ -990,6 +1178,33 @@ fn refusal_resend_cap() -> u32 {
         .ok()
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(2)
+}
+
+/// Cap for the opt-in refusal→rewrite→resend loop. Configured value
+/// (`refusal_rewrite_retry_max`), default 3, hard-clamped to 20 since each round
+/// is a full extra request and a real refusal won't clear after a few tries.
+fn refusal_rewrite_retry_cap(max: Option<u32>) -> u32 {
+    max.unwrap_or(3).min(20)
+}
+
+/// Concatenate a message's `Text` parts (the user prompt body or refusal text).
+fn message_text_parts(msg: &crate::types::ChatMessage) -> String {
+    msg.parts
+        .iter()
+        .filter_map(|p| match p {
+            crate::types::MessagePart::Text(t) => Some(t.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+/// Replace a message's `Text` parts with `text`, preserving non-text parts (e.g.
+/// attachments) so a rephrased resend keeps the turn's other content.
+fn set_message_text_parts(msg: &mut crate::types::ChatMessage, text: String) {
+    msg.parts
+        .retain(|p| !matches!(p, crate::types::MessagePart::Text(_)));
+    msg.parts.insert(0, crate::types::MessagePart::Text(text));
 }
 
 /// Value-only snapshot of everything `decide_empty_billed` needs, so the
@@ -1292,6 +1507,195 @@ mod stream_done_lifecycle_tests {
         handle.abort();
     }
 
+    /// Scripted provider whose `complete()` drives the over-refusal rewrite gate
+    /// (classifier→rewriter→verifier) to a clarifying rewrite, so the
+    /// empty-refusal→rewrite→resend loop is testable end-to-end. `stream()` is the
+    /// inert empty stream (the resend's stream body isn't asserted here).
+    struct RewriteRetryProvider;
+    #[async_trait::async_trait]
+    impl Provider for RewriteRetryProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+        async fn complete(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            options: &StreamOptions,
+        ) -> anyhow::Result<jfc_provider::CompletionResponse> {
+            let sys = options.system.clone().unwrap_or_default();
+            let content = if sys.starts_with("You are a response refusal classifier") {
+                r#"{"verdict":"refused","confidence":0.92,"rationale":"declined the request"}"#
+            } else if sys.starts_with("You are a safety intent classifier") {
+                r#"{"goal_category":"other","verdict":"allowed","confidence":0.9}"#
+            } else if sys.starts_with("You rewrite") {
+                r#"{"original_intent":"tcp server","text":"Clarified request: write a TCP echo server in Rust using only the standard library.","rationale":"clarified scope"}"#
+            } else {
+                r#"{"intent_preserved":true,"introduced_harm":false}"#
+            };
+            Ok(jfc_provider::CompletionResponse {
+                content: content.to_string(),
+                usage: jfc_provider::TokenUsage::default(),
+            })
+        }
+    }
+    impl jfc_provider::seal::Sealed for RewriteRetryProvider {}
+
+    /// State with an empty-but-billed REFUSAL turn (the blank bubble) plus the
+    /// over-refusal rewrite gate enabled, so the loop can run end-to-end.
+    fn app_with_blank_refusal_and_gate(loop_enabled: bool) -> EngineState {
+        let mut state = EngineState::new(Arc::new(RewriteRetryProvider), "test-model");
+        state.task_store = jfc_session::TaskStore::in_memory();
+        state.refusal_rewrite_retry_enabled = loop_enabled;
+        state.prompt_rewrite = Some(jfc_config::PromptRewriteConfig {
+            enabled: true,
+            model: None,
+            threshold: None,
+            constitution: None,
+        });
+        state
+            .messages
+            .push(ChatMessage::user("write a tcp echo server in rust".into()));
+        let mut blank = ChatMessage::assistant(String::new());
+        blank.usage = Some(ModelUsage {
+            output_tokens: 48,
+            ..Default::default()
+        });
+        state.messages.push(blank);
+        state.streaming_assistant_idx = Some(1);
+        state.is_streaming = true;
+        state
+    }
+
+    fn app_with_content_refusal_and_gate(loop_enabled: bool) -> EngineState {
+        let mut state = EngineState::new(Arc::new(RewriteRetryProvider), "test-model");
+        state.task_store = jfc_session::TaskStore::in_memory();
+        state.refusal_rewrite_retry_enabled = loop_enabled;
+        state.prompt_rewrite = Some(jfc_config::PromptRewriteConfig {
+            enabled: true,
+            model: None,
+            threshold: None,
+            constitution: None,
+        });
+        state
+            .messages
+            .push(ChatMessage::user("write a tcp echo server in rust".into()));
+        let mut refusal = ChatMessage::assistant("I cannot help with that.".into());
+        refusal.usage = Some(ModelUsage {
+            output_tokens: 32,
+            ..Default::default()
+        });
+        state.messages.push(refusal);
+        state.streaming_assistant_idx = Some(1);
+        state.is_streaming = true;
+        state
+    }
+
+    // The reported bug ("multiple blanks"): the provider returns an EMPTY refusal
+    // (blank bubble, stop_reason=Refusal, no body) and the engine plain-resends
+    // the same prompt forever. With the opt-in loop enabled, an empty refusal must
+    // instead route through the rewrite gate and resend a *clarified* prompt.
+    #[tokio::test]
+    async fn empty_refusal_rewrites_and_resends_when_enabled() {
+        let mut state = app_with_blank_refusal_and_gate(true);
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_stream_done(&mut state, &tx, jfc_provider::StopReason::Refusal).await;
+
+        assert_eq!(
+            state.refusal_rewrite_retry_count, 1,
+            "one rewrite-retry consumed"
+        );
+        assert!(
+            state.is_streaming,
+            "a fresh stream must be staged for the resend"
+        );
+        // The user prompt was replaced with the gate's clarification for the resend.
+        let user = state
+            .messages
+            .iter()
+            .find(|m| matches!(m.role, crate::types::Role::User))
+            .expect("user turn present");
+        assert!(
+            message_text_contains(user, "Clarified request"),
+            "the resent prompt must be the gate's clarification"
+        );
+        // The pristine original is pinned at index 0 for subsequent rounds.
+        assert_eq!(state.refusal_rewrite_attempts.len(), 2);
+        assert_eq!(
+            state.refusal_rewrite_attempts[0],
+            "write a tcp echo server in rust"
+        );
+    }
+
+    // Regression: with the loop OFF (default), an empty refusal must NOT be
+    // rephrased — it falls through to the existing empty-billed ladder and the
+    // user's prompt is left untouched (no silent rewrite when not opted in).
+    #[tokio::test]
+    async fn empty_refusal_not_rewritten_when_disabled() {
+        let mut state = app_with_blank_refusal_and_gate(false);
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_stream_done(&mut state, &tx, jfc_provider::StopReason::Refusal).await;
+
+        assert_eq!(
+            state.refusal_rewrite_retry_count, 0,
+            "loop off → no rewrite"
+        );
+        assert!(state.refusal_rewrite_attempts.is_empty());
+        let user = state
+            .messages
+            .iter()
+            .find(|m| matches!(m.role, crate::types::Role::User))
+            .expect("user turn present");
+        assert!(
+            message_text_contains(user, "write a tcp echo server in rust"),
+            "the user prompt must be unchanged when the loop is off"
+        );
+    }
+
+    #[tokio::test]
+    async fn semantic_content_refusal_rewrites_when_classifier_flags() {
+        let mut state = app_with_content_refusal_and_gate(true);
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_stream_done(&mut state, &tx, jfc_provider::StopReason::EndTurn).await;
+
+        assert_eq!(
+            state.refusal_rewrite_retry_count, 1,
+            "classifier-detected content refusal consumes one rewrite retry"
+        );
+        assert!(
+            state.is_streaming,
+            "a classifier-detected refusal should stage a fresh stream"
+        );
+        let user = state
+            .messages
+            .iter()
+            .find(|m| matches!(m.role, crate::types::Role::User))
+            .expect("user turn present");
+        assert!(
+            message_text_contains(user, "Clarified request"),
+            "the resent prompt must be the gate's clarification"
+        );
+        assert!(
+            !state
+                .messages
+                .iter()
+                .any(|m| message_text_contains(m, "I cannot help with that.")),
+            "the refused assistant turn must be removed before retry"
+        );
+    }
+
     /// Build an `EngineState` whose streaming slot is an empty-but-billed assistant
     /// turn (no text/tools/reasoning, but `output_tokens > 0`) — the exact
     /// shape `handle_stream_done` must discard.
@@ -1461,6 +1865,41 @@ mod stream_done_lifecycle_tests {
                 .iter()
                 .any(|m| m.usage.as_ref().is_some_and(|u| u.output_tokens == 64)),
             "the billed empty assistant message must have been removed"
+        );
+        unsafe { std::env::remove_var("JFC_AUTO_CONTINUE") };
+    }
+
+    // Regression: after the bounded resend ladder is exhausted, a blank,
+    // billed provider refusal is a provider-output failure, not a semantic
+    // content refusal. The toast should name the blank-refusal condition so the
+    // user does not chase a nonexistent policy refusal.
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn empty_billed_refusal_cap_toast_names_blank_provider_failure_regression() {
+        unsafe { std::env::set_var("JFC_AUTO_CONTINUE", "1") };
+        let mut state = app_with_empty_billed_turn();
+        state.empty_billed_resend_count = empty_billed_resend_cap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_stream_done(&mut state, &tx, jfc_provider::StopReason::Refusal).await;
+
+        assert!(
+            state.toasts.iter().any(|t| t
+                .text
+                .contains("Provider returned blank refusal responses repeatedly")),
+            "cap-reached blank refusals need a provider-failure toast, got {:?}",
+            state
+                .toasts
+                .iter()
+                .map(|t| t.text.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            !state
+                .toasts
+                .iter()
+                .any(|t| t.text == "The model refused this request."),
+            "blank refusal cap must not surface as a normal semantic refusal"
         );
         unsafe { std::env::remove_var("JFC_AUTO_CONTINUE") };
     }

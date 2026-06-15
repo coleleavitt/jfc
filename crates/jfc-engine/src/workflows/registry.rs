@@ -464,22 +464,37 @@ if (effort.sweepMax > 0) {
   dismissed = dismissed.concat((sweepVerified || []).filter(function(v) { return v && !v.valid })).concat(sweepFailures)
 }
 
+// Marginal reporting (auto-review memoization): files whose content hash is
+// unchanged since the last review carry pre-existing findings; the report should
+// foreground findings on *changed* files and mark the rest as carried-over.
+const priorHashes = parseJson(argValue('prior_content_hashes', null), null) || {}
+const priorFiles = Object.keys(priorHashes)
+const isCarriedOver = function(f) {
+  const file = String((f && f.file) || '')
+  return priorFiles.indexOf(file) >= 0 || priorFiles.some(function(p) { return file.endsWith(p) || p.endsWith(file) })
+}
+const marginalFindings = findings.filter(function(f) { return !isCarriedOver(f) })
+
 phase('Synthesize')
 const final_report = await agent([
   'Write the final code review report for target: ' + parsed.target,
   'Findings JSON: ' + JSON.stringify(findings),
+  priorFiles.length ? ('Files reviewed before (unchanged content carries pre-existing findings): ' + JSON.stringify(priorFiles)) : null,
+  priorFiles.length ? ('Marginal (newly introduced this change) findings JSON: ' + JSON.stringify(marginalFindings)) : null,
+  priorFiles.length ? 'Lead with the marginal findings (newly introduced by this change). List carried-over findings separately and briefly so the report does not re-litigate pre-existing issues every run.' : null,
   'Dismissed count: ' + dismissed.length,
   'Workflow diagnostics JSON: ' + JSON.stringify(diagnostics),
   'If diagnostics is non-empty, include a short review-coverage note so the report does not imply failed stages were checked.',
   'Use a concise code-review style: findings first, ordered by severity, with file:line and concrete fix guidance.',
   'If there are no findings, say that clearly and note residual risk or test gaps.',
-].join('\n\n'), { label: 'synthesize', phase: 'Synthesize' })
+].filter(Boolean).join('\n\n'), { label: 'synthesize', phase: 'Synthesize' })
 
 return {
   level: parsed.level,
   target: parsed.target,
   candidates: candidates,
   findings: findings,
+  marginal_findings: marginalFindings,
   dismissed: dismissed,
   diagnostics: diagnostics,
   sweep_notes: sweep_notes,

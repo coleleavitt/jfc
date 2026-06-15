@@ -57,6 +57,9 @@ fn build_user_prompt(ctx: &RewriteContext<'_>, assessment: &IntentAssessment) ->
     ));
     s.push_str("Prompt to rewrite:\n");
     s.push_str(ctx.original);
+    // Response-side retry feedback (empty on first attempt). Rewriter-only — the
+    // classifier/gate/verifier never see this, preserving the safety invariant.
+    s.push_str(&ctx.rewriter_feedback_block());
     s
 }
 
