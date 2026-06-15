@@ -1123,6 +1123,19 @@ Do not use a colon before tool calls.";
         provider.stream_convention(),
     );
     opts = model_profile.clamp_options(opts);
+    // Log the resolved request params after per-model clamping so every spawn's
+    // actual reasoning_effort, max_tokens, and thinking mode are observable.
+    // Critical for experiments comparing model tiers / effort levels — the
+    // post-clamp values are what the model actually sees, not the input strings.
+    tracing::debug!(
+        target: "jfc::stream",
+        model = %model,
+        reasoning_effort = ?opts.reasoning_effort,
+        max_tokens = opts.max_tokens,
+        adaptive_thinking = opts.adaptive_thinking,
+        thinking_budget = ?opts.thinking_budget,
+        "resolved request after clamp_options"
+    );
     if let Some(max) = overrides.max_thinking_tokens
         && let Some(budget) = opts.thinking_budget.as_mut()
     {

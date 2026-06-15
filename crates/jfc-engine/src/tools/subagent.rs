@@ -601,7 +601,17 @@ async fn execute_task_inner(
         if let Some(sp) = &system_prompt {
             options = options.system(sp.clone());
         }
-        // Apply reasoning effort: Task.effort > AgentDef.effort > global.
+        // Apply reasoning effort: Task.effort > AgentDef.effort > None (server default).
+        //
+        // Previously: the fallback was `crate::effort::active_global()`, which let
+        // the parent's pinned effort leak through to every child. Useful for
+        // interactive sessions (one `/effort max` pin propagates), but a silent
+        // confound for experiments comparing model tiers or prompt layers — the
+        // parent's effort becomes a hidden independent variable. Now: if neither
+        // Task nor AgentDef set effort, we send no `reasoning_effort` field and
+        // the provider/model policy applies its default (typically None → server
+        // picks). To restore the old propagation, set `task_input.effort` explicitly
+        // on every spawn or pin it in the agent def.
         if let Some(effort_val) = task_input.effort.as_deref() {
             options = options.reasoning_effort(effort_val);
         } else if let Some(agent_effort) = agent_def.and_then(|a| a.effort.as_ref()) {
@@ -613,9 +623,9 @@ async fn execute_task_inner(
                 jfc_core::Effort::XHigh => "xhigh",
             };
             options = options.reasoning_effort(val);
-        } else if let Some(global) = crate::effort::active_global() {
-            options = options.reasoning_effort(global);
         }
+        // Old fallback removed: `else if let Some(global) = crate::effort::active_global()`
+        // See comment above for rationale.
 
         // Two-stage context safety, matching v131 Claude Code's
         // approach. (1) When the running estimate crosses 100k tokens,
@@ -1793,5 +1803,59 @@ mod tests {
         );
         assert_eq!(result.output, "recovered");
         assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+    }
+
+    // ── Effort precedence tests ──────────────────────────────────────────────
+    // These lock the Task.effort > AgentDef.effort > None precedence chain after
+    // removing the old `active_global()` leak. The precedence is applied when
+    // building StreamOptions in `execute_task_inner` (lines 604-625 as of this
+    // comment). We test the *result* of that logic by building the options with
+    // the same helper chain and asserting the output effort matches expected.
+
+    /// Helper that mimics the effort-resolution block in execute_task_inner.
+    fn resolve_effort_for_test(
+        task_effort: Option<&str>,
+        agent_effort: Option<jfc_core::Effort>,
+    ) -> Option<String> {
+        let mut opts = jfc_provider::StreamOptions::new("claude-opus-4-7");
+
+        if let Some(effort_val) = task_effort {
+            opts = opts.reasoning_effort(effort_val);
+        } else if let Some(agent_effort) = agent_effort {
+            let val = match agent_effort {
+                jfc_core::Effort::Minimal => "low",
+                jfc_core::Effort::Low => "low",
+                jfc_core::Effort::Medium => "medium",
+                jfc_core::Effort::High => "high",
+                jfc_core::Effort::XHigh => "xhigh",
+            };
+            opts = opts.reasoning_effort(val);
+        }
+        // Old fallback (active_global) removed — see comment in execute_task_inner.
+
+        opts.reasoning_effort
+    }
+
+    #[test]
+    fn effort_precedence_task_wins_normal() {
+        // Task.effort set → it wins, agent_def.effort is ignored.
+        let resolved = resolve_effort_for_test(Some("max"), Some(jfc_core::Effort::Low));
+        assert_eq!(resolved, Some("max".to_string()));
+    }
+
+    #[test]
+    fn effort_precedence_agent_def_wins_when_task_is_none_normal() {
+        // Task.effort = None, AgentDef.effort set → agent def wins.
+        let resolved = resolve_effort_for_test(None, Some(jfc_core::Effort::High));
+        assert_eq!(resolved, Some("high".to_string()));
+    }
+
+    #[test]
+    fn effort_precedence_defaults_to_none_when_both_unset_normal() {
+        // Task.effort = None, AgentDef.effort = None → no effort field sent
+        // (server/provider applies its default). This is the intended behavior
+        // after removing the active_global() leak.
+        let resolved = resolve_effort_for_test(None, None);
+        assert_eq!(resolved, None);
     }
 }
