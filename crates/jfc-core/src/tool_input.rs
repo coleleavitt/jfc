@@ -353,6 +353,7 @@ macro_rules! for_each_regular_tool_input {
             SetGoal => { condition: req_str @ "condition" }
             Research => { question: req_str @ "question", export: bool_field @ "export" }
             Council => { question: req_str @ "question", models: str_vec @ "models" }
+            AskModel => { model: req_str @ "model", prompt: req_str @ "prompt", system: opt_str @ "system" }
         }
     };
 }
@@ -876,6 +877,11 @@ pub enum ToolInput {
         question: String,
         models: Vec<String>,
     },
+    AskModel {
+        model: String,
+        prompt: String,
+        system: Option<String>,
+    },
     Generic {
         summary: String,
     },
@@ -1202,6 +1208,10 @@ impl ToolInput {
             Self::Council { question, .. } => {
                 let preview: String = question.chars().take(60).collect();
                 format!("council: {preview}")
+            }
+            Self::AskModel { model, prompt, .. } => {
+                let preview: String = prompt.chars().take(50).collect();
+                format!("ask {model}: {preview}")
             }
         }
     }
@@ -2325,6 +2335,47 @@ mod macro_equivalence_tests {
     fn council_models_default_empty_robust() {
         let input = ToolInput::from_value("council", json!({"question": "q"})).unwrap();
         assert!(matches!(input, ToolInput::Council { ref models, .. } if models.is_empty()));
+    }
+
+    #[test]
+    fn ask_model_parses_and_serializes_normal() {
+        let input = ToolInput::from_value(
+            "AskModel",
+            json!({"model": "gpt-5.5", "prompt": "what is rayleigh scattering?", "system": "be terse"}),
+        )
+        .unwrap();
+        assert!(matches!(
+            input,
+            ToolInput::AskModel { ref model, ref prompt, ref system }
+                if model == "gpt-5.5"
+                    && prompt == "what is rayleigh scattering?"
+                    && system.as_deref() == Some("be terse")
+        ));
+        assert_eq!(input.to_value()["model"], json!("gpt-5.5"));
+        assert_eq!(input.to_value()["prompt"], json!("what is rayleigh scattering?"));
+        assert!(input.summary().contains("ask gpt-5.5"));
+        assert_eq!(ToolKind::from_name("ask_model"), ToolKind::AskModel);
+        assert_eq!(ToolKind::from_name("ask"), ToolKind::AskModel);
+        assert_eq!(ToolKind::AskModel.api_name(), "ask_model");
+    }
+
+    #[test]
+    fn ask_model_system_optional_robust() {
+        let input =
+            ToolInput::from_value("ask", json!({"model": "claude-opus-4-7", "prompt": "hi"}))
+                .unwrap();
+        assert!(matches!(
+            input,
+            ToolInput::AskModel { system: None, .. }
+        ));
+    }
+
+    #[test]
+    fn ask_model_requires_model_and_prompt_robust() {
+        // Missing prompt → parse error (req_str).
+        assert!(ToolInput::from_value("AskModel", json!({"model": "gpt-5.5"})).is_err());
+        // Missing model → parse error.
+        assert!(ToolInput::from_value("AskModel", json!({"prompt": "hi"})).is_err());
     }
 
     // ─── tool_input_coerced (CC 2.1.170 parity) ─────────────────────────────

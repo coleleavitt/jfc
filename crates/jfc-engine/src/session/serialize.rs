@@ -511,7 +511,8 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         | ToolInput::SetGoal { .. }
         | ToolInput::Research { .. }
         | ToolInput::SlashCommand { .. }
-        | ToolInput::Council { .. } => serialize_generic_tool_input_json(input),
+        | ToolInput::Council { .. }
+        | ToolInput::AskModel { .. } => serialize_generic_tool_input_json(input),
     }
 }
 pub fn serialize_generic_tool_input_json(input: &ToolInput) -> SerializedToolInput {

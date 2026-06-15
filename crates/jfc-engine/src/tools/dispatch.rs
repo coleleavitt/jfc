@@ -1400,6 +1400,11 @@ pub async fn execute_tool(
                  direct manual query."
                 .to_string(),
         ),
+        (ToolKind::AskModel, ToolInput::AskModel { .. }) => ExecutionResult::failure(
+            "AskModel must be executed through the stream dispatcher so JFC can \
+                 resolve the requested provider/model from the registry."
+                .to_string(),
+        ),
         (ToolKind::ConnectGitHub, ToolInput::ConnectGitHub {}) => ExecutionResult::failure(
             "ConnectGitHub is not supported in this environment. \
                  Use `gh auth login` via the Bash tool instead."

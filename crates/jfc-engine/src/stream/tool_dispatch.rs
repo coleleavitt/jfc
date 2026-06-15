@@ -12,6 +12,11 @@ use crate::scheduler;
 use crate::types::{ChatMessage, ToolCall, ToolInput, ToolKind};
 use jfc_provider::{ModelId, Provider};
 
+/// Max output tokens for a single `AskModel` one-shot completion. Matches the
+/// council member default — enough for a substantive prose answer without
+/// inviting a runaway generation on every mid-turn cross-model call.
+const ASK_MODEL_MAX_TOKENS: u32 = 2048;
+
 #[derive(Clone)]
 pub struct LocalAdvisorDispatchContext {
     pub targets: Vec<crate::advisor::LocalAdvisorProviderTarget>,
@@ -99,11 +104,13 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
     let mut workflow_calls: Vec<ToolCall> = Vec::new();
     let mut advisor_calls: Vec<ToolCall> = Vec::new();
     let mut council_calls: Vec<ToolCall> = Vec::new();
+    let mut ask_model_calls: Vec<ToolCall> = Vec::new();
     let mut research_calls: Vec<ToolCall> = Vec::new();
     for tc in tool_calls {
         match (&tc.kind, &tc.input) {
             (ToolKind::Advisor, ToolInput::Advisor {}) => advisor_calls.push(tc),
             (ToolKind::Council, ToolInput::Council { .. }) => council_calls.push(tc),
+            (ToolKind::AskModel, ToolInput::AskModel { .. }) => ask_model_calls.push(tc),
             (ToolKind::Research, ToolInput::Research { .. }) => research_calls.push(tc),
             (_, ToolInput::Task(_)) => task_calls.push(tc),
             (_, ToolInput::Workflow { .. }) => workflow_calls.push(tc),
@@ -115,11 +122,12 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
     let workflow_count = workflow_calls.len();
     let advisor_count = advisor_calls.len();
     let council_count = council_calls.len();
+    let ask_model_count = ask_model_calls.len();
     let research_count = research_calls.len();
     let regular_count = regular_calls.len();
     tracing::info!(
         target: "jfc::stream",
-        task_count, workflow_count, advisor_count, council_count, research_count, regular_count,
+        task_count, workflow_count, advisor_count, council_count, ask_model_count, research_count, regular_count,
         "dispatch_tools_batched: splitting tool calls"
     );
     let pending = Arc::new(AtomicUsize::new(
@@ -127,6 +135,7 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
             + workflow_count
             + advisor_count
             + council_count
+            + ask_model_count
             + research_count
             + usize::from(!regular_calls.is_empty()),
     ));
@@ -219,6 +228,49 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
         });
     }
 
+    // AskModel: a single direct, tool-less completion against ONE arbitrary
+    // model resolved from the provider registry, threaded back as the tool
+    // result. Runs out-of-band like the advisor/council. This is the mid-turn
+    // cross-model handoff primitive (e.g. Claude asks gpt-5.5 inline).
+    for tc in ask_model_calls {
+        let tx_ask = tx.clone();
+        let done = send_all_complete.clone();
+        let tool_id = tc.id.clone();
+        let cancel_ask = cancel.clone();
+        let active_provider = provider.clone();
+        let active_model = model.clone();
+        let registry = providers.clone();
+        let (req_model, prompt, system) = match tc.input.clone() {
+            ToolInput::AskModel {
+                model,
+                prompt,
+                system,
+            } => (model, prompt, system),
+            _ => (String::new(), String::new(), None),
+        };
+        tokio::spawn(async move {
+            let result = tokio::select! {
+                biased;
+                _ = cancel_ask.cancelled() => {
+                    crate::runtime::ExecutionResult::failure("AskModel cancelled by user")
+                }
+                result = run_ask_model_tool(
+                    req_model,
+                    prompt,
+                    system,
+                    active_provider,
+                    active_model,
+                    registry,
+                ) => result,
+            };
+            send_critical(
+                &tx_ask,
+                EngineEvent::Tool(ToolEvent::Result { tool_id, result }),
+            );
+            done();
+        });
+    }
+
     // Research: an agentic web+codebase research loop driven by the active
     // model (planner reformulates queries from evidence, synthesizer writes the
     // cited answer). Runs out-of-band like the advisor/council — it gets the
@@ -301,6 +353,7 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
             &agents,
             current_session_id.as_deref(),
             teammate_event_tx.clone(),
+            &providers,
             send_all_complete.clone(),
         ) {
             continue;
@@ -1136,6 +1189,71 @@ fn build_task_notification(
     body
 }
 
+/// Execute a model-invocable `AskModel` tool call out-of-band: resolve the
+/// requested model to a `(provider, model)`, run one tool-less prose completion
+/// via the shared one-shot executor, and return its reply. The active model's
+/// provider is the fallback when the requested id resolves to nothing concrete
+/// but the active provider can run it (e.g. an unprefixed sibling model).
+async fn run_ask_model_tool(
+    requested_model: String,
+    prompt: String,
+    system: Option<String>,
+    active_provider: Arc<dyn Provider>,
+    active_model: ModelId,
+    registry: Vec<Arc<dyn Provider>>,
+) -> crate::runtime::ExecutionResult {
+    use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole, StreamOptions};
+
+    let requested_model = requested_model.trim().to_owned();
+    let prompt = prompt.trim().to_owned();
+    if requested_model.is_empty() {
+        return crate::runtime::ExecutionResult::failure("AskModel requires a non-empty `model`.");
+    }
+    if prompt.is_empty() {
+        return crate::runtime::ExecutionResult::failure("AskModel requires a non-empty `prompt`.");
+    }
+
+    // Resolve the requested id against the full registry; fall back to the
+    // active (provider, model) when it can't be resolved but the active model
+    // matches the request, so a bare sibling id still works without a registry.
+    let (target_provider, target_model) =
+        match crate::runtime::bootstrap::resolve_provider_model(&registry, &requested_model) {
+            Some(res) => (res.provider, res.model),
+            None => {
+                if active_model.as_str() == requested_model {
+                    (active_provider, active_model.clone())
+                } else {
+                    return crate::runtime::ExecutionResult::failure(format!(
+                        "AskModel could not resolve model `{requested_model}` against any \
+                         configured provider."
+                    ));
+                }
+            }
+        };
+
+    let qualified =
+        crate::runtime::bootstrap::qualified_model_id(target_provider.as_ref(), &target_model);
+
+    let mut opts = StreamOptions::new(target_model.clone()).max_tokens(ASK_MODEL_MAX_TOKENS);
+    if let Some(sys) = system.as_deref().filter(|s| !s.trim().is_empty()) {
+        opts = opts.system(sys.to_owned());
+    }
+    let messages = vec![ProviderMessage {
+        role: ProviderRole::User,
+        content: vec![ProviderContent::Text(prompt)],
+    }];
+
+    match crate::prompt_executor::complete_once(target_provider.as_ref(), messages, &opts).await {
+        Ok(resp) => crate::runtime::ExecutionResult::success(format!(
+            "{}\n\n_(answered by `{qualified}`)_",
+            resp.content
+        )),
+        Err(e) => crate::runtime::ExecutionResult::failure(format!(
+            "AskModel call to `{qualified}` failed: {e}"
+        )),
+    }
+}
+
 /// Execute a model-invocable `Council` tool call out-of-band. Members are the
 /// active model plus the local advisor model (when configured + distinct), each
 /// already resolved to a `(provider, model)` by the dispatch context — so the
@@ -1288,6 +1406,20 @@ mod council_member_tests {
 
     struct NamedProvider {
         name: &'static str,
+        /// When set, `complete()` returns this canned answer; otherwise it errors.
+        reply: Option<&'static str>,
+    }
+
+    impl NamedProvider {
+        fn new(name: &'static str) -> Self {
+            Self { name, reply: None }
+        }
+        fn answering(name: &'static str, reply: &'static str) -> Self {
+            Self {
+                name,
+                reply: Some(reply),
+            }
+        }
     }
 
     #[async_trait]
@@ -1305,21 +1437,32 @@ mod council_member_tests {
             Err(anyhow!("unused"))
         }
         async fn complete(&self, _m: Vec<PMsg>, _o: &SOpts) -> Result<CompletionResponse> {
-            Err(anyhow!("unused"))
+            match self.reply {
+                Some(content) => Ok(CompletionResponse {
+                    content: content.to_owned(),
+                    usage: jfc_provider::TokenUsage {
+                        input_tokens: 10,
+                        output_tokens: 5,
+                        cache_read_tokens: 0,
+                        cache_creation_tokens: 0,
+                    },
+                }),
+                None => Err(anyhow!("unused")),
+            }
         }
     }
     impl jfc_provider::seal::Sealed for NamedProvider {}
 
     fn registry() -> Vec<Arc<dyn Provider>> {
         vec![
-            Arc::new(NamedProvider { name: "alpha" }) as Arc<dyn Provider>,
-            Arc::new(NamedProvider { name: "beta" }) as Arc<dyn Provider>,
+            Arc::new(NamedProvider::new("alpha")) as Arc<dyn Provider>,
+            Arc::new(NamedProvider::new("beta")) as Arc<dyn Provider>,
         ]
     }
 
     fn active() -> (Arc<dyn Provider>, ModelId) {
         (
-            Arc::new(NamedProvider { name: "alpha" }) as Arc<dyn Provider>,
+            Arc::new(NamedProvider::new("alpha")) as Arc<dyn Provider>,
             ModelId::new("active-model"),
         )
     }
@@ -1394,5 +1537,57 @@ mod council_member_tests {
         let (members, unresolved) = resolve_council_members(&[], &ap, &am, None, &registry());
         assert_eq!(members.len(), 1);
         assert!(unresolved.is_empty());
+    }
+
+    // ─── AskModel dispatch path ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn ask_model_resolves_and_answers_normal() {
+        // A registry provider that actually answers; AskModel resolves
+        // `beta/m` to it and threads the reply back as a success result.
+        let registry: Vec<Arc<dyn Provider>> = vec![
+            Arc::new(NamedProvider::new("alpha")) as Arc<dyn Provider>,
+            Arc::new(NamedProvider::answering("beta", "Rayleigh scattering."))
+                as Arc<dyn Provider>,
+        ];
+        let (ap, am) = active();
+        let result = run_ask_model_tool(
+            "beta/m".to_owned(),
+            "why is the sky blue?".to_owned(),
+            None,
+            ap,
+            am,
+            registry,
+        )
+        .await;
+        assert!(!result.is_error(), "expected success: {}", result.output);
+        assert!(result.output.contains("Rayleigh scattering."));
+        assert!(result.output.contains("answered by `beta/m`"));
+    }
+
+    #[tokio::test]
+    async fn ask_model_unresolved_is_error_robust() {
+        let (ap, am) = active();
+        let result = run_ask_model_tool(
+            "ghost/nope".to_owned(),
+            "hi".to_owned(),
+            None,
+            ap,
+            am,
+            registry(),
+        )
+        .await;
+        assert!(result.is_error());
+        assert!(result.output.contains("could not resolve model `ghost/nope`"));
+    }
+
+    #[tokio::test]
+    async fn ask_model_empty_prompt_is_error_robust() {
+        let (ap, am) = active();
+        let result =
+            run_ask_model_tool("beta/m".to_owned(), "   ".to_owned(), None, ap, am, registry())
+                .await;
+        assert!(result.is_error());
+        assert!(result.output.contains("non-empty `prompt`"));
     }
 }

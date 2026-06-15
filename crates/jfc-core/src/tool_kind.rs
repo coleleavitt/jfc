@@ -98,6 +98,7 @@ pub enum ToolKind {
     SetGoal,
     Research,
     Council,
+    AskModel,
     ServerWebSearch,
     ServerCodeExecution,
     ServerAdvisor,
@@ -270,6 +271,7 @@ impl ToolKind {
             Self::SetGoal => ["set_goal", "setgoal"],
             Self::Research => ["research", "deep_research"],
             Self::Council => ["council", "model_council"],
+            Self::AskModel => ["ask_model", "askmodel", "ask"],
         )
     }
 
@@ -406,6 +408,7 @@ impl ToolKind {
             Self::SetGoal => "SetGoal",
             Self::Research => "Research",
             Self::Council => "Council",
+            Self::AskModel => "AskModel",
             Self::ServerWebSearch => "ServerWebSearch",
             Self::ServerCodeExecution => "ServerCodeExecution",
             Self::ServerAdvisor => "ServerAdvisor",
@@ -537,6 +540,7 @@ impl ToolKind {
             Self::SetGoal => "set_goal",
             Self::Research => "research",
             Self::Council => "council",
+            Self::AskModel => "ask_model",
             Self::ServerWebSearch => "server_tool_use:web_search",
             Self::ServerCodeExecution => "server_tool_use:code_execution",
             Self::ServerAdvisor => "server_tool_use:advisor",

@@ -33,6 +33,11 @@ pub fn try_spawn_teammate(
     agents: &[AgentDef],
     current_session_id: Option<&str>,
     teammate_event_tx: mpsc::UnboundedSender<TeammateEvent>,
+    // Full provider registry, so a teammate whose selected model belongs to a
+    // different provider than the leader (e.g. a `gpt-5.5` teammate spawned
+    // from a Claude leader) is bound to ITS OWN provider rather than silently
+    // inheriting the leader's. Empty falls back to the leader's provider.
+    registry: &[Arc<dyn Provider>],
     done: impl FnOnce() + Send + 'static,
 ) -> bool {
     if !task_input.is_teammate_spawn() {
@@ -71,6 +76,15 @@ pub fn try_spawn_teammate(
     };
     let teammate_model_name = teammate_model.as_str().to_string();
 
+    // Bind the teammate to the provider that actually serves its selected
+    // model. When the leader runs Claude but the teammate's model is `gpt-5.5`,
+    // inheriting the leader's provider would send the request to the wrong API.
+    // Resolve against the registry; only the (provider, model) pair changes —
+    // everything else (mailbox, task store, system prompt) is identical, so
+    // heterogeneous teammates debate through the same swarm machinery.
+    let (teammate_provider, teammate_model) =
+        bind_teammate_provider(registry, provider.clone(), teammate_model);
+
     let config = TeammateRunnerConfig {
         identity: TeammateIdentity {
             agent_id: agent_id.clone(),
@@ -84,7 +98,7 @@ pub fn try_spawn_teammate(
         description: task_input.description.clone(),
         model: Some(teammate_model_name.clone()),
         agent_type: task_input.subagent_type.clone(),
-        provider: provider.clone(),
+        provider: teammate_provider,
         model_id: teammate_model,
         system_prompt: None,
         task_store: Some(jfc_session::TaskStore::open_team(&team_name)),
@@ -174,4 +188,100 @@ pub fn try_spawn_teammate(
     );
     done();
     true
+}
+
+/// Resolve the `(provider, model)` a teammate should run under. The selected
+/// `model` is matched against the full provider `registry`: when a provider
+/// serves that model id, the teammate is bound to it (enabling heterogeneous
+/// teammates — e.g. a `gpt-5.5` teammate under a Claude leader). When nothing
+/// resolves (no registry, or an unknown id), the teammate falls back to the
+/// leader's `fallback_provider` and the unchanged model id.
+fn bind_teammate_provider(
+    registry: &[Arc<dyn Provider>],
+    fallback_provider: Arc<dyn Provider>,
+    model: ModelId,
+) -> (Arc<dyn Provider>, ModelId) {
+    match crate::runtime::bootstrap::resolve_provider_model(registry, model.as_str()) {
+        Some(res) => (res.provider, res.model),
+        None => (fallback_provider, model),
+    }
+}
+
+#[cfg(test)]
+mod teammate_provider_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use jfc_provider::{
+        CompletionResponse, EventStream, ModelInfo, ProviderMessage as PMsg, StreamConvention,
+        StreamOptions as SOpts,
+    };
+
+    struct NamedProvider {
+        name: &'static str,
+    }
+
+    #[async_trait]
+    impl Provider for NamedProvider {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        fn stream_convention(&self) -> StreamConvention {
+            StreamConvention::AnthropicNative
+        }
+        async fn stream(&self, _m: Vec<PMsg>, _o: &SOpts) -> anyhow::Result<EventStream> {
+            anyhow::bail!("unused")
+        }
+        async fn complete(&self, _m: Vec<PMsg>, _o: &SOpts) -> anyhow::Result<CompletionResponse> {
+            anyhow::bail!("unused")
+        }
+    }
+    impl jfc_provider::seal::Sealed for NamedProvider {}
+
+    fn registry() -> Vec<Arc<dyn Provider>> {
+        vec![
+            Arc::new(NamedProvider { name: "openai" }) as Arc<dyn Provider>,
+            Arc::new(NamedProvider {
+                name: "anthropic",
+            }) as Arc<dyn Provider>,
+        ]
+    }
+
+    #[test]
+    fn teammate_bound_to_its_own_provider_normal() {
+        // A `openai/gpt-5.5` teammate spawned from a Claude (anthropic) leader
+        // resolves to the openai provider, not the leader's.
+        let leader = Arc::new(NamedProvider {
+            name: "anthropic",
+        }) as Arc<dyn Provider>;
+        let (provider, model) =
+            bind_teammate_provider(&registry(), leader, ModelId::new("openai/gpt-5.5"));
+        assert_eq!(provider.name(), "openai");
+        // The provider prefix is stripped from the model id before sending.
+        assert_eq!(model.as_str(), "gpt-5.5");
+    }
+
+    #[test]
+    fn teammate_falls_back_to_leader_when_unresolved_robust() {
+        // An unknown/unqualified model that no registry provider claims falls
+        // back to the leader's provider and unchanged id.
+        let leader = Arc::new(NamedProvider {
+            name: "anthropic",
+        }) as Arc<dyn Provider>;
+        let (provider, model) =
+            bind_teammate_provider(&registry(), leader, ModelId::new("mystery-model"));
+        assert_eq!(provider.name(), "anthropic");
+        assert_eq!(model.as_str(), "mystery-model");
+    }
+
+    #[test]
+    fn teammate_falls_back_with_empty_registry_robust() {
+        let leader = Arc::new(NamedProvider { name: "openai" }) as Arc<dyn Provider>;
+        let (provider, model) =
+            bind_teammate_provider(&[], leader, ModelId::new("openai/gpt-5.5"));
+        assert_eq!(provider.name(), "openai");
+        assert_eq!(model.as_str(), "openai/gpt-5.5");
+    }
 }

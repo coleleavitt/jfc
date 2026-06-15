@@ -322,5 +322,39 @@ pub fn agent_tool_defs() -> Vec<ToolDef> {
                 "required": ["question"]
             }),
         },
+        ToolDef {
+            name: "AskModel".into(),
+            description: "Ask a specific model a one-shot question mid-turn and get its reply \
+                threaded back into this conversation. Unlike Council (parallel fan-out + \
+                arbiter) this is a single direct call to ONE model — use it to pull a \
+                different model into the current turn: e.g. ask `gpt-5.5` for its take while \
+                you (Claude) keep driving, then react to its answer. The reply returns as \
+                this tool's result, so you can challenge it, build on it, or ask a follow-up \
+                with another AskModel call. Runs out-of-band (no tools, prose only) like the \
+                advisor.\n\n\
+                Use for cross-model second opinions, comparing how a different model family \
+                reasons about the same prompt, or interleaving two models within one task. \
+                The `model` is resolved against the configured providers (e.g. `gpt-5.5`, \
+                `openai/gpt-5.5`, `claude-opus-4-7`).".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Model id to ask, resolved against configured providers \
+                            (e.g. `gpt-5.5`, `openai/gpt-5.5`, `claude-opus-4-7`)."
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "The prompt / question to send to that model."
+                    },
+                    "system": {
+                        "type": "string",
+                        "description": "Optional system prompt to steer the asked model's role."
+                    }
+                },
+                "required": ["model", "prompt"]
+            }),
+        },
     ]
 }
