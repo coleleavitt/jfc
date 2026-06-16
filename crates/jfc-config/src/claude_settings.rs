@@ -718,6 +718,7 @@ fn apply_chrome_mcp_auto_enable(cfg: &mut Config, settings: &ClaudeCompatibility
             command: Some(chrome_mcp_command()),
             args: chrome_mcp_args(),
             env: HashMap::new(),
+            env_file: None,
             headers: HashMap::new(),
             url: None,
         },
@@ -1105,6 +1106,13 @@ fn push_hook(out: &mut ShellHooksConfig, event: &str, entry: crate::ShellHookEnt
         "FileChanged" | "fileChanged" | "file_changed" => out.file_changed.push(entry),
         "TeammateIdle" | "teammateIdle" | "teammate_idle" => out.teammate_idle.push(entry),
         "StopFailure" | "stopFailure" | "stop_failure" => out.stop_failure.push(entry),
+        "UserInterrupt" | "userInterrupt" | "user_interrupt" => out.user_interrupt.push(entry),
+        "ModelResponseChunk" | "modelResponseChunk" | "model_response_chunk" => {
+            out.model_response_chunk.push(entry)
+        }
+        "UserInputRequired" | "userInputRequired" | "user_input_required" => {
+            out.user_input_required.push(entry)
+        }
         _ => {}
     }
 }

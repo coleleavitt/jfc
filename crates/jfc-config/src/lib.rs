@@ -155,6 +155,44 @@ pub struct Config {
         alias = "refusalRewriteRetryMax"
     )]
     pub refusal_rewrite_retry_max: Option<u32>,
+    /// Queue user messages during active streaming turns instead of
+    /// interrupting. When `true`, submitting a new prompt while a turn is
+    /// streaming always queues it behind the current turn rather than
+    /// cancelling. The `/queue` command shows pending queued messages and
+    /// `/queue clear` discards them. Default `false`.
+    #[serde(default)]
+    pub message_queue_mode: bool,
+    /// Seed subagent contexts with the parent's CLAUDE.md summary when spawning
+    /// via the Task tool. When `true`, the spawn path attaches a compact
+    /// context block as `forksParentContext` in the subagent's system prompt
+    /// so it can skip redundant codebase re-scans. Off by default (opt-in).
+    #[serde(default)]
+    pub subagent_context_inheritance: bool,
+    /// Show the startup welcome/nudge banner when jfc opens (default: true).
+    /// Set `show_startup_banner = false` to suppress the one-time nudge
+    /// message shown at launch. Has no effect after the nudge marker file
+    /// is created (i.e. after the first run).
+    #[serde(default = "default_true")]
+    pub show_startup_banner: bool,
+    /// Shell to use for the Bash tool. Defaults to `bash`. Example: `/bin/zsh`
+    /// or `fish`. The shell is invoked as `<shell> -c <command>` so it must
+    /// support that interface.
+    #[serde(default, alias = "bashShell", skip_serializing_if = "Option::is_none")]
+    pub bash_shell: Option<String>,
+    /// Path to a base config file to inherit settings from. Keys in the local
+    /// config override inherited ones; unset local keys fall back to the base.
+    /// Resolved relative to the directory containing the local config file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends: Option<std::path::PathBuf>,
+    /// Compact when context reaches this percentage of the context window
+    /// (0–100). Default 85. Ignored when auto-compact is disabled.
+    #[serde(default = "default_auto_compact_threshold_pct")]
+    pub auto_compact_threshold_pct: u8,
+    /// Always expand and show model thinking blocks (default: false, collapsed).
+    /// When true, every completed thinking block is rendered expanded instead
+    /// of collapsing to a one-line teaser.
+    #[serde(default)]
+    pub always_show_thinking: bool,
 }
 
 /// Controls what happens when an agent requested worktree isolation but the
@@ -376,6 +414,9 @@ fn default_plan_recall_enabled() -> bool {
 fn default_auto_compact_enabled() -> bool {
     true
 }
+fn default_auto_compact_threshold_pct() -> u8 {
+    85
+}
 fn default_true() -> bool {
     true
 }
@@ -502,6 +543,101 @@ impl Default for Config {
             refusal_fallback_model: None,
             refusal_rewrite_retry_enabled: false,
             refusal_rewrite_retry_max: None,
+            message_queue_mode: false,
+            subagent_context_inheritance: false,
+            show_startup_banner: default_true(),
+            bash_shell: None,
+            extends: None,
+            auto_compact_threshold_pct: default_auto_compact_threshold_pct(),
+            always_show_thinking: false,
+        }
+    }
+}
+
+impl Config {
+    /// Merge `other` (local override) on top of `self` (base). For every
+    /// `Option<T>` field, the local value wins when it is `Some`; otherwise
+    /// the base value is used. For plain-bool/scalar fields the local wins
+    /// unconditionally. Collections (Vec, HashMap) are replaced by the local
+    /// copy when non-empty; the base copy is kept when the local is empty.
+    pub fn merge_with(self, other: Self) -> Self {
+        macro_rules! local_or_base {
+            ($field:ident) => {
+                other.$field.or(self.$field)
+            };
+        }
+        macro_rules! local_wins {
+            ($field:ident) => {
+                other.$field
+            };
+        }
+        macro_rules! nonempty_or_base {
+            ($field:ident) => {
+                if other.$field.is_empty() {
+                    self.$field
+                } else {
+                    other.$field
+                }
+            };
+        }
+
+        Self {
+            // Scalar / plain-bool: local wins.
+            slate_enabled: local_wins!(slate_enabled),
+            memory_recall_enabled: local_wins!(memory_recall_enabled),
+            plan_recall_enabled: local_wins!(plan_recall_enabled),
+            auto_compact_enabled: local_wins!(auto_compact_enabled),
+            auto_compact_threshold_pct: local_wins!(auto_compact_threshold_pct),
+            always_show_thinking: local_wins!(always_show_thinking),
+            copy_on_select: local_wins!(copy_on_select),
+            refusal_fallback_enabled: local_wins!(refusal_fallback_enabled),
+            refusal_rewrite_retry_enabled: local_wins!(refusal_rewrite_retry_enabled),
+            message_queue_mode: local_wins!(message_queue_mode),
+            subagent_context_inheritance: local_wins!(subagent_context_inheritance),
+            show_startup_banner: local_wins!(show_startup_banner),
+            // Option<T>: local wins when Some, else fall through to base.
+            permission_automation: local_or_base!(permission_automation),
+            background_task: local_or_base!(background_task),
+            argus_auto_review: local_or_base!(argus_auto_review),
+            prompt_rewrite: local_or_base!(prompt_rewrite),
+            pair: local_or_base!(pair),
+            redteam: local_or_base!(redteam),
+            experimental: local_or_base!(experimental),
+            theme: local_or_base!(theme),
+            output_style: local_or_base!(output_style),
+            advisor_model: local_or_base!(advisor_model),
+            advisor_enabled: local_or_base!(advisor_enabled),
+            server_advisor_model: local_or_base!(server_advisor_model),
+            council_verdict: local_or_base!(council_verdict),
+            council: local_or_base!(council),
+            slate_rules: local_or_base!(slate_rules),
+            session_cost_budget_usd: local_or_base!(session_cost_budget_usd),
+            auto_compact_window: local_or_base!(auto_compact_window),
+            compact_instructions: local_or_base!(compact_instructions),
+            hooks: local_or_base!(hooks),
+            remote_control: local_or_base!(remote_control),
+            continuation: local_or_base!(continuation),
+            exploration: local_or_base!(exploration),
+            managed_settings: local_or_base!(managed_settings),
+            isolation: local_or_base!(isolation),
+            worktree: local_or_base!(worktree),
+            sandbox: local_or_base!(sandbox),
+            default_shell: local_or_base!(default_shell),
+            refusal_fallback_model: local_or_base!(refusal_fallback_model),
+            refusal_rewrite_retry_max: local_or_base!(refusal_rewrite_retry_max),
+            bash_shell: local_or_base!(bash_shell),
+            // `extends` from the local file is already resolved; don't
+            // propagate the base's extends path into the merged result.
+            extends: other.extends,
+            // Sub-struct: local AgentConfig wins entirely.
+            default: other.default,
+            // Maps / Vecs: non-empty local wins; otherwise inherit base.
+            agents: nonempty_or_base!(agents),
+            categories: nonempty_or_base!(categories),
+            mcp: nonempty_or_base!(mcp),
+            disabled_agents: nonempty_or_base!(disabled_agents),
+            disabled_tools: nonempty_or_base!(disabled_tools),
+            claude: other.claude,
         }
     }
 }
@@ -618,6 +754,17 @@ pub struct ShellHooksConfig {
     /// Fires when a stop fails.
     #[serde(rename = "StopFailure", default)]
     pub stop_failure: Vec<ShellHookEntry>,
+    /// Fires when the user interrupts a running turn (Ctrl-C / Esc-Esc).
+    #[serde(rename = "UserInterrupt", default)]
+    pub user_interrupt: Vec<ShellHookEntry>,
+    /// Fires on each streamed model-response text chunk.
+    ///
+    /// **High-frequency** — only register cheap, non-blocking handlers.
+    #[serde(rename = "ModelResponseChunk", default)]
+    pub model_response_chunk: Vec<ShellHookEntry>,
+    /// Fires when the engine is about to block on interactive user input.
+    #[serde(rename = "UserInputRequired", default)]
+    pub user_input_required: Vec<ShellHookEntry>,
 }
 
 /// A single user-defined shell hook entry.
@@ -969,6 +1116,12 @@ fn load_from(path: &Path) -> Config {
 }
 
 fn load_toml_from(path: &Path) -> Config {
+    load_toml_from_depth(path, 0)
+}
+
+/// Inner recursive loader that handles `extends` inheritance.  Depth-limited
+/// to 8 levels so a circular chain of `extends` doesn't hang the process.
+fn load_toml_from_depth(path: &Path, depth: u8) -> Config {
     #[cfg(test)]
     READ_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -978,7 +1131,7 @@ fn load_toml_from(path: &Path) -> Config {
             tracing::trace!(
                 target: "jfc::config",
                 path = %path.display(),
-                "config file not found â using defaults"
+                "config file not found — using defaults"
             );
             return Config::default();
         }
@@ -987,23 +1140,53 @@ fn load_toml_from(path: &Path) -> Config {
                 target: "jfc::config",
                 path = %path.display(),
                 error = %e,
-                "failed to read config file â using defaults"
+                "failed to read config file — using defaults"
             );
             return Config::default();
         }
     };
-    match toml::from_str::<Config>(&raw) {
+    let local: Config = match toml::from_str::<Config>(&raw) {
         Ok(cfg) => cfg,
         Err(e) => {
             tracing::warn!(
                 target: "jfc::config",
                 path = %path.display(),
                 error = %e,
-                "failed to parse config â using defaults"
+                "failed to parse config — using defaults"
             );
-            Config::default()
+            return Config::default();
         }
+    };
+
+    // Handle `extends` inheritance: load the base config and merge, with the
+    // local config's values taking priority.  Guard against deep / circular
+    // chains.
+    if let Some(ref base_rel) = local.extends {
+        const MAX_DEPTH: u8 = 8;
+        if depth >= MAX_DEPTH {
+            tracing::warn!(
+                target: "jfc::config",
+                path = %path.display(),
+                "config `extends` chain too deep (max {MAX_DEPTH}); ignoring further inheritance"
+            );
+            return local;
+        }
+        let base_path = path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join(base_rel);
+        tracing::debug!(
+            target: "jfc::config",
+            local = %path.display(),
+            base = %base_path.display(),
+            depth,
+            "loading base config via `extends`"
+        );
+        let base = load_toml_from_depth(&base_path, depth + 1);
+        return base.merge_with(local);
     }
+
+    local
 }
 
 /// Load the canonical TOML config plus Claude-compatible JSON settings for a
@@ -1823,5 +2006,109 @@ disallowed_tools = ["Bash", "Write"]
     fn isolation_fail_open_opt_out_robust() {
         let cfg: Config = toml::from_str("[isolation]\nfail_closed = false\n").expect("parse");
         assert!(!cfg.isolation.expect("present").fail_closed);
+    }
+
+    // ── Feature 1: bash_shell ───────────────────────────────────────────────
+
+    #[test]
+    fn bash_shell_defaults_to_none_normal() {
+        let cfg = Config::default();
+        assert!(cfg.bash_shell.is_none(), "bash_shell must default to None");
+    }
+
+    #[test]
+    fn bash_shell_parses_from_toml_normal() {
+        let cfg: Config = toml::from_str(r#"bash_shell = "/bin/zsh""#).expect("parse");
+        assert_eq!(cfg.bash_shell.as_deref(), Some("/bin/zsh"));
+    }
+
+    #[test]
+    fn bash_shell_alias_camel_case_normal() {
+        let cfg: Config = toml::from_str(r#"bashShell = "fish""#).expect("parse");
+        assert_eq!(cfg.bash_shell.as_deref(), Some("fish"));
+    }
+
+    // ── Feature 2: extends / config inheritance ─────────────────────────────
+
+    #[test]
+    fn extends_parses_from_toml_normal() {
+        let cfg: Config = toml::from_str(r#"extends = "base.toml""#).expect("parse");
+        assert_eq!(
+            cfg.extends.as_deref(),
+            Some(std::path::Path::new("base.toml"))
+        );
+    }
+
+    #[test]
+    fn merge_with_local_wins_over_base_normal() {
+        let base = Config {
+            theme: Some("base-theme".into()),
+            bash_shell: Some("sh".into()),
+            always_show_thinking: false,
+            ..Config::default()
+        };
+        let local = Config {
+            theme: Some("local-theme".into()),
+            bash_shell: None, // not set in local → fall through to base
+            always_show_thinking: true,
+            ..Config::default()
+        };
+        let merged = base.merge_with(local);
+        assert_eq!(merged.theme.as_deref(), Some("local-theme"), "local theme wins");
+        assert_eq!(merged.bash_shell.as_deref(), Some("sh"), "base bash_shell kept when local is None");
+        assert!(merged.always_show_thinking, "local bool wins");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn extends_loads_base_and_merges_normal() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let base_path = tmp.path().join("base.toml");
+        let local_path = tmp.path().join("config.toml");
+
+        std::fs::write(&base_path, r#"bash_shell = "/bin/sh"
+theme = "base-theme"
+"#).unwrap();
+        std::fs::write(
+            &local_path,
+            format!(r#"extends = "base.toml"
+theme = "local-theme"
+"#),
+        )
+        .unwrap();
+
+        let cfg = load_toml_from(&local_path);
+        assert_eq!(cfg.theme.as_deref(), Some("local-theme"), "local theme wins");
+        assert_eq!(cfg.bash_shell.as_deref(), Some("/bin/sh"), "base bash_shell inherited");
+    }
+
+    // ── Feature 3: auto_compact_threshold_pct ──────────────────────────────
+
+    #[test]
+    fn auto_compact_threshold_pct_defaults_to_85_normal() {
+        let cfg = Config::default();
+        assert_eq!(cfg.auto_compact_threshold_pct, 85);
+    }
+
+    #[test]
+    fn auto_compact_threshold_pct_parses_from_toml_normal() {
+        let cfg: Config =
+            toml::from_str("auto_compact_threshold_pct = 70").expect("parse");
+        assert_eq!(cfg.auto_compact_threshold_pct, 70);
+    }
+
+    // ── Feature 4: always_show_thinking ────────────────────────────────────
+
+    #[test]
+    fn always_show_thinking_defaults_false_normal() {
+        let cfg = Config::default();
+        assert!(!cfg.always_show_thinking);
+    }
+
+    #[test]
+    fn always_show_thinking_parses_from_toml_normal() {
+        let cfg: Config =
+            toml::from_str("always_show_thinking = true").expect("parse");
+        assert!(cfg.always_show_thinking);
     }
 }

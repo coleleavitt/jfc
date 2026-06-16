@@ -97,6 +97,21 @@ pub fn interrupt(state: &mut EngineState, tx: &EventSender) {
         return;
     }
 
+    // Fire UserInterrupt hook so external scripts can react (notifications,
+    // audit logging, etc.). Best-effort: must never block the interrupt path.
+    crate::hooks::fire_async(
+        crate::hooks::HookPoint::OnUserInterrupt,
+        &crate::hooks::HookContext::for_session(
+            state
+                .current_session_id
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or("<no-session>"),
+        )
+        .with_extra("reason", "ctrl_c")
+        .with_extra("denied_approvals", denied_approvals.to_string()),
+    );
+
     crate::toast::push_with_cap(
         &mut state.toasts,
         crate::toast::Toast::new(

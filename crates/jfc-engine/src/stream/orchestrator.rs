@@ -378,6 +378,17 @@ pub async fn stream_response(
             .with_extra("stop_reason", format!("{stop_reason:?}")),
     );
 
+    // Fire a sentinel OnModelResponse (is_final=true) so scripts
+    // registered on model-response-chunk can detect turn completion.
+    crate::hooks::fire_async(
+        crate::hooks::HookPoint::OnModelResponse,
+        &crate::hooks::HookContext::for_session("stream")
+            .with_extra("chunk", String::new())
+            .with_extra("chunk_len", "0")
+            .with_extra("is_final", "true")
+            .with_extra("stop_reason", format!("{stop_reason:?}")),
+    );
+
     let _ = tx
         .send(EngineEvent::Stream(StreamEvent::Done(stop_reason)))
         .await;

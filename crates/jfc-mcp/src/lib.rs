@@ -20,7 +20,7 @@ use std::collections::HashMap;
 pub use protocol::ToolCallOutcome;
 pub use registry::{
     DispatchError, McpAdvertisedToolMetadata, McpRegistry, McpResource, McpServer, McpServerStatus,
-    register_servers_from_config, restart_server,
+    build_server, register_servers_from_config, restart_server,
 };
 pub use tool_dispatch::{
     DEFAULT_DISPATCH_TIMEOUT, dispatch_mcp_tool, dispatch_mcp_tool_with_timeout, is_mcp_tool_name,
@@ -42,6 +42,11 @@ pub struct McpServerConfig {
     pub args: Vec<String>,
     #[serde(default)]
     pub env: HashMap<String, String>,
+    /// Optional path to a `.env` file whose variables are merged into
+    /// `env` before the server is spawned. Variables already present in
+    /// `env` take precedence (`.env` only fills gaps).
+    #[serde(default, rename = "envFile")]
+    pub env_file: Option<std::path::PathBuf>,
     #[serde(default)]
     pub headers: HashMap<String, String>,
     #[serde(default)]
@@ -157,6 +162,7 @@ mod tests {
             command: command.map(str::to_owned),
             args: Vec::new(),
             env: HashMap::new(),
+            env_file: None,
             headers: HashMap::new(),
             url: url.map(str::to_owned),
         }

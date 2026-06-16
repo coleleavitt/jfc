@@ -291,6 +291,17 @@ pub(crate) struct Cli {
     #[arg(long = "cowork")]
     cowork: bool,
 
+    /// Suppress tool-call decorations in headless / stream-json output.
+    /// In TUI mode, starts the session in compact (non-verbose) tool rendering.
+    #[arg(long, short = 'q')]
+    quiet: bool,
+
+    /// Override the working directory used by the engine. When combined with
+    /// `--resume`, lets you resume a session from a different directory than
+    /// the one where it was originally created.
+    #[arg(long, value_name = "PATH")]
+    cwd: Option<PathBuf>,
+
     /// Subcommand. When omitted, jfc launches the interactive TUI.
     #[command(subcommand)]
     command: Option<Command>,
@@ -425,6 +436,10 @@ pub(crate) struct CliRuntimeConfig {
     /// Start the remote-control server at launch (from `--remote-control`
     /// or the `[remote_control] auto_start = true` config).
     pub remote_control: bool,
+    /// Suppress tool-call decoration output (`--quiet` / `-q`).
+    pub quiet: bool,
+    /// Override the engine working directory (from `--cwd`).
+    pub cwd_override: Option<PathBuf>,
 }
 
 /// Parse a comma-separated tool list (`"Read, Glob,Grep"` → `["Read",
@@ -793,6 +808,8 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         fine_grained_tool_streaming: cli.fine_grained_tool_streaming,
         strict_tool_schemas: cli.strict_tool_schemas,
         remote_control,
+        quiet: cli.quiet,
+        cwd_override: cli.cwd.clone(),
     };
 
     // v132 `-p`/`--print` headless one-shot mode. Skips the TUI

@@ -2623,3 +2623,61 @@ pub(super) async fn cmd_morning_checkin(
 
     state.messages.push(ChatMessage::assistant(body));
 }
+
+/// `/queue` — show pending queued messages, or `/queue clear` to discard them.
+///
+/// When `message_queue_mode = true` in config, every prompt submitted while a
+/// turn is streaming queues behind it rather than interrupting. This command
+/// surfaces the queue contents and lets the user discard pending messages.
+pub(super) async fn cmd_queue(
+    state: &mut EngineState,
+    parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    let sub = parts.get(1).map(|s| s.trim()).unwrap_or("");
+    if sub == "clear" {
+        let n = state.queued_prompts.len();
+        if n == 0 {
+            state.messages.push(ChatMessage::assistant(
+                "Queue is already empty.".to_string(),
+            ));
+        } else {
+            // Drain and discard all queued prompts.
+            let _drained = state.queued_prompts.drain_all();
+            // Remove the corresponding queued placeholder messages from the
+            // transcript (they carry `queued = true` and haven't been promoted
+            // yet, so no model context is lost).
+            state.messages.retain(|m| !m.queued);
+            state.messages.push(ChatMessage::assistant(format!(
+                "Cleared **{n}** queued message{}.",
+                if n == 1 { "" } else { "s" },
+            )));
+        }
+        return;
+    }
+
+    let queue_mode = config::load_arc().message_queue_mode;
+    let depth = state.queued_prompts.len();
+    let mode_label = if queue_mode {
+        "`message_queue_mode` **on** — interrupts disabled, all new messages queue."
+    } else {
+        "`message_queue_mode` **off** — interrupts enabled (default)."
+    };
+
+    if depth == 0 {
+        state.messages.push(ChatMessage::assistant(format!(
+            "**Queue** — {mode_label}\n\nNo messages queued."
+        )));
+        return;
+    }
+
+    let mut body = format!("**Queue** ({depth} pending) — {mode_label}\n\n");
+    for (i, entry) in state.queued_prompts.iter().enumerate() {
+        let preview: String = entry.text.chars().take(120).collect();
+        let ellipsis = if entry.text.chars().count() > 120 { "…" } else { "" };
+        body.push_str(&format!("{}. `{preview}{ellipsis}`\n", i + 1));
+    }
+    body.push_str("\nUse `/queue clear` to discard all pending messages.");
+    state.messages.push(ChatMessage::assistant(body));
+}

@@ -48,3 +48,17 @@ pub fn generate_session_id() -> SessionId {
     debug!(target: "jfc::session", %id, "generated session id");
     id
 }
+
+/// Delete a session file from the sessions directory.
+/// Returns `true` if the file was found and removed, `false` if it didn't exist.
+pub async fn delete_session(session_id: &str) -> std::io::Result<bool> {
+    let path = sessions_dir().join(format!("{session_id}.json"));
+    match tokio::fs::remove_file(&path).await {
+        Ok(()) => {
+            debug!(target: "jfc::session", session_id, "deleted session file");
+            Ok(true)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
+}

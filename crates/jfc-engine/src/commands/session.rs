@@ -197,11 +197,53 @@ pub(super) async fn cmd_resume(
 
 pub(super) async fn cmd_sessions(
     state: &mut EngineState,
-    _parts: &[&str],
+    parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    // List all sessions with metadata
+    // Handle `/sessions delete <id>` (also `rm`/`remove`) subcommand.
+    // run_command uses splitn(2, ' '), so parts[1] is the full remainder
+    // after "/sessions", e.g. "delete ses_20240101_120000".
+    let remainder = parts.get(1).copied().unwrap_or("").trim();
+    let mut rem_iter = remainder.splitn(2, ' ');
+    let sub = rem_iter.next().unwrap_or("");
+    if sub == "delete" || sub == "rm" || sub == "remove" {
+        let id = rem_iter.next().unwrap_or("").trim();
+        if id.is_empty() {
+            state.messages.push(ChatMessage::assistant(
+                "Usage: `/sessions delete <session_id>`".into(),
+            ));
+            return;
+        }
+        // Refuse to delete the currently-active session mid-flight.
+        let typed_id = crate::ids::SessionId::new(id);
+        if state.current_session_id.as_ref() == Some(&typed_id) {
+            state.messages.push(ChatMessage::assistant(
+                "Cannot delete the currently active session. Use `/clear` first.".into(),
+            ));
+            return;
+        }
+        match jfc_session::delete_session(id).await {
+            Ok(true) => {
+                state
+                    .messages
+                    .push(ChatMessage::assistant(format!("Session `{id}` deleted.")));
+            }
+            Ok(false) => {
+                state
+                    .messages
+                    .push(ChatMessage::assistant(format!("Session `{id}` not found.")));
+            }
+            Err(e) => {
+                state.messages.push(ChatMessage::assistant(format!(
+                    "**Error** deleting session `{id}`: {e}"
+                )));
+            }
+        }
+        return;
+    }
+
+    // Default: list all sessions with metadata
     let sessions = jfc_session::list_sessions_with_metadata().await;
     if sessions.is_empty() {
         state
@@ -210,22 +252,31 @@ pub(super) async fn cmd_sessions(
     } else {
         let mut body = format!("**{} session(s):**\n\n", sessions.len());
         for (i, s) in sessions.iter().take(20).enumerate() {
-            let prompt = s.first_prompt.as_deref().unwrap_or("(no prompt)");
-            let prompt_display = if prompt.len() > 50 {
-                let boundary = prompt.floor_char_boundary(50);
-                format!("{}…", &prompt[..boundary])
+            // Use display_title() which honours: custom /rename title →
+            // first prompt → formatted timestamp fallback (v126 parity).
+            let title = s.display_title();
+            let title_display = if title.chars().count() > 50 {
+                let boundary = title.floor_char_boundary(50);
+                format!("{}…", &title[..boundary])
             } else {
-                prompt.to_string()
+                title
             };
             let current = state.current_session_id.as_ref() == Some(&s.id);
             let marker = if current { " ← current" } else { "" };
+            // Show a 📌 indicator when the session has a custom /rename title.
+            let name_indicator = if s.title.as_ref().is_some_and(|t| !t.trim().is_empty()) {
+                " 📌"
+            } else {
+                ""
+            };
             body.push_str(&format!(
-                "{}. `{}`{} — {} msg(s)\n   {}\n",
+                "{}. `{}`{}{} — {} msg(s)\n   {}\n",
                 i + 1,
                 s.id,
                 marker,
+                name_indicator,
                 s.message_count,
-                prompt_display
+                title_display
             ));
         }
         if sessions.len() > 20 {
@@ -502,6 +553,44 @@ pub(super) async fn cmd_export(
                 &mut state.toasts,
                 crate::toast::Toast::new(crate::toast::ToastKind::Error, message),
             );
+        }
+    }
+}
+
+pub(super) async fn cmd_cd(
+    state: &mut EngineState,
+    parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    // Change the engine working directory mid-session.
+    // Usage: /cd <path>   (~ is expanded to the home directory)
+    // Note: run_command uses splitn(2, ' '), so parts[1] is the entire path arg.
+    let target = parts.get(1).copied().unwrap_or("~").trim();
+    let raw_path = if target == "~" {
+        dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
+    } else if let Some(rel) = target.strip_prefix("~/") {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(rel)
+    } else {
+        // Relative paths resolve against the *current* engine cwd.
+        let base = PathBuf::from(&state.cwd);
+        base.join(target)
+    };
+
+    match raw_path.canonicalize() {
+        Ok(canonical) => {
+            let display = canonical.display().to_string();
+            state.cwd = display.clone();
+            state.messages.push(ChatMessage::assistant(format!(
+                "Working directory changed to `{display}`."
+            )));
+        }
+        Err(e) => {
+            state.messages.push(ChatMessage::assistant(format!(
+                "**Error:** Cannot change directory to `{target}`: {e}"
+            )));
         }
     }
 }

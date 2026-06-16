@@ -848,6 +848,98 @@ pub(super) async fn cmd_market(
     state.messages.push(ChatMessage::assistant(report_str));
 }
 
+/// `/hooks` — show registered hooks with per-rule activation metrics.
+///
+/// Reads the global `HookRegistry`'s metrics snapshot and renders a markdown
+/// table of every registered handler. Columns: Hook Point, index, fire count,
+/// last-fired timestamp (UTC), average execution ms.
+///
+/// If the registry is empty (headless tests, hooks feature disabled) it
+/// shows a brief notice instead of an empty table.
+pub(super) async fn cmd_hooks(
+    state: &mut EngineState,
+    _parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    state.messages.push(ChatMessage::user("/hooks".into()));
+
+    let summary = crate::hooks::registered_hooks_summary();
+    let metrics = crate::hooks::metrics_snapshot();
+
+    if summary.is_empty() {
+        state.messages.push(ChatMessage::assistant(
+            "No hooks registered (global registry empty or `hooks` feature disabled).".into(),
+        ));
+        return;
+    }
+
+    let mut body = String::from("## Registered hooks\n\n");
+    body.push_str("| Hook Point | # | Fires | Last Fired (UTC) | Avg ms |\n");
+    body.push_str("|---|---|---|---|---|\n");
+
+    for (point, idx) in &summary {
+        let key = format!("{point:?}#{idx}");
+        let (fires, last_str, avg_ms) = if let Some(m) = metrics.get(&key) {
+            let last = m
+                .last_fired_at
+                .map(|t| {
+                    // Format as YYYY-MM-DD HH:MM:SS UTC without chrono dep.
+                    let secs = t
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    let s = secs % 60;
+                    let mins = (secs / 60) % 60;
+                    let h = (secs / 3600) % 24;
+                    let days = secs / 86400;
+                    let mut y = 1970u32;
+                    let mut d = days as u32;
+                    loop {
+                        let ydays =
+                            if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
+                        if d < ydays {
+                            break;
+                        }
+                        d -= ydays;
+                        y += 1;
+                    }
+                    let months = [31u32, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+                    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+                    let mut mo = 1u32;
+                    for &dim_base in &months {
+                        let dim = if mo == 2 && leap { dim_base + 1 } else { dim_base };
+                        if d < dim {
+                            break;
+                        }
+                        d -= dim;
+                        mo += 1;
+                    }
+                    format!("{y}-{mo:02}-{:02} {h:02}:{mins:02}:{s:02}", d + 1)
+                })
+                .unwrap_or_else(|| "—".to_owned());
+            let avg = if m.fire_count > 0 {
+                format!("{:.1}", m.total_duration_ms as f64 / m.fire_count as f64)
+            } else {
+                "—".into()
+            };
+            (m.fire_count, last, avg)
+        } else {
+            (0, "—".into(), "—".into())
+        };
+        body.push_str(&format!(
+            "| `{point:?}` | {idx} | {fires} | {last_str} | {avg_ms} |\n"
+        ));
+    }
+
+    body.push_str(&format!(
+        "\n*{} handler(s) registered.*\n",
+        summary.len()
+    ));
+
+    state.messages.push(ChatMessage::assistant(body));
+}
+
 fn recall_query_text(text: &str) -> &str {
     let trimmed = text.trim();
     let Some(idx) = trimmed.find(char::is_whitespace) else {

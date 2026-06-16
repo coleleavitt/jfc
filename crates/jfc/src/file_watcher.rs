@@ -28,6 +28,10 @@ static CHANGE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// Separate counter that ticks only when `keybindings.toml` changes, so the
 /// Tick handler can reload bindings without issuing a system-reminder.
 static KEYBINDINGS_CHANGE_COUNTER: AtomicU64 = AtomicU64::new(0);
+/// Counter that ticks when an MCP-relevant config file changes
+/// (`settings.json`, `.mcp.json`, or `config.toml`). The Tick handler
+/// compares against this to trigger a hot-reload of MCP servers.
+static MCP_CONFIG_CHANGE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Snapshot the config change counter — the Tick handler compares to its
 /// last-seen value to detect inbound file changes.
@@ -38,6 +42,24 @@ pub fn change_counter() -> u64 {
 /// Snapshot the keybindings change counter.
 pub fn keybindings_change_counter() -> u64 {
     KEYBINDINGS_CHANGE_COUNTER.load(Ordering::SeqCst)
+}
+
+/// Snapshot the MCP config change counter. The Tick handler compares
+/// this against its last-seen value to detect when MCP server
+/// configuration may have changed and a hot-reload is warranted.
+pub fn mcp_config_change_counter() -> u64 {
+    MCP_CONFIG_CHANGE_COUNTER.load(Ordering::SeqCst)
+}
+
+/// Returns `true` when the path is an MCP-relevant config file
+/// (`settings.json`, `.mcp.json`, or `config.toml`).
+fn is_mcp_config_path(p: &std::path::Path) -> bool {
+    p.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| {
+            matches!(n, "settings.json" | ".mcp.json" | "config.toml"
+                | "settings.local.json")
+        })
 }
 
 /// Spawn the watcher. Idempotent — calling twice is harmless (the
@@ -116,12 +138,27 @@ fn spawn_watcher() -> Result<(), String> {
                     if is_watched {
                         CHANGE_COUNTER.fetch_add(1, Ordering::SeqCst);
                         jfc_config::mark_config_changed();
-                        tracing::debug!(
-                            target: "jfc::file_watcher",
-                            kind = ?event.kind,
-                            paths = ?event.paths,
-                            "config file change detected"
-                        );
+                        // Also fire the MCP counter when a settings/config
+                        // file changes, so the Tick handler can hot-reload
+                        // MCP servers without waiting for the next turn.
+                        let is_mcp_relevant =
+                            event.paths.iter().any(|p| is_mcp_config_path(p));
+                        if is_mcp_relevant {
+                            MCP_CONFIG_CHANGE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                            tracing::debug!(
+                                target: "jfc::file_watcher",
+                                kind = ?event.kind,
+                                paths = ?event.paths,
+                                "MCP-relevant config file change detected"
+                            );
+                        } else {
+                            tracing::debug!(
+                                target: "jfc::file_watcher",
+                                kind = ?event.kind,
+                                paths = ?event.paths,
+                                "config file change detected"
+                            );
+                        }
                     } else {
                         tracing::trace!(
                             target: "jfc::file_watcher",

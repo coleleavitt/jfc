@@ -989,11 +989,17 @@ pub(crate) fn build_message_items<'a>(
         // reasoning; completed thinking collapses to the one-line summary
         // (ctrl+o re-expands via `reasoning_expanded`). Keeps finished turns
         // from stacking full thinking transcripts on screen.
+        //
+        // `always_show_thinking` in config forces every thinking block to
+        // render expanded, equivalent to the user having pressed ctrl+o on
+        // every message.  A per-message entry in `reasoning_expanded` can
+        // still collapse a block if the user explicitly toggles it to false.
+        let always_show = jfc_engine::config::load_arc().always_show_thinking;
         let reasoning_expanded = ctx
             .reasoning_expanded
             .get(&idx)
             .copied()
-            .unwrap_or(ctx.active_reasoning_idx == Some(idx));
+            .unwrap_or(always_show || ctx.active_reasoning_idx == Some(idx));
 
         // Walk parts with peek-ahead so consecutive groupable tools
         // (Read/Glob/Grep) collapse into a single ToolGroup row when

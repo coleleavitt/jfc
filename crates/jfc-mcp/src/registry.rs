@@ -515,11 +515,59 @@ impl std::fmt::Display for DispatchError {
 
 impl std::error::Error for DispatchError {}
 
+/// Build the effective `env` map for a server spawn.
+///
+/// Variables are resolved in this priority order (highest wins):
+/// 1. Inline `env` entries from the config block.
+/// 2. Variables loaded from `env_file` (only fill gaps not covered by #1).
+///
+/// This means explicit `env` entries always override file-sourced ones,
+/// which mirrors how tools like Docker Compose handle `env_file`.
+fn build_effective_env(name: &str, cfg: &McpServerConfig) -> HashMap<String, String> {
+    let mut env = cfg.env.clone();
+
+    if let Some(ref env_path) = cfg.env_file {
+        match dotenvy::from_path_iter(env_path) {
+            Ok(iter) => {
+                let before = env.len();
+                for item in iter.flatten() {
+                    // `or_insert` preserves the inline value when the key
+                    // already exists — explicit config wins over file-sourced.
+                    env.entry(item.0).or_insert(item.1);
+                }
+                tracing::debug!(
+                    target: "jfc::mcp",
+                    server = %name,
+                    path = %env_path.display(),
+                    loaded = env.len().saturating_sub(before),
+                    "loaded env_file"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::mcp",
+                    server = %name,
+                    path = %env_path.display(),
+                    error = %e,
+                    "failed to read env_file — proceeding without it"
+                );
+            }
+        }
+    }
+
+    env
+}
+
 /// Spawn a single server from a config block, run the handshake +
 /// `tools/list`, and return the resulting [`McpServer`] entry. On any
 /// failure returns a `Failed` entry (no transport) so `/mcp list` can
 /// still surface the configured name.
 pub async fn build_server(name: &str, cfg: &McpServerConfig) -> McpServer {
+    // Build the effective env map: start with variables from `env_file`
+    // (if set), then overlay the explicit `env` entries so that inline
+    // vars always win over file-sourced ones.
+    let effective_env = build_effective_env(name, cfg);
+
     // `type` is authoritative; resolution validates that the required
     // fields (`command` for stdio, `url` for http) are present.
     let kind = match cfg.resolve_transport() {
@@ -543,7 +591,7 @@ pub async fn build_server(name: &str, cfg: &McpServerConfig) -> McpServer {
                     kind: TransportKind::Stdio,
                     command: cfg.command.clone().unwrap_or_default(),
                     args: cfg.args.clone(),
-                    env: cfg.env.clone(),
+                    env: effective_env,
                     headers: cfg.headers.clone(),
                     url: cfg.url.clone(),
                 },
@@ -556,7 +604,7 @@ pub async fn build_server(name: &str, cfg: &McpServerConfig) -> McpServer {
         kind,
         command: cfg.command.clone().unwrap_or_default(),
         args: cfg.args.clone(),
-        env: cfg.env.clone(),
+        env: effective_env,
         headers: cfg.headers.clone(),
         url: cfg.url.clone(),
     };
@@ -676,6 +724,9 @@ pub async fn restart_server(registry: &McpRegistry, name: &str) -> Option<bool> 
         command: Some(old.spawn_cfg.command.clone()),
         args: old.spawn_cfg.args.clone(),
         env: old.spawn_cfg.env.clone(),
+        // env_file is intentionally omitted on restart: the effective env
+        // was already resolved and baked into spawn_cfg.env at startup.
+        env_file: None,
         headers: old.spawn_cfg.headers.clone(),
         url: old.spawn_cfg.url.clone(),
     };
@@ -992,6 +1043,7 @@ mod tests {
                 command: None,
                 args: vec![],
                 env: HashMap::new(),
+                env_file: None,
                 headers: HashMap::new(),
                 url: None,
             },
@@ -1015,6 +1067,7 @@ mod tests {
                 command: Some("/nonexistent/jfc-mcp-test-binary".into()),
                 args: vec![],
                 env: HashMap::new(),
+                env_file: None,
                 headers: HashMap::new(),
                 url: None,
             },
@@ -1046,5 +1099,53 @@ mod tests {
             defs.is_empty(),
             "transport-less Connected entries are excluded from active list"
         );
+    }
+
+    // Normal: env_file deserializes from JSON camelCase, is None when absent.
+    #[test]
+    fn mcp_server_config_env_file_round_trip_normal() {
+        let json = r#"{
+            "type": "stdio",
+            "command": "node",
+            "args": ["server.js"],
+            "env": {"EXPLICIT": "override"},
+            "envFile": "/tmp/test.env"
+        }"#;
+        let cfg: McpServerConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            cfg.env_file.as_ref().unwrap().to_str().unwrap(),
+            "/tmp/test.env"
+        );
+        assert_eq!(cfg.env.get("EXPLICIT").unwrap(), "override");
+
+        // Absent envFile → None (backward compat).
+        let json2 = r#"{"type": "stdio", "command": "node"}"#;
+        let cfg2: McpServerConfig = serde_json::from_str(json2).unwrap();
+        assert!(cfg2.env_file.is_none());
+    }
+
+    // Normal: build_effective_env merges file vars below explicit env vars.
+    #[test]
+    fn build_effective_env_file_vars_dont_override_explicit_normal() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        writeln!(f, "FROM_FILE=file_value").unwrap();
+        writeln!(f, "SHARED=from_file").unwrap();
+
+        let mut env = HashMap::new();
+        env.insert("SHARED".into(), "from_explicit".into());
+
+        let cfg = McpServerConfig {
+            env,
+            env_file: Some(f.path().to_path_buf()),
+            ..Default::default()
+        };
+
+        let result = build_effective_env("test-server", &cfg);
+
+        // File var added (not in explicit env).
+        assert_eq!(result.get("FROM_FILE").unwrap(), "file_value");
+        // Explicit var wins over file var.
+        assert_eq!(result.get("SHARED").unwrap(), "from_explicit");
     }
 }

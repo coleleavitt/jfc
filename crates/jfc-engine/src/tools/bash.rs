@@ -432,26 +432,32 @@ fn is_safe_task_id(task_id: &str) -> bool {
 fn build_bash_command(command: &str, cwd: &Path) -> (Command, String) {
     let command = non_interactive_shell_command(command);
 
+    // Respect `bash_shell` config override; fall back to "bash".
+    let configured_shell = crate::config::load_arc()
+        .bash_shell
+        .clone()
+        .unwrap_or_else(|| "bash".to_string());
+
     let (executable, args) = match crate::sandbox::active_bash_sandbox_config() {
         Some(ref cfg) if cfg.enabled => match crate::sandbox::build_bwrap_argv(cfg, cwd) {
             Some(mut bwrap_argv) => {
-                bwrap_argv.push("bash".into());
+                bwrap_argv.push(configured_shell);
                 bwrap_argv.push("-c".into());
                 bwrap_argv.push(command.clone());
                 let exe = bwrap_argv.remove(0);
                 (exe, bwrap_argv)
             }
             None if cfg.fail_if_unavailable => (
-                "bash".to_string(),
+                configured_shell,
                 vec![
                     "-c".into(),
                     "echo 'Bash sandbox requested but bubblewrap is unavailable' >&2; exit 127"
                         .into(),
                 ],
             ),
-            None => ("bash".to_string(), vec!["-c".into(), command.clone()]),
+            None => (configured_shell, vec!["-c".into(), command.clone()]),
         },
-        _ => ("bash".to_string(), vec!["-c".into(), command.clone()]),
+        _ => (configured_shell, vec!["-c".into(), command.clone()]),
     };
 
     let mut cmd = Command::new(&executable);

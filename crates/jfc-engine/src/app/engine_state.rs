@@ -785,6 +785,11 @@ pub struct EngineState {
     /// against `mcp::registry::refresh_counter()` to detect inbound
     /// `notifications/tools/list_changed` and emit a toast + reminder.
     pub last_mcp_refresh_seen: u64,
+    /// Last MCP-config file-change counter we observed. Tick handler
+    /// compares against `file_watcher::mcp_config_change_counter()` to
+    /// detect `settings.json` / `.mcp.json` edits and trigger a hot-
+    /// reload of all MCP servers.
+    pub last_mcp_config_seen: u64,
     /// Last file-watcher change-counter we observed. Tick handler
     /// compares against `file_watcher::change_counter()` to detect
     /// CLAUDE.md / agents / settings edits and prepend a system-
@@ -1041,6 +1046,10 @@ pub struct EngineState {
     /// `--cowork`: IDE pairing mode flag.
     pub cowork: bool,
 
+    /// `--quiet` / `-q`: suppress tool-call decorations in output.
+    /// In TUI mode this starts the session in compact (non-verbose) rendering.
+    pub quiet_mode: bool,
+
     /// ID of an active cron job created by `/babysit-prs <schedule>`.
     /// `Some(id)` means a recurring PR-status check is registered with
     /// the local daemon; `/babysit-prs stop` removes it. `None` when no
@@ -1179,6 +1188,7 @@ impl EngineState {
             exploration_state: crate::exploration::ExplorationState::new(),
             last_heartbeat_at: None,
             last_mcp_refresh_seen: 0,
+            last_mcp_config_seen: 0,
             last_file_watcher_seen: 0,
             pending_background_reminders: Vec::new(),
             pinned_message_indices: std::collections::HashSet::new(),
@@ -1253,6 +1263,7 @@ impl EngineState {
             strict_tool_schemas: false,
             mcp_config_path: None,
             cowork: false,
+            quiet_mode: false,
             babysit_prs_cron_id: None,
         };
         // Open the task store — prefer project-level persistence so tasks
@@ -1685,6 +1696,15 @@ impl EngineState {
             new_session_id = %new_id,
             "switch_session"
         );
+        // Fire SessionEnd for the *outgoing* session before replacing the id.
+        // Best-effort (fire_async): a hook failure must never block the switch.
+        if let Some(ref old) = old_id {
+            crate::hooks::fire_async(
+                crate::hooks::HookPoint::OnSessionEnd,
+                &crate::hooks::HookContext::for_session(old.as_str())
+                    .with_extra("exit_code", "0"),
+            );
+        }
         self.current_session_id = Some(new_id.clone());
         self.clear_active_stream_scope();
         // Mirror the constructor's store choice: inside a git repo the

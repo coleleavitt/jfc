@@ -118,12 +118,28 @@ pub mod hooks {
         BeforeToolBatch,
         AfterToolBatch,
         OnModelResponse,
+        // New in hook-surface expansion v2
+        OnUserInterrupt,
+        OnUserInputRequired,
     }
 
     pub struct HookContext;
 
     impl HookContext {
         pub fn for_session(_session_id: impl AsRef<str>) -> Self {
+            Self
+        }
+        pub fn for_tool(
+            _tool_name: &str,
+            _tool_input: &str,
+            _session_id: impl AsRef<str>,
+        ) -> Self {
+            Self
+        }
+        pub fn for_agent(_agent_name: &str, _session_id: impl AsRef<str>) -> Self {
+            Self
+        }
+        pub fn for_file(_file_path: &str, _session_id: impl AsRef<str>) -> Self {
             Self
         }
         #[must_use]
@@ -137,11 +153,29 @@ pub mod hooks {
         Abort(String),
     }
 
+    /// No-op metrics stub (feature = "hooks" is off).
+    #[derive(Debug, Clone, Default)]
+    pub struct HookMetrics {
+        pub fire_count: u64,
+        pub last_fired_at: Option<std::time::SystemTime>,
+        pub total_duration_ms: u64,
+    }
+
     pub fn fire(_point: HookPoint, _ctx: &HookContext) -> HookAction {
         HookAction::Continue
     }
 
     pub fn fire_async(_point: HookPoint, _ctx: &HookContext) {}
+
+    /// No-op — returns empty map when hooks feature is disabled.
+    pub fn metrics_snapshot() -> std::collections::HashMap<String, HookMetrics> {
+        std::collections::HashMap::new()
+    }
+
+    /// No-op — returns empty vec when hooks feature is disabled.
+    pub fn registered_hooks_summary() -> Vec<(HookPoint, usize)> {
+        Vec::new()
+    }
 
     pub struct HookRegistry;
 

@@ -112,6 +112,14 @@ pub(crate) async fn run(
     app.engine.cli_task_budget = cli_config.task_budget;
     app.engine.mcp_config_path = cli_config.mcp_config_path;
     app.engine.cowork = cli_config.cowork;
+    app.engine.quiet_mode = cli_config.quiet;
+    if let Some(ref cwd_override) = cli_config.cwd_override {
+        if let Ok(canonical) = cwd_override.canonicalize() {
+            app.engine.cwd = canonical.display().to_string();
+        } else {
+            app.engine.cwd = cwd_override.display().to_string();
+        }
+    }
     app.engine.local_advisor_provider = cli_config.local_advisor_provider.clone();
     app.engine.local_advisor_model = cli_config.local_advisor_model.clone();
     app.engine.advisor_enabled =
@@ -262,10 +270,13 @@ pub(crate) async fn run(
 
     // AutoDefaultNudge: show a one-time notice that auto is the default
     // permission mode. Only fires when the gate is enabled AND the
-    // marker file `~/.config/jfc/auto_nudge_seen` does not exist.
-    if jfc_engine::feature_gates::is_enabled(
-        jfc_engine::feature_gates::FeatureGate::AutoDefaultNudge,
-    ) {
+    // marker file `~/.config/jfc/auto_nudge_seen` does not exist AND
+    // `show_startup_banner` is true (default).
+    if startup_config.show_startup_banner
+        && jfc_engine::feature_gates::is_enabled(
+            jfc_engine::feature_gates::FeatureGate::AutoDefaultNudge,
+        )
+    {
         let marker = dirs::config_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join("jfc")
@@ -755,6 +766,19 @@ pub(crate) async fn run(
     // Initial terminal title — updates whenever the model or session
     // changes.
     set_terminal_title(&app);
+    // OSC 0 window title: emit once at startup so the terminal's title bar
+    // immediately shows the project name. `set_terminal_title` uses crossterm
+    // SetTitle which most terminals also honour; this raw OSC sequence is the
+    // universal fallback recognised by xterm, kitty, alacritty, iTerm2 et al.
+    {
+        use std::io::Write as _;
+        let project = std::env::current_dir()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "jfc".into());
+        print!("\x1b]0;jfc \u{2014} {project}\x07");
+        let _ = std::io::stdout().flush();
+    }
 
     // Submit initial prompt if provided via --prompt flag
     if let Some(prompt) = queued_initial_prompt {

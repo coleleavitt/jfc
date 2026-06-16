@@ -486,6 +486,21 @@ async fn execute_task_inner(
         }
     }
 
+    // Subagent context inheritance: when the parent seeded
+    // `forks_parent_context` (set by `build_parent_context_seed` in
+    // tool_dispatch.rs when `subagent_context_inheritance` is on),
+    // inject it as a `<parent_context>` block into the system prompt.
+    if let Some(Some(seed)) = agent_def.map(|a| a.forks_parent_context.as_ref()) {
+        match &mut system_prompt {
+            Some(prompt) => inject_parent_context(prompt, seed),
+            None => {
+                let mut s = String::new();
+                inject_parent_context(&mut s, seed);
+                system_prompt = Some(s);
+            }
+        }
+    }
+
     // Tool catalogue: full list filtered by the agent's allow/disallow.
     // When there's no agent definition we still drop `Task` to avoid
     // recursive subagent spawning, but otherwise pass everything.
@@ -1208,6 +1223,65 @@ fn atomic_write(path: &Path, body: &str) -> std::io::Result<()> {
     let tmp = path.with_extension("tmp");
     std::fs::write(&tmp, body)?;
     std::fs::rename(tmp, path)
+}
+
+/// Build a compact context seed for subagent context inheritance.
+///
+/// When `subagent_context_inheritance = true` in config, the tool dispatch
+/// path calls this before spawning a subagent. The returned JSON object is
+/// stored in `AgentDef::forks_parent_context` and injected into the
+/// subagent's system prompt by [`inject_parent_context`].
+///
+/// The seed includes:
+/// - The current working directory path
+/// - A compact CLAUDE.md summary from the project hierarchy (up to 4 000 chars)
+pub fn build_parent_context_seed(cwd: &Path) -> serde_json::Value {
+    let mut seed = serde_json::Map::new();
+
+    seed.insert(
+        "cwd".to_string(),
+        serde_json::Value::String(cwd.display().to_string()),
+    );
+
+    // Load the CLAUDE.md hierarchy and render a compact summary.
+    let hierarchy = crate::context::ClaudeMdHierarchy::load(cwd);
+    if let Some(rendered) = hierarchy.render() {
+        let trimmed: String = rendered.chars().take(4000).collect();
+        seed.insert(
+            "claude_md_summary".to_string(),
+            serde_json::Value::String(trimmed),
+        );
+    }
+
+    serde_json::Value::Object(seed)
+}
+
+/// Inject a `forks_parent_context` seed into an existing system prompt string.
+///
+/// Called inside `execute_task_inner` when `agent_def.forks_parent_context`
+/// is `Some`. Appends a `<parent_context>` block so the subagent knows what
+/// the parent already loaded, saving redundant codebase re-scans.
+fn inject_parent_context(system_prompt: &mut String, seed: &serde_json::Value) {
+    let mut block = String::from(
+        "\n\n<parent_context>\n\
+         The parent session has already loaded the following project context.\n\
+         You may rely on it directly instead of re-scanning from scratch:\n\n",
+    );
+
+    if let Some(cwd) = seed.get("cwd").and_then(|v| v.as_str()) {
+        block.push_str(&format!("**Working directory:** `{cwd}`\n\n"));
+    }
+
+    if let Some(claude_md) = seed.get("claude_md_summary").and_then(|v| v.as_str()) {
+        if !claude_md.is_empty() {
+            block.push_str("**CLAUDE.md context (from parent):**\n\n```\n");
+            block.push_str(claude_md);
+            block.push_str("\n```\n");
+        }
+    }
+
+    block.push_str("</parent_context>");
+    system_prompt.push_str(&block);
 }
 
 #[cfg(test)]

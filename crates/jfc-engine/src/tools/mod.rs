@@ -79,7 +79,10 @@ pub use economy::market_report_string;
 pub use daemon::execute_schedule_wakeup;
 
 // subagent
-pub use subagent::{execute_task, selected_subagent_model, selected_subagent_provider_model};
+pub use subagent::{
+    build_parent_context_seed, execute_task, selected_subagent_model,
+    selected_subagent_provider_model,
+};
 
 // tasks / skills
 

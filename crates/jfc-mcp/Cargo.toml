@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+dotenvy = "0.15"
 jfc-core = { path = "../jfc-core" }
 jfc-provider = { path = "../jfc-provider" }
 rmcp = { version = "1.7", default-features = false, features = [
@@ -21,6 +22,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
+tempfile = "3"
 
 [lints]
 workspace = true

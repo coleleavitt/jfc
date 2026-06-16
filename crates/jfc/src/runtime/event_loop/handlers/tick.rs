@@ -15,6 +15,7 @@ use crate::runtime::{
 };
 use jfc_engine::providers::AnthropicOAuthProvider;
 use jfc_engine::toast;
+use tracing;
 
 use jfc_engine::runtime::event_loop::guards::{CONFIG_RELOAD_REMINDER, MCP_REFRESH_REMINDER};
 
@@ -474,6 +475,31 @@ pub(crate) async fn handle_tick(
         }
     }
 
+    // MCP config auto-reload — when `settings.json`, `.mcp.json`, or
+    // `config.toml` changes the MCP-specific counter increments. Spawn
+    // a background task that re-reads the config and restarts every
+    // configured server so the new set takes effect without requiring
+    // a jfc restart. Throttled to one reload per counter bump.
+    let cur_mcp_cfg = crate::file_watcher::mcp_config_change_counter();
+    if cur_mcp_cfg > app.engine.last_mcp_config_seen {
+        app.engine.last_mcp_config_seen = cur_mcp_cfg;
+        if let Some(registry) = jfc_engine::tools::snapshot_mcp_registry() {
+            let new_configs = jfc_engine::config::load_arc().mcp.clone();
+            let tx_reload = tx.clone();
+            tokio::spawn(async move {
+                reload_mcp_servers(registry, new_configs, tx_reload).await;
+            });
+            toast::push_with_cap(
+                &mut app.engine.toasts,
+                toast::Toast::new(
+                    toast::ToastKind::Info,
+                    "MCP config changed — reloading servers…",
+                ),
+            );
+            needs_draw = true;
+        }
+    }
+
     // Hot-reload keybindings when keybindings.toml changes.
     let cur_kb = crate::file_watcher::keybindings_change_counter();
     if cur_kb > app.last_keybindings_watcher_seen {
@@ -683,4 +709,104 @@ pub(crate) async fn handle_tick(
     }
 
     needs_draw
+}
+
+/// Hot-reload MCP servers after a config file change.
+///
+/// Strategy: diff the new config against the currently registered servers.
+/// - **Removed** servers (in registry but not in new config) are shut down.
+/// - **Added** servers (in new config but not in registry) are spawned.
+/// - **Changed** servers (config differs from what's running) are restarted.
+/// - **Unchanged** servers are left alone.
+///
+/// After reconciliation an `McpUpdated` event is sent so the sidebar
+/// reflects the new server set without requiring a full Tick.
+async fn reload_mcp_servers(
+    registry: jfc_engine::mcp::McpRegistry,
+    new_configs: std::collections::HashMap<String, jfc_engine::mcp::McpServerConfig>,
+    tx: EventSender,
+) {
+    use jfc_core::{McpServerInfo, McpStatus};
+    use jfc_engine::mcp::{McpServerStatus, build_server, restart_server};
+
+    let existing: Vec<std::sync::Arc<jfc_engine::mcp::McpServer>> = registry.list().await;
+    let existing_names: std::collections::HashSet<&str> =
+        existing.iter().map(|s| s.name.as_str()).collect();
+    let new_names: std::collections::HashSet<&str> =
+        new_configs.keys().map(String::as_str).collect();
+
+    // Stop servers that were removed from config.
+    for server in &existing {
+        if !new_names.contains(server.name.as_str()) {
+            tracing::info!(
+                target: "jfc::mcp",
+                server = %server.name,
+                "MCP config reload: removing server"
+            );
+            if let Some(old) = registry.remove(&server.name).await {
+                if let Some(t) = old.transport.as_ref() {
+                    t.shutdown().await;
+                }
+            }
+        }
+    }
+
+    // Spawn new servers and restart changed ones.
+    for (name, cfg) in &new_configs {
+        let already_running = existing_names.contains(name.as_str());
+
+        if already_running {
+            // Detect config change by comparing the resolved spawn config
+            // with what the running server was started with.
+            let current = registry.get(name).await;
+            let config_changed = current.is_none_or(|s| {
+                let sc = &s.spawn_cfg;
+                cfg.command.as_deref().unwrap_or_default() != sc.command
+                    || cfg.args != sc.args
+                    || cfg.env != sc.env
+                    || cfg.url != sc.url
+            });
+
+            if config_changed {
+                tracing::info!(
+                    target: "jfc::mcp",
+                    server = %name,
+                    "MCP config reload: restarting changed server"
+                );
+                restart_server(&registry, name).await;
+            }
+        } else {
+            tracing::info!(
+                target: "jfc::mcp",
+                server = %name,
+                "MCP config reload: starting new server"
+            );
+            let server = build_server(name, cfg).await;
+            registry.insert(server).await;
+        }
+    }
+
+    // Notify the UI of the updated server list.
+    let servers: Vec<McpServerInfo> = registry
+        .list()
+        .await
+        .iter()
+        .map(|s| McpServerInfo {
+            name: s.name.clone(),
+            status: match s.status {
+                McpServerStatus::Connected => McpStatus::Connected,
+                McpServerStatus::Failed => McpStatus::Error,
+                McpServerStatus::Disabled => McpStatus::Disabled,
+            },
+        })
+        .collect();
+
+    let _ = tx
+        .send(EngineEvent::Provider(ProviderEvent::McpUpdated { servers }))
+        .await;
+
+    tracing::info!(
+        target: "jfc::mcp",
+        "MCP config reload complete"
+    );
 }

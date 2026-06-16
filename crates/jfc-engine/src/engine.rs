@@ -83,8 +83,16 @@ impl Engine {
                         crate::hooks::fire_async(
                             crate::hooks::HookPoint::OnElicitation,
                             &crate::hooks::HookContext::for_session("<mcp-elicitation>")
-                                .with_extra("server_name", snapshot.server_name)
-                                .with_extra("elicitation_id", snapshot.id),
+                                .with_extra("server_name", snapshot.server_name.clone())
+                                .with_extra("elicitation_id", snapshot.id.clone()),
+                        );
+                        // Also fire the unified OnUserInputRequired hook —
+                        // elicitation blocks the turn until the user responds.
+                        crate::hooks::fire_async(
+                            crate::hooks::HookPoint::OnUserInputRequired,
+                            &crate::hooks::HookContext::for_session("<mcp-elicitation>")
+                                .with_extra("kind", "elicitation")
+                                .with_extra("message", format!("MCP server '{}' is requesting structured input", snapshot.server_name)),
                         );
                     }
                     jfc_core::mcp_elicitation::ElicitationEvent::Resolved {

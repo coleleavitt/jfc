@@ -100,6 +100,12 @@ pub fn handle_chunk(state: &mut EngineState, text: Option<String>, reasoning: Op
 
         state.streaming_text.push_str(&chunk);
 
+        let session_id_for_chunk = state
+            .current_session_id
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("<no-session>");
+
         // CC 2.1.167 MessageDisplay hook — fires on each text chunk when a
         // registered handler wants to intercept/rewrite displayed content.
         // Fast path: no-op when no MessageDisplay hooks are registered.
@@ -107,14 +113,19 @@ pub fn handle_chunk(state: &mut EngineState, text: Option<String>, reasoning: Op
         // stall the stream.
         crate::hooks::fire_async(
             crate::hooks::HookPoint::OnMessageDisplay,
-            &crate::hooks::HookContext::for_session(
-                state
-                    .current_session_id
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or("<no-session>"),
-            )
-            .with_extra("chunk_len", chunk.len().to_string()),
+            &crate::hooks::HookContext::for_session(session_id_for_chunk)
+                .with_extra("chunk_len", chunk.len().to_string()),
+        );
+
+        // OnModelResponse hook — fires on every text delta so external
+        // scripts can observe the raw stream. High-frequency site: only
+        // costs anything when Shell handlers are registered for this point.
+        crate::hooks::fire_async(
+            crate::hooks::HookPoint::OnModelResponse,
+            &crate::hooks::HookContext::for_session(session_id_for_chunk)
+                .with_extra("chunk", chunk.clone())
+                .with_extra("chunk_len", chunk.len().to_string())
+                .with_extra("is_final", "false"),
         );
 
         if let Some(msg) = streaming_assistant_mut(state) {

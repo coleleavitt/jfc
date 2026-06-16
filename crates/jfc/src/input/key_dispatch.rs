@@ -1063,7 +1063,14 @@ fn cmd_handle_escape(
 /// tool-input delta (see `stream_chunk.rs`). `> 0` therefore means the
 /// connection opened and the model started responding — the only state where
 /// interrupting is the right call.
+///
+/// When `message_queue_mode = true` in config, interrupts are always
+/// suppressed — every new prompt queues behind the current turn instead.
 pub(crate) fn can_interrupt_on_submit(app: &App, compacting: bool) -> bool {
+    // message_queue_mode: never interrupt, always queue.
+    if jfc_engine::config::load_arc().message_queue_mode {
+        return false;
+    }
     app.engine.is_streaming
         && !compacting
         // Connection opened and the model has begun producing output. Before

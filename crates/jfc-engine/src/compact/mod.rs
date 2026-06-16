@@ -85,18 +85,33 @@ pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
     est
 }
 
-/// Read `JFC_AUTOCOMPACT_PCT_OVERRIDE` (1-100) once per call. v126 has the
-/// same env knob (`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`) used by integration tests
-/// to force compaction at non-default thresholds without rebuilding.
+/// Read the effective compaction percentage threshold (1–100). Priority order:
+///
+/// 1. `JFC_AUTOCOMPACT_PCT_OVERRIDE` env var (CI/integration-test knob).
+/// 2. `auto_compact_threshold_pct` from config (default 85 — the legacy
+///    hardcoded value). A config value equal to the default (85) is treated as
+///    "user did not override" so callers fall through to the fixed-headroom
+///    calculation that has always been used.  This preserves the existing
+///    compact behaviour unchanged for users who haven't set the field.
 fn pct_override() -> Option<f64> {
-    let v = std::env::var("JFC_AUTOCOMPACT_PCT_OVERRIDE")
+    // Env var takes highest priority (mirrors CC CLAUDE_AUTOCOMPACT_PCT_OVERRIDE).
+    if let Some(v) = std::env::var("JFC_AUTOCOMPACT_PCT_OVERRIDE")
         .ok()
         .and_then(|s| s.parse::<f64>().ok())
-        .filter(|p| (0.0..=100.0).contains(p) && *p > 0.0);
-    if let Some(pct) = v {
-        trace!(target: "jfc::compact", pct, "JFC_AUTOCOMPACT_PCT_OVERRIDE active");
+        .filter(|p| (0.0..=100.0).contains(p) && *p > 0.0)
+    {
+        trace!(target: "jfc::compact", pct = v, "JFC_AUTOCOMPACT_PCT_OVERRIDE active");
+        return Some(v);
     }
-    v
+    // Config-level threshold. Values of exactly 85 are the default and treated
+    // as "not set", so the existing fixed-headroom logic is unchanged.
+    let cfg_pct = crate::config::load_arc().auto_compact_threshold_pct;
+    if cfg_pct != 85 && cfg_pct > 0 {
+        let pct = f64::from(cfg_pct);
+        trace!(target: "jfc::compact", pct, "auto_compact_threshold_pct from config active");
+        return Some(pct);
+    }
+    None
 }
 
 pub fn blocked_override() -> Option<usize> {

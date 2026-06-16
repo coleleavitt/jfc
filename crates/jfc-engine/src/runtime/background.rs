@@ -199,6 +199,21 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
                 &completion.description,
                 &completion.body,
             );
+            // SubagentStop hook: fires on every terminal transition so
+            // external scripts can react (CI, Slack, logging, etc.).
+            crate::hooks::fire_async(
+                crate::hooks::HookPoint::SubagentStop,
+                &crate::hooks::HookContext::for_agent(
+                    &completion.description,
+                    state
+                        .current_session_id
+                        .as_ref()
+                        .map(|s| s.as_str())
+                        .unwrap_or("<no-session>"),
+                )
+                .with_extra("task_id", completion.task_id.to_string())
+                .with_extra("status", completion.status.label()),
+            );
             state.queue_background_agent_completion(completion);
         }
 

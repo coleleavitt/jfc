@@ -146,6 +146,11 @@ pub enum HookPoint {
     /// Fires when a stop operation fails.
     /// Maps to CC's `StopFailure` hook event.
     StopFailure,
+    /// Fires when the user interrupts a running turn (Ctrl-C / Esc-Esc).
+    OnUserInterrupt,
+    /// Fires just before the engine blocks on interactive user input
+    /// (permission modal, AskUserQuestion, elicitation, etc.).
+    OnUserInputRequired,
 }
 
 /// Action a hook can take.
@@ -446,11 +451,43 @@ impl HookHandler {
 /// Registry of hooks, fired in registration order (FIFO).
 pub struct HookRegistry {
     hooks: Vec<(HookPoint, HookHandler)>,
+    /// Per-handler activation metrics, keyed by `"<HookPoint:?>#<index>"`.
+    metrics: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, HookMetrics>>>,
 }
 
 impl HookRegistry {
     pub fn new() -> Self {
-        Self { hooks: Vec::new() }
+        Self {
+            hooks: Vec::new(),
+            metrics: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+        }
+    }
+
+    /// Snapshot of current per-handler metrics (for `/hooks status`).
+    pub fn metrics_snapshot(&self) -> std::collections::HashMap<String, HookMetrics> {
+        self.metrics
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    fn record_metric(
+        metrics: &std::sync::Arc<
+            std::sync::Mutex<std::collections::HashMap<String, HookMetrics>>,
+        >,
+        key: &str,
+        dur: std::time::Duration,
+    ) {
+        if let Ok(mut map) = metrics.lock() {
+            let entry = map.entry(key.to_owned()).or_default();
+            entry.fire_count += 1;
+            entry.last_fired_at = Some(std::time::SystemTime::now());
+            entry.total_duration_ms = entry
+                .total_duration_ms
+                .saturating_add(dur.as_millis() as u64);
+        }
     }
 
     pub fn register(&mut self, point: HookPoint, handler: HookHandler) {
@@ -467,9 +504,13 @@ impl HookRegistry {
     /// Fire all hooks registered for the given point.
     /// Short-circuits on first Skip or Abort.
     pub fn fire(&self, point: HookPoint, ctx: &HookContext) -> HookAction {
-        for (hook_point, handler) in &self.hooks {
+        for (idx, (hook_point, handler)) in self.hooks.iter().enumerate() {
             if *hook_point == point {
+                let t0 = std::time::Instant::now();
                 let action = handler.execute(point, ctx);
+                let dur = t0.elapsed();
+                let key = format!("{point:?}#{idx}");
+                Self::record_metric(&self.metrics, &key, dur);
                 match &action {
                     HookAction::Continue | HookAction::Emit(_) => continue,
                     HookAction::Skip | HookAction::Abort(_) | HookAction::Replace(_) => {
@@ -495,9 +536,13 @@ impl HookRegistry {
     ///
     /// Prefer [`HookRegistry::fire`] when veto behavior is required.
     pub fn fire_async(&self, point: HookPoint, ctx: &HookContext) {
-        for (hook_point, handler) in &self.hooks {
+        for (idx, (hook_point, handler)) in self.hooks.iter().enumerate() {
             if *hook_point == point {
+                let t0 = std::time::Instant::now();
                 let _ = handler.execute(point, ctx);
+                let dur = t0.elapsed();
+                let key = format!("{point:?}#{idx}");
+                Self::record_metric(&self.metrics, &key, dur);
             }
         }
     }
@@ -823,6 +868,36 @@ impl HookRegistry {
                 },
             );
         }
+        for entry in &hooks_cfg.user_interrupt {
+            self.register(
+                HookPoint::OnUserInterrupt,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.model_response_chunk {
+            self.register(
+                HookPoint::OnModelResponse,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.user_input_required {
+            self.register(
+                HookPoint::OnUserInputRequired,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
     }
 }
 
@@ -884,6 +959,30 @@ pub fn fire_async(point: HookPoint, ctx: &HookContext) {
     }
 }
 
+/// Snapshot the global registry's per-handler activation metrics.
+/// Returns an empty map if no registry has been initialized.
+pub fn metrics_snapshot() -> std::collections::HashMap<String, HookMetrics> {
+    GLOBAL_REGISTRY
+        .get()
+        .map(|reg| reg.metrics_snapshot())
+        .unwrap_or_default()
+}
+
+/// List all `(HookPoint, handler_index)` tuples from the global registry.
+/// Used by `/hooks status` to build the display table.
+pub fn registered_hooks_summary() -> Vec<(HookPoint, usize)> {
+    GLOBAL_REGISTRY
+        .get()
+        .map(|reg| {
+            reg.hooks
+                .iter()
+                .enumerate()
+                .map(|(idx, (point, _))| (*point, idx))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 // ─── Script-based hook runner (lifecycle events from .jfc/hooks/) ──────────
 //
 // This is a parallel surface to the in-process `HookRegistry` above. The
@@ -894,6 +993,20 @@ pub fn fire_async(point: HookPoint, ctx: &HookContext) {
 // Both systems are intentionally separate: the registry is process-local
 // and zero-cost; the runner spawns subprocesses and is opt-in per event.
 pub mod runner;
+
+/// Per-rule activation metrics tracked by the hook registry.
+///
+/// Stored in a `HashMap<String, HookMetrics>` keyed by `"<point_debug>/<handler_index>"`.
+/// Updated every time a handler runs. Exposed via `/hooks status`.
+#[derive(Debug, Clone, Default)]
+pub struct HookMetrics {
+    /// Total number of times this handler has fired.
+    pub fire_count: u64,
+    /// Wall-clock time of the most recent invocation.
+    pub last_fired_at: Option<std::time::SystemTime>,
+    /// Cumulative execution time across all invocations (milliseconds).
+    pub total_duration_ms: u64,
+}
 
 /// Lifecycle events that script hooks subscribe to.
 ///
@@ -918,6 +1031,12 @@ pub enum HookEvent {
     SessionStart {
         session_id: String,
     },
+    /// Fires when a session ends (user exit, `/clear`, or programmatic shutdown).
+    SessionEnd {
+        session_id: String,
+        /// 0 = normal exit; non-zero values indicate error conditions.
+        exit_code: i32,
+    },
     FileChanged {
         path: String,
     },
@@ -926,6 +1045,37 @@ pub enum HookEvent {
         new: String,
     },
     Notification {
+        message: String,
+    },
+    /// Fires when a background subagent reaches a terminal state.
+    SubagentStop {
+        task_id: String,
+        description: String,
+        /// `"completed"` | `"failed"` | `"cancelled"`
+        status: String,
+    },
+    /// Fires when the user interrupts a running turn (Ctrl-C, Esc-Esc).
+    UserInterrupt {
+        session_id: String,
+        /// `"ctrl_c"` | `"question"` | `"elicitation"`
+        reason: String,
+    },
+    /// Fires on each streamed model-response text chunk.
+    ///
+    /// **High-frequency** — only register handlers for this event if they
+    /// are genuinely cheap and non-blocking. The runner will skip firing
+    /// if no `.jfc/hooks/model-response-chunk.*` script is found (the
+    /// common case) so overhead is zero when unused.
+    ModelResponseChunk {
+        chunk: String,
+        /// `true` on the final chunk of a turn (after stream end).
+        is_final: bool,
+    },
+    /// Fires when the engine is about to block on interactive user input
+    /// (permission modal, AskUserQuestion, elicitation, etc.).
+    UserInputRequired {
+        /// `"permission"` | `"question"` | `"elicitation"`
+        kind: String,
         message: String,
     },
 }
@@ -939,9 +1089,14 @@ impl HookEvent {
             HookEvent::PostToolUse { .. } => "post-tool-use",
             HookEvent::UserPromptSubmit { .. } => "user-prompt-submit",
             HookEvent::SessionStart { .. } => "session-start",
+            HookEvent::SessionEnd { .. } => "session-end",
             HookEvent::FileChanged { .. } => "file-changed",
             HookEvent::CwdChanged { .. } => "cwd-changed",
             HookEvent::Notification { .. } => "notification",
+            HookEvent::SubagentStop { .. } => "subagent-stop",
+            HookEvent::UserInterrupt { .. } => "user-interrupt",
+            HookEvent::ModelResponseChunk { .. } => "model-response-chunk",
+            HookEvent::UserInputRequired { .. } => "user-input-required",
         }
     }
 }
@@ -1004,8 +1159,109 @@ mod tests {
             HookPoint::OnMemoryDeleted,
             HookPoint::OnTaskCreated,
             HookPoint::OnTaskCompleted,
+            // Additional hook points from the hook-surface expansion
+            HookPoint::SubagentStop,
+            HookPoint::Stop,
+            HookPoint::PostToolUseFailure,
+            HookPoint::OnSetup,
+            HookPoint::OnUserPromptExpansion,
+            HookPoint::OnMessageDisplay,
+            HookPoint::OnElicitation,
+            HookPoint::OnElicitationResult,
+            HookPoint::PostToolBatch,
+            HookPoint::PostCompact,
+            HookPoint::SubagentStart,
+            HookPoint::WorktreeCreate,
+            HookPoint::WorktreeRemove,
+            HookPoint::ConfigChange,
+            HookPoint::StopFailure,
+            // New in hook-surface expansion v2
+            HookPoint::OnUserInterrupt,
+            HookPoint::OnUserInputRequired,
         ];
-        assert_eq!(points.len(), 31);
+        assert_eq!(points.len(), 48);
+    }
+
+    #[test]
+    fn test_hook_event_script_names() {
+        assert_eq!(
+            HookEvent::SessionEnd {
+                session_id: "s1".into(),
+                exit_code: 0,
+            }
+            .script_name(),
+            "session-end"
+        );
+        assert_eq!(
+            HookEvent::SubagentStop {
+                task_id: "t1".into(),
+                description: "audit".into(),
+                status: "completed".into(),
+            }
+            .script_name(),
+            "subagent-stop"
+        );
+        assert_eq!(
+            HookEvent::UserInterrupt {
+                session_id: "s1".into(),
+                reason: "ctrl_c".into(),
+            }
+            .script_name(),
+            "user-interrupt"
+        );
+        assert_eq!(
+            HookEvent::ModelResponseChunk {
+                chunk: "hello".into(),
+                is_final: false,
+            }
+            .script_name(),
+            "model-response-chunk"
+        );
+        assert_eq!(
+            HookEvent::UserInputRequired {
+                kind: "permission".into(),
+                message: "allow bash?".into(),
+            }
+            .script_name(),
+            "user-input-required"
+        );
+    }
+
+    #[test]
+    fn test_hook_metrics_are_recorded() {
+        let mut registry = HookRegistry::new();
+        registry.register(HookPoint::OnHeartbeat, HookHandler::Logger);
+        registry.register(HookPoint::OnSessionStart, HookHandler::Logger);
+
+        let ctx = HookContext::for_session("s1");
+        registry.fire(HookPoint::OnHeartbeat, &ctx);
+        registry.fire(HookPoint::OnHeartbeat, &ctx);
+        registry.fire(HookPoint::OnSessionStart, &ctx);
+
+        let snap = registry.metrics_snapshot();
+        let hb = snap.get("OnHeartbeat#0").expect("heartbeat metrics present");
+        assert_eq!(hb.fire_count, 2, "OnHeartbeat fired twice");
+        assert!(hb.last_fired_at.is_some(), "last_fired_at set");
+
+        let ss = snap
+            .get("OnSessionStart#1")
+            .expect("session-start metrics present");
+        assert_eq!(ss.fire_count, 1, "OnSessionStart fired once");
+    }
+
+    #[test]
+    fn test_hook_metrics_async_recorded() {
+        let mut registry = HookRegistry::new();
+        registry.register(HookPoint::OnHeartbeat, HookHandler::Logger);
+
+        let ctx = HookContext::for_session("s1");
+        registry.fire_async(HookPoint::OnHeartbeat, &ctx);
+        registry.fire_async(HookPoint::OnHeartbeat, &ctx);
+        registry.fire_async(HookPoint::OnHeartbeat, &ctx);
+
+        let snap = registry.metrics_snapshot();
+        let entry = snap.get("OnHeartbeat#0").expect("metrics present");
+        assert_eq!(entry.fire_count, 3);
     }
 
     #[test]

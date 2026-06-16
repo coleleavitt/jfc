@@ -408,11 +408,21 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
         // prompt or tool restrictions and usually exits in <5s with
         // empty output. Fall through with `eq_ignore_ascii_case` so
         // any reasonable casing routes correctly.
-        let agent_def = task_input
+        let mut agent_def = task_input
             .subagent_type
             .as_deref()
             .and_then(|t| agents.iter().find(|a| a.name.eq_ignore_ascii_case(t)))
             .cloned();
+        // Subagent context inheritance: when enabled, seed the subagent's
+        // `forks_parent_context` with a compact CLAUDE.md summary so it
+        // doesn't need to re-scan the codebase. Injected into the system
+        // prompt by `inject_parent_context` inside `execute_task_inner`.
+        if crate::config::load_arc().subagent_context_inheritance {
+            if let Some(ref mut def) = agent_def {
+                let context_seed = crate::tools::build_parent_context_seed(&cwd);
+                def.forks_parent_context = Some(context_seed);
+            }
+        }
         // Provider-qualified specs ("openai/gpt-5.2") route through the
         // registry and may switch providers — same addressing the council
         // uses. Resolved here (not inside execute_task) so the background
