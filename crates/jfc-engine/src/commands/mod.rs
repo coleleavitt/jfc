@@ -94,6 +94,7 @@ engine_commands! {
         "/recap" [] "generate a one-line session recap now" => cmd_recap,
         "/check" [] "re-run cargo-check diagnostics" => cmd_check,
         "/compact" [] "summarize earlier messages to free context" => cmd_compact,
+        "/expand" [] "open raw messages saved before compaction (`/expand <archive-id>`)" => cmd_expand,
         "/advisor" [] "ask a parallel advisor without disturbing the main agent" => cmd_advisor,
         "/council" [] "convene a multi-model council: fan a question to N models, synthesise (`/council <model-a,model-b> <question>`)" => cmd_council,
         "/research" [] "deep research: plan sub-queries, search the web in steps, synthesise (`/research <question>`)" => cmd_research,
@@ -529,6 +530,8 @@ fn start_synthetic_user_turn(
     state.messages.push(ChatMessage::user(body));
     state.tool_ctx.total_user_turns += 1;
     state.messages.push(ChatMessage::assistant(String::new()));
+    let identity = crate::cache_lineage::current_identity(state);
+    crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;

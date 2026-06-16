@@ -102,7 +102,11 @@ pub async fn stream_to_completion(
             ),
         }
     }
-    Ok(CompletionResponse { content, usage })
+    Ok(CompletionResponse {
+        content,
+        usage,
+        context_signals: None,
+    })
 }
 
 #[cfg(test)]
@@ -272,6 +276,7 @@ mod tests {
                 cache_read_tokens: 0,
                 cache_creation_tokens: 0,
             },
+            context_signals: None,
         });
         let resp = complete_once(&provider, vec![], &opts()).await.unwrap();
         assert_eq!(resp.content, "native");

@@ -20,7 +20,7 @@ use crate::auto_mode::AutoModeConfig;
 use crate::context::{ReadDedupCache, ToolContext};
 use crate::runtime::{
     DEFERRED_TOOL_USES_CAP, DeferredToolUse, EngineEvent, MessageQueue, StreamLifecycleStatus,
-    StreamRequestMetadata, TOOL_USE_SUMMARIES_CAP, ToolUseSummary,
+    StreamRequestMetadata, TOOL_USE_SUMMARIES_CAP, ToolUseSummary, push_bounded_drop_oldest,
 };
 use crate::slate::SlateRouter;
 use crate::types::*;
@@ -407,6 +407,17 @@ pub struct EngineState {
     next_stream_id: u64,
     /// Last message ID from the API response, for `diagnostics.previous_message_id`.
     pub last_response_id: Option<String>,
+    /// Response IDs keyed by provider/model cache identity. Anthropic cache
+    /// diagnosis must not receive a response ID minted under another model or
+    /// provider after a switch.
+    pub response_ids_by_cache_identity: HashMap<String, String>,
+    /// Last observed cache-read token count per provider/model cache identity.
+    /// Used to distinguish real cache breaks from expected transcript drops.
+    pub prompt_cache_reads_by_identity: HashMap<String, u32>,
+    /// One-shot marker set when JFC intentionally deletes prompt history
+    /// (compaction or cache-lineage tail trimming) so the next cache-read drop
+    /// is logged as expected.
+    pub prompt_cache_expected_drop: Option<crate::cache_lineage::ExpectedCacheDrop>,
     pub is_streaming: bool,
     /// Updated on every inbound stream event (chunk, tool delta, done, error).
     /// Used by the watchdog to detect stuck `is_streaming` flags — if no
@@ -1075,6 +1086,9 @@ impl EngineState {
             active_stream_id: None,
             next_stream_id: 0,
             last_response_id: None,
+            response_ids_by_cache_identity: HashMap::new(),
+            prompt_cache_reads_by_identity: HashMap::new(),
+            prompt_cache_expected_drop: None,
             streaming_started_at: None,
             streaming_last_token_at: None,
             token_rate_samples: std::collections::VecDeque::new(),
@@ -1407,16 +1421,17 @@ impl EngineState {
             existing.queued_at = Instant::now();
             return;
         }
-        if self.deferred_tool_uses.len() >= DEFERRED_TOOL_USES_CAP {
-            self.deferred_tool_uses.pop_front();
-        }
-        self.deferred_tool_uses.push_back(DeferredToolUse {
-            id,
-            name,
-            input_preview,
-            reason,
-            queued_at: Instant::now(),
-        });
+        push_bounded_drop_oldest(
+            &mut self.deferred_tool_uses,
+            DEFERRED_TOOL_USES_CAP,
+            DeferredToolUse {
+                id,
+                name,
+                input_preview,
+                reason,
+                queued_at: Instant::now(),
+            },
+        );
     }
 
     pub fn clear_deferred_tool_use(&mut self, id: &str) {
@@ -1463,14 +1478,15 @@ impl EngineState {
         if summary.trim().is_empty() || preceding_tool_use_ids.is_empty() {
             return;
         }
-        if self.tool_use_summaries.len() >= TOOL_USE_SUMMARIES_CAP {
-            self.tool_use_summaries.pop_front();
-        }
-        self.tool_use_summaries.push_back(ToolUseSummary {
-            summary,
-            preceding_tool_use_ids,
-            created_at: Instant::now(),
-        });
+        push_bounded_drop_oldest(
+            &mut self.tool_use_summaries,
+            TOOL_USE_SUMMARIES_CAP,
+            ToolUseSummary {
+                summary,
+                preceding_tool_use_ids,
+                created_at: Instant::now(),
+            },
+        );
     }
 
     pub fn check_stream_watchdog(&mut self, tx: &crate::runtime::EventSender) {

@@ -296,6 +296,20 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             member_name: member_name.clone(),
             mode: mode.clone(),
         },
+        ToolInput::HcomStatus { .. }
+        | ToolInput::HcomList { .. }
+        | ToolInput::HcomSend { .. }
+        | ToolInput::HcomEvents { .. }
+        | ToolInput::HcomListen { .. }
+        | ToolInput::HcomTranscript { .. }
+        | ToolInput::HcomBundle { .. }
+        | ToolInput::HcomTerm { .. }
+        | ToolInput::HcomLaunch { .. }
+        | ToolInput::HcomResume { .. }
+        | ToolInput::HcomFork { .. }
+        | ToolInput::HcomKill { .. }
+        | ToolInput::HcomRelay { .. }
+        | ToolInput::HcomRun { .. } => serialize_generic_tool_input_json(input),
         ToolInput::PlanCreate { title, .. } => SerializedToolInput::Generic {
             summary: format!("plan_create: {title}"),
         },

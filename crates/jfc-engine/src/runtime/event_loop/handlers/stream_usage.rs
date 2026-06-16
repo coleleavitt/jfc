@@ -158,12 +158,20 @@ pub fn handle_stream_usage(
         .or_default()
         .apply_cumulative(cum, state.usage_apply_baseline);
 
+    let expected_cache_drop = crate::cache_lineage::observe_cache_usage(
+        state,
+        input_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+        partial_input_only,
+    );
+
     // Cache diagnosis: detect significant cache invalidation.
     // When cache_read_tokens is zero but input_tokens is high,
     // something invalidated the prefix cache. Log so the tracing
     // output shows what happened (mirrors v144's
     // cache-diagnosis-2026-04-07 telemetry feature).
-    if cache_read_tokens == 0 && input_tokens > 10_000 {
+    if !expected_cache_drop && cache_read_tokens == 0 && input_tokens > 10_000 {
         tracing::info!(
             target: "jfc::cache_diagnosis",
             input_tokens,
@@ -172,7 +180,7 @@ pub fn handle_stream_usage(
             "prompt cache miss — entire prefix uncached this request \
              (likely cause: system prompt change, tool schema change, or model switch)"
         );
-    } else if cache_write_tokens > 0 && cache_read_tokens == 0 {
+    } else if !expected_cache_drop && cache_write_tokens > 0 && cache_read_tokens == 0 {
         tracing::debug!(
             target: "jfc::cache_diagnosis",
             cache_write_tokens,

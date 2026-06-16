@@ -83,7 +83,7 @@ pub fn handle_output_chunk(state: &mut EngineState, tool_id: crate::ids::ToolId,
 /// Handle `ToolEvent::Result { tool_id, result }`.
 pub fn handle_tool_result(
     state: &mut EngineState,
-    tx: &EventSender,
+    _tx: &EventSender,
     tool_id: crate::ids::ToolId,
     result: crate::runtime::ExecutionResult,
 ) {
@@ -94,15 +94,16 @@ pub fn handle_tool_result(
         output_len = result.output.len(),
         "tool_result received"
     );
+    let tool_id_str = tool_id.as_str().to_owned();
+    // Tool completion is already being handled on the engine thread with
+    // mutable state access. Clear in-progress bookkeeping directly instead of
+    // enqueueing a best-effort `SetInProgressToolUseIds(remove)` event back
+    // onto the same bounded channel; if that secondary event is dropped under
+    // load, `has_interruptible_work()` stays true after the turn has ended.
+    state.set_in_progress_tool_use_ids("remove", std::slice::from_ref(&tool_id_str));
     state
         .exploration_state
         .record_tool_result(result.is_error());
-    let _ = tx.try_send(EngineEvent::Tool(
-        crate::runtime::ToolEvent::SetInProgressToolUseIds {
-            action: "remove".to_owned(),
-            ids: vec![tool_id.as_str().to_owned()],
-        },
-    ));
     let mut found = false;
     let mut tool_output_arrived = false;
     for msg in &mut state.messages {
@@ -1057,6 +1058,26 @@ mod tests {
         );
 
         assert!(should_recheck_completion_after_tool_result(&state));
+    }
+
+    #[tokio::test]
+    async fn tool_result_clears_in_progress_bookkeeping_directly_regression() {
+        let (mut state, tool_id) = test_app_with_tool(ToolStatus::Pending);
+        state.set_in_progress_tool_use_ids("add", &[tool_id.as_str().to_owned()]);
+        assert!(state.has_interruptible_work());
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        handle_tool_result(
+            &mut state,
+            &tx,
+            tool_id.clone(),
+            crate::runtime::ExecutionResult::failure("Tool cancelled by user"),
+        );
+
+        assert!(
+            !state.in_progress_tool_use_ids.contains(tool_id.as_str()),
+            "tool completion must not depend on a queued remove event"
+        );
     }
 
     #[test]

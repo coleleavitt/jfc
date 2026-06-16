@@ -243,9 +243,7 @@ mod teammate_provider_tests {
     fn registry() -> Vec<Arc<dyn Provider>> {
         vec![
             Arc::new(NamedProvider { name: "openai" }) as Arc<dyn Provider>,
-            Arc::new(NamedProvider {
-                name: "anthropic",
-            }) as Arc<dyn Provider>,
+            Arc::new(NamedProvider { name: "anthropic" }) as Arc<dyn Provider>,
         ]
     }
 
@@ -253,9 +251,7 @@ mod teammate_provider_tests {
     fn teammate_bound_to_its_own_provider_normal() {
         // A `openai/gpt-5.5` teammate spawned from a Claude (anthropic) leader
         // resolves to the openai provider, not the leader's.
-        let leader = Arc::new(NamedProvider {
-            name: "anthropic",
-        }) as Arc<dyn Provider>;
+        let leader = Arc::new(NamedProvider { name: "anthropic" }) as Arc<dyn Provider>;
         let (provider, model) =
             bind_teammate_provider(&registry(), leader, ModelId::new("openai/gpt-5.5"));
         assert_eq!(provider.name(), "openai");
@@ -267,9 +263,7 @@ mod teammate_provider_tests {
     fn teammate_falls_back_to_leader_when_unresolved_robust() {
         // An unknown/unqualified model that no registry provider claims falls
         // back to the leader's provider and unchanged id.
-        let leader = Arc::new(NamedProvider {
-            name: "anthropic",
-        }) as Arc<dyn Provider>;
+        let leader = Arc::new(NamedProvider { name: "anthropic" }) as Arc<dyn Provider>;
         let (provider, model) =
             bind_teammate_provider(&registry(), leader, ModelId::new("mystery-model"));
         assert_eq!(provider.name(), "anthropic");
@@ -279,8 +273,7 @@ mod teammate_provider_tests {
     #[test]
     fn teammate_falls_back_with_empty_registry_robust() {
         let leader = Arc::new(NamedProvider { name: "openai" }) as Arc<dyn Provider>;
-        let (provider, model) =
-            bind_teammate_provider(&[], leader, ModelId::new("openai/gpt-5.5"));
+        let (provider, model) = bind_teammate_provider(&[], leader, ModelId::new("openai/gpt-5.5"));
         assert_eq!(provider.name(), "openai");
         assert_eq!(model.as_str(), "openai/gpt-5.5");
     }

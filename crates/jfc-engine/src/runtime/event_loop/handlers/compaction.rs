@@ -70,6 +70,7 @@ pub async fn handle_done(
         "applying compaction result to app state"
     );
     let was_streaming = state.is_streaming;
+    let previous_message_count = state.messages.len();
     if was_streaming {
         // Defensive: should be unreachable with the synchronous
         // compacting_started_at guard, but if a stream somehow
@@ -129,6 +130,14 @@ pub async fn handle_done(
             .saturating_mul(2)
             .max(state.tool_ctx.approx_tokens.saturating_add(50_000));
         state.post_compact_token_ceiling = Some(ceiling);
+        let cache_identity = crate::cache_lineage::current_identity(state);
+        crate::cache_lineage::mark_expected_drop(
+            state,
+            cache_identity,
+            "regular compaction replaced transcript history",
+            previous_message_count.saturating_sub(state.messages.len()),
+            None,
+        );
         state.last_usage_input = 0;
         // Reset the per-turn baseline so the next
         // `StreamUsage` cumulative delta builds from 0,

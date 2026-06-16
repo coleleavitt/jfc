@@ -21,6 +21,8 @@ pub fn spawn_stream_response_scoped(
     previous_message_id: Option<String>,
     overrides: StreamRequestOverrides,
 ) {
+    let previous_message_id = previous_message_id
+        .or_else(|| crate::cache_lineage::previous_response_id_for(state, provider.name(), &model));
     let stream_id = state.begin_stream_scope();
     let tx_stream = scoped_stream_sender(tx.clone(), stream_id);
     let tx_guard = tx.clone();
@@ -194,20 +196,13 @@ pub fn restart_stream_in_place_with_overrides(
     };
     let messages = stream::build_provider_messages(&state.messages[..slice_end]);
     let model = state.model.clone();
+    let identity = crate::cache_lineage::request_cache_identity(state, provider.name(), &model);
+    crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
     let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
     state.cancel_token = tokio_util::sync::CancellationToken::new();
     let cancel = state.cancel_token.clone();
-    let prev_msg_id = state.last_response_id.take();
     spawn_stream_response_scoped(
-        state,
-        tx,
-        provider,
-        messages,
-        model,
-        interrupt,
-        cancel,
-        prev_msg_id,
-        overrides,
+        state, tx, provider, messages, model, interrupt, cancel, None, overrides,
     );
 }

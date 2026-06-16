@@ -207,6 +207,8 @@ pub(super) async fn handle_pr_autofix(
     state.messages.push(ChatMessage::user(prompt));
     state.tool_ctx.total_user_turns += 1;
     state.messages.push(ChatMessage::assistant(String::new()));
+    let identity = crate::cache_lineage::current_identity(state);
+    crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;

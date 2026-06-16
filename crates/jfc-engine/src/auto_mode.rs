@@ -509,6 +509,7 @@ mod tests {
         let resp = CompletionResponse {
             content: r#"{"input":{"should_block":true,"reason":"r","thinking":"t"}}"#.into(),
             usage: Default::default(),
+            context_signals: None,
         };
         let r = parse_classification(&resp).expect("parsed");
         assert!(r.should_block());
@@ -520,6 +521,7 @@ mod tests {
         let resp = CompletionResponse {
             content: r#"{"should_block":false,"reason":"safe","thinking":""}"#.into(),
             usage: Default::default(),
+            context_signals: None,
         };
         let r = parse_classification(&resp).expect("parsed");
         assert!(!r.should_block());
@@ -531,6 +533,7 @@ mod tests {
         let resp = CompletionResponse {
             content: "not json".into(),
             usage: Default::default(),
+            context_signals: None,
         };
         assert!(parse_classification(&resp).is_none());
     }
@@ -541,6 +544,7 @@ mod tests {
         let resp = CompletionResponse {
             content: r#"{"reason":"no decision"}"#.into(),
             usage: Default::default(),
+            context_signals: None,
         };
         assert!(parse_classification(&resp).is_none());
     }
@@ -553,6 +557,7 @@ mod tests {
             content: r#"thinking aloud {"should_block":true,"reason":"r","thinking":"t"} done"#
                 .into(),
             usage: Default::default(),
+            context_signals: None,
         };
         let r = parse_classification(&resp).expect("parsed embedded JSON");
         assert!(r.should_block());
@@ -565,6 +570,7 @@ mod tests {
         let resp = CompletionResponse {
             content: r#"{"arguments":{"should_block":false,"reason":"ok"}}"#.into(),
             usage: Default::default(),
+            context_signals: None,
         };
         let r = parse_classification(&resp).expect("parsed");
         assert!(!r.should_block());
@@ -629,6 +635,7 @@ mod tests {
                 result: std::sync::Mutex::new(Some(Ok(CompletionResponse {
                     content: r#"{"should_block":false,"reason":"safe","thinking":""}"#.into(),
                     usage: Default::default(),
+                    context_signals: None,
                 }))),
             }
         }
@@ -637,6 +644,7 @@ mod tests {
                 result: std::sync::Mutex::new(Some(Ok(CompletionResponse {
                     content: r#"{"should_block":true,"reason":"dangerous","thinking":""}"#.into(),
                     usage: Default::default(),
+                    context_signals: None,
                 }))),
             }
         }
@@ -650,6 +658,7 @@ mod tests {
                 result: std::sync::Mutex::new(Some(Ok(CompletionResponse {
                     content: "garbage non-json".into(),
                     usage: Default::default(),
+                    context_signals: None,
                 }))),
             }
         }

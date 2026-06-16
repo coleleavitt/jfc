@@ -912,6 +912,65 @@ fn try_render_session_by_id(query: &str) -> Option<String> {
     }
 }
 
+fn try_render_compaction_archive_by_id(query: &str) -> Option<String> {
+    if query.split_whitespace().count() != 1 {
+        return None;
+    }
+    crate::compact_archive::render_archive_by_id(query)
+}
+
+/// `/expand <archive-id>` — reopen the exact raw messages that were replaced by
+/// a compaction boundary. With no id, lists recent compaction archives.
+pub(super) async fn cmd_expand(
+    state: &mut EngineState,
+    _parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    let query = recall_query_text(text);
+
+    let body = if query.is_empty() {
+        let archives = crate::compact_archive::list_archives(10);
+        if archives.is_empty() {
+            "No compaction archives found. Archives are created the next time `/compact` or auto-compaction replaces raw messages.".to_owned()
+        } else {
+            let mut s = String::from("Recent compaction archives (use `/expand <id>`):\n");
+            for a in archives {
+                s.push_str(&format!(
+                    "  {}  {}  ({} msgs)\n    ...{}\n",
+                    a.id,
+                    a.created_at.chars().take(19).collect::<String>(),
+                    a.message_count,
+                    a.snippet.chars().take(120).collect::<String>(),
+                ));
+            }
+            s
+        }
+    } else if let Some(rendered) = try_render_compaction_archive_by_id(query) {
+        rendered
+    } else {
+        let archives = crate::compact_archive::search_archives(query, 5);
+        if archives.is_empty() {
+            format!("No compaction archive matched `{query}`.")
+        } else {
+            let mut s = format!("Compaction archives matching `{query}`:\n");
+            for a in archives {
+                s.push_str(&format!(
+                    "  {}  {}  ({} msgs)\n    ...{}\n",
+                    a.id,
+                    a.created_at.chars().take(19).collect::<String>(),
+                    a.message_count,
+                    a.snippet.chars().take(120).collect::<String>(),
+                ));
+            }
+            s
+        }
+    };
+
+    state.messages.push(ChatMessage::assistant(body));
+}
+
 /// `/recall <query>` — zero-LLM cross-session + commit search. Searches past
 /// session transcripts (and this repo's commit messages) for `query` and prints
 /// the top hits. With no query, browses the most recent sessions. With a single
@@ -943,8 +1002,10 @@ pub(super) async fn cmd_recall(
             }
             s
         }
-    } else if let Some(session) = try_render_session_by_id(query) {
-        session
+    } else if let Some(rendered) =
+        try_render_session_by_id(query).or_else(|| try_render_compaction_archive_by_id(query))
+    {
+        rendered
     } else {
         // Exclude the *current* session — its transcript is already live in the
         // prompt, so returning hits from it would re-inject text the model can
@@ -954,9 +1015,10 @@ pub(super) async fn cmd_recall(
         let sessions = jfc_session::search_sessions_excluding(query, 5, 1, current);
         let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
         let commits = jfc_session::search_commits(&cwd, query, 5, 500);
+        let archives = crate::compact_archive::search_archives(query, 5);
 
-        if sessions.is_empty() && commits.is_empty() {
-            format!("No sessions or commits matched `{query}`.")
+        if sessions.is_empty() && commits.is_empty() && archives.is_empty() {
+            format!("No sessions, commits, or compaction archives matched `{query}`.")
         } else {
             let mut s = String::new();
             if !sessions.is_empty() {
@@ -967,6 +1029,18 @@ pub(super) async fn cmd_recall(
                         h.session_id,
                         h.title.chars().take(50).collect::<String>(),
                         h.snippet.chars().take(120).collect::<String>(),
+                    ));
+                }
+            }
+            if !archives.is_empty() {
+                s.push_str(&format!("\nCompaction archives matching `{query}`:\n"));
+                for a in &archives {
+                    s.push_str(&format!(
+                        "  {}  {}  ({} msgs)\n    \u{2026}{}\n",
+                        a.id,
+                        a.created_at.chars().take(19).collect::<String>(),
+                        a.message_count,
+                        a.snippet.chars().take(120).collect::<String>(),
                     ));
                 }
             }

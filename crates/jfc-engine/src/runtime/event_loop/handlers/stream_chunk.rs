@@ -228,7 +228,7 @@ pub fn handle_thinking_tokens(state: &mut EngineState, tokens: u32) {
 pub fn handle_response_id(state: &mut EngineState, id: String) {
     state.record_stream_activity();
     state.stream_lifecycle = None;
-    state.last_response_id = Some(id);
+    crate::cache_lineage::record_response_id(state, id);
 }
 
 #[cfg(test)]

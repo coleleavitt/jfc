@@ -1,7 +1,8 @@
 //! Deterministic proof oracles for auto-review.
 //!
 //! Before an LLM reviews changed code, run cheap, deterministic checks
-//! (`cargo test`, `cargo clippy`) and capture their *observed* outcome. The
+//! (`cargo test`, `cargo clippy`, and Coq/Rocq kernel checks when present) and
+//! capture their *observed* outcome. The
 //! findings are attached to the review prompt so the model reviews with real
 //! compiler/test evidence in hand instead of guessing whether the code builds
 //! or passes — the "route findings to deterministic oracles, then LLM review
@@ -11,11 +12,13 @@
 //! cwd-dependent check can vary between runs. A finding records the oracle, the
 //! exit outcome, and a short captured summary — never a reproducibility claim.
 //!
-//! Scope: `cargo test` and `cargo clippy` are the deterministic, fast,
-//! always-available oracles. miri / sanitizer / fuzz-replay are deliberately
-//! out of scope here — they are slow, frequently unconfigured, and produce
-//! flaky findings; they would attach as additional [`ProofOracle`] variants
-//! when a project opts into them.
+//! Scope: cargo oracles are the deterministic, fast, always-available checks
+//! for Rust workspaces. A Coq/Rocq oracle is enabled when `rcoq-tests` is
+//! present; it runs `make check`, whose local Makefile performs `coqchk` kernel
+//! re-verification so admitted proofs cannot masquerade as passing. miri /
+//! sanitizer / fuzz-replay are deliberately out of scope here — they are slow,
+//! frequently unconfigured, and produce flaky findings; they would attach as
+//! additional [`ProofOracle`] variants when a project opts into them.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -30,6 +33,8 @@ pub enum ProofOracle {
     CargoTest,
     /// `cargo clippy` — lint pass (treats warnings as findings, not failures).
     CargoClippy,
+    /// `make -C rcoq-tests check` — Coq/Rocq build plus kernel checking.
+    RocqProofs,
 }
 
 impl ProofOracle {
@@ -37,6 +42,7 @@ impl ProofOracle {
         match self {
             ProofOracle::CargoTest => "cargo test",
             ProofOracle::CargoClippy => "cargo clippy",
+            ProofOracle::RocqProofs => "rocq proofs",
         }
     }
 
@@ -47,6 +53,7 @@ impl ProofOracle {
                 "cargo",
                 &["clippy", "--workspace", "--quiet", "--message-format=short"],
             ),
+            ProofOracle::RocqProofs => ("make", &["-C", "rcoq-tests", "check"]),
         }
     }
 }
@@ -155,7 +162,11 @@ pub async fn run_all(
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Vec<OracleFinding> {
     let mut findings = Vec::new();
-    for oracle in [ProofOracle::CargoTest, ProofOracle::CargoClippy] {
+    let mut oracles = vec![ProofOracle::CargoTest, ProofOracle::CargoClippy];
+    if is_rocq_project(cwd) {
+        oracles.push(ProofOracle::RocqProofs);
+    }
+    for oracle in oracles {
         if cancel.is_cancelled() {
             // User interrupted; don't start any more oracles. Record the remaining
             // ones as not-run.
@@ -227,6 +238,15 @@ fn tail_chars(text: &str, max: usize) -> String {
 /// project.
 pub fn is_cargo_project(cwd: &Path) -> bool {
     PathBuf::from(cwd).join("Cargo.toml").exists()
+}
+
+/// Whether the project has a local Coq/Rocq proof corpus that should be
+/// kernel-checked by the proof-oracle phase.
+pub fn is_rocq_project(cwd: &Path) -> bool {
+    PathBuf::from(cwd)
+        .join("rcoq-tests")
+        .join("_CoqProject")
+        .exists()
 }
 
 #[cfg(test)]
@@ -342,5 +362,17 @@ mod tests {
                 .all(|f| !f.ran && f.summary.contains("cancelled")),
             "a cancelled token must mark every oracle not-run, got {findings:?}"
         );
+    }
+
+    #[test]
+    fn rocq_project_detects_local_coqproject_normal() {
+        let tmp = std::env::temp_dir().join(format!("jfc-rocq-oracle-test-{}", std::process::id()));
+        let proof_dir = tmp.join("rcoq-tests");
+        std::fs::create_dir_all(&proof_dir).unwrap();
+        std::fs::write(proof_dir.join("_CoqProject"), "").unwrap();
+
+        assert!(is_rocq_project(&tmp));
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

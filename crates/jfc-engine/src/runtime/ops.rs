@@ -881,28 +881,6 @@ pub async fn start_turn_from_transcript(
     state.usage_apply_baseline = (0, 0, 0, 0);
     state.push_effect(crate::app::EngineEffect::ScrollToBottom);
 
-    // Auto-persist the session so the sidebar shows it. Reuses the existing
-    // session id if one was loaded; otherwise mints a fresh one keyed on the
-    // current timestamp.
-    let session_id = state
-        .current_session_id
-        .clone()
-        .unwrap_or_else(jfc_session::generate_session_id);
-    // Fire-and-forget session save — don't block the UI on disk I/O.
-    {
-        let sid = session_id.clone();
-        let msgs = state.messages.clone();
-        let cwd = state.cwd.clone();
-        let model = state.model.clone();
-        tokio::spawn(async move {
-            crate::session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str()))
-                .await;
-        });
-    }
-    state.current_session_id = Some(session_id.clone());
-
-    let provider = state.provider.clone();
-    let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
     // Slate per-turn model selection: when the router is configured (config
     // `slate_enabled = true`), classify the user's text and route to the
     // best-fit model for this turn. When None (default), use the pinned
@@ -922,6 +900,32 @@ pub async fn start_turn_from_transcript(
     } else {
         state.model.clone()
     };
+    let identity =
+        crate::cache_lineage::request_cache_identity(state, state.provider.name(), &model);
+    crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
+
+    // Auto-persist the session so the sidebar shows it. Reuses the existing
+    // session id if one was loaded; otherwise mints a fresh one keyed on the
+    // current timestamp.
+    let session_id = state
+        .current_session_id
+        .clone()
+        .unwrap_or_else(jfc_session::generate_session_id);
+    // Fire-and-forget session save — don't block the UI on disk I/O.
+    {
+        let sid = session_id.clone();
+        let msgs = state.messages.clone();
+        let cwd = state.cwd.clone();
+        let model = model.clone();
+        tokio::spawn(async move {
+            crate::session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str()))
+                .await;
+        });
+    }
+    state.current_session_id = Some(session_id.clone());
+
+    let provider = state.provider.clone();
+    let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
     let cfg = crate::config::load_arc();
     state.exploration_state.begin_turn(turn_text, &cfg);
     let interrupt = state.interrupt_flag.clone();
@@ -1039,6 +1043,7 @@ mod submit_prompt_tests {
             Ok(CompletionResponse {
                 content,
                 usage: TokenUsage::default(),
+                context_signals: None,
             })
         }
     }

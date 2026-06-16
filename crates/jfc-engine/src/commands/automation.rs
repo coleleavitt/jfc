@@ -57,6 +57,8 @@ Use the MemoryCreate tool for new memories and MemoryDelete for stale ones.{cron
     state.messages.push(ChatMessage::user(prompt));
     state.tool_ctx.total_user_turns += 1;
     state.messages.push(ChatMessage::assistant(String::new()));
+    let identity = crate::cache_lineage::current_identity(state);
+    crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
@@ -247,6 +249,8 @@ Then immediately execute the prompt now (do not wait for the first cron fire)."
     state.messages.push(ChatMessage::user(prompt));
     state.tool_ctx.total_user_turns += 1;
     state.messages.push(ChatMessage::assistant(String::new()));
+    let identity = crate::cache_lineage::current_identity(state);
+    crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
@@ -382,6 +386,8 @@ and display the results in a readable table with columns: id, schedule, command,
     state.messages.push(ChatMessage::user(prompt));
     state.tool_ctx.total_user_turns += 1;
     state.messages.push(ChatMessage::assistant(String::new()));
+    let identity = crate::cache_lineage::current_identity(state);
+    crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;

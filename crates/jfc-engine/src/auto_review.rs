@@ -1493,6 +1493,7 @@ mod tests {
         let bare = jfc_provider::CompletionResponse {
             content: r#"{"should_review": false, "reason": "doc only"}"#.to_owned(),
             usage: jfc_provider::TokenUsage::default(),
+            context_signals: None,
         };
         let g = parse_gate(&bare).unwrap();
         assert!(!g.should_review);
@@ -1501,6 +1502,7 @@ mod tests {
             content: r#"prefix {"input": {"should_review": true, "reason": "api change"}} suffix"#
                 .to_owned(),
             usage: jfc_provider::TokenUsage::default(),
+            context_signals: None,
         };
         let g = parse_gate(&wrapped).unwrap();
         assert!(g.should_review);

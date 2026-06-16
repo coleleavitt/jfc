@@ -201,9 +201,32 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
         let active_model = model.clone();
         let advisor_ctx = local_advisor.clone();
         let registry = providers.clone();
-        let (question, requested_models) = match tc.input.clone() {
-            ToolInput::Council { question, models } => (question, models),
-            _ => (String::new(), Vec::new()),
+        let council_task_store = task_store.clone();
+        let council_team_name = active_team_name.clone();
+        let council_cwd = cwd.clone();
+        let (question, requested_models, overrides) = match tc.input.clone() {
+            ToolInput::Council {
+                question,
+                models,
+                intent,
+                mode,
+                archive,
+                quorum,
+                retry_on_fail,
+                member_timeout_ms,
+            } => (
+                question,
+                models,
+                CouncilToolOverrides {
+                    intent,
+                    mode,
+                    archive,
+                    quorum,
+                    retry_on_fail,
+                    member_timeout_ms,
+                },
+            ),
+            _ => (String::new(), Vec::new(), CouncilToolOverrides::default()),
         };
         tokio::spawn(async move {
             let result = tokio::select! {
@@ -214,10 +237,14 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
                 result = run_council_tool(
                     question,
                     requested_models,
+                    overrides,
                     active_provider,
                     active_model,
                     advisor_ctx,
                     registry,
+                    council_task_store,
+                    council_team_name,
+                    council_cwd,
                 ) => result,
             };
             send_critical(
@@ -1259,15 +1286,29 @@ async fn run_ask_model_tool(
 /// already resolved to a `(provider, model)` by the dispatch context — so the
 /// council needs neither the transcript nor the full provider registry. The
 /// active model's provider also serves as the arbiter.
+#[derive(Clone, Default)]
+struct CouncilToolOverrides {
+    intent: Option<String>,
+    mode: Option<String>,
+    archive: Option<bool>,
+    quorum: Option<u64>,
+    retry_on_fail: Option<u64>,
+    member_timeout_ms: Option<u64>,
+}
+
 async fn run_council_tool(
     question: String,
     requested_models: Vec<String>,
+    overrides: CouncilToolOverrides,
     active_provider: Arc<dyn Provider>,
     active_model: ModelId,
     advisor_ctx: Option<LocalAdvisorDispatchContext>,
     registry: Vec<Arc<dyn Provider>>,
+    task_store: Option<Arc<jfc_session::TaskStore>>,
+    active_team_name: Option<String>,
+    cwd: std::path::PathBuf,
 ) -> crate::runtime::ExecutionResult {
-    use crate::council::{CouncilRequest, run_council};
+    use crate::council::{CouncilIntent, CouncilRequest, run_agentic_council, run_council};
 
     let question = question.trim().to_owned();
     if question.is_empty() {
@@ -1276,13 +1317,33 @@ async fn run_council_tool(
         );
     }
 
-    let (members, unresolved) = resolve_council_members(
-        &requested_models,
-        &active_provider,
-        &active_model,
-        advisor_ctx.as_ref(),
-        &registry,
-    );
+    let cfg = crate::config::load_arc();
+    let council_cfg = cfg.council.as_ref();
+    let mode = council_mode_name(council_cfg, overrides.mode.as_deref());
+    let agentic = match mode.as_deref() {
+        Some("direct") | None => false,
+        Some("agentic") => true,
+        Some(other) => {
+            return crate::runtime::ExecutionResult::failure(format!(
+                "Council mode `{other}` is not supported. Use `direct` or `agentic`."
+            ));
+        }
+    };
+
+    let configured_members = council_cfg
+        .map(|c| c.members.as_slice())
+        .unwrap_or_default();
+    let (members, unresolved) = if requested_models.is_empty() && !configured_members.is_empty() {
+        resolve_configured_council_members(configured_members, &registry)
+    } else {
+        resolve_council_members(
+            &requested_models,
+            &active_provider,
+            &active_model,
+            advisor_ctx.as_ref(),
+            &registry,
+        )
+    };
 
     if members.is_empty() {
         return crate::runtime::ExecutionResult::failure(format!(
@@ -1295,8 +1356,28 @@ async fn run_council_tool(
         ));
     }
 
-    let request = CouncilRequest::new(question, members);
-    match run_council(request).await {
+    let mut request = CouncilRequest::new(question, members);
+    if let Some(cfg) = council_cfg {
+        request = apply_council_config(request, cfg);
+    }
+    request = apply_council_tool_overrides(request, &overrides);
+    if request.options.intent.is_none()
+        && let Some(intent) = overrides.intent.as_deref().and_then(CouncilIntent::parse)
+    {
+        request = request.with_intent(Some(intent));
+    }
+    let council_result = if agentic {
+        run_agentic_council(
+            request,
+            task_store,
+            active_team_name.as_deref(),
+            cwd.clone(),
+        )
+        .await
+    } else {
+        run_council(request).await
+    };
+    match council_result {
         Ok(report) => {
             let mut body = report.to_markdown();
             if !unresolved.is_empty() {
@@ -1309,6 +1390,80 @@ async fn run_council_tool(
         }
         Err(e) => crate::runtime::ExecutionResult::failure(format!("Council failed: {e}")),
     }
+}
+
+fn council_mode_name(
+    cfg: Option<&jfc_config::CouncilConfig>,
+    override_mode: Option<&str>,
+) -> Option<String> {
+    override_mode
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_ascii_lowercase())
+        .or_else(|| {
+            cfg.map(|cfg| match cfg.mode {
+                jfc_config::CouncilMode::Direct => "direct".to_owned(),
+                jfc_config::CouncilMode::Agentic => "agentic".to_owned(),
+            })
+        })
+}
+
+fn apply_council_config(
+    mut request: crate::council::CouncilRequest,
+    cfg: &jfc_config::CouncilConfig,
+) -> crate::council::CouncilRequest {
+    request = request
+        .with_quorum(cfg.quorum)
+        .with_retry_on_fail(cfg.retry_on_fail)
+        .with_archive(
+            cfg.archive,
+            Some(std::env::current_dir().unwrap_or_default()),
+        );
+    request = if cfg.member_timeout_ms == 0 {
+        request.with_member_timeout(None)
+    } else {
+        request.with_member_timeout(Some(std::time::Duration::from_millis(
+            cfg.member_timeout_ms,
+        )))
+    };
+    if let Some(intent) = cfg
+        .intent
+        .as_deref()
+        .and_then(crate::council::CouncilIntent::parse)
+    {
+        request = request.with_intent(Some(intent));
+    }
+    request
+}
+
+fn apply_council_tool_overrides(
+    mut request: crate::council::CouncilRequest,
+    overrides: &CouncilToolOverrides,
+) -> crate::council::CouncilRequest {
+    if let Some(quorum) = overrides.quorum {
+        request = request.with_quorum(Some(quorum.max(1) as usize));
+    }
+    if let Some(retry) = overrides.retry_on_fail {
+        request = request.with_retry_on_fail(retry.min(u32::MAX as u64) as u32);
+    }
+    if let Some(ms) = overrides.member_timeout_ms {
+        request = if ms == 0 {
+            request.with_member_timeout(None)
+        } else {
+            request.with_member_timeout(Some(std::time::Duration::from_millis(ms)))
+        };
+    }
+    if let Some(archive) = overrides.archive {
+        request = request.with_archive(archive, Some(std::env::current_dir().unwrap_or_default()));
+    }
+    if let Some(intent) = overrides
+        .intent
+        .as_deref()
+        .and_then(crate::council::CouncilIntent::parse)
+    {
+        request = request.with_intent(Some(intent));
+    }
+    request
 }
 
 /// Build the council's de-duplicated member list. With an explicit `requested`
@@ -1356,6 +1511,45 @@ fn resolve_council_members(
                 Some(res) => add(res.provider, res.model, &mut members),
                 None => unresolved.push(id.clone()),
             }
+        }
+    }
+
+    (members, unresolved)
+}
+
+fn resolve_configured_council_members(
+    configured: &[jfc_config::CouncilMemberConfig],
+    registry: &[Arc<dyn Provider>],
+) -> (Vec<crate::council::CouncilMember>, Vec<String>) {
+    use crate::council::CouncilMember;
+
+    let mut members = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut unresolved = Vec::new();
+
+    for member in configured {
+        let model = member.model.trim();
+        if model.is_empty() {
+            continue;
+        }
+        match crate::runtime::bootstrap::resolve_provider_model(registry, model) {
+            Some(res) => {
+                let qualified = crate::runtime::bootstrap::qualified_model_id(
+                    res.provider.as_ref(),
+                    &res.model,
+                );
+                if seen.insert(qualified.clone()) {
+                    let label = member
+                        .name
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(&qualified)
+                        .to_owned();
+                    members.push(CouncilMember::new(res.provider, res.model).with_label(label));
+                }
+            }
+            None => unresolved.push(model.to_owned()),
         }
     }
 
@@ -1446,6 +1640,7 @@ mod council_member_tests {
                         cache_read_tokens: 0,
                         cache_creation_tokens: 0,
                     },
+                    context_signals: None,
                 }),
                 None => Err(anyhow!("unused")),
             }
@@ -1547,8 +1742,7 @@ mod council_member_tests {
         // `beta/m` to it and threads the reply back as a success result.
         let registry: Vec<Arc<dyn Provider>> = vec![
             Arc::new(NamedProvider::new("alpha")) as Arc<dyn Provider>,
-            Arc::new(NamedProvider::answering("beta", "Rayleigh scattering."))
-                as Arc<dyn Provider>,
+            Arc::new(NamedProvider::answering("beta", "Rayleigh scattering.")) as Arc<dyn Provider>,
         ];
         let (ap, am) = active();
         let result = run_ask_model_tool(
@@ -1578,15 +1772,25 @@ mod council_member_tests {
         )
         .await;
         assert!(result.is_error());
-        assert!(result.output.contains("could not resolve model `ghost/nope`"));
+        assert!(
+            result
+                .output
+                .contains("could not resolve model `ghost/nope`")
+        );
     }
 
     #[tokio::test]
     async fn ask_model_empty_prompt_is_error_robust() {
         let (ap, am) = active();
-        let result =
-            run_ask_model_tool("beta/m".to_owned(), "   ".to_owned(), None, ap, am, registry())
-                .await;
+        let result = run_ask_model_tool(
+            "beta/m".to_owned(),
+            "   ".to_owned(),
+            None,
+            ap,
+            am,
+            registry(),
+        )
+        .await;
         assert!(result.is_error());
         assert!(result.output.contains("non-empty `prompt`"));
     }

@@ -219,6 +219,8 @@ fn setup_new_substream_slot(state: &mut EngineState, label: &'static str) -> usi
         );
     }
     state.messages.push(ChatMessage::assistant(String::new()));
+    let identity = crate::cache_lineage::current_identity(state);
+    crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_assistant_idx = Some(assistant_idx);

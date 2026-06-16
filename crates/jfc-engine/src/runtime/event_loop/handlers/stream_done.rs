@@ -112,17 +112,29 @@ pub async fn handle_stream_done(
                 let advisor = state.local_advisor_model.clone();
                 let active = state.model.to_string();
                 let pr = state.prompt_rewrite.clone();
-                model_refusal_assessment =
-                    crate::runtime::prompt_rewrite_gate::classify_response_refusal(
-                        pr.as_ref(),
-                        provider,
-                        &providers,
-                        advisor.as_ref().map(|m| m.as_str()),
-                        &active,
-                        &original_prompt,
-                        &assistant_response_text,
-                    )
-                    .await;
+                let cancel = state.cancel_token.clone();
+                // Race the classification against the cancel token so ESC/interrupt
+                // can abort a hung refusal-classifier call (the 218-minute freeze bug).
+                let classify_fut = crate::runtime::prompt_rewrite_gate::classify_response_refusal(
+                    pr.as_ref(),
+                    provider,
+                    &providers,
+                    advisor.as_ref().map(|m| m.as_str()),
+                    &active,
+                    &original_prompt,
+                    &assistant_response_text,
+                );
+                model_refusal_assessment = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => {
+                        tracing::info!(
+                            target: "jfc::stream::lifecycle",
+                            "refusal classification cancelled by user interrupt"
+                        );
+                        None
+                    }
+                    result = classify_fut => result,
+                };
             }
         }
         let model_refusal = model_refusal_assessment
@@ -254,7 +266,10 @@ pub async fn handle_stream_done(
                     let advisor = state.local_advisor_model.clone();
                     let active = state.model.to_string();
                     let pr = state.prompt_rewrite.clone();
-                    let decision = crate::runtime::prompt_rewrite_gate::evaluate_with_feedback(
+                    let cancel = state.cancel_token.clone();
+                    // Race the rewrite gate against the cancel token so ESC/interrupt
+                    // can abort a hung rewrite call (the 218-minute freeze bug).
+                    let rewrite_fut = crate::runtime::prompt_rewrite_gate::evaluate_with_feedback(
                         pr.as_ref(),
                         provider,
                         &providers,
@@ -264,8 +279,18 @@ pub async fn handle_stream_done(
                         &[],
                         &prior_attempts,
                         Some(&refusal_text),
-                    )
-                    .await;
+                    );
+                    let decision = tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => {
+                            tracing::info!(
+                                target: "jfc::stream::lifecycle",
+                                "refusal rewrite gate cancelled by user interrupt"
+                            );
+                            None
+                        }
+                        result = rewrite_fut => result,
+                    };
                     if let Some(jfc_audit::RewriteDecision::Rewritten(rw)) = decision {
                         state.refusal_rewrite_retry_count += 1;
                         state.refusal_rewrite_attempts.push(rw.text.clone());
@@ -1545,6 +1570,7 @@ mod stream_done_lifecycle_tests {
             Ok(jfc_provider::CompletionResponse {
                 content: content.to_string(),
                 usage: jfc_provider::TokenUsage::default(),
+                context_signals: None,
             })
         }
     }

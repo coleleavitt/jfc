@@ -767,6 +767,7 @@ mod tests {
             Ok(jfc_provider::CompletionResponse {
                 content: self.reply.clone(),
                 usage: jfc_provider::TokenUsage::default(),
+                context_signals: None,
             })
         }
     }

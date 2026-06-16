@@ -338,6 +338,7 @@ mod tests {
             Ok(CompletionResponse {
                 content,
                 usage: TokenUsage::default(),
+                context_signals: None,
             })
         }
     }

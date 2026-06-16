@@ -489,6 +489,7 @@ mod tests {
             Ok(CompletionResponse {
                 content: self.reply.clone(),
                 usage: TokenUsage::default(),
+                context_signals: None,
             })
         }
     }

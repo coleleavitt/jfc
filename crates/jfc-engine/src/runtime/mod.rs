@@ -34,7 +34,7 @@ pub use factory::{factory_mode_enabled, maybe_continue_task_factory};
 pub use goal_loop::{dispatch_goal_evaluator_if_active, handle_goal_verdict};
 pub use jfc_core::{
     DEFERRED_TOOL_USES_CAP, DeferredToolUse, MessageQueue, QueuePriority, QueuedPrompt,
-    TOOL_USE_SUMMARIES_CAP, ToolUseSummary,
+    TOOL_USE_SUMMARIES_CAP, ToolUseSummary, push_bounded_drop_oldest,
 };
 #[cfg(test)]
 pub use jfc_core::{DiagnosticLevel, ToolOutcome};

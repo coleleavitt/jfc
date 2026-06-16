@@ -5,7 +5,7 @@ use crate::tools;
 use jfc_provider::{
     DEFAULT_MAX_OUTPUT_TOKENS, ModelId, ModelRequestPolicy, ModelRequestProfile,
     ModelResolutionReason, ModelSpec, Provider, ProviderContent, ProviderId, ProviderMessage,
-    ProviderRole, ResolvedModel, StreamConvention, StreamOptions,
+    ProviderRole, ResolvedModel, StreamConvention, StreamOptions, ToolDef,
 };
 
 pub struct PreparedStreamRequest {
@@ -70,6 +70,59 @@ fn last_user_text(messages: &[ProviderMessage]) -> Option<String> {
         }
     }
     None
+}
+
+fn chars_to_tokens(chars: usize) -> u64 {
+    (chars / 4).try_into().unwrap_or(u64::MAX)
+}
+
+fn provider_content_chars(content: &ProviderContent) -> usize {
+    match content {
+        ProviderContent::Text(text) => text.len(),
+        ProviderContent::ToolResult { content, .. } => content.len(),
+        ProviderContent::ToolUse { name, input, .. }
+        | ProviderContent::ServerToolUse { name, input, .. } => {
+            name.len() + input.to_string().len()
+        }
+        ProviderContent::ServerToolResult { content, .. } => content.to_string().len(),
+        ProviderContent::Attachment(attachment) => attachment.bytes.len(),
+        ProviderContent::RedactedThinking { data } => data.len(),
+    }
+}
+
+fn provider_messages_tokens(messages: &[ProviderMessage]) -> u64 {
+    chars_to_tokens(
+        messages
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .map(provider_content_chars)
+            .sum(),
+    )
+}
+
+fn tool_definition_tokens(tool: &ToolDef) -> u64 {
+    chars_to_tokens(
+        tool.name
+            .len()
+            .saturating_add(tool.description.len())
+            .saturating_add(tool.input_schema.to_string().len()),
+    )
+}
+
+fn stream_context_budget(
+    system_prompt: &str,
+    tools: &[ToolDef],
+    recalled_memory_chars: usize,
+    messages: &[ProviderMessage],
+) -> jfc_core::context_budget::ContextBudget {
+    let system_chars = system_prompt.len().saturating_sub(recalled_memory_chars);
+    jfc_core::context_budget::ContextBudget {
+        system_prompt_tokens: chars_to_tokens(system_chars),
+        tool_definition_tokens: tools.iter().map(tool_definition_tokens).sum(),
+        memory_tokens: chars_to_tokens(recalled_memory_chars),
+        project_instructions_tokens: 0,
+        user_message_tokens: provider_messages_tokens(messages),
+    }
 }
 
 /// True when the conversation is in the middle of an agentic tool loop —
@@ -323,8 +376,17 @@ fn preserve_non_action_tool(tool_name: &str) -> bool {
     // old behavior stripped every MCP tool here, which contradicted that
     // guidance and trained the model to answer structure questions from
     // memory or punt to Read/Bash on the next action turn.
-    matches!(tool_name, "ToolSearch" | "ToolSuggest" | "SendUserMessage")
-        || crate::tools::is_code_navigation_tool_name(tool_name)
+    matches!(
+        tool_name,
+        "ToolSearch"
+            | "ToolSuggest"
+            | "SendUserMessage"
+            | "HcomStatus"
+            | "HcomList"
+            | "HcomEvents"
+            | "HcomTranscript"
+            | "HcomBundle"
+    ) || crate::tools::is_code_navigation_tool_name(tool_name)
 }
 
 fn anthropic_tool_choice_value(_choice: StreamToolChoice) -> serde_json::Value {
@@ -732,6 +794,8 @@ Do not use a colon before tool calls.";
         system_prompt.push_str(&doc_rules);
     }
 
+    let hcom_available = tools::hcom_available();
+
     if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::Marsh) {
         let chunks = crate::feature_gates::marsh_drain();
         if !chunks.is_empty() {
@@ -933,6 +997,9 @@ Do not use a colon before tool calls.";
         effective_brief_mode,
         pewter_owl_tool,
     );
+    if !hcom_available {
+        advertised_tools.retain(|tool| !tools::is_hcom_tool_name(&tool.name));
+    }
 
     #[cfg(feature = "permission-automation")]
     {
@@ -1059,12 +1126,39 @@ Do not use a colon before tool calls.";
         .iter()
         .map(|tool| tool.name.clone())
         .collect::<Vec<_>>();
+    if advertised_tools
+        .iter()
+        .any(|tool| tools::is_hcom_tool_name(&tool.name))
+        && let Some(section) = tools::hcom_system_prompt_section()
+    {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(section);
+    }
     if let Some(rules) = crate::review::tool_scoped_prompt_rules(&advertised_tool_names) {
         system_prompt.push_str("\n\n");
         system_prompt.push_str(&rules);
     }
     let system_prompt_tokens = system_prompt.len() / 4;
     let advertised_tool_count = advertised_tools.len();
+    let request_budget = stream_context_budget(
+        &system_prompt,
+        &advertised_tools,
+        recalled_memory_chars,
+        messages,
+    );
+    let request_raw_tokens = jfc_core::context_budget::raw_tokens(request_budget);
+    let request_effective_tokens = jfc_core::context_budget::effective_tokens(request_budget);
+    tracing::debug!(
+        target: "jfc::stream::budget",
+        system_prompt_tokens = request_budget.system_prompt_tokens,
+        tool_definition_tokens = request_budget.tool_definition_tokens,
+        memory_tokens = request_budget.memory_tokens,
+        replay_message_tokens = request_budget.user_message_tokens,
+        raw_tokens = request_raw_tokens,
+        effective_tokens = request_effective_tokens,
+        advertised_tool_count,
+        "proof-backed stream context budget estimate"
+    );
 
     let mut base = StreamOptions::new(model.clone())
         .system(system_prompt)
@@ -1291,11 +1385,11 @@ mod tests {
 
     use super::{
         conversation_is_mid_tool_loop, prepare_stream_request, preserve_non_action_tool,
-        user_text_requests_action,
+        stream_context_budget, user_text_requests_action,
     };
     use jfc_provider::{
         EventStream, ModelId, ModelInfo, Provider, ProviderContent, ProviderMessage, ProviderRole,
-        StreamConvention, StreamOptions,
+        StreamConvention, StreamOptions, ToolDef,
     };
 
     struct TestProvider {
@@ -1360,6 +1454,25 @@ mod tests {
                 is_error: false,
             }],
         }
+    }
+
+    #[test]
+    fn stream_context_budget_uses_actual_components_normal() {
+        let tools = vec![ToolDef {
+            name: "Read".into(),
+            description: "read files".into(),
+            input_schema: serde_json::json!({"properties":{"file_path":{"type":"string"}}}),
+        }];
+        let messages = vec![user_text("hello world")];
+        let budget = stream_context_budget("system prompt plus memory", &tools, 6, &messages);
+        assert_eq!(budget.memory_tokens, 1);
+        assert!(budget.system_prompt_tokens > 0);
+        assert!(budget.tool_definition_tokens > 0);
+        assert!(budget.user_message_tokens > 0);
+        assert!(
+            jfc_core::context_budget::effective_tokens(budget)
+                >= jfc_core::context_budget::raw_tokens(budget)
+        );
     }
 
     // Normal: a post-tool continuation ends with a user message carrying
@@ -1445,7 +1558,10 @@ mod tests {
         assert!(preserve_non_action_tool("ToolSearch"));
         assert!(preserve_non_action_tool("ToolSuggest"));
         assert!(preserve_non_action_tool("SendUserMessage"));
+        assert!(preserve_non_action_tool("HcomList"));
+        assert!(preserve_non_action_tool("HcomTranscript"));
         assert!(!preserve_non_action_tool("Bash"));
+        assert!(!preserve_non_action_tool("HcomSend"));
         assert!(!preserve_non_action_tool("Read"));
         assert!(!preserve_non_action_tool("WebFetch"));
     }

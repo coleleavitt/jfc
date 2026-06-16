@@ -599,6 +599,9 @@ pub enum VoiceEvent {
     Final(String),
     /// Voice state changed (idle / recording / processing).
     StateChanged(u8), // 0=idle, 1=recording, 2=processing
+    /// A normalized [0,1] RMS audio level sample, emitted per captured chunk
+    /// while recording. Drives the live recording-cursor animation.
+    Level(f32),
     /// Error from the voice pipeline.
     Error(String),
 }

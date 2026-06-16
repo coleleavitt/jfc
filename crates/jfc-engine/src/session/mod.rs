@@ -20,3 +20,7 @@ mod serialization_tests;
 pub use core::{
     load_session, load_session_with_model, save_session, set_post_save_hook, set_session_title,
 };
+
+pub(crate) use deserialize::deserialize_message;
+pub(crate) use serialization::SerializedMessage;
+pub(crate) use serialize::serialize_message;

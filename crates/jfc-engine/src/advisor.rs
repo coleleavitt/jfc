@@ -889,6 +889,7 @@ mod tests {
                         cache_read_tokens: 0,
                         cache_creation_tokens: 0,
                     },
+                    context_signals: None,
                 }))),
             }
         }
@@ -1236,6 +1237,7 @@ mod tests {
                     cache_read_tokens: 0,
                     cache_creation_tokens: 0,
                 },
+                context_signals: None,
             }),
         ));
         let targets = vec![
@@ -1345,6 +1347,7 @@ mod tests {
                 Ok(CompletionResponse {
                     content: "x".repeat(400), // 400 chars → ~100 tokens
                     usage: Default::default(),
+                    context_signals: None,
                 })
             }
         }

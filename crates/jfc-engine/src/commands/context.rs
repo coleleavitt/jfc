@@ -119,13 +119,22 @@ pub(super) async fn cmd_advisor(
         ) {
             match crate::config::save_server_advisor_model(None) {
                 Ok(_) => {
+                    let old_identity = crate::cache_lineage::current_identity(state);
                     crate::advisor::set_active_server_advisor_model(None);
                     state.server_advisor_model = None;
-                    state
-                        .messages
-                        .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
-                            "Server advisor disabled.".into(),
-                        )]));
+                    let new_identity = crate::cache_lineage::current_identity(state);
+                    let piggyback_drop = settle_cache_identity_change(
+                        state,
+                        &old_identity,
+                        &new_identity,
+                        "advisor config change",
+                    );
+                    push_advisor_reply_after_cache_change(
+                        state,
+                        text,
+                        "Server advisor disabled.".into(),
+                        piggyback_drop,
+                    );
                 }
                 Err(e) => {
                     state
@@ -167,11 +176,22 @@ pub(super) async fn cmd_advisor(
             Ok(Some(model)) => {
                 match crate::config::save_server_advisor_model(Some(model.as_str())) {
                     Ok(_) => {
+                        let old_identity = crate::cache_lineage::current_identity(state);
                         crate::advisor::set_active_server_advisor_model(Some(model.clone()));
                         state.server_advisor_model = Some(model.clone());
-                        state.messages.push(ChatMessage::assistant_parts(vec![
-                            MessagePart::Advisor(format!("Server advisor set to `{model}`.")),
-                        ]));
+                        let new_identity = crate::cache_lineage::current_identity(state);
+                        let piggyback_drop = settle_cache_identity_change(
+                            state,
+                            &old_identity,
+                            &new_identity,
+                            "advisor config change",
+                        );
+                        push_advisor_reply_after_cache_change(
+                            state,
+                            text,
+                            format!("Server advisor set to `{model}`."),
+                            piggyback_drop,
+                        );
                     }
                     Err(e) => {
                         state.messages.push(ChatMessage::assistant_parts(vec![
@@ -206,15 +226,24 @@ pub(super) async fn cmd_advisor(
     ) {
         match crate::config::save_advisor_model(None) {
             Ok(_) => {
+                let old_identity = crate::cache_lineage::current_identity(state);
                 crate::advisor::set_active_local_advisor_model(None);
                 state.local_advisor_model = None;
                 state.advisor_enabled = false;
                 state.advisor_session = None;
-                state
-                    .messages
-                    .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
-                        "Local advisor disabled.".into(),
-                    )]));
+                let new_identity = crate::cache_lineage::current_identity(state);
+                let piggyback_drop = settle_cache_identity_change(
+                    state,
+                    &old_identity,
+                    &new_identity,
+                    "advisor config change",
+                );
+                push_advisor_reply_after_cache_change(
+                    state,
+                    text,
+                    "Local advisor disabled.".into(),
+                    piggyback_drop,
+                );
             }
             Err(e) => {
                 state
@@ -256,6 +285,7 @@ pub(super) async fn cmd_advisor(
                     Ok(provider) => {
                         match crate::config::save_advisor_model(Some(&model.config_value())) {
                             Ok(_) => {
+                                let old_identity = crate::cache_lineage::current_identity(state);
                                 crate::advisor::set_active_local_advisor_provider(
                                     model.provider.clone(),
                                 );
@@ -267,13 +297,23 @@ pub(super) async fn cmd_advisor(
                                 state.advisor_enabled = true;
                                 state.advisor_session =
                                     Some(crate::advisor::AdvisorSession::new(model.model.clone()));
-                                state.messages.push(ChatMessage::assistant_parts(vec![
-                                    MessagePart::Advisor(format!(
+                                let new_identity = crate::cache_lineage::current_identity(state);
+                                let piggyback_drop = settle_cache_identity_change(
+                                    state,
+                                    &old_identity,
+                                    &new_identity,
+                                    "advisor config change",
+                                );
+                                push_advisor_reply_after_cache_change(
+                                    state,
+                                    text,
+                                    format!(
                                         "Local advisor set to `{}` via `{}`.",
                                         model.config_value(),
                                         provider.name()
-                                    )),
-                                ]));
+                                    ),
+                                    piggyback_drop,
+                                );
                             }
                             Err(e) => {
                                 state.messages.push(ChatMessage::assistant_parts(vec![
@@ -402,7 +442,9 @@ pub(super) async fn cmd_council(
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    use crate::council::{CouncilMember, CouncilRequest, run_council};
+    use crate::council::{
+        CouncilIntent, CouncilMember, CouncilRequest, run_agentic_council, run_council,
+    };
 
     state.messages.push(ChatMessage::user(text.to_owned()));
     let args = text.trim().strip_prefix("/council").unwrap_or("").trim();
@@ -415,8 +457,15 @@ pub(super) async fn cmd_council(
         return;
     }
 
+    let cfg = crate::config::load_arc();
+    let council_cfg = cfg.council.as_ref();
+    let agentic = matches!(
+        council_cfg.map(|cfg| &cfg.mode),
+        Some(jfc_config::CouncilMode::Agentic)
+    );
+
     // A leading token with a comma is a member list; otherwise default members.
-    let (model_ids, question) = parse_council_args(args, state);
+    let (model_ids, question) = parse_council_args(args, state, council_cfg);
     if question.trim().is_empty() {
         state
             .messages
@@ -430,7 +479,22 @@ pub(super) async fn cmd_council(
     let mut unresolved = Vec::new();
     for id in &model_ids {
         match crate::runtime::bootstrap::resolve_provider_model(&state.providers, id) {
-            Some(res) => members.push(CouncilMember::new(res.provider, res.model).with_label(id)),
+            Some(res) => {
+                let label = council_cfg
+                    .and_then(|cfg| {
+                        cfg.members.iter().find_map(|member| {
+                            let model_matches = member.model.trim() == id.trim();
+                            model_matches
+                                .then(|| member.name.as_deref())
+                                .flatten()
+                                .map(str::trim)
+                                .filter(|s| !s.is_empty())
+                                .map(str::to_owned)
+                        })
+                    })
+                    .unwrap_or_else(|| id.clone());
+                members.push(CouncilMember::new(res.provider, res.model).with_label(label));
+            }
             None => unresolved.push(id.clone()),
         }
     }
@@ -448,8 +512,38 @@ pub(super) async fn cmd_council(
     }
 
     let snapshot = render_council_snapshot(&state.messages);
-    let request = CouncilRequest::new(question, members).with_context(snapshot);
-    match run_council(request).await {
+    let mut request = CouncilRequest::new(question, members).with_context(snapshot);
+    if let Some(cfg) = council_cfg {
+        request = request
+            .with_quorum(cfg.quorum)
+            .with_retry_on_fail(cfg.retry_on_fail)
+            .with_archive(
+                cfg.archive,
+                Some(std::env::current_dir().unwrap_or_default()),
+            );
+        request = if cfg.member_timeout_ms == 0 {
+            request.with_member_timeout(None)
+        } else {
+            request.with_member_timeout(Some(std::time::Duration::from_millis(
+                cfg.member_timeout_ms,
+            )))
+        };
+        if let Some(intent) = cfg.intent.as_deref().and_then(CouncilIntent::parse) {
+            request = request.with_intent(Some(intent));
+        }
+    }
+    let council_result = if agentic {
+        run_agentic_council(
+            request,
+            Some(state.task_store.clone()),
+            state.team_context.team_name.as_deref(),
+            std::env::current_dir().unwrap_or_default(),
+        )
+        .await
+    } else {
+        run_council(request).await
+    };
+    match council_result {
         Ok(report) => {
             let mut body = report.to_markdown();
             if !unresolved.is_empty() {
@@ -477,7 +571,11 @@ pub(super) async fn cmd_council(
 /// Split `/council` args into (member model ids, question). A leading token is
 /// treated as a comma-separated member list only when it actually contains a
 /// comma; otherwise members default to the active model + local advisor model.
-fn parse_council_args(args: &str, state: &EngineState) -> (Vec<String>, String) {
+fn parse_council_args(
+    args: &str,
+    state: &EngineState,
+    council_cfg: Option<&jfc_config::CouncilConfig>,
+) -> (Vec<String>, String) {
     if let Some((head, rest)) = args.split_once(char::is_whitespace) {
         if head.contains(',') {
             let ids: Vec<String> = head
@@ -490,12 +588,29 @@ fn parse_council_args(args: &str, state: &EngineState) -> (Vec<String>, String) 
             }
         }
     }
-    (default_council_models(state), args.to_owned())
+    (default_council_models(state, council_cfg), args.to_owned())
 }
 
 /// Default council membership: the active model plus the local advisor model
 /// when it's distinct. Falls back to a single-model council (still valid).
-fn default_council_models(state: &EngineState) -> Vec<String> {
+fn default_council_models(
+    state: &EngineState,
+    council_cfg: Option<&jfc_config::CouncilConfig>,
+) -> Vec<String> {
+    if let Some(configured) = council_cfg
+        .map(|cfg| cfg.members.as_slice())
+        .filter(|members| !members.is_empty())
+    {
+        let ids: Vec<String> = configured
+            .iter()
+            .map(|member| member.model.trim())
+            .filter(|model| !model.is_empty())
+            .map(str::to_owned)
+            .collect();
+        if !ids.is_empty() {
+            return ids;
+        }
+    }
     let mut ids = vec![state.model.to_string()];
     if let Some(advisor) = state.local_advisor_model.as_ref() {
         let advisor = advisor.to_string();
@@ -736,6 +851,61 @@ pub(super) async fn cmd_config(
         state.messages.push(ChatMessage::assistant(body));
     }
 }
+
+fn settle_cache_identity_change(
+    state: &mut EngineState,
+    old_identity: &str,
+    new_identity: &str,
+    change_kind: &str,
+) -> Option<crate::cache_lineage::PiggybackDrop> {
+    if new_identity == old_identity {
+        return None;
+    }
+    let drop = crate::cache_lineage::maybe_piggyback_drop_for_identity_change(
+        state,
+        new_identity,
+        change_kind,
+    );
+    state.last_response_id = state
+        .response_ids_by_cache_identity
+        .get(new_identity)
+        .cloned();
+    drop
+}
+
+fn append_cache_lineage_note(
+    reply: &mut String,
+    piggyback_drop: Option<crate::cache_lineage::PiggybackDrop>,
+) {
+    if let Some(drop) = piggyback_drop {
+        reply.push_str(&format!(
+            "\n\nCache lineage preserved: trimmed {} incompatible tail messages.",
+            drop.dropped_messages
+        ));
+        if let Some(archive_id) = drop.archive_id {
+            reply.push_str(&format!(" Raw tail archive: `/expand {archive_id}`."));
+        }
+    }
+}
+
+fn push_advisor_reply_after_cache_change(
+    state: &mut EngineState,
+    text: &str,
+    mut reply: String,
+    piggyback_drop: Option<crate::cache_lineage::PiggybackDrop>,
+) {
+    let reecho_user = piggyback_drop.is_some();
+    append_cache_lineage_note(&mut reply, piggyback_drop);
+    if reecho_user {
+        state.messages.push(ChatMessage::user(text.to_owned()));
+    }
+    state
+        .messages
+        .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+            reply,
+        )]));
+}
+
 pub(super) async fn cmd_model(
     state: &mut EngineState,
     parts: &[&str],
@@ -745,8 +915,8 @@ pub(super) async fn cmd_model(
     // `/model <name>` immediately switches the active model for
     // subsequent turns without restarting the session or clearing history.
     let arg = parts.get(1).copied().unwrap_or("").trim();
-    state.messages.push(ChatMessage::user(text.to_owned()));
     if arg.is_empty() {
+        state.messages.push(ChatMessage::user(text.to_owned()));
         state.messages.push(ChatMessage::assistant(format!(
             "Current model: `{}`\n\nUsage: `/model <name>` to switch.\n\
              Or press Ctrl+M to open the model picker.",
@@ -756,6 +926,7 @@ pub(super) async fn cmd_model(
     }
     let requested_model = arg.to_string();
     let old_model = state.model.clone();
+    let old_identity = crate::cache_lineage::current_identity(state);
     let mut recent_model = requested_model.clone();
     if let Some(resolved) =
         crate::runtime::bootstrap::resolve_provider_model(&state.providers, &requested_model)
@@ -767,6 +938,11 @@ pub(super) async fn cmd_model(
     } else {
         state.model = jfc_provider::ModelId::new(requested_model);
     }
+    let new_identity = crate::cache_lineage::current_identity(state);
+    let piggyback_drop =
+        settle_cache_identity_change(state, &old_identity, &new_identity, "provider/model switch");
+
+    state.messages.push(ChatMessage::user(text.to_owned()));
     crate::app::push_recent_model(&mut state.recent_models, &recent_model);
     state.sync_selected_context_window();
     tracing::info!(
@@ -774,12 +950,14 @@ pub(super) async fn cmd_model(
         old_model = %old_model,
         new_model = %state.model,
         provider = %state.provider.name(),
+        old_identity = %old_identity,
+        new_identity = %new_identity,
+        piggyback_dropped_messages = piggyback_drop.as_ref().map_or(0, |drop| drop.dropped_messages),
         "model switch via /model command"
     );
-    state.messages.push(ChatMessage::assistant(format!(
-        "Model switched to: {}",
-        state.model
-    )));
+    let mut reply = format!("Model switched to: {}", state.model);
+    append_cache_lineage_note(&mut reply, piggyback_drop);
+    state.messages.push(ChatMessage::assistant(reply));
 }
 
 pub(super) async fn cmd_fast(
@@ -791,10 +969,14 @@ pub(super) async fn cmd_fast(
     // Toggle fast mode (lower-latency inference via Anthropic's
     // `fast-mode-2026-02-01` beta header). Mirrors Claude Code
     // v2.1.139's `/fast` command (Alt+O keybind).
-    state.messages.push(ChatMessage::user(text.to_owned()));
+    let old_identity = crate::cache_lineage::current_identity(state);
     state.fast_mode = !state.fast_mode;
     crate::effort::set_fast_mode_global(state.fast_mode);
-    state.messages.push(ChatMessage::assistant(format!(
+    let new_identity = crate::cache_lineage::current_identity(state);
+    let piggyback_drop =
+        settle_cache_identity_change(state, &old_identity, &new_identity, "fast-mode toggle");
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    let mut reply = format!(
         "Fast mode: **{}** — {}",
         if state.fast_mode { "ON" } else { "OFF" },
         if state.fast_mode {
@@ -802,7 +984,9 @@ pub(super) async fn cmd_fast(
         } else {
             "requests will use the standard inference path"
         },
-    )));
+    );
+    append_cache_lineage_note(&mut reply, piggyback_drop);
+    state.messages.push(ChatMessage::assistant(reply));
 }
 
 pub(super) async fn cmd_pin(
@@ -916,24 +1100,43 @@ pub(super) async fn cmd_effort(
     // v132 reasoning-effort pin. `/effort low|medium|high|xhigh|max`
     // sets the pin; `/effort` alone shows the current state;
     // `/effort clear` removes the pin so the model picks adaptive.
-    state.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts.get(1).copied().unwrap_or("").trim();
     if arg.is_empty() {
+        state.messages.push(ChatMessage::user(text.to_owned()));
         state
             .messages
             .push(ChatMessage::assistant(state.effort_state.status()));
     } else if arg == "clear" || arg == "off" {
-        let msg = state.effort_state.clear();
+        let old_identity = crate::cache_lineage::current_identity(state);
+        let mut msg = state.effort_state.clear();
+        let new_identity = crate::cache_lineage::current_identity(state);
+        let piggyback_drop =
+            settle_cache_identity_change(state, &old_identity, &new_identity, "effort pin change");
+        append_cache_lineage_note(&mut msg, piggyback_drop);
+        state.messages.push(ChatMessage::user(text.to_owned()));
         state.messages.push(ChatMessage::assistant(msg));
     } else if arg.eq_ignore_ascii_case("ultracode") {
         // Claude Code's `/effort ultracode`: standing session mode that pins
         // xhigh effort and instructs the model to use Workflow by default.
-        let msg = state.effort_state.set_ultracode();
+        let old_identity = crate::cache_lineage::current_identity(state);
+        let mut msg = state.effort_state.set_ultracode();
+        let new_identity = crate::cache_lineage::current_identity(state);
+        let piggyback_drop =
+            settle_cache_identity_change(state, &old_identity, &new_identity, "effort pin change");
+        append_cache_lineage_note(&mut msg, piggyback_drop);
+        state.messages.push(ChatMessage::user(text.to_owned()));
         state.messages.push(ChatMessage::assistant(msg));
     } else if let Some(level) = crate::effort::ReasoningEffort::from_str_loose(arg) {
-        let msg = state.effort_state.set(level);
+        let old_identity = crate::cache_lineage::current_identity(state);
+        let mut msg = state.effort_state.set(level);
+        let new_identity = crate::cache_lineage::current_identity(state);
+        let piggyback_drop =
+            settle_cache_identity_change(state, &old_identity, &new_identity, "effort pin change");
+        append_cache_lineage_note(&mut msg, piggyback_drop);
+        state.messages.push(ChatMessage::user(text.to_owned()));
         state.messages.push(ChatMessage::assistant(msg));
     } else {
+        state.messages.push(ChatMessage::user(text.to_owned()));
         state.messages.push(ChatMessage::assistant(format!(
             "Unknown effort `{arg}`. Use one of: low, medium, high, xhigh, max, ultracode, clear."
         )));
@@ -946,19 +1149,37 @@ pub(super) async fn cmd_temp(
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    state.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts.get(1).copied().unwrap_or("").trim();
     if arg.is_empty() {
+        state.messages.push(ChatMessage::user(text.to_owned()));
         state
             .messages
             .push(ChatMessage::assistant(state.temperature_state.status()));
     } else if matches!(arg, "clear" | "default" | "auto" | "off") {
-        let msg = state.temperature_state.clear();
+        let old_identity = crate::cache_lineage::current_identity(state);
+        let mut msg = state.temperature_state.clear();
+        let new_identity = crate::cache_lineage::current_identity(state);
+        let piggyback_drop = settle_cache_identity_change(
+            state,
+            &old_identity,
+            &new_identity,
+            "temperature pin change",
+        );
+        append_cache_lineage_note(&mut msg, piggyback_drop);
+        state.messages.push(ChatMessage::user(text.to_owned()));
         state.messages.push(ChatMessage::assistant(msg));
     } else {
         match crate::exploration::parse_temperature(arg) {
             Ok(value) => {
+                let old_identity = crate::cache_lineage::current_identity(state);
                 let mut msg = state.temperature_state.set(value);
+                let new_identity = crate::cache_lineage::current_identity(state);
+                let piggyback_drop = settle_cache_identity_change(
+                    state,
+                    &old_identity,
+                    &new_identity,
+                    "temperature pin change",
+                );
                 // The pin is silently dropped for request shapes that lock
                 // sampling — the Anthropic OAuth/subscription API, and any
                 // request with extended thinking on (Anthropic requires
@@ -976,9 +1197,12 @@ pub(super) async fn cmd_temp(
                     ),
                     _ => {}
                 }
+                append_cache_lineage_note(&mut msg, piggyback_drop);
+                state.messages.push(ChatMessage::user(text.to_owned()));
                 state.messages.push(ChatMessage::assistant(msg));
             }
             Err(reason) => {
+                state.messages.push(ChatMessage::user(text.to_owned()));
                 state.messages.push(ChatMessage::assistant(format!(
                     "{reason} Use `/temp <0..2>` or `/temp clear`."
                 )));
@@ -1090,13 +1314,26 @@ pub(super) async fn cmd_feature(
                 return;
             }
         };
+        let old_identity = crate::cache_lineage::current_identity(state);
         crate::feature_gates::set(gate, enabled);
-        state.messages.push(ChatMessage::assistant(format!(
+        let new_identity = crate::cache_lineage::current_identity(state);
+        let piggyback_drop = settle_cache_identity_change(
+            state,
+            &old_identity,
+            &new_identity,
+            "feature-gate switch",
+        );
+        if piggyback_drop.is_some() {
+            state.messages.push(ChatMessage::user(text.to_owned()));
+        }
+        let mut reply = format!(
             "`{}` set to **{}** ({}).",
             gate.codename(),
             if enabled { "ON" } else { "OFF" },
             gate.description(),
-        )));
+        );
+        append_cache_lineage_note(&mut reply, piggyback_drop);
+        state.messages.push(ChatMessage::assistant(reply));
         // v132 system-reminder so the model sees the gate flip
         // on the next turn (rather than guessing from changed
         // behavior).
@@ -1373,16 +1610,22 @@ pub(super) async fn cmd_mode(
         }
     };
     if let Some(mode) = new_mode {
+        let old_identity = crate::cache_lineage::current_identity(state);
         state.permission_mode = mode;
         // Persist so the mode survives session restart / --continue.
         crate::config::save_permission_mode(&state.permission_mode);
         // Sync auto_mode.enabled with permission mode for backward compat
         state.auto_mode.enabled = mode == crate::app::PermissionMode::Auto;
-        state.messages.push(ChatMessage::assistant(format!(
-            "**Mode → {} {}**",
-            mode.symbol(),
-            mode.label()
-        )));
+        let new_identity = crate::cache_lineage::current_identity(state);
+        let piggyback_drop = settle_cache_identity_change(
+            state,
+            &old_identity,
+            &new_identity,
+            "permission mode switch",
+        );
+        let mut reply = format!("**Mode → {} {}**", mode.symbol(), mode.label());
+        append_cache_lineage_note(&mut reply, piggyback_drop);
+        state.messages.push(ChatMessage::assistant(reply));
     }
 }
 
@@ -1395,23 +1638,39 @@ pub(super) async fn cmd_auto_mode(
     let arg = parts.get(1).copied().unwrap_or("status").trim();
     match arg {
         "on" | "enable" | "true" => {
+            let old_identity = crate::cache_lineage::current_identity(state);
             state.auto_mode.enabled = true;
-            state.messages.push(ChatMessage::assistant(
-                "**Auto-mode enabled.** Every tool call will be sent to the v126 \
+            let new_identity = crate::cache_lineage::current_identity(state);
+            let piggyback_drop = settle_cache_identity_change(
+                state,
+                &old_identity,
+                &new_identity,
+                "auto-mode toggle",
+            );
+            let mut reply = "**Auto-mode enabled.** Every tool call will be sent to the v126 \
                          classifier LLM. The classifier may block dangerous operations \
                          without prompting you. Edit `~/.config/jfc/settings.json` under \
                          `autoMode.{allow,soft_deny,environment}` (with `$defaults` \
                          inheritance) to extend the rules."
-                    .into(),
-            ));
+                .to_owned();
+            append_cache_lineage_note(&mut reply, piggyback_drop);
+            state.messages.push(ChatMessage::assistant(reply));
         }
         "off" | "disable" | "false" => {
+            let old_identity = crate::cache_lineage::current_identity(state);
             state.auto_mode.enabled = false;
-            state.messages.push(ChatMessage::assistant(
-                "**Auto-mode disabled.** Tool calls will use the manual approval \
+            let new_identity = crate::cache_lineage::current_identity(state);
+            let piggyback_drop = settle_cache_identity_change(
+                state,
+                &old_identity,
+                &new_identity,
+                "auto-mode toggle",
+            );
+            let mut reply = "**Auto-mode disabled.** Tool calls will use the manual approval \
                          flow again."
-                    .into(),
-            ));
+                .to_owned();
+            append_cache_lineage_note(&mut reply, piggyback_drop);
+            state.messages.push(ChatMessage::assistant(reply));
         }
         _ => {
             let n_allow = state.auto_mode.allow.len();

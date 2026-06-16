@@ -242,9 +242,25 @@ pub(super) fn handle_output_style_command(state: &mut EngineState, args: &str) {
         );
         return;
     }
+    let old_identity = crate::cache_lineage::current_identity(state);
     state.output_style = parsed;
     crate::output_style::set_active_named(arg);
     let style_name = output_style::active().name();
+    let new_identity = crate::cache_lineage::current_identity(state);
+    let piggyback_drop = if new_identity == old_identity {
+        None
+    } else {
+        let drop = crate::cache_lineage::maybe_piggyback_drop_for_identity_change(
+            state,
+            &new_identity,
+            "output-style switch",
+        );
+        state.last_response_id = state
+            .response_ids_by_cache_identity
+            .get(&new_identity)
+            .cloned();
+        drop
+    };
     let persist_msg = match save_output_style(&style_name) {
         Ok(_) => format!("output style: {}", style_name),
         Err(e) => {
@@ -252,10 +268,27 @@ pub(super) fn handle_output_style_command(state: &mut EngineState, args: &str) {
             format!("output style: {} (not persisted: {e})", style_name)
         }
     };
+    let persist_msg = append_cache_lineage_status(persist_msg, piggyback_drop);
     crate::toast::push_with_cap(
         &mut state.toasts,
         crate::toast::Toast::new(crate::toast::ToastKind::Success, persist_msg),
     );
+}
+
+fn append_cache_lineage_status(
+    mut message: String,
+    piggyback_drop: Option<crate::cache_lineage::PiggybackDrop>,
+) -> String {
+    if let Some(drop) = piggyback_drop {
+        message.push_str(&format!(
+            "; trimmed {} incompatible cache-tail messages",
+            drop.dropped_messages
+        ));
+        if let Some(archive_id) = drop.archive_id {
+            message.push_str(&format!(" (/expand {archive_id})"));
+        }
+    }
+    message
 }
 
 fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {

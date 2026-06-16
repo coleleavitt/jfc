@@ -144,6 +144,8 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     } else {
         state.model.clone()
     };
+    let identity = crate::cache_lineage::request_cache_identity(state, provider.name(), &model);
+    crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
     let interrupt = state.interrupt_flag.clone();
     state.cancel_token = tokio_util::sync::CancellationToken::new();
     let cancel = state.cancel_token.clone();
