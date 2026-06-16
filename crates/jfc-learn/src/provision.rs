@@ -72,7 +72,10 @@ pub fn scaffold_agents_md(summary: &ProjectSummary) -> String {
     out.push_str(&format!("# {}\n\n", summary.name));
     out.push_str(&format!("- Project type: {}.\n", summary.kind));
     if !summary.crates.is_empty() {
-        out.push_str(&format!("- Workspace with {} crates.\n", summary.crates.len()));
+        out.push_str(&format!(
+            "- Workspace with {} crates.\n",
+            summary.crates.len()
+        ));
     }
     out.push_str(
         "- Build/test from the workspace root.\n\

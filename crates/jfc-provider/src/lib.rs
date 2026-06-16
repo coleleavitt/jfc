@@ -1092,6 +1092,7 @@ impl StreamOptions {
 pub struct CompletionResponse {
     pub content: String,
     pub usage: TokenUsage,
+    pub context_signals: Option<jfc_core::context_management::ContextSignals>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1470,6 +1471,27 @@ pub trait Provider: Send + Sync + seal::Sealed {
         _options: &StreamOptions,
     ) -> anyhow::Result<CompletionResponse> {
         anyhow::bail!("{} does not support non-streaming completion", self.name())
+    }
+
+    /// Whether this provider can export context-management signals.
+    ///
+    /// The default is false so callers can avoid building signal-probe inputs
+    /// for providers that cannot expose attention or KV metadata.
+    fn supports_context_signals(&self) -> bool {
+        false
+    }
+
+    /// Optional provider-side attention / KV-cache signal export.
+    ///
+    /// Most public APIs do not expose these tensors. Providers that do should
+    /// map their metadata into `ContextSignals`; context management will prefer
+    /// those true scores and fall back to synthetic salience otherwise.
+    async fn context_signals(
+        &self,
+        _model: &str,
+        _messages: Vec<ProviderMessage>,
+    ) -> anyhow::Result<Option<jfc_core::context_management::ContextSignals>> {
+        Ok(None)
     }
 
     /// Count input tokens for a request via the provider's tokenizer/endpoint

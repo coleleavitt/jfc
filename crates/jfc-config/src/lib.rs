@@ -85,6 +85,8 @@ pub struct Config {
         skip_serializing_if = "Option::is_none"
     )]
     pub council_verdict: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub council: Option<CouncilConfig>,
     #[serde(default)]
     pub slate_enabled: bool,
     #[serde(default)]
@@ -378,6 +380,82 @@ fn default_true() -> bool {
     true
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CouncilMode {
+    Direct,
+    Agentic,
+}
+
+impl Default for CouncilMode {
+    fn default() -> Self {
+        Self::Direct
+    }
+}
+
+fn default_council_member_timeout_ms() -> u64 {
+    120_000
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct CouncilConfig {
+    /// Optional named roster. Each member model can be provider-qualified
+    /// (`anthropic/claude-sonnet-4.5`) or a bare model id resolved like
+    /// AskModel/Council explicit members.
+    pub members: Vec<CouncilMemberConfig>,
+    /// Minimum successful member answers required before synthesis. Defaults
+    /// to one for backwards compatibility with the pre-roster council.
+    pub quorum: Option<usize>,
+    /// Retry a failed/timed-out member this many additional times.
+    pub retry_on_fail: u32,
+    /// Per-member timeout in milliseconds. Set to 0 to disable.
+    pub member_timeout_ms: u64,
+    /// Direct mode calls each member model once without tools. Agentic mode
+    /// runs read-only task-backed council members with StructuredOutput.
+    pub mode: CouncilMode,
+    /// Save prompt, member outputs, synthesis, and metadata under
+    /// `.jfc/council/<run-id>/`.
+    pub archive: bool,
+    /// Default intent used when a Council call does not provide one.
+    pub intent: Option<String>,
+}
+
+impl Default for CouncilConfig {
+    fn default() -> Self {
+        Self {
+            members: Vec::new(),
+            quorum: None,
+            retry_on_fail: 0,
+            member_timeout_ms: default_council_member_timeout_ms(),
+            mode: CouncilMode::Direct,
+            archive: false,
+            intent: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct CouncilMemberConfig {
+    pub name: Option<String>,
+    pub model: String,
+    /// Reserved for providers that expose model variants/effort through config.
+    pub variant: Option<String>,
+    pub effort: Option<String>,
+}
+
+impl Default for CouncilMemberConfig {
+    fn default() -> Self {
+        Self {
+            name: None,
+            model: String::new(),
+            variant: None,
+            effort: None,
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -400,6 +478,7 @@ impl Default for Config {
             advisor_enabled: None,
             server_advisor_model: None,
             council_verdict: None,
+            council: None,
             slate_enabled: false,
             slate_rules: None,
             memory_recall_enabled: default_memory_recall_enabled(),

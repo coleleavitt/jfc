@@ -9,6 +9,7 @@
 //! Pairs with [`crate::search`]: that searches past *sessions*; this searches
 //! past *commits*. A future unified facade can rank across both.
 
+use crate::soft_match::{best_line, query_terms, score_text};
 use serde::Serialize;
 use std::path::Path;
 use std::process::Command;
@@ -76,7 +77,9 @@ pub fn search(repo_root: &Path, query: &str, limit: usize, max_commits: usize) -
     if needle.is_empty() {
         return Vec::new();
     }
-    let mut hits = Vec::new();
+    let terms = query_terms(&needle);
+    let mut exact_hits = Vec::new();
+    let mut soft_hits = Vec::new();
     for (short_hash, date, subject, body) in read_commits(repo_root, max_commits) {
         let subject_match = subject.to_lowercase().contains(&needle);
         // Find the first body line that matches, for the snippet.
@@ -84,25 +87,46 @@ pub fn search(repo_root: &Path, query: &str, limit: usize, max_commits: usize) -
             .lines()
             .find(|l| l.to_lowercase().contains(&needle))
             .map(str::trim);
-        if !subject_match && body_line.is_none() {
-            continue;
-        }
-        let snippet = if subject_match {
-            subject.clone()
+        if subject_match || body_line.is_some() {
+            let snippet = if subject_match {
+                subject.clone()
+            } else {
+                body_line.unwrap_or(&subject).to_string()
+            };
+            exact_hits.push(CommitHit {
+                short_hash,
+                date,
+                subject,
+                snippet,
+            });
+            if exact_hits.len() >= limit {
+                break;
+            }
         } else {
-            body_line.unwrap_or(&subject).to_string()
-        };
-        hits.push(CommitHit {
-            short_hash,
-            date,
-            subject,
-            snippet,
-        });
-        if hits.len() >= limit {
-            break;
+            let combined = format!("{subject}\n{body}");
+            let score = score_text(&combined, &terms);
+            if score > 0 {
+                let snippet = best_line(&combined, &terms)
+                    .unwrap_or(&subject)
+                    .trim()
+                    .to_string();
+                soft_hits.push((
+                    score,
+                    CommitHit {
+                        short_hash,
+                        date,
+                        subject,
+                        snippet,
+                    },
+                ));
+            }
         }
     }
-    hits
+    if !exact_hits.is_empty() {
+        return exact_hits;
+    }
+    soft_hits.sort_by(|a, b| b.0.cmp(&a.0));
+    soft_hits.into_iter().map(|(_, h)| h).take(limit).collect()
 }
 
 #[cfg(test)]

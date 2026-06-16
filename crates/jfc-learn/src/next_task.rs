@@ -139,7 +139,14 @@ fn clean_action_text(line: &str) -> String {
     }
     // Drop a leading "next step(s):" / "TODO:" preamble.
     let lower = s.to_ascii_lowercase();
-    for pre in ["next steps:", "next step:", "next:", "todo:", "tbd:", "follow-up:"] {
+    for pre in [
+        "next steps:",
+        "next step:",
+        "next:",
+        "todo:",
+        "tbd:",
+        "follow-up:",
+    ] {
         if lower.starts_with(pre) {
             s = s[pre.len()..].trim_start();
             break;
@@ -167,7 +174,14 @@ mod tests {
         let out = infer_next_tasks(t);
         assert_eq!(out[0].signal, SignalKind::NextStep);
         assert!(out.iter().any(|s| s.signal == SignalKind::Todo));
-        assert!(out[0].score > out.iter().find(|s| s.signal == SignalKind::Todo).unwrap().score);
+        assert!(
+            out[0].score
+                > out
+                    .iter()
+                    .find(|s| s.signal == SignalKind::Todo)
+                    .unwrap()
+                    .score
+        );
     }
 
     #[test]
@@ -192,7 +206,10 @@ mod tests {
         let out = infer_next_tasks(t);
         let alpha = out.iter().find(|s| s.text == "alpha").unwrap();
         let omega = out.iter().find(|s| s.text == "omega").unwrap();
-        assert!(omega.score > alpha.score, "later line should win on recency");
+        assert!(
+            omega.score > alpha.score,
+            "later line should win on recency"
+        );
     }
 
     #[test]

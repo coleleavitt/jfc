@@ -12,6 +12,7 @@ use tracing::debug;
 mod catalog;
 mod git_commits;
 mod search;
+mod soft_match;
 mod task_history;
 mod task_store;
 

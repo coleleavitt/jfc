@@ -54,9 +54,13 @@ pub fn parse_path_deps(cargo_toml: &str) -> Vec<String> {
             continue;
         };
         let after = &trimmed[idx..];
-        let Some(open) = after.find('"') else { continue };
+        let Some(open) = after.find('"') else {
+            continue;
+        };
         let rest = &after[open + 1..];
-        let Some(close) = rest.find('"') else { continue };
+        let Some(close) = rest.find('"') else {
+            continue;
+        };
         let path = &rest[..close];
         // Only in-workspace path deps (relative). Take the last segment.
         if let Some(name) = path.rsplit('/').next()
@@ -134,7 +138,10 @@ pub fn render_mermaid(nodes: &[CrateNode]) -> String {
     if !untested.is_empty() {
         out.push_str("    classDef untested fill:#3a1a1a,stroke:#ff6b6b,color:#fff;\n");
         for node in &untested {
-            out.push_str(&format!("    class {} untested;\n", sanitize_id(&node.name)));
+            out.push_str(&format!(
+                "    class {} untested;\n",
+                sanitize_id(&node.name)
+            ));
         }
     }
 
@@ -347,10 +354,20 @@ mod workspace_smoke {
         let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let crates_dir = here.parent().expect("crates parent");
         let nodes = scan_workspace(crates_dir).expect("scan");
-        assert!(nodes.len() >= 20, "expected many crates, got {}", nodes.len());
-        let core = nodes.iter().find(|n| n.name == "jfc-core").expect("jfc-core");
+        assert!(
+            nodes.len() >= 20,
+            "expected many crates, got {}",
+            nodes.len()
+        );
+        let core = nodes
+            .iter()
+            .find(|n| n.name == "jfc-core")
+            .expect("jfc-core");
         assert!(core.deps.is_empty(), "jfc-core should have no path deps");
-        let engine = nodes.iter().find(|n| n.name == "jfc-engine").expect("jfc-engine");
+        let engine = nodes
+            .iter()
+            .find(|n| n.name == "jfc-engine")
+            .expect("jfc-engine");
         assert!(engine.deps.iter().any(|d| d == "jfc-core"));
         let md = render_architecture_md(&nodes);
         assert!(md.contains("flowchart TD"));

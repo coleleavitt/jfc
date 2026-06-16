@@ -721,7 +721,10 @@ mod tests {
             .run_cycle(&[DreamerTask::InduceSkills], &mut memories)
             .unwrap();
         assert!(report.tasks_run[0].error.is_none());
-        assert!(report.tasks_run[0].actions_taken >= 1, "at least one proposal");
+        assert!(
+            report.tasks_run[0].actions_taken >= 1,
+            "at least one proposal"
+        );
         let proposals = dreamer.skill_proposals();
         assert!(proposals.iter().any(|p| p.sequence.len() == 3));
     }

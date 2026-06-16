@@ -52,7 +52,13 @@
 //! and CORE (`CORE_API_KEY`) read their keys from the environment and return a
 //! clear setup error when the key is missing.
 
+pub mod backend;
+pub mod backends;
 pub mod cache;
+pub mod unified;
+
+pub use backend::{BackendId, QueryClass, SearchBackend, SearchResult};
+pub use unified::unified_search;
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -76,60 +82,96 @@ fn match_prefix<'a>(query: &'a str, prefix: &str) -> Option<&'a str> {
         .map(str::trim)
 }
 
-/// Route a search query to the appropriate backend based on prefix.
+/// Route a search query to the appropriate backend(s).
+///
+/// **Default behavior (no prefix):** Classifies the query and searches multiple
+/// relevant backends in parallel, then merges results via RRF deduplication.
+///
+/// **Prefix overrides:** Use a prefix to force a specific backend:
+/// - `arxiv:` — arXiv only
+/// - `scholar:` — Semantic Scholar only
+/// - `dblp:` — DBLP only
+/// - `brave:` — Brave Search only
+/// - `searxng:` — SearXNG only
+/// - `wiki:` — Wikipedia only
+/// - etc.
 pub async fn search(query: &str, max_results: usize) -> Result<String, String> {
+    // Check for explicit backend prefix overrides (power-user escape hatch)
     if let Some(q) = match_prefix(query, "arxiv") {
-        search_arxiv(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "scholar") {
-        search_semantic_scholar(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "dblp") {
-        search_dblp(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "gscholar") {
-        search_gscholar_complete(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "openalex") {
-        search_openalex(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "crossref") {
-        search_crossref(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "pubmed") {
-        search_pubmed(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "doaj") {
-        search_doaj(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "core") {
-        search_core(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "unpaywall") {
-        search_unpaywall(q).await
-    } else if let Some(q) = match_prefix(query, "papers") {
-        search_papers_combined(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "brave") {
-        search_brave(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "tavily") {
-        search_tavily(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "exa") {
-        search_exa(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "ddg") {
-        search_duckduckgo(q).await
-    } else if let Some(q) = match_prefix(query, "searxng") {
-        search_searxng(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "wiki") {
-        search_wikipedia(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "primo") {
-        search_primo(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "uni") {
-        search_university(q, max_results).await
-    } else if let Some(q) = match_prefix(query, "edu") {
-        search_google(&scoped_query(q, EDU_TLDS), max_results).await
-    } else if let Some(q) = match_prefix(query, "cn") {
-        search_google(&scoped_query(q, CN_TLDS), max_results).await
-    } else if let Some(q) = match_prefix(query, "gov") {
-        // CSE doesn't honour bare TLD site: filters like site:.gov; use explicit
-        // domain suffixes instead.
+        return search_arxiv(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "scholar") {
+        return search_semantic_scholar(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "dblp") {
+        return search_dblp(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "gscholar") {
+        return search_gscholar_complete(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "openalex") {
+        return search_openalex(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "crossref") {
+        return search_crossref(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "pubmed") {
+        return search_pubmed(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "doaj") {
+        return search_doaj(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "core") {
+        return search_core(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "unpaywall") {
+        return search_unpaywall(q).await;
+    }
+    if let Some(q) = match_prefix(query, "papers") {
+        return search_papers_combined(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "brave") {
+        return search_brave(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "tavily") {
+        return search_tavily(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "exa") {
+        return search_exa(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "ddg") {
+        return search_duckduckgo(q).await;
+    }
+    if let Some(q) = match_prefix(query, "searxng") {
+        return search_searxng(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "wiki") {
+        return search_wikipedia(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "primo") {
+        return search_primo(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "uni") {
+        return search_university(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "edu") {
+        return search_google(&scoped_query(q, EDU_TLDS), max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "cn") {
+        return search_google(&scoped_query(q, CN_TLDS), max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "gov") {
         let gov_query = format!(
             "{q} (site:usa.gov OR site:nih.gov OR site:cdc.gov OR site:nsf.gov OR site:energy.gov OR site:nasa.gov OR site:congress.gov OR site:whitehouse.gov OR site:govinfo.gov OR site:gov.uk OR site:gc.ca OR site:australia.gov.au OR site:europa.eu)"
         );
-        search_google(&gov_query, max_results).await
-    } else {
-        search_google(query, max_results).await
+        return search_google(&gov_query, max_results).await;
     }
+    if let Some(q) = match_prefix(query, "google") {
+        return search_google(q, max_results).await;
+    }
+
+    // No prefix — use unified search (parallel multi-backend + RRF)
+    unified_search(query, max_results).await
 }
 
 /// Academic second-level domains worldwide, for the `edu:` prefix. Curated to
@@ -3987,6 +4029,432 @@ async fn search_primo(query: &str, max_results: usize) -> Result<String, String>
         _ => out.push_str("No results found.\n"),
     }
     Ok(out)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Structured search wrappers (for unified search)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Wrapper returning structured results for Google CSE.
+pub async fn search_google_structured(
+    query: &str,
+    max_results: usize,
+) -> Result<Vec<backend::SearchResult>, String> {
+    use backend::{BackendId, SearchResult};
+
+    let pool = key_pool();
+    let key = match pool.next() {
+        Some(k) => k,
+        None => return Err("No Google CSE API keys configured".into()),
+    };
+
+    let num = max_results.clamp(1, 10);
+    let client = http_client()?;
+
+    let resp = client
+        .get("https://www.googleapis.com/customsearch/v1")
+        .query(&[
+            ("key", key.api_key.as_str()),
+            ("cx", key.cx.as_str()),
+            ("q", query),
+            ("num", &num.to_string()),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Google CSE request failed: {e}"))?;
+
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))?;
+    let parsed: GoogleSearchResponse =
+        serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
+
+    if let Some(err) = parsed.error {
+        return Err(format!("Google CSE error {}: {}", err.code, err.message));
+    }
+
+    Ok(parsed
+        .items
+        .into_iter()
+        .enumerate()
+        .map(|(i, item)| SearchResult {
+            title: item.title,
+            url: item.link,
+            snippet: item.snippet,
+            doi: None,
+            arxiv_id: None,
+            source: BackendId::Google,
+            rank: i + 1,
+        })
+        .collect())
+}
+
+/// Wrapper returning structured results for Brave Search.
+pub async fn search_brave_structured(
+    query: &str,
+    max_results: usize,
+) -> Result<Vec<backend::SearchResult>, String> {
+    use backend::{BackendId, SearchResult};
+
+    let key = std::env::var("BRAVE_API_KEY").map_err(|_| "BRAVE_API_KEY not set")?;
+
+    let client = http_client()?;
+    let resp = client
+        .get("https://api.search.brave.com/res/v1/web/search")
+        .header("X-Subscription-Token", &key)
+        .query(&[("q", query), ("count", &max_results.to_string())])
+        .send()
+        .await
+        .map_err(|e| format!("Brave request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Brave returned HTTP {}", resp.status()));
+    }
+
+    let parsed: serde_json::Value = resp.json().await.map_err(|e| format!("JSON parse: {e}"))?;
+
+    let results = parsed
+        .get("web")
+        .and_then(|w| w.get("results"))
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter()
+                .enumerate()
+                .filter_map(|(i, item)| {
+                    let title = item.get("title")?.as_str()?;
+                    let url = item.get("url")?.as_str()?;
+                    let snippet = item
+                        .get("description")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("");
+                    Some(SearchResult {
+                        title: title.to_string(),
+                        url: url.to_string(),
+                        snippet: snippet.to_string(),
+                        doi: None,
+                        arxiv_id: None,
+                        source: BackendId::Brave,
+                        rank: i + 1,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(results)
+}
+
+/// Wrapper returning structured results for SearXNG.
+pub async fn search_searxng_structured(
+    query: &str,
+    max_results: usize,
+) -> Result<Vec<backend::SearchResult>, String> {
+    use backend::{BackendId, SearchResult};
+
+    let base = searxng_base_url();
+    let client = http_client()?;
+
+    let resp = client
+        .get(format!("{base}/search"))
+        .query(&[("q", query), ("format", "json"), ("categories", "general")])
+        .send()
+        .await
+        .map_err(|e| format!("SearXNG request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("SearXNG returned HTTP {}", resp.status()));
+    }
+
+    let parsed: serde_json::Value = resp.json().await.map_err(|e| format!("JSON parse: {e}"))?;
+
+    let results = parsed
+        .get("results")
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter()
+                .take(max_results)
+                .enumerate()
+                .filter_map(|(i, item)| {
+                    let title = item.get("title")?.as_str()?;
+                    let url = item.get("url")?.as_str()?;
+                    let snippet = item.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                    Some(SearchResult {
+                        title: title.to_string(),
+                        url: url.to_string(),
+                        snippet: snippet.to_string(),
+                        doi: None,
+                        arxiv_id: None,
+                        source: BackendId::SearXNG,
+                        rank: i + 1,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(results)
+}
+
+/// Wrapper returning structured results for DuckDuckGo.
+pub async fn search_duckduckgo_structured(
+    query: &str,
+    _max_results: usize,
+) -> Result<Vec<backend::SearchResult>, String> {
+    use backend::{BackendId, SearchResult};
+
+    let client = http_client()?;
+    let resp = client
+        .get("https://api.duckduckgo.com/")
+        .query(&[
+            ("q", query),
+            ("format", "json"),
+            ("no_html", "1"),
+            ("skip_disambig", "1"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("DuckDuckGo request failed: {e}"))?;
+
+    let parsed: serde_json::Value = resp.json().await.map_err(|e| format!("JSON parse: {e}"))?;
+
+    let mut results = Vec::new();
+    let mut rank = 1;
+
+    // Abstract (main definition)
+    if let Some(text) = parsed.get("AbstractText").and_then(|v| v.as_str()) {
+        if !text.is_empty() {
+            let url = parsed
+                .get("AbstractURL")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let heading = parsed
+                .get("Heading")
+                .and_then(|v| v.as_str())
+                .unwrap_or(query);
+            results.push(SearchResult {
+                title: heading.to_string(),
+                url: url.to_string(),
+                snippet: text.to_string(),
+                doi: None,
+                arxiv_id: None,
+                source: BackendId::DuckDuckGo,
+                rank,
+            });
+            rank += 1;
+        }
+    }
+
+    // Related topics
+    if let Some(topics) = parsed.get("RelatedTopics").and_then(|v| v.as_array()) {
+        for topic in topics.iter().take(5) {
+            if let (Some(text), Some(url)) = (
+                topic.get("Text").and_then(|v| v.as_str()),
+                topic.get("FirstURL").and_then(|v| v.as_str()),
+            ) {
+                results.push(SearchResult {
+                    title: text.chars().take(100).collect(),
+                    url: url.to_string(),
+                    snippet: text.to_string(),
+                    doi: None,
+                    arxiv_id: None,
+                    source: BackendId::DuckDuckGo,
+                    rank,
+                });
+                rank += 1;
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+/// Wrapper returning structured results for arXiv.
+pub async fn search_arxiv_structured(
+    query: &str,
+    max_results: usize,
+) -> Result<Vec<backend::SearchResult>, String> {
+    use backend::{BackendId, SearchResult};
+
+    let entries = search_arxiv_entries(query, max_results).await?;
+
+    Ok(entries
+        .into_iter()
+        .enumerate()
+        .map(|(i, e)| SearchResult {
+            title: e.title,
+            url: format!(
+                "https://arxiv.org/abs/{}",
+                e.arxiv_id.as_deref().unwrap_or("")
+            ),
+            snippet: e.authors.join(", "),
+            doi: e.doi,
+            arxiv_id: e.arxiv_id,
+            source: BackendId::ArXiv,
+            rank: i + 1,
+        })
+        .collect())
+}
+
+/// Wrapper returning structured results for Semantic Scholar.
+pub async fn search_semantic_scholar_structured(
+    query: &str,
+    max_results: usize,
+) -> Result<Vec<backend::SearchResult>, String> {
+    use backend::{BackendId, SearchResult};
+
+    let entries = search_s2_via_bff_entries(query, max_results).await?;
+
+    Ok(entries
+        .into_iter()
+        .enumerate()
+        .map(|(i, e)| SearchResult {
+            title: e.title,
+            url: e.url.unwrap_or_default(),
+            snippet: e.authors.join(", "),
+            doi: e.doi,
+            arxiv_id: e.arxiv_id,
+            source: BackendId::SemanticScholar,
+            rank: i + 1,
+        })
+        .collect())
+}
+
+/// Wrapper returning structured results for OpenAlex.
+pub async fn search_openalex_structured(
+    query: &str,
+    max_results: usize,
+) -> Result<Vec<backend::SearchResult>, String> {
+    use backend::{BackendId, SearchResult};
+
+    let entries = search_openalex_entries(query, max_results).await?;
+
+    Ok(entries
+        .into_iter()
+        .enumerate()
+        .map(|(i, e)| SearchResult {
+            title: e.title,
+            url: e.url.unwrap_or_default(),
+            snippet: e.authors.join(", "),
+            doi: e.doi,
+            arxiv_id: e.arxiv_id,
+            source: BackendId::OpenAlex,
+            rank: i + 1,
+        })
+        .collect())
+}
+
+/// Wrapper returning structured results for DBLP.
+pub async fn search_dblp_structured(
+    query: &str,
+    max_results: usize,
+) -> Result<Vec<backend::SearchResult>, String> {
+    use backend::{BackendId, SearchResult};
+
+    let client = http_client()?;
+    let resp = client
+        .get("https://dblp.org/search/publ/api")
+        .query(&[
+            ("q", query),
+            ("format", "json"),
+            ("h", &max_results.to_string()),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("DBLP request failed: {e}"))?;
+
+    let parsed: serde_json::Value = resp.json().await.map_err(|e| format!("JSON parse: {e}"))?;
+
+    let hits = parsed
+        .get("result")
+        .and_then(|r| r.get("hits"))
+        .and_then(|h| h.get("hit"))
+        .and_then(|h| h.as_array());
+
+    let results = hits
+        .map(|arr| {
+            arr.iter()
+                .enumerate()
+                .filter_map(|(i, hit)| {
+                    let info = hit.get("info")?;
+                    let title = info.get("title")?.as_str()?;
+                    let url = info
+                        .get("ee")
+                        .and_then(|e| e.as_str())
+                        .or_else(|| info.get("url").and_then(|u| u.as_str()))?;
+                    let doi = info.get("doi").and_then(|d| d.as_str());
+                    let year = info.get("year").and_then(|y| y.as_str()).unwrap_or("");
+                    let venue = info.get("venue").and_then(|v| v.as_str()).unwrap_or("");
+
+                    Some(SearchResult {
+                        title: decode_basic_entities(title),
+                        url: url.to_string(),
+                        snippet: format!("{year} · {venue}"),
+                        doi: doi.map(String::from),
+                        arxiv_id: None,
+                        source: BackendId::DBLP,
+                        rank: i + 1,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(results)
+}
+
+/// Wrapper returning structured results for Wikipedia.
+pub async fn search_wikipedia_structured(
+    query: &str,
+    max_results: usize,
+) -> Result<Vec<backend::SearchResult>, String> {
+    use backend::{BackendId, SearchResult};
+
+    let client = http_client()?;
+    let resp = client
+        .get("https://en.wikipedia.org/w/api.php")
+        .query(&[
+            ("action", "query"),
+            ("list", "search"),
+            ("srsearch", query),
+            ("srlimit", &max_results.to_string()),
+            ("format", "json"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Wikipedia request failed: {e}"))?;
+
+    let parsed: serde_json::Value = resp.json().await.map_err(|e| format!("JSON parse: {e}"))?;
+
+    let results = parsed
+        .get("query")
+        .and_then(|q| q.get("search"))
+        .and_then(|s| s.as_array())
+        .map(|arr| {
+            arr.iter()
+                .enumerate()
+                .filter_map(|(i, item)| {
+                    let title = item.get("title")?.as_str()?;
+                    let snippet = item.get("snippet").and_then(|s| s.as_str()).unwrap_or("");
+                    // Strip HTML tags from snippet
+                    let clean_snippet: String = snippet
+                        .replace("<span class=\"searchmatch\">", "")
+                        .replace("</span>", "");
+                    Some(SearchResult {
+                        title: title.to_string(),
+                        url: format!("https://en.wikipedia.org/wiki/{}", title.replace(' ', "_")),
+                        snippet: clean_snippet,
+                        doi: None,
+                        arxiv_id: None,
+                        source: BackendId::Wikipedia,
+                        rank: i + 1,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(results)
 }
 
 #[cfg(test)]

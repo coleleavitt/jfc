@@ -32,7 +32,7 @@ pub mod vertex;
 pub mod vertex_wizard;
 
 pub use anthropic::AnthropicProvider;
-pub use anthropic_oauth::AnthropicOAuthProvider;
+pub use anthropic_oauth::{AnthropicOAuthProvider, current_access_token};
 pub use antigravity_oauth::AntigravityOAuthProvider;
 pub use bedrock::BedrockProvider;
 pub use codex_oauth::CodexOAuthProvider;

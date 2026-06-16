@@ -277,21 +277,65 @@ pub enum VoiceTranscriptEvent {
     Interim(String),
     /// Final transcript — inject into the textarea.
     Final(String),
+    /// A normalized [0,1] RMS audio level for the current capture chunk. Emitted
+    /// continuously while recording so the UI can animate the recording cursor.
+    Level(f32),
     /// An error occurred.
     Error(String),
     /// State changed.
     StateChanged(VoiceState),
 }
 
+/// Resolves the current Claude.ai OAuth access token on demand. Supplied by the
+/// embedding app (the TUI) so `jfc-voice` stays provider-neutral: it never
+/// reaches into the auth/provider crates itself. `None` means no token is
+/// available (not signed in), in which case the live Anthropic voice stream is
+/// skipped and the batch backend chain (OpenAI / local) is used instead.
+pub type TokenProvider = std::sync::Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// dBFS window mapped to the level meter's [0,1]. Real mics vary ~10× in gain,
+/// so a linear `rms/32768` map collapses normal speech to ~0.01 (this machine's
+/// speech RMS peaks near ~350 — a few hundredths of full scale) and the meter
+/// never lights up. A log (dBFS) scale matches how loudness is perceived and is
+/// tolerant of mic gain: `LEVEL_DB_FLOOR` reads as silence, `LEVEL_DB_CEIL` as
+/// full. The window (-55..-18 dBFS) brackets quiet-to-loud speech on this class
+/// of microphone.
+const LEVEL_DB_FLOOR: f32 = -55.0;
+const LEVEL_DB_CEIL: f32 = -18.0;
+
+/// Normalize a raw RMS energy (i16 sample units, ~0..32767) to a perceptual
+/// [0,1] level for the recording-cursor animation, via a dBFS window. Silence
+/// (and `rms == 0`) maps to 0; loud speech approaches 1.
+pub fn normalize_level(rms: u32) -> f32 {
+    if rms == 0 {
+        return 0.0;
+    }
+    let dbfs = 20.0 * (rms as f32 / 32768.0).log10();
+    ((dbfs - LEVEL_DB_FLOOR) / (LEVEL_DB_CEIL - LEVEL_DB_FLOOR)).clamp(0.0, 1.0)
+}
+
 /// The voice recorder — manages the capture+STT pipeline.
 pub struct VoiceRecorder {
     cfg: VoiceConfig,
     state: Arc<Mutex<VoiceState>>,
-    audio_buf: Arc<Mutex<Vec<u8>>>,
     /// Stop signal for the recording task.
     stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
     /// Stop signal for the VAD listen loop (VAD mode only).
     vad_stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Discard flag shared with the active recording task. `stop()` (finish)
+    /// leaves it false → the task finalizes and emits a `Final`; `cancel()`
+    /// (discard) sets it true → the task drops the utterance with NO `Final`.
+    /// Without this distinction, cancelling an in-flight recording (e.g. the
+    /// user presses Enter to submit, then stops voice) still emitted a `Final`
+    /// that auto-submitted a duplicate.
+    cancel_flag: Arc<std::sync::atomic::AtomicBool>,
+    /// Resolves the OAuth token for the live Anthropic voice stream. `None`
+    /// disables the live path (batch backends still work).
+    token_provider: Option<TokenProvider>,
     /// Output channel for transcript events.
     pub events: mpsc::UnboundedSender<VoiceTranscriptEvent>,
 }
@@ -301,11 +345,32 @@ impl VoiceRecorder {
         Self {
             cfg,
             state: Arc::new(Mutex::new(VoiceState::Idle)),
-            audio_buf: Arc::new(Mutex::new(Vec::new())),
             stop_tx: None,
             vad_stop_tx: None,
+            cancel_flag: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            token_provider: None,
             events,
         }
+    }
+
+    /// Attach an OAuth token resolver, enabling the live Anthropic voice stream.
+    pub fn with_token_provider(mut self, provider: TokenProvider) -> Self {
+        self.token_provider = Some(provider);
+        self
+    }
+
+    /// Resolve the current OAuth token via the provider, falling back to the
+    /// legacy env vars so manual setups keep working.
+    async fn resolve_token(&self) -> Option<String> {
+        if let Some(p) = &self.token_provider {
+            if let Some(tok) = p().await {
+                return Some(tok);
+            }
+        }
+        std::env::var("CLAUDE_ACCESS_TOKEN")
+            .or_else(|_| std::env::var("ANTHROPIC_ACCESS_TOKEN"))
+            .or_else(|_| std::env::var("JFC_ANTHROPIC_ACCESS_TOKEN"))
+            .ok()
     }
 
     /// Start the VAD listen loop (VAD mode only).
@@ -329,12 +394,15 @@ impl VoiceRecorder {
         info!(target: "jfc::voice", backend = %backend.label(), "starting VAD listen loop");
         let (vad_stop_tx, vad_stop_rx) = tokio::sync::oneshot::channel::<()>();
         self.vad_stop_tx = Some(vad_stop_tx);
+        self.cancel_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst);
 
         let cfg = self.cfg.clone();
         let events = self.events.clone();
         let state = Arc::clone(&self.state);
+        let cancel_flag = Arc::clone(&self.cancel_flag);
         tokio::spawn(async move {
-            vad_listen_loop(backend, cfg, events, state, vad_stop_rx).await;
+            vad_listen_loop(backend, cfg, events, state, vad_stop_rx, cancel_flag).await;
         });
     }
 
@@ -388,39 +456,51 @@ impl VoiceRecorder {
             }
         };
 
-        let buf = Arc::clone(&self.audio_buf);
-        let state = Arc::clone(&self.state);
+        // Resolve the OAuth token up front so the streaming session can use the
+        // live Anthropic voice stream when signed in.
+        let token = self.resolve_token().await;
+        let cfg = self.cfg.clone();
         let events = self.events.clone();
+        let state = Arc::clone(&self.state);
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
         self.stop_tx = Some(stop_tx);
+        // Fresh session — clear any stale discard flag from a prior recording.
+        self.cancel_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let cancel_flag = Arc::clone(&self.cancel_flag);
 
+        // The streaming pipeline owns the whole lifecycle from here: capture →
+        // live STT (or batch fallback) → finalize → Final emission → Idle.
         tokio::spawn(async move {
-            record_loop(backend, buf, state, events, stop_rx).await;
+            crate::stream_record::run(backend, cfg, token, events, state, stop_rx, cancel_flag)
+                .await;
         });
     }
 
     async fn stop_recording(&mut self) {
         info!(target: "jfc::voice", "stop_recording");
-        // Signal the recording task to stop (receiver may already be gone if it exited early).
+        // Signal the streaming task to finish; it transitions Recording →
+        // Processing → Idle and emits the Final transcript itself.
         if let Some(tx) = self.stop_tx.take() {
             if tx.send(()).is_err() {
                 debug!(target: "jfc::voice", "stop signal had no receiver (task already finished)");
             }
         }
-        self.set_state(VoiceState::Processing).await;
+    }
 
-        // Transcribe the buffered audio
-        let pcm = {
-            let mut guard = self.audio_buf.lock().await;
-            std::mem::take(&mut *guard)
-        };
-
-        let cfg = self.cfg.clone();
-        let events = self.events.clone();
-        let state = Arc::clone(&self.state);
-        tokio::spawn(async move {
-            transcribe_and_emit(pcm, &cfg, events, state).await;
-        });
+    /// Discard an in-flight hold/tap recording WITHOUT finalizing — the task
+    /// drops the utterance and emits no `Final`. No-op when nothing is recording
+    /// or in VAD mode (which has no per-key recording task, so the continuous
+    /// listen loop is left running). Used on a manual submit (Enter) so voice
+    /// doesn't auto-submit a duplicate of what the user just sent.
+    pub async fn discard_recording(&mut self) {
+        if let Some(tx) = self.stop_tx.take() {
+            info!(target: "jfc::voice", "discard_recording (manual submit)");
+            self.cancel_flag
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let _ = tx.send(());
+            self.set_state(VoiceState::Idle).await;
+        }
     }
 
     fn emit_error(&self, msg: &str) {
@@ -447,6 +527,11 @@ impl VoiceRecorder {
     /// `/voice off` left the VAD loop running in the background (mic stayed hot,
     /// utterances kept being transcribed after the user turned voice off).
     pub async fn cancel(&mut self) {
+        // Mark discard BEFORE signalling stop so the recording task sees it and
+        // drops the utterance instead of finalizing + emitting a `Final` (which
+        // would auto-submit a duplicate after a manual Enter submit).
+        self.cancel_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         if let Some(tx) = self.stop_tx.take() {
             if tx.send(()).is_err() {
                 debug!(target: "jfc::voice", "cancel: recording stop signal had no receiver");
@@ -457,7 +542,6 @@ impl VoiceRecorder {
                 debug!(target: "jfc::voice", "cancel: VAD stop signal had no receiver");
             }
         }
-        self.audio_buf.lock().await.clear();
         self.set_state(VoiceState::Idle).await;
     }
 
@@ -468,98 +552,11 @@ impl VoiceRecorder {
     }
 }
 
-/// Record audio into `buf` until `stop_rx` fires.
-async fn record_loop(
-    backend: CaptureBackend,
-    buf: Arc<Mutex<Vec<u8>>>,
-    state: Arc<Mutex<VoiceState>>,
-    events: mpsc::UnboundedSender<VoiceTranscriptEvent>,
-    stop_rx: tokio::sync::oneshot::Receiver<()>,
-) {
-    let capture = match AudioCapture::start(backend).await {
-        Ok(c) => c,
-        Err(err) => {
-            warn!(target: "jfc::voice", error = %err, "failed to start audio capture");
-            set_idle_and_notify(&state, &events, err.to_string()).await;
-            return;
-        }
-    };
-
-    debug!(target: "jfc::voice", backend = %backend.label(), "recording started");
-    let tail = run_capture_loop(capture, &buf, stop_rx).await;
-    buf.lock().await.extend_from_slice(&tail);
-    debug!(target: "jfc::voice", "recording stopped");
-}
-
-/// Inner capture loop; returns any buffered tail audio from `capture.stop()`.
-async fn run_capture_loop(
-    mut capture: AudioCapture,
-    buf: &Arc<Mutex<Vec<u8>>>,
-    stop_rx: tokio::sync::oneshot::Receiver<()>,
-) -> Vec<u8> {
-    let mut chunk = vec![0u8; 3200]; // 100ms at 16kHz 16-bit mono
-    tokio::pin!(stop_rx);
-    loop {
-        tokio::select! {
-            _ = &mut stop_rx => break,
-            n = capture.read_chunk(&mut chunk) => match n {
-                Ok(0) => break,
-                Ok(n) => buf.lock().await.extend_from_slice(&chunk[..n]),
-                Err(err) => {
-                    debug!(target: "jfc::voice", error = %err, "read_chunk error; stopping");
-                    break;
-                }
-            },
-        }
-    }
-    capture.stop().await
-}
-
-async fn set_idle_and_notify(
-    state: &Arc<Mutex<VoiceState>>,
-    events: &mpsc::UnboundedSender<VoiceTranscriptEvent>,
-    error_msg: String,
-) {
-    *state.lock().await = VoiceState::Idle;
-    events
-        .send(VoiceTranscriptEvent::Error(error_msg))
-        .unwrap_or_else(|_| debug!(target: "jfc::voice", "event channel closed"));
-    events
-        .send(VoiceTranscriptEvent::StateChanged(VoiceState::Idle))
-        .unwrap_or_else(|_| debug!(target: "jfc::voice", "event channel closed"));
-}
-
-/// Run STT and emit the transcript.
-async fn transcribe_and_emit(
-    pcm: Vec<u8>,
-    cfg: &VoiceConfig,
-    events: mpsc::UnboundedSender<VoiceTranscriptEvent>,
-    state: Arc<Mutex<VoiceState>>,
-) {
-    let result = backends::transcribe(&pcm, cfg).await;
-    *state.lock().await = VoiceState::Idle;
-    send_or_debug(
-        &events,
-        VoiceTranscriptEvent::StateChanged(VoiceState::Idle),
-    );
-
-    match result {
-        Ok(Some(text)) => {
-            info!(target: "jfc::voice", chars = text.len(), "STT transcript received");
-            send_or_debug(&events, VoiceTranscriptEvent::Final(text));
-        }
-        Ok(None) => {
-            debug!(target: "jfc::voice", "STT returned empty transcript (silence)");
-        }
-        Err(err) => {
-            warn!(target: "jfc::voice", error = %err, "STT failed");
-            send_or_debug(&events, VoiceTranscriptEvent::Error(err.to_string()));
-        }
-    }
-}
-
 #[inline]
-fn send_or_debug(tx: &mpsc::UnboundedSender<VoiceTranscriptEvent>, ev: VoiceTranscriptEvent) {
+pub(crate) fn send_or_debug(
+    tx: &mpsc::UnboundedSender<VoiceTranscriptEvent>,
+    ev: VoiceTranscriptEvent,
+) {
     tx.send(ev)
         .unwrap_or_else(|_| debug!(target: "jfc::voice", "event channel closed"));
 }
@@ -606,6 +603,7 @@ async fn vad_listen_loop(
     events: mpsc::UnboundedSender<VoiceTranscriptEvent>,
     state: Arc<Mutex<VoiceState>>,
     stop_rx: tokio::sync::oneshot::Receiver<()>,
+    cancel_flag: Arc<std::sync::atomic::AtomicBool>,
 ) {
     debug!(target: "jfc::voice::vad", "VAD loop starting");
     tokio::pin!(stop_rx);
@@ -707,6 +705,8 @@ async fn vad_listen_loop(
                         frames_seen += 1;
                         let rms = crate::vad::rms_energy(frame);
                         max_rms = max_rms.max(rms);
+                        // Feed the recording-cursor animation with the live level.
+                        send_or_debug(&events, VoiceTranscriptEvent::Level(normalize_level(rms)));
                         // Periodic heartbeat so we can see the loop is alive
                         // and what RMS it's reading (helps diagnose a high
                         // noise floor that prevents SpeechEnd).
@@ -766,6 +766,18 @@ async fn vad_listen_loop(
         );
 
         let pcm = std::mem::take(&mut utterance_buf);
+
+        // Discard on cancel (`/voice off` / Esc): if the loop was stopped via
+        // cancel rather than ending naturally, drop the utterance without
+        // transcribing or emitting a Final.
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            *state.lock().await = VoiceState::Idle;
+            send_or_debug(
+                &events,
+                VoiceTranscriptEvent::StateChanged(VoiceState::Idle),
+            );
+            break;
+        }
 
         // Target-speaker gate: drop a non-primary-speaker utterance (e.g. a
         // background movie/TV voice) before spending an STT call on it. Inert
@@ -838,6 +850,32 @@ mod tests {
         assert_eq!(VoiceState::Idle.label(), "idle");
         assert_eq!(VoiceState::Recording.label(), "●rec");
         assert_eq!(VoiceState::Processing.label(), "…stt");
+    }
+
+    // REGRESSION (recording cursor was always gray + min-bar): a linear
+    // rms/32768 map collapses this mic's speech (RMS ~350) to ~0.01, far below
+    // the meter's gray threshold and bar range. The dBFS window must map silence
+    // → ~0, real speech → a clearly visible mid level, and loud input → ~1.
+    #[test]
+    fn normalize_level_dbfs_window_normal() {
+        assert_eq!(normalize_level(0), 0.0);
+        // Near-silent room noise stays near zero (below the gray threshold).
+        assert!(
+            normalize_level(30) < 0.05,
+            "silence = {}",
+            normalize_level(30)
+        );
+        // This machine's measured speech RMS (~350) lands in a visible,
+        // colorable mid range (well above the 0.10 gray threshold).
+        let speech = normalize_level(350);
+        assert!(
+            (0.2..0.8).contains(&speech),
+            "speech level should be a visible mid value, got {speech}"
+        );
+        // Loud input saturates near full.
+        assert!(normalize_level(5000) > 0.95);
+        // Monotonic in RMS.
+        assert!(normalize_level(350) < normalize_level(1500));
     }
 
     #[tokio::test]

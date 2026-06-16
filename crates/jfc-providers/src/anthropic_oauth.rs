@@ -515,6 +515,18 @@ fn resolve_store_path(home: &std::path::Path) -> PathBuf {
         .join("anthropic-accounts.json")
 }
 
+/// Resolve the current Claude.ai OAuth access token from the shared accounts
+/// store, refreshing if needed. Returns `None` when no usable account exists.
+///
+/// Provided for provider-neutral subsystems (e.g. the voice STT stream) that
+/// need the bearer token without depending on provider internals or holding a
+/// long-lived [`AnthropicOAuthProvider`]. Each call resolves against the latest
+/// on-disk store, so the token is always current (and refreshed under the
+/// store's file lock when near expiry).
+pub async fn current_access_token() -> Option<String> {
+    AnthropicOAuthProvider::new().get_access_token().await.ok()
+}
+
 /// Resolve the Anthropic accounts store.
 pub fn default_store_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
@@ -1484,6 +1496,7 @@ fn completion_response_from_json(json: &Value) -> CompletionResponse {
             cache_read_tokens: 0,
             cache_creation_tokens: 0,
         },
+        context_signals: None,
     }
 }
 

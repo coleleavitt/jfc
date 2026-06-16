@@ -358,7 +358,10 @@ mod tests {
         assert_eq!(effort_for_model("claude-opus-4-6", "xhigh"), Some("high"));
         // low/medium/high pass through
         assert_eq!(effort_for_model("claude-opus-4-8", "low"), Some("low"));
-        assert_eq!(effort_for_model("claude-opus-4-7", "medium"), Some("medium"));
+        assert_eq!(
+            effort_for_model("claude-opus-4-7", "medium"),
+            Some("medium")
+        );
         assert_eq!(effort_for_model("claude-opus-4-6", "high"), Some("high"));
     }
 
@@ -595,7 +598,11 @@ mod tests {
             // xhigh maps to max, max stays max
             assert_eq!(effort_for_model(id, "max"), Some("max"), "{id} keeps max");
             assert_eq!(effort_for_model(id, "xhigh"), Some("max"), "{id} xhigh→max");
-            assert_eq!(effort_for_model(id, "high"), Some("high"), "{id} keeps high");
+            assert_eq!(
+                effort_for_model(id, "high"),
+                Some("high"),
+                "{id} keeps high"
+            );
         }
     }
 

@@ -17,6 +17,7 @@
 //!
 //! No LLM calls anywhere — every mode returns real text from disk.
 
+use crate::soft_match::{query_terms, score_text};
 use crate::{SessionId, sessions_dir};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -201,6 +202,15 @@ fn snippet_around(text: &str, needle_lc: &str) -> String {
     snip
 }
 
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    let mut chars = text.chars();
+    let mut out: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        out.push('…');
+    }
+    out
+}
+
 fn slice_messages(all: &[SessionMessage], center: usize, radius: usize) -> Vec<SessionMessage> {
     let start = center.saturating_sub(radius);
     let end = (center + radius + 1).min(all.len());
@@ -246,7 +256,9 @@ pub fn discover_excluding(
     if needle.is_empty() {
         return Vec::new();
     }
-    let mut hits: Vec<(String, SessionHit)> = Vec::new();
+    let terms = query_terms(&needle);
+    let mut exact_hits: Vec<(String, SessionHit)> = Vec::new();
+    let mut soft_hits: Vec<(usize, String, SessionHit)> = Vec::new();
     for id in all_session_ids() {
         if exclude_session == Some(id.as_str()) {
             continue;
@@ -255,10 +267,18 @@ pub fn discover_excluding(
             continue;
         };
         let msgs = flatten_messages(&raw);
-        let Some(match_index) = msgs
+        let exact_match = msgs
             .iter()
             .position(|m| m.text.to_lowercase().contains(&needle))
-        else {
+            .map(|idx| (idx, usize::MAX));
+        let soft_match = exact_match.or_else(|| {
+            msgs.iter()
+                .enumerate()
+                .map(|(idx, msg)| (idx, score_text(&msg.text, &terms)))
+                .max_by_key(|(_, score)| *score)
+                .filter(|(_, score)| *score > 0)
+        });
+        let Some((match_index, score)) = soft_match else {
             continue;
         };
         let updated = updated_of(&raw);
@@ -267,16 +287,31 @@ pub fn discover_excluding(
             title: title_of(&raw),
             updated_at: updated.clone(),
             match_index,
-            snippet: snippet_around(&msgs[match_index].text, &needle),
+            snippet: if score == usize::MAX {
+                snippet_around(&msgs[match_index].text, &needle)
+            } else {
+                truncate_chars(&msgs[match_index].text, SNIPPET_RADIUS * 2)
+            },
             context: slice_messages(&msgs, match_index, window),
             bookend_start: msgs.iter().take(BOOKEND).cloned().collect(),
             bookend_end: msgs.iter().rev().take(BOOKEND).rev().cloned().collect(),
         };
-        hits.push((updated, hit));
+        if score == usize::MAX {
+            exact_hits.push((updated, hit));
+        } else {
+            soft_hits.push((score, updated, hit));
+        }
     }
-    // Most recent first.
-    hits.sort_by(|a, b| b.0.cmp(&a.0));
-    hits.into_iter().map(|(_, h)| h).take(limit).collect()
+    if !exact_hits.is_empty() {
+        exact_hits.sort_by(|a, b| b.0.cmp(&a.0));
+        return exact_hits.into_iter().map(|(_, h)| h).take(limit).collect();
+    }
+    soft_hits.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+    soft_hits
+        .into_iter()
+        .map(|(_, _, h)| h)
+        .take(limit)
+        .collect()
 }
 
 /// SCROLL: anchored ±`window` slice of one session's messages.

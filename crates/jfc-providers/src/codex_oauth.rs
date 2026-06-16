@@ -466,6 +466,7 @@ impl Provider for CodexOAuthProvider {
         Ok(CompletionResponse {
             content: openai::response_output_text(&body),
             usage: openai::response_usage(&body).unwrap_or_default(),
+            context_signals: None,
         })
     }
 }

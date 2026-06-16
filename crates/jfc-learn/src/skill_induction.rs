@@ -332,9 +332,7 @@ mod tests {
         // The 3-gram should be present; the 2-gram Grep→Read should be subsumed.
         assert!(proposals.iter().any(|p| p.sequence.len() == 3));
         assert!(
-            !proposals
-                .iter()
-                .any(|p| p.sequence == vec!["Grep", "Read"]),
+            !proposals.iter().any(|p| p.sequence == vec!["Grep", "Read"]),
             "subsumed 2-gram must be dropped"
         );
     }
@@ -380,7 +378,10 @@ mod tests {
                 (0..3).map(move |s| {
                     SessionTrace::new(
                         format!("s{v}_{s}"),
-                        vec![ToolStep::new(a.clone(), true), ToolStep::new(b.clone(), true)],
+                        vec![
+                            ToolStep::new(a.clone(), true),
+                            ToolStep::new(b.clone(), true),
+                        ],
                     )
                 })
             })
