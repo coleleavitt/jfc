@@ -301,20 +301,66 @@ pub(super) async fn cmd_fork(
         .copied()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let upto = match arg {
-        None => state.messages.len(),
-        Some(s) => match s.parse::<usize>() {
-            Ok(n) if n <= state.messages.len() => n,
-            _ => {
-                state.messages.push(ChatMessage::assistant(format!(
-                            "Usage: `/fork [N]` — snapshot first N messages as a new session. \
-                             Got `{s}`, which doesn't parse or exceeds the current message count ({}).",
-                            state.messages.len()
-                        )));
+
+    // When the argument is a non-numeric string (or absent), use the parallel
+    // fork path: save the current session to disk, then copy it into a new
+    // session ID so both branches diverge independently without interrupting
+    // the current session. When the argument is a number N, fall through to
+    // the original "snapshot first N messages and switch" behaviour.
+    let maybe_n: Option<usize> = arg.and_then(|s| s.parse().ok());
+    if arg.is_none() || maybe_n.is_none() {
+        // Parallel fork: keep current session running, create a sibling.
+        let description = arg.unwrap_or("fork");
+        let source_id = match &state.current_session_id {
+            Some(id) => id.as_str().to_owned(),
+            None => {
+                state.messages.push(ChatMessage::assistant(
+                    "No active session to fork. Send a message first so the session is saved."
+                        .to_owned(),
+                ));
                 return;
             }
-        },
-    };
+        };
+        // Save the current session before forking so the fork gets the latest
+        // messages including the `/fork` command itself.
+        crate::session::save_session(
+            &state
+                .current_session_id
+                .clone()
+                .expect("checked above"),
+            &state.messages,
+            Some(state.cwd.as_str()),
+            Some(state.model.as_str()),
+        )
+        .await;
+
+        match jfc_session::fork_session(&source_id, description).await {
+            Ok(fork_id) => {
+                state.messages.push(ChatMessage::assistant(format!(
+                    "**Parallel fork** created as `{fork_id}`. \
+                     This session (`{source_id}`) continues unchanged. \
+                     Use `/resume {fork_id}` to switch to the fork.",
+                )));
+            }
+            Err(e) => {
+                state.messages.push(ChatMessage::assistant(format!(
+                    "Failed to fork session `{source_id}`: {e}"
+                )));
+            }
+        }
+        return;
+    }
+
+    // Numeric N: snapshot the first N messages and switch to a new session
+    // (original legacy behaviour — keeps backward compatibility).
+    let upto = maybe_n.unwrap();
+    if upto > state.messages.len() {
+        state.messages.push(ChatMessage::assistant(format!(
+            "Usage: `/fork [N | description]` — N ({upto}) exceeds the current message count ({}).",
+            state.messages.len()
+        )));
+        return;
+    }
     if upto == 0 {
         state.messages.push(ChatMessage::assistant(
             "Can't fork at message 0 — there's nothing to snapshot. Send a message first."
@@ -591,6 +637,184 @@ pub(super) async fn cmd_cd(
             state.messages.push(ChatMessage::assistant(format!(
                 "**Error:** Cannot change directory to `{target}`: {e}"
             )));
+        }
+    }
+}
+
+/// `/handover` — produce a curated context hand-off package for a fresh
+/// session. Writes a markdown file (`jfc-handover.md` by default, or the path
+/// given as the first argument) that contains:
+///
+/// 1. **Session summary** — an auto-generated one-paragraph overview based on
+///    the transcript.
+/// 2. **Active tasks** — items from the task store with `pending`/`in_progress`
+///    status.
+/// 3. **Recent tool calls** — last 10 tool names + status for continuity.
+/// 4. **Working directory** and current model / session id.
+/// 5. **Picked-up memories** — the memory files loaded at session start.
+/// 6. **Handover prompt** — a ready-made opening line the new session can use.
+///
+/// This mirrors Claude Code v126's `/handover` workflow: it lets the user open a
+/// fresh session and resume exactly where they left off, avoiding a stale
+/// context that would otherwise leak into the new session.
+pub(super) async fn cmd_handover(
+    state: &mut EngineState,
+    parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    state.messages.push(ChatMessage::user(text.to_owned()));
+
+    let raw_path = parts.get(1).copied().unwrap_or("").trim();
+    let out_path: std::path::PathBuf = if raw_path.is_empty() {
+        std::path::PathBuf::from("jfc-handover.md")
+    } else {
+        std::path::PathBuf::from(raw_path)
+    };
+
+    let session_id = state
+        .current_session_id
+        .as_ref()
+        .map(|id| id.as_str().to_owned())
+        .unwrap_or_else(|| "(unknown)".to_owned());
+
+    let model = state.model.as_str().to_owned();
+
+    let cwd = state.cwd.clone();
+
+    // --- 1. Brief transcript summary (last assistant text, up to 400 chars) ---
+    let last_assistant_text: String = state
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == jfc_core::Role::Assistant)
+        .and_then(|m| {
+            m.parts.iter().find_map(|p| {
+                if let jfc_core::MessagePart::Text(t) = p {
+                    Some(t.chars().take(400).collect::<String>())
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_else(|| "(no assistant messages yet)".to_owned());
+
+    // --- 2. Recent tool calls (last 10) ---
+    let mut tool_calls: Vec<String> = Vec::new();
+    'outer: for msg in state.messages.iter().rev() {
+        for part in &msg.parts {
+            if let jfc_core::MessagePart::Tool(tc) = part {
+                tool_calls.push(format!(
+                    "- `{}` — {}",
+                    tc.kind.label(),
+                    tc.status.label()
+                ));
+                if tool_calls.len() >= 10 {
+                    break 'outer;
+                }
+            }
+        }
+    }
+    tool_calls.reverse();
+
+    // --- 3. Active tasks ---
+    let all_tasks = state
+        .task_store
+        .list(jfc_session::DeletedFilter::Exclude);
+    let active_tasks: Vec<String> = all_tasks
+        .iter()
+        .filter(|t| {
+            matches!(
+                t.status,
+                jfc_session::TaskStatus::Pending
+                    | jfc_session::TaskStatus::InProgress
+                    | jfc_session::TaskStatus::Queued
+            )
+        })
+        .take(20)
+        .map(|t| {
+            format!(
+                "- [{}] {}{}",
+                format!("{:?}", t.status).to_lowercase(),
+                t.subject,
+                if t.description.is_empty() {
+                    String::new()
+                } else {
+                    let snippet: String = t.description.chars().take(80).collect();
+                    format!(" — {snippet}")
+                }
+            )
+        })
+        .collect();
+
+    // --- Build the handover document ---
+    let tool_section = if tool_calls.is_empty() {
+        "_No tool calls recorded._".to_owned()
+    } else {
+        tool_calls.join("\n")
+    };
+
+    let task_section = if active_tasks.is_empty() {
+        "_No active tasks._".to_owned()
+    } else {
+        active_tasks.join("\n")
+    };
+
+    let handover_prompt = format!(
+        "I'm continuing the session `{session_id}`. \
+         The previous context ended at: {last_assistant_text:.200}. \
+         Active tasks: {}. \
+         Please pick up from where we left off.",
+        if active_tasks.is_empty() {
+            "none".to_owned()
+        } else {
+            format!("{} items", active_tasks.len())
+        }
+    );
+
+    let doc = format!(
+        "# jfc Session Handover\n\n\
+         **Session:** `{session_id}`  \n\
+         **Model:** `{model}`  \n\
+         **CWD:** `{cwd}`\n\n\
+         ---\n\n\
+         ## Last assistant output (excerpt)\n\n\
+         {last_assistant_text}\n\n\
+         ---\n\n\
+         ## Recent tool calls\n\n\
+         {tool_section}\n\n\
+         ---\n\n\
+         ## Active tasks\n\n\
+         {task_section}\n\n\
+         ---\n\n\
+         ## Suggested opening message for the new session\n\n\
+         ```\n{handover_prompt}\n```\n",
+    );
+
+    match std::fs::write(&out_path, &doc) {
+        Ok(()) => {
+            let message = format!(
+                "Handover package written to `{}` ({} bytes). \
+                 Open a fresh session and paste the suggested opening message.",
+                out_path.display(),
+                doc.len()
+            );
+            state.messages.push(ChatMessage::assistant(message.clone()));
+            crate::toast::push_with_cap(
+                &mut state.toasts,
+                crate::toast::Toast::new(crate::toast::ToastKind::Success, message),
+            );
+        }
+        Err(e) => {
+            let message = format!(
+                "Failed to write handover package to `{}`: {e}",
+                out_path.display()
+            );
+            state.messages.push(ChatMessage::assistant(message.clone()));
+            crate::toast::push_with_cap(
+                &mut state.toasts,
+                crate::toast::Toast::new(crate::toast::ToastKind::Error, message),
+            );
         }
     }
 }

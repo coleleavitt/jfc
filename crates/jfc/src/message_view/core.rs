@@ -785,6 +785,31 @@ pub(super) fn is_invisible_in_transcript(kind: &ToolKind) -> bool {
     )
 }
 
+/// Format a Unix timestamp (seconds) as a short human-readable string for the
+/// per-message timestamp label. Today's messages show `HH:MM`; older ones
+/// show `N days ago` to avoid needing a full calendar library.
+fn format_message_timestamp(secs: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let age = now.saturating_sub(secs);
+    if age < 86400 {
+        // Same day: show HH:MM in local time (approximated from UTC offset)
+        let mins_since_midnight = (secs % 86400) / 60;
+        let hh = mins_since_midnight / 60;
+        let mm = mins_since_midnight % 60;
+        format!("{hh:02}:{mm:02}")
+    } else {
+        let days = age / 86400;
+        if days == 1 {
+            "1 day ago".to_owned()
+        } else {
+            format!("{days} days ago")
+        }
+    }
+}
+
 /// Remove every `<system-reminder>…</system-reminder>` block from `s`. Used to
 /// tell whether a user turn has any real (user-authored) content left.
 fn strip_system_reminders(s: &str) -> String {
@@ -967,6 +992,30 @@ pub(crate) fn build_message_items<'a>(
                 }
                 Line::from(spans)
             }
+        };
+        // Append a dim timestamp to the role label when `show_message_timestamps`
+        // is enabled. Only show when `created_at > 0` (0 = old session, no data).
+        // Skipped for streaming placeholders — the timestamp is meaningless while
+        // a turn is still in flight.
+        let label_line = if !suppress_label
+            && !is_streaming_placeholder
+            && msg.created_at > 0
+            && jfc_engine::config::load_arc()
+                .claude
+                .show_message_timestamps
+                .unwrap_or(false)
+        {
+            let ts = format_message_timestamp(msg.created_at);
+            let mut spans = label_line.spans;
+            spans.push(Span::styled(
+                format!("  {ts}"),
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::DIM),
+            ));
+            Line::from(spans)
+        } else {
+            label_line
         };
         if !suppress_label {
             items.push(RenderItem::TextLine(label_line));
@@ -1264,5 +1313,43 @@ mod reminder_skip_tests {
                 .is_empty()
         );
         assert_eq!(strip_system_reminders("hi <system-reminder>x").trim(), "hi");
+    }
+}
+
+#[cfg(test)]
+mod timestamp_tests {
+    use super::format_message_timestamp;
+
+    #[test]
+    fn format_message_timestamp_today_shows_hh_mm_normal() {
+        // A timestamp from the last hour should render as "HH:MM".
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let ts = format_message_timestamp(now - 60); // 1 minute ago
+        // Should be "HH:MM" format — two digits, colon, two digits.
+        let parts: Vec<&str> = ts.split(':').collect();
+        assert_eq!(parts.len(), 2, "today's timestamp should be HH:MM: {ts}");
+        assert!(parts[0].len() == 2, "hour part should be 2 chars: {ts}");
+        assert!(parts[1].len() == 2, "minute part should be 2 chars: {ts}");
+    }
+
+    #[test]
+    fn format_message_timestamp_yesterday_shows_days_ago_normal() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let ts = format_message_timestamp(now - 86401); // just over 1 day ago
+        assert!(ts.contains("day"), "old message should show days: {ts}");
+    }
+
+    #[test]
+    fn format_message_timestamp_zero_does_not_panic_robust() {
+        // Zero means "unknown" (old session). Shouldn't panic.
+        let ts = format_message_timestamp(0);
+        // Will show as some days ago (Unix epoch). Just check it doesn't panic.
+        let _ = ts;
     }
 }

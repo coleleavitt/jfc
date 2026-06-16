@@ -462,7 +462,14 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
                 model: model.clone(),
                 provider_name: Some(provider.name().to_owned()),
                 agent_def: agent_def.clone(),
-                cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                cwd: task_input
+                    .cwd
+                    .as_deref()
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| {
+                        std::env::current_dir()
+                            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                    }),
                 worker_exe: None,
                 worker_epoch: 0,
                 active_team_name: active_team_name_task.clone(),
@@ -690,9 +697,12 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
             // Bash, Edit, etc.) operate inside the isolated checkout.
             // Without this, "isolation" was a name only — the worktree
             // existed on disk but the agent ran against the parent cwd.
+            // cwd_override precedence: worktree isolation path > explicit
+            // task_input.cwd > None (execute_task falls back to current_dir).
             let cwd_override = worktree_info
                 .as_ref()
-                .map(|(info, _, _)| std::path::PathBuf::from(&info.path));
+                .map(|(info, _, _)| std::path::PathBuf::from(&info.path))
+                .or_else(|| task_input.cwd.as_deref().map(std::path::PathBuf::from));
             // No daemon registration for in-process subagents — they're
             // tracked via `state.background_tasks` and the assistant
             // message's TaskStatus parts. Previously this call planted

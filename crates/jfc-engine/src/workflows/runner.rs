@@ -688,6 +688,7 @@ fn build_agent_task_input(req: &AgentRequest) -> crate::types::TaskInput {
         isolation: req.isolation.clone(),
         parent_task_id: None,
         schema: req.schema.clone(),
+        cwd: None,
     }
 }
 

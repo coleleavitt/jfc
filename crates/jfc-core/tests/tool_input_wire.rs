@@ -49,6 +49,7 @@ mod tests {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            cwd: None,
         };
         assert!(fg.summary().contains("foreground"));
 
@@ -75,6 +76,7 @@ mod tests {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            cwd: None,
         });
         let v = input.to_value();
         assert_eq!(v["description"], "research");
@@ -218,6 +220,7 @@ mod tests {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            cwd: None,
         }
     }
 

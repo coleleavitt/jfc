@@ -954,6 +954,7 @@ mod tests {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: 0,
         };
         assert_eq!(
             recoverable_requeue_text(&msg),
@@ -976,6 +977,7 @@ mod tests {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: 0,
         };
         assert_eq!(recoverable_requeue_text(&msg), None);
     }

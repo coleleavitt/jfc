@@ -1367,6 +1367,7 @@ mod tests {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            cwd: None,
         }
     }
 

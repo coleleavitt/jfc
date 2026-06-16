@@ -114,6 +114,10 @@ pub fn agent_tool_defs() -> Vec<ToolDef> {
                     "parent_task_id": {
                         "type": "string",
                         "description": "Queued task id (e.g. 't3') this delegation fulfils. When set, the runtime auto-marks that task in_progress on spawn, completed on success, and failed on error — so you don't need a separate TaskUpdate/TaskDone call for the delegated work."
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Optional working directory for the spawned subagent. When set, the agent starts in this directory instead of the parent's cwd. Useful for pointing a subagent at a git worktree or a different project directory."
                     }
                 },
                 "required": ["description", "prompt", "run_in_background"]

@@ -528,6 +528,7 @@ mod tests {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: 0,
         }];
         let err = validate_turn_invariants(&msgs).expect_err("empty user must fail");
         assert_eq!(
@@ -598,6 +599,7 @@ mod tests {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: 0,
         }];
         let err = validate_turn_invariants(&msgs).expect_err("tool part on user role must fail");
         match err {

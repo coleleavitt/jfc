@@ -40,6 +40,12 @@ pub struct TaskInput {
     /// Optional JSON Schema that the subagent's StructuredOutput tool will
     /// validate against. Set by the parent agent to enforce output shape.
     pub schema: Option<serde_json::Value>,
+    /// Optional working directory override for the spawned subagent.
+    /// When set, the agent starts in this directory instead of the
+    /// parent's cwd. Useful for pointing a subagent at a git worktree
+    /// or a different project directory.
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 impl TaskInput {
@@ -92,6 +98,7 @@ mod tests {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            cwd: None,
         }
     }
 

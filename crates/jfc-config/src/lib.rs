@@ -193,6 +193,41 @@ pub struct Config {
     /// of collapsing to a one-line teaser.
     #[serde(default)]
     pub always_show_thinking: bool,
+    /// Emit OSC 8 hyperlinks for file paths in tool-block headers (Edit/Write/Read).
+    /// Terminals that support OSC 8 (iTerm2, kitty, WezTerm, Windows Terminal,
+    /// recent gnome-terminal) render the path as a clickable `file://` link.
+    /// Terminals that do not support OSC 8 ignore the escape sequences and
+    /// display plain text. Default `true`; set to `false` if your terminal
+    /// renders the raw escape codes visibly.
+    #[serde(default = "default_true")]
+    pub osc8_hyperlinks: bool,
+    /// When `false`, pressing bare Enter inserts a literal newline into the
+    /// input box and Ctrl+Enter submits the message. Default `true` (Enter
+    /// submits, Ctrl+Enter inserts newline).
+    #[serde(default = "default_true")]
+    pub enter_sends_message: bool,
+
+    // ── Session GC ───────────────────────────────────────────────────────
+    /// Sessions older than this many days are GC'd at startup (0 = disabled).
+    /// Default 30.
+    #[serde(default = "default_session_max_age_days")]
+    pub session_max_age_days: u64,
+
+    /// Minimum number of sessions to keep regardless of age. Default 20.
+    #[serde(default = "default_session_min_keep")]
+    pub session_min_keep: usize,
+
+    // ── Memory after compact ─────────────────────────────────────────────
+    /// Re-consult memory recall after context compaction so the fresh
+    /// context window starts with relevant memories. Default true.
+    #[serde(default = "default_true")]
+    pub consult_memory_after_compact: bool,
+
+    // ── Cross-session up-arrow history ───────────────────────────────────
+    /// Include prompts from previous sessions in up-arrow history.
+    /// Default true.
+    #[serde(default = "default_true")]
+    pub cross_session_history: bool,
 }
 
 /// Controls what happens when an agent requested worktree isolation but the
@@ -420,6 +455,12 @@ fn default_auto_compact_threshold_pct() -> u8 {
 fn default_true() -> bool {
     true
 }
+fn default_session_max_age_days() -> u64 {
+    30
+}
+fn default_session_min_keep() -> usize {
+    20
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -550,6 +591,12 @@ impl Default for Config {
             extends: None,
             auto_compact_threshold_pct: default_auto_compact_threshold_pct(),
             always_show_thinking: false,
+            osc8_hyperlinks: default_true(),
+            enter_sends_message: default_true(),
+            session_max_age_days: default_session_max_age_days(),
+            session_min_keep: default_session_min_keep(),
+            consult_memory_after_compact: default_true(),
+            cross_session_history: default_true(),
         }
     }
 }
@@ -589,6 +636,12 @@ impl Config {
             auto_compact_enabled: local_wins!(auto_compact_enabled),
             auto_compact_threshold_pct: local_wins!(auto_compact_threshold_pct),
             always_show_thinking: local_wins!(always_show_thinking),
+            osc8_hyperlinks: local_wins!(osc8_hyperlinks),
+            enter_sends_message: local_wins!(enter_sends_message),
+            session_max_age_days: local_wins!(session_max_age_days),
+            session_min_keep: local_wins!(session_min_keep),
+            consult_memory_after_compact: local_wins!(consult_memory_after_compact),
+            cross_session_history: local_wins!(cross_session_history),
             copy_on_select: local_wins!(copy_on_select),
             refusal_fallback_enabled: local_wins!(refusal_fallback_enabled),
             refusal_rewrite_retry_enabled: local_wins!(refusal_rewrite_retry_enabled),

@@ -63,6 +63,11 @@ pub struct SerializedMessage {
     /// session files (no usage) still load.
     #[serde(default)]
     pub usage: Option<crate::types::ModelUsage>,
+    /// Unix timestamp (seconds) when this message was created.
+    /// `serde(default)` so old session files without this field load
+    /// cleanly with `created_at = 0` (meaning "unknown").
+    #[serde(default)]
+    pub created_at: u64,
     pub parts: Vec<SerializedPart>,
 }
 
@@ -229,6 +234,8 @@ pub enum SerializedToolInput {
         isolation: Option<String>,
         #[serde(default)]
         parent_task_id: Option<String>,
+        #[serde(default)]
+        cwd: Option<String>,
     },
     TaskCreate {
         subject: String,

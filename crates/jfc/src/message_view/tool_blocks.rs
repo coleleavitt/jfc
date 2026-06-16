@@ -697,6 +697,29 @@ pub(super) fn format_elapsed_badge(tool: &ToolCall) -> Option<String> {
     }
 }
 
+/// Wrap `label` in an OSC 8 hyperlink pointing at `path` (resolved to an
+/// absolute `file://` URI).  Terminals that support OSC 8 (iTerm2, kitty,
+/// WezTerm, Windows Terminal, recent GNOME Terminal) render the text as a
+/// clickable link; others silently ignore the escape sequences.
+///
+/// Returns the plain `label` unchanged when:
+/// - `osc8_hyperlinks` is disabled in config, or
+/// - `path` is empty / cannot be resolved to an absolute path.
+fn maybe_osc8_file_link(path: &str, label: &str) -> String {
+    if path.is_empty() || !jfc_engine::config::load_arc().osc8_hyperlinks {
+        return label.to_owned();
+    }
+    let abs = std::path::Path::new(path)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(path));
+    // OSC 8 format: ESC ] 8 ; params ; uri BEL text ESC ] 8 ; ; BEL
+    format!(
+        "\x1b]8;;file://{}\x07{}\x1b]8;;\x07",
+        abs.display(),
+        label
+    )
+}
+
 pub(super) fn build_header_inner_spans<'a>(
     tool: &'a ToolCall,
     t: &Theme,
@@ -740,28 +763,31 @@ pub(super) fn build_header_inner_spans<'a>(
         }
         ToolInput::Edit { file_path, .. } => {
             let path = truncate_str(file_path, max_w.saturating_sub(8));
+            let linked = maybe_osc8_file_link(file_path, &path);
             vec![
                 Span::styled("Update", kind_style),
                 Span::styled("(", Style::default().fg(t.text_muted)),
-                Span::styled(path, Style::default().fg(t.text_primary)),
+                Span::styled(linked, Style::default().fg(t.text_primary)),
                 Span::styled(")", Style::default().fg(t.text_muted)),
             ]
         }
         ToolInput::Write { file_path, .. } => {
             let path = truncate_str(file_path, max_w.saturating_sub(8));
+            let linked = maybe_osc8_file_link(file_path, &path);
             vec![
                 Span::styled("Write", kind_style),
                 Span::styled("(", Style::default().fg(t.text_muted)),
-                Span::styled(path, Style::default().fg(t.text_primary)),
+                Span::styled(linked, Style::default().fg(t.text_primary)),
                 Span::styled(")", Style::default().fg(t.text_muted)),
             ]
         }
         ToolInput::Read { file_path, .. } => {
             let path = truncate_str(file_path, max_w.saturating_sub(7));
+            let linked = maybe_osc8_file_link(file_path, &path);
             vec![
                 Span::styled("Read", kind_style),
                 Span::styled("(", Style::default().fg(t.text_muted)),
-                Span::styled(path, Style::default().fg(t.text_secondary)),
+                Span::styled(linked, Style::default().fg(t.text_secondary)),
                 Span::styled(")", Style::default().fg(t.text_muted)),
             ]
         }

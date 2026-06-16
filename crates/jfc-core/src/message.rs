@@ -1,5 +1,14 @@
 use super::{ModelUsage, TaskStatusPart, ToolCall, ToolStatus};
 
+/// Return the current Unix timestamp in seconds. Used as the default for
+/// `ChatMessage::created_at` when a new message is created at runtime.
+fn now_unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
     User,
@@ -113,6 +122,12 @@ pub struct ChatMessage {
     pub model_name: Option<String>,
     pub cost_tier: Option<String>,
     pub elapsed: Option<String>,
+    /// Unix timestamp (seconds) when this message was created. Defaults to
+    /// the current time when a new message is built. Persisted in session
+    /// files and used by the TUI to render per-message timestamps when
+    /// `show_message_timestamps` is enabled in config. Zero means unknown
+    /// (e.g. old sessions loaded before this field was introduced).
+    pub created_at: u64,
     /// Token usage as of the END of this assistant turn. Set on
     /// `StreamUsage` (via `apply_to_last_assistant`) so when the
     /// session is later resumed, `App::recompute_token_estimate` can
@@ -153,6 +168,7 @@ impl ChatMessage {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: now_unix_secs(),
         }
     }
 
@@ -170,6 +186,7 @@ impl ChatMessage {
             usage: None,
             queued: true,
             attachments: Vec::new(),
+            created_at: now_unix_secs(),
         }
     }
 
@@ -190,6 +207,7 @@ impl ChatMessage {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: now_unix_secs(),
         }
     }
 
@@ -204,6 +222,7 @@ impl ChatMessage {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: now_unix_secs(),
         }
     }
 
@@ -228,6 +247,7 @@ impl ChatMessage {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: now_unix_secs(),
         }
     }
 

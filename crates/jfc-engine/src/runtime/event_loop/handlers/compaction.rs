@@ -7,7 +7,7 @@ use crate::context::ToolContext;
 use crate::runtime::{
     CompactionEvent, EventSender, drain_queued_prompts, maybe_continue_task_factory,
 };
-use crate::types::ChatMessage;
+use crate::types::{ChatMessage, MessagePart, Role};
 use crate::{stream, toast};
 
 pub fn handle_started(state: &mut EngineState) {
@@ -46,14 +46,96 @@ pub fn handle_progress(state: &mut EngineState, output_chars: u64) {
     state.compacting_output_chars = state.compacting_attempt_baseline + output_chars;
 }
 
+/// Pull the last user-role plain-text from a `ChatMessage` slice. Used by
+/// the post-compact memory recall to know what query to recall against.
+fn last_user_query(msgs: &[ChatMessage]) -> Option<String> {
+    for m in msgs.iter().rev() {
+        if m.role != Role::User || m.is_compact_boundary() {
+            continue;
+        }
+        let text: String = m
+            .parts
+            .iter()
+            .filter_map(|p| {
+                if let MessagePart::Text(t) = p { Some(t.as_str()) } else { None }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !text.trim().is_empty() {
+            return Some(text);
+        }
+    }
+    None
+}
+
+/// Re-consult memory recall after compaction and append any relevant block to
+/// the compact boundary message so the model has memory context in the new
+/// window. No-op when `consult_memory_after_compact` or
+/// `memory_recall_enabled` is false, when no memories exist, or when the
+/// recall deadline is exceeded.
+async fn inject_post_compact_memory(state: &mut EngineState, messages: &mut Vec<ChatMessage>) {
+    let config = crate::config::load_arc();
+    if !config.consult_memory_after_compact || !config.memory_recall_enabled {
+        return;
+    }
+    let query = match last_user_query(messages) {
+        Some(q) => q,
+        None => return,
+    };
+    let trimmed = query.trim().to_owned();
+    if trimmed.is_empty() || trimmed.starts_with('/') {
+        return;
+    }
+    let cwd_path = std::path::PathBuf::from(&state.cwd);
+    let memories = crate::prompt_context_cache::memories(&cwd_path);
+    if memories.is_empty() {
+        return;
+    }
+    let recall_model = state
+        .provider
+        .available_models()
+        .into_iter()
+        .find(|m| m.id.as_str().contains("haiku"))
+        .map(|m| m.id)
+        .unwrap_or_else(|| state.model.clone());
+    const DEADLINE_MS: u64 = 2_000;
+    let recall_block = tokio::time::timeout(
+        std::time::Duration::from_millis(DEADLINE_MS),
+        crate::memory_recall::run_recall(&trimmed, &memories, state.provider.clone(), recall_model),
+    )
+    .await
+    .unwrap_or(None);
+    let Some(block) = recall_block else { return };
+    tracing::debug!(
+        target: "jfc::compact",
+        recall_block_len = block.len(),
+        "post-compact memory recall: injecting into compact boundary"
+    );
+    // Append to the compact boundary message text. This keeps the
+    // message count stable and avoids violating user/assistant turn ordering.
+    if let Some(boundary) = messages.first_mut() {
+        for part in &mut boundary.parts {
+            if let MessagePart::Text(t) = part {
+                t.push_str("\n\n[Memory context relevant to continuing this session]\n");
+                t.push_str(&block);
+                break;
+            }
+        }
+    }
+}
+
 pub async fn handle_done(
     state: &mut EngineState,
     tx: &EventSender,
-    messages: Vec<ChatMessage>,
+    mut messages: Vec<ChatMessage>,
     tool_ctx: ToolContext,
     pre_tokens: usize,
     post_tokens: usize,
 ) {
+    // Feature: re-consult memory recall after compaction so the fresh context
+    // window starts with relevant memories. Runs before the message swap.
+    inject_post_compact_memory(state, &mut messages).await;
+
     // Reset post-compact read tracker so we can detect re-reads.
     state.post_compact_reads.clear();
     let saved = pre_tokens.saturating_sub(post_tokens);

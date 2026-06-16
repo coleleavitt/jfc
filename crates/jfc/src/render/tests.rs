@@ -1057,6 +1057,7 @@ mod pure_helper_tests {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: 0,
         });
         let stats = collect_diff_stats(&app);
         assert_eq!(stats.total_files, 1);
@@ -1104,6 +1105,7 @@ mod pure_helper_tests {
                 usage: None,
                 queued: false,
                 attachments: Vec::new(),
+                created_at: 0,
             });
         }
         let stats = collect_diff_stats(&app);
@@ -1153,6 +1155,7 @@ mod pure_helper_tests {
                 usage: None,
                 queued: false,
                 attachments: Vec::new(),
+                created_at: 0,
             });
         }
         let stats = collect_diff_stats(&app);

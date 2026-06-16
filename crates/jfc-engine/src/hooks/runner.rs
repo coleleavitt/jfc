@@ -253,6 +253,9 @@ mod tests {
         HookEvent::PreToolUse {
             tool_name: "Bash".to_string(),
             tool_input: serde_json::json!({"command": "ls"}),
+            session_input_tokens: 0,
+            session_output_tokens: 0,
+            session_cost_usd: 0.0,
         }
     }
 

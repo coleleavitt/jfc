@@ -17,6 +17,7 @@ pub fn serialize_message(msg: &ChatMessage) -> SerializedMessage {
         cost_tier: msg.cost_tier.clone(),
         elapsed: msg.elapsed.clone(),
         usage: msg.usage.clone(),
+        created_at: msg.created_at,
         parts: msg.parts.iter().map(serialize_part).collect(),
     }
 }
@@ -174,6 +175,7 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             mode: ti.mode.clone(),
             isolation: ti.isolation.clone(),
             parent_task_id: ti.parent_task_id.clone(),
+            cwd: ti.cwd.clone(),
         },
         ToolInput::TaskCreate {
             subject,

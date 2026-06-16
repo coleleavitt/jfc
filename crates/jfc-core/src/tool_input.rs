@@ -1570,6 +1570,7 @@ impl ToolInput {
                 isolation: opt_str_field("isolation"),
                 parent_task_id: opt_str_field("parent_task_id"),
                 schema: obj.and_then(|m| m.get("schema")).cloned(),
+                cwd: opt_str_field("cwd"),
             }),
             ToolKind::Skill => Self::Skill {
                 name: opt_str_field("name")
@@ -1821,6 +1822,9 @@ impl ToolInput {
                 }
                 if let Some(parent_task_id) = &task_input.parent_task_id {
                     value["parent_task_id"] = json!(parent_task_id);
+                }
+                if let Some(cwd) = &task_input.cwd {
+                    value["cwd"] = json!(cwd);
                 }
                 value
             }

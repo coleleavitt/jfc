@@ -29,6 +29,8 @@ pub fn deserialize_message(msg: SerializedMessage) -> ChatMessage {
         // Attachments (images) are not persisted in session files — they
         // would bloat JSON to hundreds of MB. Default to empty on load.
         attachments: Vec::new(),
+        // 0 means "unknown" for old sessions that predate this field.
+        created_at: msg.created_at,
     }
 }
 
@@ -396,6 +398,7 @@ pub fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             mode,
             isolation,
             parent_task_id,
+            cwd,
         } => ToolInput::Task(TaskInput {
             description,
             prompt,
@@ -410,6 +413,7 @@ pub fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             isolation,
             parent_task_id,
             schema: None,
+            cwd,
         }),
         SerializedToolInput::TaskCreate {
             subject,

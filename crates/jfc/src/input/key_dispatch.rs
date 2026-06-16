@@ -854,6 +854,14 @@ fn cmd_open_prompt_search(app: &mut App) -> Option<anyhow::Result<bool>> {
             all.push(text);
         }
     }
+    // Append cross-session prompts (already de-duplicated against current session
+    // in `user_prompts`, but PromptSearch.all is built independently here, so
+    // de-dup manually using the same `seen` set).
+    for p in app.prior_session_prompts.iter().rev() {
+        if seen.insert(p.clone()) {
+            all.push(p.clone());
+        }
+    }
     if all.is_empty() {
         jfc_engine::toast::push_with_cap(
             &mut app.engine.toasts,
@@ -1100,6 +1108,30 @@ async fn handle_enter_submit(
     key: event::KeyEvent,
     tx: &mpsc::Sender<crate::runtime::EngineEvent>,
 ) -> Option<anyhow::Result<bool>> {
+    if key.code != KeyCode::Enter {
+        return None;
+    }
+
+    let enter_sends = jfc_engine::config::load_arc().enter_sends_message;
+    let ctrl_held = key.modifiers.contains(KeyModifiers::CONTROL);
+    let shift_held = key.modifiers.contains(KeyModifiers::SHIFT);
+
+    // Ctrl+Enter always inserts a literal newline (regardless of enter_sends_message).
+    if ctrl_held && !shift_held {
+        app.textarea.insert_newline();
+        return Some(Ok(false));
+    }
+
+    // When enter_sends_message = false: bare Enter → newline, only Ctrl+Enter
+    // submits. The Ctrl+Enter branch above already handled submit when the flag
+    // is false — here we just let bare Enter fall through to newline insertion.
+    // (The textarea widget handles Enter naturally when we return None.)
+    if !enter_sends && !shift_held && !ctrl_held {
+        app.textarea.insert_newline();
+        return Some(Ok(false));
+    }
+
+    // Default (enter_sends_message = true): bare Enter (no Shift, no Ctrl) submits.
     if key.code == KeyCode::Enter && !key.modifiers.contains(KeyModifiers::SHIFT) {
         let text = app.textarea.lines().join("\n");
         let text = text.trim().to_string();

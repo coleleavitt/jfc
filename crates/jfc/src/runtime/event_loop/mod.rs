@@ -129,6 +129,33 @@ pub(crate) async fn run(
     app.engine.fine_grained_tool_streaming = cli_config.fine_grained_tool_streaming;
     app.engine.strict_tool_schemas = cli_config.strict_tool_schemas;
     let startup_config = config::load_arc();
+
+    // Feature: session GC — remove stale session files at startup so the
+    // sessions directory doesn't grow unbounded. Fires as a background task
+    // so it doesn't block the TUI from appearing. Respects `session_max_age_days`
+    // (0 = disabled) and `session_min_keep`.
+    {
+        let max_age = startup_config.session_max_age_days;
+        let min_keep = startup_config.session_min_keep;
+        tokio::spawn(async move {
+            match jfc_session::gc_old_sessions(max_age, min_keep).await {
+                Ok(0) => {}
+                Ok(n) => tracing::info!(
+                    target: "jfc::session::gc",
+                    deleted = n,
+                    max_age_days = max_age,
+                    min_keep,
+                    "gc_old_sessions: pruned stale sessions"
+                ),
+                Err(e) => tracing::warn!(
+                    target: "jfc::session::gc",
+                    error = %e,
+                    "gc_old_sessions: error during session GC"
+                ),
+            }
+        });
+    }
+
     // Opt-in council-verdict: config `council_verdict = true` OR the env var
     // (already applied in EngineState::default). Either source enables it.
     app.engine.council_verdict_enabled =
@@ -575,6 +602,15 @@ pub(crate) async fn run(
         }
     }
     restore_persistent_background_agents(&mut app.engine);
+
+    // Feature: cross-session up-arrow history. Load user prompts from the N
+    // most-recent sessions (sync/blocking, capped so startup latency stays
+    // sub-ms on cold paths) and stash them in `app.prior_session_prompts` for
+    // `user_prompts()` / `cmd_open_prompt_search` to include. Gated by the
+    // `cross_session_history` config flag (default true).
+    if startup_config.cross_session_history {
+        load_prior_session_prompts(&mut app);
+    }
 
     // Check for pending historian transcripts from previous sessions.
     jfc_engine::learn_lifecycle::on_session_start(&app.engine.cwd);
@@ -1386,6 +1422,103 @@ async fn inject_voice_transcript(app: &mut App, text: &str, tx: &crate::runtime:
             app.textarea.insert_char(ch);
         }
     }
+}
+
+/// Extract user prompts from a parsed session JSON value (raw serde_json).
+/// Returns text strings oldest-first, capped at `max_prompts`. Skips compact
+/// boundaries, empty strings, and slash commands.
+fn extract_prompts_from_session_json(
+    session: &serde_json::Value,
+    max_prompts: usize,
+) -> Vec<String> {
+    let Some(messages) = session.get("messages").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    'msg: for msg in messages {
+        if msg.get("role").and_then(|r| r.as_str()) != Some("user") {
+            continue;
+        }
+        let Some(parts) = msg.get("parts").and_then(|p| p.as_array()) else { continue };
+        // Skip compact-boundary messages.
+        for p in parts.iter() {
+            if p.get("type").and_then(|t| t.as_str()) == Some("compactBoundary")
+                || p.get("compactBoundary").is_some()
+            {
+                continue 'msg;
+            }
+        }
+        for part in parts {
+            let Some(text) = part.get("text").and_then(|t| t.as_str()) else { continue };
+            let t = text.trim();
+            if t.is_empty() || t.starts_with('/') {
+                continue;
+            }
+            out.push(t.to_owned());
+            if out.len() >= max_prompts {
+                return out;
+            }
+        }
+    }
+    out
+}
+
+/// Populate `app.prior_session_prompts` from the most-recent past sessions.
+///
+/// Reads up to `MAX_SESSIONS` session files synchronously (acceptable at
+/// startup before the TUI loop starts). Each session's user-role text parts
+/// are collected oldest-first. Compact boundary messages are skipped.
+/// Slash commands are skipped. De-duplication is caller-side (in
+/// `user_prompts` / `cmd_open_prompt_search`).
+fn load_prior_session_prompts(app: &mut App) {
+    const MAX_SESSIONS: usize = 10;
+    const MAX_PROMPTS_PER_SESSION: usize = 50;
+
+    let dir = jfc_session::sessions_dir();
+    // Collect (mtime, path) pairs for all *.json files.
+    let mut entries: Vec<(std::time::SystemTime, std::path::PathBuf)> = Vec::new();
+    let Ok(rd) = std::fs::read_dir(&dir) else { return };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else { continue };
+        let Ok(modified) = meta.modified() else { continue };
+        entries.push((modified, path));
+    }
+    // Sort newest-first; skip the current/continued session.
+    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    let current_id = app.engine.current_session_id.as_ref().map(|id| id.as_str().to_owned());
+
+    let mut collected: Vec<String> = Vec::new();
+    let mut loaded = 0usize;
+    for (_, path) in entries {
+        if loaded >= MAX_SESSIONS {
+            break;
+        }
+        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            if current_id.as_deref() == Some(stem) {
+                continue;
+            }
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        let Ok(session) = serde_json::from_str::<serde_json::Value>(&content) else { continue };
+        let prompts = extract_prompts_from_session_json(&session, MAX_PROMPTS_PER_SESSION);
+        collected.extend(prompts);
+        loaded += 1;
+    }
+    // Reverse so the combined vec is oldest-first across all loaded sessions;
+    // `user_prompts` prepends these before the current session's prompts.
+    collected.reverse();
+    let count = collected.len();
+    app.prior_session_prompts = collected;
+    tracing::debug!(
+        target: "jfc::session::history",
+        sessions_loaded = loaded,
+        prompt_count = count,
+        "loaded cross-session prompt history"
+    );
 }
 
 #[cfg(test)]

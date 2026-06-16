@@ -1153,6 +1153,33 @@ pub(super) async fn cmd_recall(
     state.messages.push(ChatMessage::assistant(body));
 }
 
+/// `/reloadSettings` (`/reload-settings`) — bust the config cache so the next
+/// `load_arc()` call re-reads `~/.config/jfc/config.toml` (and any project
+/// overrides) from disk. Useful after editing the config file without wanting
+/// to restart the session.
+pub(super) async fn cmd_reload_settings(
+    state: &mut EngineState,
+    _parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    state.messages.push(ChatMessage::user(text.to_owned()));
+    crate::config::invalidate_cache();
+    // Eagerly re-parse so the user sees the new values immediately (and any
+    // parse errors surface in the response rather than silently deferring).
+    let path = crate::config::config_path();
+    let cfg = crate::config::load_arc();
+    let preview = match toml::to_string_pretty(&cfg) {
+        Ok(s) if s.trim().is_empty() => "(no local overrides — using defaults)".to_owned(),
+        Ok(s) => format!("```toml\n{s}```"),
+        Err(e) => format!("**Warning — could not serialize reloaded config:** {e}"),
+    };
+    state.messages.push(ChatMessage::assistant(format!(
+        "**Settings reloaded** from `{}`.\n\n{preview}",
+        path.display()
+    )));
+}
+
 #[cfg(test)]
 mod recall_command_tests {
     use super::*;

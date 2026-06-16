@@ -823,6 +823,39 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    /// Nested subdirectories (depth > 1): a skill at
+    /// `.claude/skills/category/subcategory/SKILL.md` must be found by the
+    /// BFS recursive walk even when it's more than one level deep.
+    #[test]
+    fn load_skills_finds_nested_subdirectory_skill_normal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_skill_nested_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        // Depth-2 nesting: .claude/skills/category/deep-skill/SKILL.md
+        let deep_dir = tmp.join(".claude/skills/category/deep-skill");
+        std::fs::create_dir_all(&deep_dir).unwrap();
+        std::fs::write(
+            deep_dir.join("SKILL.md"),
+            "---\nname: deep-skill\ndescription: deeply nested skill\n---\nnested body",
+        )
+        .unwrap();
+
+        let skills = load_skills(&tmp);
+        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"deep-skill"),
+            "expected `deep-skill` in loaded skills at depth 2, got {names:?}"
+        );
+        let s = skills.iter().find(|s| s.name == "deep-skill").unwrap();
+        assert_eq!(s.description.as_deref(), Some("deeply nested skill"));
+        assert!(s.body.contains("nested body"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     #[test]
     fn load_skills_collects_package_files_normal() {
         let tmp = std::env::temp_dir().join(format!(

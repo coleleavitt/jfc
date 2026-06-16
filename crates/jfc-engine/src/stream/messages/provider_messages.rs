@@ -288,6 +288,7 @@ mod tests {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: 0,
         };
         let out = build_provider_messages(&[m]);
         assert_eq!(out.len(), 1);
@@ -311,6 +312,7 @@ mod tests {
             usage: None,
             queued: false,
             attachments: Vec::new(),
+            created_at: 0,
         };
         let out = build_provider_messages(&[m]);
         // Empty input -> nothing emitted, ensure_user_last leaves the result

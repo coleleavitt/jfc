@@ -272,7 +272,9 @@ pub(super) fn jump_to_last_assistant(app: &mut App) {
 }
 
 pub(super) fn user_prompts(app: &App) -> Vec<String> {
-    app.engine
+    // Current-session prompts (oldest-first as they appear in messages).
+    let mut prompts: Vec<String> = app
+        .engine
         .messages
         .iter()
         .filter(|message| message.role == Role::User)
@@ -288,7 +290,24 @@ pub(super) fn user_prompts(app: &App) -> Vec<String> {
                 .join("\n");
             if text.is_empty() { None } else { Some(text) }
         })
-        .collect()
+        .collect();
+    // Cross-session prompts (pre-loaded at startup, oldest-first). These come
+    // *before* the current-session prompts so up-arrow cycles current first,
+    // then falls back to history from prior sessions. De-duplicate against the
+    // current session to avoid the same prompt appearing twice.
+    let current_set: std::collections::HashSet<&str> =
+        prompts.iter().map(String::as_str).collect();
+    let prior: Vec<String> = app
+        .prior_session_prompts
+        .iter()
+        .filter(|p| !current_set.contains(p.as_str()))
+        .cloned()
+        .collect();
+    // Prepend prior so the full vec is [prior_oldest…, current_oldest…,
+    // current_newest]. `recall_previous_prompt` iterates from the end (newest).
+    let mut combined = prior;
+    combined.append(&mut prompts);
+    combined
 }
 
 pub(super) fn recall_previous_prompt(app: &mut App) -> Option<String> {

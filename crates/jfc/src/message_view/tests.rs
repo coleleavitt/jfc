@@ -1847,10 +1847,27 @@ mod helper_tests {
         );
         let spans = build_header_inner_spans(&tool, &t, 30);
         let path_span = &spans[2].content;
+        // Strip OSC 8 hyperlink escape sequences before measuring the
+        // visible display width. OSC 8 wraps the visible label with:
+        //   ESC ] 8 ; ; URI BEL  LABEL  ESC ] 8 ; ; BEL
+        // The terminal renders only LABEL; the escapes are transparent.
+        let visible = if let Some(inner) = path_span
+            .strip_prefix('\x1b')
+            .and_then(|s| s.strip_prefix("]8;;"))
+            .and_then(|s| s.split_once('\x07'))
+            .map(|(_, rest)| rest)
+            .and_then(|s| s.strip_suffix('\x07'))
+            .and_then(|s| s.strip_suffix("]8;;"))
+            .and_then(|s| s.strip_suffix('\x1b'))
+        {
+            inner
+        } else {
+            path_span.as_ref()
+        };
         assert!(
-            path_span.chars().count() <= 30,
-            "got len {}: {path_span:?}",
-            path_span.chars().count()
+            visible.chars().count() <= 30,
+            "got visible len {}: visible={visible:?} full={path_span:?}",
+            visible.chars().count()
         );
     }
 

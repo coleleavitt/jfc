@@ -213,6 +213,12 @@ pub struct App {
     pub transcript_search: Option<TranscriptSearch>,
     /// Ctrl+R reverse-history search overlay (None = closed).
     pub prompt_search: Option<PromptSearch>,
+    /// Prompts loaded from previous sessions for cross-session up-arrow /
+    /// Ctrl+R history. Populated at startup (async, background) when
+    /// `cross_session_history = true` in config. Empty when the feature is
+    /// disabled or no prior sessions exist. Oldest-first so that
+    /// `user_prompts` can append them after the current session's prompts.
+    pub prior_session_prompts: Vec<String>,
     /// Slash-command autocomplete popup state. `Some(idx)` while the
     /// user is typing a command and the popup is open. None when the
     /// popup is dismissed.
@@ -559,6 +565,7 @@ impl App {
             tool_group_expanded: std::collections::HashSet::new(),
             transcript_search: None,
             prompt_search: None,
+            prior_session_prompts: Vec::new(),
             slash_popup_selected: None,
             path_yank_cursor: 0,
             editing_message_idx: None,

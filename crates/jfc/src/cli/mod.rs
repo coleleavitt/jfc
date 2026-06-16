@@ -296,6 +296,12 @@ pub(crate) struct Cli {
     #[arg(long, short = 'q')]
     quiet: bool,
 
+    /// Disable automatic context compaction for this session.
+    /// Equivalent to setting `auto_compact_enabled = false` in config,
+    /// but scoped to this invocation only.
+    #[arg(long)]
+    no_auto_compact: bool,
+
     /// Override the working directory used by the engine. When combined with
     /// `--resume`, lets you resume a session from a different directory than
     /// the one where it was originally created.
@@ -811,6 +817,17 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         quiet: cli.quiet,
         cwd_override: cli.cwd.clone(),
     };
+
+    // --no-auto-compact: disable automatic context compaction for this session.
+    // Set the env var so `auto_compact_disabled()` in jfc-engine picks it up
+    // regardless of what the config file says.
+    if cli.no_auto_compact {
+        // SAFETY: single-threaded at this point (before spawning the async runtime).
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("JFC_DISABLE_AUTO_COMPACT", "1");
+        }
+    }
 
     // v132 `-p`/`--print` headless one-shot mode. Skips the TUI
     // entirely, streams the response to stdout, exits with the

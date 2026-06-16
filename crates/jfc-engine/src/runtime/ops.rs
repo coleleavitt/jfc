@@ -210,10 +210,16 @@ pub async fn submit_prompt(
         );
     }
 
+    let hook_input_tokens: u64 = state.usage_by_model.values().map(|u| u.input_tokens).sum();
+    let hook_output_tokens: u64 = state.usage_by_model.values().map(|u| u.output_tokens).sum();
+    let hook_cost_usd = crate::cost::total_cost(&state.usage_by_model);
     let hook_action = crate::hooks::fire(
         crate::hooks::HookPoint::OnUserPromptSubmit,
         &crate::hooks::HookContext::for_session(&session_id_for_hook)
-            .with_extra("text_len", text.len().to_string()),
+            .with_extra("text_len", text.len().to_string())
+            .with_extra("session_input_tokens", hook_input_tokens.to_string())
+            .with_extra("session_output_tokens", hook_output_tokens.to_string())
+            .with_extra("session_cost_usd", format!("{hook_cost_usd:.6}")),
     );
     if let crate::hooks::HookAction::Abort(reason) = &hook_action {
         tracing::warn!(target: "jfc::hooks", %reason, "OnUserPromptSubmit aborted turn");

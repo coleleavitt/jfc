@@ -330,6 +330,7 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
             isolation: None, // Worktree already created by SwarmProvider
             parent_task_id: None,
             schema: None,
+            cwd: None,
         };
 
         tracing::info!(

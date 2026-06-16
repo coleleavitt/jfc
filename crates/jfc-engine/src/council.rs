@@ -694,6 +694,7 @@ async fn deliberate_agentic_member(
             isolation: None,
             parent_task_id: None,
             schema: Some(schema.clone()),
+            cwd: None,
         };
         let call = crate::tools::execute_task(
             &task_input,

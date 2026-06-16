@@ -107,6 +107,7 @@ engine_commands! {
         "/factory" [] "show factory throughput, success rate, rework, and attempt metrics" => cmd_factory,
         "/oauth-login" [] "start OAuth device-flow login (RFC 8628)" => cmd_oauth_login,
         "/config" [] "show parsed config (`/config path` for the file location)" => cmd_config,
+        "/reloadSettings" ["/reload-settings"] "reload configuration from disk without restarting" => cmd_reload_settings,
         "/continue" ["/c"] "resume the most recent session (`/continue all` for any cwd)" => cmd_continue,
         "/resume" [] "resume a specific session by id" => cmd_resume,
         "/sessions" [] "list all saved sessions" => cmd_sessions,
@@ -117,6 +118,7 @@ engine_commands! {
         "/feedback" [] "open the GitHub issue tracker" => cmd_feedback,
         "/upgrade" [] "show how to upgrade jfc" => cmd_upgrade,
         "/fork" [] "snapshot the first N messages as a new session" => cmd_fork,
+        "/handover" [] "write a curated context hand-off package for a fresh session" => cmd_handover,
         "/batch" [] "submit a prompt-file via the Message Batches API" => cmd_batch,
         "/diff" [] "show pending uncommitted changes" => cmd_diff,
         "/turn-diff" ["/td"] "diff only the files edited in the current turn" => cmd_turn_diff,
@@ -344,6 +346,7 @@ pub async fn skill_fallthrough(
                 isolation: None,
                 parent_task_id: None,
                 schema: skill.input_schema.clone(),
+                cwd: None,
             };
             let provider = state.provider.clone();
             let model = state.model.clone();
