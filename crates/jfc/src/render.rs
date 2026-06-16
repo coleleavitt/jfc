@@ -33,6 +33,7 @@ mod task_panel;
 mod teammates_panel;
 mod theme_picker;
 pub(crate) mod visual;
+pub(crate) mod voice_cursor;
 
 #[cfg(test)]
 mod tests;

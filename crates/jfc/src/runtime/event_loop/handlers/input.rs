@@ -28,6 +28,19 @@ pub(crate) async fn handle_term_event(
                 return Ok(true);
             }
         }
+        // Push-to-talk key-up: end a hold-mode recording. Relies on the Kitty
+        // keyboard protocol's release reports (enabled in `cli::terminal`); only
+        // the bare Space key drives PTT, and the recorder ignores releases that
+        // don't apply (tap/VAD modes), so this is safe to call unconditionally.
+        Event::Key(k)
+            if k.kind == KeyEventKind::Release
+                && app.voice_enabled
+                && crate::voice::is_initialized()
+                && k.code == crossterm::event::KeyCode::Char(' ')
+                && k.modifiers == crossterm::event::KeyModifiers::NONE =>
+        {
+            crate::voice::activate(false).await;
+        }
         Event::Paste(text) => {
             // Try image clipboard first — when the user pastes a
             // screenshot the OS sends a bracketed-paste *event*
@@ -202,11 +215,23 @@ async fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent, _tx: &
                     sel.dragged = true;
                 }
             }
+            // Drag-edge autoscroll: when the cursor is dragged to/past the top
+            // or bottom edge of the transcript, record how far beyond the edge
+            // it is so the throttled tick can keep scrolling + extending the
+            // selection. Without this a drag stalls at the viewport edge and
+            // can never select content that scrolled offscreen (the original
+            // "copy is limited to the visible area" report).
+            app.drag_autoscroll = app
+                .text_selection
+                .filter(|s| s.dragged)
+                .and_then(|_| drag_autoscroll_overrun(app, mouse.row));
         }
         // Only the *left* button drives selection. Matching `Up(_)` here let a
         // right/middle-button release finalize or drop a left-drag selection.
         MouseEventKind::Up(MouseButton::Left) => {
             app.drag_anchor_y = None;
+            // The drag is over — stop any edge autoscroll.
+            app.drag_autoscroll = None;
             match app.text_selection {
                 // A real drag: hand off to the renderer to extract + copy the
                 // covered cells (it has the buffer; this handler does not).
@@ -228,6 +253,8 @@ async fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent, _tx: &
         // Press anchors a potential selection but defers the click action to
         // release, so starting a drag doesn't also fire a click (e.g. yank).
         MouseEventKind::Down(MouseButton::Left) => {
+            // Fresh gesture — clear any leftover edge-autoscroll signal.
+            app.drag_autoscroll = None;
             // `copy_on_select = false` disables the drag-to-select gesture
             // entirely: clicks fall straight through to the click handler and
             // the clipboard is never touched by a drag.
@@ -468,9 +495,31 @@ fn selection_content_line(app: &App, row: u16) -> usize {
     app.scroll_offset + row.saturating_sub(top) as usize
 }
 
+/// How far (in rows) a drag cursor has overrun the transcript's top/bottom
+/// edge, or `None` when it's inside the viewport. Negative = above the top
+/// edge (autoscroll up); positive = below the bottom edge (autoscroll down).
+/// Drives [`crate::app::App::drag_autoscroll`] so the tick keeps scrolling
+/// while the cursor is pinned past an edge — letting a drag select content
+/// beyond the visible area.
+fn drag_autoscroll_overrun(app: &App, row: u16) -> Option<i32> {
+    let area = (*app.messages_rect.borrow())?;
+    let top = area.y;
+    let bottom = area.y + area.height; // exclusive (last content row = bottom-1)
+    if row < top {
+        Some(i32::from(row) - i32::from(top)) // negative
+    } else if row >= bottom {
+        Some(i32::from(row) - i32::from(bottom) + 1) // positive (>=1)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::selection_started;
+    use super::{drag_autoscroll_overrun, selection_started};
+    use crate::app::App;
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+    use std::sync::Arc;
 
     #[test]
     fn one_cell_jitter_is_not_a_selection_normal() {
@@ -487,5 +536,94 @@ mod tests {
         assert!(selection_started((10, 5), (8, 5)));
         assert!(selection_started((10, 5), (10, 6)));
         assert!(selection_started((10, 5), (10, 4)));
+    }
+
+    struct StubProvider;
+    #[async_trait::async_trait]
+    impl Provider for StubProvider {
+        fn name(&self) -> &str {
+            "stub"
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+    impl jfc_provider::seal::Sealed for StubProvider {}
+
+    // Drag-edge autoscroll overrun: rows inside the transcript yield None; rows
+    // above the top edge yield a negative overrun (scroll up); rows at/below
+    // the bottom edge yield a positive overrun (scroll down). This is the core
+    // signal that lets a drag select content past the viewport.
+    #[test]
+    fn drag_autoscroll_overrun_detects_edges_normal() {
+        let app = App::new(Arc::new(StubProvider), "test-model");
+        // Messages area: y=2, height=10 → rows [2, 12), last content row = 11.
+        *app.messages_rect.borrow_mut() = Some(ratatui::layout::Rect::new(0, 2, 40, 10));
+
+        // Inside the viewport → no autoscroll.
+        assert_eq!(drag_autoscroll_overrun(&app, 2), None);
+        assert_eq!(drag_autoscroll_overrun(&app, 6), None);
+        assert_eq!(drag_autoscroll_overrun(&app, 11), None);
+
+        // Above the top edge → negative (scroll up), magnitude = rows past edge.
+        assert_eq!(drag_autoscroll_overrun(&app, 1), Some(-1));
+        assert_eq!(drag_autoscroll_overrun(&app, 0), Some(-2));
+
+        // At/below the bottom edge → positive (scroll down), magnitude ≥ 1.
+        assert_eq!(drag_autoscroll_overrun(&app, 12), Some(1));
+        assert_eq!(drag_autoscroll_overrun(&app, 14), Some(3));
+    }
+
+    // A `Drag` whose cursor is back INSIDE the viewport must clear the
+    // autoscroll signal — otherwise the tick would keep scrolling after the
+    // user dragged back in. This mirrors the Drag arm's assignment:
+    // `drag_autoscroll = selection(dragged).and_then(overrun)`.
+    #[test]
+    fn drag_autoscroll_clears_when_cursor_reenters_viewport_normal() {
+        let app = build_drag_app(true);
+        // Cursor inside the viewport → overrun is None regardless of a prior
+        // edge overrun, so the Drag arm stores None.
+        let reentered = app
+            .text_selection
+            .filter(|s| s.dragged)
+            .and_then(|_| drag_autoscroll_overrun(&app, 6));
+        assert_eq!(reentered, None, "in-viewport drag must clear autoscroll");
+    }
+
+    // Click jitter past the edge (selection exists but `dragged == false`) must
+    // NOT start autoscroll — only a promoted drag-selection does. Guards the
+    // `filter(|s| s.dragged)` in the Drag arm.
+    #[test]
+    fn drag_autoscroll_not_armed_for_undragged_selection_normal() {
+        let app = build_drag_app(false); // dragged = false
+        let armed = app
+            .text_selection
+            .filter(|s| s.dragged)
+            .and_then(|_| drag_autoscroll_overrun(&app, 0)); // row above top edge
+        assert_eq!(armed, None, "an un-dragged selection must not autoscroll");
+    }
+
+    /// App with a transcript selection over a recorded messages_rect; `dragged`
+    /// controls whether the selection has been promoted to a real drag.
+    fn build_drag_app(dragged: bool) -> App {
+        let app = App::new(Arc::new(StubProvider), "test-model");
+        *app.messages_rect.borrow_mut() = Some(ratatui::layout::Rect::new(0, 2, 40, 10));
+        let mut app = app;
+        app.text_selection = Some(crate::app::TextSelection {
+            anchor: (1, 5),
+            head: (5, 5),
+            area_width: 40,
+            dragged,
+            finalize: false,
+            copied: false,
+        });
+        app
     }
 }

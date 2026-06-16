@@ -12,6 +12,10 @@ use jfc_provider::{ModelId, ModelInfo, Provider};
 
 use super::EngineState;
 
+/// Max number of recent RMS audio levels retained for the recording-cursor
+/// animation (the CLI's `LWA` ring length).
+pub const VOICE_AUDIO_LEVELS_CAP: usize = 16;
+
 /// The expanded panel state cycled by Ctrl+T — mirrors Claude Code's
 /// `expandedView: "none" | "tasks" | "teammates"` state machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -260,6 +264,15 @@ pub struct App {
     /// the next drag delta can advance scroll_offset by the
     /// difference. Reset on Down / Up so a fresh drag starts cleanly.
     pub drag_anchor_y: Option<u16>,
+    /// Drag-edge autoscroll signal. While the left button is held and the
+    /// cursor sits at/over the top or bottom edge of the transcript, the mouse
+    /// handler records how many rows beyond the edge the cursor is (negative =
+    /// above the top edge → scroll up; positive = below the bottom edge →
+    /// scroll down). The throttled tick then scrolls in that direction and
+    /// extends the selection head, so a drag can select content past the
+    /// visible viewport instead of stalling at the edge. `None` when the
+    /// cursor is inside the viewport or no drag is active.
+    pub drag_autoscroll: Option<i32>,
     /// In-progress / just-finished mouse text selection over the transcript.
     /// Drag inside the messages area paints a reverse-video highlight; on
     /// button-up the renderer reads the selected buffer cells, copies them to
@@ -427,6 +440,13 @@ pub struct App {
     /// Used to delete the previous interim before inserting an updated one so
     /// live transcription replaces in place rather than appending.
     pub voice_interim_chars: usize,
+    /// Ring of the most recent normalized [0,1] RMS audio levels (newest last),
+    /// fed by the voice pipeline while recording. Drives the animated recording
+    /// cursor. Capped at [`VOICE_AUDIO_LEVELS_CAP`].
+    pub voice_audio_levels: Vec<f32>,
+    /// Monotonic instant the current recording session began — the time base for
+    /// the recording cursor's hue rotation. `None` when not recording.
+    pub voice_record_started: Option<std::time::Instant>,
     /// Per-frame map of `(tool_id, screen_rect)` populated by the message
     /// renderer as each `ToolBlock` paints. The mouse handler reads this to
     /// translate a left-click into the tool whose body should expand —
@@ -550,6 +570,7 @@ impl App {
             messages_rect: std::cell::RefCell::new(None),
             toasts_rect: std::cell::RefCell::new(None),
             drag_anchor_y: None,
+            drag_autoscroll: None,
             text_selection: None,
             last_click: None,
             pending_select_request: None,
@@ -600,6 +621,8 @@ impl App {
             voice_interim: None,
             voice_enabled: false,
             voice_interim_chars: 0,
+            voice_audio_levels: Vec::new(),
+            voice_record_started: None,
             tool_hit_regions: RefCell::new(Vec::new()),
             render_cache: RefCell::new(RenderCache::new()),
             height_index: RefCell::new(crate::message_view::height_index::HeightIndex::new()),

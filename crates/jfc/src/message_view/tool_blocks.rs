@@ -1,6 +1,7 @@
 use super::assistant_parts::{sanitize_terminal_text, truncate_str};
 use super::bash::{BashCmdKind, classify_bash_cmd};
 use super::core::diagnostics_for_path;
+use super::detection::detect_background_task_notification;
 use super::detection::looks_like_git_diff_output;
 use super::formatters::{
     produce_cat_markdown_output_line_count, produce_cat_markdown_output_lines,
@@ -25,7 +26,6 @@ use super::syntax::{
     produce_highlighted_with_line_numbers_line_count, produce_highlighted_with_line_numbers_lines,
 };
 use super::tool_height::tool_block_height;
-use super::detection::detect_background_task_notification;
 use super::*;
 
 /// Count the rows produced by `tool_body_lines_themed` without constructing
@@ -949,6 +949,20 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         | ToolKind::TeamDelete
         | ToolKind::SendMessage
         | ToolKind::TeamMemberMode => Color::Rgb(255, 150, 130), // coral
+        ToolKind::HcomStatus
+        | ToolKind::HcomList
+        | ToolKind::HcomSend
+        | ToolKind::HcomEvents
+        | ToolKind::HcomListen
+        | ToolKind::HcomTranscript
+        | ToolKind::HcomBundle
+        | ToolKind::HcomTerm
+        | ToolKind::HcomLaunch
+        | ToolKind::HcomResume
+        | ToolKind::HcomFork
+        | ToolKind::HcomKill
+        | ToolKind::HcomRelay
+        | ToolKind::HcomRun => Color::Rgb(110, 210, 210), // hcom cyan
         ToolKind::Skill => Color::Rgb(180, 220, 255), // ice
         ToolKind::SkillCreate => Color::Rgb(150, 230, 210), // mint-teal (authoring)
         ToolKind::ToolSearch | ToolKind::ToolSuggest => Color::Rgb(170, 210, 180),
@@ -1524,13 +1538,28 @@ mod provider_attribution_tests {
     // Normal: each known model id maps to its expected provider family.
     #[test]
     fn classify_known_families_normal() {
-        assert_eq!(ProviderFamily::classify("claude-opus-4-7"), ProviderFamily::Anthropic);
-        assert_eq!(ProviderFamily::classify("anthropic/claude-x"), ProviderFamily::Anthropic);
-        assert_eq!(ProviderFamily::classify("fable-5"), ProviderFamily::Anthropic);
+        assert_eq!(
+            ProviderFamily::classify("claude-opus-4-7"),
+            ProviderFamily::Anthropic
+        );
+        assert_eq!(
+            ProviderFamily::classify("anthropic/claude-x"),
+            ProviderFamily::Anthropic
+        );
+        assert_eq!(
+            ProviderFamily::classify("fable-5"),
+            ProviderFamily::Anthropic
+        );
         assert_eq!(ProviderFamily::classify("gpt-5.5"), ProviderFamily::OpenAI);
-        assert_eq!(ProviderFamily::classify("openai/gpt-5.5"), ProviderFamily::OpenAI);
+        assert_eq!(
+            ProviderFamily::classify("openai/gpt-5.5"),
+            ProviderFamily::OpenAI
+        );
         assert_eq!(ProviderFamily::classify("o3-mini"), ProviderFamily::OpenAI);
-        assert_eq!(ProviderFamily::classify("gemini-2.5-pro"), ProviderFamily::Gemini);
+        assert_eq!(
+            ProviderFamily::classify("gemini-2.5-pro"),
+            ProviderFamily::Gemini
+        );
     }
 
     // Robust: an unknown id falls back to Other.
@@ -1579,10 +1608,18 @@ mod provider_attribution_tests {
         let lines = tool_body_lines_themed(&tool, 60, t, None);
         let rendered: Vec<String> = lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect();
         let gpt_bar = ProviderFamily::OpenAI.style().bar;
-        assert!(rendered.iter().any(|l| l.contains("You → GPT")), "header missing: {rendered:?}");
+        assert!(
+            rendered.iter().any(|l| l.contains("You → GPT")),
+            "header missing: {rendered:?}"
+        );
         assert!(rendered.iter().any(|l| l.contains("Rayleigh scattering")));
         assert!(
             rendered.iter().any(|l| l.starts_with(gpt_bar)),

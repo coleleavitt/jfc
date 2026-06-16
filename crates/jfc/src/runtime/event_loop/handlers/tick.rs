@@ -350,6 +350,16 @@ pub(crate) async fn handle_tick(
         }
     }
 
+    // Drag-edge autoscroll: while a drag-selection's cursor is pinned past the
+    // top/bottom edge of the transcript, scroll + extend the selection so a
+    // drag can select content beyond the visible viewport (fixes "copy is
+    // limited to the visible area"). The whole gesture lives in
+    // `App::apply_drag_autoscroll_tick` so this handler and the tests share one
+    // source of truth.
+    if app.apply_drag_autoscroll_tick() {
+        needs_draw = true;
+    }
+
     app.update_wants_animation_frame();
     // When there's genuine on-screen motion (streaming, a live agent, a
     // running task spinner, kinetic scroll, a visible toast), every tick

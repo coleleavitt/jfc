@@ -37,8 +37,8 @@ pub(super) fn looks_like_git_diff_output(text: &str) -> bool {
 pub(super) fn detect_background_task_notification(text: &str) -> Option<&str> {
     // Pattern: starts with "Command exceeded..." or ends with
     // "Use BashOutput with..." and contains "task_id:" line.
-    let is_bg_notice = text.contains("was moved to the background")
-        || text.contains("Use BashOutput with");
+    let is_bg_notice =
+        text.contains("was moved to the background") || text.contains("Use BashOutput with");
     if !is_bg_notice {
         return None;
     }

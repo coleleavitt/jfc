@@ -1626,6 +1626,180 @@ mod render_snapshot_tests {
         );
     }
 
+    // Bug 2 (the never-resolved scrollback copy report): a drag whose cursor
+    // is pinned at the TOP edge must autoscroll up and keep extending the
+    // selection, so the user can select content that started ABOVE the visible
+    // viewport. Before the drag-edge autoscroll fix the selection head clamped
+    // at the top row and the copy was limited to what was already on screen.
+    #[test]
+    fn drag_autoscroll_extends_selection_above_viewport_normal() {
+        use jfc_core::ChatMessage;
+
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        for i in 0..40 {
+            app.engine
+                .messages
+                .push(ChatMessage::assistant(format!("transcript line {i:02}")));
+        }
+
+        let backend = TestBackend::new(60, 10);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::messages::messages(f, &mut app, area);
+        })
+        .expect("draw");
+        let area = app.messages_rect.borrow().expect("messages rect");
+
+        // User scrolls partway up and starts a drag-selection anchored at the
+        // top visible row, then drags PAST the top edge (cursor row < top).
+        app.follow_bottom = false;
+        app.scroll_offset = 20;
+        let anchor_line = app.scroll_offset; // top visible content line
+        app.text_selection = Some(crate::app::TextSelection {
+            anchor: (area.x + 1, anchor_line),
+            head: (area.x + 5, anchor_line),
+            area_width: area.width,
+            dragged: true,
+            finalize: false,
+            copied: false,
+        });
+        // Cursor pinned one row above the top edge → autoscroll-up signal.
+        app.drag_autoscroll = Some(-1);
+        let start_scroll = app.scroll_offset;
+
+        // Pump several ticks through the SAME method handle_tick calls, so this
+        // test can't drift from the real handler.
+        for _ in 0..5 {
+            assert!(
+                app.apply_drag_autoscroll_tick(),
+                "an active drag_autoscroll should report it scrolled"
+            );
+        }
+
+        // The viewport scrolled up…
+        assert!(
+            app.scroll_offset < start_scroll,
+            "autoscroll should have moved the viewport up: {start_scroll} -> {}",
+            app.scroll_offset
+        );
+        // …and the selection head now sits ABOVE the original anchor line,
+        // i.e. the selection genuinely extends past where the viewport began.
+        let head_line = app.text_selection.unwrap().head.1;
+        assert!(
+            head_line < anchor_line,
+            "selection head ({head_line}) should extend above the anchor ({anchor_line})"
+        );
+
+        // And the content-backed copy now includes a line that was offscreen
+        // (above) when the drag started.
+        let sel = app.text_selection.unwrap();
+        let (start, end) = sel.ordered();
+        let text = super::super::frame::extract_selection_text(&app, start, end, area);
+        assert!(
+            text.contains(&format!("transcript line {head_line:02}")) || text.lines().count() > 1,
+            "copy should span the autoscrolled-in rows:\n{text}"
+        );
+    }
+
+    /// Build a transcript app rendered at a 60×10 TestBackend so messages_rect
+    /// and heights are recorded; returns (app, term, messages_rect).
+    fn drag_app_rendered(lines: usize) -> (App, Terminal<TestBackend>, ratatui::layout::Rect) {
+        use jfc_core::ChatMessage;
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        for i in 0..lines {
+            app.engine
+                .messages
+                .push(ChatMessage::assistant(format!("transcript line {i:02}")));
+        }
+        let backend = TestBackend::new(60, 10);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::messages::messages(f, &mut app, area);
+        })
+        .expect("draw");
+        let area = app.messages_rect.borrow().expect("messages rect");
+        (app, term, area)
+    }
+
+    // Symmetric to the above: a drag pinned at the BOTTOM edge autoscrolls DOWN
+    // and extends the selection below the viewport. This exercises the down
+    // branch (edge_row = bottom-1, scroll_down) that the upward test doesn't.
+    #[test]
+    fn drag_autoscroll_extends_selection_below_viewport_normal() {
+        let (mut app, _term, area) = drag_app_rendered(40);
+
+        // Scroll up so there's room to autoscroll DOWN, anchor a drag at the
+        // bottom visible row, cursor pinned one row below the bottom edge.
+        app.follow_bottom = false;
+        app.scroll_offset = 5;
+        let bottom_line = app.scroll_offset + (area.height as usize - 1);
+        app.text_selection = Some(crate::app::TextSelection {
+            anchor: (area.x + 1, bottom_line),
+            head: (area.x + 5, bottom_line),
+            area_width: area.width,
+            dragged: true,
+            finalize: false,
+            copied: false,
+        });
+        app.drag_autoscroll = Some(1); // one row below the bottom edge
+        let start_scroll = app.scroll_offset;
+
+        for _ in 0..5 {
+            assert!(app.apply_drag_autoscroll_tick());
+        }
+
+        assert!(
+            app.scroll_offset > start_scroll,
+            "downward autoscroll should move the viewport down: {start_scroll} -> {}",
+            app.scroll_offset
+        );
+        let head_line = app.text_selection.unwrap().head.1;
+        assert!(
+            head_line > bottom_line,
+            "selection head ({head_line}) should extend below the start bottom ({bottom_line})"
+        );
+    }
+
+    // Regression (auto-review #2/#5): a downward copy-drag that reaches the
+    // bottom must NOT silently re-arm `follow_bottom`. `scroll_down` sets it at
+    // max-scroll, but a drag is a copy gesture, not a "pin to live output"
+    // request — `apply_drag_autoscroll_tick` restores the prior follow state.
+    #[test]
+    fn drag_autoscroll_down_does_not_rearm_follow_bottom_regression() {
+        let (mut app, _term, area) = drag_app_rendered(40);
+
+        app.follow_bottom = false;
+        app.scroll_offset = 5;
+        let bottom_line = app.scroll_offset + (area.height as usize - 1);
+        app.text_selection = Some(crate::app::TextSelection {
+            anchor: (area.x + 1, bottom_line),
+            head: (area.x + 5, bottom_line),
+            area_width: area.width,
+            dragged: true,
+            finalize: false,
+            copied: false,
+        });
+        app.drag_autoscroll = Some(6); // big overrun → quickly reaches the max
+
+        // Pump enough ticks to drive scroll_offset to the bottom (max_scroll).
+        for _ in 0..30 {
+            app.apply_drag_autoscroll_tick();
+        }
+
+        assert!(
+            app.is_at_bottom(),
+            "the drag should have reached the bottom of the transcript"
+        );
+        assert!(
+            !app.follow_bottom,
+            "a copy-drag reaching the bottom must NOT re-arm follow_bottom"
+        );
+    }
+
     // t910 merge: drilling into a detached agent (the task view reached via
     // viewing_task_id, fallback string-log path) now leads with the SAME
     // canonical detail body the Tasks pane shows (Progress header + stats).

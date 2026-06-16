@@ -296,7 +296,10 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
     ];
-    // Voice mode indicator — shown when recording or processing.
+    // Voice mode indicator — shown when recording or processing. The live RMS
+    // animation lives at the input cursor (see `input_box`); here we keep a
+    // plain textual label so there's always a clear indicator even when the
+    // cursor is scrolled out of view.
     match app.voice_state {
         jfc_voice::VoiceState::Recording => {
             spans.push(Span::styled(" · ", muted));
@@ -308,8 +311,14 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
             ));
         }
         jfc_voice::VoiceState::Processing => {
+            // Pulsing gray "…STT" — port of CC 2.1.177's processing indicator.
+            let elapsed = app
+                .voice_record_started
+                .map(|t| t.elapsed().as_millis())
+                .unwrap_or(0);
+            let pulse = crate::render::voice_cursor::processing_pulse(elapsed);
             spans.push(Span::styled(" · ", muted));
-            spans.push(Span::styled("…STT", Style::default().fg(app.theme.warning)));
+            spans.push(Span::styled("…STT", Style::default().fg(pulse)));
         }
         jfc_voice::VoiceState::Idle => {
             // Also show interim transcript if available

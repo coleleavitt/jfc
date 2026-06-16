@@ -100,6 +100,7 @@ impl Provider for MockProvider {
         Ok(CompletionResponse {
             content: next,
             usage: TokenUsage::default(),
+            context_signals: None,
         })
     }
 }

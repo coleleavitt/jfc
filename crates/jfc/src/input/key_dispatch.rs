@@ -32,20 +32,29 @@ pub async fn handle_key(
         return Ok(false);
     }
 
-    // Voice push-to-talk: Space activates recording when voice is enabled,
-    // the input is empty, and no modal is blocking.
+    // Voice push-to-talk: Space drives recording when voice is enabled and no
+    // modal is blocking. Press/Repeat → activate (the recorder dedups held-key
+    // repeats); the key-up half lives in `handle_term_event` (Kitty Release).
+    //
+    // Start only from an *empty* prompt so Space mid-typing still types a space.
+    // Once recording, absorb Space (and its repeats) regardless of prompt
+    // contents — the live interim transcript types into the box, so the
+    // "empty" guard no longer holds and a held key would otherwise leak spaces.
     if app.voice_enabled
         && crate::voice::is_initialized()
         && key.code == crossterm::event::KeyCode::Char(' ')
         && key.modifiers == crossterm::event::KeyModifiers::NONE
-        && app.textarea.lines().iter().all(|l| l.is_empty())
         && app.engine.pending_approval.is_none()
         && app.engine.pending_question.is_none()
         && app.engine.pending_elicitations.is_empty()
         && app.pending_rewrite_proposal.is_none()
     {
-        crate::voice::activate(true).await;
-        return Ok(false);
+        let recording = app.voice_state != jfc_voice::VoiceState::Idle;
+        let input_empty = app.textarea.lines().iter().all(|l| l.is_empty());
+        if recording || input_empty {
+            crate::voice::activate(true).await;
+            return Ok(false);
+        }
     }
 
     if approval::handle_approval_key(app, key, tx) {
@@ -1088,6 +1097,16 @@ async fn handle_enter_submit(
         let text = app.textarea.lines().join("\n");
         let text = text.trim().to_string();
         if !text.is_empty() {
+            // If a hold/tap voice recording is mid-flight, this Enter submits
+            // what's already in the box — discard the recording so its eventual
+            // Final transcript doesn't auto-submit a duplicate. (The earlier
+            // double-send: Enter submitted, then stopping voice sent again.)
+            // Leaves VAD's continuous loop alone.
+            if app.voice_state != jfc_voice::VoiceState::Idle || app.voice_interim_chars > 0 {
+                crate::voice::discard_recording().await;
+                app.voice_interim = None;
+                app.voice_interim_chars = 0;
+            }
             // Enter-submit entry trace. `submitted_chars` is the source of
             // truth for the prompt-doubling bug: if it arrives already-doubled
             // here, the corruption happened upstream in a recall/insert path

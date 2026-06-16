@@ -28,6 +28,13 @@ impl App {
             || turn_active
             || any_alive_background
             || self.scroll_velocity.abs() > 0.5
+            // Drag-edge autoscroll runs on the tick; keep ticks at the
+            // animation cadence so the selection extends smoothly instead of
+            // stepping at the 80ms idle rate.
+            || self.drag_autoscroll.is_some()
+            // Voice recording/processing drives the animated RMS cursor — keep
+            // ticks at the animation cadence so the glyph + hue update smoothly.
+            || self.voice_state != jfc_voice::VoiceState::Idle
             || self
                 .engine
                 .toasts
@@ -149,6 +156,54 @@ impl App {
     }
     pub fn is_at_bottom(&self) -> bool {
         self.scroll_offset >= self.max_scroll()
+    }
+
+    /// Apply one tick of drag-edge autoscroll. While a drag-selection's cursor
+    /// is pinned past the top/bottom edge of the transcript (`drag_autoscroll`
+    /// holds the rows-past-edge overrun: negative = above the top edge → scroll
+    /// up, positive = below the bottom edge → scroll down), scroll in that
+    /// direction and pull the selection head to the freshly revealed edge row —
+    /// so a drag can select content beyond the visible viewport (the
+    /// never-resolved "copy is limited to the visible area" report).
+    ///
+    /// Returns `true` when it scrolled (the caller should redraw). This is the
+    /// single source of truth for the gesture: `handle_tick` calls it each tick
+    /// and the tests drive it directly, so the test can't drift from the real
+    /// handler.
+    ///
+    /// The step grows with how far past the edge the cursor is (natural
+    /// acceleration), capped so a big overrun can't teleport. Auto-following
+    /// the bottom is NOT re-engaged by a downward copy-drag: `scroll_down` sets
+    /// `follow_bottom` when it reaches the max, but a drag is a copy gesture,
+    /// not a "pin to live output" request, so we restore the prior
+    /// `follow_bottom` afterward.
+    pub fn apply_drag_autoscroll_tick(&mut self) -> bool {
+        let Some(overrun) = self.drag_autoscroll else {
+            return false;
+        };
+        let step = (overrun.unsigned_abs() as usize).clamp(1, 6);
+        let follow_before = self.follow_bottom;
+        if overrun < 0 {
+            self.scroll_up(step);
+        } else {
+            self.scroll_down(step);
+            // A copy-drag must not silently re-arm auto-follow when it reaches
+            // the bottom — the user is selecting text, not pinning to live
+            // output. Keep whatever follow state they had before the drag.
+            self.follow_bottom = follow_before;
+        }
+        // Re-anchor the selection head to the current edge content-line so the
+        // highlight follows the revealed rows.
+        if let (Some(area), Some(sel)) =
+            (*self.messages_rect.borrow(), self.text_selection.as_mut())
+        {
+            let top = area.y;
+            let bottom = area.y + area.height; // exclusive
+            let edge_row = if overrun < 0 { top } else { bottom - 1 };
+            let content_line = self.scroll_offset + edge_row.saturating_sub(top) as usize;
+            sel.head = (sel.head.0, content_line);
+        }
+        true
     }
 
     fn max_scroll(&self) -> usize {

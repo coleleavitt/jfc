@@ -153,50 +153,77 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
         inner,
     );
 
-    // Ghost cursor pulse: tint the cursor cell's background between
-    // surface_raised and accent on a 1.2s clock so the typing surface
-    // feels "ready" even when nothing's moving. Only visible when
-    // not streaming (the spinner takes over the visual focus during
-    // streaming) and not in edit mode (the orange edit border is
-    // already a strong signal). Reduced-motion skips the pulse.
-    if !app.engine.is_streaming
-        && !in_edit_mode
+    let cursor_x = inner
+        .x
+        .saturating_add(cursor_col as u16)
+        .min(inner.right().saturating_sub(1));
+    let cursor_y = inner
+        .y
+        .saturating_add(cursor_row.saturating_sub(start) as u16)
+        .min(inner.bottom().saturating_sub(1));
+
+    // While recording, the cursor *becomes* a live RMS bar whose hue rotates
+    // while the mic is open — the literal port of CC 2.1.177's animated cursor
+    // (`RM8`/`pd9`). We paint the glyph into the cursor cell at the insertion
+    // point and deliberately skip `set_cursor_position`, so ratatui hides the
+    // hardware cursor and the animated glyph is what the user sees. Reduced
+    // motion falls back to the normal cursor (matching CC, which disables the
+    // custom cursor under reduced motion).
+    let animate_voice_cursor = app.voice_state == jfc_voice::VoiceState::Recording
         && !crate::spinner::reduced_motion()
         && area.height > 1
-        && area.width > 2
-    {
-        let cursor_x = inner
-            .x
-            .saturating_add(cursor_col as u16)
-            .min(inner.right().saturating_sub(1));
-        let cursor_y = inner
-            .y
-            .saturating_add(cursor_row.saturating_sub(start) as u16)
-            .min(inner.bottom().saturating_sub(1));
+        && area.width > 2;
+
+    if animate_voice_cursor {
+        let elapsed = app
+            .voice_record_started
+            .map(|t| t.elapsed().as_millis())
+            .unwrap_or(0);
+        let (glyph, color) = crate::render::voice_cursor::recording_glyph(
+            &app.voice_audio_levels,
+            elapsed,
+            crate::render::voice_cursor::terminal_truecolor(),
+        );
         let buf = f.buffer_mut();
         if cursor_x < buf.area().right() && cursor_y < buf.area().bottom() {
-            // Static accent bg on the cursor cell. Previously this was a
-            // pulsing animation (sin wave on elapsed time) which caused
-            // ratatui to see a buffer diff every frame → 30fps terminal
-            // writes even during idle. A static tint eliminates the diff
-            // while still visually marking the cursor position.
-            let bg = pulse_color(t.surface_raised, t.accent, 0.18);
             let cell = &mut buf[(cursor_x, cursor_y)];
-            cell.set_style(cell.style().bg(bg));
+            cell.set_char(glyph);
+            cell.set_style(
+                cell.style()
+                    .fg(color)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            );
         }
-    }
+        // No set_cursor_position — the animated glyph is the cursor.
+    } else {
+        // Ghost cursor pulse: tint the cursor cell's background between
+        // surface_raised and accent so the typing surface feels "ready" even
+        // when nothing's moving. Only visible when not streaming (the spinner
+        // takes over the visual focus during streaming) and not in edit mode
+        // (the orange edit border is already a strong signal). Reduced-motion
+        // skips the pulse.
+        if !app.engine.is_streaming
+            && !in_edit_mode
+            && !crate::spinner::reduced_motion()
+            && area.height > 1
+            && area.width > 2
+        {
+            let buf = f.buffer_mut();
+            if cursor_x < buf.area().right() && cursor_y < buf.area().bottom() {
+                // Static accent bg on the cursor cell. Previously this was a
+                // pulsing animation (sin wave on elapsed time) which caused
+                // ratatui to see a buffer diff every frame → 30fps terminal
+                // writes even during idle. A static tint eliminates the diff
+                // while still visually marking the cursor position.
+                let bg = pulse_color(t.surface_raised, t.accent, 0.18);
+                let cell = &mut buf[(cursor_x, cursor_y)];
+                cell.set_style(cell.style().bg(bg));
+            }
+        }
 
-    if area.height > 1 && area.width > 2 {
-        f.set_cursor_position(Position::new(
-            inner
-                .x
-                .saturating_add(cursor_col as u16)
-                .min(inner.right().saturating_sub(1)),
-            inner
-                .y
-                .saturating_add(cursor_row.saturating_sub(start) as u16)
-                .min(inner.bottom().saturating_sub(1)),
-        ));
+        if area.height > 1 && area.width > 2 {
+            f.set_cursor_position(Position::new(cursor_x, cursor_y));
+        }
     }
 }
 

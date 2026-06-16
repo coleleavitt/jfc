@@ -1231,9 +1231,27 @@ async fn handle_voice_event(
                 _ => VoiceState::Processing,
             };
             app.voice_state = state;
-            if state == VoiceState::Idle {
-                app.voice_interim = None;
+            match state {
+                VoiceState::Recording => {
+                    // Fresh recording — reset the level ring and hue time base.
+                    app.voice_audio_levels.clear();
+                    app.voice_record_started = Some(std::time::Instant::now());
+                }
+                VoiceState::Idle => {
+                    app.voice_interim = None;
+                    app.voice_audio_levels.clear();
+                    app.voice_record_started = None;
+                }
+                VoiceState::Processing => {}
             }
+        }
+        VoiceEvent::Level(level) => {
+            // Append to the rolling level ring (newest last), capped.
+            let levels = &mut app.voice_audio_levels;
+            if levels.len() >= crate::app::VOICE_AUDIO_LEVELS_CAP {
+                levels.remove(0);
+            }
+            levels.push(*level);
         }
         VoiceEvent::Interim(text) => {
             // Live transcription: type the partial transcript into the input

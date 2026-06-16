@@ -591,7 +591,11 @@ impl<'a> RenderItem<'a> {
             RenderItem::ToolBlock(tool) => {
                 render_tool_block(app, tool, area, t, buf, skip);
             }
-            RenderItem::AttachmentBlock { kind, size_bytes, id } => {
+            RenderItem::AttachmentBlock {
+                kind,
+                size_bytes,
+                id,
+            } => {
                 if skip > 0 || area.height == 0 {
                     return;
                 }
@@ -610,10 +614,7 @@ impl<'a> RenderItem<'a> {
                     format!("{}B", size_bytes)
                 };
                 let line = Line::from(vec![
-                    Span::styled(
-                        format!("  {icon} "),
-                        Style::default().fg(t.accent),
-                    ),
+                    Span::styled(format!("  {icon} "), Style::default().fg(t.accent)),
                     Span::styled(
                         format!("[{label} #{id}]"),
                         Style::default().fg(t.text_secondary),

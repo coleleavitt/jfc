@@ -36,7 +36,13 @@ pub fn init(voice_value: Option<&serde_json::Value>, engine_tx: jfc_engine::runt
     );
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<VoiceTranscriptEvent>();
-    let recorder = VoiceRecorder::new(cfg, event_tx);
+
+    // Token provider: resolve the real Claude.ai OAuth access token from the
+    // shared accounts store on demand, so the live Anthropic voice stream is
+    // wired to the same auth the rest of the app uses (not a dead env var).
+    let token_provider: jfc_voice::TokenProvider =
+        std::sync::Arc::new(|| Box::pin(jfc_providers::current_access_token()));
+    let recorder = VoiceRecorder::new(cfg, event_tx).with_token_provider(token_provider);
 
     if RECORDER.set(Mutex::new(recorder)).is_err() {
         tracing::warn!(target: "jfc::voice", "init called twice — ignoring");
@@ -49,6 +55,7 @@ pub fn init(voice_value: Option<&serde_json::Value>, engine_tx: jfc_engine::runt
             let engine_ev = match ev {
                 VoiceTranscriptEvent::Interim(t) => EngineEvent::Voice(VoiceEvent::Interim(t)),
                 VoiceTranscriptEvent::Final(t) => EngineEvent::Voice(VoiceEvent::Final(t)),
+                VoiceTranscriptEvent::Level(l) => EngineEvent::Voice(VoiceEvent::Level(l)),
                 VoiceTranscriptEvent::Error(e) => EngineEvent::Voice(VoiceEvent::Error(e)),
                 VoiceTranscriptEvent::StateChanged(s) => {
                     EngineEvent::Voice(VoiceEvent::StateChanged(s as u8))
@@ -73,10 +80,19 @@ pub async fn activate(pressed: bool) {
     }
 }
 
-/// Cancel any active recording (e.g. on Esc).
+/// Cancel any active recording (e.g. on Esc) AND the VAD listen loop.
 pub async fn cancel() {
     if let Some(rec) = RECORDER.get() {
         rec.lock().await.cancel().await;
+    }
+}
+
+/// Discard an in-flight hold/tap recording without emitting a transcript — used
+/// when the user submits manually (Enter) so voice doesn't auto-submit a
+/// duplicate. Leaves the VAD listen loop running.
+pub async fn discard_recording() {
+    if let Some(rec) = RECORDER.get() {
+        rec.lock().await.discard_recording().await;
     }
 }
 
