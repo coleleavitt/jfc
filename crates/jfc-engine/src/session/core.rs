@@ -6,7 +6,7 @@
 use tracing::{debug, info, warn};
 
 use crate::ids::SessionId;
-use crate::types::{ChatMessage, validate_turn_invariants};
+use crate::types::{ChatMessage, MessagePart, validate_turn_invariants};
 
 use jfc_session::sessions_dir;
 
@@ -181,6 +181,18 @@ pub fn set_post_save_hook(hook: fn()) {
     let _ = POST_SAVE_HOOK.set(hook);
 }
 
+fn scrub_loaded_thinking_poison(messages: &mut [ChatMessage]) -> usize {
+    let mut removed = 0usize;
+    for message in messages {
+        let before = message.parts.len();
+        message
+            .parts
+            .retain(|part| !matches!(part, MessagePart::RedactedThinking(_)));
+        removed += before.saturating_sub(message.parts.len());
+    }
+    removed
+}
+
 pub async fn load_session(session_id: &SessionId) -> Option<Vec<ChatMessage>> {
     let session_id_str = session_id.as_str();
     debug!(target: "jfc::session", session_id = session_id_str, "loading session");
@@ -217,7 +229,17 @@ pub async fn load_session(session_id: &SessionId) -> Option<Vec<ChatMessage>> {
         // coalesce-on-save fix. This prevents the resume path from reviving
         // placeholder-only turns after a watchdog cancel or process exit.
     }
-    let messages = repair_loaded_messages(messages);
+    let mut messages = repair_loaded_messages(messages);
+    let scrubbed_thinking_blocks = scrub_loaded_thinking_poison(&mut messages);
+    if scrubbed_thinking_blocks > 0 {
+        warn!(
+            target: "jfc::session::repair",
+            session_id = session_id_str,
+            scrubbed_thinking_blocks,
+            "load_session: stripped persisted redacted-thinking blocks before resume"
+        );
+        messages = repair_loaded_messages(messages);
+    }
     if let Err(err) = validate_turn_invariants(&messages) {
         warn!(
             target: "jfc::session::invariants",
@@ -255,7 +277,17 @@ pub async fn load_session_with_model(
             "load_session_with_model: persisted transcript violates turn invariants — repairing"
         );
     }
-    let messages = repair_loaded_messages(messages);
+    let mut messages = repair_loaded_messages(messages);
+    let scrubbed_thinking_blocks = scrub_loaded_thinking_poison(&mut messages);
+    if scrubbed_thinking_blocks > 0 {
+        warn!(
+            target: "jfc::session::repair",
+            session_id = session_id_str,
+            scrubbed_thinking_blocks,
+            "load_session_with_model: stripped persisted redacted-thinking blocks before resume"
+        );
+        messages = repair_loaded_messages(messages);
+    }
     if let Err(err) = validate_turn_invariants(&messages) {
         warn!(
             target: "jfc::session::invariants",
@@ -266,6 +298,40 @@ pub async fn load_session_with_model(
         );
     }
     Some((messages, model))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{MessagePart, Role};
+
+    #[test]
+    fn scrub_loaded_thinking_poison_removes_redacted_blocks_regression() {
+        let mut messages = vec![
+            ChatMessage::user("prompt".into()),
+            ChatMessage::assistant_parts(vec![
+                MessagePart::RedactedThinking("opaque".into()),
+                MessagePart::Text("answer".into()),
+            ]),
+        ];
+
+        let removed = scrub_loaded_thinking_poison(&mut messages);
+
+        assert_eq!(removed, 1);
+        assert_eq!(messages[1].role, Role::Assistant);
+        assert!(
+            messages[1]
+                .parts
+                .iter()
+                .all(|part| !matches!(part, MessagePart::RedactedThinking(_)))
+        );
+        assert!(
+            messages[1]
+                .parts
+                .iter()
+                .any(|part| matches!(part, MessagePart::Text(text) if text == "answer"))
+        );
+    }
 }
 
 /// Set the user-defined title on a session (`/rename` slash). Returns
@@ -683,6 +749,7 @@ mod disk_io_tests {
                 timeout: Some(30_000),
                 workdir: Some("/tmp".into()),
                 run_in_background: None,
+                suppress_output: None,
             },
             output: ToolOutput::Command {
                 stdout: "hi\n".into(),

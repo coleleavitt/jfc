@@ -27,7 +27,6 @@ impl App {
             || self.engine.is_streaming
             || turn_active
             || any_alive_background
-            || self.scroll_velocity.abs() > 0.5
             // Drag-edge autoscroll runs on the tick; keep ticks at the
             // animation cadence so the selection extends smoothly instead of
             // stepping at the 80ms idle rate.

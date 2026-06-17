@@ -8,7 +8,6 @@ use crate::app::{App, SelectKind, SelectRequest, TextSelection};
 use crate::runtime::EventSender;
 use crate::{attachments, input, message_view};
 use jfc_core::*;
-use jfc_engine::toast;
 
 /// Max gap between clicks to count as a multi-click (word/line select).
 const MULTI_CLICK_MS: u128 = 500;
@@ -50,13 +49,6 @@ pub(crate) async fn handle_term_event(
             // the text path. Mirrors v126's clipboard-image flow.
             let attached_image = match attachments::read_clipboard_image() {
                 Ok(Some((att, w, h))) => {
-                    toast::push_with_cap(
-                        &mut app.engine.toasts,
-                        toast::Toast::new(
-                            toast::ToastKind::Info,
-                            format!("Image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
-                        ),
-                    );
                     app.image_counter += 1;
                     let id = app.image_counter;
                     app.pasted_images.push(crate::attachments::PastedContent {
@@ -105,25 +97,25 @@ pub(crate) async fn handle_term_event(
                     }
                 }
                 if attached_any {
-                    toast::push_with_cap(
-                        &mut app.engine.toasts,
-                        toast::Toast::new(
-                            toast::ToastKind::Info,
-                            format!("{} image(s) attached from path", image_paths.len()),
-                        ),
+                    tracing::debug!(
+                        target: "jfc::input::paste",
+                        attached = image_paths.len(),
+                        "attached image path(s) from paste"
                     );
                 }
             }
             // Always insert the text — it may be a path or
-            // contextual prose alongside the image. A *large* paste
-            // collapses to a `[Pasted #N · …]` chip so it doesn't flood
-            // the prompt; the full text is restored on submit.
+            // contextual prose alongside the image. Large pastes should
+            // remain editable in the textarea instead of collapsing to an
+            // opaque chip. Preserve the old chip behavior behind a config
+            // gate for users who prefer it.
             if !attached_image || !text.is_empty() {
                 const PASTE_LINE_THRESHOLD: usize = 8;
                 const PASTE_CHAR_THRESHOLD: usize = 400;
                 let n_lines = text.lines().count();
                 let n_chars = text.chars().count();
-                if n_lines > PASTE_LINE_THRESHOLD || n_chars > PASTE_CHAR_THRESHOLD {
+                let collapse = jfc_engine::config::load_arc().collapse_large_pastes;
+                if collapse && (n_lines > PASTE_LINE_THRESHOLD || n_chars > PASTE_CHAR_THRESHOLD) {
                     app.paste_counter += 1;
                     let id = app.paste_counter;
                     let label = if n_lines > 1 {
@@ -135,6 +127,7 @@ pub(crate) async fn handle_term_event(
                     app.pasted_texts.push((chip.clone(), text.clone()));
                     app.textarea.insert_str(&chip);
                 } else {
+                    // Insert full pasted text so it stays editable.
                     app.textarea.insert_str(&text);
                 }
             }
@@ -156,11 +149,12 @@ pub(crate) async fn handle_term_event(
     Ok(false)
 }
 
-/// On terminal refocus, hint that the clipboard holds an image (Ctrl+V to
-/// paste), debounced with a 30s cooldown. The clipboard probe blocks (shells
-/// out / hits arboard), so it runs on a blocking task and reports back via a
-/// Toast event rather than touching `app` off-thread.
-fn handle_focus_gained(app: &mut App, tx: &EventSender) {
+/// On terminal refocus, remember the moment so focus storms stay cheap.
+///
+/// Older builds probed the clipboard here and showed a passive image hint.
+/// That was noisy and could block on clipboard backends; paste itself still
+/// probes and attaches images on Ctrl+V.
+fn handle_focus_gained(app: &mut App, _tx: &EventSender) {
     const FOCUS_HINT_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
     let now = std::time::Instant::now();
     if app
@@ -169,20 +163,7 @@ fn handle_focus_gained(app: &mut App, tx: &EventSender) {
     {
         return;
     }
-    // Debounce the probe itself (not just the toast) so an alt-tab storm
-    // doesn't hammer the clipboard.
     app.last_focus_hint_at = Some(now);
-    let tx = tx.clone();
-    tokio::task::spawn_blocking(move || {
-        if let Ok(Some(_)) = attachments::read_clipboard_image() {
-            let _ = tx.try_send(crate::runtime::EngineEvent::Control(
-                crate::runtime::ControlEvent::Notice {
-                    kind: toast::ToastKind::Info,
-                    text: "image in clipboard · Ctrl+V to paste".to_string(),
-                },
-            ));
-        }
-    });
 }
 
 /// Handle mouse events: scroll, drag, click.
@@ -190,11 +171,11 @@ async fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent, _tx: &
     use crossterm::event::{MouseButton, MouseEventKind};
     match mouse.kind {
         MouseEventKind::ScrollUp => {
-            app.scroll_velocity = (app.scroll_velocity - 12.0).max(-120.0);
+            app.scroll_velocity = 0.0;
             app.scroll_up(3);
         }
         MouseEventKind::ScrollDown => {
-            app.scroll_velocity = (app.scroll_velocity + 12.0).min(120.0);
+            app.scroll_velocity = 0.0;
             app.scroll_down(3);
         }
         MouseEventKind::Drag(MouseButton::Left) => {
@@ -336,6 +317,9 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
     // affordance (cmd-click on iTerm2; we use a plain
     // click since non-iTerm terminals don't surface
     // the cmd modifier the same way).
+    let copy_hit =
+        message_view::find_tool_at(&app.tool_copy_regions.borrow(), mouse.column, mouse.row)
+            .map(str::to_owned);
     let hit = message_view::find_tool_at(&app.tool_hit_regions.borrow(), mouse.column, mouse.row)
         .map(str::to_owned);
     // Toast click → dismiss. Toasts render newest-
@@ -358,6 +342,20 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
         if local_row < app.engine.toasts.len() {
             let drop_idx = app.engine.toasts.len() - 1 - local_row;
             app.engine.toasts.remove(drop_idx);
+        }
+        return;
+    }
+
+    let input_hit = app.input_rect.borrow().as_ref().is_some_and(|r| {
+        mouse.column >= r.x
+            && mouse.column < r.x + r.width
+            && mouse.row >= r.y
+            && mouse.row < r.y + r.height
+    });
+    if input_hit {
+        let text = app.textarea.lines().join("\n");
+        if !text.trim().is_empty() {
+            crate::runtime::copy_to_clipboard(&text, "current-input");
         }
         return;
     }
@@ -432,6 +430,11 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
     if handled_in_sidebar {
         // Sidebar consumed the click; skip the
         // tool/yank fallthrough.
+    } else if let Some(tool_id) = copy_hit {
+        if let Some(command) = bash_command_for_tool(app, &tool_id).map(str::to_owned) {
+            crate::runtime::copy_to_clipboard(&command, "bash-command");
+            app.last_tool_click = None;
+        }
     } else if let Some(group_key) = hit
         .as_ref()
         .and_then(|s| s.strip_prefix("group:"))
@@ -479,6 +482,23 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
     // on Ctrl+Y and drag-to-select.
 }
 
+fn bash_command_for_tool<'a>(app: &'a App, tool_id: &str) -> Option<&'a str> {
+    app.engine.messages.iter().find_map(|msg| {
+        msg.parts.iter().find_map(|part| {
+            let MessagePart::Tool(tc) = part else {
+                return None;
+            };
+            if tc.id != tool_id {
+                return None;
+            }
+            let ToolInput::Bash { command, .. } = &tc.input else {
+                return None;
+            };
+            Some(command.as_str())
+        })
+    })
+}
+
 /// Whether a drag has moved far enough from its anchor to count as a real
 /// text selection rather than click jitter. Any row change, or ≥2 columns
 /// horizontally on the same row, qualifies.
@@ -505,8 +525,8 @@ fn drag_autoscroll_overrun(app: &App, row: u16) -> Option<i32> {
     let area = (*app.messages_rect.borrow())?;
     let top = area.y;
     let bottom = area.y + area.height; // exclusive (last content row = bottom-1)
-    if row < top {
-        Some(i32::from(row) - i32::from(top)) // negative
+    if row < top || (row == top && app.scroll_offset > 0) {
+        Some((i32::from(row) - i32::from(top)).min(-1)) // negative
     } else if row >= bottom {
         Some(i32::from(row) - i32::from(bottom) + 1) // positive (>=1)
     } else {
@@ -516,7 +536,7 @@ fn drag_autoscroll_overrun(app: &App, row: u16) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{drag_autoscroll_overrun, selection_started};
+    use super::{drag_autoscroll_overrun, handle_mouse, selection_started};
     use crate::app::App;
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
     use std::sync::Arc;
@@ -557,6 +577,45 @@ mod tests {
     }
     impl jfc_provider::seal::Sealed for StubProvider {}
 
+    #[tokio::test]
+    async fn mouse_wheel_scroll_is_direct_not_kinetic_regression() {
+        let mut app = App::new(Arc::new(StubProvider), "test-model");
+        app.total_lines = 100;
+        app.viewport_height = 20;
+        app.scroll_offset = 8;
+        app.scroll_velocity = 42.0;
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        handle_mouse(
+            &mut app,
+            crossterm::event::MouseEvent {
+                kind: crossterm::event::MouseEventKind::ScrollUp,
+                column: 0,
+                row: 0,
+                modifiers: crossterm::event::KeyModifiers::empty(),
+            },
+            &tx,
+        )
+        .await;
+        assert_eq!(app.scroll_offset, 5);
+        assert_eq!(app.scroll_velocity, 0.0);
+
+        app.scroll_velocity = -42.0;
+        handle_mouse(
+            &mut app,
+            crossterm::event::MouseEvent {
+                kind: crossterm::event::MouseEventKind::ScrollDown,
+                column: 0,
+                row: 0,
+                modifiers: crossterm::event::KeyModifiers::empty(),
+            },
+            &tx,
+        )
+        .await;
+        assert_eq!(app.scroll_offset, 8);
+        assert_eq!(app.scroll_velocity, 0.0);
+    }
+
     // Drag-edge autoscroll overrun: rows inside the transcript yield None; rows
     // above the top edge yield a negative overrun (scroll up); rows at/below
     // the bottom edge yield a positive overrun (scroll down). This is the core
@@ -579,6 +638,22 @@ mod tests {
         // At/below the bottom edge → positive (scroll down), magnitude ≥ 1.
         assert_eq!(drag_autoscroll_overrun(&app, 12), Some(1));
         assert_eq!(drag_autoscroll_overrun(&app, 14), Some(3));
+    }
+
+    // Regression: in the normal chat layout the messages area can start at
+    // terminal row 0, and mouse rows are unsigned, so a cursor can never be
+    // reported as "row < top". A promoted drag pinned to that top edge still
+    // has to arm upward autoscroll when scrollback exists; otherwise copying
+    // upward stalls while copying downward works.
+    #[test]
+    fn drag_autoscroll_overrun_top_edge_scrolls_when_transcript_starts_at_zero_regression() {
+        let mut app = App::new(Arc::new(StubProvider), "test-model");
+        *app.messages_rect.borrow_mut() = Some(ratatui::layout::Rect::new(0, 0, 40, 10));
+
+        assert_eq!(drag_autoscroll_overrun(&app, 0), None);
+
+        app.scroll_offset = 8;
+        assert_eq!(drag_autoscroll_overrun(&app, 0), Some(-1));
     }
 
     // A `Drag` whose cursor is back INSIDE the viewport must clear the

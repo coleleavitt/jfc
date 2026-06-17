@@ -1113,6 +1113,7 @@ mod pause_turn_end_to_end_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             output: ToolOutput::Command {
                 stdout: "file.txt\n".into(),

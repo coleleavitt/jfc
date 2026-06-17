@@ -2675,7 +2675,11 @@ pub(super) async fn cmd_queue(
     let mut body = format!("**Queue** ({depth} pending) — {mode_label}\n\n");
     for (i, entry) in state.queued_prompts.iter().enumerate() {
         let preview: String = entry.text.chars().take(120).collect();
-        let ellipsis = if entry.text.chars().count() > 120 { "…" } else { "" };
+        let ellipsis = if entry.text.chars().count() > 120 {
+            "…"
+        } else {
+            ""
+        };
         body.push_str(&format!("{}. `{preview}{ellipsis}`\n", i + 1));
     }
     body.push_str("\nUse `/queue clear` to discard all pending messages.");

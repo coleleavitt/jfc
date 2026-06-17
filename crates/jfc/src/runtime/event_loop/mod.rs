@@ -275,6 +275,12 @@ pub(crate) async fn run(
         );
         app.engine.output_style = parsed;
     }
+    crate::markdown::set_syntax_highlighting_disabled(
+        startup_config
+            .claude
+            .syntax_highlighting_disabled
+            .unwrap_or(false),
+    );
 
     // v132 Finch onboarding — first-run UI for users with no prior
     // session. Drops the help overlay automatically so they see the
@@ -818,6 +824,10 @@ pub(crate) async fn run(
 
     // Submit initial prompt if provided via --prompt flag
     if let Some(prompt) = queued_initial_prompt {
+        if jfc_engine::runtime::ops::refuse_budget_cap_if_reached(&mut app.engine) {
+            return Ok(());
+        }
+
         // Use the same logic as handle_submit but without waiting for user input
         let assistant_idx = app.engine.messages.len() + 1;
         app.engine.messages.push(ChatMessage::user(prompt.clone()));
@@ -1439,7 +1449,9 @@ fn extract_prompts_from_session_json(
         if msg.get("role").and_then(|r| r.as_str()) != Some("user") {
             continue;
         }
-        let Some(parts) = msg.get("parts").and_then(|p| p.as_array()) else { continue };
+        let Some(parts) = msg.get("parts").and_then(|p| p.as_array()) else {
+            continue;
+        };
         // Skip compact-boundary messages.
         for p in parts.iter() {
             if p.get("type").and_then(|t| t.as_str()) == Some("compactBoundary")
@@ -1449,7 +1461,9 @@ fn extract_prompts_from_session_json(
             }
         }
         for part in parts {
-            let Some(text) = part.get("text").and_then(|t| t.as_str()) else { continue };
+            let Some(text) = part.get("text").and_then(|t| t.as_str()) else {
+                continue;
+            };
             let t = text.trim();
             if t.is_empty() || t.starts_with('/') {
                 continue;
@@ -1477,19 +1491,27 @@ fn load_prior_session_prompts(app: &mut App) {
     let dir = jfc_session::sessions_dir();
     // Collect (mtime, path) pairs for all *.json files.
     let mut entries: Vec<(std::time::SystemTime, std::path::PathBuf)> = Vec::new();
-    let Ok(rd) = std::fs::read_dir(&dir) else { return };
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return;
+    };
     for entry in rd.flatten() {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
         let Ok(meta) = entry.metadata() else { continue };
-        let Ok(modified) = meta.modified() else { continue };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
         entries.push((modified, path));
     }
     // Sort newest-first; skip the current/continued session.
     entries.sort_by(|a, b| b.0.cmp(&a.0));
-    let current_id = app.engine.current_session_id.as_ref().map(|id| id.as_str().to_owned());
+    let current_id = app
+        .engine
+        .current_session_id
+        .as_ref()
+        .map(|id| id.as_str().to_owned());
 
     let mut collected: Vec<String> = Vec::new();
     let mut loaded = 0usize;
@@ -1502,8 +1524,12 @@ fn load_prior_session_prompts(app: &mut App) {
                 continue;
             }
         }
-        let Ok(content) = std::fs::read_to_string(&path) else { continue };
-        let Ok(session) = serde_json::from_str::<serde_json::Value>(&content) else { continue };
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(session) = serde_json::from_str::<serde_json::Value>(&content) else {
+            continue;
+        };
         let prompts = extract_prompts_from_session_json(&session, MAX_PROMPTS_PER_SESSION);
         collected.extend(prompts);
         loaded += 1;

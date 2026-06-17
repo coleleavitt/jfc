@@ -85,6 +85,7 @@ pub(crate) fn fleet_ordered_task_ids(app: &App) -> Vec<String> {
 // Ordering + active-detection now live in the canonical roster module.
 use super::roster::{failed_is_fresh, fleet_rank, roster_is_active};
 
+#[allow(dead_code)]
 pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     use jfc_core::TaskLifecycle;
     if area.height == 0 || area.width < 20 {
@@ -241,6 +242,7 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
 ///    ├─ implementer: Idle for 3s
 ///    └─ tester: Running tests… · 5 tool uses
 /// ```
+#[allow(dead_code)]
 pub(crate) fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
     use crate::theme::teammate_color;
     use jfc_engine::swarm;

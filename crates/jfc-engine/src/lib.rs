@@ -129,11 +129,7 @@ pub mod hooks {
         pub fn for_session(_session_id: impl AsRef<str>) -> Self {
             Self
         }
-        pub fn for_tool(
-            _tool_name: &str,
-            _tool_input: &str,
-            _session_id: impl AsRef<str>,
-        ) -> Self {
+        pub fn for_tool(_tool_name: &str, _tool_input: &str, _session_id: impl AsRef<str>) -> Self {
             Self
         }
         pub fn for_agent(_agent_name: &str, _session_id: impl AsRef<str>) -> Self {

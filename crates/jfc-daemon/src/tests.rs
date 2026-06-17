@@ -766,7 +766,7 @@ fn reconcile_prunes_terminal_agents_beyond_retention_bound_robust() {
     let running_id = "bgwf_x:agent_running".to_owned();
     let running_log = background_agent_log_path(&paths, &running_id);
     std::fs::write(&running_log, "running\n").unwrap();
-    let mut running = terminal_agent(&running_id, running_log.clone(), base);
+    let mut running = terminal_agent(&running_id, running_log, base);
     running.status = BackgroundAgentStatus::Running;
     running.completed_at = None;
     // Give it this live process's PID + a fresh heartbeat so reconcile sees the

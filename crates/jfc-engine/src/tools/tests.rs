@@ -27,7 +27,7 @@ use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_e
 use super::*;
 
 use crate::runtime::{DiagnosticLevel, EngineEvent, ToolEvent, ToolOutcome};
-use crate::types::{ReplacementMode, ToolInput, ToolKind};
+use crate::types::{DiffLineKind, ReplacementMode, ToolInput, ToolKind};
 use jfc_provider::ToolDef;
 use jfc_session::{DeletedFilter, TaskStore};
 use std::path::{Path, PathBuf};
@@ -364,6 +364,13 @@ fn bash_tool_schema_advertises_workdir_and_fresh_shell_regression() {
             .get("run_in_background")
             .is_some(),
         "Bash schema must advertise run_in_background: {}",
+        bash.input_schema
+    );
+    assert!(
+        bash.input_schema["properties"]
+            .get("suppressOutput")
+            .is_some(),
+        "Bash schema must advertise suppressOutput: {}",
         bash.input_schema
     );
     assert!(
@@ -1506,6 +1513,53 @@ async fn execute_write_overwrite_uses_updated_header_normal() {
     let result = execute_write(path.to_str().unwrap(), "replaced").await;
     assert!(!result.is_error());
     assert!(result.output.starts_with("Updated "), "{}", result.output);
+    assert!(
+        result.diff.is_some(),
+        "overwrite should include diff preview"
+    );
+}
+
+#[tokio::test]
+async fn execute_write_refuses_numbered_read_output_overwrite_regression() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("src.rs");
+    tokio::fs::write(&path, "fn main() {}\n").await.unwrap();
+    let numbered = (1..=8)
+        .map(|i| format!("{i}: line {i}\n"))
+        .collect::<String>();
+
+    let result = execute_write(path.to_str().unwrap(), &numbered).await;
+    assert!(result.is_error());
+    assert!(
+        result.output.contains("numbered Read-tool output"),
+        "{}",
+        result.output
+    );
+    let on_disk = tokio::fs::read_to_string(&path).await.unwrap();
+    assert_eq!(on_disk, "fn main() {}\n");
+}
+
+#[tokio::test]
+async fn execute_edit_refuses_non_append_jsonl_mutation_regression() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("events.jsonl");
+    tokio::fs::write(&path, "{\"a\":1}\n{\"b\":2}\n")
+        .await
+        .unwrap();
+
+    let result = execute_edit(
+        path.to_str().unwrap(),
+        "{\"a\":1}",
+        "{\"a\":10}",
+        ReplacementMode::FirstOnly,
+    )
+    .await;
+    assert!(result.is_error());
+    assert!(
+        result.output.contains("append-only JSONL"),
+        "{}",
+        result.output
+    );
 }
 
 #[tokio::test]
@@ -1650,6 +1704,70 @@ fn apply_one_edit_ambiguous_and_missing_fail_robust() {
 }
 
 #[tokio::test]
+async fn execute_edit_missing_old_string_includes_stale_recovery_regression() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("stale.txt");
+    tokio::fs::write(&path, "current line\n").await.unwrap();
+
+    let result = execute_edit(
+        path.to_str().unwrap(),
+        "old line\n",
+        "new line\n",
+        ReplacementMode::FirstOnly,
+    )
+    .await;
+
+    assert!(result.is_error(), "{}", result.output);
+    assert!(
+        result.output.contains("old_string not found"),
+        "{}",
+        result.output
+    );
+    assert!(
+        result.output.contains("stale-read recovery"),
+        "{}",
+        result.output
+    );
+    assert!(result.output.contains("sha256:"), "{}", result.output);
+    assert!(result.output.contains("mtime_unix:"), "{}", result.output);
+}
+
+#[tokio::test]
+async fn multiedit_missing_old_string_includes_stale_recovery_regression() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("multi.txt");
+    tokio::fs::write(&path, "alpha\nbeta\n").await.unwrap();
+
+    let result = execute_tool(
+        ToolKind::MultiEdit,
+        ToolInput::MultiEdit {
+            file_path: path.to_string_lossy().to_string(),
+            edits: serde_json::json!([
+                {"old_string": "missing\n", "new_string": "replacement\n"}
+            ]),
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(result.is_error(), "{}", result.output);
+    assert!(
+        result.output.contains("MultiEdit: edit 1 of 1"),
+        "{}",
+        result.output
+    );
+    assert!(
+        result.output.contains("stale-read recovery"),
+        "{}",
+        result.output
+    );
+    assert!(result.output.contains("sha256:"), "{}", result.output);
+}
+
+#[tokio::test]
 async fn execute_edit_tolerates_unicode_punct_drift_normal() {
     // File uses an em-dash and curly quotes; the model emits ASCII hyphen and
     // straight quotes. Exact match misses; the Unicode-folding tier recovers it.
@@ -1762,6 +1880,14 @@ async fn execute_edit_replace_all_mentions_count_normal() {
 
 // ─── build_edit_diff_view ────────────────────────────────────────────
 
+fn diff_kind_label(kind: &DiffLineKind) -> &'static str {
+    match kind {
+        DiffLineKind::Context => "context",
+        DiffLineKind::Removed => "removed",
+        DiffLineKind::Added => "added",
+    }
+}
+
 #[test]
 fn build_edit_diff_view_no_change_yields_empty_hunks_normal() {
     let view = build_edit_diff_view("x.rs", "abc\n", "abc\n");
@@ -1784,6 +1910,37 @@ fn build_edit_diff_view_pure_addition_robust() {
     let view = build_edit_diff_view("x.rs", "a\nb\n", "a\nb\nc\n");
     assert_eq!(view.additions, 1);
     assert_eq!(view.deletions, 0);
+    assert_eq!(view.hunks[0].header, "@@ -1,2 +1,3 @@");
+}
+
+#[test]
+fn build_edit_diff_view_keeps_shared_lines_inside_changed_region_robust() {
+    let view = build_edit_diff_view(
+        "proof.v",
+        "head\nalpha\nshared\nbeta\ntail\n",
+        "head\nalpha changed\nshared\nbeta changed\ntail\n",
+    );
+    assert_eq!(view.additions, 2);
+    assert_eq!(view.deletions, 2);
+    assert_eq!(view.hunks.len(), 1);
+    assert_eq!(view.hunks[0].header, "@@ -1,5 +1,5 @@");
+
+    let shared = view.hunks[0]
+        .lines
+        .iter()
+        .find(|line| line.content == "shared")
+        .expect("shared line should be preserved as context");
+    assert_eq!(diff_kind_label(&shared.kind), "context");
+    assert_eq!(shared.old_line, Some(3));
+    assert_eq!(shared.new_line, Some(3));
+
+    let changed_kinds: Vec<_> = view.hunks[0]
+        .lines
+        .iter()
+        .filter(|line| line.content.contains("alpha") || line.content.contains("beta"))
+        .map(|line| diff_kind_label(&line.kind))
+        .collect();
+    assert_eq!(changed_kinds, vec!["removed", "added", "removed", "added"]);
 }
 
 // ─── execute_glob ─────────────────────────────────────────────────────
@@ -2094,6 +2251,7 @@ async fn execute_tool_dispatches_bash_normal() {
             timeout: Some(5_000),
             workdir: None,
             run_in_background: None,
+            suppress_output: None,
         },
         dir.path().to_path_buf(),
         None,
@@ -2103,6 +2261,28 @@ async fn execute_tool_dispatches_bash_normal() {
     .await;
     assert!(!result.is_error(), "{}", result.output);
     assert!(result.output.contains("dispatched"), "{}", result.output);
+}
+
+#[tokio::test]
+async fn execute_tool_bash_suppress_output_hides_success_stdout_normal() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let result = execute_tool(
+        ToolKind::Bash,
+        ToolInput::Bash {
+            command: "printf secret".into(),
+            timeout: Some(5_000),
+            workdir: None,
+            run_in_background: None,
+            suppress_output: Some(true),
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+    assert!(!result.is_error(), "{}", result.output);
+    assert_eq!(result.output, "(output suppressed)");
 }
 
 #[tokio::test]
@@ -2119,6 +2299,7 @@ async fn execute_tool_bash_honors_workdir_regression() {
             timeout: Some(5_000),
             workdir: Some("subdir".into()),
             run_in_background: None,
+            suppress_output: None,
         },
         dir.path().to_path_buf(),
         None,
@@ -2154,6 +2335,7 @@ async fn execute_tool_bash_run_in_background_can_be_read_regression() {
             timeout: Some(5_000),
             workdir: None,
             run_in_background: Some(true),
+            suppress_output: None,
         },
         dir.path().to_path_buf(),
         None,
@@ -2210,6 +2392,7 @@ async fn execute_tool_bash_output_blocks_by_default_regression() {
             timeout: Some(5_000),
             workdir: None,
             run_in_background: Some(true),
+            suppress_output: None,
         },
         dir.path().to_path_buf(),
         None,
@@ -2258,6 +2441,7 @@ async fn execute_tool_bash_output_nonblocking_snapshot_regression() {
             timeout: Some(5_000),
             workdir: None,
             run_in_background: Some(true),
+            suppress_output: None,
         },
         dir.path().to_path_buf(),
         None,
@@ -2306,6 +2490,7 @@ async fn execute_tool_bash_explicit_background_is_not_abort_tracked_regression()
             timeout: Some(5_000),
             workdir: None,
             run_in_background: Some(true),
+            suppress_output: None,
         },
         dir.path().to_path_buf(),
         None,
@@ -2357,6 +2542,7 @@ async fn execute_tool_bash_auto_background_stays_abort_tracked_regression() {
             timeout: Some(5_000),
             workdir: None,
             run_in_background: None,
+            suppress_output: None,
         },
         dir.path().to_path_buf(),
         None,
@@ -2451,6 +2637,7 @@ async fn execute_tool_bash_auto_backgrounds_after_foreground_budget_regression()
             timeout: Some(5_000),
             workdir: None,
             run_in_background: None,
+            suppress_output: None,
         },
         dir.path().to_path_buf(),
         None,

@@ -1,17 +1,14 @@
-//! Honest streaming-status model for the spinner row.
+//! Streaming-status model for the spinner row.
 //!
-//! Every string this module produces reflects something the stream
-//! actually told us — elapsed time, real token counts, real thinking
-//! tokens, measured throughput, or measured silence. There are no
-//! decorative verbs, no shimmer sweeps, no fabricated reassurance
-//! ("almost done thinking"), and no animation that runs when nothing is
-//! happening. The renderer reads `App` fields and asks this module to
-//! format them; this module is pure formatting — no mutation, no I/O.
+//! Elapsed time, token counts, thinking tokens, throughput, and silence
+//! reflect real stream signals. The active verb follows Claude Code's
+//! spinner vocabulary and user-configurable `spinnerVerbs`; the renderer
+//! picks one verb per activity instead of changing it every redraw.
 //!
 //! ## Format (one line)
 //!
 //! ```text
-//! ✦ Thinking · 1m04s · 1.2k thinking · 18 tok/s
+//! ✦ Thinking · 1m04s · 1.2k tokens · 18 tok/s
 //! ✦ Responding · 1m22s · 2.4k tokens · 47 tok/s
 //! ```
 //!
@@ -85,6 +82,263 @@ pub fn frame_for(tick: usize) -> &'static str {
     FRAMES[tick % FRAMES.len()]
 }
 
+// Full Claude Code 2.1.177 default spinner verb vocabulary. User settings can
+// append to or replace this list with `spinnerVerbs = { mode, verbs }`.
+pub const DEFAULT_SPINNER_VERBS: &[&str] = &[
+    "Accomplishing",
+    "Actioning",
+    "Actualizing",
+    "Architecting",
+    "Baking",
+    "Beaming",
+    "Beboppin'",
+    "Befuddling",
+    "Billowing",
+    "Blanching",
+    "Bloviating",
+    "Boogieing",
+    "Boondoggling",
+    "Booping",
+    "Bootstrapping",
+    "Brewing",
+    "Bunning",
+    "Burrowing",
+    "Calculating",
+    "Canoodling",
+    "Caramelizing",
+    "Cascading",
+    "Catapulting",
+    "Cerebrating",
+    "Channeling",
+    "Channelling",
+    "Choreographing",
+    "Churning",
+    "Clauding",
+    "Coalescing",
+    "Cogitating",
+    "Combobulating",
+    "Composing",
+    "Computing",
+    "Concocting",
+    "Considering",
+    "Contemplating",
+    "Cooking",
+    "Crafting",
+    "Creating",
+    "Crunching",
+    "Crystallizing",
+    "Cultivating",
+    "Deciphering",
+    "Deliberating",
+    "Determining",
+    "Dilly-dallying",
+    "Discombobulating",
+    "Doing",
+    "Doodling",
+    "Drizzling",
+    "Ebbing",
+    "Effecting",
+    "Elucidating",
+    "Embellishing",
+    "Enchanting",
+    "Envisioning",
+    "Evaporating",
+    "Fermenting",
+    "Fiddle-faddling",
+    "Finagling",
+    "Flambéing",
+    "Flibbertigibbeting",
+    "Flowing",
+    "Flummoxing",
+    "Fluttering",
+    "Forging",
+    "Forming",
+    "Frolicking",
+    "Frosting",
+    "Gallivanting",
+    "Galloping",
+    "Garnishing",
+    "Generating",
+    "Gesticulating",
+    "Germinating",
+    "Gitifying",
+    "Grooving",
+    "Gusting",
+    "Harmonizing",
+    "Hashing",
+    "Hatching",
+    "Herding",
+    "Honking",
+    "Hullaballooing",
+    "Hyperspacing",
+    "Ideating",
+    "Imagining",
+    "Improvising",
+    "Incubating",
+    "Inferring",
+    "Infusing",
+    "Ionizing",
+    "Jitterbugging",
+    "Julienning",
+    "Kneading",
+    "Leavening",
+    "Levitating",
+    "Lollygagging",
+    "Manifesting",
+    "Marinating",
+    "Meandering",
+    "Metamorphosing",
+    "Misting",
+    "Moonwalking",
+    "Moseying",
+    "Mulling",
+    "Mustering",
+    "Musing",
+    "Nebulizing",
+    "Nesting",
+    "Newspapering",
+    "Noodling",
+    "Nucleating",
+    "Orbiting",
+    "Orchestrating",
+    "Osmosing",
+    "Perambulating",
+    "Percolating",
+    "Perusing",
+    "Philosophising",
+    "Photosynthesizing",
+    "Pollinating",
+    "Pondering",
+    "Pontificating",
+    "Pouncing",
+    "Precipitating",
+    "Prestidigitating",
+    "Processing",
+    "Proofing",
+    "Propagating",
+    "Puttering",
+    "Puzzling",
+    "Quantumizing",
+    "Razzle-dazzling",
+    "Razzmatazzing",
+    "Recombobulating",
+    "Reticulating",
+    "Roosting",
+    "Ruminating",
+    "Sautéing",
+    "Scampering",
+    "Schlepping",
+    "Scurrying",
+    "Seasoning",
+    "Shenaniganing",
+    "Shimmying",
+    "Simmering",
+    "Skedaddling",
+    "Sketching",
+    "Slithering",
+    "Smooshing",
+    "Sock-hopping",
+    "Spelunking",
+    "Spinning",
+    "Sprouting",
+    "Stewing",
+    "Sublimating",
+    "Swirling",
+    "Swooping",
+    "Symbioting",
+    "Synthesizing",
+    "Tempering",
+    "Thinking",
+    "Thundering",
+    "Tinkering",
+    "Tomfoolering",
+    "Topsy-turvying",
+    "Transfiguring",
+    "Transmuting",
+    "Twisting",
+    "Undulating",
+    "Unfurling",
+    "Unravelling",
+    "Vibing",
+    "Waddling",
+    "Wandering",
+    "Warping",
+    "Whatchamacalliting",
+    "Whirlpooling",
+    "Whirring",
+    "Whisking",
+    "Wibbling",
+    "Working",
+    "Wrangling",
+    "Zesting",
+    "Zigzagging",
+];
+
+fn configured_spinner_verbs() -> &'static [std::borrow::Cow<'static, str>] {
+    static VERBS: OnceLock<Vec<std::borrow::Cow<'static, str>>> = OnceLock::new();
+    VERBS.get_or_init(|| {
+        let settings = jfc_engine::config::load_arc().claude.spinner_verbs.clone();
+        let custom = settings.as_ref().and_then(|value| {
+            let obj = value.as_object()?;
+            let mode = obj.get("mode").and_then(|v| v.as_str()).unwrap_or("append");
+            let verbs = obj
+                .get("verbs")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            Some((mode, verbs))
+        });
+
+        let mut verbs: Vec<std::borrow::Cow<'static, str>> = Vec::new();
+        match custom {
+            Some(("replace", custom)) if !custom.is_empty() => {
+                verbs.extend(custom.into_iter().map(std::borrow::Cow::Owned));
+            }
+            Some(("replace", _)) => {
+                verbs.extend(
+                    DEFAULT_SPINNER_VERBS
+                        .iter()
+                        .copied()
+                        .map(std::borrow::Cow::Borrowed),
+                );
+            }
+            Some((_, custom)) => {
+                verbs.extend(
+                    DEFAULT_SPINNER_VERBS
+                        .iter()
+                        .copied()
+                        .map(std::borrow::Cow::Borrowed),
+                );
+                verbs.extend(custom.into_iter().map(std::borrow::Cow::Owned));
+            }
+            None => {
+                verbs.extend(
+                    DEFAULT_SPINNER_VERBS
+                        .iter()
+                        .copied()
+                        .map(std::borrow::Cow::Borrowed),
+                );
+            }
+        }
+        verbs
+    })
+}
+
+pub fn spinner_verb_for_index(index: usize) -> std::borrow::Cow<'static, str> {
+    let verbs = configured_spinner_verbs();
+    if verbs.is_empty() {
+        return std::borrow::Cow::Borrowed("Working");
+    }
+    verbs[index % verbs.len()].clone()
+}
+
 // ─── Spinner tips (CC 177 parity) ─────────────────────────────────────
 /// Contextual tips shown in the spinner row during streaming. Rotated
 /// every ~12 seconds. Mirrors CC 177's `spinnerTipsEnabled` feature.
@@ -114,19 +368,19 @@ pub fn spinner_tips_enabled() -> bool {
     })
 }
 
-/// Returns a tip for the current frame, cycling every ~12 seconds (at 4 Hz
-/// tick rate). Returns `None` if tips are disabled or not enough time has
-/// passed to show one yet (avoids showing a tip in the first few seconds).
+/// Returns a tip for the current frame, cycling every ~12 seconds at the
+/// normal animation cadence. Returns `None` if tips are disabled or not enough
+/// time has passed to show one yet.
 pub fn spinner_tip(frame: usize) -> Option<&'static str> {
     if !spinner_tips_enabled() {
         return None;
     }
     // Show a tip after ~5 seconds of streaming, then rotate every ~12s.
-    // At 4 Hz (250ms ticks), frame 20 = 5s, cycle every 48 frames = 12s.
-    if frame < 20 {
+    // At 10 Hz (100ms ticks), frame 50 = 5s, cycle every 120 frames = 12s.
+    if frame < 50 {
         return None;
     }
-    let tip_idx = ((frame - 20) / 48) % SPINNER_TIPS.len();
+    let tip_idx = ((frame - 50) / 120) % SPINNER_TIPS.len();
     Some(SPINNER_TIPS[tip_idx])
 }
 
@@ -404,11 +658,12 @@ pub fn status_segments(
             // so don't repeat it as a redundant `thinking {elapsed}` chip —
             // that rendered the same number twice (`Thinking · 1m04s ·
             // thinking 1m04s`). Show the cumulative thinking-token total
-            // instead: the same honest count Claude Code surfaces (not a
-            // `~`-marked estimate). The server's running total may plateau at
-            // a steady state, but it's still the real count.
+            // instead, without repeating the phase word: the same honest count
+            // Claude Code surfaces (not a `~`-marked estimate). The server's
+            // running total may plateau at a steady state, but it's still the
+            // real count.
             if thinking_tokens > 0 {
-                parts.push(format!("{} thinking", fmt_tokens(thinking_tokens)));
+                parts.push(format!("{} tokens", fmt_tokens(thinking_tokens)));
             }
             push_rate(&mut parts);
         }
@@ -664,11 +919,16 @@ mod tests {
             "elapsed should appear exactly once: {}",
             s.body
         );
-        // Cumulative thinking-token total, rendered as `1.2k thinking`
-        // (matches the module-doc status line), no `~` estimate marker.
+        // Cumulative thinking-token total, rendered as `1.2k tokens`
+        // under the `Thinking` phase label, no `~` estimate marker.
         assert!(
-            s.body.contains("1.2k thinking"),
+            s.body.contains("1.2k tokens"),
             "thinking token total missing: {}",
+            s.body
+        );
+        assert!(
+            !s.body.contains("thinking"),
+            "phase label should carry `Thinking`; body should not repeat it: {}",
             s.body
         );
         assert!(

@@ -18,6 +18,16 @@ pub(crate) fn filtered_theme_choices(app: &App) -> Vec<&'static crate::theme::Th
 /// highlight the current theme so opening previews no change (mirrors Claude
 /// Code's `usePreviewTheme` + opencode's live theme switch).
 pub(super) fn open_theme_picker(app: &mut App) {
+    if jfc_engine::config::safe_mode_enabled() {
+        jfc_engine::toast::push_with_cap(
+            &mut app.engine.toasts,
+            jfc_engine::toast::Toast::new(
+                jfc_engine::toast::ToastKind::Warning,
+                "Theme changes are disabled in safe mode",
+            ),
+        );
+        return;
+    }
     app.theme_preview_original = Some(app.theme);
     app.theme_picker_input.clear();
     let current = jfc_engine::config::load_arc().theme.clone();
@@ -41,6 +51,9 @@ pub(super) fn close_theme_picker(app: &mut App) {
 /// style caches, but do NOT persist or toast. Committed on Enter via
 /// [`apply_theme`] or reverted on Esc.
 pub(super) fn preview_theme(app: &mut App, name: &str) {
+    if jfc_engine::config::safe_mode_enabled() {
+        return;
+    }
     if let Some(choice) = Theme::choice_by_name(name)
         && let Some(theme) = Theme::by_name(choice.name)
     {
@@ -52,6 +65,16 @@ pub(super) fn preview_theme(app: &mut App, name: &str) {
 }
 
 pub(super) fn apply_theme(app: &mut App, name: &str) {
+    if jfc_engine::config::safe_mode_enabled() {
+        jfc_engine::toast::push_with_cap(
+            &mut app.engine.toasts,
+            jfc_engine::toast::Toast::new(
+                jfc_engine::toast::ToastKind::Warning,
+                "Theme changes are disabled in safe mode",
+            ),
+        );
+        return;
+    }
     if let Some(choice) = Theme::choice_by_name(name)
         && let Some(theme) = Theme::by_name(choice.name)
     {
@@ -60,20 +83,11 @@ pub(super) fn apply_theme(app: &mut App, name: &str) {
         app.height_index.borrow_mut().clear();
         crate::markdown::clear_highlight_cache();
         if let Err(err) = jfc_engine::config::save_theme(choice.name) {
-            jfc_engine::toast::push_with_cap(
-                &mut app.engine.toasts,
-                jfc_engine::toast::Toast::new(
-                    jfc_engine::toast::ToastKind::Warning,
-                    format!("Theme: {} (not persisted: {err})", choice.label),
-                ),
-            );
-        } else {
-            jfc_engine::toast::push_with_cap(
-                &mut app.engine.toasts,
-                jfc_engine::toast::Toast::new(
-                    jfc_engine::toast::ToastKind::Success,
-                    format!("Theme: {}", choice.label),
-                ),
+            tracing::warn!(
+                target: "jfc::ui::theme",
+                theme = choice.name,
+                error = %err,
+                "theme changed for current session but was not persisted"
             );
         }
     }

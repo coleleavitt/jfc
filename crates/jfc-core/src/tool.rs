@@ -121,6 +121,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             output: ToolOutput::Command {
                 stdout: "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.38s"
@@ -453,6 +454,7 @@ mod tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             output: ToolOutput::Empty,
             display: ToolDisplayState::DEFAULT,

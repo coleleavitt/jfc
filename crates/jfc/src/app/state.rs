@@ -150,7 +150,7 @@ pub struct PromptRewriteProposal {
 
 pub const SPINNER: &[&str] = crate::glyphs::TASK_FRAMES;
 pub const IDLE_TICK_MS: u64 = 80;
-pub const ANIM_TICK_MS: u64 = 33;
+pub const ANIM_TICK_MS: u64 = 100;
 
 pub struct App {
     /// The frontend-neutral engine state: conversation, streaming,
@@ -266,6 +266,10 @@ pub struct App {
     /// Bounds of the toast overlay strip; used by the click handler
     /// to map a click to a toast index for instant dismissal.
     pub toasts_rect: std::cell::RefCell<Option<ratatui::layout::Rect>>,
+    /// Bounds of the editable input strip, set on each render. Used by mouse
+    /// hit-testing to copy the logical draft text instead of lossy terminal
+    /// wrapped cells.
+    pub input_rect: std::cell::RefCell<Option<ratatui::layout::Rect>>,
     /// Last known drag-Y, set on each MouseEventKind::Drag event so
     /// the next drag delta can advance scroll_offset by the
     /// difference. Reset on Down / Up so a fresh drag starts cleanly.
@@ -467,6 +471,11 @@ pub struct App {
     /// `MessageView` borrows `&App` immutably during `Widget::render`, and
     /// we need a `&mut` push from inside that path.
     pub tool_hit_regions: RefCell<Vec<(String, Rect)>>,
+    /// Narrower per-frame regions whose click action is "copy this tool's
+    /// semantic payload" rather than "toggle the whole tool block". This keeps
+    /// command rows selectable/copyable without changing the existing
+    /// expand/pin hit region for the surrounding tool.
+    pub tool_copy_regions: RefCell<Vec<(String, Rect)>>,
     /// Content-addressed cache for `markdown::to_lines()` output. Keyed on
     /// `(hash(text), width)` so unchanged messages aren't re-parsed on every
     /// frame. Uses `RefCell` because `MessageView` borrows `&App` immutably
@@ -487,13 +496,13 @@ pub struct App {
     /// input is injected into the main event bus. See `crate::remote_host`.
     pub remote_host: Option<std::sync::Arc<jfc_engine::remote_host::RemoteHost>>,
     /// Shared flag: true when the UI needs high-frequency ticks (animations,
-    /// kinetic scroll, boot sweep). The tick task reads this to choose
+    /// boot sweep). The tick task reads this to choose
     /// `ANIM_TICK_MS` vs `IDLE_TICK_MS`.
     pub wants_animation_frame: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    /// Kinetic scroll velocity (lines/sec). Wheel events inject impulse;
-    /// each animation tick decays by 0.85 and applies to `scroll_offset`.
+    /// Reserved for compatibility with older state snapshots. Mouse wheel
+    /// scrolling is direct; drag-edge autoscroll has its own state.
     pub scroll_velocity: f32,
-    /// Last tick instant for kinetic scroll dt calculation.
+    /// Reserved alongside `scroll_velocity`.
     pub last_scroll_tick: std::time::Instant,
     /// Last time the user interacted (typed, submitted, scrolled).
     /// Used for idle-return detection (suggest /clear after 75min away).
@@ -538,13 +547,13 @@ impl App {
         // Minimal placeholder — the help overlay and `?` shortcut
         // already document Enter / Shift+Enter; repeating it inline
         // every render was noise. Just a soft prompt.
-        textarea.set_placeholder_text("send a message…");
+        textarea.set_placeholder_text("");
 
         let mut app = Self {
             engine: EngineState::new(provider, model),
             stream_pacer: crate::render::codex_stream::stream_pacer::StreamPacer::default(),
             paced_stream_key: None,
-            theme: Theme::dark(),
+            theme: Theme::claude(),
             esc_saved_text: None,
             history_cursor: None,
             scroll_offset: 0,
@@ -576,6 +585,7 @@ impl App {
             sidebar_rect: std::cell::RefCell::new(None),
             messages_rect: std::cell::RefCell::new(None),
             toasts_rect: std::cell::RefCell::new(None),
+            input_rect: std::cell::RefCell::new(None),
             drag_anchor_y: None,
             drag_autoscroll: None,
             text_selection: None,
@@ -631,6 +641,7 @@ impl App {
             voice_audio_levels: Vec::new(),
             voice_record_started: None,
             tool_hit_regions: RefCell::new(Vec::new()),
+            tool_copy_regions: RefCell::new(Vec::new()),
             render_cache: RefCell::new(RenderCache::new()),
             height_index: RefCell::new(crate::message_view::height_index::HeightIndex::new()),
             diff_stats_cache: RefCell::new(None),

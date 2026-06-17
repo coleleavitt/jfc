@@ -238,10 +238,16 @@ fn render_preview(f: &mut Frame, preview: &str, area: Rect, t: &Theme) {
     f.render_widget(block, area);
     // Rendered as a plain monospace box (the TUI variant of the contract's
     // preview); no markdown styling, just faithful lines.
-    let lines: Vec<Line<'static>> = preview
+    let mut lines: Vec<Line<'static>> = preview
         .lines()
         .map(|l| Line::from(Span::styled(l.to_owned(), t.style_text_primary)))
         .collect();
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            String::new(),
+            t.style_text_primary,
+        )));
+    }
     f.render_widget(
         Paragraph::new(lines).style(Style::default().bg(t.surface)),
         inner,

@@ -466,6 +466,7 @@ pub(super) fn help_overlay(f: &mut Frame, app: &App) {
                 ("Ctrl+F", "search inside the textarea"),
                 ("Ctrl+R", "retry last prompt"),
                 ("Ctrl+E", "edit + resubmit previous user message"),
+                ("Alt+Y", "yank current input to clipboard"),
                 ("Ctrl+L", "yank file:line ref to clipboard"),
                 ("Alt+./Alt+,", "raise / lower reasoning effort"),
                 ("/export", "save transcript as markdown"),

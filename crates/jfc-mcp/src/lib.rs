@@ -51,6 +51,74 @@ pub struct McpServerConfig {
     pub headers: HashMap<String, String>,
     #[serde(default)]
     pub url: Option<String>,
+    /// Optional OAuth/client metadata for HTTP MCP servers. The current rmcp
+    /// transport still expects callers to supply Authorization headers, but
+    /// preserving these aliases keeps config compatible with MCP protected-
+    /// resource metadata and with clients that spell client id differently.
+    #[serde(default, alias = "oauthMetadata", alias = "oauth_metadata")]
+    pub oauth: McpOAuthMetadata,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct McpOAuthMetadata {
+    #[serde(alias = "clientId", alias = "client_id")]
+    pub client_id: Option<String>,
+    #[serde(alias = "clientSecret", alias = "client_secret")]
+    pub client_secret: Option<String>,
+    #[serde(alias = "clientSecretEnv", alias = "client_secret_env")]
+    pub client_secret_env: Option<String>,
+    #[serde(alias = "accessToken", alias = "access_token")]
+    pub access_token: Option<String>,
+    #[serde(
+        alias = "accessTokenEnv",
+        alias = "access_token_env",
+        alias = "tokenEnv",
+        alias = "token_env"
+    )]
+    pub access_token_env: Option<String>,
+    #[serde(
+        alias = "tokenUrl",
+        alias = "token_url",
+        alias = "tokenEndpoint",
+        alias = "token_endpoint"
+    )]
+    pub token_url: Option<String>,
+    #[serde(alias = "scope", deserialize_with = "deserialize_oauth_scopes")]
+    pub scopes: Vec<String>,
+    pub resource: Option<String>,
+    #[serde(alias = "authorizationServer", alias = "authorization_server")]
+    pub authorization_server: Option<String>,
+}
+
+fn deserialize_oauth_scopes<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum ScopeField {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    let Some(field) = Option::<ScopeField>::deserialize(deserializer)? else {
+        return Ok(Vec::new());
+    };
+    let scopes = match field {
+        ScopeField::One(scope) => scope
+            .split_whitespace()
+            .map(str::trim)
+            .filter(|scope| !scope.is_empty())
+            .map(str::to_owned)
+            .collect(),
+        ScopeField::Many(scopes) => scopes
+            .into_iter()
+            .map(|scope| scope.trim().to_owned())
+            .filter(|scope| !scope.is_empty())
+            .collect(),
+    };
+    Ok(scopes)
 }
 
 impl McpServerConfig {
@@ -62,6 +130,14 @@ impl McpServerConfig {
 
     fn url_present(&self) -> bool {
         self.url.as_deref().is_some_and(|u| !u.trim().is_empty())
+    }
+
+    pub fn oauth_resource(&self) -> Option<String> {
+        self.oauth
+            .resource
+            .as_deref()
+            .or(self.url.as_deref())
+            .map(normalize_oauth_resource)
     }
 
     /// Resolve which transport to spawn. The `type` field is
@@ -124,6 +200,15 @@ impl McpServerConfig {
     }
 }
 
+fn normalize_oauth_resource(resource: &str) -> String {
+    let trimmed = resource.trim();
+    if trimmed.is_empty() || trimmed.ends_with('/') {
+        trimmed.to_owned()
+    } else {
+        format!("{trimmed}/")
+    }
+}
+
 /// Convenience: list all currently active (Connected + transport alive) servers.
 pub async fn list_active_servers(registry: &McpRegistry) -> Vec<std::sync::Arc<McpServer>> {
     registry.list_active().await
@@ -165,6 +250,7 @@ mod tests {
             env_file: None,
             headers: HashMap::new(),
             url: url.map(str::to_owned),
+            oauth: McpOAuthMetadata::default(),
         }
     }
 
@@ -234,6 +320,63 @@ mod tests {
             cfg(Some("stdio"), Some("   "), None)
                 .resolve_transport()
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn oauth_metadata_accepts_aliases_and_normalizes_resource_regression() {
+        let cfg: McpServerConfig = serde_json::from_value(serde_json::json!({
+            "type": "http",
+            "url": "https://mcp.example.test/mcp",
+            "oauth": {
+                "clientId": "client-a",
+                "scope": "tools.read tools.write",
+                "authorizationServer": "https://auth.example.test"
+            }
+        }))
+        .expect("config parses");
+        assert_eq!(cfg.oauth.client_id.as_deref(), Some("client-a"));
+        assert_eq!(cfg.oauth.access_token_env.as_deref(), None);
+        assert_eq!(cfg.oauth.scopes, vec!["tools.read", "tools.write"]);
+        assert_eq!(
+            cfg.oauth.authorization_server.as_deref(),
+            Some("https://auth.example.test")
+        );
+        assert_eq!(
+            cfg.oauth_resource().as_deref(),
+            Some("https://mcp.example.test/mcp/")
+        );
+
+        let snake: McpServerConfig = serde_json::from_value(serde_json::json!({
+            "type": "http",
+            "url": "https://mcp.example.test/mcp/",
+            "oauth_metadata": {
+                "client_id": "client-b",
+                "tokenUrl": "https://auth.example.test/token",
+                "clientSecretEnv": "MCP_CLIENT_SECRET",
+                "accessTokenEnv": "MCP_ACCESS_TOKEN",
+                "scopes": ["tools.read"],
+                "resource": "https://resource.example.test/root"
+            }
+        }))
+        .expect("snake config parses");
+        assert_eq!(snake.oauth.client_id.as_deref(), Some("client-b"));
+        assert_eq!(
+            snake.oauth.token_url.as_deref(),
+            Some("https://auth.example.test/token")
+        );
+        assert_eq!(
+            snake.oauth.client_secret_env.as_deref(),
+            Some("MCP_CLIENT_SECRET")
+        );
+        assert_eq!(
+            snake.oauth.access_token_env.as_deref(),
+            Some("MCP_ACCESS_TOKEN")
+        );
+        assert_eq!(snake.oauth.scopes, vec!["tools.read"]);
+        assert_eq!(
+            snake.oauth_resource().as_deref(),
+            Some("https://resource.example.test/root/")
         );
     }
 }

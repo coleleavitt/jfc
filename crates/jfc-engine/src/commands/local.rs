@@ -584,6 +584,64 @@ pub(super) fn handle_cost_command(state: &mut EngineState) {
         .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
 }
 
+/// `/usage-report` shows per-model token usage, cache hits, cost, and budget percent if configured.
+pub(super) fn handle_usage_report_command(state: &mut EngineState) {
+    let mut total_cost = 0.0f64;
+    let mut total_in = 0u64;
+    let mut total_out = 0u64;
+    let mut total_cr = 0u64;
+    let mut total_cw = 0u64;
+    let mut lines: Vec<String> = vec!["Usage by model:".into(), "".into()];
+    if state.usage_by_model.is_empty() {
+        lines.push("  (no usage yet)".into());
+    } else {
+        let mut models: Vec<_> = state.usage_by_model.iter().collect();
+        models.sort_by_key(|(m, _)| (*m).clone());
+        for (model, usage) in models {
+            let cost = crate::cost::cost_for(model.as_str(), usage);
+            total_cost += cost;
+            total_in += usage.input_tokens;
+            total_out += usage.output_tokens;
+            total_cr += usage.cache_read_tokens;
+            total_cw += usage.cache_write_tokens;
+            lines.push(format!(
+                "- {}: {} in / {} out / {} cache-read / {} cache-write → {}",
+                model,
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cache_read_tokens,
+                usage.cache_write_tokens,
+                crate::cost::fmt_cost(cost)
+            ));
+        }
+    }
+    lines.push("".into());
+    lines.push(format!(
+        "Totals: {} in / {} out / {} cache-read / {} cache-write",
+        total_in, total_out, total_cr, total_cw
+    ));
+    lines.push(format!("Total cost: {}", crate::cost::fmt_cost(total_cost)));
+    if let Some(budget_usd) = crate::config::load_arc().session_cost_budget_usd {
+        let pct = if budget_usd > 0.0 {
+            ((total_cost / budget_usd) * 100.0).round() as u64
+        } else {
+            0
+        };
+        lines.push(format!(
+            "Budget: {} of {} ({}%)",
+            crate::cost::fmt_cost(total_cost),
+            crate::cost::fmt_cost(budget_usd),
+            pct
+        ));
+    }
+    state
+        .messages
+        .push(jfc_core::ChatMessage::user("/usage-report".into()));
+    state
+        .messages
+        .push(jfc_core::ChatMessage::assistant(lines.join("\n")));
+}
+
 /// `/status` reports rich session status.
 pub(super) fn handle_status_command(state: &mut EngineState) {
     let (total_in, total_out, total_cr, total_cw) =

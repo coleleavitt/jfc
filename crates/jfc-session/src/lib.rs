@@ -11,6 +11,7 @@ use tracing::debug;
 
 mod catalog;
 mod git_commits;
+mod inbox;
 mod search;
 mod soft_match;
 mod task_history;
@@ -23,6 +24,11 @@ pub use catalog::{
     shorten_cwd,
 };
 pub use git_commits::{CommitHit, search as search_commits};
+pub use inbox::{
+    SessionInboxMessage, clear_inbox as clear_inbox_for_session,
+    read_messages as read_inbox_for_session, session_inbox_dir,
+    write_message as write_inbox_message,
+};
 pub use search::{
     SessionBrief, SessionHit, SessionMessage, browse as browse_sessions,
     discover as search_sessions, discover_excluding as search_sessions_excluding,
@@ -96,8 +102,12 @@ async fn collect_session_mtimes() -> Vec<(std::time::SystemTime, std::path::Path
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
-        let Ok(meta) = entry.metadata().await else { continue };
-        let Ok(modified) = meta.modified() else { continue };
+        let Ok(meta) = entry.metadata().await else {
+            continue;
+        };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
         out.push((modified, path));
     }
     out
@@ -124,10 +134,13 @@ pub async fn fork_session(source_id: &str, description: &str) -> std::io::Result
     let fork_id_str = fork_id.as_str().to_owned();
 
     if let Some(obj) = value.as_object_mut() {
-        obj.insert("id".to_owned(), serde_json::Value::String(fork_id_str.clone()));
+        obj.insert(
+            "id".to_owned(),
+            serde_json::Value::String(fork_id_str.clone()),
+        );
         // Record when the fork was created.
         let now = chrono::Utc::now().to_rfc3339();
-        obj.insert("updated_at".to_owned(), serde_json::Value::String(now.clone()));
+        obj.insert("updated_at".to_owned(), serde_json::Value::String(now));
         // If a fork description is provided, stash it in the title field so
         // the session picker can distinguish the fork from the original.
         if !description.is_empty() {
@@ -168,4 +181,121 @@ pub async fn delete_session(session_id: &str) -> std::io::Result<bool> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e),
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionFsckIssue {
+    pub path: PathBuf,
+    pub reason: String,
+    pub quarantined_to: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SessionFsckReport {
+    pub checked: usize,
+    pub ok: usize,
+    pub issues: Vec<SessionFsckIssue>,
+}
+
+impl SessionFsckReport {
+    pub fn quarantined(&self) -> usize {
+        self.issues
+            .iter()
+            .filter(|issue| issue.quarantined_to.is_some())
+            .count()
+    }
+}
+
+pub async fn fsck_sessions(quarantine: bool) -> std::io::Result<SessionFsckReport> {
+    let dir = sessions_dir();
+    let lost_found = dir.join("lost+found");
+    let mut report = SessionFsckReport::default();
+    let mut rd = match tokio::fs::read_dir(&dir).await {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(report),
+        Err(e) => return Err(e),
+    };
+
+    while let Some(entry) = rd.next_entry().await? {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        report.checked += 1;
+        let reason = match validate_session_file_shape(&path).await {
+            Ok(()) => {
+                report.ok += 1;
+                continue;
+            }
+            Err(reason) => reason,
+        };
+        let quarantined_to = if quarantine {
+            tokio::fs::create_dir_all(&lost_found).await?;
+            let target = lost_found.join(quarantine_file_name(&path));
+            tokio::fs::rename(&path, &target).await?;
+            Some(target)
+        } else {
+            None
+        };
+        report.issues.push(SessionFsckIssue {
+            path,
+            reason,
+            quarantined_to,
+        });
+    }
+
+    Ok(report)
+}
+
+async fn validate_session_file_shape(path: &std::path::Path) -> Result<(), String> {
+    let content = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|e| format!("read failed: {e}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("json parse failed: {e}"))?;
+    let obj = value
+        .as_object()
+        .ok_or_else(|| "root is not a JSON object".to_owned())?;
+    let id = obj
+        .get("id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| "missing non-empty id".to_owned())?;
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    if stem != id {
+        return Err(format!("id `{id}` does not match filename `{stem}`"));
+    }
+    let messages = obj
+        .get("messages")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "missing messages array".to_owned())?;
+    for (idx, message) in messages.iter().enumerate() {
+        let Some(message_obj) = message.as_object() else {
+            return Err(format!("message {idx} is not an object"));
+        };
+        match message_obj.get("role").and_then(|v| v.as_str()) {
+            Some("user") | Some("assistant") => {}
+            Some(other) => return Err(format!("message {idx} has invalid role `{other}`")),
+            None => return Err(format!("message {idx} missing role")),
+        }
+        if !message_obj
+            .get("parts")
+            .is_some_and(|parts| parts.as_array().is_some())
+        {
+            return Err(format!("message {idx} missing parts array"));
+        }
+    }
+    Ok(())
+}
+
+fn quarantine_file_name(path: &std::path::Path) -> String {
+    let original = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("session.json");
+    let stamp = chrono::Utc::now().format("%Y%m%d%H%M%S");
+    format!("{stamp}-{original}")
 }

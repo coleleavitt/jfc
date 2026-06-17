@@ -31,6 +31,7 @@ pub(super) enum PluginSubcommand {
 
 pub(super) async fn run_plugin_subcommand(sub: PluginSubcommand) -> anyhow::Result<()> {
     let managed = jfc_engine::config::load_managed_settings();
+    let safe_mode = jfc_engine::config::safe_mode_enabled();
     match sub {
         PluginSubcommand::List => {
             print!("{}", list_plugins()?);
@@ -41,6 +42,9 @@ pub(super) async fn run_plugin_subcommand(sub: PluginSubcommand) -> anyhow::Resu
             name,
             force,
         } => {
+            if safe_mode {
+                anyhow::bail!("plugin installs are disabled in safe mode");
+            }
             if managed.as_ref().is_some_and(|m| m.disable_plugin_urls)
                 && looks_like_git_url(&source)
             {
@@ -56,6 +60,9 @@ pub(super) async fn run_plugin_subcommand(sub: PluginSubcommand) -> anyhow::Resu
             Ok(())
         }
         PluginSubcommand::Update { name } => {
+            if safe_mode {
+                anyhow::bail!("plugin updates are disabled in safe mode");
+            }
             if managed.as_ref().is_some_and(|m| m.disable_plugin_updates) {
                 anyhow::bail!("plugin updates are disabled by managed settings");
             }
@@ -70,6 +77,9 @@ pub(super) async fn run_plugin_subcommand(sub: PluginSubcommand) -> anyhow::Resu
             Ok(())
         }
         PluginSubcommand::Remove { name } => {
+            if safe_mode {
+                anyhow::bail!("plugin removal is disabled in safe mode");
+            }
             let path = remove_plugin(&name)?;
             println!("removed plugin at {}", path.display());
             Ok(())
@@ -78,6 +88,9 @@ pub(super) async fn run_plugin_subcommand(sub: PluginSubcommand) -> anyhow::Resu
 }
 
 pub(super) fn ensure_plugin_url(url: &str) -> anyhow::Result<PathBuf> {
+    if jfc_engine::config::safe_mode_enabled() {
+        anyhow::bail!("plugin URL registration is disabled in safe mode");
+    }
     let name = plugin_name_from_url(url)?;
     let dest = plugins_root()?.join(&name);
     if dest.exists() {

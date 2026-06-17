@@ -1699,16 +1699,10 @@ impl EngineState {
         // Fire SessionEnd for the *outgoing* session before replacing the id.
         // Best-effort (fire_async): a hook failure must never block the switch.
         if let Some(ref old) = old_id {
-            let session_input_tokens: u64 = self
-                .usage_by_model
-                .values()
-                .map(|u| u.input_tokens)
-                .sum();
-            let session_output_tokens: u64 = self
-                .usage_by_model
-                .values()
-                .map(|u| u.output_tokens)
-                .sum();
+            let session_input_tokens: u64 =
+                self.usage_by_model.values().map(|u| u.input_tokens).sum();
+            let session_output_tokens: u64 =
+                self.usage_by_model.values().map(|u| u.output_tokens).sum();
             let session_cost_usd = crate::cost::total_cost(&self.usage_by_model);
             crate::hooks::fire_async(
                 crate::hooks::HookPoint::OnSessionEnd,

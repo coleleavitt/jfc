@@ -496,8 +496,12 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
         }
     }
 
-    // Wait for in-flight agents to settle (or be cancelled).
-    while orch.agent_tasks.join_next().await.is_some() {}
+    // Wait for in-flight agents to settle. On cancellation, cap the grace
+    // period so a stuck provider/tool future cannot wedge workflow teardown.
+    if drain_agent_tasks(&mut orch.agent_tasks, cancelled).await {
+        orch.logs
+            .push("aborted lingering workflow agent task(s) after cancellation".to_owned());
+    }
 
     // Drain any trailing progress signals.
     while let Ok(sig) = progress_rx.try_recv() {
@@ -550,6 +554,33 @@ fn reject_pending_requests(
     rejected
 }
 
+async fn drain_agent_tasks(agent_tasks: &mut tokio::task::JoinSet<()>, cancelled: bool) -> bool {
+    drain_agent_tasks_with_grace(agent_tasks, cancelled, std::time::Duration::from_secs(5)).await
+}
+
+async fn drain_agent_tasks_with_grace(
+    agent_tasks: &mut tokio::task::JoinSet<()>,
+    cancelled: bool,
+    grace: std::time::Duration,
+) -> bool {
+    if !cancelled {
+        while agent_tasks.join_next().await.is_some() {}
+        return false;
+    }
+
+    let timed_out = tokio::time::timeout(grace, async {
+        while agent_tasks.join_next().await.is_some() {}
+    })
+    .await
+    .is_err();
+
+    if timed_out {
+        agent_tasks.abort_all();
+        while agent_tasks.join_next().await.is_some() {}
+    }
+    timed_out
+}
+
 /// Dispatch one agent through `execute_task`, write the journal, and reply.
 async fn run_one_agent(
     req: AgentRequest,
@@ -580,8 +611,21 @@ async fn run_one_agent(
     // `daemon-state.json` forever. We now finalize the row on every exit path
     // below via `finalize_agent_row`.
 
-    let task_input = build_agent_task_input(&req);
     let agent_def = resolve_agent_def(&req);
+    let task_input = build_agent_task_input(&req, agent_def.as_ref());
+    let worktree_info = match prepare_workflow_agent_worktree(&task_input, &agent_id).await {
+        Ok(info) => info,
+        Err(error) => {
+            finalize_agent_row(&agent_id, AgentRowOutcome::Failed(&error));
+            emit_agent_failed(&tx, &workflow_task_id, req.index, error.clone());
+            let _ = req.reply.send(Err(error));
+            return;
+        }
+    };
+    let cwd_override = worktree_info
+        .as_ref()
+        .map(|info| std::path::PathBuf::from(&info.worktree.path))
+        .or_else(|| task_input.cwd.as_deref().map(std::path::PathBuf::from));
 
     // Race the dispatch against cancellation.
     let result = tokio::select! {
@@ -596,11 +640,12 @@ async fn run_one_agent(
             tx.as_ref(),
             Some(&agent_id),
             agent_def.as_ref(),
-            None,
+            cwd_override,
             None,
             None,
         ) => r,
     };
+    finish_workflow_agent_worktree(&agent_id, worktree_info).await;
 
     if result.is_error() {
         // Finalize the daemon row so it never goes stale-Failed after the UI
@@ -673,8 +718,11 @@ async fn run_one_agent(
 }
 
 /// Build the `TaskInput` for a workflow sub-agent dispatch from its request.
-fn build_agent_task_input(req: &AgentRequest) -> crate::types::TaskInput {
-    crate::types::TaskInput {
+fn build_agent_task_input(
+    req: &AgentRequest,
+    agent_def: Option<&crate::agents::AgentDef>,
+) -> crate::types::TaskInput {
+    let mut task_input = crate::types::TaskInput {
         description: req.label.clone(),
         prompt: req.prompt.clone(),
         subagent_type: req.agent_type.clone(),
@@ -689,6 +737,32 @@ fn build_agent_task_input(req: &AgentRequest) -> crate::types::TaskInput {
         parent_task_id: None,
         schema: req.schema.clone(),
         cwd: None,
+    };
+    apply_workflow_agent_isolation_defaults(
+        &mut task_input,
+        agent_def,
+        crate::config::load_arc()
+            .isolation
+            .as_ref()
+            .and_then(|isolation| isolation.default_task_isolation.as_deref()),
+    );
+    task_input
+}
+
+fn apply_workflow_agent_isolation_defaults(
+    task_input: &mut crate::types::TaskInput,
+    agent_def: Option<&crate::agents::AgentDef>,
+    config_default: Option<&str>,
+) {
+    if task_input.isolation.is_none()
+        && let Some(isolation) = agent_def.and_then(|agent| agent.isolation.as_deref())
+    {
+        task_input.isolation = Some(isolation.to_owned());
+    }
+    if task_input.isolation.is_none()
+        && let Some(default) = config_default.map(str::trim).filter(|s| !s.is_empty())
+    {
+        task_input.isolation = Some(default.to_owned());
     }
 }
 
@@ -700,6 +774,170 @@ fn resolve_agent_def(req: &AgentRequest) -> Option<crate::agents::AgentDef> {
         .as_deref()
         .and_then(|t| agents.iter().find(|a| a.name.eq_ignore_ascii_case(t)))
         .cloned()
+}
+
+struct WorkflowAgentWorktree {
+    worktree: crate::worktrees::WorktreeInfo,
+    repo_root: std::path::PathBuf,
+    change_id: Option<String>,
+}
+
+async fn prepare_workflow_agent_worktree(
+    task_input: &crate::types::TaskInput,
+    agent_id: &str,
+) -> Result<Option<WorkflowAgentWorktree>, String> {
+    if task_input.isolation.as_deref() != Some("worktree") {
+        return Ok(None);
+    }
+
+    let suffix: String = agent_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(12)
+        .collect();
+    let name = format!(
+        "agent-{}",
+        if suffix.is_empty() {
+            "workflow"
+        } else {
+            suffix.as_str()
+        }
+    );
+    let cwd = task_input
+        .cwd
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let repo_root = match crate::worktrees::find_repo_root_async(&cwd).await {
+        Ok(root) => root,
+        Err(e) => {
+            tracing::warn!(
+                target: "jfc::workflow",
+                cwd = %cwd.display(),
+                error = %e,
+                "workflow agent: failed to resolve git root, falling back to cwd for worktree"
+            );
+            cwd
+        }
+    };
+
+    match crate::worktrees::create_worktree_async(&repo_root, &name).await {
+        Ok(worktree) => {
+            tracing::info!(
+                target: "jfc::workflow",
+                repo_root = %repo_root.display(),
+                worktree = %worktree.path,
+                "workflow agent: created worktree for isolated agent"
+            );
+            let origin = crate::changeset::ChangeOrigin {
+                task_id: Some(agent_id.to_owned()),
+                agent_id: task_input
+                    .subagent_type
+                    .clone()
+                    .or_else(|| Some("workflow".to_owned())),
+                session_id: None,
+            };
+            let change_id = crate::changeset::open_for_worktree(
+                &repo_root,
+                &worktree.path,
+                &worktree.branch,
+                &origin,
+            )
+            .await;
+            Ok(Some(WorkflowAgentWorktree {
+                worktree,
+                repo_root,
+                change_id,
+            }))
+        }
+        Err(e) => match crate::changeset::isolation_fallback() {
+            crate::changeset::IsolationFallback::FailClosed => Err(format!(
+                "Refusing to run isolated workflow agent in the main checkout: \
+                 worktree creation failed ({e}). Isolation is fail-closed \
+                 (set [isolation] fail_closed = false or JFC_ISOLATION_FAIL_CLOSED=0 \
+                 to allow the cwd fallback)."
+            )),
+            crate::changeset::IsolationFallback::AllowCwd => {
+                tracing::warn!(
+                    target: "jfc::workflow",
+                    repo_root = %repo_root.display(),
+                    error = %e,
+                    "workflow agent: failed to create worktree, running in cwd (fail-open)"
+                );
+                Ok(None)
+            }
+        },
+    }
+}
+
+async fn finish_workflow_agent_worktree(
+    agent_id: &str,
+    worktree_info: Option<WorkflowAgentWorktree>,
+) {
+    let Some(info) = worktree_info else { return };
+    if let Some(ref change_id) = info.change_id {
+        crate::changeset::finalize_for_worktree(&info.repo_root, change_id, &info.worktree.path)
+            .await;
+    }
+    let dirty = match tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&info.worktree.path)
+        .arg("status")
+        .arg("--porcelain")
+        .output()
+        .await
+    {
+        Ok(out) if out.status.success() => !out.stdout.is_empty(),
+        Ok(out) => {
+            tracing::warn!(
+                target: "jfc::workflow",
+                agent_id,
+                worktree = %info.worktree.path,
+                stderr = %String::from_utf8_lossy(&out.stderr),
+                "git status in workflow worktree returned non-zero — preserving worktree"
+            );
+            true
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "jfc::workflow",
+                agent_id,
+                worktree = %info.worktree.path,
+                error = %e,
+                "git status spawn failed for workflow worktree — preserving worktree"
+            );
+            true
+        }
+    };
+    if dirty {
+        tracing::info!(
+            target: "jfc::workflow",
+            agent_id,
+            worktree = %info.worktree.path,
+            branch = %info.worktree.branch,
+            "workflow worktree has uncommitted changes — preserving"
+        );
+        return;
+    }
+    let wt_name = std::path::Path::new(&info.worktree.path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    match crate::worktrees::remove_worktree_async(&info.repo_root, wt_name).await {
+        Ok(_) => tracing::info!(
+            target: "jfc::workflow",
+            agent_id,
+            worktree = %info.worktree.path,
+            "workflow worktree had no changes — removed"
+        ),
+        Err(e) => tracing::warn!(
+            target: "jfc::workflow",
+            agent_id,
+            worktree = %info.worktree.path,
+            error = %e,
+            "workflow worktree cleanup failed"
+        ),
+    }
 }
 
 /// Parse a schema-bound agent's output into a JSON object. Returns `Ok(None)`
@@ -931,6 +1169,86 @@ mod tests {
                 calls: AtomicUsize::new(0),
             }),
         )
+    }
+
+    fn workflow_task_input(isolation: Option<&str>) -> crate::types::TaskInput {
+        crate::types::TaskInput {
+            description: "inspect".into(),
+            prompt: "inspect".into(),
+            subagent_type: Some("reviewer".into()),
+            category: None,
+            run_in_background: false,
+            model: None,
+            effort: None,
+            name: None,
+            team_name: None,
+            mode: None,
+            isolation: isolation.map(str::to_owned),
+            parent_task_id: None,
+            schema: None,
+            cwd: None,
+        }
+    }
+
+    fn workflow_agent_def(isolation: Option<&str>) -> crate::agents::AgentDef {
+        crate::agents::AgentDef {
+            name: "reviewer".into(),
+            source: std::path::PathBuf::from("test"),
+            model: None,
+            isolation: isolation.map(str::to_owned),
+            skills: Vec::new(),
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            permission_mode: None,
+            forks_parent_context: None,
+            background: None,
+            color: None,
+            effort: None,
+            max_turns: None,
+            max_input_tokens: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: std::collections::HashMap::new(),
+            key_trigger: None,
+            use_when: Vec::new(),
+            avoid_when: Vec::new(),
+            cost: None,
+            system_prompt: String::new(),
+        }
+    }
+
+    #[test]
+    fn workflow_agent_isolation_defaults_preserve_precedence_normal() {
+        let mut task = workflow_task_input(None);
+        let agent = workflow_agent_def(Some("worktree"));
+
+        apply_workflow_agent_isolation_defaults(&mut task, Some(&agent), Some("other"));
+
+        assert_eq!(task.isolation.as_deref(), Some("worktree"));
+
+        let mut task = workflow_task_input(None);
+        apply_workflow_agent_isolation_defaults(&mut task, None, Some(" worktree "));
+        assert_eq!(task.isolation.as_deref(), Some("worktree"));
+
+        let mut task = workflow_task_input(Some("explicit"));
+        let agent = workflow_agent_def(Some("worktree"));
+        apply_workflow_agent_isolation_defaults(&mut task, Some(&agent), Some("other"));
+        assert_eq!(task.isolation.as_deref(), Some("explicit"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancelled_workflow_agent_tasks_abort_after_grace_regression() {
+        let mut tasks = tokio::task::JoinSet::new();
+        tasks.spawn(async {
+            std::future::pending::<()>().await;
+        });
+
+        let aborted =
+            drain_agent_tasks_with_grace(&mut tasks, true, std::time::Duration::from_millis(10))
+                .await;
+
+        assert!(aborted, "cancelled drain must abort stuck agent tasks");
+        assert_eq!(tasks.len(), 0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

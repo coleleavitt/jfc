@@ -295,8 +295,7 @@ pub(super) fn user_prompts(app: &App) -> Vec<String> {
     // *before* the current-session prompts so up-arrow cycles current first,
     // then falls back to history from prior sessions. De-duplicate against the
     // current session to avoid the same prompt appearing twice.
-    let current_set: std::collections::HashSet<&str> =
-        prompts.iter().map(String::as_str).collect();
+    let current_set: std::collections::HashSet<&str> = prompts.iter().map(String::as_str).collect();
     let prior: Vec<String> = app
         .prior_session_prompts
         .iter()

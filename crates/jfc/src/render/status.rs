@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    layout::Rect,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -18,63 +18,12 @@ struct StatusSeg {
 }
 
 pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
-    let t = app.theme;
-
-    // The footer is two rows: row 0 is the divider line that DOUBLES as the
-    // context gauge (it fills left→right and shifts green→amber→red as context
-    // grows — no separate "ctx … bar" row), row 1 is the info line. This is
-    // one fewer dense row than a dedicated gauge and reads softer.
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1)])
-        .split(area);
-
-    // ── Row 0: divider-as-context-gauge ──────────────────────────────────
-    {
-        let used = app.engine.tool_ctx.approx_tokens;
-        let max = app.engine.max_context_tokens.max(1);
-        let ratio = (used as f64 / max as f64).clamp(0.0, 1.0);
-        let pct = (ratio * 100.0).round() as u32;
-        let gauge_color = if pct < 60 {
-            t.success
-        } else if pct < 85 {
-            t.warning
-        } else {
-            t.error
-        };
-        // Compact count parked at the right end of the divider; the fill on the
-        // left is the at-a-glance signal.
-        let label = format!(" {} ", context_gauge_label(used, max, pct).trim());
-        let w = rows[0].width as usize;
-        let label_w = super::cell_width(&label).min(w);
-        let gauge_w = w.saturating_sub(label_w);
-        let filled = ((ratio * gauge_w as f64).round() as usize).min(gauge_w);
-        let divider = Line::from(vec![
-            Span::styled("─".repeat(filled), Style::default().fg(gauge_color)),
-            Span::styled("─".repeat(gauge_w - filled), t.style_border),
-            Span::styled(label, t.style_text_muted),
-        ]);
-        f.render_widget(
-            Paragraph::new(divider).style(Style::default().bg(t.surface)),
-            rows[0],
-        );
+    if area.height == 0 || area.width == 0 {
+        return;
     }
-
-    // Just the project directory name — the full path was noise on a line
-    // that's already tight; the branch + model carry the working context.
-    let cwd_display = std::path::Path::new(&app.engine.cwd)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| app.engine.cwd.clone());
-
-    // ── Build prioritised, colour-coded segments (see `StatusSeg`) ──
-    let provider_badge = pretty_provider_label(app.engine.provider.name());
+    let t = app.theme;
+    let ui_tokens = t.claude_ui_tokens();
     let muted = Style::default().fg(t.text_muted);
-    let sec = Style::default().fg(t.text_secondary);
-    // Semantic split (was all `warning` gold): `cost` rides the money hue,
-    // genuine alerts stay `warning`/`error`, and routine activity/mode/flag
-    // state uses the calm `accent_secondary` so it no longer screams.
-    let cost_style = Style::default().fg(t.cost_signal);
     let alert = Style::default().fg(t.warning);
     let activity = Style::default().fg(t.accent_secondary);
     let mut segs: Vec<StatusSeg> = Vec::new();
@@ -87,21 +36,39 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         };
     }
 
-    // Identity: model first, then cost in gold (the number you watch).
-    push1!(app.engine.model.to_string(), sec, 100);
-    let cost_total = jfc_engine::cost::total_cost(&app.engine.usage_by_model);
-    if cost_total > 0.001 {
-        let cost_str = if cost_total < 0.01 {
-            format!("${:.4}", cost_total)
-        } else if cost_total < 10.0 {
-            format!("${:.3}", cost_total)
-        } else {
-            format!("${:.2}", cost_total)
-        };
-        push1!(cost_str, cost_style.add_modifier(Modifier::BOLD), 95);
+    // The footer is now a single contextual action row, not a dashboard. Keep
+    // it quiet until something is actionable or under pressure.
+    if let Some((symbol, label)) = match app.engine.permission_mode {
+        crate::app::PermissionMode::Default => None,
+        crate::app::PermissionMode::Plan => Some(("◇", "plan mode on")),
+        crate::app::PermissionMode::AcceptEdits => Some(("⏵⏵", "accept edits on")),
+        crate::app::PermissionMode::BypassPermissions => Some(("!!", "bypass permissions on")),
+        crate::app::PermissionMode::Auto => Some(("⏵⏵", "auto mode on")),
+    } {
+        push1!(
+            format!("{symbol} {label}"),
+            alert.add_modifier(Modifier::BOLD),
+            88
+        );
     }
 
-    // Problems / actionable state — high priority, coloured to draw the eye.
+    let safe_mode = jfc_engine::config::safe_mode_enabled();
+    if safe_mode {
+        push1!(
+            "safe mode".to_owned(),
+            alert.add_modifier(Modifier::BOLD),
+            97
+        );
+    }
+    let managed = jfc_engine::config::load_managed_settings();
+    let plugins_disabled = safe_mode
+        || managed
+            .as_ref()
+            .is_some_and(|m| m.disable_plugin_dirs || m.disable_plugin_urls);
+    if plugins_disabled {
+        push1!("plugins off".to_owned(), muted, 62);
+    }
+    // Problems / actionable state get the highest priority.
     let mcp_down: Vec<&str> = app
         .engine
         .mcp_servers
@@ -111,20 +78,20 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         .collect();
     if !mcp_down.is_empty() {
         push1!(
-            format!("⚠ mcp: {}", mcp_down.join(", ")),
+            format!("MCP issue: {} · /doctor", mcp_down.join(", ")),
             Style::default().fg(t.error).add_modifier(Modifier::BOLD),
-            93,
+            98,
         );
     }
     if let Some(status) = app.engine.claude_status.as_ref() {
         if status.is_degraded() {
-            push1!(status.short_badge(), alert, 92);
+            push1!(status.short_badge(), alert, 96);
         }
     } else if app.engine.claude_status_error.is_some() {
         push1!(
             "status unreachable".to_owned(),
             Style::default().fg(t.error),
-            92
+            96
         );
     }
     let approval_count = app.engine.approval_queue.len()
@@ -135,57 +102,29 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         };
     if approval_count > 0 {
         push1!(
-            format!("{approval_count} pending"),
+            format!("{approval_count} awaiting approval"),
             alert.add_modifier(Modifier::BOLD),
-            90,
+            94,
         );
     }
     if app.leader_key_active {
-        push1!("[^X …]".to_owned(), Style::default().fg(t.accent), 88);
+        push1!("leader key".to_owned(), Style::default().fg(t.accent), 90);
     } else if app.viewing_task_id.is_some() {
-        push1!("[task view]".to_owned(), Style::default().fg(t.accent), 88);
+        push1!("agent view".to_owned(), Style::default().fg(t.accent), 86);
     }
     if !app.engine.queued_prompts.is_empty() {
         push1!(
-            format!("⏳ {} queued", app.engine.queued_prompts.len()),
+            format!("{} queued", app.engine.queued_prompts.len()),
             muted,
             80
         );
     }
-    let alive_n = app
-        .engine
-        .background_tasks
-        .values()
-        .filter(|bt| bt.status.is_alive())
-        .count();
-    if alive_n > 0 {
-        let tools: u32 = app
-            .engine
-            .background_tasks
-            .values()
-            .filter(|bt| bt.status.is_alive())
-            .map(|b| b.tool_use_count)
-            .sum();
-        let s = if tools > 0 {
-            format!("{alive_n} agents · {tools} tools")
-        } else {
-            format!("{alive_n} agents")
-        };
-        push1!(s, activity, 78);
-    }
 
-    // Mode flags.
-    if let crate::app::PermissionMode::Default = app.engine.permission_mode {
-    } else {
-        // Plain label — the mode word (Bypass / Auto / Plan) reads on its own;
-        // the leading symbol was emoji-zoo noise.
-        push1!(app.engine.permission_mode.label().to_owned(), activity, 85);
-    }
     if app.engine.fast_mode {
         push1!("fast".to_owned(), activity, 60);
     }
     if app.engine.effort_state.current.is_some() {
-        push1!(effort_status_badge(app), muted, 50);
+        push1!(effort_status_badge(app), muted, 45);
     }
     if let Some(ref rc) = app.remote_host {
         let clients = rc.client_count.load(std::sync::atomic::Ordering::Relaxed);
@@ -197,11 +136,12 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         push1!(label, activity, 55);
     }
 
-    // Repo zone: branch · diff (green/red) · cwd. `⎇` stays — it's the
-    // conventional, compact branch marker (the user's own shell prompt uses
-    // it); the `Δ` diff prefix is dropped since the +/− colors say "diff".
     if let Some(branch) = app.engine.git_branch.as_deref().filter(|b| !b.is_empty()) {
-        push1!(format!("⎇ {}", super::truncate_str(branch, 24)), muted, 70);
+        push1!(
+            format!("git {}", super::truncate_str(branch, 24)),
+            muted,
+            35
+        );
     }
     let diff = super::collect_diff_stats(app);
     if diff.total_files > 0 {
@@ -209,29 +149,33 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
             spans: vec![
                 Span::styled(
                     format!("+{}", diff.additions),
-                    Style::default().fg(t.success),
+                    Style::default().fg(ui_tokens.diff_added),
                 ),
                 Span::styled(" ", muted),
-                Span::styled(format!("−{}", diff.deletions), Style::default().fg(t.error)),
+                Span::styled(
+                    format!("−{}", diff.deletions),
+                    Style::default().fg(ui_tokens.diff_removed),
+                ),
             ],
-            prio: 65,
+            prio: 50,
         });
     }
-    push1!(cwd_display, muted, 45);
 
-    if let Some(badge) = plan_badge(
-        app.engine.subscription_type.as_deref(),
-        app.engine.seat_tier.as_deref(),
-    ) {
-        push1!(badge, muted, 40);
+    let used = app.engine.tool_ctx.approx_tokens;
+    let max = app.engine.max_context_tokens.max(1);
+    let ctx_pct = ((used as f64 / max as f64).clamp(0.0, 1.0) * 100.0).round() as u32;
+    if ctx_pct >= 70 {
+        let style = if ctx_pct >= 90 {
+            Style::default().fg(t.error)
+        } else {
+            Style::default().fg(t.warning)
+        };
+        push1!(format!("ctx {ctx_pct}%"), style, 91);
     }
 
-    // Unified rate-limit quota badge: the OAuth account snapshot already carries
-    // 5h/7d utilization, claim, and overage state — surface the highest-pressure
-    // quota so the user sees it climbing *before* getting rejected. Coloured by
-    // pressure (amber ≥ 80%, red ≥ 95%).
     if let Some(snapshot) = app.engine.anthropic_account_snapshot.as_ref()
         && let Some((label, pct)) = quota_badge(snapshot)
+        && (pct >= 80 || label.contains("overage"))
     {
         let style = if pct >= 95 {
             Style::default().fg(t.error)
@@ -240,28 +184,16 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         } else {
             muted
         };
-        push1!(label, style, 38);
+        push1!(label, style, 89);
     }
     if app
         .engine
         .last_session_save_at
         .is_some_and(|t| t.elapsed().as_millis() < 2000)
     {
-        push1!("✓ saved".to_owned(), Style::default().fg(t.success), 35);
+        push1!("saved".to_owned(), Style::default().fg(t.success), 40);
     }
 
-    // ── Assemble: provider prefix (fixed) · segments · pad · right ──
-    let right = " ? help · ^P palette ";
-    let total_width = area.width as usize;
-    let right_w = super::cell_width(right);
-    let avail = total_width.saturating_sub(right_w);
-
-    // Static provider dot — the network EKG (which used to drive a pulse
-    // here) is gone; a steady provider-coloured dot just identifies the
-    // backend without faking "liveness".
-    let dot_color = provider_accent(app.engine.provider.name());
-
-    let prefix_w = 3 + super::cell_width(&provider_badge); // " ● <provider>"
     const SEP_W: usize = 3; // " · "
     let seg_w = |s: &StatusSeg| -> usize {
         s.spans
@@ -270,41 +202,25 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
             .sum()
     };
 
-    // Drop the lowest-priority segment until the line fits.
-    // Drop segments to fit, preserving the always-visible floor. See
-    // `fit_segments` for the policy.
+    if segs.is_empty() {
+        push1!("? help".to_owned(), muted, 10);
+    }
+
     let widths: Vec<usize> = segs.iter().map(|s| SEP_W + seg_w(s)).collect();
     let prios: Vec<u8> = segs.iter().map(|s| s.prio).collect();
-    let keep = fit_segments(&prios, &widths, prefix_w, avail);
+    let keep = fit_segments(&prios, &widths, 0, area.width as usize);
     let mut keep_iter = keep.iter();
     segs.retain(|_| *keep_iter.next().unwrap_or(&false));
 
-    let kept_w: usize = segs.iter().map(|s| SEP_W + seg_w(s)).sum();
-    let pad = avail.saturating_sub(prefix_w + kept_w);
-
-    let mut spans: Vec<Span> = vec![
-        Span::raw(" "),
-        Span::styled(
-            "●",
-            Style::default().fg(dot_color).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-        Span::styled(
-            provider_badge,
-            Style::default()
-                .fg(provider_accent(app.engine.provider.name()))
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
+    let mut spans: Vec<Span> = vec![Span::raw("  ")];
     // Voice mode indicator — shown when recording or processing. The live RMS
     // animation lives at the input cursor (see `input_box`); here we keep a
     // plain textual label so there's always a clear indicator even when the
     // cursor is scrolled out of view.
     match app.voice_state {
         jfc_voice::VoiceState::Recording => {
-            spans.push(Span::styled(" · ", muted));
             spans.push(Span::styled(
-                "●REC",
+                "recording",
                 Style::default()
                     .fg(app.theme.error)
                     .add_modifier(ratatui::style::Modifier::BOLD),
@@ -317,13 +233,11 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
                 .map(|t| t.elapsed().as_millis())
                 .unwrap_or(0);
             let pulse = crate::render::voice_cursor::processing_pulse(elapsed);
-            spans.push(Span::styled(" · ", muted));
-            spans.push(Span::styled("…STT", Style::default().fg(pulse)));
+            spans.push(Span::styled("transcribing", Style::default().fg(pulse)));
         }
         jfc_voice::VoiceState::Idle => {
             // Also show interim transcript if available
             if let Some(ref interim) = app.voice_interim {
-                spans.push(Span::styled(" · ", muted));
                 let preview = if interim.len() > 40 {
                     format!("{}…", &interim[..37])
                 } else {
@@ -337,20 +251,24 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         }
     }
 
-    for s in segs {
-        spans.push(Span::styled(" · ", muted));
+    let had_voice = spans.len() > 1;
+    for (idx, s) in segs.into_iter().enumerate() {
+        if idx > 0 || had_voice {
+            spans.push(Span::styled(" · ", muted));
+        }
+        if !had_voice && idx == 0 {
+            // The leading two spaces already provide the input/footer inset.
+        }
         spans.extend(s.spans);
     }
-    spans.push(Span::styled(" ".repeat(pad), Style::default()));
-    spans.push(Span::styled(right, muted));
 
-    // Info line sits below the gauge-divider.
     f.render_widget(
-        Paragraph::new(Line::from(spans)).style(Style::default().bg(t.surface)),
-        rows[1],
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(t.bg)),
+        area,
     );
 }
 
+#[cfg(test)]
 pub(super) fn context_gauge_label(used: usize, max: usize, pct: u32) -> String {
     format!(" ctx {}k / {}k · {}% ", used / 1000, max / 1000, pct)
 }
@@ -411,6 +329,7 @@ fn utilization_percent(value: f64) -> Option<u32> {
 /// max". Title Case (`Max`) plus the effort badge keeping its `effort ` prefix
 /// (`effort max`) keeps the subscription tier distinct from the effort knob,
 /// so the plan no longer needs a `◆` brand glyph.
+#[cfg(test)]
 pub(super) fn plan_badge(subscription: Option<&str>, seat: Option<&str>) -> Option<String> {
     let plan = subscription.map(pretty_plan_name);
     match (plan, seat) {
@@ -426,6 +345,7 @@ pub(super) fn plan_badge(subscription: Option<&str>, seat: Option<&str>) -> Opti
 
 /// Title-case the known Anthropic plan ids; pass anything unrecognized through
 /// unchanged so a new plan name still renders (just without our casing).
+#[cfg(test)]
 fn pretty_plan_name(subscription: &str) -> String {
     match subscription {
         "max" => "Max".to_owned(),
@@ -437,35 +357,9 @@ fn pretty_plan_name(subscription: &str) -> String {
     }
 }
 
-/// Friendly short label for a provider id. Anthropic providers are common
-/// enough that we collapse `anthropic-oauth` to just `OAuth`; bedrock and
-/// openwebui get their own short labels.
-pub(super) fn pretty_provider_label(provider: &str) -> String {
-    match provider {
-        "anthropic" => "API".to_owned(),
-        "anthropic-oauth" => "OAuth".to_owned(),
-        "bedrock" => "Bedrock".to_owned(),
-        "vertex" => "Vertex".to_owned(),
-        "openwebui" => "OpenWebUI".to_owned(),
-        "codex" => "Codex".to_owned(),
-        other => other.to_owned(),
-    }
-}
-
-/// Accent color per provider so the live-stream pulse reads as
-/// "Bedrock-orange" / "OpenWebUI-teal" at a glance.
-/// Provider brand accent for the status dot + badge. Delegates to the
-/// canonical, fully-populated map in `model_picker` rather than keeping a
-/// second divergent subset (this used to only know 4 providers and fell back
-/// to gray for openai/gemini/litellm/…). Brand colors are identity, not
-/// theme-tinted, so they intentionally live in code, not the Theme struct.
-pub(super) fn provider_accent(provider: &str) -> Color {
-    super::model_picker::provider_color(provider)
-}
-
 /// Priority at/above which a status segment is part of the always-visible
-/// floor: model identity, running cost, and genuine alerts (MCP down,
-/// degraded/unreachable status, pending approvals).
+/// floor: genuine alerts (MCP down, degraded/unreachable status, pending
+/// approvals, high context pressure).
 pub(super) const STATUS_FLOOR_PRIO: u8 = 90;
 
 /// Decide which status segments survive in `avail` columns. Returns a keep
@@ -473,7 +367,7 @@ pub(super) const STATUS_FLOOR_PRIO: u8 = 90;
 ///
 /// Policy: while the kept segments don't fit, drop the lowest-priority
 /// segment *below the floor* first — so narrow terminals shed context
-/// (cwd, branch, plan, effort, mode flags) before they ever touch the floor
+/// (branch, effort, routine hints) before they ever touch the floor
 /// (`prio >= STATUS_FLOOR_PRIO`). Only once nothing below the floor remains
 /// do we drop the lowest floor segment, as a last resort on an extremely
 /// narrow width (better to truncate than render past the edge).

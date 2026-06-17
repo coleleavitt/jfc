@@ -49,16 +49,17 @@ pub(super) fn colorize_git_diff_line(
             Style::default().fg(t.warning),
         )]);
     }
+    let ui_tokens = t.claude_ui_tokens();
     if let Some(rest) = line.strip_prefix('+') {
         return Some(vec![
-            Span::styled("+".to_owned(), Style::default().fg(t.success)),
-            Span::styled(rest.to_owned(), Style::default().fg(t.success)),
+            Span::styled("+".to_owned(), Style::default().fg(ui_tokens.diff_added)),
+            Span::styled(rest.to_owned(), Style::default().fg(ui_tokens.diff_added)),
         ]);
     }
     if let Some(rest) = line.strip_prefix('-') {
         return Some(vec![
-            Span::styled("-".to_owned(), Style::default().fg(t.error)),
-            Span::styled(rest.to_owned(), Style::default().fg(t.error)),
+            Span::styled("-".to_owned(), Style::default().fg(ui_tokens.diff_removed)),
+            Span::styled(rest.to_owned(), Style::default().fg(ui_tokens.diff_removed)),
         ]);
     }
     let _ = fallback;

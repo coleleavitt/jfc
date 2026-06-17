@@ -68,6 +68,7 @@ pub(super) async fn cmd_help(
          - Ctrl+O — Expand reasoning / open diagnostic panel\n\
          - Alt+. / Alt+, — Raise / lower reasoning effort\n\
          - Ctrl+Y — Yank last assistant message to clipboard\n\
+         - Alt+Y — Yank current input to clipboard\n\
          - Ctrl+S — Toggle info sidebar\n\
          - `@` — Autocomplete file paths from cwd\n\
          - Up — Recall most recent queued prompt / cycle history (when input empty)\n\

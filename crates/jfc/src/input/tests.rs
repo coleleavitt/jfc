@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::navigation::{scan_path_refs, user_prompts};
 use super::*;
@@ -96,6 +96,7 @@ fn make_tool(id: &str, kind: ToolKind) -> ToolCall {
             timeout: None,
             workdir: None,
             run_in_background: None,
+            suppress_output: None,
         },
         ToolKind::Read => ToolInput::Read {
             file_path: "x".into(),
@@ -129,6 +130,7 @@ fn make_bash_tool(id: &str, command: &str) -> ToolCall {
             timeout: None,
             workdir: None,
             run_in_background: None,
+            suppress_output: None,
         },
         output: ToolOutput::Empty,
         display: jfc_core::ToolDisplayState::DEFAULT,
@@ -322,6 +324,7 @@ fn collect_recent_paths_dedups_normal() {
             timeout: None,
             workdir: None,
             run_in_background: None,
+            suppress_output: None,
         },
         output: ToolOutput::Command {
             stdout: "src/lib.rs:1 and src/lib.rs:1".into(),
@@ -1077,6 +1080,7 @@ async fn jump_armed_e_jumps_to_error_normal() {
                     timeout: None,
                     workdir: None,
                     run_in_background: None,
+                    suppress_output: None,
                 },
                 output: ToolOutput::Empty,
                 display: jfc_core::ToolDisplayState::DEFAULT,
@@ -1188,7 +1192,7 @@ async fn up_recalls_queued_prompt_robust() {
     // Push the placeholder user message that recall expects to remove.
     app.engine
         .messages
-        .push(ChatMessage::user("⏳ queued".into()));
+        .push(ChatMessage::user("[queued] queued".into()));
     let (tx, _rx) = channel();
     handle_key(&mut app, key(KeyCode::Up), &tx).await.unwrap();
     let txt = app.textarea.lines().join("\n");
@@ -1216,7 +1220,7 @@ async fn up_recall_replaces_textarea_no_double_insert_regression() {
     });
     app.engine
         .messages
-        .push(ChatMessage::user("⏳ alpha".into()));
+        .push(ChatMessage::user("[queued] alpha".into()));
     // Residual content already in the textarea (a prior un-submitted recall).
     app.textarea = TextArea::from(vec!["alpha".to_string()]);
     let (tx, _rx) = channel();
@@ -1278,6 +1282,54 @@ async fn ctrl_y_with_no_assistant_message_robust() {
     .await
     .unwrap();
     // Best-effort: should not panic. No assistant message → no clipboard call.
+}
+
+#[tokio::test]
+async fn alt_y_copies_current_input_without_toast_normal() {
+    let mut app = test_app_with_input("copy this draft", 80);
+    let (tx, _rx) = channel();
+    handle_key(
+        &mut app,
+        key_mod(KeyCode::Char('y'), KeyModifiers::ALT),
+        &tx,
+    )
+    .await
+    .unwrap();
+    assert!(app.engine.toasts.is_empty());
+}
+
+#[tokio::test]
+async fn alt_y_empty_input_is_silent_robust() {
+    let mut app = test_app();
+    let (tx, _rx) = channel();
+    handle_key(
+        &mut app,
+        key_mod(KeyCode::Char('y'), KeyModifiers::ALT),
+        &tx,
+    )
+    .await
+    .unwrap();
+    assert!(app.engine.toasts.is_empty());
+}
+
+#[tokio::test]
+async fn bracketed_text_paste_is_editable_without_toast_normal() {
+    let mut app = test_app();
+    let (tx, _rx) = channel();
+    crate::runtime::event_loop::handlers::input::handle_term_event(
+        &mut app,
+        Event::Paste("one\ntwo\nthree".to_string()),
+        &tx,
+    )
+    .await
+    .unwrap();
+
+    let text = app.textarea.lines().join("\n");
+    assert!(
+        text.ends_with("one\ntwo\nthree"),
+        "pasted text should remain editable, got {text:?}"
+    );
+    assert!(app.engine.toasts.is_empty());
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -2115,6 +2167,7 @@ async fn alt_period_raises_reasoning_effort_normal() {
         app.engine.effort_state.current,
         Some(jfc_engine::effort::ReasoningEffort::High)
     );
+    assert!(app.engine.toasts.is_empty());
 }
 
 #[tokio::test]
@@ -2135,6 +2188,7 @@ async fn alt_comma_lowers_reasoning_effort_normal() {
         app.engine.effort_state.current,
         Some(jfc_engine::effort::ReasoningEffort::Low)
     );
+    assert!(app.engine.toasts.is_empty());
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -2503,6 +2557,220 @@ async fn slash_task_rm_robust_no_args() {
 }
 
 #[tokio::test]
+async fn slash_task_clear_clears_terminal_tasks_normal() {
+    let mut app = test_app();
+    let pending = app
+        .engine
+        .task_store
+        .create(
+            "keep me".to_string(),
+            String::new(),
+            None,
+            Vec::<jfc_session::TaskId>::new(),
+        )
+        .expect("create pending task");
+    let done = app
+        .engine
+        .task_store
+        .create(
+            "clear me".to_string(),
+            String::new(),
+            None,
+            Vec::<jfc_session::TaskId>::new(),
+        )
+        .expect("create completed task");
+    app.engine
+        .task_store
+        .update(
+            done.id.as_str(),
+            jfc_session::TaskPatch {
+                status: Some(jfc_session::TaskStatus::Completed),
+                ..Default::default()
+            },
+        )
+        .expect("complete task");
+
+    run_slash_command(&mut app, "/task-clear").await;
+
+    let visible = app
+        .engine
+        .task_store
+        .list(jfc_session::DeletedFilter::Exclude);
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].id, pending.id);
+    assert!(app.engine.messages.iter().any(|m| m.parts.iter().any(
+        |part| matches!(part, MessagePart::Text(text) if text.contains("Cleared 1 terminal task"))
+    )));
+}
+
+#[tokio::test]
+async fn slash_task_clear_terminal_with_open_tasks_reports_open_hint_robust() {
+    let mut app = test_app();
+    app.engine
+        .task_store
+        .create(
+            "still open".to_string(),
+            String::new(),
+            None,
+            Vec::<jfc_session::TaskId>::new(),
+        )
+        .expect("create pending task");
+
+    run_slash_command(&mut app, "/task-clear").await;
+
+    assert_eq!(
+        app.engine
+            .task_store
+            .list(jfc_session::DeletedFilter::Exclude)
+            .len(),
+        1
+    );
+    assert!(
+        app.engine
+            .messages
+            .iter()
+            .any(|m| m.parts.iter().any(|part| matches!(
+                part,
+                MessagePart::Text(text)
+                    if text.contains("open task(s) remain")
+                        && text.contains("/task-clear open")
+            )))
+    );
+}
+
+#[tokio::test]
+async fn slash_task_clear_open_clears_visible_open_tasks_normal() {
+    let mut app = test_app();
+    let open = app
+        .engine
+        .task_store
+        .create(
+            "clear open".to_string(),
+            String::new(),
+            None,
+            Vec::<jfc_session::TaskId>::new(),
+        )
+        .expect("create open task");
+    let done = app
+        .engine
+        .task_store
+        .create(
+            "keep done".to_string(),
+            String::new(),
+            None,
+            Vec::<jfc_session::TaskId>::new(),
+        )
+        .expect("create completed task");
+    app.engine
+        .task_store
+        .update(
+            done.id.as_str(),
+            jfc_session::TaskPatch {
+                status: Some(jfc_session::TaskStatus::Completed),
+                ..Default::default()
+            },
+        )
+        .expect("complete task");
+
+    run_slash_command(&mut app, "/task-clear open").await;
+
+    let visible = app
+        .engine
+        .task_store
+        .list(jfc_session::DeletedFilter::Exclude);
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].id, done.id);
+    assert!(
+        app.engine
+            .task_store
+            .get(open.id.as_str())
+            .is_some_and(|task| task.status == jfc_session::TaskStatus::Deleted)
+    );
+}
+
+#[tokio::test]
+async fn slash_task_done_all_completes_open_tasks_normal() {
+    let mut app = test_app();
+    app.engine
+        .task_store
+        .create(
+            "first".to_string(),
+            String::new(),
+            None,
+            Vec::<jfc_session::TaskId>::new(),
+        )
+        .expect("create first task");
+    let second = app
+        .engine
+        .task_store
+        .create(
+            "second".to_string(),
+            String::new(),
+            None,
+            Vec::<jfc_session::TaskId>::new(),
+        )
+        .expect("create second task");
+    app.engine
+        .task_store
+        .update(
+            second.id.as_str(),
+            jfc_session::TaskPatch {
+                status: Some(jfc_session::TaskStatus::Queued),
+                ..Default::default()
+            },
+        )
+        .expect("queue second task");
+
+    run_slash_command(&mut app, "/task-done all").await;
+
+    let visible = app
+        .engine
+        .task_store
+        .list(jfc_session::DeletedFilter::Exclude);
+    assert_eq!(visible.len(), 2);
+    assert!(
+        visible
+            .iter()
+            .all(|task| task.status == jfc_session::TaskStatus::Completed)
+    );
+}
+
+#[tokio::test]
+async fn slash_tasks_clear_all_clears_visible_tasks_normal() {
+    let mut app = test_app();
+    app.engine
+        .task_store
+        .create(
+            "first".to_string(),
+            String::new(),
+            None,
+            Vec::<jfc_session::TaskId>::new(),
+        )
+        .expect("create first task");
+    app.engine
+        .task_store
+        .create(
+            "second".to_string(),
+            String::new(),
+            None,
+            Vec::<jfc_session::TaskId>::new(),
+        )
+        .expect("create second task");
+
+    run_slash_command(&mut app, "/tasks clear all").await;
+
+    assert!(
+        app.engine
+            .task_store
+            .list(jfc_session::DeletedFilter::Exclude)
+            .is_empty()
+    );
+    assert!(app.engine.messages.iter().any(|m| m.parts.iter().any(
+        |part| matches!(part, MessagePart::Text(text) if text.contains("Cleared 2 all task"))
+    )));
+}
+
+#[tokio::test]
 async fn slash_check_emits_assistant_robust() {
     let mut app = test_app();
     run_slash_command(&mut app, "/check").await;
@@ -2617,6 +2885,7 @@ async fn slash_theme_invalidates_render_cache_regression() {
     // App already starts on it — `Theme::by_name("light")` is the
     // visually distinct case.
     run_slash_command(&mut app, "/theme light").await;
+    assert!(app.engine.toasts.is_empty());
 
     // Post-switch: the cache must be empty so the next render runs the
     // syntect pipeline against the new theme.

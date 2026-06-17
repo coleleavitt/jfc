@@ -53,6 +53,10 @@ Use the MemoryCreate tool for new memories and MemoryDelete for stale ones.{cron
         return;
     };
 
+    if crate::runtime::ops::refuse_budget_cap_if_reached(state) {
+        return;
+    }
+
     let assistant_idx = state.messages.len() + 1;
     state.messages.push(ChatMessage::user(prompt));
     state.tool_ctx.total_user_turns += 1;
@@ -245,6 +249,10 @@ Then immediately execute the prompt now (do not wait for the first cron fire)."
         return;
     };
 
+    if crate::runtime::ops::refuse_budget_cap_if_reached(state) {
+        return;
+    }
+
     let assistant_idx = state.messages.len() + 1;
     state.messages.push(ChatMessage::user(prompt));
     state.tool_ctx.total_user_turns += 1;
@@ -381,6 +389,10 @@ and display the results in a readable table with columns: id, schedule, command,
         state.push_effect(crate::app::EngineEffect::ScrollToBottom);
         return;
     };
+
+    if crate::runtime::ops::refuse_budget_cap_if_reached(state) {
+        return;
+    }
 
     let assistant_idx = state.messages.len() + 1;
     state.messages.push(ChatMessage::user(prompt));

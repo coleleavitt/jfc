@@ -3,19 +3,21 @@ use super::*;
 use crate::markdown;
 pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
     let t = app.theme;
-    // Boxed input with rounded border. The prompt char sits INLINE
-    // at the start of the typing surface — like a shell prompt.
+    let ui_tokens = t.claude_ui_tokens();
+    // Flat input strip. The prompt char sits inline at the start of the typing
+    // surface, like a shell prompt; the top/bottom rules provide the only
+    // chrome.
     // Up to 4 cells reserved for the prompt + an animation tail
     // (currently only used by `:comet` mode).
     //
-    // Prompt glyph: a static `❯` chevron by default — honest, zero
+    // Prompt glyph: a static `›` chevron by default — honest, zero
     // animation, reads instantly as "type here". Power users can still
     // opt into a different glyph or an animated preset via JFC_PROMPT_CHAR:
     //   :comet / :moon / :dice / :notes / :hourglass / :atom — presets
     //   <any single char> — that char as a static glyph
     // Edit mode overrides any choice with `✎` (pencil).
     let in_edit_mode = app.editing_message_idx.is_some();
-    let raw_setting = std::env::var("JFC_PROMPT_CHAR").unwrap_or_else(|_| "❯".to_string());
+    let raw_setting = std::env::var("JFC_PROMPT_CHAR").unwrap_or_else(|_| "›".to_string());
     let mode = parse_prompt_mode(&raw_setting);
     let now_ms = app.launched_at.elapsed().as_millis();
     let streaming_for_anim = app.engine.is_streaming && !crate::spinner::reduced_motion();
@@ -30,9 +32,9 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
     let (prompt_color, border_color) = if in_edit_mode {
         (t.warning, t.warning)
     } else if app.engine.is_streaming {
-        (t.accent, t.text_muted)
+        (t.accent, ui_tokens.prompt_border_shimmer)
     } else {
-        (t.accent, t.border)
+        (t.accent, ui_tokens.prompt_border)
     };
 
     // Edit-mode / vim-mode badge in the title (top border) so the user
@@ -59,15 +61,13 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
         Line::from("")
     };
 
-    // Flat dock: a single TOP divider instead of a full rounded box.
-    // The prompt glyph + the typing surface carry the "this is the
-    // input" affordance; a box around it just stacked another border.
+    // Claude-style dock: horizontal rules only, no left/right box.
     let block = Block::default()
-        .borders(Borders::TOP)
+        .borders(Borders::TOP | Borders::BOTTOM)
         .border_style(Style::default().fg(border_color))
         .padding(Padding::horizontal(1))
         .title(title_line)
-        .style(Style::default().bg(t.surface));
+        .style(Style::default().bg(t.bg));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -94,13 +94,13 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
             );
             let style = if invert {
                 Style::default()
-                    .fg(t.surface)
+                    .fg(t.bg)
                     .bg(prompt_color)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
                     .fg(prompt_color)
-                    .bg(t.surface)
+                    .bg(t.bg)
                     .add_modifier(Modifier::BOLD)
             };
             cell.set_style(style);
@@ -110,7 +110,7 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
         if space_x < buf.area().right() {
             let cell = &mut buf[(space_x, inner.y)];
             cell.set_symbol(" ");
-            cell.set_style(Style::default().bg(t.surface));
+            cell.set_style(Style::default().bg(t.bg));
         }
     }
 
@@ -122,6 +122,7 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
         width: textarea_w,
         height: inner.height,
     };
+    *app.input_rect.borrow_mut() = Some(inner);
 
     let content_width = inner.width.max(1) as usize;
     app.input_wrap_width = content_width;
@@ -149,7 +150,7 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(
         Paragraph::new(visible)
             .wrap(ratatui::widgets::Wrap { trim: false })
-            .style(Style::default().bg(t.surface)),
+            .style(Style::default().bg(t.bg)),
         inner,
     );
 
@@ -246,7 +247,11 @@ pub(super) fn input_soft_wrapped_lines(
     let mut visual_cursor_col = 0usize;
 
     if logical_lines.iter().all(|line| line.is_empty()) {
-        out.push("send a message…".to_string());
+        if app.engine.queued_prompts.is_empty() {
+            out.push(String::new());
+        } else {
+            out.push("Press up to edit queued messages".to_owned());
+        }
         return (out, 0, 0);
     }
 

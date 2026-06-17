@@ -13,7 +13,8 @@
 //! - [`ToolCallOutcome`] — the flattened result of a `tools/call`, built
 //!   from [`rmcp::model::CallToolResult`].
 //! - [`advertise_tool_name`] / [`split_advertised`] — the
-//!   `mcp__<server>__<tool>` namespacing scheme, unchanged.
+//!   `mcp__<server>__<tool>` namespacing scheme, normalized to provider-safe
+//!   ASCII while the registry keeps the original MCP names for dispatch.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -137,11 +138,88 @@ impl From<rmcp::model::CallToolResult> for ToolCallOutcome {
     }
 }
 
-/// Construct the canonical `mcp__<server>__<tool>` advertised name. This
-/// is the format Anthropic's MCP spec uses to namespace tool names so a
-/// `read_file` tool from `filesystem` and one from `git` don't collide.
+const MAX_ADVERTISED_TOOL_NAME_LEN: usize = 64;
+
+fn stable_hash_hex(input: &str) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in input.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{:08x}", hash as u32)
+}
+
+fn truncate_ascii(s: &str, max: usize) -> String {
+    s.as_bytes()
+        .iter()
+        .take(max)
+        .map(|b| char::from(*b))
+        .collect()
+}
+
+/// Sanitize one advertised-name component to the provider-compatible tool-name
+/// subset (`[A-Za-z0-9_-]`) while avoiding the `__` namespace separator inside
+/// components. A hash suffix is added when the component changed so different
+/// original MCP names do not collapse to the same advertised name.
+pub fn sanitize_advertised_component(component: &str) -> String {
+    let mut out = String::with_capacity(component.len().min(32));
+    let mut changed = false;
+    let mut last_underscore = false;
+    for ch in component.chars() {
+        let mapped = if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            ch
+        } else {
+            changed = true;
+            '_'
+        };
+        if mapped == '_' {
+            if last_underscore {
+                changed = true;
+                continue;
+            }
+            last_underscore = true;
+        } else {
+            last_underscore = false;
+        }
+        out.push(mapped);
+    }
+    let trimmed = out.trim_matches('_').to_owned();
+    if trimmed.len() != out.len() {
+        changed = true;
+    }
+    out = if trimmed.is_empty() {
+        changed = true;
+        "x".to_owned()
+    } else {
+        trimmed
+    };
+    if changed {
+        out.push('_');
+        out.push_str(&stable_hash_hex(component));
+    }
+    out
+}
+
+/// Construct the canonical provider-facing `mcp__<server>__<tool>` advertised
+/// name. The registry maps this sanitized name back to the original MCP
+/// `(server, tool)` pair before dispatch, so MCP servers can expose names with
+/// dots, slashes, spaces, or other characters providers reject.
 pub fn advertise_tool_name(server: &str, tool: &str) -> String {
-    format!("mcp__{server}__{tool}")
+    let server = sanitize_advertised_component(server);
+    let tool = sanitize_advertised_component(tool);
+    let full = format!("mcp__{server}__{tool}");
+    if full.len() <= MAX_ADVERTISED_TOOL_NAME_LEN {
+        return full;
+    }
+
+    let suffix = format!("_h{}", stable_hash_hex(&format!("{server}\0{tool}")));
+    let fixed = "mcp__".len() + "__".len() + suffix.len();
+    let budget = MAX_ADVERTISED_TOOL_NAME_LEN.saturating_sub(fixed).max(2);
+    let server_budget = (budget / 3).max(1).min(server.len());
+    let tool_budget = budget.saturating_sub(server_budget).max(1);
+    let server = truncate_ascii(&server, server_budget);
+    let tool = truncate_ascii(&tool, tool_budget.min(tool.len()));
+    format!("mcp__{server}__{tool}{suffix}")
 }
 
 /// Inverse of [`advertise_tool_name`]. Returns `(server, tool)` when
@@ -278,6 +356,26 @@ mod tests {
             advertise_tool_name("filesystem", "read_file"),
             "mcp__filesystem__read_file"
         );
+    }
+
+    #[test]
+    fn advertise_tool_name_sanitizes_invalid_provider_names_regression() {
+        let advertised = advertise_tool_name("git.server", "branch/list:all");
+        assert!(advertised.starts_with("mcp__git_server_"));
+        assert!(
+            advertised
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+            "{advertised}"
+        );
+        assert!(advertised.len() <= 64, "{advertised}");
+    }
+
+    #[test]
+    fn advertise_tool_name_caps_long_names_robust() {
+        let advertised = advertise_tool_name(&"server".repeat(20), &"tool".repeat(30));
+        assert!(advertised.len() <= 64, "{advertised}");
+        assert!(split_advertised(&advertised).is_some());
     }
 
     #[test]

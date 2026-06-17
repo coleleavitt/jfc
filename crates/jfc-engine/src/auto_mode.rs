@@ -419,6 +419,7 @@ mod tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             output: ToolOutput::Empty,
             display: crate::types::ToolDisplayState::Collapsed,

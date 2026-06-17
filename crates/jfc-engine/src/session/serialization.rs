@@ -175,6 +175,8 @@ pub enum SerializedToolInput {
         workdir: Option<String>,
         #[serde(default)]
         run_in_background: Option<bool>,
+        #[serde(default, rename = "suppressOutput", alias = "suppress_output")]
+        suppress_output: Option<bool>,
     },
     BashOutput {
         task_id: String,

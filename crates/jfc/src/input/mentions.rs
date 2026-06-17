@@ -14,7 +14,7 @@ pub(super) fn apply_mention_pick(app: &mut App, pick: &str) {
     let (new_buf, _new_cursor) = crate::mentions::apply_acceptance(&buffer, anchor, q_len, pick);
     app.textarea = TextArea::from(new_buf.lines().map(str::to_string).collect::<Vec<_>>());
     app.textarea.set_cursor_line_style(Style::default());
-    app.textarea.set_placeholder_text("send a message…");
+    app.textarea.set_placeholder_text("");
     app.textarea.move_cursor(CursorMove::End);
 }
 

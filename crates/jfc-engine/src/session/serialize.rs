@@ -119,11 +119,13 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             timeout,
             workdir,
             run_in_background,
+            suppress_output,
         } => SerializedToolInput::Bash {
             command: command.clone(),
             timeout: *timeout,
             workdir: workdir.clone(),
             run_in_background: *run_in_background,
+            suppress_output: *suppress_output,
         },
         ToolInput::BashOutput {
             task_id,

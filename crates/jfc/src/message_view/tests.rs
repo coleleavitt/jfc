@@ -16,8 +16,8 @@ use super::syntax::{
 use super::tool_blocks::{
     bash_continuation_lines, border_color_for_status, build_collapsed_header,
     build_header_inner_spans, build_title_spans, format_elapsed_badge, produce_text_block_lines,
-    render_tool_block, tool_body_lines_themed, tool_kind_color, tool_status_icon_animated,
-    tool_title_width_cap,
+    render_tool_block, tool_body_line_count, tool_body_lines_themed, tool_kind_color,
+    tool_progress_verb, tool_status_icon_animated, tool_title_width_cap,
 };
 use super::tool_height::{tool_block_height, tool_block_height_pub, tool_content_height_with_tool};
 use super::truncation::{
@@ -804,6 +804,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Command {
                 stdout: String::new(),
@@ -827,6 +828,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Command {
                 stdout: "ok".into(),
@@ -893,6 +895,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1066,6 +1069,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             output.clone(),
             ToolKind::Bash,
@@ -1109,14 +1113,13 @@ mod helper_tests {
     }
 
     #[test]
-    fn tool_content_height_command_includes_exit_row_normal() {
+    fn tool_content_height_command_omits_success_exit_row_normal() {
         let out = ToolOutput::Command {
             stdout: "ok".to_string(),
             stderr: String::new(),
             exit_code: Some(0),
         };
-        // 1 (exit row) + 1 (stdout "ok") = 2.
-        assert_eq!(tool_content_height_with(&out, 80, false), 2);
+        assert_eq!(tool_content_height_with(&out, 80, false), 1);
     }
 
     #[test]
@@ -1127,8 +1130,7 @@ mod helper_tests {
             stderr: "err".to_string(),
             exit_code: Some(1),
         };
-        // exit (1) + stdout (1) + divider (1) + stderr (1) = 4.
-        assert_eq!(tool_content_height_with(&out, 80, false), 4);
+        assert_eq!(tool_content_height_with(&out, 80, false), 3);
     }
 
     #[test]
@@ -1144,7 +1146,7 @@ mod helper_tests {
         );
         let rendered = lines_to_plain(&lines);
 
-        assert_eq!(lines.len(), 81, "exit row + 80 output rows:\n{rendered}");
+        assert_eq!(lines.len(), 80, "80 output rows:\n{rendered}");
         assert!(
             rendered.contains("line-0"),
             "expected head of output:\n{rendered}"
@@ -1197,6 +1199,76 @@ mod helper_tests {
     }
 
     #[test]
+    fn structured_diff_changed_rows_use_diff_colors_not_language_syntax_robust() {
+        let diff = DiffView {
+            file_path: "theories/CopyPropagation.v".into(),
+            additions: 1,
+            deletions: 1,
+            hunks: vec![DiffHunk {
+                old_start: 134,
+                new_start: 134,
+                header: "@@ -134,1 +134,1 @@".into(),
+                lines: vec![
+                    DiffLine {
+                        kind: DiffLineKind::Removed,
+                        old_line: Some(134),
+                        new_line: None,
+                        content: "(* Two stores that differ ONLY at [t] stay equal off [t]. *)"
+                            .into(),
+                    },
+                    DiffLine {
+                        kind: DiffLineKind::Added,
+                        old_line: None,
+                        new_line: Some(134),
+                        content: "(* [t] is never READ by program [p]. *)".into(),
+                    },
+                ],
+            }],
+        };
+        let theme = Theme::dark();
+        let ui_tokens = theme.claude_ui_tokens();
+        let lines = produce_diff_view_lines(&diff, theme, true, 120);
+        let rendered = lines_to_plain(&lines);
+
+        let changed_rows: Vec<_> = lines
+            .iter()
+            .filter_map(|line| {
+                let plain: String = line
+                    .spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect();
+                if plain.contains("Two stores") {
+                    Some((DiffLineKind::Removed, line))
+                } else if plain.contains("never READ") {
+                    Some((DiffLineKind::Added, line))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(changed_rows.len(), 2, "missing changed rows:\n{rendered}");
+
+        for (kind, line) in changed_rows {
+            let expected = match kind {
+                DiffLineKind::Removed => ui_tokens.diff_removed,
+                DiffLineKind::Added => ui_tokens.diff_added,
+                DiffLineKind::Context => unreachable!(),
+            };
+            for span in line.spans.iter().skip(2) {
+                if span.content.trim().is_empty() {
+                    continue;
+                }
+                assert_eq!(
+                    span.style.fg,
+                    Some(expected),
+                    "changed diff content should keep diff color, not language syntax color:\n{rendered}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn tool_content_height_filelist_caps_normal() {
         let files: Vec<String> = (0..5).map(|n| format!("f{n}")).collect();
         let out = ToolOutput::FileList(files);
@@ -1233,6 +1305,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Text("foo\nbar\nbaz".into()),
             ToolKind::Bash,
@@ -1252,6 +1325,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1268,6 +1342,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1286,6 +1361,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1301,6 +1377,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1322,6 +1399,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1349,6 +1427,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1463,27 +1542,20 @@ mod helper_tests {
     // --- tool_kind_color ---------------------------------------------
 
     #[test]
-    fn tool_kind_color_distinct_per_family_normal() {
+    fn tool_kind_color_uses_quiet_title_color_normal() {
         let t = Theme::dark();
-        // Read = blue, Write = amber, Edit = mint — all distinct.
-        let read_c = tool_kind_color(&ToolKind::Read, &t);
-        let write_c = tool_kind_color(&ToolKind::Write, &t);
-        let edit_c = tool_kind_color(&ToolKind::Edit, &t);
-        assert_ne!(read_c, write_c);
-        assert_ne!(write_c, edit_c);
-        assert_ne!(read_c, edit_c);
+        assert_eq!(tool_kind_color(&ToolKind::Read, &t), t.text_primary);
+        assert_eq!(tool_kind_color(&ToolKind::Write, &t), t.text_primary);
+        assert_eq!(tool_kind_color(&ToolKind::Edit, &t), t.text_primary);
     }
 
     #[test]
-    fn tool_kind_color_grep_glob_search_share_lavender_normal() {
-        // Grep family shares the search/lavender color.
+    fn tool_kind_color_search_family_is_quiet_normal() {
         let t = Theme::dark();
+        assert_eq!(tool_kind_color(&ToolKind::Grep, &t), t.text_primary);
+        assert_eq!(tool_kind_color(&ToolKind::Glob, &t), t.text_primary);
         assert_eq!(
-            tool_kind_color(&ToolKind::Grep, &t),
-            tool_kind_color(&ToolKind::Glob, &t)
-        );
-        assert_eq!(
-            tool_kind_color(&ToolKind::Grep, &t),
+            tool_kind_color(&ToolKind::Glob, &t),
             tool_kind_color(&ToolKind::Search, &t)
         );
     }
@@ -1530,7 +1602,7 @@ mod helper_tests {
 
     #[test]
     fn tool_status_icon_animated_running_rotates_glyph_normal() {
-        // Running + frame=0 → first frame; frame=4 → second; frame=8 → third.
+        // Running uses the same frame index as the main activity row.
         let t = Theme::dark();
         let tool = dummy_tool(
             ToolInput::Bash {
@@ -1538,6 +1610,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1545,13 +1618,13 @@ mod helper_tests {
         let mut tool = tool;
         tool.status = ToolStatus::Running;
         let (g0, _) = tool_status_icon_animated(&tool, &t, 0);
-        let (g4, _) = tool_status_icon_animated(&tool, &t, 4);
-        let (g8, _) = tool_status_icon_animated(&tool, &t, 8);
-        let (g12, _) = tool_status_icon_animated(&tool, &t, 12);
-        assert_eq!(g0, "✶");
-        assert_eq!(g4, "✷");
-        assert_eq!(g8, "✸");
-        assert_eq!(g12, "✹");
+        let (g1, _) = tool_status_icon_animated(&tool, &t, 1);
+        let (g2, _) = tool_status_icon_animated(&tool, &t, 2);
+        let (g3, _) = tool_status_icon_animated(&tool, &t, 3);
+        assert_eq!(g0, "·");
+        assert_eq!(g1, "✢");
+        assert_eq!(g2, "✦");
+        assert_eq!(g3, "✶");
     }
 
     #[test]
@@ -1566,6 +1639,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             output: ToolOutput::Empty,
             display: jfc_core::ToolDisplayState::DEFAULT,
@@ -1573,11 +1647,13 @@ mod helper_tests {
             started_at: None,
             thought_signature: None,
         };
-        let (g0, _) = tool_status_icon_animated(&tool, &t, 0);
-        let (g6, _) = tool_status_icon_animated(&tool, &t, 6);
+        let (g0, s0) = tool_status_icon_animated(&tool, &t, 0);
+        let (g6, s6) = tool_status_icon_animated(&tool, &t, 6);
         // PENDING_FRAMES is &["○", "◌"] at frame/6 cadence.
         assert_eq!(g0, "○");
         assert_eq!(g6, "◌");
+        assert_eq!(s0.fg, Some(t.text_muted));
+        assert_eq!(s6.fg, Some(t.text_muted));
     }
 
     #[test]
@@ -1593,6 +1669,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             output: ToolOutput::Empty,
             display: jfc_core::ToolDisplayState::DEFAULT,
@@ -1618,6 +1695,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             output: ToolOutput::Empty,
             display: jfc_core::ToolDisplayState::DEFAULT,
@@ -1640,6 +1718,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1656,6 +1735,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1672,6 +1752,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1688,6 +1769,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1704,6 +1786,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1721,6 +1804,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1769,6 +1853,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1812,6 +1897,11 @@ mod helper_tests {
         );
         let spans = build_header_inner_spans(&tool, &t, 80);
         assert_eq!(spans[0].content, "Write");
+        let combined: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            !combined.contains("]8;;") && !combined.contains("file://"),
+            "tool title must not leak OSC8 payloads: {combined:?}"
+        );
     }
 
     #[test]
@@ -1832,6 +1922,218 @@ mod helper_tests {
     }
 
     #[test]
+    fn build_header_inner_spans_multi_edit_format_normal() {
+        let t = Theme::dark();
+        let tool = dummy_tool(
+            ToolInput::MultiEdit {
+                file_path: "src/lib.rs".into(),
+                edits: serde_json::json!([]),
+            },
+            ToolOutput::Empty,
+            ToolKind::MultiEdit,
+        );
+        let spans = build_header_inner_spans(&tool, &t, 80);
+        assert_eq!(spans[0].content, "Update");
+        let combined: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(combined.contains("src/lib.rs"));
+        assert!(!combined.contains("MultiEdit"));
+    }
+
+    #[test]
+    fn build_header_inner_spans_bash_output_format_normal() {
+        let t = Theme::dark();
+        let tool = dummy_tool(
+            ToolInput::BashOutput {
+                task_id: "bash_fe28c4f9154a".into(),
+                offset: None,
+                limit: None,
+                block: None,
+                timeout: None,
+                wait_up_to: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::BashOutput,
+        );
+        let spans = build_header_inner_spans(&tool, &t, 80);
+        let combined: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(combined, "TaskOutput bash_fe28c4f9154a");
+    }
+
+    #[test]
+    fn build_header_inner_spans_generic_strips_redundant_summary_prefixes_robust() {
+        let t = Theme::dark();
+        let cases: Vec<(ToolKind, ToolInput, &str, &[&str])> = vec![
+            (
+                ToolKind::Research,
+                ToolInput::Research {
+                    question: "mine UI bugs".into(),
+                    export: false,
+                },
+                "Research mine UI bugs",
+                &["Research research:"],
+            ),
+            (
+                ToolKind::Council,
+                ToolInput::Council {
+                    question: "A decompiler is at type-recovery recall 100 / precision 66.9; audit the next bug.".into(),
+                    models: vec![],
+                    intent: None,
+                    mode: None,
+                    archive: None,
+                    quorum: None,
+                    retry_on_fail: None,
+                    member_timeout_ms: None,
+                },
+                "Council A decompiler",
+                &["Council council:"],
+            ),
+            (
+                ToolKind::SetGoal,
+                ToolInput::SetGoal {
+                    condition: "ship UI cleanup".into(),
+                },
+                "SetGoal ship UI cleanup",
+                &["SetGoal set goal:"],
+            ),
+            (
+                ToolKind::SkillCreate,
+                ToolInput::SkillCreate {
+                    name: "rust-crate-bump".into(),
+                    description: "Bump a Rust crate".into(),
+                    body: "body".into(),
+                },
+                "SkillCreate rust-crate-bump",
+                &["SkillCreate skill create:"],
+            ),
+            (
+                ToolKind::ToolSearch,
+                ToolInput::ToolSearch {
+                    query: "codegraph".into(),
+                    limit: None,
+                },
+                "ToolSearch codegraph",
+                &["ToolSearch tool search:"],
+            ),
+            (
+                ToolKind::AskModel,
+                ToolInput::AskModel {
+                    model: "gpt-5.5".into(),
+                    prompt: "explain the diff".into(),
+                    system: None,
+                },
+                "AskModel gpt-5.5: explain the diff",
+                &["AskModel ask gpt-5.5:"],
+            ),
+        ];
+
+        for (kind, input, expected_prefix, forbidden) in cases {
+            let tool = dummy_tool(input, ToolOutput::Empty, kind);
+            let combined: String = build_header_inner_spans(&tool, &t, 96)
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect();
+            assert!(
+                combined.starts_with(expected_prefix),
+                "expected {expected_prefix:?}, got {combined:?}"
+            );
+            for bad in forbidden {
+                assert!(!combined.contains(bad), "{combined}");
+            }
+            assert!(combined.len() <= 96, "{combined}");
+        }
+    }
+
+    #[test]
+    fn bash_output_text_hides_model_metadata_normal() {
+        let raw = concat!(
+            "retrieval_status: success\n",
+            "task_id: bash_fe28c4f9154a\n",
+            "status: completed exit=0\n",
+            "output_file: /tmp/jfc-1000/bash/bash_fe28c4f9154a.log\n",
+            "command: echo hello && echo world\n",
+            "cwd: /tmp\n",
+            "started_at_ms: 1781666416196\n",
+            "completed_at_ms: 1781666465609\n",
+            "bytes: 12\n",
+            "lines: 2\n",
+            "showing_lines: 1-2 of 2\n",
+            "\n",
+            "hello\n",
+            "world\n",
+        );
+        let tool = dummy_tool(
+            ToolInput::BashOutput {
+                task_id: "bash_fe28c4f9154a".into(),
+                offset: None,
+                limit: None,
+                block: None,
+                timeout: None,
+                wait_up_to: None,
+            },
+            ToolOutput::Text(raw.into()),
+            ToolKind::BashOutput,
+        );
+
+        let lines = tool_body_lines_themed(&tool, 120, Theme::dark(), None);
+        let rendered = lines_to_plain(&lines);
+        assert_eq!(rendered, "hello\nworld");
+        assert_eq!(tool_body_line_count(&tool, 120), 2);
+        assert!(!rendered.contains("retrieval_status"));
+        assert!(!rendered.contains("command:"));
+        assert!(!rendered.contains("cwd:"));
+        assert!(!rendered.contains("started_at_ms"));
+    }
+
+    #[test]
+    fn build_header_inner_spans_notebook_tools_format_normal() {
+        let t = Theme::dark();
+        let read = dummy_tool(
+            ToolInput::NotebookRead {
+                path: "analysis.ipynb".into(),
+            },
+            ToolOutput::Empty,
+            ToolKind::NotebookRead,
+        );
+        let edit = dummy_tool(
+            ToolInput::NotebookEdit {
+                path: "analysis.ipynb".into(),
+                cell_id: "cell-1".into(),
+                new_source: "print('ok')".into(),
+                edit_mode: Some("replace".into()),
+            },
+            ToolOutput::Empty,
+            ToolKind::NotebookEdit,
+        );
+
+        let read_combined: String = build_header_inner_spans(&read, &t, 80)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        let edit_combined: String = build_header_inner_spans(&edit, &t, 80)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        assert_eq!(read_combined, "Read notebook(analysis.ipynb)");
+        assert_eq!(edit_combined, "Editing notebook(analysis.ipynb · replace)");
+    }
+
+    #[test]
+    fn tool_progress_verbs_match_claude_aliases_normal() {
+        assert_eq!(tool_progress_verb(&ToolKind::Write), "Writing");
+        assert_eq!(tool_progress_verb(&ToolKind::Edit), "Editing");
+        assert_eq!(tool_progress_verb(&ToolKind::MultiEdit), "Editing");
+        assert_eq!(
+            tool_progress_verb(&ToolKind::NotebookEdit),
+            "Editing notebook"
+        );
+        assert_eq!(tool_progress_verb(&ToolKind::Bash), "Running");
+        assert_eq!(tool_progress_verb(&ToolKind::Read), "Reading");
+        assert_eq!(tool_progress_verb(&ToolKind::Glob), "Searching");
+        assert_eq!(tool_progress_verb(&ToolKind::Grep), "Searching");
+    }
+
+    #[test]
     fn build_header_inner_spans_long_path_truncates_robust() {
         // A very long path gets truncated with ellipsis.
         let t = Theme::dark();
@@ -1847,27 +2149,14 @@ mod helper_tests {
         );
         let spans = build_header_inner_spans(&tool, &t, 30);
         let path_span = &spans[2].content;
-        // Strip OSC 8 hyperlink escape sequences before measuring the
-        // visible display width. OSC 8 wraps the visible label with:
-        //   ESC ] 8 ; ; URI BEL  LABEL  ESC ] 8 ; ; BEL
-        // The terminal renders only LABEL; the escapes are transparent.
-        let visible = if let Some(inner) = path_span
-            .strip_prefix('\x1b')
-            .and_then(|s| s.strip_prefix("]8;;"))
-            .and_then(|s| s.split_once('\x07'))
-            .map(|(_, rest)| rest)
-            .and_then(|s| s.strip_suffix('\x07'))
-            .and_then(|s| s.strip_suffix("]8;;"))
-            .and_then(|s| s.strip_suffix('\x1b'))
-        {
-            inner
-        } else {
-            path_span.as_ref()
-        };
         assert!(
-            visible.chars().count() <= 30,
-            "got visible len {}: visible={visible:?} full={path_span:?}",
-            visible.chars().count()
+            !path_span.contains("]8;;") && !path_span.contains("file://"),
+            "path title must be plain visible text: {path_span:?}"
+        );
+        assert!(
+            path_span.chars().count() <= 30,
+            "got visible len {}: full={path_span:?}",
+            path_span.chars().count()
         );
     }
 
@@ -1880,6 +2169,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1899,6 +2189,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1918,6 +2209,7 @@ mod helper_tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Empty,
             ToolKind::Bash,
@@ -1937,7 +2229,7 @@ mod helper_tests {
     fn border_color_for_status_each_state_normal() {
         let t = Theme::dark();
         for (status, expected) in [
-            (ToolStatus::Pending, t.warning),
+            (ToolStatus::Pending, t.border),
             (ToolStatus::Running, t.accent),
             (ToolStatus::Completed, t.border),
             (ToolStatus::Failed, t.error),
@@ -1948,6 +2240,7 @@ mod helper_tests {
                     timeout: None,
                     workdir: None,
                     run_in_background: None,
+                    suppress_output: None,
                 },
                 ToolOutput::Empty,
                 ToolKind::Bash,
@@ -2179,6 +2472,7 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Command {
                 stdout: stdout.into(),
@@ -2202,6 +2496,7 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             ToolOutput::Command {
                 stdout: stdout.into(),
@@ -2305,19 +2600,20 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
 
         let add = add_fg.expect("expected at least one `+` line with foreground style");
         let del = del_fg.expect("expected at least one `-` line with foreground style");
+        let ui_tokens = theme.claude_ui_tokens();
         assert_ne!(
             add, del,
             "`+` and `-` lines rendered with the same fg color (add={add:?}, del={del:?})",
         );
         assert_eq!(
-            add, theme.success,
-            "`+` add line should use Theme.success, got {add:?} (theme.success = {:?})",
-            theme.success,
+            add, ui_tokens.diff_added,
+            "`+` add line should use diffAdded, got {add:?} (diffAdded = {:?})",
+            ui_tokens.diff_added,
         );
         assert_eq!(
-            del, theme.error,
-            "`-` remove line should use Theme.error, got {del:?} (theme.error = {:?})",
-            theme.error,
+            del, ui_tokens.diff_removed,
+            "`-` remove line should use diffRemoved, got {del:?} (diffRemoved = {:?})",
+            ui_tokens.diff_removed,
         );
     }
 
@@ -2334,13 +2630,14 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
         );
 
         let theme = Theme::dark();
+        let ui_tokens = theme.claude_ui_tokens();
         let mut saw_plus = false;
         let mut saw_minus = false;
         for span in lines.iter().flat_map(|line| line.spans.iter()) {
-            if span.content.contains('+') && span.style.fg == Some(theme.success) {
+            if span.content.contains('+') && span.style.fg == Some(ui_tokens.diff_added) {
                 saw_plus = true;
             }
-            if span.content.contains('-') && span.style.fg == Some(theme.error) {
+            if span.content.contains('-') && span.style.fg == Some(ui_tokens.diff_removed) {
                 saw_minus = true;
             }
         }
@@ -2679,6 +2976,95 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
         painted
     }
 
+    #[test]
+    fn expanded_bash_registers_command_copy_regions_normal() {
+        let app = stub_app();
+        let tool = ToolCall {
+            id: "bash-copy-1".into(),
+            kind: ToolKind::Bash,
+            status: ToolStatus::Completed,
+            input: ToolInput::Bash {
+                command: "printf 'hello world'\nprintf 'second line'".into(),
+                timeout: None,
+                workdir: None,
+                run_in_background: None,
+                suppress_output: None,
+            },
+            output: ToolOutput::Command {
+                stdout: "hello world\n".into(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            },
+            display: jfc_core::ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: None,
+            thought_signature: None,
+        };
+        let area = Rect {
+            x: 2,
+            y: 3,
+            width: 80,
+            height: 20,
+        };
+        let mut buf = Buffer::empty(area);
+
+        render_tool_block(&app, &tool, area, app.theme, &mut buf, 0);
+
+        let regions = app.tool_copy_regions.borrow();
+        assert!(
+            regions
+                .iter()
+                .any(|(id, rect)| id == "bash-copy-1" && rect.y == area.y),
+            "expanded Bash title row should copy the raw command: {regions:?}"
+        );
+        assert!(
+            regions
+                .iter()
+                .any(|(id, rect)| id == "bash-copy-1" && rect.y > area.y),
+            "expanded Bash continuation rows should copy the raw command: {regions:?}"
+        );
+    }
+
+    #[test]
+    fn collapsed_bash_does_not_register_command_copy_region_robust() {
+        let app = stub_app();
+        let tool = ToolCall {
+            id: "bash-copy-collapsed".into(),
+            kind: ToolKind::Bash,
+            status: ToolStatus::Completed,
+            input: ToolInput::Bash {
+                command: "cargo test".into(),
+                timeout: None,
+                workdir: None,
+                run_in_background: None,
+                suppress_output: None,
+            },
+            output: ToolOutput::Command {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            },
+            display: jfc_core::ToolDisplayState::Collapsed,
+            elapsed_ms: None,
+            started_at: None,
+            thought_signature: None,
+        };
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 5,
+        };
+        let mut buf = Buffer::empty(area);
+
+        render_tool_block(&app, &tool, area, app.theme, &mut buf, 0);
+
+        assert!(
+            app.tool_copy_regions.borrow().is_empty(),
+            "collapsed Bash row must remain an expand/pin click target"
+        );
+    }
+
     /// Multi-line Bash command, plain stdout — exercises the
     /// continuation-line + command-output dispatch.
     #[test]
@@ -2693,6 +3079,7 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             output: ToolOutput::Command {
                 stdout: "alpha\nbeta\ngamma\n".into(),

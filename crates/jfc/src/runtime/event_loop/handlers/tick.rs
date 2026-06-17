@@ -1,7 +1,7 @@
 //! `UiEvent::Tick` handler — fires every IDLE_TICK_MS / ANIM_TICK_MS and
 //! drives all per-tick housekeeping: spinner, watchdog, network EKG,
-//! daemon-state sync, toast expiry, OAuth refresh, hot-reloads, kinetic
-//! scroll, heartbeat, MCP-tools change watcher, file-watcher reload,
+//! daemon-state sync, toast expiry, OAuth refresh, hot-reloads, heartbeat,
+//! MCP-tools change watcher, file-watcher reload,
 //! worktree count, git branch, swarm permission poller, swarm inbox poller.
 //!
 //! Returns `true` when the handler dirtied state that needs a fresh draw.
@@ -326,29 +326,6 @@ pub(crate) async fn handle_tick(
                 );
             }
         });
-    }
-
-    // Kinetic scroll: apply velocity, decay, stop.
-    {
-        let now = std::time::Instant::now();
-        let dt = now.duration_since(app.last_scroll_tick).as_secs_f32();
-        app.last_scroll_tick = now;
-        if app.scroll_velocity.abs() > 0.5 {
-            let delta = app.scroll_velocity * dt;
-            let lines = delta.round() as i32;
-            if lines > 0 {
-                app.scroll_down(lines as usize);
-                needs_draw = true;
-            } else if lines < 0 {
-                app.scroll_up(lines.unsigned_abs() as usize);
-                needs_draw = true;
-            }
-            app.scroll_velocity *= 0.85;
-            if app.scroll_velocity.abs() < 0.5 {
-                app.scroll_velocity = 0.0;
-                needs_draw = true;
-            }
-        }
     }
 
     // Drag-edge autoscroll: while a drag-selection's cursor is pinned past the

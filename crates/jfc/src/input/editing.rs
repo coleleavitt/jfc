@@ -7,7 +7,7 @@ pub(super) fn reset_input(app: &mut App) {
     let before = textarea_char_len(app);
     app.textarea = TextArea::default();
     app.textarea.set_cursor_line_style(Style::default());
-    app.textarea.set_placeholder_text("send a message…");
+    app.textarea.set_placeholder_text("");
     tracing::debug!(
         target: "jfc::input::recall",
         cleared_chars = before,
@@ -107,13 +107,7 @@ pub(super) fn step_reasoning_effort(app: &mut App, raise: bool) {
     } else {
         current.previous()
     };
-    let message = match next {
-        Some(level) => app.engine.effort_state.set(level),
-        None if raise => format!("Reasoning effort is already at max ({current})"),
-        None => format!("Reasoning effort is already at min ({current})"),
-    };
-    jfc_engine::toast::push_with_cap(
-        &mut app.engine.toasts,
-        jfc_engine::toast::Toast::new(jfc_engine::toast::ToastKind::Info, message),
-    );
+    if let Some(level) = next {
+        let _ = app.engine.effort_state.set(level);
+    }
 }

@@ -20,10 +20,45 @@ pub enum SubmitOutcome {
     /// An OnUserPromptSubmit hook vetoed the turn. Note: any staged
     /// attachments passed in are dropped with the veto.
     AbortedByHook,
+    /// The configured hard session budget has already been reached, so the
+    /// prompt was refused before hooks, transcript mutation, or streaming.
+    BudgetExceeded,
     /// Context is at/over the compaction threshold — a pre-submit compaction
     /// was spawned and the prompt will re-fire via
     /// `ControlEvent::SubmitPrompt` once it lands.
     CompactingFirst,
+}
+
+fn current_budget_cap_excess(state: &EngineState) -> Option<(f64, f64)> {
+    let cap = state
+        .max_budget_usd
+        .filter(|cap| cap.is_finite() && *cap > 0.0)?;
+    let spent = crate::cost::total_cost(&state.usage_by_model);
+    (spent >= cap).then_some((spent, cap))
+}
+
+pub fn refuse_budget_cap_if_reached(state: &mut EngineState) -> bool {
+    let Some((spent, cap)) = current_budget_cap_excess(state) else {
+        return false;
+    };
+    tracing::warn!(
+        target: "jfc::cost",
+        spent,
+        cap,
+        "refusing submit: max_budget_usd reached"
+    );
+    crate::toast::push_with_cap(
+        &mut state.toasts,
+        crate::toast::Toast::new(
+            crate::toast::ToastKind::Error,
+            format!(
+                "Budget cap reached: spent {} of {}. Start a new session or raise --max-budget-usd to continue.",
+                crate::cost::fmt_cost(spent),
+                crate::cost::fmt_cost(cap),
+            ),
+        ),
+    );
+    true
 }
 
 /// Interrupt the current turn: cancel the stream, abort in-flight tools,
@@ -183,6 +218,10 @@ pub async fn submit_prompt(
     attachments: Vec<crate::attachments::Attachment>,
     edit_at: Option<usize>,
 ) -> anyhow::Result<SubmitOutcome> {
+    if refuse_budget_cap_if_reached(state) {
+        return Ok(SubmitOutcome::BudgetExceeded);
+    }
+
     // v132 OnUserPromptSubmit hook — fires before any compaction or
     // stream setup so a registered handler can inject system reminders,
     // veto the turn, or rewrite the text. Default registry has only
@@ -771,11 +810,9 @@ pub async fn submit_prompt(
         let classification = crate::intent::classify(&text);
         let intent_for_inject = classification.intent;
 
-        // (1) Doc-request intents → suggest the matching slash command
-        // via a toast. We never auto-run the command (writing a file
-        // the user didn't explicitly ask for is destructive) — the
-        // toast is a one-keystroke nudge. Suppressed via
-        // JFC_AUTO_DOC_SUGGEST=0.
+        // (1) Doc-request intents are logged for observability. We never
+        // auto-run the command (writing a file the user didn't explicitly
+        // ask for is destructive), and the TUI stays quiet here.
         if let Some(cmd) = intent_for_inject.doc_command()
             && crate::intent::auto_doc_suggest_enabled()
         {
@@ -783,17 +820,7 @@ pub async fn submit_prompt(
                 target: "jfc::intent::doc_suggest",
                 intent = ?intent_for_inject,
                 cmd,
-                "doc-request detected — surfacing slash-command suggestion"
-            );
-            crate::toast::push_with_cap(
-                &mut state.toasts,
-                crate::toast::Toast::new(
-                    crate::toast::ToastKind::Info,
-                    format!(
-                        "This looks like a doc request — type `{cmd}` to draft \
-                             it with the strict format contract."
-                    ),
-                ),
+                "doc-request detected"
             );
         }
 
@@ -849,6 +876,10 @@ pub async fn start_turn_from_transcript(
     tx: &EventSender,
     turn_text: &str,
 ) {
+    if refuse_budget_cap_if_reached(state) {
+        return;
+    }
+
     let assistant_idx = state.messages.len();
     state.messages.push(ChatMessage::assistant(String::new()));
     state.streaming_text.clear();
@@ -1095,6 +1126,38 @@ mod submit_prompt_tests {
                     .collect::<Vec<_>>()
                     .join("")
             })
+    }
+
+    #[tokio::test]
+    async fn max_budget_usd_blocks_submit_before_transcript_mutation_regression() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.max_budget_usd = Some(1.00);
+        state.usage_by_model.insert(
+            "claude-opus-4-7".into(),
+            crate::types::ModelUsage {
+                input_tokens: 1_000_000,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                cost_usd: None,
+            },
+        );
+        let (tx, _rx) = mpsc::channel(8);
+
+        let outcome = submit_prompt(&mut state, &tx, "do more".into(), Vec::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::BudgetExceeded);
+        assert!(!state.is_streaming);
+        assert!(state.messages.is_empty());
+        assert!(
+            state
+                .toasts
+                .iter()
+                .any(|toast| toast.text.contains("Budget cap reached")),
+            "budget refusal should surface a user-visible toast"
+        );
     }
 
     // Flag OFF (the default): the gate is a no-op pass-through and the prompt

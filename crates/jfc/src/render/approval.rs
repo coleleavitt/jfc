@@ -153,6 +153,7 @@ pub(super) fn approval(f: &mut Frame, app: &App) {
 /// Produce a diff/content preview for the pending tool, when applicable. Returns
 /// `None` for tools whose effects can't be summarized as a diff (Read, etc.).
 fn build_diff_preview(tool: &ToolCall, t: &Theme) -> Option<Vec<Line<'static>>> {
+    let ui_tokens = t.claude_ui_tokens();
     match &tool.input {
         ToolInput::Edit {
             file_path,
@@ -167,7 +168,11 @@ fn build_diff_preview(tool: &ToolCall, t: &Theme) -> Option<Vec<Line<'static>>> 
             )));
             lines.push(Line::from(""));
             for (kind, txt) in [("- ", old_string), ("+ ", new_string)] {
-                let color = if kind == "- " { t.error } else { t.success };
+                let color = if kind == "- " {
+                    ui_tokens.diff_removed
+                } else {
+                    ui_tokens.diff_added
+                };
                 for ln in txt.lines().take(20) {
                     lines.push(Line::from(vec![
                         Span::styled(kind.to_owned(), Style::default().fg(color)),
@@ -203,8 +208,8 @@ fn build_diff_preview(tool: &ToolCall, t: &Theme) -> Option<Vec<Line<'static>>> 
             let mut lines: Vec<Line<'static>> = Vec::new();
             for ln in patch.lines().take(40) {
                 let color = match ln.chars().next() {
-                    Some('+') if !ln.starts_with("+++") => t.success,
-                    Some('-') if !ln.starts_with("---") => t.error,
+                    Some('+') if !ln.starts_with("+++") => ui_tokens.diff_added,
+                    Some('-') if !ln.starts_with("---") => ui_tokens.diff_removed,
                     Some('@') => t.accent,
                     _ => t.text_secondary,
                 };

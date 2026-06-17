@@ -65,7 +65,8 @@ pub use paging::{PageStore, Pressure, estimate_tokens};
 pub use plan_cache::{CachedPlan, PlanCache, normalize_signature};
 pub use prompt_queue::{
     DEFERRED_TOOL_USES_CAP, DeferredToolUse, MessageQueue, QueuePriority, QueuedPrompt,
-    TOOL_USE_SUMMARIES_CAP, ToolUseSummary, push_bounded_drop_oldest, should_preserve_prompt,
+    TOOL_USE_SUMMARIES_CAP, ToolUseSummary, push_bounded_drop_oldest, queued_prompt_placeholder,
+    should_preserve_prompt,
 };
 pub use routing::{cascade_pick, knapsack_select};
 pub use server_tool::ServerToolResultKind;

@@ -92,7 +92,13 @@ impl Engine {
                             crate::hooks::HookPoint::OnUserInputRequired,
                             &crate::hooks::HookContext::for_session("<mcp-elicitation>")
                                 .with_extra("kind", "elicitation")
-                                .with_extra("message", format!("MCP server '{}' is requesting structured input", snapshot.server_name)),
+                                .with_extra(
+                                    "message",
+                                    format!(
+                                        "MCP server '{}' is requesting structured input",
+                                        snapshot.server_name
+                                    ),
+                                ),
                         );
                     }
                     jfc_core::mcp_elicitation::ElicitationEvent::Resolved {

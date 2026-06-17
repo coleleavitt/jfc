@@ -273,30 +273,6 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     let retry_assistant_idx = state.streaming_assistant_idx;
     let retry_turn_started_at = state.turn_started_at;
 
-    // BUG FIX (2026-06-01): When a stream fails AFTER emitting content
-    // (committed_output=true), append a truncation warning to the message
-    // so the user knows the response was incomplete. This prevents the
-    // confusing case where output_tokens=0 with actual content, and the
-    // message looks fine but is actually truncated mid-sentence.
-    if let Some(idx) = retry_assistant_idx
-        && let Some(msg) = state.messages.get_mut(idx)
-        && (msg.usage.as_ref().map(|u| u.output_tokens).unwrap_or(0) > 0
-            || msg
-                .parts
-                .iter()
-                .any(|p| matches!(p, types::MessagePart::Text(t) if !t.trim().is_empty())))
-    {
-        // Only add the warning if the message has actual content (text or tools).
-        // This avoids the warning on streams that failed before emitting anything.
-        let warning = "\n\n⚠️ **Response truncated** — stream ended unexpectedly. \
-                      Press Ctrl+R to retry."
-            .to_string();
-        match msg.parts.last_mut() {
-            Some(types::MessagePart::Text(t)) => t.push_str(&warning),
-            _ => msg.parts.push(types::MessagePart::Text(warning)),
-        }
-    }
-
     state.is_streaming = false;
     state.last_stream_event_at = None;
     state.streaming_started_at = None;
@@ -322,11 +298,14 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
         state.turn_started_at = None;
     }
     state.pending_tool_calls.clear();
-    // A question modal only exists as a turn's terminal act; if the turn died
-    // (error/cancel) the answer can no longer feed anywhere, so close the modal
-    // rather than leave it capturing all key input. The dangling AskUserQuestion
-    // tool_use is marked Failed by the synthetic-tool-result injection above.
-    state.pending_question = None;
+    // A question modal only exists as a turn's terminal act; if the turn really
+    // died (error/cancel) the answer can no longer feed anywhere, so close the
+    // modal rather than leave it capturing all key input. For recoverable
+    // auto-retry signals, keep it visible so a transient stream restart does
+    // not make an AskUserQuestion prompt disappear under the user.
+    if !auto_retry_signal {
+        state.pending_question = None;
+    }
     state.pre_dispatched_tool_ids.clear();
     state.deferred_tool_uses.clear();
     state.in_progress_tool_use_ids.clear();
@@ -674,6 +653,39 @@ mod tests {
                 .interrupt_flag
                 .load(std::sync::atomic::Ordering::SeqCst),
             "interrupt flag should be cleared after cleanup"
+        );
+    }
+
+    #[tokio::test]
+    async fn interrupted_partial_assistant_keeps_transcript_clean_robust() {
+        let mut state = test_app();
+        state.messages.push(ChatMessage::user("only prompt".into()));
+        state
+            .messages
+            .push(ChatMessage::assistant("partial answer".into()));
+        state.is_streaming = true;
+        state.streaming_assistant_idx = Some(1);
+        state.cancel_token.cancel();
+        state
+            .interrupt_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let (tx, _rx) = mpsc::channel(8);
+
+        handle_stream_error(&mut state, &tx, "Interrupted by user".to_owned()).await;
+
+        assert_eq!(state.messages.len(), 2, "interrupt should not append error");
+        let text: String = state.messages[1]
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                MessagePart::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, "partial answer");
+        assert!(
+            !text.contains("Response truncated"),
+            "interrupt must not persist a truncation banner"
         );
     }
 

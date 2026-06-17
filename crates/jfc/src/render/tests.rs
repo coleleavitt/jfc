@@ -652,7 +652,7 @@ mod pure_helper_tests {
 
     #[test]
     fn input_visual_line_count_empty_returns_one_robust() {
-        // Empty input still renders the placeholder — count is 1, not 0.
+        // Empty input still reserves one prompt row — count is 1, not 0.
         let app = fake_app();
         assert_eq!(input_visual_line_count(&app, 80), 1);
     }
@@ -684,10 +684,25 @@ mod pure_helper_tests {
 
     #[test]
     fn input_soft_wrapped_empty_uses_placeholder_robust() {
-        // All-empty input → placeholder string is the only line.
+        // All-empty input renders a blank prompt line.
         let app = fake_app();
         let (lines, row, col) = input_soft_wrapped_lines(&app, 80);
-        assert_eq!(lines, vec!["send a message…".to_string()]);
+        assert_eq!(lines, vec![String::new()]);
+        assert_eq!(row, 0);
+        assert_eq!(col, 0);
+    }
+
+    #[test]
+    fn input_soft_wrapped_empty_with_queue_shows_recall_hint_normal() {
+        let mut app = fake_app();
+        app.engine.queued_prompts.push(crate::app::QueuedPrompt {
+            text: "queued".into(),
+            priority: crate::app::QueuePriority::Later,
+            is_meta: false,
+            attachments: Vec::new(),
+        });
+        let (lines, row, col) = input_soft_wrapped_lines(&app, 80);
+        assert_eq!(lines, vec!["Press up to edit queued messages".to_owned()]);
         assert_eq!(row, 0);
         assert_eq!(col, 0);
     }
@@ -938,7 +953,7 @@ mod pure_helper_tests {
 
     #[test]
     fn fit_segments_keeps_all_when_room_normal() {
-        // prios: model(100) cost(95) cwd(45); plenty of width.
+        // prios: alert(100) pressure(95) context(45); plenty of width.
         let keep = fit_segments(&[100, 95, 45], &[10, 8, 6], 5, 100);
         assert_eq!(keep, vec![true, true, true]);
     }
@@ -946,7 +961,7 @@ mod pure_helper_tests {
     #[test]
     fn fit_segments_drops_lowest_prio_context_first_normal() {
         // Width fits only ~2 of 3 segments. The lowest-prio (cwd=45) goes
-        // first; the floor segments (model=100, cost=95) survive.
+        // first; the floor segments (alert=100, pressure=95) survive.
         let keep = fit_segments(&[100, 95, 45], &[10, 10, 10], 0, 23);
         assert_eq!(keep, vec![true, true, false]);
     }
@@ -955,7 +970,7 @@ mod pure_helper_tests {
     fn fit_segments_preserves_floor_over_lower_prio_robust() {
         // A below-floor "activity" segment (78) outranks cwd(45) but is still
         // below the floor; under pressure both context segments drop before
-        // the floor cost(95) is ever touched.
+        // the floor alert(95) is ever touched.
         // Widths force dropping until only ~1 segment fits.
         let keep = fit_segments(&[95, 78, 45], &[10, 10, 10], 0, 13);
         // cost (floor) kept; activity + cwd (both below floor) dropped.
@@ -1344,9 +1359,9 @@ mod subagent_counter_tests {
 /// without a live terminal.
 #[cfg(test)]
 mod render_snapshot_tests {
-    use crate::app::{App, BackgroundTask};
+    use crate::app::{App, BackgroundTask, PermissionMode};
     use jfc_core::TaskLifecycle;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{Terminal, backend::TestBackend, style::Color};
     use std::sync::Arc;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
@@ -1413,6 +1428,81 @@ mod render_snapshot_tests {
             out.push('\n');
         }
         out
+    }
+
+    #[test]
+    fn empty_session_renders_launch_header_normal() {
+        let mut app = App::new(Arc::new(TestProvider), "claude-opus-4-8");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.engine.max_context_tokens = 1_000_000;
+        app.engine.cwd = "/tmp".to_string();
+
+        let backend = TestBackend::new(90, 18);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::messages::messages(f, &mut app, area);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        let buf = term.backend().buffer();
+        let flag_red = Color::Rgb(217, 0, 18);
+        let flag_blue = Color::Rgb(0, 51, 160);
+        let flag_orange = Color::Rgb(242, 168, 0);
+        assert!(text.contains("JFC v"), "product/version missing:\n{text}");
+        assert!(
+            text.contains("▟╳◇╳▙"),
+            "woven arakhchin logo cap missing:\n{text}"
+        );
+        assert!(text.contains("▐▛███▜▌"), "logo face/eyes missing:\n{text}");
+        assert!(
+            text.contains("▝▜█████▛▘"),
+            "logo arms/body missing:\n{text}"
+        );
+        assert!(text.contains("▘▘ ▝▝"), "logo feet missing:\n{text}");
+        assert_eq!(buf[(3, 0)].symbol(), "▟", "cap red cell moved:\n{text}");
+        assert_eq!(buf[(3, 0)].fg, flag_red, "cap red color drifted");
+        assert_eq!(buf[(4, 0)].symbol(), "╳", "cap orange cell moved:\n{text}");
+        assert_eq!(buf[(4, 0)].fg, flag_orange, "cap orange color drifted");
+        assert_eq!(buf[(5, 0)].symbol(), "◇", "cap blue cell moved:\n{text}");
+        assert_eq!(buf[(5, 0)].fg, flag_blue, "cap blue color drifted");
+        assert_eq!(buf[(2, 1)].symbol(), "▐", "face row moved:\n{text}");
+        assert_eq!(buf[(2, 1)].fg, flag_red, "face row should be red");
+        assert_eq!(buf[(1, 2)].symbol(), "▝", "body row moved:\n{text}");
+        assert_eq!(buf[(1, 2)].fg, flag_blue, "arms/body row should be blue");
+        assert_eq!(buf[(3, 3)].symbol(), "▘", "feet row moved:\n{text}");
+        assert_eq!(buf[(3, 3)].fg, flag_orange, "feet row should be orange");
+        assert!(
+            text.contains("Opus 4.8 (1M context) with default effort · test"),
+            "model/provider line missing:\n{text}"
+        );
+        assert!(text.contains("/tmp"), "cwd missing:\n{text}");
+    }
+
+    #[test]
+    fn status_row_renders_auto_mode_symbol_normal() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.engine.permission_mode = PermissionMode::Auto;
+
+        let backend = TestBackend::new(80, 1);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::status::status(f, &app, area);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        assert!(
+            text.contains("⏵⏵ auto mode on"),
+            "mode symbol missing:\n{text}"
+        );
+        assert!(
+            !text.contains("shift+tab to cycle"),
+            "cycle hint should not live in the persistent footer:\n{text}"
+        );
     }
 
     // The teammates panel renders the agent's description and the shared
@@ -1574,6 +1664,84 @@ mod render_snapshot_tests {
             "panel missing tool: {panel_row}"
         );
         assert!(panel_row.contains('●'), "panel missing glyph: {panel_row}");
+    }
+
+    #[test]
+    fn pinned_tasks_render_compact_header_without_progress_bar_robust() {
+        use jfc_session::{TaskPatch, TaskStatus};
+        use ratatui::layout::Rect;
+
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        let active = app
+            .engine
+            .task_store
+            .create(
+                "Clean tool headers".into(),
+                String::new(),
+                Some("Cleaning tool headers".into()),
+                Vec::<String>::new(),
+            )
+            .expect("create active task");
+        let done = app
+            .engine
+            .task_store
+            .create(
+                "Review Claude UI".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .expect("create done task");
+        app.engine
+            .task_store
+            .create(
+                "Run render tests".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .expect("create pending task");
+        app.engine
+            .task_store
+            .update(
+                active.id.as_str(),
+                TaskPatch {
+                    status: Some(TaskStatus::InProgress),
+                    ..TaskPatch::default()
+                },
+            )
+            .expect("mark active");
+        app.engine
+            .task_store
+            .update(
+                done.id.as_str(),
+                TaskPatch {
+                    status: Some(TaskStatus::Completed),
+                    ..TaskPatch::default()
+                },
+            )
+            .expect("mark done");
+        app.engine
+            .task_completion_times
+            .insert(done.id.clone(), std::time::Instant::now());
+
+        let backend = TestBackend::new(80, 5);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            super::super::messages::tasks_pinned_row(f, &app, Rect::new(0, 0, 80, 5));
+        })
+        .expect("draw");
+        let text = buffer_text(&term);
+
+        assert!(text.contains("3 tasks (1 done, 2 open)"), "{text}");
+        assert!(text.contains("Clean tool headers"), "{text}");
+        assert!(text.contains("Run render tests"), "{text}");
+        assert!(!text.contains("1/3"), "historical progress leaked:\n{text}");
+        assert!(!text.contains("Tasks"), "dashboard label leaked:\n{text}");
+        assert!(!text.contains('█'), "block progress bar leaked:\n{text}");
+        assert!(!text.contains('░'), "block progress bar leaked:\n{text}");
+        assert!(!text.contains('%'), "percent badge leaked:\n{text}");
     }
 
     // t919: content-backed selection extraction. Fill the transcript with

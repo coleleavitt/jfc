@@ -26,6 +26,15 @@ pub struct QueuedPrompt {
     pub attachments: Vec<Attachment>,
 }
 
+pub fn queued_prompt_placeholder(text: &str, is_meta: bool) -> String {
+    let prefix = if is_meta {
+        "[command queued]"
+    } else {
+        "[queued]"
+    };
+    format!("{prefix} {text}")
+}
+
 #[derive(Debug, Clone)]
 pub struct DeferredToolUse {
     pub id: String,

@@ -23,7 +23,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::McpServerConfig;
+use crate::{McpOAuthMetadata, McpServerConfig};
 use jfc_provider::ToolDef;
 
 use super::protocol::{self, McpTool, ToolCallOutcome};
@@ -446,23 +446,19 @@ impl McpRegistry {
         timeout: std::time::Duration,
         permissions: Option<&crate::tool_permissions::ToolPermissionStore>,
     ) -> Result<ToolCallOutcome, DispatchError> {
-        let (server_name, tool_name) =
-            protocol::split_advertised(advertised_name).ok_or(DispatchError::NotMcpName)?;
+        let (server, tool_name) = self.resolve_advertised_tool(advertised_name).await?;
+        let server_name = server.name.as_str();
         if let Some(store) = permissions {
             if let crate::tool_permissions::ToolDecision::Blocked(src) =
-                store.decide(server_name, tool_name)
+                store.decide(server_name, &tool_name)
             {
                 return Err(DispatchError::ToolBlocked {
                     server: server_name.to_owned(),
-                    tool: tool_name.to_owned(),
+                    tool: tool_name.clone(),
                     reason: src.reason(),
                 });
             }
         }
-        let server = self
-            .get(server_name)
-            .await
-            .ok_or_else(|| DispatchError::UnknownServer(server_name.to_owned()))?;
         if server.status != McpServerStatus::Connected {
             return Err(DispatchError::ServerNotConnected(server_name.to_owned()));
         }
@@ -470,10 +466,44 @@ impl McpRegistry {
             return Err(DispatchError::ServerNotConnected(server_name.to_owned()));
         };
         let result = transport
-            .call_tool(tool_name, arguments, timeout)
+            .call_tool(&tool_name, arguments, timeout)
             .await
             .map_err(DispatchError::Request)?;
         Ok(ToolCallOutcome::from(result))
+    }
+
+    /// Resolve a provider-facing advertised name back to the original MCP
+    /// server/tool names. New sanitized names are resolved by recomputing the
+    /// advertised names from the cached tool list; legacy exact names still
+    /// fall back to the split `(server, tool)` pair so older transcripts and
+    /// calls to uncached dynamic tools remain compatible.
+    async fn resolve_advertised_tool(
+        &self,
+        advertised_name: &str,
+    ) -> Result<(Arc<McpServer>, String), DispatchError> {
+        let (server_key, tool_key) =
+            protocol::split_advertised(advertised_name).ok_or(DispatchError::NotMcpName)?;
+
+        let guard = self.inner.read().await;
+        let mut matched: Option<(Arc<McpServer>, String)> = None;
+        for server in guard.values() {
+            for tool in &server.tools {
+                if protocol::advertise_tool_name(&server.name, &tool.name) == advertised_name {
+                    if matched.is_some() {
+                        return Err(DispatchError::AmbiguousToolName(advertised_name.to_owned()));
+                    }
+                    matched = Some((Arc::clone(server), tool.name.clone()));
+                }
+            }
+        }
+        if let Some(found) = matched {
+            return Ok(found);
+        }
+
+        if let Some(server) = guard.get(server_key) {
+            return Ok((Arc::clone(server), tool_key.to_owned()));
+        }
+        Err(DispatchError::UnknownServer(server_key.to_owned()))
     }
 }
 
@@ -493,6 +523,10 @@ pub enum DispatchError {
         tool: String,
         reason: &'static str,
     },
+    /// Two cached tools collapsed to the same provider-facing name. This should
+    /// only happen under an extreme hash collision, but failing closed is better
+    /// than dispatching to the wrong server tool.
+    AmbiguousToolName(String),
     /// Lower-layer transport error.
     Request(RequestError),
 }
@@ -508,6 +542,9 @@ impl std::fmt::Display for DispatchError {
                 tool,
                 reason,
             } => write!(f, "MCP tool {server}/{tool} is disabled: {reason}"),
+            Self::AmbiguousToolName(name) => {
+                write!(f, "ambiguous MCP advertised tool name: {name}")
+            }
             Self::Request(e) => write!(f, "MCP dispatch error: {e}"),
         }
     }
@@ -599,13 +636,45 @@ pub async fn build_server(name: &str, cfg: &McpServerConfig) -> McpServer {
         }
     };
 
+    let headers = match kind {
+        TransportKind::Http => match effective_http_headers(name, cfg, &effective_env).await {
+            Ok(headers) => headers,
+            Err(reason) => {
+                tracing::warn!(
+                    target: "jfc::mcp",
+                    server = %name,
+                    reason = %reason,
+                    "MCP HTTP OAuth token acquisition failed — marking failed"
+                );
+                return McpServer {
+                    name: name.to_owned(),
+                    status: McpServerStatus::Failed,
+                    tools: Vec::new(),
+                    resources: Vec::new(),
+                    instructions: None,
+                    transport: None,
+                    spawn_cfg: SpawnConfig {
+                        server_name: name.to_owned(),
+                        kind,
+                        command: cfg.command.clone().unwrap_or_default(),
+                        args: cfg.args.clone(),
+                        env: effective_env,
+                        headers: cfg.headers.clone(),
+                        url: cfg.url.clone(),
+                    },
+                };
+            }
+        },
+        TransportKind::Stdio => cfg.headers.clone(),
+    };
+
     let spawn_cfg = SpawnConfig {
         server_name: name.to_owned(),
         kind,
         command: cfg.command.clone().unwrap_or_default(),
         args: cfg.args.clone(),
         env: effective_env,
-        headers: cfg.headers.clone(),
+        headers,
         url: cfg.url.clone(),
     };
 
@@ -642,6 +711,165 @@ pub async fn build_server(name: &str, cfg: &McpServerConfig) -> McpServer {
         transport: Some(transport),
         spawn_cfg,
     }
+}
+
+fn has_authorization_header(headers: &HashMap<String, String>) -> bool {
+    headers
+        .keys()
+        .any(|key| key.eq_ignore_ascii_case("authorization"))
+}
+
+async fn effective_http_headers(
+    server_name: &str,
+    cfg: &McpServerConfig,
+    env: &HashMap<String, String>,
+) -> Result<HashMap<String, String>, String> {
+    let mut headers = cfg.headers.clone();
+    if has_authorization_header(&headers) {
+        return Ok(headers);
+    }
+
+    let Some(token) = resolve_oauth_bearer_token(server_name, cfg, env).await? else {
+        return Ok(headers);
+    };
+    headers.insert("Authorization".to_owned(), format!("Bearer {token}"));
+    Ok(headers)
+}
+
+async fn resolve_oauth_bearer_token(
+    server_name: &str,
+    cfg: &McpServerConfig,
+    env: &HashMap<String, String>,
+) -> Result<Option<String>, String> {
+    let oauth = &cfg.oauth;
+    if let Some(token) = oauth
+        .access_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return Ok(Some(token.to_owned()));
+    }
+    if let Some(var) = oauth
+        .access_token_env
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let token = env
+            .get(var)
+            .cloned()
+            .or_else(|| std::env::var(var).ok())
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("oauth access token env var `{var}` is not set"))?;
+        return Ok(Some(token));
+    }
+
+    let Some(token_url) = oauth
+        .token_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return Ok(None);
+    };
+    let client_id = oauth
+        .client_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "oauth token_url requires client_id".to_owned())?;
+    let client_secret = resolve_client_secret(oauth, env)?;
+    let form = client_credentials_form(oauth, cfg.oauth_resource(), client_id, &client_secret);
+
+    tracing::info!(
+        target: "jfc::mcp",
+        server = %server_name,
+        token_url,
+        has_resource = cfg.oauth_resource().is_some(),
+        scope_count = oauth.scopes.len(),
+        "acquiring MCP OAuth bearer token"
+    );
+    let response = reqwest::Client::new()
+        .post(token_url)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .form(&form)
+        .send()
+        .await
+        .map_err(|err| format!("oauth token request failed: {err}"))?;
+    let status = response.status();
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|err| format!("oauth token response was not JSON: {err}"))?;
+    if !status.is_success() {
+        return Err(format!("oauth token endpoint returned {status}: {body}"));
+    }
+    let token_type = body
+        .get("token_type")
+        .and_then(|value| value.as_str())
+        .unwrap_or("Bearer");
+    if !token_type.eq_ignore_ascii_case("bearer") {
+        return Err(format!(
+            "oauth token endpoint returned unsupported token_type `{token_type}`"
+        ));
+    }
+    let token = body
+        .get("access_token")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "oauth token response did not include access_token".to_owned())?;
+    Ok(Some(token.to_owned()))
+}
+
+fn resolve_client_secret(
+    oauth: &McpOAuthMetadata,
+    env: &HashMap<String, String>,
+) -> Result<String, String> {
+    if let Some(secret) = oauth
+        .client_secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return Ok(secret.to_owned());
+    }
+    let Some(var) = oauth
+        .client_secret_env
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return Err("oauth token_url requires client_secret or client_secret_env".to_owned());
+    };
+    env.get(var)
+        .cloned()
+        .or_else(|| std::env::var(var).ok())
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| format!("oauth client secret env var `{var}` is not set"))
+}
+
+fn client_credentials_form(
+    oauth: &McpOAuthMetadata,
+    resource: Option<String>,
+    client_id: &str,
+    client_secret: &str,
+) -> Vec<(String, String)> {
+    let mut form = vec![
+        ("grant_type".to_owned(), "client_credentials".to_owned()),
+        ("client_id".to_owned(), client_id.to_owned()),
+        ("client_secret".to_owned(), client_secret.to_owned()),
+    ];
+    if !oauth.scopes.is_empty() {
+        form.push(("scope".to_owned(), oauth.scopes.join(" ")));
+    }
+    if let Some(resource) = resource {
+        form.push(("resource".to_owned(), resource));
+    }
+    form
 }
 
 /// Discover every resource the server exposes. Errors mean the server does
@@ -729,6 +957,7 @@ pub async fn restart_server(registry: &McpRegistry, name: &str) -> Option<bool> 
         env_file: None,
         headers: old.spawn_cfg.headers.clone(),
         url: old.spawn_cfg.url.clone(),
+        oauth: Default::default(),
     };
     let new_server = build_server(name, &cfg).await;
     let connected = new_server.status == McpServerStatus::Connected;
@@ -850,6 +1079,38 @@ mod tests {
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "mcp__git__status");
         assert_eq!(defs[0].description, "Show status");
+    }
+
+    #[tokio::test]
+    async fn advertised_tool_defs_sanitize_invalid_names_and_dispatch_resolves_original_regression()
+    {
+        let reg = McpRegistry::new();
+        reg.insert(fake_server(
+            "git.server",
+            McpServerStatus::Failed,
+            vec![McpTool {
+                name: "branch/list:all".into(),
+                description: "List branches".into(),
+                input_schema: json!({"type":"object"}),
+                ..McpTool::default()
+            }],
+        ))
+        .await;
+
+        let server = reg.get("git.server").await.unwrap();
+        let advertised = server.advertised_tool_defs()[0].name.clone();
+        assert_ne!(advertised, "mcp__git.server__branch/list:all");
+        assert!(
+            advertised
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+            "{advertised}"
+        );
+
+        let res = reg
+            .dispatch_tool(&advertised, json!({}), std::time::Duration::from_secs(1))
+            .await;
+        assert!(matches!(res, Err(DispatchError::ServerNotConnected(s)) if s == "git.server"));
     }
 
     #[test]
@@ -1033,6 +1294,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn effective_http_headers_uses_oauth_access_token_env_regression() {
+        let mut cfg = McpServerConfig {
+            server_type: Some("http".into()),
+            command: None,
+            args: vec![],
+            env: HashMap::new(),
+            env_file: None,
+            headers: HashMap::new(),
+            url: Some("https://mcp.example.test/mcp".into()),
+            oauth: Default::default(),
+        };
+        cfg.oauth.access_token_env = Some("MCP_TEST_TOKEN".into());
+        let env = HashMap::from([("MCP_TEST_TOKEN".to_owned(), "tok_123".to_owned())]);
+
+        let headers = effective_http_headers("server", &cfg, &env)
+            .await
+            .expect("headers resolve");
+
+        assert_eq!(
+            headers.get("Authorization").map(String::as_str),
+            Some("Bearer tok_123")
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_authorization_header_skips_oauth_regression() {
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_owned(), "Bearer static".to_owned());
+        let mut cfg = McpServerConfig {
+            server_type: Some("http".into()),
+            command: None,
+            args: vec![],
+            env: HashMap::new(),
+            env_file: None,
+            headers,
+            url: Some("https://mcp.example.test/mcp".into()),
+            oauth: Default::default(),
+        };
+        cfg.oauth.access_token_env = Some("MISSING_TOKEN_SHOULD_NOT_BE_READ".into());
+
+        let headers = effective_http_headers("server", &cfg, &HashMap::new())
+            .await
+            .expect("explicit auth wins");
+
+        assert_eq!(
+            headers.get("authorization").map(String::as_str),
+            Some("Bearer static")
+        );
+        assert!(!headers.contains_key("Authorization"));
+    }
+
+    #[test]
+    fn client_credentials_form_includes_scope_and_resource_regression() {
+        let mut cfg = McpServerConfig {
+            server_type: Some("http".into()),
+            command: None,
+            args: vec![],
+            env: HashMap::new(),
+            env_file: None,
+            headers: HashMap::new(),
+            url: Some("https://mcp.example.test/mcp".into()),
+            oauth: Default::default(),
+        };
+        cfg.oauth.scopes = vec!["tools.read".into(), "tools.write".into()];
+        cfg.oauth.resource = Some("https://resource.example.test/root".into());
+
+        let form =
+            client_credentials_form(&cfg.oauth, cfg.oauth_resource(), "client-a", "secret-a");
+
+        assert!(form.contains(&("grant_type".into(), "client_credentials".into())));
+        assert!(form.contains(&("client_id".into(), "client-a".into())));
+        assert!(form.contains(&("client_secret".into(), "secret-a".into())));
+        assert!(form.contains(&("scope".into(), "tools.read tools.write".into())));
+        assert!(form.contains(&(
+            "resource".into(),
+            "https://resource.example.test/root/".into()
+        )));
+    }
+
+    #[tokio::test]
     async fn register_servers_with_missing_command_marks_failed_robust() {
         let reg = McpRegistry::new();
         let mut configs = HashMap::new();
@@ -1046,6 +1387,7 @@ mod tests {
                 env_file: None,
                 headers: HashMap::new(),
                 url: None,
+                oauth: Default::default(),
             },
         );
         register_servers_from_config(&reg, &configs).await;
@@ -1070,6 +1412,7 @@ mod tests {
                 env_file: None,
                 headers: HashMap::new(),
                 url: None,
+                oauth: Default::default(),
             },
         );
         register_servers_from_config(&reg, &configs).await;

@@ -5,6 +5,219 @@ use super::*;
 // Re-export from message_view — the canonical definitions now live there.
 pub(crate) use crate::message_view::task_body::task_view_body_lines;
 
+fn modal_overlay_locks_scroll(app: &App) -> bool {
+    app.show_palette
+        || app.show_model_picker
+        || app.show_session_picker
+        || app.show_task_panel
+        || matches!(app.expanded_view, crate::app::ExpandedView::Tasks)
+        || matches!(app.expanded_view, crate::app::ExpandedView::Teammates)
+        || app.show_help
+        || (app.show_diagnostic_panel && !app.engine.diagnostics.is_empty())
+        || app.engine.pending_approval.is_some()
+        || app.engine.pending_question.is_some()
+        || !app.engine.pending_elicitations.is_empty()
+        || app.pending_rewrite_proposal.is_some()
+}
+
+fn should_snap_to_bottom(app: &App, visible: usize, total_lines: usize) -> bool {
+    !modal_overlay_locks_scroll(app)
+        && (app.follow_bottom || app.scroll_offset + visible > total_lines)
+}
+
+fn context_window_label(tokens: usize) -> String {
+    if tokens >= 1_000_000 {
+        let whole = tokens / 1_000_000;
+        if tokens % 1_000_000 == 0 {
+            format!("{whole}M context")
+        } else {
+            let tenth = (tokens % 1_000_000) / 100_000;
+            format!("{whole}.{tenth}M context")
+        }
+    } else if tokens >= 1_000 {
+        format!("{}k context", tokens / 1_000)
+    } else {
+        format!("{tokens} context")
+    }
+}
+
+fn pretty_model_label(model: &str) -> String {
+    let short = model.strip_prefix("claude-").unwrap_or(model);
+    for (prefix, label) in [
+        ("opus-", "Opus"),
+        ("sonnet-", "Sonnet"),
+        ("haiku-", "Haiku"),
+    ] {
+        if let Some(rest) = short.strip_prefix(prefix) {
+            let version = rest
+                .split('-')
+                .take_while(|part| part.chars().all(|c| c.is_ascii_digit()))
+                .collect::<Vec<_>>()
+                .join(".");
+            if !version.is_empty() {
+                return format!("{label} {version}");
+            }
+        }
+    }
+    truncate_str(model, 36)
+}
+
+fn provider_label(provider: &str) -> String {
+    match provider {
+        "anthropic-oauth" => "OAuth".to_string(),
+        "anthropic" => "Anthropic".to_string(),
+        "openai" => "OpenAI".to_string(),
+        "gemini" => "Gemini".to_string(),
+        "openwebui" => "OpenWebUI".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn effort_header_label(app: &App) -> String {
+    if let Some(badge) = app.engine.effort_state.badge() {
+        if let Some(level) = badge.strip_prefix("effort ") {
+            format!("{level} effort")
+        } else {
+            badge
+        }
+    } else {
+        "default effort".to_string()
+    }
+}
+
+fn claude_logo_row(row: usize, t: Theme) -> Vec<Span<'static>> {
+    let flag_red = ratatui::style::Color::Rgb(217, 0, 18);
+    let flag_blue = ratatui::style::Color::Rgb(0, 51, 160);
+    let flag_orange = ratatui::style::Color::Rgb(242, 168, 0);
+    let face_style = Style::default().fg(flag_red);
+    let body_style = Style::default().fg(flag_blue);
+    let foot_style = Style::default().fg(flag_orange);
+    let hat_style = Style::default().fg(flag_red).bg(t.bg);
+    let orange_style = Style::default()
+        .fg(flag_orange)
+        .bg(t.bg)
+        .add_modifier(Modifier::BOLD);
+    let weave_blue_style = Style::default()
+        .fg(flag_blue)
+        .bg(t.bg)
+        .add_modifier(Modifier::BOLD);
+    match row {
+        0 => vec![
+            Span::raw("  "),
+            Span::styled("▟", hat_style),
+            Span::styled("╳", orange_style),
+            Span::styled("◇", weave_blue_style),
+            Span::styled("╳", orange_style),
+            Span::styled("▙", hat_style),
+            Span::raw("  "),
+        ],
+        1 => vec![
+            Span::styled(" ▐", face_style),
+            Span::styled("▛███▜", face_style),
+            Span::styled("▌", face_style),
+            Span::raw(" "),
+        ],
+        2 => vec![Span::styled("▝▜█████▛▘", body_style)],
+        _ => vec![
+            Span::raw("  "),
+            Span::styled("▘▘", foot_style),
+            Span::raw(" "),
+            Span::styled("▝▝", foot_style),
+            Span::raw("  "),
+        ],
+    }
+}
+
+fn with_claude_logo(row: usize, t: Theme, mut text_spans: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = claude_logo_row(row, t);
+    spans.push(Span::raw("  "));
+    spans.append(&mut text_spans);
+    Line::from(spans)
+}
+
+fn empty_session_lines(app: &App, t: Theme, width: u16) -> Vec<Line<'static>> {
+    let provider = app.engine.provider.name();
+    let setup_issues = app
+        .engine
+        .mcp_servers
+        .iter()
+        .filter(|server| matches!(server.status, jfc_core::McpStatus::Error))
+        .count();
+    let title_spans = vec![
+        Span::styled(
+            "JFC",
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" v{}", env!("CARGO_PKG_VERSION")),
+            Style::default().fg(t.text_muted),
+        ),
+    ];
+    let model_spans = vec![Span::styled(
+        format!(
+            "{} ({}) with {} · {}",
+            pretty_model_label(app.engine.model.as_str()),
+            context_window_label(app.engine.max_context_tokens),
+            effort_header_label(app),
+            provider_label(provider),
+        ),
+        Style::default().fg(t.text_secondary),
+    )];
+    let cwd_spans = vec![Span::styled(
+        truncate_str(&app.engine.cwd, 72),
+        Style::default().fg(t.text_secondary),
+    )];
+
+    let mut lines = if width >= 70 {
+        vec![
+            with_claude_logo(0, t, title_spans),
+            with_claude_logo(1, t, model_spans),
+            with_claude_logo(2, t, cwd_spans),
+            with_claude_logo(3, t, Vec::new()),
+            Line::from(""),
+        ]
+    } else {
+        vec![
+            Line::from(title_spans),
+            Line::from(model_spans),
+            Line::from(cwd_spans),
+            Line::from(""),
+        ]
+    };
+
+    if setup_issues > 0 {
+        let issue_word = if setup_issues == 1 { "issue" } else { "issues" };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{setup_issues} setup {issue_word}: "),
+                Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("MCP", Style::default().fg(t.warning)),
+            Span::styled(" · /doctor", Style::default().fg(t.text_muted)),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    lines.extend([
+        Line::from(Span::styled(
+            "What can I help you with?",
+            Style::default().fg(t.text_muted),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  ?    keybindings",
+            Style::default().fg(t.text_muted),
+        )),
+        Line::from(Span::styled(
+            "  Ctrl+P    palette · Ctrl+M    model picker",
+            Style::default().fg(t.text_muted),
+        )),
+    ]);
+    lines
+}
+
 pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     use crate::message_view::MessageView;
     use ratatui::widgets::Widget;
@@ -18,28 +231,14 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    // Reserve the scrollbar's 1-cell column up front so the
-    // total-lines computation uses the SAME width MessageView will
-    // actually render at. Earlier we computed total at full inner
-    // width and then chopped 1 col when the scrollbar showed —
-    // long lines wrapped at the smaller width during render but
-    // weren't counted in the wider-width total, so `follow_bottom`
-    // pinned to a position that still left the true last row
-    // offscreen until the next chunk's recompute caught up.
-    //
-    // Always reserving the column is cheap (1 col) and makes the
-    // scroll math consistent across "needs scrolling vs doesn't"
-    // states. A pure visual cost when no scrollbar is visible:
-    // ~1.5% of a 60-col message column.
-    //
-    // Total horizontal overhead for the (borderless) transcript:
-    //   padding (1 left + 1 right)  = 2
-    //   scrollbar reserve           = 1
-    //                         total  = 3
+    // Total horizontal overhead for the borderless transcript is just the
+    // block padding (1 left + 1 right). Keep the measured width and the
+    // MessageView render width identical so scroll/follow-bottom math cannot
+    // drift from wrapping.
     // The transcript is flat — no box border — so it costs no rows/cols beyond
-    // padding + the scrollbar gutter (region separators are the flat-top docks
-    // below, not a frame around the messages).
-    let inner_width = area.width.saturating_sub(3) as usize;
+    // padding (region separators are the flat-top docks below, not a frame
+    // around the messages).
+    let inner_width = area.width.saturating_sub(2) as usize;
 
     // Build render items ONCE per frame and share them with `MessageView::render`.
     // Pre-fix this function called `message_view_total_lines` (one
@@ -71,10 +270,10 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     // them. The new value is also passed into `PrebuiltItems` so the widget
     // sees it during paint instead of the (still-old) `app.scroll_offset`.
     let scroll_before = app.scroll_offset;
-    let new_scroll_offset = if app.follow_bottom || app.scroll_offset + visible > total_lines {
+    let new_scroll_offset = if should_snap_to_bottom(app, visible, total_lines) {
         total_lines.saturating_sub(visible)
     } else {
-        app.scroll_offset
+        app.scroll_offset.min(total_lines.saturating_sub(visible))
     };
 
     // Build items for the visible message window only. `window_top` is the
@@ -110,11 +309,9 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     );
 
     // Flat transcript: no box border, just 1-cell horizontal padding so prose
-    // doesn't kiss the edge / scrollbar. Region separation comes from the
-    // flat-top docks below (input/spinner), not a frame around the messages —
-    // matching Claude Code & codex, which leave the transcript open. The
-    // scrollbar thumb conveys scroll position, so the old border-title
-    // `↓ N more` overflow indicator is dropped (it was redundant with it).
+    // doesn't kiss the edge. Region separation comes from the flat-top docks
+    // below (input/spinner), not a frame around the messages — matching Claude
+    // Code & codex, which leave the transcript open.
     //
     // (Earlier this was a rounded border that also pulsed `border ↔ accent`
     // while streaming; both the pulse and the box are gone now.)
@@ -140,42 +337,10 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     );
 
     if app.engine.messages.is_empty() && app.engine.streaming_text.is_empty() {
-        // Static placeholder — no boot animation. The empty session is a
-        // calm muted prompt that settles immediately; a star cascade
-        // rippling across the headline on every launch was decoration the
-        // session didn't earn.
-        const HEADLINE: &str = "What can I help you with?";
-        let headline_spans: Vec<Span<'static>> = vec![Span::styled(
-            HEADLINE.to_string(),
-            Style::default().fg(t.text_muted),
-        )];
-        let placeholder = Paragraph::new(vec![
-            Line::from(""),
-            Line::from(headline_spans),
-            Line::from(""),
-            Line::from(Span::styled(
-                "  ?    keybindings",
-                Style::default().fg(t.text_muted),
-            )),
-            Line::from(Span::styled(
-                "  Ctrl+P    palette · Ctrl+M    model picker",
-                Style::default().fg(t.text_muted),
-            )),
-        ])
-        .style(Style::default().bg(t.bg));
+        let placeholder = Paragraph::new(empty_session_lines(app, t, inner.width))
+            .style(Style::default().bg(t.bg));
         f.render_widget(placeholder, inner);
     } else {
-        // Reserve a 1-col gutter on the right for the scrollbar
-        // ALWAYS (not just when scrollbar is visible). The total-
-        // lines computation above uses width-5 (border + padding +
-        // scrollbar) so the rendering must use the same width or the
-        // scroll math gets off-by-N when the gutter goes from
-        // "absent" to "present" mid-stream.
-        let scrollbar_visible = total_lines > visible && visible > 0;
-        let content_inner = Rect {
-            width: inner.width.saturating_sub(1),
-            ..inner
-        };
         // The widget walks the items it's handed and skips `scroll` rows
         // from the FIRST item — with windowed items that must be the
         // window-relative offset, not the absolute transcript offset.
@@ -187,29 +352,7 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
                 scroll: window_scroll,
             }),
         }
-        .render(content_inner, f.buffer_mut());
-
-        if scrollbar_visible {
-            // ratatui::widgets::Scrollbar drives off ScrollbarState
-            // (content length, position, viewport length). Mapping
-            // jfc's existing `scroll_offset / total_lines` straight
-            // in. The thumb is bound to the body region (excluding
-            // top+bottom borders) by passing `area` (the bordered
-            // block) and using `Vertical-Right` orientation.
-            use ratatui::prelude::StatefulWidget;
-            use ratatui::widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState};
-            let mut state = ScrollbarState::new(total_lines.saturating_sub(visible))
-                .position(new_scroll_offset)
-                .viewport_content_length(visible);
-            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .begin_symbol(Some(crate::glyphs::SCROLLBAR_BEGIN))
-                .end_symbol(Some(crate::glyphs::SCROLLBAR_END))
-                .thumb_symbol(crate::glyphs::SCROLLBAR_THUMB)
-                .track_symbol(Some(crate::glyphs::SCROLLBAR_TRACK))
-                .style(t.style_text_muted)
-                .thumb_style(t.style_accent);
-            scrollbar.render(area, f.buffer_mut(), &mut state);
-        }
+        .render(inner, f.buffer_mut());
 
         // (The "token rain" border cell that pulsed on each arriving token
         // lived here — removed. It faked liveness in the corner of the
@@ -408,9 +551,9 @@ fn render_workflow_detail(
 pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     let t = app.theme;
     // Flat dock: a single TOP divider, not a full box — so no L/R borders.
-    // MessageView still reserves 3 cols of its inner width (scrollbar +
-    // its own L/R padding), so the height estimate is full width − 3.
-    let inner_width = area.width.saturating_sub(3) as usize;
+    // MessageView has no internal gutter; estimate with the same width it
+    // renders at.
+    let inner_width = area.width as usize;
 
     let (title_str, body_lines, use_message_view) = match app.engine.background_tasks.get(task_id) {
         None => (format!("task {task_id} (not found)"), Vec::new(), false),
@@ -518,10 +661,11 @@ pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_
                 .map(|i| i.height(inner_width))
                 .sum::<usize>()
         };
-        let new_scroll = if app.follow_bottom || app.scroll_offset + visible > total_lines_est {
+        let new_scroll = if should_snap_to_bottom(app, visible, total_lines_est) {
             total_lines_est.saturating_sub(visible)
         } else {
             app.scroll_offset
+                .min(total_lines_est.saturating_sub(visible))
         };
         app.scroll_offset = new_scroll;
         app.total_lines = total_lines_est;
@@ -622,8 +766,10 @@ pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_
             })
             .sum();
 
-        if app.follow_bottom || app.scroll_offset + visible > total_lines {
+        if should_snap_to_bottom(app, visible, total_lines) {
             app.scroll_offset = total_lines.saturating_sub(visible);
+        } else {
+            app.scroll_offset = app.scroll_offset.min(total_lines.saturating_sub(visible));
         }
         app.total_lines = total_lines;
         app.viewport_height = visible;
@@ -685,17 +831,13 @@ fn common_word_prefix<'a>(items: &[&'a str]) -> &'a str {
 
 pub(super) fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
     let t = app.theme;
-    // Show one tab per running BackgroundTask. Selected tab tracks
-    // `viewing_task_id`. Hint row sits below the tabs so the user
-    // sees both `← →` cycling and the `↑` exit at a glance — the
-    // previous one-line `[1 of N] ◀ back ▶ next` collapsed both
-    // navigation and identity into a string that scanned poorly with
-    // 5+ tasks.
+    // One quiet tab strip. Selected tab tracks `viewing_task_id`; navigation
+    // hints are appended only when there is room.
     let task_ids: Vec<String> = super::agents::fleet_ordered_task_ids(app);
     if task_ids.is_empty() {
         f.render_widget(
             Paragraph::new(Line::from(vec![Span::styled(
-                "↑ back  · no tasks",
+                "↑ back · no agents",
                 Style::default().fg(t.text_muted),
             )]))
             .style(Style::default().bg(t.bg)),
@@ -744,10 +886,9 @@ pub(super) fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
             let title = truncate_cells(desc, 22);
             let (glyph, color) = match bt.map(|b| b.status) {
                 Some(jfc_core::TaskLifecycle::Running) => {
-                    let frame = (app.launched_at.elapsed().as_millis() / 240) as usize;
-                    (["✶", "✷", "✸", "✹"][frame % 4], t.warning)
+                    (crate::spinner::frame_for(app.spinner_frame), t.warning)
                 }
-                Some(jfc_core::TaskLifecycle::Completed) => ("●", t.success),
+                Some(jfc_core::TaskLifecycle::Completed) => ("✓", t.success),
                 Some(jfc_core::TaskLifecycle::Failed) => ("✗", t.error),
                 _ => ("○", t.text_muted),
             };
@@ -758,11 +899,6 @@ pub(super) fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
             }
         })
         .collect();
-
-    let split = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1)])
-        .split(area);
 
     // Window the tabs around `selected` so they never run off the edge.
     // Grow outward (right-biased) from the selected tab while the strip
@@ -805,49 +941,30 @@ pub(super) fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
         let title_style = if sel {
             Style::default()
                 .fg(t.text_primary)
-                .bg(t.surface_raised)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(t.text_muted)
         };
-        spans.push(Span::styled(
-            format!("{} ", tab.glyph),
-            if sel {
-                glyph_style.bg(t.surface_raised)
-            } else {
-                glyph_style
-            },
-        ));
+        spans.push(Span::styled(format!("{} ", tab.glyph), glyph_style));
         spans.push(Span::styled(tab.title.clone(), title_style));
     }
     if hi + 1 < n {
         spans.push(Span::styled(" ›", Style::default().fg(t.text_muted)));
     }
+
+    let used_w: usize = spans.iter().map(|sp| cell_width(&sp.content)).sum();
+    let hint = format!("↑ back · ←/→ · {}/{}", selected + 1, n);
+    let hint_w = cell_width(&hint);
+    if used_w + hint_w + 3 <= area.width as usize {
+        spans.push(Span::styled(
+            " ".repeat((area.width as usize).saturating_sub(used_w + hint_w)),
+            Style::default(),
+        ));
+        spans.push(Span::styled(hint, Style::default().fg(t.text_muted)));
+    }
     f.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(t.bg)),
-        split[0],
-    );
-
-    // Hint row + a right-aligned `n/N` position so you always know where
-    // you are in the fleet even when the window hides some tabs.
-    let hint = "↑ back · ←/→ cycle · ↓ latest";
-    let counter = format!("{}/{}", selected + 1, n);
-    let pad = (area.width as usize)
-        .saturating_sub(cell_width(hint) + cell_width(&counter) + 1)
-        .max(1);
-    let hint_line = Line::from(vec![
-        Span::styled(hint, Style::default().fg(t.text_muted)),
-        Span::styled(" ".repeat(pad), Style::default()),
-        Span::styled(
-            counter,
-            Style::default()
-                .fg(t.text_secondary)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]);
-    f.render_widget(
-        Paragraph::new(hint_line).style(Style::default().bg(t.bg)),
-        split[1],
+        area,
     );
 }
 
@@ -874,11 +991,7 @@ fn pick_next_open_task(tasks: &[jfc_session::Task]) -> Option<&jfc_session::Task
     tasks
         .iter()
         .find(|t| matches!(t.status, TaskStatus::InProgress))
-        .or_else(|| {
-            tasks
-                .iter()
-                .find(|t| matches!(t.status, TaskStatus::Pending))
-        })
+        .or_else(|| tasks.iter().find(|t| t.status.is_open()))
 }
 
 /// Single- or double-row spinner widget rendered between the message
@@ -1019,9 +1132,9 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         );
         head_glyph = segs.glyph;
         dim = segs.dim;
-        // Honest phase label, unless an in-progress task names the actual
-        // work — its `activeForm` is more specific *and* still honest, so
-        // it wins. No random decorative verb, no shimmer sweep.
+        // Spinner label. Requesting/thinking stay literal because they map to
+        // specific wire states; working/responding/tool gaps use Claude's
+        // configured verb vocabulary, chosen from a stable session+turn seed.
         let lifecycle = app.engine.stream_lifecycle.as_ref();
         let label: std::borrow::Cow<'_, str> = {
             let tasks = app
@@ -1038,15 +1151,40 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
                 .or_else(|| {
                     lifecycle.map(|status| std::borrow::Cow::Borrowed(status.phase.label()))
                 })
-                .unwrap_or(std::borrow::Cow::Borrowed(app.spinner_state.phase.label()))
+                .unwrap_or_else(|| match app.spinner_state.phase {
+                    crate::spinner::SpinnerPhase::Requesting
+                    | crate::spinner::SpinnerPhase::Thinking => {
+                        std::borrow::Cow::Borrowed(app.spinner_state.phase.label())
+                    }
+                    crate::spinner::SpinnerPhase::Responding
+                    | crate::spinner::SpinnerPhase::ToolUse
+                    | crate::spinner::SpinnerPhase::Working => {
+                        let mut seed = app.engine.tool_ctx.total_user_turns as usize;
+                        if let Some(session_id) = app.engine.current_session_id.as_ref() {
+                            for b in session_id.as_str().bytes() {
+                                seed = seed.wrapping_mul(16_777_619) ^ b as usize;
+                            }
+                        }
+                        crate::spinner::spinner_verb_for_index(seed)
+                    }
+                    crate::spinner::SpinnerPhase::Compacting
+                    | crate::spinner::SpinnerPhase::NetworkRecovery => {
+                        std::borrow::Cow::Borrowed(app.spinner_state.phase.label())
+                    }
+                })
         };
+        let mut label = label.into_owned();
+        if !matches!(
+            app.spinner_state.phase,
+            crate::spinner::SpinnerPhase::Requesting | crate::spinner::SpinnerPhase::Thinking
+        ) && !label.ends_with('…')
+        {
+            label.push('…');
+        }
         // Label color: secondary while live, muted once the stream has
         // gone quiet (the honest "stalled" tint — dimmer, not redder).
-        let label_color = if dim { t.text_muted } else { t.text_secondary };
-        verb_spans.push(Span::styled(
-            label.into_owned(),
-            Style::default().fg(label_color),
-        ));
+        let label_color = if dim { t.text_muted } else { t.warning };
+        verb_spans.push(Span::styled(label, Style::default().fg(label_color)));
         tail_body = if let Some(status) = lifecycle {
             let age = now.duration_since(status.updated_at).as_secs();
             let mut body = String::new();
@@ -1056,8 +1194,15 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             }
             body.push_str(&format!(" · {age}s"));
             if !segs.body.is_empty() {
-                body.push_str(" · ");
-                body.push_str(segs.body.trim_start_matches(" · "));
+                let mut status_body = segs.body.trim_start_matches(" · ");
+                let elapsed_chip = crate::spinner::fmt_elapsed(elapsed);
+                if let Some(rest) = status_body.strip_prefix(&elapsed_chip) {
+                    status_body = rest.trim_start_matches(" · ");
+                }
+                if !status_body.is_empty() {
+                    body.push_str(" · ");
+                    body.push_str(status_body);
+                }
             }
             body
         } else {
@@ -1083,7 +1228,7 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // free-running pulse on an idle screen. It holds accent while
         // active and dims to muted once the wire has gone quiet, matching
         // the label.
-        let glyph_color = if dim { t.text_muted } else { t.accent };
+        let glyph_color = if dim { t.text_muted } else { t.warning };
         let mut s = vec![Span::styled(
             format!("{} ", head_glyph),
             Style::default()
@@ -1130,7 +1275,7 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             // Show a spinner tip during streaming when no task is queued
             if let Some(tip) = crate::spinner::spinner_tip(app.spinner_frame) {
                 let row1_line = Line::from(vec![Span::styled(
-                    format!("  💡 {tip}"),
+                    format!("  Tip: {tip}"),
                     Style::default().fg(t.text_muted),
                 )]);
                 f.render_widget(
@@ -1147,14 +1292,13 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
     // lives on the other side, where peripheral status belongs.
 }
 
-/// Pinned todo list above the input. Mirrors Claude Code's todo widget:
-/// one header row (`Tasks (k/n done)`), then up to the dynamic visible cap
-/// task rows with status glyphs (✓ done, ◐ in-progress, ☐ pending, ◯
-/// blocked-on-open-task) and an optional `… +N more` footer. In-progress
-/// tasks bubble to the top so the row the user is actively driving stays
-/// on screen even with a long pending queue. Per-subagent model badges
-/// deliberately don't render here — they belong in the agent fan tree
-/// where execution lives, not in the todo list where intent lives.
+/// Pinned todo list above the input. Mirrors Claude Code's compact task status:
+/// one quiet header row (`3 tasks (1 done, 2 open)`), then up to the dynamic
+/// visible cap task rows with status glyphs and an optional `… +N more` footer.
+/// In-progress tasks bubble to the top so the row the user is actively driving
+/// stays on screen even with a long pending queue. Per-subagent model badges
+/// deliberately don't render here — they belong in the agent fan tree where
+/// execution lives, not in the todo list where intent lives.
 pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 || area.width < 10 {
         return;
@@ -1172,12 +1316,7 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     // tasks, no recently-completed fade-out tail), skip entirely. The
     // layout already collapses our chunk height to 0 in that case, but
     // this lets `tasks_pinned_row` be safely called from elsewhere.
-    let any_live = all.iter().any(|t| {
-        matches!(
-            t.status,
-            jfc_session::TaskStatus::Pending | jfc_session::TaskStatus::InProgress
-        )
-    });
+    let any_live = all.iter().any(|t| t.status.is_open());
     let now = std::time::Instant::now();
     let any_recent = all
         .iter()
@@ -1197,7 +1336,7 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         .collect();
     let mut pending: Vec<_> = all
         .iter()
-        .filter(|t| t.status == jfc_session::TaskStatus::Pending)
+        .filter(|t| t.status.is_open() && t.status != jfc_session::TaskStatus::InProgress)
         .collect();
     let completed: Vec<_> = all
         .iter()
@@ -1219,9 +1358,6 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         a_blocked.cmp(&b_blocked).then_with(|| a.id.cmp(&b.id))
     });
 
-    let total = in_progress.len() + pending.len() + completed.len();
-    let done = completed.len();
-
     // Which todo is the running agent actually working on right now?
     // Link through the active agent's `parent_task_id` so that one task
     // reads as the live focus (bright + animated) while the rest of the
@@ -1233,32 +1369,13 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         .and_then(|aid| app.engine.background_tasks.get(aid))
         .and_then(|bt| bt.parent_task_id.clone());
 
-    // Header: a glanceable progress bar instead of "(99 done, 12 in
-    // progress)" arithmetic. `tasks ███████░ 89% · 99/111`.
-    let pct = (done * 100).checked_div(total).unwrap_or(0);
-    const BAR_W: usize = 10;
-    let filled = (pct * BAR_W / 100).min(BAR_W);
-    let bar: String = "█".repeat(filled);
-    let rest: String = "░".repeat(BAR_W - filled);
-    let title_line = Line::from(vec![
-        Span::styled(
-            " tasks ",
-            Style::default()
-                .fg(t.text_secondary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(bar, Style::default().fg(t.success)),
-        Span::styled(rest, Style::default().fg(t.border)),
-        Span::styled(
-            format!(" {pct}% · {done}/{total} "),
-            Style::default().fg(t.text_muted),
-        ),
-    ]);
+    let active_open = in_progress.len() + pending.len();
 
     // Flat: no divider rule — the pinned list floats above the input (the
     // input keeps the one top rule), so the bottom reads as two boundaries,
-    // not a stack of shelves. The progress header is the first body line.
-    let block = Block::default().style(Style::default().bg(t.surface));
+    // not a stack of shelves. Keep the background transparent to the chat
+    // dock rather than drawing a full-width task box.
+    let block = Block::default().style(Style::default().bg(t.bg));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -1277,11 +1394,13 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         })
         .count();
 
-    // Everything done: collapse to a single celebratory line. A full 100%
-    // progress bar plus a "N just completed" line was redundant once nothing
-    // is in flight — the bar is for live work.
+    let title_line = tasks_pinned_header_line(recent_done, active_open, &t);
+
+    // Everything done: collapse to a single recent-completion line. Historical
+    // completions stay out of the dock so old task stores don't dominate the
+    // current prompt.
     if !any_live {
-        let n = done.max(recent_done);
+        let n = recent_done.max(1);
         let label = if n == 1 {
             "1 task done".to_owned()
         } else {
@@ -1289,16 +1408,17 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         };
         f.render_widget(
             Paragraph::new(Line::from(vec![
+                Span::styled("  ", Style::default()),
                 Span::styled("✓ ", Style::default().fg(t.success)),
                 Span::styled(label, Style::default().fg(t.success)),
             ]))
-            .style(Style::default().bg(t.surface)),
+            .style(Style::default().bg(t.bg)),
             inner,
         );
         return;
     }
 
-    // Live work: progress-bar header line, then the recent-completed summary.
+    // Live work: compact header line, then the recent-completed summary.
     rendered.push(title_line);
     if recent_done > 0 && rendered.len() < visible_budget {
         let label = if recent_done == 1 {
@@ -1307,29 +1427,17 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
             format!("{recent_done} just completed")
         };
         rendered.push(Line::from(vec![
+            Span::styled("  ", Style::default()),
             Span::styled("✓ ", Style::default().fg(t.success)),
             Span::styled(label, Style::default().fg(t.success)),
         ]));
     }
 
-    // In-progress tasks. The focal task (the one the running agent is on,
-    // else the first) gets an animated amber spinner + bright bold text
-    // and its activeForm sub-line; the rest dim to text_secondary with a
-    // static `◐`, so the eye lands on what's live right now.
-    // Only animate the focal spinner when there's REAL activity (a stream
-    // or a live agent) — that's exactly when the event loop redraws every
-    // tick, so the braille advances smoothly. With no live work the frame
-    // wouldn't redraw on its own, so a "spinning" glyph would freeze until
-    // the next keypress (the jank we're fixing); show a static `◐` then.
-    let any_alive_agent = app
-        .engine
-        .background_tasks
-        .values()
-        .any(|bt| bt.status.is_alive());
-    let animate = !crate::spinner::reduced_motion() && (app.engine.is_streaming || any_alive_agent);
-    let spin_frame = (app.launched_at.elapsed().as_millis() / 100) as usize;
-    let spinner = crate::app::SPINNER[spin_frame % crate::app::SPINNER.len()];
+    // In-progress tasks use a filled square, not a second spinner. The live
+    // spinner row already carries activity; the checklist is state, so it
+    // stays stable while the turn redraws.
     let mut focal_used = false;
+    let mut open_rendered = 0usize;
     for (i, task) in in_progress.iter().enumerate() {
         if rendered.len() >= visible_budget {
             break;
@@ -1342,26 +1450,29 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
             focal_used = true;
         }
         let (glyph, glyph_style, name_style) = if is_focal {
-            let g = if animate { spinner } else { "◐" };
             (
-                g.to_string(),
-                Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
+                "■".to_string(),
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
                 Style::default()
                     .fg(t.text_primary)
                     .add_modifier(Modifier::BOLD),
             )
         } else {
             (
-                "◐".to_string(),
-                Style::default().fg(t.warning),
-                Style::default().fg(t.text_secondary),
+                "■".to_string(),
+                Style::default().fg(t.accent_secondary),
+                Style::default()
+                    .fg(t.text_secondary)
+                    .add_modifier(Modifier::BOLD),
             )
         };
-        let avail = render_width.saturating_sub(3);
+        let avail = render_width.saturating_sub(5);
         rendered.push(Line::from(vec![
+            Span::styled("  ", Style::default()),
             Span::styled(format!("{glyph} "), glyph_style),
             Span::styled(truncate_str(&task.subject, avail), name_style),
         ]));
+        open_rendered += 1;
         // activeForm sub-line only for the focal task — that's the one
         // whose live activity ("Constructing CFG…") is worth the row.
         if is_focal
@@ -1369,9 +1480,9 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
             && form != &task.subject
             && rendered.len() < visible_budget
         {
-            let sub_avail = render_width.saturating_sub(5);
+            let sub_avail = render_width.saturating_sub(7);
             rendered.push(Line::from(vec![
-                Span::styled("  ", Style::default()),
+                Span::styled("    ", Style::default()),
                 Span::styled(
                     truncate_str(form, sub_avail),
                     Style::default()
@@ -1392,22 +1503,23 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
             .filter(|id| !completed_ids.contains(id.as_str()))
             .map(|id| id.as_str())
             .collect();
-        let blocked = !open_blockers.is_empty();
-        // Queued = hollow `○` (matches the fan's idle glyph); blocked =
-        // dotted `◌`, dimmer, with its blockers spelled out.
-        let icon = if blocked { "◌" } else { "○" };
+        let blocked = task.status == jfc_session::TaskStatus::Blocked || !open_blockers.is_empty();
+        // Queued = hollow checkbox; blocked keeps the same shape but dims and
+        // spells out the blocker so the row stays text-first.
+        let icon = task.status.glyph();
         let color = if blocked {
             t.text_muted
         } else {
             t.text_secondary
         };
         let blockers_suffix = if blocked {
-            format!(" · ⏳ {}", open_blockers.join(", "))
+            format!(" · blocked by {}", open_blockers.join(", "))
         } else {
             String::new()
         };
-        let avail = render_width.saturating_sub(3 + blockers_suffix.len());
+        let avail = render_width.saturating_sub(5 + blockers_suffix.len());
         rendered.push(Line::from(vec![
+            Span::styled("  ", Style::default()),
             Span::styled(format!("{icon} "), Style::default().fg(color)),
             Span::styled(
                 truncate_str(&task.subject, avail),
@@ -1420,11 +1532,11 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
                     .add_modifier(Modifier::ITALIC),
             ),
         ]));
+        open_rendered += 1;
     }
 
     // Overflow footer if we couldn't fit everything.
-    let active_open = in_progress.len() + pending.len();
-    let hidden_open = active_open.saturating_sub(rendered.len());
+    let hidden_open = active_open.saturating_sub(open_rendered);
     if hidden_open > 0 && rendered.len() < visible_budget {
         rendered.push(Line::from(Span::styled(
             format!("  … +{hidden_open} more · open /tasks for the full list"),
@@ -1435,9 +1547,29 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     }
 
     f.render_widget(
-        Paragraph::new(rendered).style(Style::default().bg(t.surface)),
+        Paragraph::new(rendered).style(Style::default().bg(t.bg)),
         inner,
     );
+}
+
+fn tasks_pinned_header_line(recent_done: usize, active_open: usize, t: &Theme) -> Line<'static> {
+    let shown_total = active_open + recent_done;
+    let summary = match (recent_done, active_open) {
+        (0, open) => format!("({open} open)"),
+        (done, 0) => format!("({done} done)"),
+        (done, open) => format!("({done} done, {open} open)"),
+    };
+    let spans = vec![
+        Span::styled("  ", Style::default()),
+        Span::styled(
+            format!("{shown_total} tasks"),
+            Style::default()
+                .fg(t.text_secondary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!(" {summary}"), Style::default().fg(t.text_muted)),
+    ];
+    Line::from(spans)
 }
 
 /// Render the running-agents tree in its own chunk beneath the input box.
@@ -1445,6 +1577,7 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
 /// path. Skips entirely when there's no live data — caller already gates
 /// on `tree_rows > 0`, but defensive return keeps the function safe to
 /// call unconditionally in future call sites.
+#[allow(dead_code)]
 pub(super) fn agent_fan_below_input(f: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 {
         return;

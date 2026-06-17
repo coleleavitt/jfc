@@ -93,6 +93,19 @@ pub(super) fn truncate_lines_middle_row_count(line_count: usize, max_lines: usiz
     }
 }
 
+pub(super) fn expand_hint_text(count: usize, unit: &str) -> String {
+    let plural = if count == 1 {
+        unit.to_owned()
+    } else {
+        format!("{unit}s")
+    };
+    format!("… +{count} {plural} (ctrl+o to expand)")
+}
+
+pub(super) fn expand_hint_line(count: usize, unit: &str, style: Style) -> Line<'static> {
+    Line::from(Span::styled(expand_hint_text(count, unit), style))
+}
+
 /// Keep the head and tail of already-wrapped terminal output, inserting a
 /// visible omission marker in the middle. This preserves the final error lines
 /// that are usually more useful than the middle of a long log.
@@ -124,10 +137,7 @@ pub(super) fn truncate_lines_middle(
 }
 
 fn omitted_line(omitted: usize, style: Style) -> Line<'static> {
-    Line::from(Span::styled(
-        format!("… {omitted} omitted lines"),
-        style.add_modifier(Modifier::ITALIC),
-    ))
+    expand_hint_line(omitted, "line", style)
 }
 
 fn char_width(ch: char) -> usize {
@@ -200,7 +210,12 @@ pub(super) fn colorize_diffstat_line(
 }
 
 fn push_diffstat_bar(spans: &mut Vec<Span<'static>>, buf: &mut String, kind: char, t: Theme) {
-    let color = if kind == '+' { t.success } else { t.error };
+    let ui_tokens = t.claude_ui_tokens();
+    let color = if kind == '+' {
+        ui_tokens.diff_added
+    } else {
+        ui_tokens.diff_removed
+    };
     let modifier = if kind == '+' {
         Modifier::BOLD
     } else {

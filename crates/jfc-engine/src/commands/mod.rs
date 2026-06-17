@@ -10,6 +10,8 @@ pub mod automation;
 pub mod context;
 pub mod delegating;
 pub mod github;
+pub mod inbox;
+pub mod inbox_helper;
 pub mod info;
 pub mod local;
 pub mod markdown;
@@ -40,6 +42,7 @@ use prelude::*;
 use account::*;
 use context::*;
 use delegating::*;
+use inbox::*;
 use info::*;
 use session::*;
 use task::*;
@@ -110,7 +113,9 @@ engine_commands! {
         "/reloadSettings" ["/reload-settings"] "reload configuration from disk without restarting" => cmd_reload_settings,
         "/continue" ["/c"] "resume the most recent session (`/continue all` for any cwd)" => cmd_continue,
         "/resume" [] "resume a specific session by id" => cmd_resume,
-        "/sessions" [] "list all saved sessions" => cmd_sessions,
+         "/sessions" [] "list all saved sessions (also: /sessions send <id> <message>)" => cmd_sessions,
+         "/inbox" [] "list or clear this session's inter-session inbox" => cmd_inbox,
+
         "/workflow" ["/wf", "/workflows"] "list running + available workflows; run a named workflow" => cmd_workflow,
         "/login" [] "authenticate with a provider (browser flow)" => cmd_login,
         "/logout" [] "wipe stored credentials" => cmd_logout,
@@ -145,8 +150,9 @@ engine_commands! {
         "/market" [] "show the agent-economy snapshot" => cmd_market,
         "/task-list" ["/tasks"] "list todo/task items" => cmd_task_list,
         "/task-add" [] "create a new task" => cmd_task_add,
-        "/task-done" [] "mark a task completed" => cmd_task_done,
+        "/task-done" [] "mark a task completed (`all` completes every open task)" => cmd_task_done,
         "/task-rm" ["/task-delete"] "delete a task" => cmd_task_rm,
+        "/task-clear" ["/tasks-clear"] "clear tasks (`terminal`, `open`, or `all`)" => cmd_task_clear,
         "/claude-md" [] "show which CLAUDE.md layers are loaded" => cmd_claude_md,
         "/mode" [] "switch permission mode (default/plan/accept/auto/bypass)" => cmd_mode,
         "/auto-mode" [] "toggle the autonomous tool classifier" => cmd_auto_mode,
@@ -160,6 +166,7 @@ engine_commands! {
         "/parity" [] "draft or update PARITY.md (evidence required)" => cmd_parity,
         "/philosophy" [] "draft or update PHILOSOPHY.md" => cmd_philosophy,
         "/usage" [] "draft or update USAGE.md (operator commands)" => cmd_usage,
+        "/usage-report" ["/usage_stats", "/usage-stats", "/usage_report"] "show session token usage by model with cost/budget" => cmd_usage_report,
         "/cost" ["/stats"] "show session cost / token usage" => cmd_cost,
         "/audit" [] "show the runtime audit ledger (agent actions)" => cmd_audit,
         "/changes" [] "list/show/apply/revert agent change-sets" => cmd_changes,
@@ -532,6 +539,10 @@ fn start_synthetic_user_turn(
     body: String,
     tx: &mpsc::Sender<EngineEvent>,
 ) {
+    if crate::runtime::ops::refuse_budget_cap_if_reached(state) {
+        return;
+    }
+
     let assistant_idx = state.messages.len() + 1;
     state.messages.push(ChatMessage::user(body));
     state.tool_ctx.total_user_turns += 1;

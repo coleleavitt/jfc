@@ -203,6 +203,10 @@ pub(super) async fn handle_pr_autofix(
         return;
     };
 
+    if crate::runtime::ops::refuse_budget_cap_if_reached(state) {
+        return;
+    }
+
     let assistant_idx = state.messages.len() + 1;
     state.messages.push(ChatMessage::user(prompt));
     state.tool_ctx.total_user_turns += 1;

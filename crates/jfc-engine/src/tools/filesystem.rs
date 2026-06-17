@@ -1,7 +1,9 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
+use std::time::SystemTime;
 
+use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 use tracing::{debug, info, trace, warn};
 
@@ -41,6 +43,119 @@ pub async fn acquire_file_lock(path: &str) -> Arc<Mutex<()>> {
         .entry(path.to_owned())
         .or_insert_with(|| Arc::new(Mutex::new(())))
         .clone()
+}
+
+fn path_has_component(path: &Path, needle: &str) -> bool {
+    path.components()
+        .any(|component| component.as_os_str().to_string_lossy() == needle)
+}
+
+fn is_jfc_runtime_state_path(path: &Path) -> bool {
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if !path_has_component(path, ".jfc") && !path_has_component(path, "jfc") {
+        return false;
+    }
+    matches!(
+        file_name,
+        "daemon-state.json"
+            | "tasks.json"
+            | "sessions.json"
+            | "session.json"
+            | "inbox.json"
+            | "config.json"
+    )
+}
+
+fn is_append_only_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("jsonl"))
+}
+
+fn looks_like_numbered_read_output(content: &str) -> bool {
+    let mut checked = 0usize;
+    let mut numbered = 0usize;
+    for line in content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(40)
+    {
+        checked += 1;
+        let Some((prefix, rest)) = line.split_once(':') else {
+            continue;
+        };
+        if !rest.starts_with(' ') {
+            continue;
+        }
+        if !prefix.is_empty() && prefix.chars().all(|ch| ch.is_ascii_digit()) {
+            numbered += 1;
+        }
+    }
+    checked >= 6 && numbered * 100 / checked >= 60
+}
+
+pub fn validate_file_mutation(
+    file_path: &str,
+    before: Option<&str>,
+    after: &str,
+    tool: &str,
+) -> Result<(), String> {
+    if std::env::var("JFC_ALLOW_PROTECTED_FILE_MUTATION")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+
+    let path = Path::new(file_path);
+    if path_has_component(path, ".git") {
+        return Err(format!(
+            "{tool}: refusing to mutate Git internals at {file_path}. Use git commands instead."
+        ));
+    }
+    if is_jfc_runtime_state_path(path) {
+        return Err(format!(
+            "{tool}: refusing to mutate JFC runtime state file {file_path}. Use the relevant JFC command/API instead of raw file replacement."
+        ));
+    }
+
+    let Some(before) = before else {
+        return Ok(());
+    };
+    if is_append_only_path(path) && !after.starts_with(before) {
+        return Err(format!(
+            "{tool}: refusing non-append modification to append-only JSONL file {file_path}."
+        ));
+    }
+    if looks_like_numbered_read_output(after) {
+        return Err(format!(
+            "{tool}: refusing to overwrite {file_path} with numbered Read-tool output. Remove line-number prefixes and retry with the actual file content."
+        ));
+    }
+    Ok(())
+}
+
+pub fn stale_read_recovery_hint(file_path: &str, content: &str) -> String {
+    let digest = Sha256::digest(content.as_bytes());
+    let hash = format!("{digest:x}");
+    let short_hash = &hash[..12];
+    let lines = content.lines().count();
+    let bytes = content.len();
+    let mtime = std::fs::metadata(file_path)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|mtime| mtime.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|| "unknown".to_owned());
+    format!(
+        "stale-read recovery: re-read {file_path} before retrying and copy `old_string` from the current file contents. Current snapshot: {bytes} bytes, {lines} lines, sha256:{short_hash}, mtime_unix:{mtime}."
+    )
+}
+
+pub fn edit_error_needs_stale_recovery_hint(error: &str) -> bool {
+    error.contains("old_string not found")
 }
 
 pub async fn execute_read(
@@ -241,6 +356,10 @@ pub async fn execute_write(file_path: &str, content: &str) -> ExecutionResult {
     // v126 always renders a diff for Write so the user sees what
     // actually changed; a bare "Written 97 bytes" tells them nothing.
     let prior = tokio::fs::read_to_string(&path).await.ok();
+    if let Err(reason) = validate_file_mutation(file_path, prior.as_deref(), content, "Write") {
+        warn!(target: "jfc::tools", file_path, reason = %reason, "write: data-loss guard refused mutation");
+        return ExecutionResult::failure(reason);
+    }
     // /undo capture: stash the pre-mutation content so the user can
     // revert this Write step. None = file didn't exist (undo will
     // delete the new file).
@@ -279,7 +398,12 @@ pub async fn execute_write(file_path: &str, content: &str) -> ExecutionResult {
             } else {
                 String::new()
             };
-            ExecutionResult::success(format!("{header}\n\n{preview}{footer}"))
+            let result = ExecutionResult::success(format!("{header}\n\n{preview}{footer}"));
+            if let Some(prior) = &prior {
+                result.with_diff(build_edit_diff_view(file_path, prior, content))
+            } else {
+                result
+            }
         }
         Err(e) => {
             warn!(target: "jfc::tools", file_path, error = %e, "write: cannot write file");
@@ -514,14 +638,16 @@ pub async fn execute_edit(
                     }
                     WsMatch::Ambiguous(n) => {
                         warn!(target: "jfc::tools", file_path, n, "edit: ambiguous whitespace match");
+                        let hint = stale_read_recovery_hint(file_path, &content);
                         return ExecutionResult::failure(format!(
-                            "old_string not found exactly, and the whitespace-insensitive match is ambiguous ({n} candidates) in {file_path}. Include surrounding lines to disambiguate."
+                            "old_string not found exactly, and the whitespace-insensitive match is ambiguous ({n} candidates) in {file_path}. Include surrounding lines to disambiguate.\n{hint}"
                         ));
                     }
                     WsMatch::None => {
                         warn!(target: "jfc::tools", file_path, "edit: old_string not found");
+                        let hint = stale_read_recovery_hint(file_path, &content);
                         return ExecutionResult::failure(format!(
-                            "old_string not found in {file_path}"
+                            "old_string not found in {file_path}\n{hint}"
                         ));
                     }
                 }
@@ -540,6 +666,12 @@ pub async fn execute_edit(
             let count = count.max(1);
             // /undo capture: stash the pre-mutation content. The Edit
             // tool always preserves the file, so we never push None.
+            if let Err(reason) =
+                validate_file_mutation(file_path, Some(&content), &new_content, "Edit")
+            {
+                warn!(target: "jfc::tools", file_path, reason = %reason, "edit: data-loss guard refused mutation");
+                return ExecutionResult::failure(reason);
+            }
             crate::tools::push_undo_entry(file_path, Some(content.clone()), "Edit");
             match tokio::fs::write(file_path, &new_content).await {
                 Ok(_) => {
@@ -575,16 +707,22 @@ pub async fn execute_edit(
                 }
             }
         }
-        Err(_) if old_string.is_empty() => match tokio::fs::write(file_path, new_string).await {
-            Ok(_) => {
-                debug!(target: "jfc::tools", file_path, "edit: created new file");
-                ExecutionResult::success(format!("Created new file {file_path}"))
+        Err(_) if old_string.is_empty() => {
+            if let Err(reason) = validate_file_mutation(file_path, None, new_string, "Edit") {
+                warn!(target: "jfc::tools", file_path, reason = %reason, "edit: data-loss guard refused create");
+                return ExecutionResult::failure(reason);
             }
-            Err(e2) => {
-                warn!(target: "jfc::tools", file_path, error = %e2, "edit: cannot create file");
-                ExecutionResult::failure(format!("Cannot create file: {e2}"))
+            match tokio::fs::write(file_path, new_string).await {
+                Ok(_) => {
+                    debug!(target: "jfc::tools", file_path, "edit: created new file");
+                    ExecutionResult::success(format!("Created new file {file_path}"))
+                }
+                Err(e2) => {
+                    warn!(target: "jfc::tools", file_path, error = %e2, "edit: cannot create file");
+                    ExecutionResult::failure(format!("Cannot create file: {e2}"))
+                }
             }
-        },
+        }
         Err(e) => {
             warn!(target: "jfc::tools", file_path, error = %e, "edit: cannot read file");
             ExecutionResult::failure(format!("Cannot read file: {e}"))
@@ -592,13 +730,67 @@ pub async fn execute_edit(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineEdit<'a> {
+    Equal(&'a str),
+    Removed(&'a str),
+    Added(&'a str),
+}
+
+fn line_edit_script<'a>(old: &'a [&'a str], new: &'a [&'a str]) -> Option<Vec<LineEdit<'a>>> {
+    const MAX_LCS_CELLS: usize = 200_000;
+    let cols = new.len().checked_add(1)?;
+    let cells = old.len().checked_add(1)?.checked_mul(cols)?;
+    if cells > MAX_LCS_CELLS {
+        return None;
+    }
+
+    let mut lcs = vec![0usize; cells];
+    for i in (0..old.len()).rev() {
+        for j in (0..new.len()).rev() {
+            let idx = i * cols + j;
+            lcs[idx] = if old[i] == new[j] {
+                lcs[(i + 1) * cols + j + 1] + 1
+            } else {
+                lcs[(i + 1) * cols + j].max(lcs[i * cols + j + 1])
+            };
+        }
+    }
+
+    let mut edits = Vec::with_capacity(old.len().max(new.len()));
+    let mut i = 0usize;
+    let mut j = 0usize;
+    while i < old.len() && j < new.len() {
+        if old[i] == new[j] {
+            edits.push(LineEdit::Equal(old[i]));
+            i += 1;
+            j += 1;
+        } else if lcs[(i + 1) * cols + j] >= lcs[i * cols + j + 1] {
+            edits.push(LineEdit::Removed(old[i]));
+            i += 1;
+        } else {
+            edits.push(LineEdit::Added(new[j]));
+            j += 1;
+        }
+    }
+    while i < old.len() {
+        edits.push(LineEdit::Removed(old[i]));
+        i += 1;
+    }
+    while j < new.len() {
+        edits.push(LineEdit::Added(new[j]));
+        j += 1;
+    }
+    Some(edits)
+}
+
 /// Build a `DiffView` that walks the line-by-line difference between
 /// `old` and `new` and groups changed-region(s) into hunks with a few
-/// lines of context. Not as fancy as a real LCS-based diff (no min-edit
-/// guarantees) but adequate for Edit-tool display where the change is a
-/// localized old_string→new_string replacement. Mirrors what unified
-/// diff renders look like, fed straight into the existing
-/// `ToolOutput::Diff` renderer.
+/// lines of context. For normal Edit-tool replacement sizes this uses a
+/// bounded LCS pass so unchanged lines inside the replacement stay as
+/// context instead of being rendered as remove+add noise. Very large
+/// replacements fall back to the old splice behavior to avoid quadratic
+/// worst-case work in the TUI hot path.
 pub fn build_edit_diff_view(file_path: &str, old: &str, new: &str) -> crate::types::DiffView {
     use crate::types::{DiffHunk, DiffLine, DiffLineKind, DiffView};
     const CONTEXT: usize = 3;
@@ -643,44 +835,82 @@ pub fn build_edit_diff_view(file_path: &str, old: &str, new: &str) -> crate::typ
             old_lineno += 1;
             new_lineno += 1;
         }
-        // Removed lines.
-        for line in &old_lines[first..last_old] {
-            lines.push(DiffLine {
-                kind: DiffLineKind::Removed,
-                old_line: Some(old_lineno),
-                new_line: None,
-                content: (*line).to_owned(),
-            });
-            old_lineno += 1;
-            deletions += 1;
+        let changed_old = &old_lines[first..last_old];
+        let changed_new = &new_lines[first..last_new];
+        if let Some(edits) = line_edit_script(changed_old, changed_new) {
+            for edit in edits {
+                match edit {
+                    LineEdit::Equal(line) => {
+                        lines.push(DiffLine {
+                            kind: DiffLineKind::Context,
+                            old_line: Some(old_lineno),
+                            new_line: Some(new_lineno),
+                            content: line.to_owned(),
+                        });
+                        old_lineno += 1;
+                        new_lineno += 1;
+                    }
+                    LineEdit::Removed(line) => {
+                        lines.push(DiffLine {
+                            kind: DiffLineKind::Removed,
+                            old_line: Some(old_lineno),
+                            new_line: None,
+                            content: line.to_owned(),
+                        });
+                        old_lineno += 1;
+                        deletions += 1;
+                    }
+                    LineEdit::Added(line) => {
+                        lines.push(DiffLine {
+                            kind: DiffLineKind::Added,
+                            old_line: None,
+                            new_line: Some(new_lineno),
+                            content: line.to_owned(),
+                        });
+                        new_lineno += 1;
+                        additions += 1;
+                    }
+                }
+            }
+        } else {
+            for line in changed_old {
+                lines.push(DiffLine {
+                    kind: DiffLineKind::Removed,
+                    old_line: Some(old_lineno),
+                    new_line: None,
+                    content: (*line).to_owned(),
+                });
+                old_lineno += 1;
+                deletions += 1;
+            }
+            for line in changed_new {
+                lines.push(DiffLine {
+                    kind: DiffLineKind::Added,
+                    old_line: None,
+                    new_line: Some(new_lineno),
+                    content: (*line).to_owned(),
+                });
+                new_lineno += 1;
+                additions += 1;
+            }
         }
-        // Added lines.
-        for line in &new_lines[first..last_new] {
+        // Trailing context.
+        for line in &old_lines[last_old..ctx_end_old] {
             lines.push(DiffLine {
-                kind: DiffLineKind::Added,
-                old_line: None,
+                kind: DiffLineKind::Context,
+                old_line: Some(old_lineno),
                 new_line: Some(new_lineno),
                 content: (*line).to_owned(),
             });
+            old_lineno += 1;
             new_lineno += 1;
-            additions += 1;
         }
-        // Trailing context.
-        for (i, line) in old_lines[last_old..ctx_end_old].iter().enumerate() {
-            lines.push(DiffLine {
-                kind: DiffLineKind::Context,
-                old_line: Some(old_lineno + i),
-                new_line: Some(new_lineno + i),
-                content: (*line).to_owned(),
-            });
-        }
-        let _ = ctx_end_new; // reserved for future LCS-based hunks
         let header = format!(
             "@@ -{old_start},{old_count} +{new_start},{new_count} @@",
             old_start = ctx_start + 1,
             old_count = ctx_end_old - ctx_start,
             new_start = ctx_start + 1,
-            new_count = (ctx_end_old - ctx_start) + new_lines.len() - old_lines.len(),
+            new_count = ctx_end_new - ctx_start,
         );
         hunks.push(DiffHunk {
             old_start: ctx_start + 1,

@@ -17,13 +17,13 @@ pub(super) fn produce_highlighted_with_line_numbers_lines(
         .unwrap_or(0);
 
     // When we have any diagnostics for this file, reserve one column
-    // for the severity glyph between the line number and separator
-    // (` 12 ✘ │ `). When no diagnostics, the gutter stays at the
-    // existing width so unaffected reads don't shift.
+    // for the severity glyph between the line number and code. Keep
+    // the gutter as spacing, not a vertical box rule, so file previews
+    // read like Claude's plain terminal rows.
     let has_diags = !diag_lines.is_empty();
     let glyph_w: usize = if has_diags { 2 } else { 0 };
     let gutter_cols = if gutter_width > 0 {
-        gutter_width + 3 + glyph_w
+        gutter_width + 2 + glyph_w
     } else {
         2
     };
@@ -36,8 +36,6 @@ pub(super) fn produce_highlighted_with_line_numbers_lines(
     let take_n = total.min(max_lines);
 
     let gutter_style = Style::default().fg(t.text_muted);
-    let separator_style = Style::default().fg(t.border);
-
     let mut lines: Vec<Line<'static>> = highlighted
         .into_iter()
         .take(take_n)
@@ -63,10 +61,10 @@ pub(super) fn produce_highlighted_with_line_numbers_lines(
                         Style::default().fg(color).add_modifier(Modifier::BOLD),
                     ));
                 }
-                spans_init.push(Span::styled(" │ ", separator_style));
+                spans_init.push(Span::styled("  ", gutter_style));
                 spans_init
             } else {
-                vec![Span::styled("│ ", separator_style)]
+                vec![Span::styled("  ", gutter_style)]
             };
             spans.append(&mut hl_line.spans);
             Line::from(spans)
@@ -74,15 +72,13 @@ pub(super) fn produce_highlighted_with_line_numbers_lines(
         .collect();
 
     if truncated {
-        lines.push(Line::from(Span::styled(
-            format!(
-                "… {} more lines · click or press o to expand",
-                total - take_n
-            ),
+        lines.push(terminal_output::expand_hint_line(
+            total - take_n,
+            "line",
             Style::default()
                 .fg(t.text_muted)
                 .add_modifier(Modifier::ITALIC),
-        )));
+        ));
     }
     lines
 }
@@ -104,7 +100,7 @@ pub(super) fn produce_highlighted_with_line_numbers_line_count(
         .unwrap_or(0);
     let glyph_w = if diag_lines.is_empty() { 0 } else { 2 };
     let gutter_cols = if gutter_width > 0 {
-        gutter_width + 3 + glyph_w
+        gutter_width + 2 + glyph_w
     } else {
         2
     };
@@ -413,15 +409,13 @@ pub(super) fn produce_highlighted_block_lines(
     let total = lines.len();
     if total > max_lines {
         lines.truncate(max_lines);
-        lines.push(Line::from(Span::styled(
-            format!(
-                "… {} more lines · click or press o to expand",
-                total - max_lines
-            ),
+        lines.push(terminal_output::expand_hint_line(
+            total - max_lines,
+            "line",
             Style::default()
                 .fg(t.text_muted)
                 .add_modifier(Modifier::ITALIC),
-        )));
+        ));
     }
     lines
 }

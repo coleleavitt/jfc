@@ -368,7 +368,9 @@ pub async fn handle_stream_tool(state: &mut EngineState, tx: &EventSender, tool:
         );
         let mut tool = tool;
         let _ = tool.mark_failed();
-        tool.output = ToolOutput::Text(format!("Denied by permission mode: {reason}"));
+        tool.output = ToolOutput::Text(format!(
+            "Tool use rejected\n\nDenied by permission mode: {reason}"
+        ));
         if let Some(msg) = streaming_assistant_mut(state) {
             msg.parts.push(MessagePart::tool_boxed(tool));
         }
@@ -519,12 +521,16 @@ pub async fn handle_classifier_decision(
         emit_in_progress(tx, "remove", vec![tool.id.as_str().to_owned()]);
         tool.status = ToolStatus::Failed;
         tool.output = ToolOutput::Text(format!(
-            "Auto-mode classifier blocked this tool call.\n\nReason: {reason}"
+            "Tool use rejected\n\nAuto-mode classifier blocked this tool call.\n\nReason: {reason}"
         ));
         if let Some(msg) = streaming_assistant_mut(state) {
             msg.parts.push(MessagePart::tool_boxed(tool));
         }
     } else {
+        toast::push_with_cap(
+            &mut state.toasts,
+            toast::Toast::new(ToastKind::Info, "Allowed by auto mode classifier"),
+        );
         if let Some(msg) = streaming_assistant_mut(state) {
             msg.parts
                 .push(MessagePart::tool_boxed(Box::new((*tool).clone())));
@@ -771,6 +777,7 @@ mod tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
         )
     }

@@ -7,6 +7,14 @@ use super::truncation::{
 };
 use super::*;
 
+fn line_with_background(mut line: Line<'static>, bg: Color) -> Line<'static> {
+    line.style = line.style.bg(bg);
+    for span in &mut line.spans {
+        span.style = span.style.bg(bg);
+    }
+    line
+}
+
 /// Append `body` to `spans`, with substrings matching `pattern`
 /// rendered in `match_style` and the rest in `body_style`. Mirrors
 /// the way GNU grep / ripgrep highlight matches via GREP_COLORS
@@ -251,15 +259,13 @@ pub(super) fn produce_grep_output_lines(
         }
     }
     if total > max_lines {
-        lines.push(Line::from(Span::styled(
-            format!(
-                "… {} more lines · click or press o to expand",
-                total - max_lines
-            ),
+        lines.push(terminal_output::expand_hint_line(
+            total - max_lines,
+            "line",
             Style::default()
                 .fg(t.text_muted)
                 .add_modifier(Modifier::ITALIC),
-        )));
+        ));
     }
     if !stderr.is_empty() {
         if !lines.is_empty() {
@@ -459,6 +465,7 @@ pub(super) fn produce_git_diff_output_lines(
 ) -> Vec<Line<'static>> {
     let max_lines = if expanded { 1000usize } else { 200usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
+    let ui_tokens = t.claude_ui_tokens();
     if let Some(code) = exit_code {
         // git diff exits 1 when there are differences (with --exit-code).
         // 0 = no diffs, 1 = diffs found, >1 = real error.
@@ -514,8 +521,8 @@ pub(super) fn produce_git_diff_output_lines(
                 break;
             }
             let (bg_color, fg_color, sigil) = match kind {
-                DiffLineKind::Added => (t.code_bg, t.success, '+'),
-                DiffLineKind::Removed => (t.code_bg, t.error, '-'),
+                DiffLineKind::Added => (t.code_bg, ui_tokens.diff_added, '+'),
+                DiffLineKind::Removed => (t.code_bg, ui_tokens.diff_removed, '-'),
                 DiffLineKind::Context => (t.bg, t.text_secondary, ' '),
             };
             let mut spans: Vec<Span<'static>> = vec![Span::styled(
@@ -714,10 +721,11 @@ fn produce_difftastic_output_lines(
         let styled = style_difftastic_line(clean, t);
         body_lines.extend(terminal_output::wrap_styled_line(&styled, content_w));
     }
+    let bash_bg = t.claude_ui_tokens().bash_message_background_color;
     lines.extend(terminal_output::truncate_lines_middle(
         body_lines,
         max_lines,
-        Style::default().fg(t.text_muted),
+        Style::default().fg(t.text_muted).bg(bash_bg),
     ));
 
     if !stderr.is_empty() {
@@ -1486,25 +1494,20 @@ pub(super) fn produce_compiler_output_line_count(
 }
 
 /// Produce Bash output lines where stdout is the contents of a single
-/// file (cat / head / tail). Top row is the exit-code badge, then
-/// stdout flows through syntect highlighting (no line numbers — the
-/// `cat` user opted out of those), then any stderr in red.
+/// file (cat / head / tail). stdout flows through syntect highlighting
+/// (no line numbers — the `cat` user opted out of those), then any stderr
+/// in red. The tool title already carries failure exit codes, so a clean
+/// `exit 0` body row is intentionally omitted.
 pub(super) fn produce_cat_output_lines(
     lang: &str,
     stdout: &str,
     stderr: &str,
-    exit_code: Option<i32>,
+    _exit_code: Option<i32>,
     content_w: usize,
     t: Theme,
     expanded: bool,
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let (code_str, code_style) = match exit_code {
-        Some(0) => ("exit 0".to_owned(), Style::default().fg(t.success)),
-        Some(n) => (format!("exit {n}"), Style::default().fg(t.error)),
-        None => ("running…".to_owned(), Style::default().fg(t.text_muted)),
-    };
-    lines.push(Line::from(Span::styled(code_str, code_style)));
 
     let max_lines = if expanded { 500usize } else { 80usize };
     let mut highlighted = markdown::highlight_code_raw(lang, stdout, content_w, &t);
@@ -1562,13 +1565,13 @@ pub(super) fn produce_cat_output_line_count(
         1 + stderr.lines().take(40).count()
     };
 
-    1 + body + stderr_rows
+    body + stderr_rows
 }
 
 pub(super) fn produce_command_output_lines(
     stdout: &str,
     stderr: &str,
-    exit_code: Option<i32>,
+    _exit_code: Option<i32>,
     content_w: usize,
     t: Theme,
     expanded: bool,
@@ -1577,13 +1580,7 @@ pub(super) fn produce_command_output_lines(
 
     let mut lines: Vec<Line<'static>> = Vec::new();
     let w = content_w;
-
-    let (code_str, code_style) = match exit_code {
-        Some(0) => ("exit 0".to_owned(), Style::default().fg(t.success)),
-        Some(n) => (format!("exit {n}"), Style::default().fg(t.error)),
-        None => ("running…".to_owned(), Style::default().fg(t.text_muted)),
-    };
-    lines.push(Line::from(Span::styled(code_str, code_style)));
+    let bash_bg = t.claude_ui_tokens().bash_message_background_color;
 
     let max_lines = if expanded { 500usize } else { 80usize };
     let mut body_lines: Vec<Line<'static>> = Vec::new();
@@ -1599,7 +1596,7 @@ pub(super) fn produce_command_output_lines(
         };
         for line in source_lines {
             for wrapped in terminal_output::wrap_styled_line(&line, w.max(1)) {
-                lines.push(wrapped);
+                lines.push(line_with_background(wrapped, bash_bg));
             }
         }
     };
@@ -1614,6 +1611,7 @@ pub(super) fn produce_command_output_lines(
             "↳ stderr",
             Style::default()
                 .fg(t.error)
+                .bg(bash_bg)
                 .add_modifier(Modifier::ITALIC | Modifier::BOLD),
         )));
     }
@@ -1643,7 +1641,7 @@ pub(super) fn produce_command_output_line_count(
     }
     body_rows += wrapped_ansi_text_row_count(stderr, content_w, Style::default().fg(t.error));
 
-    1 + terminal_output::truncate_lines_middle_row_count(body_rows, max_lines)
+    terminal_output::truncate_lines_middle_row_count(body_rows, max_lines)
 }
 
 pub(super) fn produce_file_list_lines(files: &[String], t: Theme) -> Vec<Line<'static>> {

@@ -721,6 +721,7 @@ fn apply_chrome_mcp_auto_enable(cfg: &mut Config, settings: &ClaudeCompatibility
             env_file: None,
             headers: HashMap::new(),
             url: None,
+            oauth: Default::default(),
         },
     );
 }

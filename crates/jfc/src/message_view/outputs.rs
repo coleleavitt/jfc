@@ -12,6 +12,7 @@ use super::*;
 /// this lossy on purpose: matching the syntect set up front would couple this
 /// helper to syntect's loaded syntaxes, but the highlighter already does that
 /// resolution downstream and degrades gracefully.
+#[cfg(test)]
 pub fn diff_lang(diff: &DiffView) -> Option<String> {
     let p = std::path::Path::new(&diff.file_path);
     if let Some(ext) = p.extension().and_then(|e| e.to_str())
@@ -35,7 +36,7 @@ pub(super) fn produce_diff_view_lines(
     width: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    let lang = diff_lang(diff);
+    let ui_tokens = t.claude_ui_tokens();
 
     // Sub-status row: `□ Added N lines, removed M` matching v126's
     // `□ Added 3 lines` summary line under the Update title (cli.js
@@ -80,33 +81,10 @@ pub(super) fn produce_diff_view_lines(
         let hunk_cap = if expanded { 500 } else { 50 };
         let max_dl = hunk.lines.len().min(hunk_cap);
 
-        // Per-hunk syntax highlighting. Build a single string containing all
-        // line bodies (sigils stripped) joined by `\n`, then run syntect over
-        // it once so multi-line constructs (block comments, raw strings,
-        // here-docs) tokenize correctly across +/-/context boundaries. We
-        // pass `wrap_w = 0` to disable hard-wrapping, guaranteeing a 1:1 map
-        // from input lines to output lines that we can index into by row.
-        // Mirrors codex's diff_render approach (codex-rs/tui/src/diff_render
-        // .rs around the `hunk_syntax_lines` block).
-        let highlighted: Option<Vec<Line<'static>>> = lang.as_deref().and_then(|l| {
-            let visible = &hunk.lines[..max_dl];
-            let hunk_text: String = visible
-                .iter()
-                .map(|dl| sanitize_terminal_text(&dl.content))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let lines = markdown::highlight_code_raw(l, &hunk_text, 0, &t);
-            // Defensive: if line counts don't agree (shouldn't happen with
-            // wrap_w=0, but syntect can occasionally produce extra rows on
-            // pathological inputs), bail and let the unhighlighted branch
-            // render. Better plain than misaligned.
-            (lines.len() == visible.len()).then_some(lines)
-        });
-
-        for (idx, dl) in hunk.lines.iter().take(max_dl).enumerate() {
+        for dl in hunk.lines.iter().take(max_dl) {
             let (bg_color, fg_color, sigil) = match dl.kind {
-                DiffLineKind::Added => (t.code_bg, t.success, "+"),
-                DiffLineKind::Removed => (t.code_bg, t.error, "-"),
+                DiffLineKind::Added => (t.code_bg, ui_tokens.diff_added, "+"),
+                DiffLineKind::Removed => (t.code_bg, ui_tokens.diff_removed, "-"),
                 DiffLineKind::Context => (t.bg, t.text_secondary, " "),
             };
             // Line-number column matches v126's diff style — show
@@ -117,45 +95,11 @@ pub(super) fn produce_diff_view_lines(
                 _ => dl.new_line,
             };
 
-            let mut content_spans: Vec<Span<'static>> = Vec::new();
-            // Span composition: keep syntect's foreground, force the
-            // diff bg tint over it, and dim removed lines so deletions
-            // read as fading out.
-            let extra_mod = matches!(dl.kind, DiffLineKind::Removed).then_some(Modifier::DIM);
-            let push_hl_spans = |target: &mut Vec<Span<'static>>, hl_spans: &[Span<'static>]| {
-                for sp in hl_spans {
-                    let mut style = sp.style;
-                    style.bg = Some(bg_color);
-                    if let Some(m) = extra_mod {
-                        style = style.add_modifier(m);
-                    }
-                    target.push(Span::styled(sp.content.clone().into_owned(), style));
-                }
-            };
-            match highlighted.as_ref().and_then(|h| h.get(idx)) {
-                Some(hl) => {
-                    push_hl_spans(&mut content_spans, &hl.spans);
-                }
-                None => {
-                    // Resilient fallback: re-run syntect on just this
-                    // line so a hunk-level mismatch doesn't strip all
-                    // color from every row.
-                    let sanitized = sanitize_terminal_text(&dl.content);
-                    let single = lang.as_deref().and_then(|l| {
-                        markdown::highlight_code_raw(l, &sanitized, 0, &t)
-                            .into_iter()
-                            .next()
-                    });
-                    if let Some(hl) = single {
-                        push_hl_spans(&mut content_spans, &hl.spans);
-                    } else {
-                        content_spans.push(Span::styled(
-                            sanitized,
-                            Style::default().fg(fg_color).bg(bg_color),
-                        ));
-                    }
-                }
+            let mut style = Style::default().fg(fg_color).bg(bg_color);
+            if matches!(dl.kind, DiffLineKind::Removed) {
+                style = style.add_modifier(Modifier::DIM);
             }
+            let content_spans = vec![Span::styled(sanitize_terminal_text(&dl.content), style)];
 
             push_wrapped_diff_data_line(
                 &mut lines,

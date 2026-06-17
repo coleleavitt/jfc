@@ -93,6 +93,15 @@ pub(super) async fn cmd_cost(
     handle_cost_command(state);
 }
 
+pub(super) async fn cmd_usage_report(
+    state: &mut EngineState,
+    _parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    super::local::handle_usage_report_command(state);
+}
+
 pub(super) async fn cmd_status(
     state: &mut EngineState,
     _parts: &[&str],

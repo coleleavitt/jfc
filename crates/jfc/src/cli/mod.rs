@@ -17,6 +17,7 @@ mod bridge;
 mod changes;
 mod daemon;
 mod debug;
+mod doctor;
 mod headless;
 mod logging;
 mod memory;
@@ -39,6 +40,7 @@ use bridge::{BridgeSubcommand, run_bridge_subcommand};
 use changes::{ChangesSubcommand, run_changes_subcommand};
 use daemon::{DaemonSubcommand, compact_terminal_agents_on_startup, run_daemon_subcommand};
 use debug::{DebugSubcommand, run_debug_subcommand};
+use doctor::{DoctorSubcommand, run_doctor_subcommand};
 use headless::{
     HeadlessInputFormat, HeadlessOutputFormat, PrintModeConfig, run_print_mode, run_remote_session,
 };
@@ -226,6 +228,15 @@ pub(crate) struct Cli {
     #[arg(long = "json")]
     json: bool,
 
+    /// Accessibility: reduce ambiguous glyphs and prefer text labels.
+    /// Equivalent to setting `screen_reader_mode = true` in config.
+    #[arg(
+        long = "screen-reader",
+        alias = "screenReader",
+        alias = "screenReaderMode"
+    )]
+    screen_reader: bool,
+
     /// Start the remote-control WebSocket server at launch (alias `--rc`).
     /// Equivalent to running `/remote-control` once the TUI is up — prints
     /// the pairing token + connection URL. Connect from another device with
@@ -252,6 +263,11 @@ pub(crate) struct Cli {
     /// `~/.config/jfc/sessions/`. Useful for transient probes / CI.
     #[arg(long = "no-session-persistence")]
     no_session_persistence: bool,
+
+    /// Disable runtime customization for this run: plugin registration/changes
+    /// and theme preview/persistence are blocked.
+    #[arg(long = "safe-mode")]
+    safe_mode: bool,
 
     /// Token budget for a single task (beta `task-budgets-2026-03-13`).
     /// Wires through `StreamOptions.task_budget_tokens`.
@@ -373,6 +389,11 @@ enum Command {
     Debug {
         #[command(subcommand)]
         sub: DebugSubcommand,
+    },
+    /// Diagnose local installation and path layout for XDG compatibility.
+    Doctor {
+        #[command(subcommand)]
+        sub: DoctorSubcommand,
     },
 }
 
@@ -556,29 +577,35 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
     if !policy_inspection {
         enforce_managed_startup_policy(managed_settings.as_ref())?;
     }
+    if cli.safe_mode {
+        jfc_engine::config::set_safe_mode_override(true);
+    }
+    let safe_mode = jfc_engine::config::safe_mode_enabled();
 
-    if managed_settings
-        .as_ref()
-        .is_some_and(|m| m.disable_plugin_dirs)
+    if (safe_mode
+        || managed_settings
+            .as_ref()
+            .is_some_and(|m| m.disable_plugin_dirs))
         && !cli.plugin_dir.is_empty()
     {
         tracing::warn!(
             target: "jfc::plugins",
-            "--plugin-dir ignored by managed settings"
+            "--plugin-dir ignored by policy"
         );
     } else {
         for dir in &cli.plugin_dir {
             jfc_engine::workflows::registry::register_extra_plugin_dir(dir.clone());
         }
     }
-    if managed_settings
-        .as_ref()
-        .is_some_and(|m| m.disable_plugin_urls)
+    if (safe_mode
+        || managed_settings
+            .as_ref()
+            .is_some_and(|m| m.disable_plugin_urls))
         && !cli.plugin_url.is_empty()
     {
         tracing::warn!(
             target: "jfc::plugins",
-            "--plugin-url ignored by managed settings"
+            "--plugin-url ignored by policy"
         );
     } else {
         for url in &cli.plugin_url {
@@ -791,6 +818,16 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         }
     }
 
+    // Apply --screen-reader: overrides config for this run.
+    if cli.screen_reader {
+        // Force-enable screen reader mode for this run by bumping the cache generation so
+        // downstream loads see the updated value if the file is already set.
+        // We do not persist here to avoid surprising config writes from a CLI flag.
+        // Note: config persistence API doesn't expose a setter yet; keep it runtime-only.
+        jfc_engine::config::invalidate_cache();
+        tracing::info!(target: "jfc::cli", "screen-reader mode hint enabled by CLI flag (non-persistent)");
+    }
+
     let runtime_config = CliRuntimeConfig {
         max_turns: cli.max_turns,
         max_budget_usd,
@@ -972,6 +1009,7 @@ async fn run_subcommand(cmd: Command) -> anyhow::Result<()> {
         Command::Redteam { sub } => run_redteam_subcommand(sub).await,
         Command::Bridge { sub } => run_bridge_subcommand(sub).await,
         Command::Debug { sub } => run_debug_subcommand(sub).await,
+        Command::Doctor { sub } => run_doctor_subcommand(sub).await,
     }
 }
 

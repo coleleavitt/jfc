@@ -896,8 +896,11 @@ pub(super) async fn cmd_hooks(
                     let mut y = 1970u32;
                     let mut d = days as u32;
                     loop {
-                        let ydays =
-                            if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
+                        let ydays = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
+                            366
+                        } else {
+                            365
+                        };
                         if d < ydays {
                             break;
                         }
@@ -908,7 +911,11 @@ pub(super) async fn cmd_hooks(
                     let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
                     let mut mo = 1u32;
                     for &dim_base in &months {
-                        let dim = if mo == 2 && leap { dim_base + 1 } else { dim_base };
+                        let dim = if mo == 2 && leap {
+                            dim_base + 1
+                        } else {
+                            dim_base
+                        };
                         if d < dim {
                             break;
                         }
@@ -932,10 +939,7 @@ pub(super) async fn cmd_hooks(
         ));
     }
 
-    body.push_str(&format!(
-        "\n*{} handler(s) registered.*\n",
-        summary.len()
-    ));
+    body.push_str(&format!("\n*{} handler(s) registered.*\n", summary.len()));
 
     state.messages.push(ChatMessage::assistant(body));
 }

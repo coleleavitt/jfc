@@ -57,7 +57,11 @@ fn last_user_query(msgs: &[ChatMessage]) -> Option<String> {
             .parts
             .iter()
             .filter_map(|p| {
-                if let MessagePart::Text(t) = p { Some(t.as_str()) } else { None }
+                if let MessagePart::Text(t) = p {
+                    Some(t.as_str())
+                } else {
+                    None
+                }
             })
             .collect::<Vec<_>>()
             .join("\n");

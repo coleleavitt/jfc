@@ -982,12 +982,25 @@ impl StreamOptions {
 
     pub fn max_tokens(mut self, n: u32) -> Self {
         self.max_tokens = n;
+        self.clamp_legacy_thinking_budget();
         self
     }
 
     pub fn thinking(mut self, budget: u32) -> Self {
         self.thinking_budget = Some(budget);
+        self.clamp_legacy_thinking_budget();
         self
+    }
+
+    fn clamp_legacy_thinking_budget(&mut self) {
+        let Some(budget) = self.thinking_budget.as_mut() else {
+            return;
+        };
+        if self.max_tokens <= 1 {
+            self.thinking_budget = None;
+        } else if *budget >= self.max_tokens {
+            *budget = self.max_tokens - 1;
+        }
     }
 
     /// Use adaptive thinking (Opus 4.6+, Sonnet 4.6+). Ignores budget_tokens.
@@ -1914,6 +1927,24 @@ mod tests {
         let opts = StreamOptions::new("m").thinking(4096).adaptive();
         assert!(opts.adaptive_thinking);
         assert_eq!(opts.thinking_budget, Some(4096));
+    }
+
+    #[test]
+    fn stream_options_clamps_thinking_budget_below_max_tokens_regression() {
+        let opts = StreamOptions::new("m").thinking(8192).max_tokens(4096);
+        assert_eq!(opts.max_tokens, 4096);
+        assert_eq!(opts.thinking_budget, Some(4095));
+
+        let opts = StreamOptions::new("m").max_tokens(4096).thinking(8192);
+        assert_eq!(opts.max_tokens, 4096);
+        assert_eq!(opts.thinking_budget, Some(4095));
+    }
+
+    #[test]
+    fn stream_options_disables_thinking_when_max_tokens_too_low_regression() {
+        let opts = StreamOptions::new("m").thinking(128).max_tokens(1);
+        assert_eq!(opts.max_tokens, 1);
+        assert!(opts.thinking_budget.is_none());
     }
 
     // Robust: passing 0 for max_tokens is allowed at the type level (u32) —

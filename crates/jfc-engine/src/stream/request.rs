@@ -46,6 +46,33 @@ fn requested_thinking_display(overrides: &StreamRequestOverrides) -> Option<Stri
         .and_then(|value| normalize_thinking_display(&value).map(str::to_owned))
 }
 
+fn enforce_thinking_budget_fits_max_tokens(opts: &mut StreamOptions) {
+    let Some(budget) = opts.thinking_budget.as_mut() else {
+        return;
+    };
+    if opts.max_tokens <= 1 {
+        tracing::warn!(
+            target: "jfc::stream",
+            max_tokens = opts.max_tokens,
+            thinking_budget = *budget,
+            "disabling explicit thinking budget because max_tokens is too low"
+        );
+        opts.thinking_budget = None;
+        return;
+    }
+    if *budget >= opts.max_tokens {
+        let adjusted = opts.max_tokens - 1;
+        tracing::warn!(
+            target: "jfc::stream",
+            max_tokens = opts.max_tokens,
+            requested_thinking_budget = *budget,
+            adjusted_thinking_budget = adjusted,
+            "clamped thinking budget below max_tokens"
+        );
+        *budget = adjusted;
+    }
+}
+
 /// Pull the most recent user-role text out of a provider message vec. Used by
 /// the memory-recall pass to know what query the user actually asked. Returns
 /// `None` when the conversation is empty or the last user turn carried only
@@ -1235,6 +1262,7 @@ Do not use a colon before tool calls.";
     {
         *budget = (*budget).min(max);
     }
+    enforce_thinking_budget_fits_max_tokens(&mut opts);
     if opts.adaptive_thinking || opts.thinking_budget.is_some() {
         let display = thinking_display.unwrap_or_else(|| "summarized".into());
         opts = opts.thinking_display(display);
@@ -1384,8 +1412,9 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        conversation_is_mid_tool_loop, prepare_stream_request, preserve_non_action_tool,
-        stream_context_budget, user_text_requests_action,
+        conversation_is_mid_tool_loop, enforce_thinking_budget_fits_max_tokens,
+        prepare_stream_request, preserve_non_action_tool, stream_context_budget,
+        user_text_requests_action,
     };
     use jfc_provider::{
         EventStream, ModelId, ModelInfo, Provider, ProviderContent, ProviderMessage, ProviderRole,
@@ -1676,5 +1705,16 @@ mod tests {
 
         assert!(request.opts.adaptive_thinking);
         assert_eq!(request.opts.temperature, None);
+    }
+
+    #[test]
+    fn request_guard_clamps_legacy_thinking_budget_below_max_tokens_regression() {
+        let mut opts = StreamOptions::new("claude-sonnet-4-5-20250929").max_tokens(8192);
+        opts.thinking_budget = Some(16_384);
+
+        enforce_thinking_budget_fits_max_tokens(&mut opts);
+
+        assert_eq!(opts.max_tokens, 8192);
+        assert_eq!(opts.thinking_budget, Some(8191));
     }
 }

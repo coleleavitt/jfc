@@ -4,7 +4,7 @@ use crate::{
     stream,
     types::{ChatMessage, MessagePart, Role},
 };
-use jfc_core::QueuedPrompt;
+use jfc_core::{QueuedPrompt, queued_prompt_placeholder};
 
 pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     let drained: Vec<QueuedPrompt> = state.queued_prompts.drain_all();
@@ -30,8 +30,7 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
             attachments,
             ..
         } = queued;
-        let glyph = if is_meta { "⚙" } else { "⏳" };
-        let placeholder = format!("{glyph} {text}");
+        let placeholder = queued_prompt_placeholder(&text, is_meta);
         for msg in state.messages.iter_mut() {
             if msg.role == Role::User {
                 let mut replaced = false;
@@ -88,6 +87,10 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     }
 
     let assistant_idx = state.messages.len();
+    if crate::runtime::ops::refuse_budget_cap_if_reached(state) {
+        return;
+    }
+
     #[cfg(debug_assertions)]
     if let Err(error) = crate::types::validate_turn_invariants_inner(
         &state.messages,

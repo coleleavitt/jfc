@@ -81,7 +81,7 @@ pub(super) async fn cmd_continue(
             let msg_count = messages.len();
             state.messages = messages;
             let session_id_for_msg = session_id.clone();
-            state.switch_session(Some(session_id));
+            state.switch_session(Some(session_id.clone()));
             state.streaming_text.clear();
             state.streaming_reasoning.clear();
             state.streaming_response_bytes = 0;
@@ -92,6 +92,8 @@ pub(super) async fn cmd_continue(
             state.messages.push(ChatMessage::assistant(format!(
                 "**Resumed session `{session_id_for_msg}`** ({scope}) — {msg_count} message(s) loaded."
             )));
+            // Surface any pending inter-session inbox messages for this session.
+            crate::commands::inbox_helper::inject_inbox_reminder(state, session_id.as_str()).await;
         } else {
             state.messages.push(ChatMessage::assistant(format!(
                 "**Error:** Failed to load session `{session_id}`."
@@ -187,6 +189,7 @@ pub(super) async fn cmd_resume(
             state.messages.push(ChatMessage::assistant(format!(
                 "**Resumed session `{typed_session_id}`** — {msg_count} message(s) loaded."
             )));
+            crate::commands::inbox::inject_inbox_reminder(state, typed_session_id.as_str()).await;
         } else {
             state.messages.push(ChatMessage::assistant(format!(
                 "**Error:** Session `{typed_session_id}` not found."
@@ -201,12 +204,57 @@ pub(super) async fn cmd_sessions(
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    // Handle `/sessions delete <id>` (also `rm`/`remove`) subcommand.
-    // run_command uses splitn(2, ' '), so parts[1] is the full remainder
-    // after "/sessions", e.g. "delete ses_20240101_120000".
+    // Handle `/sessions fsck`, `/sessions delete <id>` (also `rm`/`remove`),
+    // and `/sessions send <id> <message>`.
+    // run_command uses splitn(2, ' '), so parts[1] is the full remainder after "/sessions".
     let remainder = parts.get(1).copied().unwrap_or("").trim();
     let mut rem_iter = remainder.splitn(2, ' ');
     let sub = rem_iter.next().unwrap_or("");
+
+    if sub == "fsck" {
+        let args = rem_iter.next().unwrap_or("").trim();
+        let quarantine = args
+            .split_whitespace()
+            .any(|arg| matches!(arg, "--quarantine" | "--repair" | "quarantine" | "repair"));
+        match jfc_session::fsck_sessions(quarantine).await {
+            Ok(report) => {
+                let mut body = format!(
+                    "**Session fsck:** checked {}, ok {}, issue(s) {}, quarantined {}\n",
+                    report.checked,
+                    report.ok,
+                    report.issues.len(),
+                    report.quarantined()
+                );
+                if !report.issues.is_empty() {
+                    body.push('\n');
+                    for issue in report.issues.iter().take(20) {
+                        body.push_str(&format!("- `{}`: {}", issue.path.display(), issue.reason));
+                        if let Some(target) = &issue.quarantined_to {
+                            body.push_str(&format!(" -> `{}`", target.display()));
+                        }
+                        body.push('\n');
+                    }
+                    if report.issues.len() > 20 {
+                        body.push_str(&format!(
+                            "\n... and {} more issue(s)\n",
+                            report.issues.len() - 20
+                        ));
+                    }
+                }
+                if !quarantine && !report.issues.is_empty() {
+                    body.push_str("\nRun `/sessions fsck --quarantine` to move corrupt files to `lost+found`.");
+                }
+                state.messages.push(ChatMessage::assistant(body));
+            }
+            Err(e) => {
+                state.messages.push(ChatMessage::assistant(format!(
+                    "**Session fsck failed:** {e}"
+                )));
+            }
+        }
+        return;
+    }
+
     if sub == "delete" || sub == "rm" || sub == "remove" {
         let id = rem_iter.next().unwrap_or("").trim();
         if id.is_empty() {
@@ -243,6 +291,29 @@ pub(super) async fn cmd_sessions(
         return;
     }
 
+    if sub == "send" {
+        let args = rem_iter.next().unwrap_or("").trim();
+        let mut it = args.splitn(2, ' ');
+        let target = it.next().unwrap_or("").trim();
+        let msg = it.next().unwrap_or("").trim();
+        if target.is_empty() || msg.is_empty() {
+            state.messages.push(ChatMessage::assistant(
+                "Usage: `/sessions send <session_id> <message>`".into(),
+            ));
+            return;
+        }
+        let from = state
+            .current_session_id
+            .as_ref()
+            .map(|s| s.as_str().to_owned());
+        let _ = jfc_session::write_inbox_message(target, from.as_deref(), msg).await;
+        state.messages.push(ChatMessage::assistant(format!(
+            "Message delivered to `{}`'s inbox.",
+            target
+        )));
+        return;
+    }
+
     // Default: list all sessions with metadata
     let sessions = jfc_session::list_sessions_with_metadata().await;
     if sessions.is_empty() {
@@ -252,8 +323,6 @@ pub(super) async fn cmd_sessions(
     } else {
         let mut body = format!("**{} session(s):**\n\n", sessions.len());
         for (i, s) in sessions.iter().take(20).enumerate() {
-            // Use display_title() which honours: custom /rename title →
-            // first prompt → formatted timestamp fallback (v126 parity).
             let title = s.display_title();
             let title_display = if title.chars().count() > 50 {
                 let boundary = title.floor_char_boundary(50);
@@ -263,7 +332,6 @@ pub(super) async fn cmd_sessions(
             };
             let current = state.current_session_id.as_ref() == Some(&s.id);
             let marker = if current { " ← current" } else { "" };
-            // Show a 📌 indicator when the session has a custom /rename title.
             let name_indicator = if s.title.as_ref().is_some_and(|t| !t.trim().is_empty()) {
                 " 📌"
             } else {
@@ -324,10 +392,7 @@ pub(super) async fn cmd_fork(
         // Save the current session before forking so the fork gets the latest
         // messages including the `/fork` command itself.
         crate::session::save_session(
-            &state
-                .current_session_id
-                .clone()
-                .expect("checked above"),
+            &state.current_session_id.clone().expect("checked above"),
             &state.messages,
             Some(state.cwd.as_str()),
             Some(state.model.as_str()),
@@ -704,11 +769,7 @@ pub(super) async fn cmd_handover(
     'outer: for msg in state.messages.iter().rev() {
         for part in &msg.parts {
             if let jfc_core::MessagePart::Tool(tc) = part {
-                tool_calls.push(format!(
-                    "- `{}` — {}",
-                    tc.kind.label(),
-                    tc.status.label()
-                ));
+                tool_calls.push(format!("- `{}` — {}", tc.kind.label(), tc.status.label()));
                 if tool_calls.len() >= 10 {
                     break 'outer;
                 }
@@ -718,9 +779,7 @@ pub(super) async fn cmd_handover(
     tool_calls.reverse();
 
     // --- 3. Active tasks ---
-    let all_tasks = state
-        .task_store
-        .list(jfc_session::DeletedFilter::Exclude);
+    let all_tasks = state.task_store.list(jfc_session::DeletedFilter::Exclude);
     let active_tasks: Vec<String> = all_tasks
         .iter()
         .filter(|t| {

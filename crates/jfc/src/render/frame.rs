@@ -2,7 +2,7 @@ use super::approval::approval;
 use super::elicitation::elicitation;
 use super::input_box::{input, input_visual_line_count};
 use super::messages::messages;
-use super::messages::{agent_fan_below_input, subagent_footer};
+use super::messages::subagent_footer;
 use super::messages::{spinner_row, tasks_pinned_row};
 use super::model_picker::model_picker;
 use super::overlays::{
@@ -29,6 +29,8 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // region of the screen now occupied by something else and toggle a
     // tool they can't see.
     app.tool_hit_regions.borrow_mut().clear();
+    app.tool_copy_regions.borrow_mut().clear();
+    *app.input_rect.borrow_mut() = None;
 
     f.render_widget(Block::default().style(Style::default().bg(t.bg)), f.area());
 
@@ -43,29 +45,25 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // narrower phantom width = more visual rows than the real
     // render produces) and the input box ends up taller than
     // needed, eating into the message column.
-    // Task view collapses the entire chat dock — when reading a
-    // background agent's transcript you can't act on the input, pinned
-    // tasks, or the agent fan, so they'd just squeeze the log. Keep only
-    // the tab strip (footer) + status bar. Sidebars are also forced off
-    // so the transcript gets the full width.
+    // Task view collapses the chat dock — when reading a background agent's
+    // transcript you can't act on the input, pinned tasks, or the agent fan.
+    // Keep only a one-line task tab strip plus the compact status line.
     let in_task_view = app.viewing_task_id.is_some();
 
-    // Input box is now a flat strip under a single TOP divider (no
-    // full rounded box), so its chrome is 1 row, not 2. Width chrome is
-    // likewise 4 (2 padding + 2 prompt strip), not 6 (no L/R borders).
+    // Input box is now a flat strip with only top/bottom rules (no full
+    // rounded box). Width chrome is 4 (2 padding + prompt strip), not 6
+    // (no left/right borders).
     let total_w_pre = f.area().width as usize;
     let input_content_w = total_w_pre.saturating_sub(4);
     let input_lines = input_visual_line_count(app, input_content_w);
     let input_height = if in_task_view {
         0
     } else {
-        (input_lines + 1).min(7) as u16
+        (input_lines + 2).min(8) as u16
     };
-    // Two rows when in task view: tab strip on top, key-hint row
-    // below. Was 1 when the footer was a flat back/next string;
-    // expanded for the Tabs widget redesign so each tab has space
-    // for its glyph + truncated description.
-    let subagent_footer_height: u16 = if app.viewing_task_id.is_some() { 2 } else { 0 };
+    // One quiet task-view tab strip. Navigation hints fit on the same row when
+    // there is room; the transcript gets the rest.
+    let subagent_footer_height: u16 = if app.viewing_task_id.is_some() { 1 } else { 0 };
     // v126 puts the "Fermenting…" spinner as a dedicated row above the input
     // (not as the input's border title) — so the input bar stays visually
     // stable during streaming and the spinner reads as part of the
@@ -97,33 +95,10 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         || !app.engine.pending_tool_calls.is_empty()
         || app.engine.turn_started_at.is_some()
         || any_alive_subagent;
-    // When a team is active, the spinner area expands to show the teammate tree:
-    // 2 base rows (spinner + next-task hint) + 1 leader row + N teammate rows.
-    // For non-team parallel subagents (the "fire 5 Explore agents" case),
-    // expand for the same reason — the user sees one row per agent.
-    let teammate_count = if app.engine.team_context.is_active() {
-        app.engine.team_context.teammates.len().saturating_sub(1) // exclude leader
-    } else {
-        0
-    };
-    let active_subagent_count = if !app.engine.team_context.is_active() {
-        // Count both Running and Idle teammates: Idle ones still belong
-        // on the fan (the user can SendMessage to wake them) so the
-        // tree row needs to be reserved for them.
-        app.engine
-            .background_tasks
-            .values()
-            .filter(|bt| bt.status.is_alive())
-            .count()
-    } else {
-        0
-    };
-    let tree_rows = teammate_count.max(active_subagent_count);
-    // Spinner row above input: verb + Next preview only. The agent fan
-    // tree moved below the input — "agent view sits under the input
-    // box" reads better than "agent fan crowds the verb line", and it
-    // keeps the verb glued to the prompt where the user's eye lives
-    // while typing.
+    // Spinner row above input: verb + Next preview only. Background agents are
+    // available through the explicit agents/teammates views; keeping a live fan
+    // docked under the prompt made the primary chat surface noisy and unlike
+    // Claude's clean input/footer stack.
     let spinner_row_height: u16 = if show_spinner && !in_task_view { 2 } else { 0 };
     // Pinned todo list above the input, Claude-Code style. Header row
     // ("Tasks (k/n done)") + up to task_pin_visible rows + an optional
@@ -153,15 +128,15 @@ pub fn frame(f: &mut Frame, app: &mut App) {
                 .is_some_and(|ts| now_tp.duration_since(*ts).as_secs() < 30)
         })
         .count();
-    // Dynamic cap: matches Claude Code's `rows <= 10 ? 0 : min(5, max(3, rows - 14))`
-    // so on small terminals the task pin doesn't eat the screen, while larger
-    // terminals can show more context.
+    // Keep the pinned task list peripheral. The active spinner already names
+    // the current task; the pin is just enough checklist context to avoid the
+    // historical "194/201 done" dashboard block.
     let task_pin_visible: usize = {
         let rows = f.area().height as usize;
         if rows <= 10 {
             0
         } else {
-            rows.saturating_sub(14).clamp(3, 5)
+            rows.saturating_sub(16).clamp(2, 4)
         }
     };
     // Collapse out entirely when there's nothing live OR recently-done to
@@ -191,22 +166,9 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     } else if tp_open == 0 {
         1
     } else {
-        // +1 for the progress-header content line (the old `+1` was the
-        // divider row; the header is now content, so the count is unchanged).
-        (task_pin_rows as u16).min(10) + 1
+        (task_pin_rows as u16).min(5)
     };
-    // Agent fan beneath the input: leader row ("agents") plus one row
-    // per alive sub-agent. Capped at 8 so a fan of 30 doesn't push the
-    // status bar off-screen — the user can still open the task view to
-    // see all of them.
-    // Flattened: 1 TOP divider + 1 summary line + up to 7 agent rows.
-    // (Was a full rounded box: +2 chrome plus a leader row.) The summary
-    // line carries the fleet counts, so the per-agent rows are pure data.
-    let agent_fan_height: u16 = if tree_rows > 0 && !in_task_view {
-        (2 + tree_rows as u16).min(9)
-    } else {
-        0
-    };
+    let agent_fan_height: u16 = 0;
     // Diagnostic summary row — only shown when there are *new*
     // (unacknowledged) entries. v126 cli.js:231025-231036 keeps a
     // per-URI "delivered" set; entries already shown to the user don't
@@ -235,7 +197,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
             Constraint::Length(tasks_pinned_height),    // 4
             Constraint::Length(input_height),           // 5
             Constraint::Length(agent_fan_height),       // 6
-            Constraint::Length(2),                      // 7: status (gauge-divider + info line)
+            Constraint::Length(1),                      // 7: compact status line
         ])
         .split(f.area());
 
@@ -320,9 +282,6 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     }
     if input_height > 0 {
         input(f, app, chunks[5]);
-    }
-    if agent_fan_height > 0 {
-        agent_fan_below_input(f, app, chunks[6]);
     }
     status(f, app, chunks[7]);
 
@@ -450,10 +409,10 @@ pub(super) fn extract_selection_text(
     area: Rect,
 ) -> String {
     use ratatui::widgets::Widget;
-    // Same width the live transcript renders at: area − 2 (padding) − 1
-    // (scrollbar gutter). Must match `render::messages` exactly or the
-    // offscreen wrap diverges from what the user selected.
-    let content_w = area.width.saturating_sub(3);
+    // Same width the live transcript renders at: area − 2 (horizontal
+    // padding). Must match `render::messages` exactly or the offscreen wrap
+    // diverges from what the user selected.
+    let content_w = area.width.saturating_sub(2);
     if content_w == 0 {
         return String::new();
     }
@@ -485,7 +444,7 @@ pub(super) fn extract_selection_text(
     // Column mapping: the selection stores absolute screen columns; the
     // offscreen buffer starts at the content's left edge (area.x + 1).
     let left_screen = area.x.saturating_add(1);
-    let right_screen = area.x + area.width - 1; // exclusive (scrollbar column)
+    let right_screen = area.x + area.width - 1; // exclusive (right padding)
     let mut rows: Vec<String> = Vec::new();
     for off in 0..span {
         let line = first + off;
@@ -518,11 +477,11 @@ fn apply_text_selection(f: &mut Frame, app: &mut App) {
         return;
     }
     // The transcript is borderless: content fills the area top-to-bottom,
-    // inset 1 col by horizontal padding, with the scrollbar on the last column.
+    // inset 1 col by horizontal padding.
     let top = area.y;
     let bottom = area.y + area.height; // exclusive (last content row = bottom-1)
     let left = area.x.saturating_add(1); // horizontal padding
-    let right = area.x + area.width - 1; // exclusive (scrollbar column)
+    let right = area.x + area.width - 1; // exclusive (right padding)
 
     let (start, end) = sel.ordered();
 
@@ -537,13 +496,6 @@ fn apply_text_selection(f: &mut Frame, app: &mut App) {
             return;
         }
         crate::runtime::copy_to_clipboard(&text, "select");
-        jfc_engine::toast::push_with_cap(
-            &mut app.engine.toasts,
-            jfc_engine::toast::Toast::new(
-                jfc_engine::toast::ToastKind::Info,
-                format!("Copied {} chars", text.chars().count()),
-            ),
-        );
         // Persist the highlight (copied=true) so the user sees what was
         // copied; cleared on the next mouse-down, Esc, or width change —
         // scrolling keeps it (content-line coords stay valid). Fall through
@@ -600,7 +552,7 @@ fn resolve_select_request(f: &mut Frame, app: &mut App) {
     let top = area.y;
     let bottom = area.y + area.height; // exclusive (last content row = bottom-1)
     let left = area.x.saturating_add(1); // horizontal padding
-    let right = area.x + area.width - 1; // exclusive (scrollbar column)
+    let right = area.x + area.width - 1; // exclusive (right padding)
     if right <= left || req.row < top || req.row >= bottom {
         return;
     }
@@ -670,8 +622,8 @@ mod tests {
     // Characterization tests for selection_line_span — the pure column-span
     // computation behind drag-selection extraction, now keyed on absolute
     // CONTENT lines (scroll-invariant) instead of screen rows. left=1,
-    // right=40 model the padded message rect (col 0 padding, col 41
-    // scrollbar).
+    // right=40 model the padded message rect (col 0 and the far-right col are
+    // padding).
     const LEFT: u16 = 1;
     const RIGHT: u16 = 40;
 

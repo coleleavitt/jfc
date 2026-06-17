@@ -607,6 +607,7 @@ mod tests {
                 timeout: Some(5_000),
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
             output: ToolOutput::Empty,
             display: crate::types::ToolDisplayState::DEFAULT,
@@ -725,6 +726,7 @@ mod tests {
             timeout: None,
             workdir: None,
             run_in_background: None,
+            suppress_output: None,
         };
         let batches = schedule_tools(vec![bash]);
         // One Sequential batch.

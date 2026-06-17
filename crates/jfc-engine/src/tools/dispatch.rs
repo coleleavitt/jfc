@@ -69,6 +69,19 @@ pub fn resolve_bash_workdir(cwd: &Path, workdir: Option<&str>) -> PathBuf {
     }
 }
 
+fn suppress_bash_output(mut result: ExecutionResult) -> ExecutionResult {
+    if result.is_error() {
+        return result;
+    }
+    let first_line = result.output.lines().next().unwrap_or_default();
+    result.output = if first_line.starts_with("[exit ") {
+        format!("{first_line}\n(output suppressed)")
+    } else {
+        "(output suppressed)".to_owned()
+    };
+    result
+}
+
 fn checkpoint_before_mutation(path: &Path, tool: &str) {
     match crate::file_checkpoint::checkpoint_file(path) {
         Ok(backup) => {
@@ -142,7 +155,9 @@ pub async fn execute_tool(
     if let ToolInput::Read { file_path, .. } = &input {
         let policy = crate::access_policy::AccessPolicy::for_root(&cwd);
         if !policy.is_empty() && policy.is_blocked(std::path::Path::new(file_path)) {
-            return ExecutionResult::failure(crate::access_policy::AccessPolicy::refusal(file_path));
+            return ExecutionResult::failure(crate::access_policy::AccessPolicy::refusal(
+                file_path,
+            ));
         }
     }
 
@@ -193,17 +208,23 @@ pub async fn execute_tool(
                 timeout,
                 workdir,
                 run_in_background,
+                suppress_output,
             },
         ) => {
             let effective_cwd = resolve_bash_workdir(&cwd, workdir.as_deref());
-            execute_bash_with_options(
+            let result = execute_bash_with_options(
                 &command,
                 timeout,
                 &effective_cwd,
                 None,
                 run_in_background.unwrap_or(false),
             )
-            .await
+            .await;
+            if suppress_output.unwrap_or(false) && !run_in_background.unwrap_or(false) {
+                suppress_bash_output(result)
+            } else {
+                result
+            }
         }
         (
             ToolKind::BashOutput,
@@ -765,9 +786,25 @@ pub async fn execute_tool(
                     &label,
                 ) {
                     Ok(updated) => content = updated,
-                    Err(e) => return ExecutionResult::failure(e),
+                    Err(e) => {
+                        if crate::tools::filesystem::edit_error_needs_stale_recovery_hint(&e) {
+                            let hint = crate::tools::filesystem::stale_read_recovery_hint(
+                                &file_path, &content,
+                            );
+                            return ExecutionResult::failure(format!("{e}\n{hint}"));
+                        }
+                        return ExecutionResult::failure(e);
+                    }
                 }
                 applied += 1;
+            }
+            if let Err(reason) = crate::tools::filesystem::validate_file_mutation(
+                &file_path,
+                Some(&old_content),
+                &content,
+                "MultiEdit",
+            ) {
+                return ExecutionResult::failure(reason);
             }
             if let Err(e) = tokio::fs::write(&path, &content).await {
                 return ExecutionResult::failure(format!("MultiEdit: write {file_path}: {e}"));

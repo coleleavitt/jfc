@@ -14,7 +14,7 @@ pub mod scheduled_tasks;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
@@ -123,6 +123,11 @@ pub struct Config {
     pub default_shell: Option<String>,
     #[serde(default, skip_serializing_if = "ClaudeCompatibilityConfig::is_empty")]
     pub claude: ClaudeCompatibilityConfig,
+    /// Safe mode disables runtime customization that can mutate local state or
+    /// fetch code: plugin installs/updates/runtime registration and theme
+    /// persistence/preview. Also surfaced in the TUI footer.
+    #[serde(default, alias = "safeMode")]
+    pub safe_mode: bool,
     /// Auto-copy the transcript selection to the clipboard on mouse-up
     /// (drag-to-select). Default on; set `copy_on_select = false` to disable
     /// the gesture entirely so clicks/drags never touch the clipboard.
@@ -228,6 +233,18 @@ pub struct Config {
     /// Default true.
     #[serde(default = "default_true")]
     pub cross_session_history: bool,
+
+    /// Accessibility: when true, the TUI reduces ambiguous glyphs and renders
+    /// more linear, text-first labels in key areas (status row, spinner, thinking
+    /// blocks). Aliased for Claude-compatible casing.
+    #[serde(default, alias = "screenReaderMode")]
+    pub screen_reader_mode: bool,
+
+    /// Large text paste handling: when true, collapse large pastes in the input
+    /// box to a compact `[Pasted #N · …]` chip. When false (default), insert the
+    /// full pasted text as normal editable input and show a transient toast.
+    #[serde(default, alias = "collapseLargePastes")]
+    pub collapse_large_pastes: bool,
 }
 
 /// Controls what happens when an agent requested worktree isolation but the
@@ -242,11 +259,24 @@ pub struct IsolationConfig {
     /// dispatch fails closed. Set false to restore the legacy permissive
     /// fall-back-to-cwd behaviour.
     pub fail_closed: bool,
+    /// Optional default isolation mode for Task/workflow subagents when neither
+    /// the tool call nor the agent definition set one. Set to `"worktree"` to
+    /// make subagents use isolated worktrees by default.
+    #[serde(
+        default,
+        rename = "defaultTaskIsolation",
+        alias = "default_task_isolation",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default_task_isolation: Option<String>,
 }
 
 impl Default for IsolationConfig {
     fn default() -> Self {
-        Self { fail_closed: true }
+        Self {
+            fail_closed: true,
+            default_task_isolation: None,
+        }
     }
 }
 
@@ -579,6 +609,7 @@ impl Default for Config {
             sandbox: None,
             default_shell: None,
             claude: ClaudeCompatibilityConfig::default(),
+            safe_mode: false,
             copy_on_select: default_true(),
             refusal_fallback_enabled: default_true(),
             refusal_fallback_model: None,
@@ -597,6 +628,8 @@ impl Default for Config {
             session_min_keep: default_session_min_keep(),
             consult_memory_after_compact: default_true(),
             cross_session_history: default_true(),
+            screen_reader_mode: false,
+            collapse_large_pastes: false,
         }
     }
 }
@@ -643,6 +676,9 @@ impl Config {
             consult_memory_after_compact: local_wins!(consult_memory_after_compact),
             cross_session_history: local_wins!(cross_session_history),
             copy_on_select: local_wins!(copy_on_select),
+            safe_mode: local_wins!(safe_mode),
+            screen_reader_mode: local_wins!(screen_reader_mode),
+            collapse_large_pastes: local_wins!(collapse_large_pastes),
             refusal_fallback_enabled: local_wins!(refusal_fallback_enabled),
             refusal_rewrite_retry_enabled: local_wins!(refusal_rewrite_retry_enabled),
             message_queue_mode: local_wins!(message_queue_mode),
@@ -1127,6 +1163,7 @@ struct Cached {
 
 static CACHE: Mutex<Option<Cached>> = Mutex::new(None);
 static CACHE_GENERATION: AtomicU64 = AtomicU64::new(0);
+static SAFE_MODE_OVERRIDE: AtomicBool = AtomicBool::new(false);
 
 #[cfg(test)]
 static READ_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -1259,6 +1296,29 @@ pub fn load() -> Config {
 /// Load the canonical config as a shared value.
 pub fn load_arc() -> Arc<Config> {
     load_cached_arc(&config_path())
+}
+
+pub fn set_safe_mode_override(enabled: bool) {
+    SAFE_MODE_OVERRIDE.store(enabled, Ordering::Release);
+}
+
+pub fn safe_mode_enabled() -> bool {
+    if SAFE_MODE_OVERRIDE.load(Ordering::Acquire) {
+        return true;
+    }
+    if std::env::var("JFC_SAFE_MODE")
+        .or_else(|_| std::env::var("CLAUDE_CODE_SAFE_MODE"))
+        .ok()
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+    {
+        return true;
+    }
+    load_arc().safe_mode
 }
 
 /// Candidate managed-settings files, from highest to lowest precedence.
@@ -2061,6 +2121,30 @@ disallowed_tools = ["Bash", "Write"]
         assert!(!cfg.isolation.expect("present").fail_closed);
     }
 
+    #[test]
+    fn isolation_default_task_isolation_parses_snake_case_normal() {
+        let cfg: Config =
+            toml::from_str("[isolation]\ndefault_task_isolation = \"worktree\"\n").expect("parse");
+        let isolation = cfg.isolation.expect("present");
+        assert!(isolation.fail_closed);
+        assert_eq!(
+            isolation.default_task_isolation.as_deref(),
+            Some("worktree")
+        );
+    }
+
+    #[test]
+    fn isolation_default_task_isolation_parses_camel_case_normal() {
+        let cfg: Config =
+            toml::from_str("[isolation]\ndefaultTaskIsolation = \"worktree\"\n").expect("parse");
+        let isolation = cfg.isolation.expect("present");
+        assert!(isolation.fail_closed);
+        assert_eq!(
+            isolation.default_task_isolation.as_deref(),
+            Some("worktree")
+        );
+    }
+
     // ── Feature 1: bash_shell ───────────────────────────────────────────────
 
     #[test]
@@ -2107,8 +2191,16 @@ disallowed_tools = ["Bash", "Write"]
             ..Config::default()
         };
         let merged = base.merge_with(local);
-        assert_eq!(merged.theme.as_deref(), Some("local-theme"), "local theme wins");
-        assert_eq!(merged.bash_shell.as_deref(), Some("sh"), "base bash_shell kept when local is None");
+        assert_eq!(
+            merged.theme.as_deref(),
+            Some("local-theme"),
+            "local theme wins"
+        );
+        assert_eq!(
+            merged.bash_shell.as_deref(),
+            Some("sh"),
+            "base bash_shell kept when local is None"
+        );
         assert!(merged.always_show_thinking, "local bool wins");
     }
 
@@ -2119,20 +2211,34 @@ disallowed_tools = ["Bash", "Write"]
         let base_path = tmp.path().join("base.toml");
         let local_path = tmp.path().join("config.toml");
 
-        std::fs::write(&base_path, r#"bash_shell = "/bin/sh"
+        std::fs::write(
+            &base_path,
+            r#"bash_shell = "/bin/sh"
 theme = "base-theme"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         std::fs::write(
             &local_path,
-            format!(r#"extends = "base.toml"
+            format!(
+                r#"extends = "base.toml"
 theme = "local-theme"
-"#),
+"#
+            ),
         )
         .unwrap();
 
         let cfg = load_toml_from(&local_path);
-        assert_eq!(cfg.theme.as_deref(), Some("local-theme"), "local theme wins");
-        assert_eq!(cfg.bash_shell.as_deref(), Some("/bin/sh"), "base bash_shell inherited");
+        assert_eq!(
+            cfg.theme.as_deref(),
+            Some("local-theme"),
+            "local theme wins"
+        );
+        assert_eq!(
+            cfg.bash_shell.as_deref(),
+            Some("/bin/sh"),
+            "base bash_shell inherited"
+        );
     }
 
     // ── Feature 3: auto_compact_threshold_pct ──────────────────────────────
@@ -2145,8 +2251,7 @@ theme = "local-theme"
 
     #[test]
     fn auto_compact_threshold_pct_parses_from_toml_normal() {
-        let cfg: Config =
-            toml::from_str("auto_compact_threshold_pct = 70").expect("parse");
+        let cfg: Config = toml::from_str("auto_compact_threshold_pct = 70").expect("parse");
         assert_eq!(cfg.auto_compact_threshold_pct, 70);
     }
 
@@ -2160,8 +2265,7 @@ theme = "local-theme"
 
     #[test]
     fn always_show_thinking_parses_from_toml_normal() {
-        let cfg: Config =
-            toml::from_str("always_show_thinking = true").expect("parse");
+        let cfg: Config = toml::from_str("always_show_thinking = true").expect("parse");
         assert!(cfg.always_show_thinking);
     }
 }

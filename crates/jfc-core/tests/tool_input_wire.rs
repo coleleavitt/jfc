@@ -299,6 +299,7 @@ mod tests {
             timeout: None,
             workdir: Some("/tmp".into()),
             run_in_background: None,
+            suppress_output: None,
         };
         assert_eq!(i.summary(), "ls in /tmp");
     }
@@ -310,6 +311,7 @@ mod tests {
             timeout: None,
             workdir: None,
             run_in_background: None,
+            suppress_output: None,
         };
         assert_eq!(i.summary(), "ls -la");
     }
@@ -760,12 +762,14 @@ mod tests {
             timeout: Some(5_000),
             workdir: Some("/tmp".into()),
             run_in_background: Some(true),
+            suppress_output: Some(true),
         };
         let v = i.to_value();
         assert_eq!(v["command"], "echo hi");
         assert_eq!(v["timeout"], 5_000);
         assert_eq!(v["workdir"], "/tmp");
         assert_eq!(v["run_in_background"], true);
+        assert_eq!(v["suppressOutput"], true);
     }
 
     #[test]
@@ -775,12 +779,14 @@ mod tests {
             timeout: None,
             workdir: None,
             run_in_background: None,
+            suppress_output: None,
         };
         let v = i.to_value();
         assert_eq!(v["command"], "ls");
         assert!(v.get("timeout").is_none());
         assert!(v.get("workdir").is_none());
         assert!(v.get("run_in_background").is_none());
+        assert!(v.get("suppressOutput").is_none());
     }
 
     #[test]
@@ -798,6 +804,26 @@ mod tests {
             } => {
                 assert_eq!(command, "sleep 10");
                 assert_eq!(run_in_background, Some(true));
+            }
+            other => panic!("expected Bash input, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tool_input_from_value_bash_preserves_suppress_output_normal() {
+        let v = serde_json::json!({
+            "command": "printf secret",
+            "suppressOutput": true
+        });
+        let input = ToolInput::from_value("Bash", v).expect("parse Bash input");
+        match input {
+            ToolInput::Bash {
+                command,
+                suppress_output,
+                ..
+            } => {
+                assert_eq!(command, "printf secret");
+                assert_eq!(suppress_output, Some(true));
             }
             other => panic!("expected Bash input, got {other:?}"),
         }

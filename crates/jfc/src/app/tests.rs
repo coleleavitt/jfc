@@ -127,6 +127,7 @@ fn permission_mode_plan_decisions_normal() {
         timeout: None,
         workdir: None,
         run_in_background: None,
+        suppress_output: None,
     };
     assert_eq!(
         PermissionMode::Plan.auto_approves(&bash_ls),
@@ -139,6 +140,7 @@ fn permission_mode_plan_decisions_normal() {
         timeout: None,
         workdir: None,
         run_in_background: None,
+        suppress_output: None,
     };
     assert!(matches!(
         PermissionMode::Plan.auto_approves(&bash_rm),
@@ -218,6 +220,7 @@ fn make_bash_tool(command: &str) -> ToolCall {
             timeout: None,
             workdir: None,
             run_in_background: None,
+            suppress_output: None,
         },
         output: ToolOutput::Empty,
         display: jfc_core::ToolDisplayState::DEFAULT,

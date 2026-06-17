@@ -65,6 +65,7 @@ pub fn deserialize_part(part: SerializedPart) -> MessagePart {
                         timeout: None,
                         workdir: None,
                         run_in_background: None,
+                        suppress_output: None,
                     },
                 },
                 output: match output {
@@ -350,11 +351,13 @@ pub fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             timeout,
             workdir,
             run_in_background,
+            suppress_output,
         } => ToolInput::Bash {
             command,
             timeout,
             workdir,
             run_in_background,
+            suppress_output,
         },
         SerializedToolInput::BashOutput {
             task_id,

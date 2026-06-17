@@ -70,6 +70,32 @@ pub struct Theme {
     pub style_text_primary_bold: Style,
 }
 
+/// Claude Code token names that do not map 1:1 to JFC's older semantic slots.
+///
+/// Keep the original camelCase names in the constants so parity audits can
+/// verify that each Claude UI token has an explicit home in JFC:
+/// `promptBorder`, `promptBorderShimmer`, `userMessageBackground`,
+/// `userMessageBackgroundHover`, `bashMessageBackgroundColor`, `diffAdded`,
+/// and `diffRemoved`.
+pub const CLAUDE_TOKEN_PROMPT_BORDER: &str = "promptBorder";
+pub const CLAUDE_TOKEN_PROMPT_BORDER_SHIMMER: &str = "promptBorderShimmer";
+pub const CLAUDE_TOKEN_USER_MESSAGE_BACKGROUND: &str = "userMessageBackground";
+pub const CLAUDE_TOKEN_USER_MESSAGE_BACKGROUND_HOVER: &str = "userMessageBackgroundHover";
+pub const CLAUDE_TOKEN_BASH_MESSAGE_BACKGROUND_COLOR: &str = "bashMessageBackgroundColor";
+pub const CLAUDE_TOKEN_DIFF_ADDED: &str = "diffAdded";
+pub const CLAUDE_TOKEN_DIFF_REMOVED: &str = "diffRemoved";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClaudeUiTokens {
+    pub prompt_border: Color,
+    pub prompt_border_shimmer: Color,
+    pub user_message_background: Color,
+    pub user_message_background_hover: Color,
+    pub bash_message_background_color: Color,
+    pub diff_added: Color,
+    pub diff_removed: Color,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeChoice {
     pub name: &'static str,
@@ -79,6 +105,12 @@ pub struct ThemeChoice {
 }
 
 const THEME_CHOICES: &[ThemeChoice] = &[
+    ThemeChoice {
+        name: "claude",
+        label: "Claude",
+        description: "Claude Code-style black terminal palette.",
+        aliases: &["claude-code", "cc"],
+    },
     ThemeChoice {
         name: "dark",
         label: "Dark",
@@ -166,6 +198,7 @@ const THEME_CHOICES: &[ThemeChoice] = &[
 ];
 
 const AVAILABLE_THEME_NAMES: &[&str] = &[
+    "claude",
     "dark",
     "light",
     "solarized",
@@ -213,6 +246,46 @@ impl Theme {
             .fg(self.text_primary)
             .add_modifier(Modifier::BOLD);
         self
+    }
+
+    /// Claude Code-style dark theme, mapped from the deobfuscated
+    /// 2.1.177 dark truecolor tokens onto JFC's semantic slots.
+    pub fn claude() -> Self {
+        Self {
+            bg: Color::Rgb(0, 0, 0),
+            surface: Color::Rgb(0, 0, 0),
+            surface_raised: Color::Rgb(55, 55, 55),
+            border: Color::Rgb(136, 136, 136),
+            text_primary: Color::Rgb(255, 255, 255),
+            text_secondary: Color::Rgb(153, 153, 153),
+            text_muted: Color::Rgb(80, 80, 80),
+            accent: Color::Rgb(147, 165, 255),
+            success: Color::Rgb(78, 186, 101),
+            warning: Color::Rgb(255, 193, 7),
+            error: Color::Rgb(255, 107, 128),
+            user_bubble_bg: Color::Rgb(55, 55, 55),
+            asst_bubble_bg: Color::Rgb(0, 0, 0),
+            code_bg: Color::Rgb(0, 0, 0),
+            code_fg: Color::Rgb(255, 255, 255),
+            code_string: Color::Rgb(145, 200, 130),
+            code_keyword: Color::Rgb(122, 180, 232),
+            code_comment: Color::Rgb(80, 80, 80),
+            code_number: Color::Rgb(245, 139, 87),
+            reasoning_bg: Color::Rgb(0, 0, 0),
+            reasoning_fg: Color::Rgb(153, 153, 153),
+            accent_secondary: Color::Reset,
+            cost_signal: Color::Reset,
+            style_text_secondary: Style::default(),
+            style_text_muted: Style::default(),
+            style_error: Style::default(),
+            style_success: Style::default(),
+            style_accent: Style::default(),
+            style_accent_bold: Style::default(),
+            style_border: Style::default(),
+            style_text_primary: Style::default(),
+            style_text_primary_bold: Style::default(),
+        }
+        .with_cached_styles()
     }
 
     /// Default dark theme — high-contrast indigo/blue accents.
@@ -788,6 +861,7 @@ impl Theme {
     /// `catppuccin` ↔ `catppuccin-mocha`, `tokyo` ↔ `tokyo-night`).
     pub fn by_name(name: &str) -> Option<Self> {
         match Self::choice_by_name(name)?.name {
+            "claude" => Some(Self::claude()),
             "dark" => Some(Self::dark()),
             "light" => Some(Self::light()),
             "solarized" => Some(Self::solarized_dark()),
@@ -825,6 +899,38 @@ impl Theme {
 }
 
 impl Theme {
+    pub fn claude_ui_tokens(&self) -> ClaudeUiTokens {
+        let is_claude_dark = matches!(
+            (self.bg, self.user_bubble_bg, self.border),
+            (
+                Color::Rgb(0, 0, 0),
+                Color::Rgb(55, 55, 55),
+                Color::Rgb(136, 136, 136)
+            )
+        );
+        if is_claude_dark {
+            return ClaudeUiTokens {
+                prompt_border: Color::Rgb(136, 136, 136),
+                prompt_border_shimmer: Color::Rgb(166, 166, 166),
+                user_message_background: Color::Rgb(55, 55, 55),
+                user_message_background_hover: Color::Rgb(70, 70, 70),
+                bash_message_background_color: Color::Rgb(65, 60, 65),
+                diff_added: Color::Rgb(78, 186, 101),
+                diff_removed: Color::Rgb(255, 107, 128),
+            };
+        }
+
+        ClaudeUiTokens {
+            prompt_border: self.border,
+            prompt_border_shimmer: blend(self.text_primary, self.border, 0.65),
+            user_message_background: self.user_bubble_bg,
+            user_message_background_hover: blend(self.text_primary, self.user_bubble_bg, 0.86),
+            bash_message_background_color: blend(self.text_secondary, self.surface_raised, 0.82),
+            diff_added: self.success,
+            diff_removed: self.error,
+        }
+    }
+
     pub fn base(&self) -> Style {
         Style::default().fg(self.text_primary).bg(self.bg)
     }
@@ -981,6 +1087,31 @@ mod tests {
     }
 
     #[test]
+    fn claude_theme_has_rgb_slots_normal() {
+        let t = Theme::claude();
+        assert_all_slots_rgb(&t, "claude");
+        assert_text_distinct_from_bg(&t, "claude");
+    }
+
+    #[test]
+    fn claude_ui_tokens_match_2177_dark_contract_normal() {
+        let tokens = Theme::claude().claude_ui_tokens();
+        assert_eq!(rgb_of(tokens.prompt_border), Some((136, 136, 136)));
+        assert_eq!(rgb_of(tokens.prompt_border_shimmer), Some((166, 166, 166)));
+        assert_eq!(rgb_of(tokens.user_message_background), Some((55, 55, 55)));
+        assert_eq!(
+            rgb_of(tokens.user_message_background_hover),
+            Some((70, 70, 70))
+        );
+        assert_eq!(
+            rgb_of(tokens.bash_message_background_color),
+            Some((65, 60, 65))
+        );
+        assert_eq!(rgb_of(tokens.diff_added), Some((78, 186, 101)));
+        assert_eq!(rgb_of(tokens.diff_removed), Some((255, 107, 128)));
+    }
+
+    #[test]
     fn light_theme_has_rgb_slots_normal() {
         let t = Theme::light();
         assert_all_slots_rgb(&t, "light");
@@ -1129,6 +1260,7 @@ mod tests {
 
     #[test]
     fn by_name_resolves_canonical_names_normal() {
+        assert!(Theme::by_name("claude").is_some());
         assert!(Theme::by_name("dark").is_some());
         assert!(Theme::by_name("light").is_some());
         assert!(Theme::by_name("solarized").is_some());
@@ -1146,6 +1278,10 @@ mod tests {
         let c1 = Theme::by_name("catppuccin").unwrap();
         let c2 = Theme::by_name("catppuccin-mocha").unwrap();
         assert_eq!(rgb_of(c1.bg), rgb_of(c2.bg));
+
+        let claude = Theme::by_name("claude").unwrap();
+        let cc = Theme::by_name("claude-code").unwrap();
+        assert_eq!(rgb_of(claude.bg), rgb_of(cc.bg));
     }
 
     #[test]
@@ -1162,6 +1298,7 @@ mod tests {
     #[test]
     fn by_name_is_case_insensitive_normal() {
         assert!(Theme::by_name("DARK").is_some());
+        assert!(Theme::by_name("Claude-Code").is_some());
         assert!(Theme::by_name("Dracula").is_some());
         assert!(Theme::by_name("Tokyo-Night").is_some());
         assert!(Theme::by_name("GITHUB-LIGHT").is_some());

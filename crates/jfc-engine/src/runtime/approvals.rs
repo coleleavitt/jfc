@@ -136,25 +136,20 @@ pub fn advance_approval_queue(state: &mut EngineState) -> Vec<ToolCall> {
         // (or react to) a pending permission modal.
         crate::hooks::fire_async(
             crate::hooks::HookPoint::OnPermissionRequest,
-            &crate::hooks::HookContext::for_tool(
-                next.kind.label(),
-                "",
-                session_id_for_hook,
-            )
-            .with_extra("kind", "permission")
-            .with_extra("tool_id", next.id.to_string()),
+            &crate::hooks::HookContext::for_tool(next.kind.label(), "", session_id_for_hook)
+                .with_extra("kind", "permission")
+                .with_extra("tool_id", next.id.to_string()),
         );
         // Also fire the unified OnUserInputRequired hook — signals any
         // handler that the engine is about to block on user interaction.
         crate::hooks::fire_async(
             crate::hooks::HookPoint::OnUserInputRequired,
-            &crate::hooks::HookContext::for_tool(
-                next.kind.label(),
-                "",
-                session_id_for_hook,
-            )
-            .with_extra("kind", "permission")
-            .with_extra("message", format!("Awaiting approval for {}", next.kind.label())),
+            &crate::hooks::HookContext::for_tool(next.kind.label(), "", session_id_for_hook)
+                .with_extra("kind", "permission")
+                .with_extra(
+                    "message",
+                    format!("Awaiting approval for {}", next.kind.label()),
+                ),
         );
         state.pending_approval = Some(crate::app::PendingApproval {
             tool: next,

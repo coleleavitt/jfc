@@ -17,6 +17,39 @@ use jfc_provider::{ModelId, Provider};
 /// inviting a runaway generation on every mid-turn cross-model call.
 const ASK_MODEL_MAX_TOKENS: u32 = 2048;
 
+fn inherit_agent_isolation_if_omitted(
+    task_input: &mut crate::types::TaskInput,
+    agent_def: Option<&crate::agents::AgentDef>,
+) {
+    if task_input.isolation.is_none()
+        && let Some(isolation) = agent_def.and_then(|agent| agent.isolation.clone())
+    {
+        task_input.isolation = Some(isolation);
+    }
+}
+
+fn apply_default_task_isolation_if_omitted(
+    task_input: &mut crate::types::TaskInput,
+    default_isolation: Option<&str>,
+) {
+    if task_input.isolation.is_some() {
+        return;
+    }
+    let Some(default_isolation) = default_isolation.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    task_input.isolation = Some(default_isolation.to_owned());
+}
+
+fn apply_config_default_task_isolation_if_omitted(task_input: &mut crate::types::TaskInput) {
+    let config = crate::config::load_arc();
+    let default_isolation = config
+        .isolation
+        .as_ref()
+        .and_then(|isolation| isolation.default_task_isolation.as_deref());
+    apply_default_task_isolation_if_omitted(task_input, default_isolation);
+}
+
 #[derive(Clone)]
 pub struct LocalAdvisorDispatchContext {
     pub targets: Vec<crate::advisor::LocalAdvisorProviderTarget>,
@@ -413,6 +446,8 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
             .as_deref()
             .and_then(|t| agents.iter().find(|a| a.name.eq_ignore_ascii_case(t)))
             .cloned();
+        inherit_agent_isolation_if_omitted(&mut task_input, agent_def.as_ref());
+        apply_config_default_task_isolation_if_omitted(&mut task_input);
         // Subagent context inheritance: when enabled, seed the subagent's
         // `forks_parent_context` with a compact CLAUDE.md summary so it
         // doesn't need to re-scan the codebase. Injected into the system
@@ -467,8 +502,7 @@ pub fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDisp
                     .as_deref()
                     .map(std::path::PathBuf::from)
                     .unwrap_or_else(|| {
-                        std::env::current_dir()
-                            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
                     }),
                 worker_exe: None,
                 worker_epoch: 0,
@@ -1489,7 +1523,7 @@ fn apply_council_tool_overrides(
 /// Build the council's de-duplicated member list. With an explicit `requested`
 /// list, ids are resolved against the full provider `registry` (unresolved ids
 /// returned separately); otherwise the council defaults to the active model
-/// plus the local advisor model (when distinct).
+/// plus all local advisor targets (when distinct).
 fn resolve_council_members(
     requested: &[String],
     active_provider: &Arc<dyn Provider>,
@@ -1520,10 +1554,10 @@ fn resolve_council_members(
 
     if requested.is_empty() {
         add(active_provider.clone(), active_model.clone(), &mut members);
-        if let Some(ctx) = advisor_ctx
-            && let Some(target) = ctx.targets.first()
-        {
-            add(target.provider.clone(), target.model.clone(), &mut members);
+        if let Some(ctx) = advisor_ctx {
+            for target in &ctx.targets {
+                add(target.provider.clone(), target.model.clone(), &mut members);
+            }
         }
     } else {
         for id in requested {
@@ -1574,6 +1608,101 @@ fn resolve_configured_council_members(
     }
 
     (members, unresolved)
+}
+
+#[cfg(test)]
+mod isolation_inheritance_tests {
+    use super::{apply_default_task_isolation_if_omitted, inherit_agent_isolation_if_omitted};
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    fn task_input(isolation: Option<&str>) -> crate::types::TaskInput {
+        crate::types::TaskInput {
+            description: "inspect".into(),
+            prompt: "inspect".into(),
+            subagent_type: Some("implementer".into()),
+            category: None,
+            run_in_background: false,
+            model: None,
+            effort: None,
+            name: None,
+            team_name: None,
+            mode: None,
+            isolation: isolation.map(str::to_owned),
+            parent_task_id: None,
+            schema: None,
+            cwd: None,
+        }
+    }
+
+    fn agent_def(isolation: Option<&str>) -> crate::agents::AgentDef {
+        crate::agents::AgentDef {
+            name: "implementer".into(),
+            source: PathBuf::from("test"),
+            model: None,
+            isolation: isolation.map(str::to_owned),
+            skills: Vec::new(),
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            permission_mode: None,
+            forks_parent_context: None,
+            background: None,
+            color: None,
+            effort: None,
+            max_turns: None,
+            max_input_tokens: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: HashMap::new(),
+            key_trigger: None,
+            use_when: Vec::new(),
+            avoid_when: Vec::new(),
+            cost: None,
+            system_prompt: String::new(),
+        }
+    }
+
+    #[test]
+    fn task_inherits_agent_worktree_isolation_when_omitted_regression() {
+        let mut task = task_input(None);
+        let agent = agent_def(Some("worktree"));
+
+        inherit_agent_isolation_if_omitted(&mut task, Some(&agent));
+
+        assert_eq!(task.isolation.as_deref(), Some("worktree"));
+    }
+
+    #[test]
+    fn explicit_task_isolation_wins_over_agent_default_normal() {
+        let mut task = task_input(Some("worktree"));
+        let agent = agent_def(Some("other"));
+
+        inherit_agent_isolation_if_omitted(&mut task, Some(&agent));
+
+        assert_eq!(task.isolation.as_deref(), Some("worktree"));
+    }
+
+    #[test]
+    fn task_inherits_config_default_isolation_after_agent_default_normal() {
+        let mut task = task_input(None);
+        let agent = agent_def(None);
+
+        inherit_agent_isolation_if_omitted(&mut task, Some(&agent));
+        apply_default_task_isolation_if_omitted(&mut task, Some(" worktree "));
+
+        assert_eq!(task.isolation.as_deref(), Some("worktree"));
+    }
+
+    #[test]
+    fn agent_isolation_wins_over_config_default_normal() {
+        let mut task = task_input(None);
+        let agent = agent_def(Some("worktree"));
+
+        inherit_agent_isolation_if_omitted(&mut task, Some(&agent));
+        apply_default_task_isolation_if_omitted(&mut task, Some("other"));
+
+        assert_eq!(task.isolation.as_deref(), Some("worktree"));
+    }
 }
 
 #[cfg(test)]
@@ -1752,6 +1881,41 @@ mod council_member_tests {
         let (members, unresolved) = resolve_council_members(&[], &ap, &am, None, &registry());
         assert_eq!(members.len(), 1);
         assert!(unresolved.is_empty());
+    }
+
+    #[test]
+    fn empty_request_uses_all_advisor_targets_regression() {
+        let (ap, am) = active();
+        let advisor_ctx = LocalAdvisorDispatchContext {
+            targets: vec![
+                crate::advisor::LocalAdvisorProviderTarget {
+                    provider: Arc::new(NamedProvider::new("beta")) as Arc<dyn Provider>,
+                    model: ModelId::new("advisor-a"),
+                },
+                crate::advisor::LocalAdvisorProviderTarget {
+                    provider: Arc::new(NamedProvider::new("alpha")) as Arc<dyn Provider>,
+                    model: ModelId::new("advisor-b"),
+                },
+                crate::advisor::LocalAdvisorProviderTarget {
+                    provider: ap.clone(),
+                    model: am.clone(),
+                },
+            ],
+            transcript: Vec::new(),
+        };
+
+        let (members, unresolved) =
+            resolve_council_members(&[], &ap, &am, Some(&advisor_ctx), &registry());
+
+        assert!(unresolved.is_empty());
+        assert_eq!(members.len(), 3);
+        let labels: Vec<&str> = members
+            .iter()
+            .map(|m| m.label.as_deref().unwrap_or(""))
+            .collect();
+        assert!(labels.contains(&"alpha/active-model"), "{labels:?}");
+        assert!(labels.contains(&"beta/advisor-a"), "{labels:?}");
+        assert!(labels.contains(&"alpha/advisor-b"), "{labels:?}");
     }
 
     // ─── AskModel dispatch path ──────────────────────────────────────────────

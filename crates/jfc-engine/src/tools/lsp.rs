@@ -20,6 +20,10 @@ pub async fn execute_lsp(
         "workspace_symbols",
         "incoming_calls",
         "outgoing_calls",
+        // Newly supported kinds
+        "diagnostics",
+        "code_action",
+        "rename",
     ];
     if !valid_kinds.contains(&kind_norm.as_str()) {
         return ExecutionResult::failure(format!(
@@ -36,7 +40,37 @@ pub async fn execute_lsp(
         return ExecutionResult::failure(format!("lsp: file does not exist: {file}"));
     }
 
+    // Fast-path diagnostics: if we already have a cached publishDiagnostics snapshot,
+    // surface that without requiring a running language server.
+    if kind_norm == "diagnostics" {
+        let mut lines: Vec<String> = Vec::new();
+        let entries = crate::diagnostics::global_snapshot();
+        let file_str = path.display().to_string();
+        let mut matched: Vec<&crate::diagnostics::DiagnosticEntry> =
+            entries.iter().filter(|e| e.file == file_str).collect();
+        if matched.is_empty() {
+            // Try matching by basename as a fallback (different absolute paths across OS/users).
+            if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                matched = entries.iter().filter(|e| e.file.ends_with(name)).collect();
+            }
+        }
+        if !matched.is_empty() {
+            lines.push(format!("Diagnostics for {}:", file_str));
+            for e in matched {
+                lines.push(crate::diagnostics::format_entry(e));
+            }
+            return ExecutionResult::success(lines.join("\n"));
+        }
+        // No cache available for this file — we'll try a pull request if a server exists.
+    }
+
     let Some((cmd, args)) = crate::lsp_client::detect_lsp_for_cwd(cwd) else {
+        if kind_norm == "diagnostics" {
+            return ExecutionResult::success(format!(
+                "lsp: no cached diagnostics for {file} and no language server detected for {}",
+                cwd.display()
+            ));
+        }
         return ExecutionResult::failure(format!(
             "lsp: no language server detected for {} (looked for Cargo.toml, build.zig)",
             cwd.display()
@@ -170,11 +204,146 @@ pub async fn execute_lsp(
                 _ => format!("lsp: no call hierarchy item at {file}:{line}:{column}"),
             }
         }
+        "diagnostics" => {
+            // Pull-based diagnostics — not widely supported. Best-effort.
+            let params = serde_json::json!({
+                "textDocument": { "uri": uri },
+                // Identifier per spec; arbitrary stable string.
+                "identifier": { "value": "jfc" }
+            });
+            match client.send_request("textDocument/diagnostic", params).await {
+                Some(v) if !v.is_null() => format!("{}", v),
+                _ => format!(
+                    "lsp: pull-diagnostics not supported by this server (no cached diagnostics for {file})"
+                ),
+            }
+        }
+        "code_action" => {
+            let params = serde_json::json!({
+                "textDocument": { "uri": uri },
+                "range": {
+                    "start": {"line": line.saturating_sub(1), "character": column.saturating_sub(1)},
+                    "end": {"line": line.saturating_sub(1), "character": column.saturating_sub(1)}
+                },
+                "context": {"diagnostics": []}
+            });
+            match client.send_request("textDocument/codeAction", params).await {
+                Some(v) => format_code_actions(&v),
+                None => "lsp: codeAction request returned nothing".to_owned(),
+            }
+        }
+        "rename" => {
+            // Safe preview: only probe whether rename is available and show the range/placeholder.
+            let params = serde_json::json!({
+                "textDocument": { "uri": uri },
+                "position": {
+                    "line": line.saturating_sub(1),
+                    "character": column.saturating_sub(1),
+                },
+            });
+            match client
+                .send_request("textDocument/prepareRename", params)
+                .await
+            {
+                Some(v) if v.is_null() => "lsp: rename not available at this location".to_owned(),
+                Some(v) => format_prepare_rename(&v),
+                None => "lsp: prepareRename returned nothing".to_owned(),
+            }
+        }
         _ => unreachable!("kind validated above"),
     };
 
     client.shutdown().await;
     ExecutionResult::success(result)
+}
+
+fn format_code_actions(v: &serde_json::Value) -> String {
+    // textDocument/codeAction returns an array of CodeAction | Command.
+    let Some(arr) = v.as_array() else {
+        return v.to_string();
+    };
+    if arr.is_empty() {
+        return "lsp: no code actions available".to_owned();
+    }
+    let mut lines = Vec::new();
+    for (i, item) in arr.iter().enumerate() {
+        if let Some(title) = item.get("title").and_then(|v| v.as_str()) {
+            let kind = item.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            let suffix = if kind.is_empty() {
+                String::new()
+            } else {
+                format!(" ({kind})")
+            };
+            lines.push(format!("{}. {}{}", i + 1, title, suffix));
+        } else if let Some(command) = item.get("command").and_then(|v| v.as_str()) {
+            lines.push(format!("{}. Command: {}", i + 1, command));
+        }
+    }
+    if lines.is_empty() {
+        "lsp: no code actions available".to_owned()
+    } else {
+        lines.join("\n")
+    }
+}
+
+fn format_prepare_rename(v: &serde_json::Value) -> String {
+    // prepareRename result may be Range or { range, placeholder } or null/not supported
+    if v.is_null() {
+        return "lsp: rename not available at this location".to_owned();
+    }
+    if let Some(obj) = v.as_object() {
+        let placeholder = obj
+            .get("placeholder")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if let Some(range) = obj.get("range") {
+            let start = range.get("start").and_then(|s| {
+                Some((
+                    s.get("line")?.as_u64()? + 1,
+                    s.get("character")?.as_u64()? + 1,
+                ))
+            });
+            let end = range.get("end").and_then(|s| {
+                Some((
+                    s.get("line")?.as_u64()? + 1,
+                    s.get("character")?.as_u64()? + 1,
+                ))
+            });
+            if let (Some((sl, sc)), Some((el, ec))) = (start, end) {
+                if placeholder.is_empty() {
+                    return format!("rename available — selection {}:{}..{}:{}", sl, sc, el, ec);
+                } else {
+                    return format!(
+                        "rename available — `{}` at {}:{}..{}:{}",
+                        placeholder, sl, sc, el, ec
+                    );
+                }
+            }
+        }
+        if !placeholder.is_empty() {
+            return format!("rename available — `{}`", placeholder);
+        }
+        return "rename available".to_owned();
+    }
+    // Range-only form
+    if let Some(range) = v.get("range") {
+        let start = range.get("start").and_then(|s| {
+            Some((
+                s.get("line")?.as_u64()? + 1,
+                s.get("character")?.as_u64()? + 1,
+            ))
+        });
+        let end = range.get("end").and_then(|s| {
+            Some((
+                s.get("line")?.as_u64()? + 1,
+                s.get("character")?.as_u64()? + 1,
+            ))
+        });
+        if let (Some((sl, sc)), Some((el, ec))) = (start, end) {
+            return format!("rename available — selection {}:{}..{}:{}", sl, sc, el, ec);
+        }
+    }
+    v.to_string()
 }
 
 pub fn format_lsp_hover(v: &serde_json::Value) -> String {

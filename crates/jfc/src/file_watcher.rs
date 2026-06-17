@@ -54,12 +54,12 @@ pub fn mcp_config_change_counter() -> u64 {
 /// Returns `true` when the path is an MCP-relevant config file
 /// (`settings.json`, `.mcp.json`, or `config.toml`).
 fn is_mcp_config_path(p: &std::path::Path) -> bool {
-    p.file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|n| {
-            matches!(n, "settings.json" | ".mcp.json" | "config.toml"
-                | "settings.local.json")
-        })
+    p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+        matches!(
+            n,
+            "settings.json" | ".mcp.json" | "config.toml" | "settings.local.json"
+        )
+    })
 }
 
 /// Spawn the watcher. Idempotent — calling twice is harmless (the
@@ -141,8 +141,7 @@ fn spawn_watcher() -> Result<(), String> {
                         // Also fire the MCP counter when a settings/config
                         // file changes, so the Tick handler can hot-reload
                         // MCP servers without waiting for the next turn.
-                        let is_mcp_relevant =
-                            event.paths.iter().any(|p| is_mcp_config_path(p));
+                        let is_mcp_relevant = event.paths.iter().any(|p| is_mcp_config_path(p));
                         if is_mcp_relevant {
                             MCP_CONFIG_CHANGE_COUNTER.fetch_add(1, Ordering::SeqCst);
                             tracing::debug!(

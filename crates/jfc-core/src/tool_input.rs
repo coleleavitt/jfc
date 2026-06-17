@@ -381,7 +381,7 @@ macro_rules! for_each_regular_tool_input {
 macro_rules! for_each_to_value_only_tool_input {
     ($cb:ident) => {
         $cb! {
-            Bash => { command: req_str @ "command", timeout: opt_u64 @ "timeout", workdir: opt_str @ "workdir", run_in_background: raw_bool_opt @ "run_in_background" }
+            Bash => { command: req_str @ "command", timeout: opt_u64 @ "timeout", workdir: opt_str @ "workdir", run_in_background: raw_bool_opt @ "run_in_background", suppress_output: raw_bool_opt @ "suppressOutput" }
             TaskCreate => { subject: req_str @ "subject", description: req_str @ "description", active_form: opt_str @ "active_form", blocked_by: str_vec @ "blocked_by", acceptance_criteria: opt_str @ "acceptance_criteria", verification_command: opt_str @ "verification_command", risk: opt_str @ "risk", parent_id: opt_str @ "parent_id", kind: opt_str @ "kind", tags: str_vec @ "tags", priority: opt_u8 @ "priority", effort: opt_str @ "effort", model: opt_str @ "model" }
             Skill => { name: req_str @ "name", args: opt_str @ "args" }
             SendMessage => { to: req_str @ "to", message: req_str @ "message", summary: opt_str @ "summary" }
@@ -506,6 +506,7 @@ pub enum ToolInput {
         timeout: Option<u64>,
         workdir: Option<String>,
         run_in_background: Option<bool>,
+        suppress_output: Option<bool>,
     },
     BashOutput {
         task_id: String,
@@ -1492,6 +1493,8 @@ impl ToolInput {
                     timeout: opt_u64_field("timeout"),
                     workdir: opt_str_field("workdir"),
                     run_in_background: raw_bool_opt_field("run_in_background"),
+                    suppress_output: raw_bool_opt_field("suppressOutput")
+                        .or_else(|| raw_bool_opt_field("suppress_output")),
                 }
             }
             ToolKind::TaskCreate => {
@@ -2093,6 +2096,10 @@ fn normalize_lsp_operation(operation: &str) -> &str {
         "outgoingCalls" | "outgoing_calls" => "outgoing_calls",
         "prepareCallHierarchy" | "prepare_call_hierarchy" => "incoming_calls",
         "hover" => "hover",
+        // New operations supported by the LSP tool
+        "codeAction" | "code_action" => "code_action",
+        "diagnostics" | "publishDiagnostics" | "diagnostic" => "diagnostics",
+        "rename" => "rename",
         other => other,
     }
 }

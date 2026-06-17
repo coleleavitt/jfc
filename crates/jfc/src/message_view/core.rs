@@ -29,8 +29,9 @@ pub(super) fn attribution_for_message_for_test(
 
 /// Provider attribution for an assistant message, when it represents a distinct
 /// cross-model voice. Returns `(style, display_name)` for messages from a named
-/// teammate or a model whose family is identifiable; `None` for an ordinary
-/// single-model assistant turn (which renders the plain "assistant" label).
+/// teammate; `None` for an ordinary single-model assistant turn. Normal stream
+/// messages record `model_name`, so model-only attribution would redundantly
+/// render `◆ Claude` on nearly every turn.
 fn attribution_for_message(msg: &ChatMessage) -> Option<(ProviderStyle, String)> {
     // A named teammate is always a distinct voice. Prefer the model's provider
     // family for the visual identity (so a "gpt-5.5" teammate shows the GPT
@@ -44,23 +45,13 @@ fn attribution_for_message(msg: &ChatMessage) -> Option<(ProviderStyle, String)>
             .style();
         return Some((style, name.to_owned()));
     }
-    // No teammate name, but a model is recorded: attribute by provider family
-    // only when it resolves to a known family (else fall back to plain label).
-    if let Some(model) = msg.model_name.as_deref().filter(|m| !m.trim().is_empty()) {
-        let family = ProviderFamily::classify(model);
-        if family != ProviderFamily::Other {
-            let style = family.style();
-            return Some((style, style.label.to_owned()));
-        }
-    }
     None
 }
 
-/// Columns reserved at the left of a user message for the `▌` ribbon + a
-/// space. User text is *wrapped* this much narrower (in the item builder)
-/// and then *rendered* shifted right by the same amount, so the two widths
-/// always agree — no re-wrap, no right-edge clip.
-pub const MSG_USER_INDENT: u16 = 2;
+/// User prompt rows now render as Claude-style grey `› prompt` rows rather
+/// than an accent gutter. Kept public for older tests that import the symbol.
+#[allow(dead_code)]
+pub const MSG_USER_INDENT: u16 = 0;
 
 pub struct MessageView<'a> {
     pub app: &'a App,
@@ -293,7 +284,6 @@ impl Widget for MessageView<'_> {
         // color + bold on the role label is the entire visual
         // differentiation, no per-row decoration.
         struct Scope {
-            role: Role,
             is_streaming_placeholder: bool,
         }
         let mut scope: Option<Scope> = None;
@@ -323,11 +313,10 @@ impl Widget for MessageView<'_> {
             // simple.
             match item {
                 RenderItem::MessageStart {
-                    role,
+                    role: _,
                     is_streaming_placeholder,
                 } => {
                     scope = Some(Scope {
-                        role: *role,
                         is_streaming_placeholder: *is_streaming_placeholder,
                     });
                     last_streaming_cursor = None;
@@ -376,30 +365,10 @@ impl Widget for MessageView<'_> {
             last_visible_item = Some(item_idx);
             last_visible_line = Some(lines_skipped + item_scroll_skip + render_h as usize);
 
-            // User messages get a flat accent ribbon (`▌`) down the left
-            // and a 2-col indent so the speaker reads at a glance without
-            // any background fill (terminals band bg gradients badly, and
-            // a solid tint is the decoration we keep stripping). Assistant
-            // and everything else render flush-left at full width.
-            let user_ribbon = matches!(
-                scope,
-                Some(Scope {
-                    role: Role::User,
-                    ..
-                })
-            );
-            let (item_x, item_w) = if user_ribbon {
-                (
-                    area.x + MSG_USER_INDENT,
-                    width.saturating_sub(MSG_USER_INDENT),
-                )
-            } else {
-                (area.x, width)
-            };
             let item_area = Rect {
-                x: item_x,
+                x: area.x,
                 y,
-                width: item_w,
+                width,
                 height: render_h,
             };
             // Hit-region: each clickable item registers its area so
@@ -423,18 +392,6 @@ impl Widget for MessageView<'_> {
                 _ => {}
             }
             item.render_with_skip(self.app, item_area, buf, t, item_scroll_skip);
-
-            // Paint the user-message ribbon: a flat `▌` in accent at the
-            // left edge of every row this item occupies. Static (no pulse)
-            // — it's a structural speaker marker, not a liveness animation.
-            if user_ribbon && area.x < buf.area().right() {
-                let ribbon_bottom = (y + render_h).min(buf.area().bottom());
-                for ry in y..ribbon_bottom {
-                    let cell = &mut buf[(area.x, ry)];
-                    cell.set_symbol("▌");
-                    cell.set_style(Style::default().fg(t.accent));
-                }
-            }
 
             // For streaming-placeholder scopes, remember the bottom
             // row's last-content column so MessageEnd can drop a
@@ -853,6 +810,49 @@ fn is_reminder_only_user(msg: &ChatMessage) -> bool {
     strip_system_reminders(&joined).trim().is_empty()
 }
 
+fn push_user_prompt_lines(
+    items: &mut Vec<RenderItem<'_>>,
+    text: &str,
+    queued: bool,
+    t: &Theme,
+    width: usize,
+) {
+    let width = width.max(2);
+    let content_w = width.saturating_sub(2).max(1);
+    let tokens = t.claude_ui_tokens();
+    let mut style = Style::default()
+        .fg(t.text_primary)
+        .bg(tokens.user_message_background);
+    if queued {
+        style = style
+            .fg(t.text_muted)
+            .add_modifier(Modifier::DIM | Modifier::ITALIC);
+    }
+
+    let mut pushed = false;
+    for raw in text.split('\n') {
+        let chunks = if raw.is_empty() {
+            vec![String::new()]
+        } else {
+            markdown::hard_wrap_str(raw, content_w)
+        };
+        for chunk in chunks {
+            let mut row = format!("› {chunk}");
+            let used = unicode_width::UnicodeWidthStr::width(row.as_str());
+            if used < width {
+                row.push_str(&" ".repeat(width - used));
+            }
+            items.push(RenderItem::TextLine(Line::from(Span::styled(row, style))));
+            pushed = true;
+        }
+    }
+    if !pushed {
+        let mut row = "› ".to_owned();
+        row.push_str(&" ".repeat(width.saturating_sub(2)));
+        items.push(RenderItem::TextLine(Line::from(Span::styled(row, style))));
+    }
+}
+
 fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<RenderItem<'a>> {
     let mut items: Vec<RenderItem<'a>> = Vec::new();
     // Tracks the previous *rendered* message's role so a run of
@@ -937,29 +937,21 @@ pub(crate) fn build_message_items<'a>(
             role: msg.role,
             is_streaming_placeholder,
         });
-        // Suppress the repeated label for a same-speaker continuation.
+        let assistant_attr = if matches!(msg.role, Role::Assistant) {
+            attribution_for_message(msg)
+        } else {
+            None
+        };
+        // Suppress repeated ordinary assistant labels for same-speaker
+        // continuations. Named teammates are not suppressed here because the
+        // attribution is the only thing distinguishing that voice.
         let suppress_label = *prev_role == Some(msg.role)
             && matches!(msg.role, Role::Assistant)
-            && !is_streaming_placeholder;
+            && !is_streaming_placeholder
+            && assistant_attr.is_none();
         *prev_role = Some(msg.role);
         let label_line = match msg.role {
-            // Queued user message (pending submit): dim the role label
-            // and append "[queued]" so it visually reads as pending vs
-            // already-processed turns. Mirrors CC 2.1.144's queued-
-            // message rendering where pending input is muted to
-            // distinguish it from in-flight or completed turns
-            // (cli.beautified.js:501634 hints "Press up to edit
-            // queued messages" surfaces when queued items exist).
-            Role::User if msg.queued => Line::from(vec![
-                Span::styled("you", t.user_label().add_modifier(Modifier::DIM)),
-                Span::styled(
-                    " [queued]",
-                    Style::default()
-                        .fg(t.text_muted)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ]),
-            Role::User => Line::from(Span::styled("you", t.user_label())),
+            Role::User => None,
             Role::Assistant => {
                 let mut spans = Vec::new();
                 // Static accent dot marks *which* message is in flight. No
@@ -968,56 +960,55 @@ pub(crate) fn build_message_items<'a>(
                 if is_streaming_placeholder {
                     spans.push(Span::styled("● ", Style::default().fg(t.accent)));
                 }
-                // Cross-model attribution: when this assistant message came
-                // from a named teammate or a non-default model, label it with
-                // the provider's identity (color + glyph + label) so a
-                // heterogeneous exchange (e.g. a GPT teammate replying in a
-                // Claude-led session) reads as a distinct voice. Redundant
-                // attribution (glyph + label + color) survives monochrome /
-                // color-vision deficiency. Falls back to plain "assistant".
-                match attribution_for_message(msg) {
-                    Some((style, who)) => {
-                        spans.push(Span::styled(
-                            format!("{} {}", style.glyph, style.bar),
-                            Style::default().fg(style.color),
-                        ));
-                        spans.push(Span::styled(
-                            who,
-                            Style::default()
-                                .fg(style.color)
-                                .add_modifier(Modifier::BOLD),
-                        ));
-                    }
-                    None => spans.push(Span::styled("assistant", t.asst_label())),
+                // Cross-model attribution is reserved for named teammates.
+                // Ordinary assistant turns render as prose, matching Claude's
+                // transcript shape and avoiding redundant `Claude` headers.
+                if let Some((style, who)) = assistant_attr {
+                    spans.push(Span::styled(
+                        format!("{} {}", style.glyph, style.bar),
+                        Style::default().fg(style.color),
+                    ));
+                    spans.push(Span::styled(
+                        who,
+                        Style::default()
+                            .fg(style.color)
+                            .add_modifier(Modifier::BOLD),
+                    ));
                 }
-                Line::from(spans)
+                if spans.is_empty() {
+                    None
+                } else {
+                    Some(Line::from(spans))
+                }
             }
         };
         // Append a dim timestamp to the role label when `show_message_timestamps`
         // is enabled. Only show when `created_at > 0` (0 = old session, no data).
         // Skipped for streaming placeholders — the timestamp is meaningless while
         // a turn is still in flight.
-        let label_line = if !suppress_label
-            && !is_streaming_placeholder
-            && msg.created_at > 0
-            && jfc_engine::config::load_arc()
-                .claude
-                .show_message_timestamps
-                .unwrap_or(false)
-        {
-            let ts = format_message_timestamp(msg.created_at);
-            let mut spans = label_line.spans;
-            spans.push(Span::styled(
-                format!("  {ts}"),
-                Style::default()
-                    .fg(t.text_muted)
-                    .add_modifier(Modifier::DIM),
-            ));
-            Line::from(spans)
-        } else {
-            label_line
-        };
-        if !suppress_label {
+        let label_line = label_line.map(|line| {
+            if !suppress_label
+                && !is_streaming_placeholder
+                && msg.created_at > 0
+                && jfc_engine::config::load_arc()
+                    .claude
+                    .show_message_timestamps
+                    .unwrap_or(false)
+            {
+                let ts = format_message_timestamp(msg.created_at);
+                let mut spans = line.spans;
+                spans.push(Span::styled(
+                    format!("  {ts}"),
+                    Style::default()
+                        .fg(t.text_muted)
+                        .add_modifier(Modifier::DIM),
+                ));
+                Line::from(spans)
+            } else {
+                line
+            }
+        });
+        if !suppress_label && let Some(label_line) = label_line {
             items.push(RenderItem::TextLine(label_line));
         }
 
@@ -1113,15 +1104,12 @@ pub(crate) fn build_message_items<'a>(
                         p += 1;
                         continue;
                     }
-                    // User messages render inside a 2-col ribbon indent (see
-                    // `MSG_USER_INDENT` in the widget), so they must *wrap* at
-                    // that narrower width — otherwise the indented render rect
-                    // would re-wrap or clip them. Assistant text uses full width.
-                    let content_w = if msg.role == Role::User {
-                        inner_w.saturating_sub(MSG_USER_INDENT as usize)
-                    } else {
-                        inner_w
-                    };
+                    if msg.role == Role::User {
+                        push_user_prompt_lines(items, text, msg.queued, &t, inner_w);
+                        p += 1;
+                        continue;
+                    }
+                    let content_w = inner_w;
                     // Render-layer guard: a model that lost its tool catalog
                     // (misclassified prompt -> tools stripped in stream::request)
                     // can emit a tool call as visible text like

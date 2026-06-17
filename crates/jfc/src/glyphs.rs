@@ -28,11 +28,10 @@ pub const SCROLLBAR_TRACK: &str = "│";
 /// The streaming status row's spinner (the `✦`-style star cycle), used by the
 /// honest status line in `spinner.rs`.
 pub const STATUS_FRAMES: &[&str] = &["·", "✢", "✦", "✶", "✻", "✽"];
-/// The braille spinner used by the task/subagent panels. Intentionally distinct
-/// from [`STATUS_FRAMES`]: the panels show many small concurrent spinners where
-/// the braille cycle reads better than the larger stars. Both live here so the
-/// distinction is explicit rather than accidental.
-pub const TASK_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+/// Task/subagent panels use the same frames as the streaming status row. A
+/// second spinner vocabulary made live work look like different systems were
+/// competing on the same screen.
+pub const TASK_FRAMES: &[&str] = STATUS_FRAMES;
 
 /// Network-recovery marker shown in place of the spinner glyph while a provider
 /// retries a transient failure (was a bare `"!"` literal in `messages.rs`).

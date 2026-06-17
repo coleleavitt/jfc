@@ -13,6 +13,7 @@ use ratatui::{
 };
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 use syntect::{
@@ -348,6 +349,18 @@ static HIGHLIGHT_CACHE: LazyLock<Mutex<HighlightCache>> = LazyLock::new(|| {
     })
 });
 
+static SYNTAX_HIGHLIGHTING_DISABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn syntax_highlighting_disabled() -> bool {
+    SYNTAX_HIGHLIGHTING_DISABLED.load(Ordering::Relaxed)
+}
+
+pub fn set_syntax_highlighting_disabled(disabled: bool) {
+    if SYNTAX_HIGHLIGHTING_DISABLED.swap(disabled, Ordering::Relaxed) != disabled {
+        clear_highlight_cache();
+    }
+}
+
 /// Drop every memoized highlight result. Call when something changes that the
 /// cache key cannot encode — e.g. a fresh syntax set is loaded. Theme/width
 /// switches are already covered by the key, but `RenderCache::clear()` callers
@@ -362,6 +375,40 @@ fn hash_code(code: &str) -> u64 {
     let mut h = DefaultHasher::new();
     code.hash(&mut h);
     h.finish()
+}
+
+fn plain_code_lines(
+    code: &str,
+    wrap_w: usize,
+    with_gutter: bool,
+    gutter_style: Style,
+    fallback_style: Style,
+) -> Vec<Line<'static>> {
+    let mut out = Vec::new();
+    for raw_line in LinesWithEndings::from(code) {
+        let sanitized: String = raw_line
+            .chars()
+            .map(|c| {
+                if c == '\n' {
+                    '\n'
+                } else if c == '\t' || c.is_control() {
+                    ' '
+                } else {
+                    c
+                }
+            })
+            .collect();
+        let clean = sanitized.trim_end_matches('\n');
+        for chunk in hard_wrap_str(clean, wrap_w) {
+            let mut spans = Vec::new();
+            if with_gutter {
+                spans.push(Span::styled("│ ", gutter_style));
+            }
+            spans.push(Span::styled(chunk, fallback_style));
+            out.push(Line::from(spans));
+        }
+    }
+    out
 }
 
 /// Pick the syntect highlighting theme whose token foregrounds suit the user's
@@ -417,6 +464,12 @@ fn highlight_code_inner(
     } else {
         inner_width.max(20)
     };
+
+    if syntax_highlighting_disabled() {
+        let out = plain_code_lines(code, wrap_w, with_gutter, gutter_style, fallback_style);
+        record_line_count(hash_code(code), wrap_w, with_gutter, out.len());
+        return out;
+    }
 
     let lower = lang.to_lowercase();
     let theme_name = syntect_theme_for(theme);

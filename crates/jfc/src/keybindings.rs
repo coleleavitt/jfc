@@ -39,6 +39,8 @@ pub enum KeyAction {
     ClearHistory,
     Compact,
     OpenModelPicker,
+    CyclePermissionMode,
+    ToggleSyntaxHighlighting,
     ToggleVerbose,
     Exit,
     ToggleHelp,
@@ -53,6 +55,10 @@ impl FromStr for KeyAction {
             "clear_history" => Ok(Self::ClearHistory),
             "compact" => Ok(Self::Compact),
             "open_model_picker" => Ok(Self::OpenModelPicker),
+            "cycle_permission_mode" | "chat:cycleMode" => Ok(Self::CyclePermissionMode),
+            "toggle_syntax_highlighting" | "theme:toggleSyntaxHighlighting" => {
+                Ok(Self::ToggleSyntaxHighlighting)
+            }
             "toggle_verbose" => Ok(Self::ToggleVerbose),
             "exit" => Ok(Self::Exit),
             "toggle_help" => Ok(Self::ToggleHelp),
@@ -68,6 +74,8 @@ impl KeyAction {
             Self::ClearHistory => "Clear conversation history",
             Self::Compact => "Compact context",
             Self::OpenModelPicker => "Open model picker",
+            Self::CyclePermissionMode => "Cycle permission mode",
+            Self::ToggleSyntaxHighlighting => "Toggle syntax highlighting",
             Self::ToggleVerbose => "Toggle verbose tool display",
             Self::Exit => "Exit jfc",
             Self::ToggleHelp => "Show/hide keybindings help",
@@ -373,6 +381,11 @@ mod tests {
         assert_eq!("clear_history".parse(), Ok(KeyAction::ClearHistory));
         assert_eq!("compact".parse(), Ok(KeyAction::Compact));
         assert_eq!("open_model_picker".parse(), Ok(KeyAction::OpenModelPicker));
+        assert_eq!("chat:cycleMode".parse(), Ok(KeyAction::CyclePermissionMode));
+        assert_eq!(
+            "theme:toggleSyntaxHighlighting".parse(),
+            Ok(KeyAction::ToggleSyntaxHighlighting)
+        );
         assert_eq!("toggle_verbose".parse(), Ok(KeyAction::ToggleVerbose));
         assert_eq!("exit".parse(), Ok(KeyAction::Exit));
         assert_eq!("toggle_help".parse(), Ok(KeyAction::ToggleHelp));

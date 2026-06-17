@@ -138,17 +138,15 @@ pub async fn handle_key(
     // Up-arrow recall: when the textarea is empty and prompts are queued,
     // pressing Up pops the most recent queued prompt back into the textarea
     // for editing. Mirrors v126's "Press up to edit queued messages". Also
-    // removes the corresponding ⏳/⚙ placeholder from the transcript so the
+    // removes the corresponding queued placeholder from the transcript so the
     // user sees the action took effect — they can re-edit and re-submit.
     if let Some(result) = handle_up_recall_keys(app, key) {
         return result;
     }
 
-    // Ctrl+Y yanks the last assistant message text to the system clipboard
-    // (vim/Emacs convention: y for "yank"). We use `arboard` so the copy
-    // works on Linux/macOS/Windows + Wayland. If the clipboard backend
-    // isn't available (e.g. headless container), the copy silently no-ops
-    // and a tracing warn fires so the user can see why nothing happened.
+    // Ctrl+Y yanks the last assistant message text to the system clipboard.
+    // Alt+Y yanks the current draft/input buffer. Both go through the runtime
+    // clipboard owner so OSC52 and platform clipboard behavior stay unified.
     if let Some(result) = handle_yank_key(app, key) {
         return result;
     }
@@ -248,6 +246,37 @@ pub(crate) fn request_user_interrupt(
     crate::runtime::ops::interrupt(&mut app.engine, tx);
 }
 
+fn cycle_permission_mode(app: &mut App) {
+    app.engine.permission_mode = app.engine.permission_mode.next();
+    jfc_engine::config::save_permission_mode(&app.engine.permission_mode);
+    jfc_engine::toast::push_with_cap(
+        &mut app.engine.toasts,
+        jfc_engine::toast::Toast::new(
+            jfc_engine::toast::ToastKind::Info,
+            format!(
+                "{} Mode: {}",
+                app.engine.permission_mode.symbol(),
+                app.engine.permission_mode.label()
+            ),
+        ),
+    );
+}
+
+fn toggle_syntax_highlighting(app: &mut App) {
+    let disabled = !crate::markdown::syntax_highlighting_disabled();
+    crate::markdown::set_syntax_highlighting_disabled(disabled);
+    app.render_cache.borrow_mut().clear();
+    app.height_index.borrow_mut().clear();
+    let state = if disabled { "off" } else { "on" };
+    jfc_engine::toast::push_with_cap(
+        &mut app.engine.toasts,
+        jfc_engine::toast::Toast::new(
+            jfc_engine::toast::ToastKind::Info,
+            format!("Syntax highlighting {state}"),
+        ),
+    );
+}
+
 /// User-configured keybindings (`keybindings.toml`), checked before built-in
 /// bindings so users can override defaults. Returns `Some(result)` when a
 /// configured action fired, `None` to fall through. Actions route through
@@ -263,6 +292,8 @@ async fn handle_configured_keybinding(
         KeyAction::ClearHistory => run_slash_command(app, "/clear").await,
         KeyAction::Compact => run_slash_command(app, "/compact").await,
         KeyAction::OpenModelPicker => open_model_picker(app),
+        KeyAction::CyclePermissionMode => cycle_permission_mode(app),
+        KeyAction::ToggleSyntaxHighlighting => toggle_syntax_highlighting(app),
         KeyAction::ToggleVerbose => run_slash_command(app, "/verbose").await,
         KeyAction::Exit => return Some(Ok(true)),
         KeyAction::ToggleHelp => app.show_help = !app.show_help,
@@ -445,6 +476,7 @@ async fn handle_command_keys(
         // transfers. Ctrl+B keeps the legacy left sidebar; users
         // who prefer filter-and-go grab Alt+S, browse-and-stay grab
         // Ctrl+B.
+        (KeyModifiers::ALT, KeyCode::Char('y')) => cmd_yank_current_input(app),
         (KeyModifiers::ALT, KeyCode::Char('s')) => {
             open_session_picker(app);
             Some(Ok(false))
@@ -657,21 +689,7 @@ async fn handle_command_keys(
         }
         (KeyModifiers::NONE, KeyCode::Esc) => cmd_handle_escape(app, key, tx),
         (KeyModifiers::SHIFT, KeyCode::BackTab) | (KeyModifiers::NONE, KeyCode::BackTab) => {
-            // Shift+Tab cycles permission modes
-            app.engine.permission_mode = app.engine.permission_mode.next();
-            // Persist the mode change to config.toml so it survives sessions.
-            jfc_engine::config::save_permission_mode(&app.engine.permission_mode);
-            jfc_engine::toast::push_with_cap(
-                &mut app.engine.toasts,
-                jfc_engine::toast::Toast::new(
-                    jfc_engine::toast::ToastKind::Info,
-                    format!(
-                        "{} Mode: {}",
-                        app.engine.permission_mode.symbol(),
-                        app.engine.permission_mode.label()
-                    ),
-                ),
-            );
+            cycle_permission_mode(app);
             Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::PageUp) => {
@@ -827,14 +845,18 @@ fn cmd_yank_path_ref(app: &mut App) -> Option<anyhow::Result<bool>> {
     let idx = app.path_yank_cursor % paths.len();
     let target = paths[idx].clone();
     crate::runtime::copy_to_clipboard(&target, "path-yank");
-    jfc_engine::toast::push_with_cap(
-        &mut app.engine.toasts,
-        jfc_engine::toast::Toast::new(
-            jfc_engine::toast::ToastKind::Success,
-            format!("{} ({}/{})", target, idx + 1, paths.len()),
-        ),
-    );
     app.path_yank_cursor = app.path_yank_cursor.wrapping_add(1);
+    Some(Ok(false))
+}
+
+/// Alt+Y — copy the current editable prompt buffer.
+fn cmd_yank_current_input(app: &mut App) -> Option<anyhow::Result<bool>> {
+    let text = app.textarea.lines().join("\n");
+    if text.trim().is_empty() {
+        return Some(Ok(false));
+    }
+
+    crate::runtime::copy_to_clipboard(&text, "input-yank");
     Some(Ok(false))
 }
 
@@ -885,12 +907,12 @@ fn cmd_open_prompt_search(app: &mut App) -> Option<anyhow::Result<bool>> {
 fn cmd_paste_clipboard_image(app: &mut App) -> Option<anyhow::Result<bool>> {
     match crate::attachments::read_clipboard_image() {
         Ok(Some((att, w, h))) => {
-            jfc_engine::toast::push_with_cap(
-                &mut app.engine.toasts,
-                jfc_engine::toast::Toast::new(
-                    jfc_engine::toast::ToastKind::Info,
-                    format!("Image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
-                ),
+            tracing::debug!(
+                target: "jfc::input::paste",
+                width = w,
+                height = h,
+                bytes = att.bytes.len(),
+                "attached clipboard image"
             );
             app.image_counter += 1;
             let id = app.image_counter;
@@ -1260,7 +1282,6 @@ pub(super) fn queue_prompt_for_later(app: &mut App, text: String) {
         expanded
     };
     let is_meta = text.starts_with('/');
-    let glyph = if is_meta { "⚙" } else { "⏳" };
     tracing::info!(
         target: "jfc::ui::queue",
         depth = app.engine.queued_prompts.len() + 1,
@@ -1293,9 +1314,9 @@ pub(super) fn queue_prompt_for_later(app: &mut App, text: String) {
         priority: crate::app::QueuePriority::Later,
         attachments,
     });
-    app.engine
-        .messages
-        .push(ChatMessage::user_queued(format!("{glyph} {text}")));
+    app.engine.messages.push(ChatMessage::user_queued(
+        jfc_core::queued_prompt_placeholder(&text, is_meta),
+    ));
     app.scroll_to_bottom();
 }
 
@@ -1439,7 +1460,7 @@ fn handle_arrow_history_keys(app: &mut App, key: event::KeyEvent) -> Option<anyh
                 app.textarea =
                     TextArea::from(prompt.lines().map(str::to_string).collect::<Vec<_>>());
                 app.textarea.set_cursor_line_style(Style::default());
-                app.textarea.set_placeholder_text("send a message…");
+                app.textarea.set_placeholder_text("");
                 app.textarea.move_cursor(CursorMove::End);
                 tracing::debug!(
                     target: "jfc::input::recall",
@@ -1465,7 +1486,7 @@ fn handle_arrow_history_keys(app: &mut App, key: event::KeyEvent) -> Option<anyh
                     app.textarea =
                         TextArea::from(prompt.lines().map(str::to_string).collect::<Vec<_>>());
                     app.textarea.set_cursor_line_style(Style::default());
-                    app.textarea.set_placeholder_text("send a message…");
+                    app.textarea.set_placeholder_text("");
                     app.textarea.move_cursor(CursorMove::End);
                     tracing::debug!(
                         target: "jfc::input::recall",
@@ -1635,8 +1656,7 @@ fn handle_up_recall_keys(app: &mut App, key: event::KeyEvent) -> Option<anyhow::
         && app.textarea.lines().iter().all(|l| l.is_empty())
         && let Some(qp) = app.engine.queued_prompts.pop_back()
     {
-        let glyph = if qp.is_meta { "⚙" } else { "⏳" };
-        let placeholder = format!("{glyph} {}", qp.text);
+        let placeholder = jfc_core::queued_prompt_placeholder(&qp.text, qp.is_meta);
         // Remove the matching placeholder user message (last occurrence).
         for i in (0..app.engine.messages.len()).rev() {
             if app.engine.messages[i].role == Role::User
@@ -1731,15 +1751,6 @@ fn handle_yank_key(app: &mut App, key: event::KeyEvent) -> Option<anyhow::Result
             // Single funnel: the owner thread keeps the clipboard handle
             // alive (survives X11/Wayland) and emits OSC 52 for SSH/tmux.
             crate::runtime::copy_to_clipboard(&text, "yank");
-            let preview: String = text.chars().take(40).collect();
-            let suffix = if text.chars().count() > 40 { "…" } else { "" };
-            jfc_engine::toast::push_with_cap(
-                &mut app.engine.toasts,
-                jfc_engine::toast::Toast::new(
-                    jfc_engine::toast::ToastKind::Success,
-                    format!("Copied: {preview}{suffix}"),
-                ),
-            );
         }
         return Some(Ok(false));
     }

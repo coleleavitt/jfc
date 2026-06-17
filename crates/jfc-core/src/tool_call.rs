@@ -272,6 +272,7 @@ mod tests {
                 timeout: None,
                 workdir: None,
                 run_in_background: None,
+                suppress_output: None,
             },
         )
     }

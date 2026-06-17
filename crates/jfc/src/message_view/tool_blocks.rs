@@ -41,6 +41,14 @@ pub(super) fn tool_body_line_count(tool: &ToolCall, content_w: usize) -> usize {
     match &tool.output {
         ToolOutput::Empty => 0,
         ToolOutput::Text(s) => {
+            if let Some(display) = bash_output_display_text(tool, s) {
+                return produce_text_block_line_count(
+                    display.as_ref(),
+                    content_w,
+                    t.text_secondary,
+                    expanded,
+                );
+            }
             // Compact render for background task notifications
             if detect_background_task_notification(s).is_some() {
                 return 1;
@@ -195,11 +203,20 @@ pub(super) fn tool_body_lines_themed(
     match &tool.output {
         ToolOutput::Empty => Vec::new(),
         ToolOutput::Text(s) => {
+            if let Some(display) = bash_output_display_text(tool, s) {
+                return produce_text_block_lines(
+                    display.as_ref(),
+                    content_w,
+                    t.text_secondary,
+                    t,
+                    tool.display.is_expanded(),
+                );
+            }
             // Compact render for background task notifications — show a
             // single muted line instead of the full infrastructure block.
             if let Some(task_id) = detect_background_task_notification(s) {
                 return vec![Line::from(Span::styled(
-                    format!("⏳ backgrounded → {task_id}"),
+                    format!("backgrounded -> {task_id}"),
                     Style::default()
                         .fg(t.text_muted)
                         .add_modifier(Modifier::ITALIC),
@@ -282,7 +299,7 @@ pub(super) fn tool_body_lines_themed(
             // Compact render for background task notifications
             if let Some(task_id) = detect_background_task_notification(stdout) {
                 return vec![Line::from(Span::styled(
-                    format!("⏳ backgrounded → {task_id}"),
+                    format!("backgrounded -> {task_id}"),
                     Style::default()
                         .fg(t.text_muted)
                         .add_modifier(Modifier::ITALIC),
@@ -491,7 +508,7 @@ pub(super) fn render_tool_block(
         return;
     }
 
-    let frame_idx = (app.launched_at.elapsed().as_millis() / 80) as usize;
+    let frame_idx = app.spinner_frame;
     let (status_icon, status_style) = tool_status_icon_animated(tool, &t, frame_idx);
 
     let full_h = tool_block_height(tool, area.width as usize) as u16;
@@ -531,6 +548,7 @@ pub(super) fn render_tool_block(
         Paragraph::new(Line::from(title_spans))
             .style(Style::default().bg(t.bg))
             .render(title_area, buf);
+        register_bash_command_copy_region(app, tool, title_area);
     }
 
     let title_consumed: u16 = if skip == 0 { 1 } else { 0 };
@@ -556,13 +574,24 @@ pub(super) fn render_tool_block(
     }
 }
 
+fn register_bash_command_copy_region(app: &App, tool: &ToolCall, rect: Rect) {
+    if rect.width == 0 || rect.height == 0 {
+        return;
+    }
+    if matches!(&tool.input, ToolInput::Bash { .. }) {
+        app.tool_copy_regions
+            .borrow_mut()
+            .push((tool.id.to_string(), rect));
+    }
+}
+
 pub(super) fn build_collapsed_header<'a>(
     tool: &'a ToolCall,
     t: &Theme,
     width: usize,
     elapsed_ms: u128,
 ) -> Line<'a> {
-    let frame_idx = (elapsed_ms / 80) as usize;
+    let frame_idx = (elapsed_ms / crate::app::ANIM_TICK_MS as u128) as usize;
     let (status_icon, status_style) = tool_status_icon_animated(tool, t, frame_idx);
     // Collapsed-tool header: status icon + title. The chevron `▶`
     // that used to mark "expandable" was redundant — a collapsed
@@ -697,27 +726,105 @@ pub(super) fn format_elapsed_badge(tool: &ToolCall) -> Option<String> {
     }
 }
 
-/// Wrap `label` in an OSC 8 hyperlink pointing at `path` (resolved to an
-/// absolute `file://` URI).  Terminals that support OSC 8 (iTerm2, kitty,
-/// WezTerm, Windows Terminal, recent GNOME Terminal) render the text as a
-/// clickable link; others silently ignore the escape sequences.
+/// Return the visible file label for a tool title.
 ///
-/// Returns the plain `label` unchanged when:
-/// - `osc8_hyperlinks` is disabled in config, or
-/// - `path` is empty / cannot be resolved to an absolute path.
-fn maybe_osc8_file_link(path: &str, label: &str) -> String {
-    if path.is_empty() || !jfc_engine::config::load_arc().osc8_hyperlinks {
-        return label.to_owned();
+/// We intentionally do not place OSC 8 hyperlink sequences inside ratatui
+/// spans. The terminal backend treats control bytes as zero-width but leaves
+/// the printable OSC payload behind in the cell buffer on some paths, which
+/// turns a clean `Write(path)` title into raw `]8;;file://...` text. File
+/// opening should be implemented through explicit hit regions, not inline
+/// terminal controls embedded in the render tree.
+fn maybe_osc8_file_link(_path: &str, label: &str) -> String {
+    label.to_owned()
+}
+
+pub(super) fn tool_progress_verb(kind: &ToolKind) -> &str {
+    match kind {
+        // Claude 2.1.177 aliases: Write/FileWriteTool -> Writing.
+        ToolKind::Write => "Writing",
+        // Claude 2.1.177 aliases: Edit/MultiEdit/FileEditTool -> Editing.
+        ToolKind::Edit | ToolKind::MultiEdit => "Editing",
+        // Claude 2.1.177 alias: NotebookEditTool -> Editing notebook.
+        ToolKind::NotebookEdit => "Editing notebook",
+        // Claude 2.1.177 aliases: Bash/BashTool -> Running.
+        ToolKind::Bash => "Running",
+        // Claude 2.1.177 alias: FileReadTool -> Reading.
+        ToolKind::Read | ToolKind::NotebookRead => "Reading",
+        // Claude 2.1.177 aliases: GlobTool/GrepTool -> Searching.
+        ToolKind::Glob | ToolKind::Grep | ToolKind::Search => "Searching",
+        // Claude 2.1.177 aliases: AgentOutputTool/BashOutputTool/AgentOutput/
+        // BashOutput -> TaskOutput.
+        ToolKind::BashOutput => "TaskOutput",
+        ToolKind::TaskStop => "TaskStop",
+        _ => kind.label(),
     }
-    let abs = std::path::Path::new(path)
-        .canonicalize()
-        .unwrap_or_else(|_| std::path::PathBuf::from(path));
-    // OSC 8 format: ESC ] 8 ; params ; uri BEL text ESC ] 8 ; ; BEL
-    format!(
-        "\x1b]8;;file://{}\x07{}\x1b]8;;\x07",
-        abs.display(),
-        label
-    )
+}
+
+trait ToolHeaderSummary {
+    fn header_summary_tail<'a>(&self, summary: &'a str) -> &'a str;
+}
+
+impl ToolHeaderSummary for ToolKind {
+    fn header_summary_tail<'a>(&self, summary: &'a str) -> &'a str {
+        let summary = summary.trim_start();
+        for alias in [self.label(), self.api_name()] {
+            if let Some(rest) = strip_redundant_header_colon_prefix(summary, alias) {
+                return rest;
+            }
+        }
+        for alias in extra_header_summary_aliases(self) {
+            if let Some(rest) = strip_redundant_header_colon_prefix(summary, alias) {
+                return rest;
+            }
+            if let Some(rest) = strip_redundant_header_word_prefix(summary, alias) {
+                return rest;
+            }
+        }
+        summary
+    }
+}
+
+fn extra_header_summary_aliases(kind: &ToolKind) -> &'static [&'static str] {
+    match kind {
+        ToolKind::AskModel => &["ask", "ask model"],
+        ToolKind::AskUserQuestion => &["ask"],
+        ToolKind::Council => &["model council"],
+        ToolKind::Research => &["deep research"],
+        ToolKind::SkillCreate => &["create skill"],
+        _ => &[],
+    }
+}
+
+fn normalized_header_token(s: &str) -> String {
+    s.chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect()
+}
+
+fn strip_redundant_header_colon_prefix<'a>(summary: &'a str, alias: &str) -> Option<&'a str> {
+    let (prefix, rest) = summary.split_once(':')?;
+    if normalized_header_token(prefix) == normalized_header_token(alias) {
+        Some(rest.trim_start())
+    } else {
+        None
+    }
+}
+
+fn strip_redundant_header_word_prefix<'a>(summary: &'a str, alias: &str) -> Option<&'a str> {
+    let summary = summary.trim_start();
+    let prefix = summary.get(..alias.len())?;
+    if !prefix.eq_ignore_ascii_case(alias) {
+        return None;
+    }
+    let rest = summary.get(alias.len()..)?;
+    let mut chars = rest.chars();
+    let first = chars.next()?;
+    if first.is_whitespace() {
+        Some(chars.as_str().trim_start())
+    } else {
+        None
+    }
 }
 
 pub(super) fn build_header_inner_spans<'a>(
@@ -771,6 +878,16 @@ pub(super) fn build_header_inner_spans<'a>(
                 Span::styled(")", Style::default().fg(t.text_muted)),
             ]
         }
+        ToolInput::MultiEdit { file_path, .. } => {
+            let path = truncate_str(file_path, max_w.saturating_sub(8));
+            let linked = maybe_osc8_file_link(file_path, &path);
+            vec![
+                Span::styled("Update", kind_style),
+                Span::styled("(", Style::default().fg(t.text_muted)),
+                Span::styled(linked, Style::default().fg(t.text_primary)),
+                Span::styled(")", Style::default().fg(t.text_muted)),
+            ]
+        }
         ToolInput::Write { file_path, .. } => {
             let path = truncate_str(file_path, max_w.saturating_sub(8));
             let linked = maybe_osc8_file_link(file_path, &path);
@@ -791,14 +908,103 @@ pub(super) fn build_header_inner_spans<'a>(
                 Span::styled(")", Style::default().fg(t.text_muted)),
             ]
         }
+        ToolInput::NotebookRead { path } => {
+            let display_path = truncate_str(path, max_w.saturating_sub(17));
+            let linked = maybe_osc8_file_link(path, &display_path);
+            vec![
+                Span::styled("Read notebook", kind_style),
+                Span::styled("(", Style::default().fg(t.text_muted)),
+                Span::styled(linked, Style::default().fg(t.text_secondary)),
+                Span::styled(")", Style::default().fg(t.text_muted)),
+            ]
+        }
+        ToolInput::NotebookEdit {
+            path, edit_mode, ..
+        } => {
+            let display_path = truncate_str(path, max_w.saturating_sub(22));
+            let linked = maybe_osc8_file_link(path, &display_path);
+            let verb = tool_progress_verb(&tool.kind);
+            let mode = edit_mode.as_deref().unwrap_or("replace");
+            vec![
+                Span::styled(verb, kind_style),
+                Span::styled("(", Style::default().fg(t.text_muted)),
+                Span::styled(linked, Style::default().fg(t.text_primary)),
+                Span::styled(" · ", Style::default().fg(t.text_muted)),
+                Span::styled(mode.to_owned(), Style::default().fg(t.text_secondary)),
+                Span::styled(")", Style::default().fg(t.text_muted)),
+            ]
+        }
+        ToolInput::BashOutput { task_id, .. } => {
+            let id = truncate_str(task_id, max_w.saturating_sub(11));
+            vec![
+                Span::styled("TaskOutput", kind_style),
+                Span::styled(" ", Style::default().fg(t.text_muted)),
+                Span::styled(id, Style::default().fg(t.text_primary)),
+            ]
+        }
         _ => {
-            let s = truncate_str(&summary, max_w.saturating_sub(kind_label.len() + 1));
+            let display_summary = tool.kind.header_summary_tail(&summary);
+            let s = truncate_str(display_summary, max_w.saturating_sub(kind_label.len() + 1));
             vec![
                 Span::styled(format!("{kind_label} "), kind_style),
                 Span::styled(s, Style::default().fg(t.text_secondary)),
             ]
         }
     }
+}
+
+fn bash_output_display_text<'a>(
+    tool: &ToolCall,
+    raw: &'a str,
+) -> Option<std::borrow::Cow<'a, str>> {
+    if !matches!(tool.kind, ToolKind::BashOutput)
+        && !matches!(tool.input, ToolInput::BashOutput { .. })
+    {
+        return None;
+    }
+
+    let (metadata, body) = raw.split_once("\n\n").unwrap_or((raw, ""));
+    if !looks_like_bash_output_metadata(metadata) {
+        return None;
+    }
+
+    let body = body.trim_end_matches('\n');
+    if !body.trim().is_empty() {
+        return Some(std::borrow::Cow::Borrowed(body));
+    }
+
+    let retrieval_status = metadata
+        .lines()
+        .find_map(|line| line.strip_prefix("retrieval_status: "))
+        .unwrap_or_default();
+    let task_status = metadata
+        .lines()
+        .find_map(|line| line.strip_prefix("status: "))
+        .unwrap_or_default();
+
+    let message =
+        if matches!(retrieval_status, "not_ready" | "timeout") || task_status.contains("running") {
+            "Task is still running..."
+        } else {
+            "No task output available"
+        };
+    Some(std::borrow::Cow::Borrowed(message))
+}
+
+fn looks_like_bash_output_metadata(metadata: &str) -> bool {
+    let mut has_retrieval = false;
+    let mut has_task_id = false;
+    let mut has_status = false;
+    for line in metadata.lines() {
+        if line.starts_with("retrieval_status: ") {
+            has_retrieval = true;
+        } else if line.starts_with("task_id: ") {
+            has_task_id = true;
+        } else if line.starts_with("status: ") {
+            has_status = true;
+        }
+    }
+    has_retrieval && has_task_id && has_status
 }
 
 /// Icon + style for a tool's status. Static for the resolved states
@@ -817,7 +1023,7 @@ fn tool_status_icon(tool: &ToolCall, t: &Theme) -> (&'static str, Style) {
     // Idle (programmer error) still shows something rather than
     // crashing the renderer.
     match tool.status {
-        ToolStatus::Pending => ("○", Style::default().fg(t.warning)),
+        ToolStatus::Pending => ("○", Style::default().fg(t.text_muted)),
         ToolStatus::Running | ToolStatus::Idle => ("◌", Style::default().fg(t.accent)),
         ToolStatus::Completed => ("●", Style::default().fg(t.success)),
         ToolStatus::Failed => ("✗", Style::default().fg(t.error)),
@@ -944,123 +1150,14 @@ fn gutter_wrap(
     out
 }
 
-/// Distinct accent color per tool kind. The gutter bar and tool name
-/// span both pick this color (mixed with status state for Running /
-/// Failed) so the user can spot at a glance "this is a Bash" vs
-/// "this is a Read" without reading the label. Mirrors Claude Code's
-/// per-tool color identity.
-///
-/// Picks are tuned for the dark theme to stay distinguishable from
-/// each other AND from status colors: success (green) and error (red)
-/// are reserved for status indicators, so Read/Write/etc. use blues,
-/// purples, and ambers that don't collide.
+/// Tool titles stay intentionally quiet. The status glyph carries state
+/// color; the title itself should read like Claude Code's plain
+/// `Bash(...)` / `Write(...)` rows instead of a rainbow of tool families.
 pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
-    use ratatui::style::Color;
     match kind {
-        ToolKind::Read => Color::Rgb(120, 180, 255), // soft blue
-        ToolKind::Write => Color::Rgb(255, 200, 130), // amber
-        ToolKind::Edit | ToolKind::ApplyPatch => Color::Rgb(160, 230, 170), // mint
-        ToolKind::Bash | ToolKind::BashOutput => Color::Rgb(180, 180, 200), // neutral grey
-        ToolKind::Glob | ToolKind::Grep | ToolKind::Search => Color::Rgb(200, 160, 255), // lavender
-        ToolKind::Task => Color::Rgb(255, 170, 220), // rose
-        ToolKind::TaskCreate
-        | ToolKind::TaskUpdate
-        | ToolKind::TaskList
-        | ToolKind::TaskDone
-        | ToolKind::TaskStop
-        | ToolKind::TaskGet
-        | ToolKind::TaskValidate => Color::Rgb(140, 220, 220), // teal
-        ToolKind::MemoryCreate | ToolKind::MemoryDelete => Color::Rgb(220, 220, 140), // olive
-        ToolKind::TeamCreate
-        | ToolKind::TeamDelete
-        | ToolKind::SendMessage
-        | ToolKind::TeamMemberMode => Color::Rgb(255, 150, 130), // coral
-        ToolKind::HcomStatus
-        | ToolKind::HcomList
-        | ToolKind::HcomSend
-        | ToolKind::HcomEvents
-        | ToolKind::HcomListen
-        | ToolKind::HcomTranscript
-        | ToolKind::HcomBundle
-        | ToolKind::HcomTerm
-        | ToolKind::HcomLaunch
-        | ToolKind::HcomResume
-        | ToolKind::HcomFork
-        | ToolKind::HcomKill
-        | ToolKind::HcomRelay
-        | ToolKind::HcomRun => Color::Rgb(110, 210, 210), // hcom cyan
-        ToolKind::Skill => Color::Rgb(180, 220, 255), // ice
-        ToolKind::SkillCreate => Color::Rgb(150, 230, 210), // mint-teal (authoring)
-        ToolKind::ToolSearch | ToolKind::ToolSuggest => Color::Rgb(170, 210, 180),
-        ToolKind::PlanCreate
-        | ToolKind::PlanList
-        | ToolKind::PlanShow
-        | ToolKind::PlanAdvance
-        | ToolKind::PlanArchive
-        | ToolKind::PlanMaterialize => Color::Rgb(180, 160, 220), // lavender
-        ToolKind::LearnStatus
-        | ToolKind::LearnHistorize
-        | ToolKind::LearnDream
-        | ToolKind::LearnKeyFilesList
-        | ToolKind::LearnUserProfileShow => Color::Rgb(220, 180, 130), // amber
-        ToolKind::PostBounty | ToolKind::RunBounty | ToolKind::MarketStatus => {
-            Color::Rgb(255, 215, 100)
-        } // gold
-        ToolKind::ExitPlanMode | ToolKind::SubmitPlan => Color::Rgb(170, 200, 255),
-        ToolKind::AddReviewComment | ToolKind::SuggestCommitMessage => Color::Rgb(255, 190, 150),
-        ToolKind::MultiEdit => Color::Rgb(160, 230, 170),
-        ToolKind::AskUserQuestion => Color::Rgb(255, 200, 240),
-        ToolKind::WebFetch | ToolKind::WebSearch => Color::Rgb(120, 200, 220),
-        // Server-side tools: cyan-teal to distinguish them from local WebSearch
-        ToolKind::ServerWebSearch => Color::Rgb(80, 210, 200),
-        ToolKind::ServerCodeExecution => Color::Rgb(200, 160, 80), // amber-gold
-        ToolKind::ServerAdvisor => Color::Rgb(235, 195, 90),       // advisor gold
-        ToolKind::Mcp(_) => Color::Rgb(190, 170, 240),
-        ToolKind::CronCreate
-        | ToolKind::CronList
-        | ToolKind::CronDelete
-        | ToolKind::ScheduleWakeup
-        | ToolKind::Monitor => Color::Rgb(180, 200, 255),
-        ToolKind::Lsp => Color::Rgb(140, 200, 240),
-        ToolKind::Research | ToolKind::Council | ToolKind::AskModel => Color::Rgb(200, 180, 255), // research violet
-        ToolKind::PushNotification | ToolKind::RemoteTrigger => Color::Rgb(255, 180, 110),
-        ToolKind::EnterPlanMode
-        | ToolKind::SetGoal
-        | ToolKind::EnterWorktree
-        | ToolKind::ExitWorktree => Color::Rgb(180, 220, 180),
-        ToolKind::NotebookRead | ToolKind::NotebookEdit => Color::Rgb(255, 170, 100),
-        ToolKind::ScratchpadRead | ToolKind::ScratchpadWrite => Color::Rgb(200, 200, 160), // warm grey
-        ToolKind::Workflow | ToolKind::SlashCommand => Color::Rgb(255, 170, 220), // rose (orchestration)
-        ToolKind::SendUserMessage => Color::Rgb(100, 200, 255),                   // bright blue
-        ToolKind::SendUserFile => Color::Rgb(255, 200, 130),                      // amber
-        ToolKind::StructuredOutput => Color::Rgb(180, 230, 130),                  // lime
-        ToolKind::WaitForMcpServers => Color::Rgb(190, 170, 240), // purple (MCP family)
-        ToolKind::ListMcpResources => Color::Rgb(190, 170, 240),  // purple (MCP family)
-        ToolKind::ReadMcpResource => Color::Rgb(190, 170, 240),   // purple (MCP family)
-        ToolKind::Advisor => Color::Rgb(255, 215, 100),           // gold
-        ToolKind::ConnectGitHub => Color::Rgb(200, 200, 200),     // grey
-        ToolKind::DesignProjectCreate
-        | ToolKind::DesignProjectList
-        | ToolKind::DesignProjectSetMeta
-        | ToolKind::DesignListFiles
-        | ToolKind::DesignReadFile
-        | ToolKind::DesignWriteFile
-        | ToolKind::DesignDeleteFile
-        | ToolKind::DesignCopyFile
-        | ToolKind::DesignRegisterAsset
-        | ToolKind::DesignUnregisterAsset
-        | ToolKind::DesignBundleHtml
-        | ToolKind::DesignHandoff
-        | ToolKind::DesignCheckSystem
-        | ToolKind::DesignCapabilities
-        | ToolKind::DesignServe => Color::Rgb(120, 210, 190), // design teal
         ToolKind::Generic(_) => t.text_secondary,
-        // Unknown tools render in a muted style — they're never
-        // dispatched (permission layer denies them), so the row is
-        // really just a record of "the model asked for this name and
-        // we refused." Use text_muted to make it visually distinct
-        // from a normal Generic row.
         ToolKind::UnknownTool { .. } => t.text_muted,
+        _ => t.text_primary,
     }
 }
 
@@ -1173,22 +1270,15 @@ pub fn provider_style_for_model(model: &str) -> ProviderStyle {
     ProviderFamily::classify(model).style()
 }
 
-/// 4-frame star-burst rotation used for Running tools — same shape family
-/// as v126's tool-use indicator (Claude Code shows alternating `* ✱ +`
-/// glyphs as the bullet). Each frame is one codepoint so column width
-/// stays stable regardless of which frame is showing.
-const RUNNING_FRAMES: &[&str] = &["✶", "✷", "✸", "✹"];
-
-/// 2-frame pulse for Pending: open ring → dotted ring. Same column
+/// 2-frame pulse for Pending: open ring -> dotted ring. Same column
 /// width, just enough motion that "queued behind another tool" reads
-/// as queued rather than frozen.
+/// as queued rather than frozen, but muted so it does not look like an active
+/// warning.
 const PENDING_FRAMES: &[&str] = &["○", "◌"];
 
-/// Per-frame animated icon. Running tools rotate through the star-burst
-/// frames at ~120ms each (one frame per ~1.5 ticks), so the bullet
-/// visibly steps through the cycle instead of just two-tone blinking the
-/// same shape — that was indistinguishable from a static `●` on most
-/// terminal themes. Pending tools alternate between `○` and `◌` at a
+/// Per-frame animated icon. Running tools rotate through the same status-frame
+/// spinner as the main turn row, so Bash/Write/Read do not appear to have a
+/// separate animation system. Pending tools alternate between `○` and `◌` at a
 /// slower cadence so a queued tool reads differently from an idle one.
 ///
 /// Why glyph rotation over color-only blink: terminals with low foreground
@@ -1203,17 +1293,10 @@ pub fn tool_status_icon_animated(
 ) -> (&'static str, Style) {
     match tool.status {
         ToolStatus::Running => {
-            // Two-layer animation:
-            //  - Glyph rotates slowly (every 4 ticks ≈ 320ms per frame,
-            //    full cycle ≈ 1.28s). Rotation tells the eye "this is
-            //    moving" without strobing.
-            //  - Color pulses at a different cadence (every 9 ticks ≈
-            //    720ms BOLD ⇄ DIM) so the two effects don't sync into
-            //    a single distracting beat.
-            // Picked the prime-ish 4 vs 9 spacing so the two
-            // periodicities take ~25 ticks (2s) to align — beyond
-            // perceptual gestalt.
-            let glyph = RUNNING_FRAMES[(frame / 4) % RUNNING_FRAMES.len()];
+            // Two-layer animation: the shared glyph rotates, and the color
+            // pulse sits on a slower cadence so running tools remain legible
+            // in dense transcripts.
+            let glyph = crate::spinner::frame_for(frame);
             let bright = (frame / 9).is_multiple_of(2);
             let style = if bright {
                 Style::default()
@@ -1226,7 +1309,7 @@ pub fn tool_status_icon_animated(
         }
         ToolStatus::Pending => {
             let glyph = PENDING_FRAMES[(frame / 6) % PENDING_FRAMES.len()];
-            (glyph, Style::default().fg(t.warning))
+            (glyph, Style::default().fg(t.text_muted))
         }
         _ => tool_status_icon(tool, t),
     }
@@ -1238,7 +1321,7 @@ pub fn border_color_for_status(tool: &ToolCall, t: &Theme) -> Color {
     // Cancelled tool drops to muted to match its terminal-but-benign
     // semantics.
     match tool.status {
-        ToolStatus::Pending => t.warning,
+        ToolStatus::Pending => t.border,
         ToolStatus::Running | ToolStatus::Idle => t.accent,
         ToolStatus::Completed => t.border,
         ToolStatus::Failed => t.error,
@@ -1340,8 +1423,8 @@ fn render_tool_content_with_skip(
                 Span::styled("┆ ", Style::default().fg(t.text_muted)),
                 Span::styled(truncated, Style::default().fg(t.text_secondary)),
             ]))
-            .style(Style::default().bg(t.bg))
             .render(row, buf);
+            register_bash_command_copy_region(app, tool, row);
             content_y += 1;
             remaining_h -= 1;
         }
@@ -1681,6 +1764,17 @@ mod provider_attribution_tests {
     fn plain_assistant_not_attributed_robust() {
         let mut msg = ChatMessage::user("x".to_owned());
         msg.role = Role::Assistant;
+        assert!(super::super::core::attribution_for_message_for_test(&msg).is_none());
+    }
+
+    // Robust: the stream records the active model on ordinary assistant
+    // messages. That must not render a redundant provider header such as
+    // `◆ Claude` in normal single-model chat.
+    #[test]
+    fn plain_assistant_with_model_not_attributed_robust() {
+        let mut msg = ChatMessage::user("x".to_owned());
+        msg.role = Role::Assistant;
+        msg.model_name = Some("claude-opus-4-8".to_owned());
         assert!(super::super::core::attribution_for_message_for_test(&msg).is_none());
     }
 }

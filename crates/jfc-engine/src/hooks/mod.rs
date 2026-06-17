@@ -260,6 +260,118 @@ impl HookContext {
     }
 }
 
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeHookSpecificOutput {
+    permission_decision: Option<String>,
+    permission_decision_reason: Option<String>,
+}
+
+/// Claude-compatible hook JSON output.
+///
+/// Expected schema fragment from Claude Code 2.1.177:
+/// `suppressOutput -> boolean (optional)`.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeHookOutput {
+    #[serde(rename = "continue")]
+    continue_run: Option<bool>,
+    stop_reason: Option<String>,
+    suppress_output: Option<bool>,
+    decision: Option<String>,
+    reason: Option<String>,
+    system_message: Option<String>,
+    terminal_sequence: Option<String>,
+    permission_decision: Option<String>,
+    hook_specific_output: Option<ClaudeHookSpecificOutput>,
+}
+
+impl ClaudeHookOutput {
+    fn wants_abort(&self) -> bool {
+        self.continue_run == Some(false)
+            || self.decision.as_deref().is_some_and(is_block_decision)
+            || self
+                .permission_decision
+                .as_deref()
+                .is_some_and(is_deny_decision)
+            || self
+                .hook_specific_output
+                .as_ref()
+                .and_then(|output| output.permission_decision.as_deref())
+                .is_some_and(is_deny_decision)
+    }
+
+    fn abort_reason(&self, fallback: impl Into<String>) -> String {
+        self.hook_specific_output
+            .as_ref()
+            .and_then(|output| non_empty_owned(output.permission_decision_reason.as_deref()))
+            .or_else(|| non_empty_owned(self.stop_reason.as_deref()))
+            .or_else(|| non_empty_owned(self.reason.as_deref()))
+            .or_else(|| non_empty_owned(self.system_message.as_deref()))
+            .unwrap_or_else(|| fallback.into())
+    }
+
+    fn suppress_output(&self) -> bool {
+        self.suppress_output.unwrap_or(false)
+    }
+}
+
+fn is_block_decision(value: &str) -> bool {
+    value.eq_ignore_ascii_case("block") || value.eq_ignore_ascii_case("deny")
+}
+
+fn is_deny_decision(value: &str) -> bool {
+    value.eq_ignore_ascii_case("deny") || value.eq_ignore_ascii_case("block")
+}
+
+fn non_empty_owned(value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn parse_claude_hook_output(stdout: &[u8]) -> Option<ClaudeHookOutput> {
+    let text = std::str::from_utf8(stdout).ok()?.trim();
+    if text.is_empty() || !text.starts_with('{') {
+        return None;
+    }
+    serde_json::from_str(text).ok()
+}
+
+fn hook_exit_message(status: std::process::ExitStatus) -> String {
+    format!("Hook blocked: exit {}", status.code().unwrap_or(1))
+}
+
+fn hook_abort_message_from_output(
+    stdout: &[u8],
+    status: std::process::ExitStatus,
+    parsed: Option<&ClaudeHookOutput>,
+) -> String {
+    let fallback = hook_exit_message(status);
+    if let Some(output) = parsed {
+        if output.wants_abort() {
+            return output.abort_reason("Blocked by hook");
+        }
+        if output.suppress_output() {
+            return fallback;
+        }
+        if let Some(reason) = output.reason.as_deref().and_then(|reason| {
+            let trimmed = reason.trim();
+            (!trimmed.is_empty()).then_some(trimmed.to_string())
+        }) {
+            return reason;
+        }
+        return fallback;
+    }
+
+    let msg = String::from_utf8_lossy(stdout).trim().to_string();
+    if msg.is_empty() { fallback } else { msg }
+}
+
 /// Concrete hook handlers — enum dispatch, no dyn.
 #[derive(Debug, Clone)]
 pub enum HookHandler {
@@ -286,7 +398,10 @@ pub enum HookHandler {
     /// metrics).
     ShellCommand { command: String },
     /// Execute a shell command. Exit 0 = allow (Continue), non-zero = block
-    /// (Abort with stdout as message). Optionally filter by tool name pattern.
+    /// (Abort with stdout as message). Claude-compatible JSON stdout can
+    /// return `continue: false`, `decision: "block"`,
+    /// `permissionDecision: "deny"`, and `suppressOutput: true`.
+    /// Optionally filter by tool name pattern.
     Shell {
         /// Shell command to execute.
         command: String,
@@ -431,14 +546,21 @@ impl HookHandler {
                     .envs(ctx.env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
                     .output()
                 {
-                    Ok(out) if out.status.success() => HookAction::Continue,
+                    Ok(out) if out.status.success() => {
+                        if let Some(output) = parse_claude_hook_output(&out.stdout) {
+                            if output.wants_abort() {
+                                return HookAction::Abort(output.abort_reason("Blocked by hook"));
+                            }
+                        }
+                        HookAction::Continue
+                    }
                     Ok(out) => {
-                        let msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        HookAction::Abort(if msg.is_empty() {
-                            format!("Hook blocked: exit {}", out.status.code().unwrap_or(1))
-                        } else {
-                            msg
-                        })
+                        let parsed = parse_claude_hook_output(&out.stdout);
+                        HookAction::Abort(hook_abort_message_from_output(
+                            &out.stdout,
+                            out.status,
+                            parsed.as_ref(),
+                        ))
                     }
                     Err(e) => HookAction::Abort(format!("Hook exec error: {e}")),
                 }
@@ -459,9 +581,7 @@ impl HookRegistry {
     pub fn new() -> Self {
         Self {
             hooks: Vec::new(),
-            metrics: std::sync::Arc::new(std::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )),
+            metrics: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -474,9 +594,7 @@ impl HookRegistry {
     }
 
     fn record_metric(
-        metrics: &std::sync::Arc<
-            std::sync::Mutex<std::collections::HashMap<String, HookMetrics>>,
-        >,
+        metrics: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, HookMetrics>>>,
         key: &str,
         dur: std::time::Duration,
     ) {
@@ -1149,6 +1267,68 @@ mod tests {
     }
 
     #[test]
+    fn shell_hook_json_block_decision_normal() {
+        let hook = HookHandler::Shell {
+            command: "printf '%s' '{\"decision\":\"block\",\"reason\":\"policy blocked\"}'"
+                .to_string(),
+            async_mode: false,
+            matcher: None,
+        };
+
+        match hook.execute(HookPoint::BeforeToolDispatch, &context()) {
+            HookAction::Abort(message) => assert_eq!(message, "policy blocked"),
+            action => panic!("expected abort, got {action:?}"),
+        }
+    }
+
+    #[test]
+    fn shell_hook_continue_false_uses_stop_reason_normal() {
+        let hook = HookHandler::Shell {
+            command: "printf '%s' '{\"continue\":false,\"stopReason\":\"stop here\"}'".to_string(),
+            async_mode: false,
+            matcher: None,
+        };
+
+        match hook.execute(HookPoint::BeforeToolDispatch, &context()) {
+            HookAction::Abort(message) => assert_eq!(message, "stop here"),
+            action => panic!("expected abort, got {action:?}"),
+        }
+    }
+
+    #[test]
+    fn shell_hook_hook_specific_permission_deny_normal() {
+        let hook = HookHandler::Shell {
+            command: "printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no bash\"}}'".to_string(),
+            async_mode: false,
+            matcher: None,
+        };
+
+        match hook.execute(HookPoint::BeforeToolDispatch, &context()) {
+            HookAction::Abort(message) => assert_eq!(message, "no bash"),
+            action => panic!("expected abort, got {action:?}"),
+        }
+    }
+
+    #[test]
+    fn shell_hook_suppress_output_hides_raw_stdout_normal() {
+        let hook = HookHandler::Shell {
+            command:
+                "printf '%s' '{\"suppressOutput\":true,\"reason\":\"raw-json-secret\"}'; exit 1"
+                    .to_string(),
+            async_mode: false,
+            matcher: None,
+        };
+
+        match hook.execute(HookPoint::BeforeToolDispatch, &context()) {
+            HookAction::Abort(message) => {
+                assert_eq!(message, "Hook blocked: exit 1");
+                assert!(!message.contains("raw-json-secret"));
+            }
+            action => panic!("expected abort, got {action:?}"),
+        }
+    }
+
+    #[test]
     fn test_all_hook_points_compile() {
         // Ensure exhaustive match compiles — if you add a variant, this breaks.
         let points = [
@@ -1266,7 +1446,9 @@ mod tests {
         registry.fire(HookPoint::OnSessionStart, &ctx);
 
         let snap = registry.metrics_snapshot();
-        let hb = snap.get("OnHeartbeat#0").expect("heartbeat metrics present");
+        let hb = snap
+            .get("OnHeartbeat#0")
+            .expect("heartbeat metrics present");
         assert_eq!(hb.fire_count, 2, "OnHeartbeat fired twice");
         assert!(hb.last_fired_at.is_some(), "last_fired_at set");
 
@@ -1437,8 +1619,14 @@ mod tests {
             session_cost_usd: 0.042,
         };
         let json = serde_json::to_string(&event).expect("serialize");
-        assert!(json.contains("\"session_input_tokens\":12345"), "input tokens in payload: {json}");
-        assert!(json.contains("\"session_output_tokens\":678"), "output tokens in payload: {json}");
+        assert!(
+            json.contains("\"session_input_tokens\":12345"),
+            "input tokens in payload: {json}"
+        );
+        assert!(
+            json.contains("\"session_output_tokens\":678"),
+            "output tokens in payload: {json}"
+        );
         assert!(json.contains("session_cost_usd"), "cost in payload: {json}");
 
         // PostToolUse carries the same fields.
@@ -1451,7 +1639,13 @@ mod tests {
             session_cost_usd: 0.12,
         };
         let json2 = serde_json::to_string(&post).expect("serialize");
-        assert!(json2.contains("\"session_input_tokens\":50000"), "input tokens in post payload: {json2}");
-        assert!(json2.contains("\"is_error\":false"), "is_error in payload: {json2}");
+        assert!(
+            json2.contains("\"session_input_tokens\":50000"),
+            "input tokens in post payload: {json2}"
+        );
+        assert!(
+            json2.contains("\"is_error\":false"),
+            "is_error in payload: {json2}"
+        );
     }
 }

@@ -195,10 +195,10 @@ impl ToolKind {
     /// Filesystem, shell, search, task, team, and web tool names.
     fn match_io_name(name: &str) -> Option<Self> {
         match_tool_kind!(name,
-            Self::Edit => ["edit", "str_replace_based_edit_tool"],
-            Self::Write => ["write", "write_file"],
-            Self::Read => ["read", "read_file"],
-            Self::Bash => ["bash", "run_bash"],
+            Self::Edit => ["edit", "str_replace_based_edit_tool", "file_edit_tool"],
+            Self::Write => ["write", "write_file", "file_write_tool"],
+            Self::Read => ["read", "read_file", "file_read_tool"],
+            Self::Bash => ["bash", "run_bash", "bash_tool"],
             Self::BashOutput => [
                 "bash_output",
                 "bashoutput",
@@ -208,18 +208,18 @@ impl ToolKind {
                 "agent_output",
                 "agent_output_tool",
             ],
-            Self::Glob => ["glob"],
-            Self::Grep => ["grep"],
+            Self::Glob => ["glob", "glob_tool"],
+            Self::Grep => ["grep", "grep_tool"],
             Self::Search => ["codebase_search", "search"],
             Self::ApplyPatch => ["apply_patch"],
             Self::MultiEdit => ["multi_edit"],
             Self::NotebookRead => ["notebook_read"],
-            Self::NotebookEdit => ["notebook_edit"],
+            Self::NotebookEdit => ["notebook_edit", "notebook_edit_tool"],
             Self::TaskCreate => ["task_create"],
             Self::TaskUpdate => ["task_update"],
             Self::TaskList => ["task_list"],
             Self::TaskDone => ["task_done"],
-            Self::TaskStop => ["task_stop"],
+            Self::TaskStop => ["task_stop", "kill_bash", "kill_bash_tool"],
             Self::TaskGet => ["task_get"],
             Self::TaskValidate => ["task_validate"],
             Self::Task => ["task"],
@@ -639,6 +639,23 @@ mod tests {
     fn from_name_normalizes_across_separators_normal() {
         for n in ["TaskCreate", "task_create", "taskcreate", "TASKCREATE"] {
             assert!(matches!(ToolKind::from_name(n), ToolKind::TaskCreate));
+        }
+    }
+
+    #[test]
+    fn from_name_accepts_claude_tool_suffix_aliases_normal() {
+        let cases = [
+            ("FileReadTool", ToolKind::Read),
+            ("FileWriteTool", ToolKind::Write),
+            ("FileEditTool", ToolKind::Edit),
+            ("BashTool", ToolKind::Bash),
+            ("GlobTool", ToolKind::Glob),
+            ("GrepTool", ToolKind::Grep),
+            ("NotebookEditTool", ToolKind::NotebookEdit),
+            ("KillBash", ToolKind::TaskStop),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(ToolKind::from_name(name), expected, "{name}");
         }
     }
 
