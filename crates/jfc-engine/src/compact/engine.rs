@@ -8,8 +8,8 @@ use std::fmt::Write as _;
 use tracing::{debug, info, instrument, trace, warn};
 
 use super::{
-    BLOCKED_HEADROOM, CHARS_PER_TOKEN, CIRCUIT_BREAKER_LIMIT, MAX_ATTEMPTS, THRASH_TURN_WINDOW,
-    blocked_override, estimate_tokens,
+    CHARS_PER_TOKEN, CIRCUIT_BREAKER_LIMIT, MAX_ATTEMPTS, THRASH_TURN_WINDOW,
+    blocked_threshold_with_output, estimate_tokens,
 };
 #[cfg(test)]
 use super::{
@@ -392,6 +392,7 @@ pub async fn compact(
     options: &StreamOptions,
     tool_ctx: &mut ToolContext,
     window: usize,
+    max_output_tokens: Option<usize>,
     on_progress: Option<CompactProgressCb>,
 ) -> CompactResult {
     // Recovery: reset the rapid-refill counter when enough turns have
@@ -660,6 +661,7 @@ pub async fn compact(
                 let summary_msg = ChatMessage::compact_boundary(&boundary_summary, pre_tokens);
                 let mut compacted = vec![summary_msg];
                 compacted.extend(to_preserve);
+                clear_usage_metadata_after_compact(&mut compacted);
 
                 let post_tokens = estimate_tokens(&compacted);
 
@@ -671,8 +673,7 @@ pub async fn compact(
                 // a long agentic batch with multi-tens-of-KB Read outputs)
                 // gets stuck in a compact-resubmit loop because each
                 // pass produces a Success that's still over Blocked.
-                let blocked =
-                    blocked_override().unwrap_or_else(|| window.saturating_sub(BLOCKED_HEADROOM));
+                let blocked = blocked_threshold_with_output(window, max_output_tokens);
                 if post_tokens >= blocked {
                     if preserve_count > 0 {
                         info!(
@@ -825,6 +826,12 @@ pub async fn compact(
                 preserve_count = (preserve_count + step).min(total_groups - 1);
             }
         }
+    }
+}
+
+fn clear_usage_metadata_after_compact(messages: &mut [ChatMessage]) {
+    for message in messages {
+        message.usage = None;
     }
 }
 
@@ -1407,7 +1414,9 @@ fn insert_restored_files(compacted: &mut Vec<ChatMessage>, restored_files: &[Str
 #[cfg(test)]
 mod level_tests {
     use super::*;
-    use crate::compact::{compact_level_with_output, compact_threshold_with_output};
+    use crate::compact::{
+        blocked_threshold_with_output, compact_level_with_output, compact_threshold_with_output,
+    };
 
     const W: usize = 200_000;
 
@@ -1636,8 +1645,8 @@ mod level_tests {
     // ──────────────────────────────────────────────────────────────────
 
     use crate::types::{
-        ChatMessage, MessagePart, ToolCall, ToolDisplayState, ToolInput, ToolKind, ToolOutput,
-        ToolStatus,
+        ChatMessage, MessagePart, ModelUsage, ToolCall, ToolDisplayState, ToolInput, ToolKind,
+        ToolOutput, ToolStatus,
     };
 
     fn user_msg(text: &str) -> ChatMessage {
@@ -1915,6 +1924,30 @@ mod level_tests {
         assert_eq!(count_user_turns_since_last_compact(&messages), 3);
     }
 
+    #[test]
+    fn compact_clears_preserved_tail_usage_robust() {
+        let mut preserved = assistant_msg("preserved assistant");
+        preserved.usage = Some(ModelUsage {
+            input_tokens: 180_000,
+            output_tokens: 1_000,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            cost_usd: None,
+        });
+        let mut compacted = vec![
+            ChatMessage::compact_boundary("summary", 180_000),
+            user_msg("preserved user"),
+            preserved,
+        ];
+
+        clear_usage_metadata_after_compact(&mut compacted);
+
+        assert!(
+            compacted.iter().all(|message| message.usage.is_none()),
+            "stale pre-compact usage must not survive into compacted transcripts"
+        );
+    }
+
     // Normal: token_gap_step with `None` falls back to halving (current/2),
     // never zero.
     #[test]
@@ -2183,6 +2216,21 @@ mod level_tests {
         );
     }
 
+    #[test]
+    fn blocked_threshold_with_output_matches_level_boundary_robust() {
+        let _g = lock();
+        clear_env();
+        assert_eq!(blocked_threshold_with_output(W, Some(8_000)), 189_000);
+        assert_eq!(
+            compact_level_with_output(188_999, W, Some(8_000)),
+            CompactLevel::Compact
+        );
+        assert_eq!(
+            compact_level_with_output(189_000, W, Some(8_000)),
+            CompactLevel::Blocked
+        );
+    }
+
     // Normal: estimate_group_tokens of a single-message group equals
     // estimate_tokens of that one message. (Sanity round-trip.)
     #[test]
@@ -2334,7 +2382,7 @@ mod circuit_breaker_tests {
             ChatMessage::user("hello".to_owned()),
             ChatMessage::assistant("hi".to_owned()),
         ];
-        let result = compact(&messages, &provider, &opts, &mut ctx, 200_000, None).await;
+        let result = compact(&messages, &provider, &opts, &mut ctx, 200_000, None, None).await;
         assert!(matches!(result, CompactResult::CircuitBreakerTripped));
     }
 
@@ -2351,7 +2399,7 @@ mod circuit_breaker_tests {
             ..Default::default()
         };
         let messages = vec![ChatMessage::user("hello".to_owned())];
-        let result = compact(&messages, &provider, &opts, &mut ctx, 200_000, None).await;
+        let result = compact(&messages, &provider, &opts, &mut ctx, 200_000, None, None).await;
         // The breaker cleared, so it did NOT return CircuitBreakerTripped.
         assert!(!matches!(result, CompactResult::CircuitBreakerTripped));
         assert_eq!(ctx.rapid_refill_count, 0, "breaker should auto-clear");

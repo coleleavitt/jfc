@@ -1,0 +1,79 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - generic [ref=e5]: adk-rs
+    - generic [ref=e6]:
+      - generic [ref=e7]: Rust port workbench
+      - generic [ref=e8]: running on :8087
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - paragraph [ref=e11]: ADK Python browser UI · Rust runtime parity
+      - heading "A real workbench for runs, sessions, artifacts, evals, graphs, traces, routes, and missing parity." [level=1] [ref=e12]
+      - paragraph [ref=e13]: I mapped the upstream ADK CLI/browser/dev-server surfaces around run/SSE/live, sessions, artifacts, eval sets, event graphs, debug traces, tools, models, A2A, auth, and replay gaps.
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - paragraph [ref=e17]: "8"
+        - paragraph [ref=e18]: UI surfaces
+      - generic [ref=e19]:
+        - paragraph [ref=e20]: "37"
+        - paragraph [ref=e21]: tool specs
+      - generic [ref=e22]:
+        - paragraph [ref=e23]: "5"
+        - paragraph [ref=e24]: known gaps
+  - generic [ref=e25]:
+    - button "Workbench" [ref=e26] [cursor=pointer]
+    - button "Parity" [ref=e27] [cursor=pointer]
+    - button "Runtime" [active] [ref=e28] [cursor=pointer]
+    - button "Gaps" [ref=e29] [cursor=pointer]
+  - generic [ref=e162]:
+    - generic [ref=e163]:
+      - generic [ref=e164]:
+        - paragraph [ref=e165]: Map
+        - heading "Executable local runtime" [level=2] [ref=e166]
+      - generic [ref=e167]:
+        - article [ref=e168]:
+          - generic [ref=e169]:
+            - generic [ref=e170]:
+              - heading "Run console" [level=3] [ref=e171]
+              - paragraph [ref=e172]: runnable
+            - generic [ref=e173]: adk-cli debug-run, adk-server /run
+          - paragraph [ref=e174]: Local request/response execution and API route shape are implemented.
+          - paragraph [ref=e175]: POST /run, /run_sse, /run_live
+        - article [ref=e176]:
+          - generic [ref=e177]:
+            - generic [ref=e178]:
+              - heading "Sessions" [level=3] [ref=e179]
+              - paragraph [ref=e180]: persistent
+            - generic [ref=e181]: In-memory and JSON file session stores
+          - paragraph [ref=e182]: Events append into sessions and state deltas mutate typed session state.
+          - paragraph [ref=e183]: Session CRUD + state deltas
+        - article [ref=e184]:
+          - generic [ref=e185]:
+            - generic [ref=e186]:
+              - heading "Artifacts" [level=3] [ref=e187]
+              - paragraph [ref=e188]: persistent
+            - generic [ref=e189]: In-memory and JSON file artifact services
+          - paragraph [ref=e190]: Latest-version loading, listing, delete, and versioned storage are covered.
+          - paragraph [ref=e191]: Artifact CRUD + version browser
+        - article [ref=e192]:
+          - generic [ref=e193]:
+            - generic [ref=e194]:
+              - heading "Evaluation" [level=3] [ref=e195]
+              - paragraph [ref=e196]: persistent
+            - generic [ref=e197]: Eval cases, results, in-memory and file services
+          - paragraph [ref=e198]: Eval storage exists; metric executors are still trait surfaces.
+          - paragraph [ref=e199]: Eval sets, runs, metrics, results
+        - article [ref=e200]:
+          - generic [ref=e201]:
+            - generic [ref=e202]:
+              - heading "Graph + traces" [level=3] [ref=e203]
+              - paragraph [ref=e204]: executable
+            - generic [ref=e205]: Workflow graph + runtime order
+          - paragraph [ref=e206]: Graph roots, next nodes, and ordered traversal are implemented locally.
+          - paragraph [ref=e207]: DOT graph, event graph, debug trace
+    - article [ref=e208]:
+      - generic [ref=e209]:
+        - paragraph [ref=e210]: Graph
+        - heading "Workflow runtime" [level=2] [ref=e211]
+      - generic [ref=e212]:
+        - paragraph [ref=e213]: START → root function → tool node → final response
+        - paragraph [ref=e214]: WorkflowRuntime::run_from_roots() returns [root, child]

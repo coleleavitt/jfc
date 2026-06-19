@@ -752,8 +752,10 @@ pub async fn handle_stream_done(
     // full turn's token estimate.
     if turn_done {
         state.streaming_response_bytes = 0;
+        state.streaming_response_baseline = 0;
         state.streaming_thinking_tokens = 0;
-        state.last_thinking_estimate = 0;
+        state.token_rate_samples.clear();
+        state.token_rate_sample_thinking = None;
     }
     // Clear the user-turn clock only when the loop has
     // genuinely concluded — EndTurn stop reason AND no

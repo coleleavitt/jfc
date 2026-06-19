@@ -7,7 +7,7 @@ use crate::types::{ChatMessage, MessagePart, Role};
 pub fn extract_first_prompt(messages: &[ChatMessage]) -> Option<String> {
     messages
         .iter()
-        .find(|m| m.role == Role::User)
+        .find(|m| m.role == Role::User && !m.is_compact_boundary())
         .and_then(|m| {
             m.parts.iter().find_map(|p| match p {
                 MessagePart::Text(t) if !t.trim().is_empty() => {
@@ -268,7 +268,7 @@ mod coalesce_tests {
     //! assistant message on save so the file is human-readable and the
     //! resume path doesn't get 50+ assistant rows for a single user
     //! turn (the original `ses_20260515_175208.json` symptom).
-    use super::coalesce_consecutive_same_role;
+    use super::{coalesce_consecutive_same_role, extract_first_prompt};
     use crate::ids::ToolId;
     use crate::types::{
         ChatMessage, MessagePart, ModelUsage, Role, ToolCall, ToolDisplayState, ToolInput,
@@ -427,6 +427,20 @@ mod coalesce_tests {
         assert!(
             out[2].is_compact_boundary(),
             "boundary must survive on its own message"
+        );
+    }
+
+    #[test]
+    fn extract_first_prompt_skips_compact_boundary_robust() {
+        let messages = vec![
+            ChatMessage::compact_boundary("old summary", 180_000),
+            user_text("actual first prompt after compact"),
+            assistant_text("reply"),
+        ];
+
+        assert_eq!(
+            extract_first_prompt(&messages).as_deref(),
+            Some("actual first prompt after compact")
         );
     }
 

@@ -1,0 +1,1017 @@
+                                         E VIC P RESS: Joint KV-Cache Compression and Eviction for Efficient LLM Serving
+
+                                               Shaoting Feng∗,1 Yuhan Liu∗,1 Hanchen Li2 Xiaokun Chen3 Samuel Shen3 Kuntai Du3 Zhuohan Gu4
+                                              Rui Zhang5 Yuyang Huang1 Yihua Cheng3 Jiayi Yao1 Qizheng Zhang6 Ganesh Ananthanarayanan7 Junchen Jiang1,3
+                                               1 University of Chicago 2 UC Berkeley 3 Tensormesh, Inc. 4 MIT  5 UC Santa Cruz 6 Stanford  7 Microsoft
+
+
+                                                                    Abstract
+                                                                                                                                                                    LRU based eviction
+                                         Reusing KV cache is essential for high efficiency of Large                                                                 w/o compression
+                                                                                                                                     CacheServe
+                                         Language Model (LLM) inference systems. With more LLM
+                                         users, the KV cache footprint can easily exceed GPU memory                                                                                 Full prefill
+                                         capacity, so prior work has proposed to either evict KV cache
+
+
+
+
+arXiv:2512.14946v1 [cs.OS] 16 Dec 2025
+                                                                                                                   Quality
+                                         to lower-tier storage devices, or compress KV cache so that
+                                         more KV cache can be fit in the fast memory. However, prior                                            Fixed compression rate
+                                         work misses an important opportunity: jointly optimizing the                                           + LRU based eviction             Be
+                                                                                                                                                                                   tte
+                                         eviction and compression decisions across all KV caches to                                                                                   r
+
+                                         minimize average generation latency without hurting quality.                         Aggressive compression without eviction
+                                            We propose E VIC P RESS, a KV-cache management sys-
+                                         tem that applies lossy compression and adaptive eviction to                                             Time-to-first-token (TTFT)
+                                         KV cache across multiple storage tiers. Specifically, for each
+                                         KV cache of a context, E VIC P RESS considers the effect of
+                                                                                                                 Figure 1: E VIC P RESS jointly optimizes offloading and com-
+                                         compression and eviction of the KV cache on the average
+                                                                                                                 pression, achieving much better trade-off in terms of quality
+                                         generation quality and delay across all contexts as a whole.
+                                                                                                                 and TTFT. This figure is illustrative.
+                                         To achieve this, E VIC P RESS proposes a unified utility func-
+                                         tion that quantifies the effect of quality and delay of the lossy
+                                         compression or eviction. To this end, E VIC P RESS’s profiling             Realizing the potential performance benefit, however,
+                                         module periodically updates the utility function scores on all          brings a new system challenge: the total size of KV cache that
+                                         possible eviction-compression configurations for all contexts           needs to be stored continues to grow due to growing model
+                                         and places KV caches using a fast heuristic to rearrange KV             context window limits and an increased number of concur-
+                                         caches on all storage tiers, with the goal of maximizing the            rent users being served. Thus, it is challenging to fit all KV
+                                         utility function scores on each storage tier. Compared to the           cache inside GPU memory. Two lines of work exist to avoid
+                                         baselines that evict KV cache or compress KV cache, E VIC -             re-computing the KV caches that do not fit in GPU memory.
+                                         P RESS achieves higher KV-cache hit rates on fast devices, i.e.,        First, KV cache eviction1 has been proposed to improve the
+                                         lower delay, while preserving high generation quality by ap-            cache hit rate [6, 38, 59]. These works apply classic caching
+                                         plying conservative compression to contexts that are sensitive          policies, such as least recent used (LRU), to evict KV cache
+                                         to compression errors. Evaluation on 12 datasets and 5 mod-             from GPU memory to lower-tier storage devices, which have
+                                         els demonstrates that E VIC P RESS achieves up to 2.19× faster          larger and cheaper space. This might increase the cache hit
+                                         time-to-first-token (TTFT) at equivalent generation quality.            rate by allowing more KV caches to be stored and thus avoid
+                                                                                                                 repeatedly recomputing the KV cache. The second line of
+                                         1     Introduction                                                      work applies KV cache compression to reduce the memory
+                                                                                                                 footprint of each KV cache, allowing more KV caches to fit
+                                         Large Language Models (LLMs) are used ubiquitously, in                  in the GPU memory [17, 18, 31, 32, 63].
+                                         chatbot, agentic, personal assistance, and many other use                  However, both eviction and compression approaches are
+                                         cases. Thus, improving the efficiency of LLM inference, which           limited when used separately. When compression is applied,
+                                         provides low-delay experience for users at a low compute cost,          prior works only consider using more aggressive compression
+                                         is one of the most important problems in both industry and              when reaching the space limit of the storage devices, and do
+                                         academia. To this end, reusing KV cache—the intermediate                not consider the possibility of eviction or simply using tradi-
+                                         states generated during LLM inference—has become the de-                tional eviction policies, such as LRU [17, 18, 31, 32]. When
+                                         facto optimization in modern LLM inference systems. By                  eviction is applied, these works do not adapt compression
+                                         storing and reusing the KV cache of a context in different              configurations based on the eviction decisions [6,38,59]. This
+                                         requests, the inference latency could be significantly reduced,
+                                         and throughput can be greatly improved [22, 29, 53, 54].                    1 KV cache eviction, in this work, means that a KV cache is moved from a
+
+                                                                                                                 faster storage device to the next tier, slower, device. It does not mean deleting
+                                             * Equal contribution                                                the KV cache from the system.
+
+
+                                                                                                             1
+               Context 1             Context 2                             can be aggressively compressed to improve overall TTFT and
+            (No quality drop     (Quality collapse w/                      quality.
+            w/ compression)       any compression)
+                  4GB              8 GB
+                                                                              A key insight is that different contexts benefit differently
+                                                                           from compression or eviction, since they have various sensi-
+                 Fast Storage       Slow Storage
+                   (20GB/s)            (2GB/s)                             tivities to lossy compression (§3.1). Some contexts are highly
+  Compression                                           Low                sensitive to compression errors, and even a conservative com-
+              2GB 4GB                                   Quality
+         Only
+                                                                           pression ratio can lead to a huge quality drop; while others
+      Eviction                                                             can be largely compressed without affecting generation qual-
+         Only      8 GB          4GB                    High TTFT
+                                                                           ity. Thus, compression and eviction decisions should be made
+  Compression                                           High Quality
+    + Eviction     8 GB                                                    globally to consider the sensitivities of all contexts in the sys-
+                                0.2 GB                  Low TTFT
+       (Ours)                                                              tem. For example, we should choose to evict highly sensitive
+                                                                           contexts that suffer greatly from lossy compression when a
+Figure 2: A simple example to illustrate the benefit of jointly            higher storage tier is full, while bringing up KV cache from a
+deciding compression and eviction. Consider two KV caches                  lower tier that has lower sensitivity to compress them aggres-
+(a 4 GB KV cache that can be compressed to 5% without                      sively to fit into the higher storage tier.
+quality drop, and a 8 GB KV cache where slight compression                    Making global cache management decisions based on all
+drops its quality to 50%), which are originally stored on a                contexts creates a search space to the power of the number
+fast memory (20GB/s loading bandwidth) and a slow device                   of contexts. To make it practical, our paper proposes a utility
+(2GB/s). A compression-only scheme compresses both KV                      function, taking the storage tier, compression method, and rate
+caches by half, causing low TTFT (0.3 seconds) but low qual-               as input, outputting a single score that quantitatively measures
+ity (only 75%); an eviction-only scheme evicts half of the KV              the effect of each decision on delay and quality. This allows
+cache to slow storage, which has high quality (100%) but with              us to easily compute the overall delay and quality trade-off
+high TTFT (2.4 seconds) when reusing the evicted KV cache;                 based on all contexts for each cache management decision.
+by considering compression and eviction, we simultaneously                    Putting it together, we propose E VIC P RESS, a system
+achieve high quality (100%) and low TTFT (0.5 seconds).                    that adaptively chooses the optimal compression-eviction
+                                                                           configuration—whether to evict, to which storage device, and
+is often suboptimal. As shown in Figure 2, if we consider KV               whether to compress, by what method and at which ratio—on
+cache for two contexts (context 1 is 4 GB in size and context 2            a per KV-cache (per context) basis. E VIC P RESS first calcu-
+is 8 GB), context 1 can keep a quality score of 100% even it is            lates all possible configurations’ utility function scores for
+aggressively compressed, while context 2’s quality collapses               each context, based on a set of initially generated queries.
+to 50% even with minimal compression. When compression-                    Then E VIC P RESS puts KV cache that maximizes the total util-
+only is applied, compressing both KV cache to 50% of their                 ity function score on a certain storage device. Since real-world
+original size, the quality score degrades to 50% for context               queries may drift from the initial set of queries, E VIC P RESS
+2, with an average quality of 75% and average TTFT of 0.3                  records new incoming queries for each context, and performs
+seconds. When eviction only is applied, context 1 is evicted to            periodic re-profiling based on the newest set of queries. After
+slow device, and context 2 is kept at the fast device, achieving           re-profiling, E VIC P RESS uses a greedy-based algorithm to
+a quality score of 100% and TTFT of 2.4 seconds. A better                  re-arrange KV cache in different storage tiers, such that the
+choice is to combine compression and eviction, specifically                utility function scores can be maximized on each tier.
+keeping context 2 in fast storage, and compressing context 1’s                We implement E VIC P RESS within the existing LLM serv-
+KV cache to 0.2GB and evicted to slow storage. This achieves               ing stack by extending vLLM and LMCache with ~3K lines
+100% quality score with TTFT of 0.5 seconds.                               of code that add multi-tier KV-cache placement, compression,
+   Prior works do not consider decisions of eviction or com-               and eviction control. Concretely, our implementation inter-
+pression on all contexts, primarily due to the huge search                 cepts KV-cache lookups, retrievals, and stores, applies per-
+space this problem incurs. First, when applying compression,               context compression/eviction policies, and integrates tightly
+compression methods and rates can be adapted. Secondly,                    with vLLM’s paged GPU memory management to orchestrate
+compression needs to be combined with eviction; for exam-                  cache movement across GPU, CPU, and SSD tiers.
+ple, after a certain compression rate, eviction should be used                In short, our contributions are:
+to avoid a huge quality drop. Furthermore, when dealing with               • We design and implement E VIC P RESS, the first system that
+any context’s KV cache, considering the impact of compres-                    jointly considers both lossy compression and eviction for a
+sion and eviction on itself is not enough; instead, its impact                multi-tier KV cache eviction system.
+on other contexts also needs to be considered. Compressing a               • We propose a utility function that quantifies the effect of
+KV cache to a moderate rate and placing it on a fast storage                  lossy compression and eviction on both quality and delay to
+device is beneficial to its quality and TTFT; however, this                   make cache management decisions. Using this utility func-
+space can be used to store substantially more KV cache that                   tion, E VIC P RESS can compare all feasible compression-
+
+
+                                                                       2
+  eviction configurations at once with a clear optimization               Dataset     Length (mean) Type of contexts #Contexts
+  criterion.
+                                                                          Samsum      11586           Few-shot        50
+• We implement E VIC P RESS in the state-of-the-art inference             TriviaQA    12311           Few-shot        50
+  engine, vLLM [24], and show that compared to baselines                  MultiNews 2741              Multi-document 50
+  that apply the same compression methods and ratios on                   2wikimQA 7526               Multi-document 50
+  all contexts, E VIC P RESS reduces TTFT by 1.43–3.77×                   Qasper      4885            Single-document 50
+  across five different models with the same quality score;               NarrativeQA 40003           Single-document 50
+  compared to the baseline that only applies LRU-based evic-
+                                                                       Table 1: Lengths, type and number of contexts used in §3.
+  tion, E VIC P RESS reduces TTFT by 1.22 to 1.56× within
+  3% quality drop, and improves inference throughput by
+  2.0–3.6× compared best baseline at a quality score target           been done on compressing KV cache. KV cache compression
+  of 80%.                                                             gives two key benefits in LLM serving. First, by reducing
+   We should note that the idea of using utility function             the size of each cache entry, one can store more KV caches
+which captures the effect of delay and quality and adapt-             within a given memory budget, which increases the proba-
+ing compression configurations based on sensitivity are not           bility of reuse and leads to higher cache hit rates. Second, it
+new [23, 39, 55, 62]. However, we are the first to apply the          substantially reduces the data transfer overhead in offloading-
+utility function to enable the joint optimization of eviction         based inference systems where KV caches are stored in CPU
+and compression, achieving much better results than fixed             or SSD memory. This is crucial since transferring large KV
+compression or eviction.                                              caches over bandwidth-limited interconnects can become a
+                                                                      performance bottleneck.
+2     Background                                                         There have been many KV cache compression methods,
+                                                                      and they differ in both quality retention and system efficiency.
+2.1    KV cache reusing and eviction in LLMs                          These methods can be broadly categorized into: (1) token
+LLM inference includes two phases, the prefill phase where            dropping (e.g., H2O, SnapKV) [27, 59], which selectively
+the entire input context is fed into the LLM at once to produce       removes less important tokens from the KV cache; (2) quanti-
+the KV cache, and decode phase where the KV cache is used             zation (e.g., CacheGen (Adaptive quantization), KIVI (Uni-
+to generate consecutive output tokens. The prefill phase is           form quantization)) [31, 32], which reduces the bit-width
+computation-heavy, especially under long-context scenarios,           representation of KV entries; (3) merging (e.g., HOMER,
+since its computational complexity grows super-linearly with          Look-M) [42, 45]; (4) prompt compression (e.g., LLMlingua,
+the input length. To accelerate the prefill phase, many recent        LongLLMlingua) [19, 20].
+systems improve inference efficiency by storing and reusing              Due to the different natures of these categories, these meth-
+previously computed KV caches to skip redundant computa-              ods have widely different performances. As we demonstrate
+tion [15, 29, 31]. Prior works in systems mainly focused on           later in Sec 3.2, depending on the specific model size, dataset
+KV cache management inside a hierarchical storage system.             properties, and generation lengths, different methods will have
+   To reduce memory waste, vLLM [24] uses PagedAttention              different tradeoffs. Some methods, like CacheGen or KIVI,
+to handle the KV cache in smaller, page-like blocks instead           have a decompression overhead, while others, like H2O, can
+of large contiguous chunks, reducing memory fragmentation.            be directly used in decoding. Moreover, more novel research
+SGLang [60] optimizes computation and memory usage by                 on KV cache compression is being created on top of previ-
+employing a tree-based caching mechanism called RadixAt-              ous work every month. Yet there is no principled method to
+tention, which stores KV caches in a radix tree and maintains         choose and adopt this wide variety of compression algorithms
+them via a least recently used (LRU) eviction policy. Some re-        in real systems.
+cent works further push the boundary by extending KV cache
+management across the memory hierarchy and storage. LM-               3    Motivation
+Cache [29] reuses KV caches for any repeated text, regardless         The most straightforward way of managing KV cache memory
+of whether it is a prefix, and offloads KV caches that are not        is to either apply uniform compression or to use a cache
+selected to hierarchical caching devices such as CPU memory.          eviction scheme, such as Least Recently Used (LRU) or Least
+Works like Mooncake [37], Attentionstore [13], and InstIn-            Frequently Used (LFU), on all contexts. Both compression
+fer [34] leverage disaggregated resources (i.e., CPU, DRAM,           and eviction can greatly improve inference throughput, either
+and SSD) to offload KV caches and accelerate LLM serving.             by compressing the memory footprint of KV cache, so it
+                                                                      is faster to fetch from remote storage devices [22, 28, 31],
+                                                                      or by keeping KV cache that is more likely to be needed
+2.2    KV cache compression
+                                                                      in the near future in faster storage devices to make loading
+Due to the relatively large sizes of KV caches (7.81 GB for           faster [5, 11, 13, 29].
+32k token context in Qwen3-32B), much previous work has                  However, as we will show in this section, further optimiza-
+
+
+                                                                  3
+tion is possible, as KV cache management decisions should                        3.2 Why not the same compression method
+depend on context-specific characteristics.                                          and ratio for all contexts?
+   In this section, we present an empirical study with six
+                                                                                 Another natural question to ask is why not apply a fixed com-
+datasets from LongBench dataset [3], which is a widely-used
+                                                                                 pression method and ratio on all contexts? As also discussed
+dataset for verifying LLM’s ability to answer long-context
+                                                                                 in §2.2, many parameters can be adjusted, including differ-
+questions. The dataset details are shown in Table 1. Specif-
+                                                                                 ent compression methods and compression ratios for each
+ically, we randomly draw 50 contexts from 12 datasets in
+                                                                                 method. As different methods look at different metrics for
+the LongBench [3] dataset, covering various types of tasks,
+                                                                                 dropping information from the KV cache, we hypothesize
+including few-shot, single-document question answering, and
+                                                                                 that different contexts have their own optimal compression
+multi-document question answering.
+                                                                                 method and ratios.
+
+3.1     Why not compress or evict all contexts?                                  Insight 2 The optimal compression method and ratio cannot
+KV caches for some contexts are highly sensitive to compres-                     be simply determined by the lengths of contexts or the type of
+sion errors: even applying an extremely conservative compres-                    contexts.
+sion ratio can lead to a substantial quality drop. In contrast,
+                                                                                    To verify this, in Figure 4, we plot the length distribution for
+other contexts are minimally affected. This leads to our first
+                                                                                 three groups of contexts whose optimal compression methods
+insight as follows.
+                                                                                 are kvzip, knorm and snapkv, respectively. Here, optimal
+                                                                                 compression method is defined as the method with the lowest
+Insight 1 Different contexts have different sensitivities to                     quality3 drop at the same compression ratio. There are 40.3%,
+compression errors, thus simply applying the same eviction                       40.0% and 19.7% contexts whose optimal methods are kvzip,
+or compression schemes on all contexts is not optimal.                           knorm and snapkv, suggesting that there is no dominant com-
+                                                                                 pression method that works for all contexts, and per-context
+   Figure 3 illustrates this, where the CDF of compression                       method adaptation is needed. Furthermore, we can see that
+error sensitivities, defined as relative quality drop under a                    the context lengths distribution for the three groups overlaps
+compression ratio of 0.92 , is plotted with datasets in Table 1                  with each other, indicating that there is not a clear relationship
+of different types. The figure is plotted with the Llama-3.1-                    between context length and which compression method to
+8B-Instruct model with keydiff compression. As shown                             select.
+in the figure, for example, Wikipedia articles (2wikimQA)                           Secondly, in Figure 5, we plot the mean optimal compres-
+have high sensitivities, with median of 0.681. Our intuition                     sion ratio and the standard deviation for different datasets
+is that critical information is distributed at a high density in                 in Table 1. The optimal compression ratio is defined as the
+all contexts. Meanwhile, story narratives (NarrativeQA) have                     ratio with best quality-delay trade-off among all compres-
+a much lower sensitivity, with a median of 0.340, since they                     sion methods4 . We can see that even within each dataset, the
+are based on dialogues containing redundant information.                         optimal compression ratio varies greatly across different con-
+   Moreover, we find that even though two datasets belong                        texts, with coefficient of variation being 0.068 to 0.806. This
+to the same type of context, they may have completely dif-                       shows that the optimal compression ratios cannot be simply
+ferent distribution of sensitivities. For example, Samsum and                    determined by the dataset.
+TriviaQA are both few-shot datasets, where several example                          Moreover, we observe that even though two datasets belong
+question-answer pairs are provided to LLMs before answer-                        to the same type, such as MultiNews and Musique, which are
+ing the real questions, while Samsum has sensitivity with a                      both multi-document contexts, they have non-overlapping dis-
+median of 0.676 and TriviaQA has sensitivity with a median                       tributions. This suggests that the optimal compression ratios
+of 0.392. Also, MultiNews samples are multi-document con-                        cannot be trivially determined by type of contexts either.
+texts, where multiple news articles are concatenated to form
+each sample, and Qasper samples are single-document, where
+each sample only contains a single document on a specific                        4    E VIC P RESS Design
+topic. However, the MultiNews and Qasper datasets have very
+similar median sensitivities, 0.738 and 0.759 specifically.                      We now describe the design of E VIC P RESS, starting with
+   Overall, sensitivities vary significantly across contexts.                    an overall workflow (§4.1), a utility function that determines
+Specifically, the coefficient of variation (a measure of vari-                   the quality-rate trade-off of each compression configuration
+ance) is from 0.078 to 0.394, and this shows that different
+                                                                                     3 Generation quality is defined as the similarity between the generated
+contexts have very different sensitivities, even within the same
+                                                                                 answer after compression and the original prefill answer.
+dataset.                                                                             4 To measure the correlation between TTFT and quality, we use
+   2 Compression ratio is defined as the ratio between compressed KV cache       normalized quality − normalized TTFT to make sure that quality and TTFT
+size and original KV cache size.                                                 are comparable in terms of scale.
+
+
+                                                                             4
+               1.0   samsum                              1.0   triviaqa                                                  1.0    multi_news
+
+         CDF   0.5                                       0.5                                                             0.5
+
+               0.0                                       0.0                                                             0.0
+                  0.00 0.25 0.50          0.75    1.00      0.00 0.25      0.50                           0.75    1.00      0.00 0.25 0.50            0.75    1.00
+               1.0 2wikimqa                              1.0 qasper                                                      1.0 narrativeqa
+
+         CDF   0.5                                       0.5                                                             0.5
+
+               0.0                                       0.0                                                             0.0
+                  0.00    0.25 0.50 0.75          1.00      0.00   0.25 0.50 0.75                                 1.00      0.00      0.25 0.50 0.75          1.00
+                          Relative Quality Drop                    Relative Quality Drop                                              Relative Quality Drop
+Figure 3: Different contexts have different compression error sensitivities in the six datasets mentioned in Table 1. Compression
+error sensitivity is defined as the quality score drop when applied with keydiff compression at a ratio of 0.9. Plotted with
+Llama-3.1-8B-Instruct.
+
+
+                                                                                                          1.0
+
+
+
+
+                                                                              Optimal Compression Ratio
+         30000                                                                                            0.8
+
+Length
+         20000                                                                                            0.6
+
+         10000                                                                                            0.4
+
+               0                                                                                          0.2
+                         kvzip          knorm             snapkv
+                                        Method                                                            0.0
+                                                                                                                 um       a
+                                                                                                                         iaq    ne
+                                                                                                                                      s   siq ue              er
+                                                                                                            sa        triv         w               qana
+                                                                                                                                                     sprra
+                                                                                                              ms               lti_       mu              tiv
+Figure 4: Length distributions for contexts whose least quality                                                              mu                              eq a
+drop occurs when using kvzip, knorm, and snapkv, under a
+compression ratio of 0.6.
+                                                                              Figure 5: Different types of contexts have different optimal
+                                                                              compression ratios. Here, each bar shows the mean and stan-
+(§4.2), a profiling mechanism to determine the right compres-                 dard deviation of optimal compression ratios for different type
+sion configuration for each context (§4.3), and a policy to                   of contexts.
+manage the KV cache when a storage tier is full (§4.4).
+
+4.1        Overall workflow                                                   it exists, E VIC P RESS’s retriever fetches the KV cache from
+                                                                              the location that the lookup module returns. If it does not,
+E VIC P RESS contains two phases: an initial offline phase and                the KV cache is generated by the LLM, and then saved by
+an online inference phase.                                                    E VIC P RESS to the remote disk, which is assumed to have
+Initial offline phase: During the initial offline phase, E VIC -              unlimited space. As the online queries may differ from the
+P RESS’s profiler (§4.3) computes the utility function scores                 initial set of profile queries, E VIC P RESS’s profiling module
+(§4.2) for all possible eviction-compression configurations of                also performs periodic re-profiling based on an updated set of
+each context. To compute the quality and delay items in the                   queries for each context, when the achieved quality is lower
+utility function, we use an initial set of generated questions                than threshold X% and free GPU cycles are available.
+for each context.                                                                Note that the KV cache storing operation runs on the CPU,
+Online inference phase: In the online inference phase, when                   which does not block the online inference computations for
+a user request comes in, the lookup module first determines                   other queries. Furthermore, the re-profiling step first com-
+whether the KV cache for the requested context exists in                      presses the KV cache into multiple versions and runs decod-
+the multi-tier storage system managed by E VIC P RESS. If                     ing phases with different KV cache versions. Both the com-
+
+
+                                                                          5
+                     KV cache KV cache        KV cache                              worse than (keydiff, 0.9, CPU) as the former one has the same
+                                                          CPU
+                     exists       retriever                                         TTFT and lower quality. This is reflected by the utility func-
+                Lookup                                  Local SSD
+                module
+                                Saving generated KV                                 tion score too, with the former one having a lower score than
+       User                     cache to remote disk   Remote Disk
+                    KV cache
+                                                                                    the latter.
+ Inference Phase    doesn’t exist                                                      The system enables users to navigate the trade-off between
+                                                          Updated
+ Non-               Periodically fetching all KV cache         eviction-            generation quality and latency with the tunable parameter
+ blocking to        and new queries                            compression
+ inference                                                     configurations       α. A larger α prioritizes generation quality, while a smaller
+                                                   Choosing eviction-               α prioritizes smaller TTFT. For example, in the 2wikimQA
+           Profiler
+                                                     compression                    dataset, a compression ratio of 0.4 yields a quality score of
+         module (4.3)   Utility function scores    configuration (4.4)
+                                  (4.2)                                             0.82 and a TTFT of 0.20 seconds, whereas a ratio of 0.2
+                                                                                    improves quality to 0.92 but increases TTFT to 0.24 seconds.
+                                                                                    Consequently, if a user sets α > 0.3, the utility function favors
+       Figure 6: End-to-end workflow of E VIC P RESS.
+                                                                                    the higher quality provided by the 0.2 ratio; conversely, a
+                                                                                    lower α prioritizes the latency reduction offered by the 0.4
+pression step and decoding computations are lightweight in                          ratio.
+terms of GPU computations, and can be batched with other re-                           Another important design question when calculating the
+quests’ decoding computations. As we will show soon (§6.3),                         utility function is: what is a suitable granularity to compute
+re-profiling incurs minimal system overhead.                                        this utility function on? E VIC P RESS computes this utility
+                                                                                    function based on context-level, instead of chunk-level which
+4.2 Utility function: Balancing quality and                                         splits the whole context’s KV cache into multiple chunks,
+    loading delay                                                                   or token-level. This is because context-level profiling has a
+Each compression and eviction configuration presents a point                        global view of important token distribution considering the en-
+on the generation quality and loading delay trade-off. To                           tire context. On the other hand, for chunk-level profiling, some
+easily measure the impact of each configuration on quality                          tokens may be important within the scope of a chunk, while
+and loading delay, we design a utility function which outputs                       unimportant at the scope of the whole context. Token-level
+a single score for each eviction-compression configuration –                        profiling is even more suboptimal since quality measurement
+the storage tier that the eviction scheme offloads KV cache                         is not feasible. And token-level retrieval cannot saturate band-
+to, and the compression method and ratio it applies:                                width and leads to low speed and high overhead because of
+                                                                                    inconsistent memory access.
+Util(method, ratio, device) = (α · quality − TTFT) · frequency,
+
+where α is the trade-off parameter between quality and load-                        4.3 Profiler module: Computing the utility
+ing delay — higher α improves the quality of E VIC P RESS at                            function scores and choosing eviction-
+the cost of higher loading delay in average, and in our eval-                           compression configuration
+uation we will vary α to show the trade-off of E VIC P RESS
+between quality and loading delay.                                                  Based on insight 1, the compression-eviction configuration
+   In the above equation, the input to the function is the stor-                    must adapt to different contexts. Insight 2 indicates that the
+age device tier which the eviction algorithm sends the KV                           configuration cannot simply be determined by the character-
+cache to, and the compression method/ratio that is applied.                         istics of the context, such as lengths or types. Thus, instead
+The quality is computed based on the compression method                             of coming up with context characteristics that indicate the
+and ratio, averaged across all the data in the profiling query                      benefits of each configuration, E VIC P RESS directly profiles
+set; the delay item is computed with estimated latency to                           the impact of all configurations on overall quality and delay.
+fetch a (compressed) KV cache from the corresponding stor-                          Specifically, E VIC P RESS uses the utility function (§4.2) that
+age device; and the frequency item is the number of times the                       outputs a single score for each configuration of (storage de-
+context is accessed.                                                                vice, compression method, compression ratio) to capture both
+   To make it concrete, take the examples from §3.1,                                delay and quality.
+when using keydiff compression, across the contexts from                               Before the online inference stage, as the system does not
+2wikimQA dataset which has higher sensitivity, with com-                            see any queries before, the profiling module generates a set of
+pression ratio of 0.6, we can reach a quality score of 0.65                         training questions for each context following prior works [10,
+and TTFT of 0.05 seconds; while across contexts from Narra-                         47–49, 57], to compute the average quality and delay on them.
+tiveQA dataset that has lower sensitivity, with compression                         The questions are generated by the GPT-5 API about different
+ratio of 0.9, we can get a quality score of 0.67 with TTFT                          paragraphs in the contexts, aiming to obtain the eviction-
+of 0.05 seconds. Assuming α = 1 and equal frequency for                             compression configuration that drops as much redundancy for
+each context, the utility function score is 0.607 and 0.621 re-                     each paragraph as possible to reduce delay.
+spectively. The configuration of (keydiff, 0.6, CPU) is strictly                       During online inference, as real-world queries may drift
+
+
+                                                                                6
+from the training queries, the profiling module also period-          number of hit tokens is returned, and the vLLM engine allo-
+ically re-profiles with a newer dataset. The re-profiling is          cates the amount of GPU memory for storing the KV cache for
+triggered whenever the quality achieved on the online test-           the hit tokens. Then, LMCache’s retrieve(tokens)->KV
+ing dataset is below the quality achieved on the profiling            Cache function is triggered to load the KV cache from E VIC -
+dataset by a threshold of X%, and when the system has free            P RESS-managed multi-tier storage backend, and put it into
+GPU cycles. Note that the profiling process only requires             the paged GPU memory allocated by vLLM.
+the KV cache to be compressed with different methods and                 If it does not find the requested KV cache, LM-
+ratios, which incurs very minimal overhead, and running the           Cache’s store(tokens, KV Cache) function is triggered
+decoding phase with these different compressed versions. The          to save the generated KV cache to CPU DRAM, and
+decoding phase is known to be largely batchable (batching             then E VIC P RESS calls the manage function, which places
+with other requests does not increase decoding delay). Thus,          the new KV cache on a storage device and updates ex-
+available GPU cycles occur when the number of online infer-           isting KV cache entries if the device is full. Specifi-
+ence requests is smaller than the maximum batch size in the           cally, we use a class KVConfig(KV Cache) which records
+system. In practice, users can freely adapt X% based on their         the utility function scores for all possible configurations
+quality requirements.                                                 for the given KV cache. The manage function takes
+                                                                      in [KVConfig(KV Cache 1), ..., KVConfig(KV Cache
+                                                                      n)] and computes (device placement, compression
+4.4 Eviction-compression configuration selec-                         method, compression ratio) for each KV cache that
+    tion module                                                       needs updating, calculated by E VIC P RESS’s configuration
+Given an initial set of contexts, where each context has a set        selection module (§4.4). Finally, the manage function updates
+of generated queries for profiling, E VIC P RESS computes the         those KV caches with the new configuration.
+utility function scores for all possible eviction-compression
+configurations on each context. E VIC P RESS’s configuration
+selection module then places the (compressed) KV cache to
+                                                                      6      Evaluation
+a certain storage tier for each context with the configuration
+corresponding to the highest utility function score.                  The key takeaways from the evaluation are:
+   When a storage device S is full, existing KV cache on              • Across 5 models and 555 contexts from 12 datasets from
+that device needs to be updated. Specifically, each context’s           LongBench [3], E VIC P RESS reduces TTFT by 1.43 to
+KV cache can be updated either by more aggressive com-                  3.77× and improves quality by 13.58% to 55.40% at the
+pression to fit in S, or by evicting it to a lower-tier storage         same TTFT, compared to the baseline that combines fixed
+to save space. Each context has (#compression methods ×                 compression and classic eviction.
+#compression ratios × #lower-tier storage devices) of op-             • Compared to smart KV cache eviction system IMPRESS
+tions to choose from. Here, we filter out options that keep KV          [5], E VIC P RESS reduces TTFT by 1.5 to 5.2 × and im-
+cache on storage S but do not save space (such as keeping the           proves quality by 14.29% to 27.00% at the same TTFT.
+compression ratios and not evicting to the next tier).                • Compared to full prefill or full eviction, E VIC P RESS re-
+   The problem of deciding the configuration for each context           duces TTFT by 1.29 to 2.19× within 3% of quality drop.
+while maximizing the total utility function score on device
+S is a Multi-Choice Knapsack Problem, which is NP-hard.
+We greedily solve this problem by repeating the greedy pro-           6.1       Evaluation setup
+cess of finding updated configurations with the lowest utility
+score drop for contexts on S, until the updated KV cache fits             Dataset           Mean    Std   Topic
+successfully. Then, the same update process is applied recur-             narrativeqa       108K   55K    Long stories (literature, film).
+sively if the lower-tier storage is also full. The exact greedy           qasper             24K   12K    NLP research papers
+algorithm for this process is described in §A.                            multifieldqa_en    29K   15K    Legal documents and reports.
+                                                                          hotpotqa           57K   18K    Wikipedia articles.
+                                                                          2wikimqa           30K   15K    Wikipedia articles.
+                                                                          musique            69K    9K    Wikipedia articles.
+5   Implementation                                                        gov_report         54K   34K    US GAO and CRS reports.
+                                                                          qmsum              57K   27K    Meeting scripts and records.
+We implement E VIC P RESS on top of vLLM v0.11.2 and                      multi_news         12K   10K    News articles on the same event.
+                                                                          trec               30K   12K    News articles and web pages.
+LMCache v0.3.9post2, with about 3K lines of code in                       triviaqa           47K   25K    Trivia questions.
+Python based on PyTorch v2.9.                                             samsum             34K   17K    Messenger-like conversation histo-
+   When a new text query comes in, we call LMCache’s KV                                                   ries.
+cache lookup module, specifically lookup(tokens). If it
+finds that the requested KV cache exists in the system, the                       Table 2: Dataset Statistics and description.
+
+
+                                                                  7
+                                      Be                                        Be
+                                           tte                                                                     Be
+                                                 r                                   tte                                tte
+                                                                                           r                                  r
+
+
+
+
+                                                        Be                                        Be
+                                                             tte                                       tte
+                                                                   r                                         r
+
+
+
+
+Figure 7: E VIC P RESS reduces TTFT by 1.43 to 3.77× with the same quality score compared to compression + LRU-based
+eviction, and reduces TTFT by 1.22 to 1.56× compared to prefill and eviction only scheme.
+
+LLMs: We cover a wide range of popular open-source                           recently used (LRU) policy, without any compression.
+LLMs, including dense LLMs, including Llama (meta-                         • (keydiff/knorm/snapkv) Compression + LRU-based evic-
+llama/Llama-3.1-8B-Instruct), Qwen (Qwen/Qwen2.5-14B-                        tion: This baseline applies either keydiff [35], knorm [9]
+Instruct), LongChat (lmsys/longchat-7b-v1.5-32k) and Mis-                    or snapkv [27] compression on all contexts. We also vary
+tral (mistralai/Mistral-7B-Instruct-v0.3), and also Mixture-of-              the compression ratio for each method, which forms the
+Expert LLM (Qwen/Qwen3-30B-A3B-Instruct-2507).                               quality-TTFT trade-off. At a certain compression ratio,
+Dataset: We use LongBench benchmark [3], which com-                          when a storage tier is full, the system evicts the compressed
+bines many long-context datasets and includes a wide range                   KV cache to lower-tier storage with LRU. Among these
+of context genres (including government reports, news, con-                  methods, keydiff computes the average cosine similarity of
+versations and stories), as our evaluation dataset. The dataset              every token to all other tokens, and drops the tokens whose
+statistics, including the mean and standard deviation of the                 similarities are high among all; knorm computes the L2
+context lengths, and the dataset description is listed in Table 2.           norm of the key cache, and drops those with low L2 norm;
+                                                                             snapkv computes the cross attention between tokens near
+Query construction: We randomly sampled 555 contexts
+                                                                             the query and the earlier contexts, and drops those tokens
+from longbench dataset. For each context, we prompts gpt-5
+                                                                             with low cross-attention scores.
+to generate 100 QA queries (following previous works [10,
+47–49, 57]), 50 as training queries to build the profiler of               • IMPRESS: IMPRESS [5] uses three out of eight attention
+E VIC P RESS and 50 for testing.                                             heads to compute the attention scores to profile important
+                                                                             tokens in the KV cache. IMPRESS keeps X% of important
+Hardware: We run our experiments on one 80GB H100                            tokens whose attention scores are among the top X% of all
+GPU that hosts the model weights for each model. We allocate                 tokens. Then it splits each KV cache into chunks, and only
+80GB CPU DRAM, 800GB SSD, and assume that the remote                         loads KV cache chunks containing important tokens during
+storage has unlimited space.                                                 inference. We vary X% in our experiments to achieve the
+Baselines: We compare E VIC P RESS with baselines that apply                 quality-delay trade-off of IMPRESS.
+KV cache compression or eviction.                                          Evaluation metrics:
+• Prefill: This baseline performs full prefill on each query               • Quality score: measures the similarity of answers based on
+  without prefix caching. We run this with vLLM v0.11.2.                     compressed KV cache vs. answers based on uncompressed
+• Eviction only: When a storage tier becomes full, this system               KV cache. Following prior work [2,12,40], we compute the
+  evicts KV cache to the next storage tier using an least-                   cosine similarity between the embedding of the generated
+
+
+                                                                       8
+                                                                         keydiff+LRU-based eviction                   knorm+LRU-based eviction                  snapkv+LRU-based eviction
+                                                                         impress                                      eviction only                             prefill
+                                                                         ours
+                                                                         Llama-3.1-8B-Instruct                         Mistral-7B-Instruct-v0.3                    Qwen2.5-14B-Instruct
+
+
+
+
+                                              Average TTFT (s)
+                                                                 4                                           4                                              4
+
+                                                                 2                                           2                                              2
+
+                                                                 0                                           0                                              0
+                                                                     0        5         10        15              0          10         20      30           0.0      2.5     5.0     7.5
+                                                   0.20                                                    0.20                                          0.20
+
+
+
+                                 Average ITL (s)
+                                                   0.15                                                    0.15                                          0.15
+                                                   0.10                                                    0.10                                          0.10
+                                                   0.05                                                    0.05                                          0.05
+                                                   0.00                                                    0.00                                          0.00
+                                                                     0        5         10        15              0          10         20      30           0.0      2.5     5.0     7.5
+                                                                                  QPS                                                 QPS                                   QPS
+                                                                         Figure 8: E VIC P RESS maintains consistently low TTFT and ITL across all QPS levels.
+
+
+                           compression+LRU-based eviction                                        impress              ours             6.2    Evaluation results
+                                                                                                                                       TTFT v.s. generation quality: In Figure 7, compared to
+
+
+
+
+  Average quality score
+                          0.72                                                    0.80
+                                                                                                                                       the baselines that applies keydiff, knorm and snapkv and
+                          0.70                                                    0.74                                                 LRU-based eviction, E VIC P RESS reduces TTFT by 1.43 to
+                          0.68                                                                                                         3.77× at the same quality score, and improves quality scores
+                                                                                  0.68
+                                                                                                                                       by 13.58% to 55.40% at the same TTFT. Compared to full
+                          0.66                                                    0.62                                                 prefill that does not affect generation quality, E VIC P RESS
+                                  0 10 20 30 40                                          0     20 40 60 80
+                                    CPU-hit request %                                        SSD-hit request %                         reduces TTFT by 1.29 to 2.19× within 3% of quality drop.
+                                                                                                                                       Compared to LRU-based eviction, E VIC P RESS reduces TTFT
+                                                                                                                                       by 1.22 to 1.56× with quality drop less than 3%. Finally,
+Figure 9: With Qwen2.5-14B-Instruct, E VIC P RESS has higher                                                                           compared to IMPRESS, E VIC P RESS reduces TTFT by 1.5
+fast device (CPU) hit request percentage while maintaining                                                                             to 5.2× without degrading generation quality, or improves
+higher quality.                                                                                                                        generation quality by 14.29% to 27.00% without increasing
+                                                                                                                                       TTFT.
+                                                                                                                                       TTFT and ITL v.s. QPS: Figure 8 shows the TTFT and ITL
+                                                                                                                                       under different query-per-second (QPS), at a quality score
+  answer and that of the answer based on uncompressed KV                                                                               target of 80% for Llama-3.1-8B-Instruct, Mistral-7B-Instruct-
+  cache using the MiniLM-L6-v2 model. The higher this score                                                                            v0.3 and Qwen2.5-14B-Instruct. At the same TTFT level,
+  is, the closer the generated answers is compared to answers                                                                          E VIC P RESS achieves 2.0 to 3.6× higher request processing
+  on uncompressed KV cache, which is the better.                                                                                       rate, compared to the best baseline. Similarly, at the same ITL
+• Time-to-first-token (TTFT) is the time between the arrival                                                                           level, E VIC P RESS achieves 1.9 to 3.4× higher QPS compared
+  of a query to the time of the first generated token. This                                                                            to the best baseline.
+  includes the delay to retrieve KV cache from the storage
+                                                                                                                                       E VIC P RESS’s improvement: E VIC P RESS outperforms dif-
+  devices, and the time to prefill the new queries.
+                                                                                                                                       ferent baselines for different reasons. First, compared to the
+• Inter-token-latency (ITL) is the average delay for generating                                                                        baselines that apply same compression methods and ratios on
+  consecutive tokens. ITL reflects the encoding throughput,                                                                            all contexts, E VIC P RESS is better as the context sensitivity
+  and increases when the inference engine has more running                                                                             difference is considered and eviction-compression configu-
+  requests.                                                                                                                            ration is adjusted for different contexts. Secondly, compared
+• End-to-end latency is the time between when the request                                                                              to LRU-based eviction, which evicts all contexts that can-
+  comes in and when the last token is received.                                                                                        not fit on the CPU DRAM to lower tier storage, E VIC P RESS
+
+
+                                                                                                                                  9
+                         Difference (with without periodic update)              6.3    Microbenchmarks
+                0.13
+
+
+Quality score
+                                                                                The effect of periodic update: Figure 10 evaluates our
+                0.09                                                            periodic-profiling mechanism (§4.3) using real timestamps
+                                                                                from the Azure inference trace [46]. As Azure inference
+                0.05                                                            trace does not include the concrete content of the request,
+                                                                                we use the request we generated (described in §4.3) instead.
+                  4
+
+Latency (s)
+                                                                                E VIC P RESS then performs profiling when the discrepancy
+                  2                                                             between the profiled quality and the predicted quality of the
+                                                                                query decoded with the stored KV cache exceeds 0.3.
+                  0
+                                                                                   We illustrate the time series of using periodic profiling
+                   2.5           3.0          3.5            4.0     4.5        versus not in Figure 10:
+                                       Minutes since start
+                                                                                • The figure above shows how the quality gain of using peri-
+                                                                                   odic profiling versus not evolves over time. From this figure,
+Figure 10: Quality and latency over time under Azure work-                         we can see that the quality gain increases gradually over
+load [41,46,58] with only one training query per context. Red                      time and eventually saturates at around 11%, because peri-
+vertical lines denote periodic profiling events with Llama-3.1-                    odic profiling allows E VIC P RESS to use up-to-date profile
+8B-Instruct. Frequent profiling at the beginning and around                        to make near-optimal compression decision, while the pro-
+3.75–4 minutes introduces brief latency spikes, but latency                        file of not doing periodic update gradually gets outdated and
+quickly returns to baseline. As profiling corrects stale com-                      result in lower accuracy under the same storage resource
+pression decisions, model quality steadily improves through-                       budget.
+out execution.                                                                  • The figure below shows how the end-to-end latency of
+                                                                                   requests of E VIC P RESS vaaries over time. We can see that,
+                                                                                   E VIC P RESS has higher end-to-end latency in the periodic
+                                                                                   profiling intervals (the red intervals) in average, because
+is better since some low-sensitivity contexts can be largely                       periodic profiling requires GPU resources and slow down
+compressed without being evicted to slow storage. Thirdly,                         the execution of existing requests. That said, the quality
+compared to full prefill which incurs significant amount of                        improvement brought by periodic profiling (about 10%)
+GPU computation, E VIC P RESS is better since the prefill com-                     still justifies its cost.
+putation is skipped. Finally, compared with IMPRESS, which                      Different context needs different eviction-compression
+splits KV cache into chunks, and not only loads important                       configurations: Figure 11 visualizes the distribution of se-
+tokens, but also unimportant tokens in each chunk to fast de-                   lected eviction-compression configurations. We observe that
+vice, E VIC P RESS only puts KV cache that maximize the total                   the system indeed makes use of a diverse set of compression
+utility function scores on fast device.                                         configurations, indicating that a large search space is not only
+                                                                                necessary but actively exploited. We highlight two insights:
+   In summary, E VIC P RESS achieves much higher cache hit                      • KV caches on disk actually requires higher compression
+rate in CPU DRAM, as shown in Figure 9, compared to base-                         ratio in average compared to KV caches on CPU. This
+lines that apply the same compression methods and LRU-                            is because KV caches on disk are slower to read, which
+based eviction on all contexts and IMPRESS. On the other                          requires E VIC P RESS to further compress the KV caches to
+hand, as shown in the right hand side of the figure, the cache                    reduce their loading time.
+hit rate on local SSD for E VIC P RESS is lower than other base-
+                                                                                • We note that, though keydiff generally outperforms snapkv
+lines, which illustrates that most of the cache hit tokens reside
+                                                                                  (which in turn outperforms knorm), yet a non-negligible
+on CPU DRAM, providing much faster loading delay than
+                                                                                  portion of KV caches still adopts snapkv due to context-
+baselines.
+                                                                                  specific benefits.
+   We acknowledge that the improvement of E VIC P RESS de-                      Improvements across heterogeneous contexts: Figure 12 il-
+pends on the sizes of KV cache for different LLMs. When the                     lustrates the TTFT — Average score trade-off of E VIC P RESS
+KV cache is small, DRAM can hold most tokens, leaving little                    and baselines across different subtasks of longbench dataset.
+room for improvement. For example, the MoE model Qwen3-                         We draw two conclusions:
+30B-A3B-Instruct-2507 has a small KV cache (0.0915 GB                           • E VIC P RESS has higher improvement on tasks that corre-
+per 1K tokens), while a smaller dense model such as Llama-                        sponds to shorter contexts (e.g., multi_news and qasper).
+3.1-8B-Instruct has 0.12GB KV cache per 1K tokens, so even                        This is because, in order to achieve higher CPU cache hit
+with a conservative compression ratio, most of the KV cache                       rate, E VIC P RESS puts shorter contexts in CPU instead of
+can be stored in CPU DRAM, leading to low TTFT.                                   longer ones, so that the CPU can fit into the KV caches of
+
+
+                                                                           10
+                                CPU                          SSD                termine important tokens from the KV cache, and evicts non-
+                                                                                important ones to lower-tier storage [5,50]. However, this line
+                                                                                of work only applies different eviction schemes on KV cache,
+
+# KV cache under
+                    20                          40                              not even considering combining with compression schemes
+                                                                                to achieve higher cache hit rates.
+
+ each comp. rate
+                    10                          20                              KV cache compression: To achieve higher cache hit rate,
+                                                                                many works have explored orthogonal methods to compress
+                                                                                KV caches to reduce memory footprint. Token dropping
+                     0                           0
+                         0.0 0.1 0.2 0.3 0.4         0.0 0.2 0.4 0.6 0.8        methods drop less important tokens from the KV cache,
+                                                                                either based on attention scores or learned importance sig-
+                                               200
+                                                                                nals [6, 38, 59]. Quantization methods reduce the size of KV
+
+# KV cache under
+                    20                         150                              cache by using fewer bits to represent each KV cache element,
+                                                                                including adaptive quantization where different layers are ap-
+
+
+each comp. method
+                                               100                              plied with different levels of quantization [17,31] and uniform
+                    10
+                                                50                              quantization [32]. Similarly, this line of work only consid-
+                                                                                ers the possibility of compression, without combining it with
+                     0                           0                              eviction, even when the quality drop is high. Another line
+                     co
+                     ke mp
+                       yd
+                    sn f  if.                      ke
+                                                  sn
+                                                     ydiff                      of work applies different levels of compression considering
+                      ap  kv                        ap kv
+            no
+                     kn orm                     no co mp .                      the error sensitivity of each context [7, 51]. However, it does
+                                                                                not consider per-context sensitivity difference to the problem
+                                                                                of joint optimization between eviction and compression as
+Figure 11: Distribution of selected compression methods and                     E VIC P RESS does.
+compression rates across CPU and SSD storage tiers under                        Faster LLM serving: Another complementary line of work
+α = 1 with Mistral-7B-Instruct-v0.3. E VIC P RESS actively                      speeds up LLM serving by better scheduling to reduce the
+uses a broad combination of configurations, validating the                      bubbles across different inference stages (e.g., prefill, decode
+need for a large search space.                                                  or tool-calling) [1, 8]; prefill-decode disaggregation to place
+                                                                                the prefill and decode phases to different GPUs to reduce
+  more requests.                                                                SLO violation rate [36, 61]; speculative decoding approaches
+• E VIC P RESS improves the performance for 11 out of 12                        which proposes using a smaller, faster draft model to propose
+  tasks. The only exception is on musique, where E VIC -                        a sequence of future tokens, and using the larger target model
+  P RESS performs slightly worse than the keydiff with LRU                      to verify the tokens in parallel [25, 33]; and chunked-prefill to
+  eviction baseline.                                                            enable piggy-backed decoding and reduce memory consump-
+                                                                                tion of prefill [1]. This line of work is complementary and
+                                                                                orthogonal to E VIC P RESS, and can be combined with E VIC -
+7           Related Work
+                                                                                P RESS to further increase the efficiency of LLM inference.
+KV cache reuse and eviction systems: Storing and reusing                        Other KV cache related optimizations: There are a lot of
+KV cache across multiple requests has been a critical fo-                       other works that optimize KV cache in LLM inference, includ-
+cus in the design of high-performance LLM serving sys-                          ing non-prefix KV cache sharing with approximation [14, 54],
+tems. This includes paged memory management in GPU,                             cross-LLM KV cache reusing with partial layer recompu-
+such as vLLM [24] and SGLang [60]. However, this line of                        tation [30], request routing that is aware of KV cache lo-
+work suffers from low cache hit rate when the request ar-                       cation [43], improving paged attention for multi-modality
+rival rate is high and the number of concurrent users is large,                 models with different shapes of KV cache [44], and managing
+since GPU memory only has limited space (40 to 80 GB                            KV cache for sparse-attention models [4]. While this line of
+for A100 or H100 GPUs). Thus, more work is proposed to                          work also makes KV cache in LLM inference more practical
+evict KV cache that cannot fit in GPU memory to lower-tier                      in multiple use cases, E VIC P RESS is complementary to them
+storage devices, such as CPU DRAM [26, 29, 52, 60], local                       as they jointly optimize eviction and compression.
+disks [22,29,56], and even remote disks [22,29]. For example,
+LMCache [21, 29] reuses splits each KV cache into multiple                      8   Limitations and future work
+chunks, and optimizes the loading speed from CPU/disks to
+GPU memory with high-performance CUDA kernels; Moon-                            Deployment scope and assumptions: E VIC P RESS targets a
+cake [37] and InstInfer [34] optimizes the loading bandwidths                   common and challenging deployment scenario with limited
+across different GPU clusters and performance of prefill-                       GPU and CPU memory and a multi-tier storage hierarchy,
+decode disaggregation; IMPRESS applies fine-grained token-                      where KV caches routinely contend for capacity, and eviction
+level eviction, which uses a subset of attention heads to de-                   or compression decisions concretely affect end-to-end latency
+
+
+                                                                           11
+                                  keydiff+LRU-based eviction          knorm+LRU-based eviction          snapkv+LRU-based eviction
+                                  prefill                             ours
+                                    2wikimqa                   gov_report                 hotpotqa                  multi_news
+                         1.0                         1.0                       1.0                         1.0
+
+
+         Average score
+                         0.8                         0.8                       0.8                         0.8
+                         0.6                         0.6                       0.6                         0.6
+                         0.4                         0.4                       0.4                         0.4
+                         0.2                         0.2                       0.2                         0.2
+                         0.0                         0.0                       0.0                         0.0
+                            0.0 0.1 0.2                 0.0        0.2            0.0      0.2      0.4       0.0          0.1
+                                 multifieldqa_en                musique                 narrativeqa                    qasper
+                         1.0                         1.0                       1.0                         1.0
+
+
+         Average score
+                         0.8                         0.8                       0.8                         0.8
+                         0.6                         0.6                       0.6                         0.6
+                         0.4                         0.4                       0.4                         0.4
+                         0.2                         0.2                       0.2                         0.2
+                         0.0                         0.0                       0.0                         0.0
+                            0.0 0.1 0.2                 0.0 0.2 0.4               0.0      0.5      1.0       0.0      0.1     0.2
+                                     qmsum                      samsum                       trec                     triviaqa
+                         1.0                         1.0                       1.0                         1.0
+
+
+         Average score
+                         0.8                         0.8                       0.8                         0.8
+                         0.6                         0.6                       0.6                         0.6
+                         0.4                         0.4                       0.4                         0.4
+                         0.2                         0.2                       0.2                         0.2
+                         0.0                         0.0                       0.0                         0.0
+                            0.0       0.2      0.4      0.0         0.2           0.0 0.1 0.2                 0.0        0.2       0.4
+                                Average TTFT (s)            Average TTFT (s)          Average TTFT (s)            Average TTFT (s)
+Figure 12: E VIC P RESS’s consistently improves TTFT-quality trade-off on different datasets. Among these datasets, E VIC P RESS
+has better improvement on shorter contexts (such as multi_news and qasper).
+
+and quality. In settings with abundant DRAM (e.g., models                         ods from three methods that drop important tokens from KV
+with small KV cache size or workloads where all KV caches                         cache to shrink its memory footprint. E VIC P RESS can be
+can be kept in fast memory), the advantage of sophisticated                       easily extended to choose from KV cache quantization meth-
+joint optimization over simpler policies naturally diminishes.                    ods [16, 17, 32]. Similarly, we can build a profiling configura-
+Moreover, when the loading bandwidths for fast and slow                           tion pool that combines both token dropping and quantization,
+storage devices are similar, E VIC P RESS’s benefits of joint                     and adapts the fraction of tokens to be dropped and the num-
+optimization will decrease. Our prototype is evaluated on a                       ber of bits used to represent each KV element.
+single-node GPU setup. Extending E VIC P RESS to multi-node
+deployments, cross-GPU cache sharing, highly multi-tenant
+environments with strict isolation requirements, and alterna-                     9    Conclusion
+tive serving systems and storage hierarchies is an important                      We present CacheServe, a caching system for large language
+direction for future work.                                                        model inference workload that co-designs compression and
+Adapting to changing loading bandwidth: E VIC P RESS                              eviction policies under hierarchical storage devices to achieve
+currently assumes that the bandwidth of each storage tier is                      better quality-delay tradeoff. CacheServe’s core innovation
+known and relatively stable over the time at which we profile                     lies in its capability to jointly exploit the benefit of both evic-
+and re-profile configurations. When the available bandwidth                       tion and compression, by defining a utility function and se-
+changes more rapidly than our re-profiling frequency or when                      lecting the compression-eviction that maximizes such utility.
+bandwidth fluctuations are strongly correlated with bursty                        We implement our system on top of production level LLM
+query arrivals, the precomputed utility function scores could                     serving engine (vLLM) and cache engine (LMCache). Our
+temporarily deviate from the true quality-latency trade-offs                      evaluations across diverse models and datasets demonstrate
+and lead to suboptimal decisions. As part of our future work,                     that CacheServe significantly reduces average Time-To-First-
+we plan to extend E VIC P RESS to react more quickly to band-                     Token by 1.43 to 3.77× with equivalent quality as baselines
+width shifts, incorporate richer online telemetry, and co-design                  or improves quality by 13.58% to 55.40% at the same TTFT.
+bandwidth-aware profiling and scheduling policies.                                By designing our forward-compatible architecture for future
+Extending to a richer set of compression methods: In the                          KV cache compression and eviction techniques, E VIC P RESS
+evaluation section, E VIC P RESS selects compression meth-                        opens up a new dimension for LLM inference optimizations.
+
+
+                                                                             12
+References                                                                Adaptcache: Kv cache native storage hierarchy for low-
+                                                                          delay and high-quality language model serving, 2025.
+ [1] Amey Agrawal, Ashish Panwar, Jayashree Mohan,
+     Nipun Kwatra, Bhargav S. Gulavani, and Ramachandran             [12] Harsha R Gaikwad and Arvind W Kiwelekar. A genera-
+     Ramjee. Sarathi: Efficient llm inference by piggyback-               tive ai-based assistant to evaluate short and long answer
+     ing decodes with chunked prefills, 2023.                             questions. SN Computer Science, 5(5):633, 2024.
+
+ [2] Negar Arabzadeh, Amin Bigdeli, and Charles L. A.                [13] Bin Gao, Zhuomin He, Puru Sharma, Qingxuan Kang,
+     Clarke. Adapting standard retrieval benchmarks to eval-              Djordje Jevdjic, Junbo Deng, Xingkun Yang, Zhou Yu,
+     uate generated answers, 2024.                                        and Pengfei Zuo. Attentionstore: Cost-effective atten-
+                                                                          tion reuse across multi-turn conversations in large lan-
+ [3] Yushi Bai, Xin Lv, Jiajie Zhang, Hongchang Lyu,                      guage model serving. arXiv preprint arXiv:2403.19708,
+     Jiankai Tang, Zhidian Huang, Zhengxiao Du, Xiao Liu,                 52:20–38, 2024.
+     Aohan Zeng, Lei Hou, Yuxiao Dong, Jie Tang, and
+     Juanzi Li. Longbench: A bilingual, multitask bench-             [14] In Gim, Guojun Chen, Seung seob Lee, Nikhil Sarda,
+     mark for long context understanding. arXiv preprint                  Anurag Khandelwal, and Lin Zhong. Prompt cache:
+     arXiv:2308.14508, 2023.                                              Modular attention reuse for low-latency inference, 2023.
+ [4] Ziyi Cao, Qingyi Si, Jingbin Zhang, and Bingquan Liu.           [15] Zhuohan Gu, Jiayi Yao, Kuntai Du, and Junchen Jiang.
+     Sparse attention across multiple-context kv cache, 2025.             Llmsteer: Improving long-context llm inference by steer-
+                                                                          ing attention on reused contexts, 2024.
+ [5] Weijian Chen, Shuibing He, Haoyang Qu, Ruidong
+     Zhang, Siling Yang, Ping Chen, Yi Zheng, Baoxing                [16] Yefei He, Luoming Zhang, Weijia Wu, Jing Liu, Hong
+     Huai, and Gang Chen. {IMPRESS}: An {Importance-                      Zhou, and Bohan Zhuang. Zipcache: Accurate and effi-
+     Informed}{Multi-Tier} prefix {KV} storage system for                 cient kv cache quantization with salient token identifica-
+     large language model inference. In 23rd USENIX Con-                  tion, 2024.
+     ference on File and Storage Technologies (FAST 25),
+     pages 187–201, 2025.                                            [17] Coleman Hooper, Sehoon Kim, Hiva Mohammadzadeh,
+                                                                          Michael W Mahoney, Yakun Sophia Shao, Kurt Keutzer,
+ [6] Yilong Chen, Guoxia Wang, Junyuan Shang, Shiyao Cui,
+                                                                          and Amir Gholami. Kvquant: Towards 10 million con-
+     Zhenyu Zhang, Tingwen Liu, Shuohuan Wang, Yu Sun,
+                                                                          text length llm inference with kv cache quantization.
+     Dianhai Yu, and Hua Wu. Nacl: A general and effective
+                                                                          arXiv preprint arXiv:2401.18079, 2024.
+     kv cache eviction framework for llms at inference time,
+     2024.                                                           [18] Bo Jiang, Taolue Yang, Youyuan Liu, Chengming Zhang,
+                                                                          Xubin He, and Sian Jin. Kvcomp: A high-performance,
+ [7] Wen Cheng, Shichen Dong, Jiayu Qin, and Wei Wang.
+                                                                          llm-aware, lossy compression framework for kv cache,
+     Qaq: Quality adaptive quantization for llm kv cache. In
+                                                                          2025.
+     Proceedings of the IEEE/CVF International Conference
+     on Computer Vision, pages 2542–2550, 2025.                      [19] Huiqiang Jiang, Qianhui Wu, Chin-Yew Lin, Yuqing
+ [8] Weihao Cui, Yukang Chen, Han Zhao, Ziyi Xu, Quan                     Yang, and Lili Qiu. Llmlingua: Compressing prompts
+     Chen, Xusheng Chen, Yangjie Zhou, Shixuan Sun, and                   for accelerated inference of large language models.
+     Minyi Guo. Optimizing slo-oriented llm serving with                  arXiv preprint arXiv:2310.05736, 2023.
+     pd-multiplexing, 2025.
+                                                                     [20] Huiqiang Jiang, Qianhui Wu, Xufang Luo, Dongsheng
+ [9] Alessio Devoto, Yu Zhao, Simone Scardapane, and                      Li, Chin-Yew Lin, Yuqing Yang, and Lili Qiu. Longllm-
+     Pasquale Minervini. A simple and effective l2 norm-                  lingua: Accelerating and enhancing llms in long context
+     based strategy for kv cache compression, 2024.                       scenarios via prompt compression, 2023.
+
+[10] Sabri Eyuboglu, Ryan Ehrlich, Simran Arora, Neel                [21] Junchen Jiang, Yuhan Liu, Zhuohan Gu, Qizheng Zhang,
+     Guha, Dylan Zinsley, Emily Liu, Will Tennien, Atri                   Chen Wang, Yue Zhu, Ruoyu Qin, Yuwei An, Xiangfeng
+     Rudra, James Zou, Azalia Mirhoseini, and Christopher                 Zhu, Kuntai Du, et al. Networking for stateful llm infer-
+     Re. Cartridges: Lightweight and general-purpose long                 ence. In Conference of the ACM Special Interest Group
+     context representations via self-study, 2025.                        on Data Communication, 2025.
+
+[11] Shaoting Feng, Hanchen Li, Kuntai Du, Zhuohan Gu,               [22] Shuowei Jin, Xueshen Liu, Qingzhao Zhang, and Z. Mor-
+     Yuhan Liu, Jiayi Yao, Siddhant Ray, Samuel Shen, Yihua               ley Mao. Compute or load kv cache? why not both?,
+     Cheng, Ganesh Ananthanarayanan, and Junchen Jiang.                   2025.
+
+
+                                                                13
+[23] Jang-Hyun Kim, Jinuk Kim, Sangwoo Kwon, Jae W.                         Jia. SpecInfer: Accelerating Generative LLM Serving
+     Lee, Sangdoo Yun, and Hyun Oh Song. Kvzip: Query-                      with Speculative Inference and Token Tree Verification.
+     agnostic kv cache compression with context reconstruc-                 arXiv preprint arXiv:2305.09781, 2023.
+     tion, 2025.
+                                                                       [34] Xiurui Pan, Endian Li, Qiao Li, Shengwen Liang,
+[24] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying                           Yizhou Shan, Ke Zhou, Yingwei Luo, Xiaolin Wang,
+     Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonza-                    and Jie Zhang. Instinfer: In-storage attention offloading
+     lez, Hao Zhang, and Ion Stoica. Efficient memory man-                  for cost-effective long-context llm inference, 2024.
+     agement for large language model serving with pagedat-
+     tention, 2023.                                                    [35] Junyoung Park, Dalton Jones, Matthew J Morse,
+                                                                            Raghavv Goel, Mingu Lee, and Chris Lott. Keydiff: Key
+[25] Yaniv Leviathan, Matan Kalman, and Y. Matias. Fast In-                 similarity-based kv cache eviction for long-context llm
+     ference from Transformers via Speculative Decoding. In                 inference in resource-constrained environments, 2025.
+     International Conference on Machine Learning, 2022.
+                                                                       [36] Pratyush Patel, Esha Choukse, Chaojie Zhang, Aashaka
+[26] Hanchen Li, Qiuyang Mang, Runyuan He, Qizheng                          Shah, Íñigo Goiri, Saeed Maleki, and Ricardo Bianchini.
+     Zhang, Huanzhi Mao, Xiaokun Chen, Alvin Cheung,                        Splitwise: Efficient generative llm inference using phase
+     Joseph Gonzalez, and Ion Stoica. Continuum: Efficient                  splitting, 2024.
+     and robust multi-turn llm agent scheduling with kv cache
+     time-to-live, 2025.                                               [37] Ruoyu Qin, Zheming Li, Weiran He, Mingxing Zhang,
+                                                                            Yongwei Wu, Weimin Zheng, and Xinran Xu. Moon-
+[27] Yuhong Li, Yingbing Huang, Bowen Yang, Bharat                          cake: A kvcache-centric disaggregated architecture for
+     Venkitesh, Acyr Locatelli, Hanchen Ye, Tianle Cai,                     llm serving, 2025.
+     Patrick Lewis, and Deming Chen. Snapkv: Llm knows
+     what you are looking for before generation, 2024.                 [38] Ziran Qin, Yuchen Cao, Mingbao Lin, Wen Hu, Shixuan
+                                                                            Fan, Ke Cheng, Weiyao Lin, and Jianguo Li. Cake:
+[28] Akide Liu, Jing Liu, Zizheng Pan, Yefei He, Gholamreza                 Cascading and adaptive kv cache eviction with layer
+     Haffari, and Bohan Zhuang. Minicache: Kv cache com-                    preferences, 2025.
+     pression in depth dimension for large language models,
+     2024.                                                             [39] Siddhant Ray, Rui Pan, Zhuohan Gu, Kuntai Du, Shaot-
+                                                                            ing Feng, Ganesh Ananthanarayanan, Ravi Netravali,
+[29] Yuhan Liu, Yihua Cheng, Jiayi Yao, Yuwei An, Xiaokun                   and Junchen Jiang. Metis: Fast quality-aware rag sys-
+     Chen, Shaoting Feng, Yuyang Huang, Samuel Shen, Rui                    tems with configuration adaptation. In Proceedings of
+     Zhang, Kuntai Du, and Junchen Jiang. Lmcache: An ef-                   the ACM SIGOPS 31st Symposium on Operating Sys-
+     ficient kv cache layer for enterprise-scale llm inference,             tems Principles, pages 606–622, 2025.
+     2025.
+                                                                       [40] Nils Reimers and Iryna Gurevych. Sentence-bert: Sen-
+[30] Yuhan Liu, Yuyang Huang, Jiayi Yao, Shaoting Feng,                     tence embeddings using siamese bert-networks. In Pro-
+     Zhuohan Gu, Kuntai Du, Hanchen Li, Yihua Cheng,                        ceedings of the 2019 Conference on Empirical Methods
+     Junchen Jiang, Shan Lu, Madan Musuvathi, and Esha                      in Natural Language Processing. Association for Com-
+     Choukse. Droidspeak: Kv cache sharing for cross-llm                    putational Linguistics, 11 2019.
+     communication and multi-llm serving, 2025.
+                                                                       [41] Mohammad Shahrad, Rodrigo Fonseca, Inigo Goiri, Go-
+[31] Yuhan Liu, Hanchen Li, Kuntai Du, Jiayi Yao, Yihua                     har Chaudhry, Paul Batum, Jason Cooke, Eduardo Lau-
+     Cheng, Yuyang Huang, Shan Lu, Michael Maire, Henry                     reano, Colby Tresness, Mark Russinovich, and Ricardo
+     Hoffmann, Ari Holtzman, et al. Cachegen: Fast context                  Bianchini. Serverless in the wild: Characterizing and
+     loading for language model applications. arXiv preprint                optimizing the serverless workload at a large cloud
+     arXiv:2310.07240, 2023.                                                provider. In 2020 USENIX annual technical conference
+                                                                            (USENIX ATC 20), pages 205–218, 2020.
+[32] Zirui Liu, Jiayi Yuan, Hongye Jin, Shaochen Zhong,
+     Zhaozhuo Xu, Vladimir Braverman, Beidi Chen, and                  [42] Woomin Song, Seunghyuk Oh, Sangwoo Mo, Jaehyung
+     Xia Hu. Kivi: A tuning-free asymmetric 2bit quanti-                    Kim, Sukmin Yun, Jung-Woo Ha, and Jinwoo Shin. Hi-
+     zation for kv cache. arXiv preprint arXiv:2402.02750,                  erarchical context merging: Better long context under-
+     2024.                                                                  standing for pre-trained llms, 2024.
+[33] Xupeng Miao, Gabriele Oliaro, Zhihao Zhang, Xinhao                [43] Vikranth Srivatsa, Zijian He, Reyna Abhyankar, Dong-
+     Cheng, Zeyu Wang, Rae Ying Yee Wong, Zhuoming                          ming Li, and Yiying Zhang. Preble: Efficient distributed
+     Chen, Daiyaan Arfeen, Reyna Abhyankar, and Zhihao                      prompt scheduling for llm serving, 2024.
+
+
+                                                                  14
+[44] Dezhan Tu, Danylo Vashchilenko, Yuzhe Lu, and Pan-             [54] Jiayi Yao, Hanchen Li, Yuhan Liu, Siddhant Ray, Yi-
+     pan Xu. Vl-cache: Sparsity and modality-aware kv                    hua Cheng, Qizheng Zhang, Kuntai Du, Shan Lu, and
+     cache compression for vision-language model inference               Junchen Jiang. Cacheblend: Fast large language model
+     acceleration, 2024.                                                 serving for rag with cached knowledge fusion, 2025.
+
+[45] Zhongwei Wan, Ziang Wu, Che Liu, Jinfa Huang, Zhi-             [55] Bohan Yu and Yekun Chai. Evolkv: Evolutionary kv
+     hong Zhu, Peng Jin, Longyue Wang, and Li Yuan. Look-                cache compression for llm inference, 2025.
+     m: Look-once optimization in kv cache for efficient
+     multimodal long-context inference, 2024.                       [56] Huawei Zhang, Chunwei Xia, and Zheng Wang.
+                                                                         Kvswap: Disk-aware kv cache offloading for long-
+[46] Yuxin Wang, Yuhan Chen, Zeyu Li, Xueze Kang, Yuchu                  context on-device inference, 2025.
+     Fang, Yeju Zhou, Yang Zheng, Zhenheng Tang, Xin He,
+     Rui Guo, Xin Wang, Qiang Wang, Amelie Chi Zhou,                [57] Xinrong Zhang, Yingfa Chen, Shengding Hu, Zihang
+     and Xiaowen Chu. Burstgpt: A real-world workload                    Xu, Junhao Chen, Moo Khai Hao, Xu Han, Zhen Leng
+     dataset to optimize llm serving systems, 2025.                      Thai, Shuo Wang, Zhiyuan Liu, and Maosong Sun.
+                                                                         ∞bench: Extending long context evaluation beyond
+[47] Jerry Wei, Da Huang, Yifeng Lu, Denny Zhou, and                     100k tokens, 2024.
+     Quoc V. Le. Simple synthetic data reduces sycophancy
+     in large language models, 2024.                                [58] Yanqi Zhang, Íñigo Goiri, Gohar Irfan Chaudhry, Ro-
+                                                                         drigo Fonseca, Sameh Elnikety, Christina Delimitrou,
+[48] Jerry Wei, Chengrun Yang, Xinying Song, Yifeng Lu,                  and Ricardo Bianchini. Faster and cheaper serverless
+     Nathan Hu, Jie Huang, Dustin Tran, Daiyi Peng, Ruibo                computing on harvested resources. In Proceedings of the
+     Liu, Da Huang, Cosmo Du, and Quoc V. Le. Long-form                  ACM SIGOPS 28th Symposium on Operating Systems
+     factuality in large language models, 2024.                          Principles, pages 724–739, 2021.
+[49] Colin White, Samuel Dooley, Manley Roberts, Arka Pal,          [59] Zhenyu Zhang, Ying Sheng, Tianyi Zhou, Tianlong
+     Ben Feuer, Siddhartha Jain, Ravid Shwartz-Ziv, Neel                 Chen, Lianmin Zheng, Ruisi Cai, Zhao Song, Yuandong
+     Jain, Khalid Saifullah, Sreemanti Dey, Shubh-Agrawal,               Tian, Christopher Ré, Clark Barrett, et al. H2o: Heavy-
+     Sandeep Singh Sandha, Siddartha Naidu, Chinmay                      hitter oracle for efficient generative inference of large
+     Hegde, Yann LeCun, Tom Goldstein, Willie Neiswanger,                language models. Advances in Neural Information Pro-
+     and Micah Goldblum. Livebench: A challenging,                       cessing Systems, 36, 2024.
+     contamination-limited llm benchmark, 2025.
+                                                                    [60] Lianmin Zheng, Liangsheng Yin, Zhiqiang Xie, Jeff
+[50] Zhiqiang Xie, Ziyi Xu, Mark Zhao, Yuwei An,
+                                                                         Huang, Chuyue Sun, Cody Hao Yu, Shiyi Cao, Chris-
+     Vikram Sharma Mailthody, Scott Mahlke, Michael Gar-
+                                                                         tos Kozyrakis, Ion Stoica, Joseph E Gonzalez, et al.
+     land, and Christos Kozyrakis. Strata: Hierarchical con-
+                                                                         Efficiently programming large language models using
+     text caching for long context language model serving.
+                                                                         sglang. arXiv preprint arXiv:2312.07104, 2023.
+     arXiv preprint arXiv:2508.18572, 2025.
+                                                                    [61] Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu,
+[51] Jing Xiong, Jianghan Shen, Fanghua Ye, Chaofan Tao,
+                                                                         Yibo Zhu, Xuanzhe Liu, Xin Jin, and Hao Zhang. Dist-
+     Zhongwei Wan, Jianqiao Lu, Xun Wu, Chuanyang
+                                                                         serve: Disaggregating prefill and decoding for goodput-
+     Zheng, Zhijiang Guo, Min Yang, Lingpeng Kong, and
+                                                                         optimized large language model serving. arXiv preprint
+     Ngai Wong. Uncomp: Can matrix entropy uncover spar-
+                                                                         arXiv:2401.09670, 2024.
+     sity? – a compressor design from an uncertainty-aware
+     perspective, 2025.
+                                                                    [62] Xiabin Zhou, Wenbin Wang, Minyan Zeng, Jiaxian Guo,
+[52] Yi Xiong, Hao Wu, Changxu Shao, Ziqing Wang, Rui                    Xuebo Liu, Li Shen, Min Zhang, and Liang Ding. Dy-
+     Zhang, Yuhong Guo, Junping Zhao, Ke Zhang, and                      namickv: Task-aware adaptive kv cache compression
+     Zhenxuan Pan. Layerkv: Optimizing large language                    for long context llms, 2025.
+     model serving with layer-wise kv cache management,
+     2024.                                                          [63] Jianian Zhu, Hang Wu, Haojie Wang, Yinghui Li, Biao
+                                                                         Hou, Ruixuan Li, and Jidong Zhai. Fastcache: Opti-
+[53] Jingbo Yang, Bairu Hou, Wei Wei, Yujia Bao, and Shiyu               mizing multimodal llm serving through lightweight kv-
+     Chang. Kvlink: Accelerating large language models via               cache compression framework, 2025.
+     efficient kv cache reuse, 2025.
+
+
+                                                               15
+A   Pseudo Code for Algorithm
+
+
+Algorithm 1: Policy Optimizer
+ Input: Incoming KV Cache that needs to be stored i (size of
+     the kv cache li , quality function Qi (compression ratio)),
+     Storage queue T , Current Occupied size ST , Storage
+     memory size C
+ Output: List of operations on KV Cache: [( KV Cache i,
+     compression ratio ri , operation oi )]
+  1: ri ← arg max Qi (r)
+  2: T .append(i, ri )
+  3: L.append((i, ri , insert))
+  4: ST = ST + sizeo f (li ∗ ri )
+  5: while ST > C do
+  6:     j, r, o, ← KV Cache in T with the least utility drop
+        operation and the operation.
+  7:    if o == compress then
+  8:         S = ST − T j ∗ (r j − r)
+  9:    else if o == evict then
+ 10:         r←0
+ 11:         S = ST − (T j ∗ r j )
+ 12:    end if
+ 13:    L.append(( j, r, o))
+ 14: end while
+ 15: return L to executor.
+
+
+
+
+                                                              16
+

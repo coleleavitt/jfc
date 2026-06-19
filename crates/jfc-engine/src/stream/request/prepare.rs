@@ -1,0 +1,242 @@
+use std::sync::Arc;
+
+use crate::runtime::{StreamRequestMetadata, StreamRequestOverrides};
+use crate::tools;
+use jfc_provider::{
+    DEFAULT_MAX_OUTPUT_TOKENS, ModelId, ModelRequestPolicy, ModelRequestProfile,
+    ModelResolutionReason, ModelSpec, Provider, ProviderId, ProviderMessage, ResolvedModel,
+    StreamConvention, StreamOptions,
+};
+
+use super::PreparedStreamRequest;
+use super::budget::stream_context_budget;
+use super::project_context::append_project_context;
+use super::prompt_seed::{PromptSeed, build_prompt_seed};
+use super::runtime_prompt::{append_runtime_prompt_sections, append_turn_prompt_sections};
+use super::thinking::{enforce_thinking_budget_fits_max_tokens, requested_thinking_display};
+use super::tool_catalog::prepare_advertised_tools;
+use super::tools::anthropic_tool_choice_value;
+
+pub async fn prepare_stream_request(
+    provider: Arc<dyn Provider>,
+    messages: &[ProviderMessage],
+    model: &ModelId,
+    overrides: StreamRequestOverrides,
+) -> PreparedStreamRequest {
+    let PromptSeed {
+        mut system_prompt,
+        skills_chars,
+        dispatch_chars,
+        diagnostics_chars,
+    } = build_prompt_seed().await;
+    let mut overrides = overrides;
+    let recalled_memory_chars = append_project_context(
+        &mut system_prompt,
+        &mut overrides,
+        &provider,
+        messages,
+        model,
+    )
+    .await;
+    let runtime_prompt = append_runtime_prompt_sections(&mut system_prompt, &provider);
+    append_turn_prompt_sections(&mut system_prompt, &overrides, messages);
+
+    let provider_name = provider.name().to_owned();
+    let selected_model_info = provider
+        .available_models()
+        .into_iter()
+        .find(|info| info.id == *model);
+    let model_profile = ModelRequestProfile::from_provider_model(
+        &provider_name,
+        model.as_str(),
+        selected_model_info
+            .as_ref()
+            .and_then(|info| info.context_window_tokens),
+        selected_model_info
+            .as_ref()
+            .and_then(|info| info.max_output_tokens),
+    );
+    let thinking_mode = model_profile.thinking_mode();
+    tracing::debug!(
+        target: "jfc::stream::budget",
+        skills_chars,
+        dispatch_chars,
+        diagnostics_chars,
+        total_system_chars = system_prompt.len(),
+        estimated_tokens = system_prompt.len() / 4,
+        "system prompt budget breakdown"
+    );
+    tracing::info!(
+        target: "jfc::stream",
+        model = %model,
+        has_thinking_support = thinking_mode.has_thinking_support(),
+        supports_adaptive = thinking_mode.supports_adaptive(),
+        system_prompt_len = system_prompt.len(),
+        tool_count = tools::all_tool_defs().len(),
+        "preparing stream request"
+    );
+    let max_out = model_profile
+        .max_output_tokens()
+        .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS);
+    let pewter_owl_header = crate::feature_gates::pewter_owl_header_enabled(model.as_str(), false);
+    let pewter_owl_tool = crate::feature_gates::pewter_owl_tool_enabled(model.as_str(), false);
+    let pewter_owl_brief = crate::feature_gates::pewter_owl_brief_enabled(model.as_str(), false);
+    let effective_brief_mode = overrides.brief_mode || pewter_owl_brief;
+    if effective_brief_mode {
+        system_prompt.push_str(
+            "\n\n## Brief User Messages\n\nPlain assistant text is hidden from \
+             the main chat view. Put every substantive user-facing reply in \
+             `SendUserMessage`; use normal assistant text only for internal \
+             reasoning that can be omitted from the user's visible transcript.",
+        );
+    } else if pewter_owl_tool {
+        system_prompt.push_str(
+            "\n\n## Pewter Owl Messaging\n\n`SendUserMessage` is available for \
+             exact user-visible content between tool calls, such as generated \
+             snippets, specific values, and direct replies to mid-task user \
+             messages. Routine narration and final answers may remain normal \
+             assistant text.",
+        );
+    }
+    let tool_catalog = prepare_advertised_tools(
+        &mut system_prompt,
+        messages,
+        &overrides,
+        runtime_prompt.hcom_available,
+        runtime_prompt.local_advisor_model.is_none(),
+        effective_brief_mode,
+        pewter_owl_tool,
+    )
+    .await;
+    let advertised_tool_count = tool_catalog.advertised_tool_count;
+    let action_expected = tool_catalog.action_expected;
+    let advertised_tools = tool_catalog.tools;
+    let request_budget = stream_context_budget(
+        &system_prompt,
+        &advertised_tools,
+        recalled_memory_chars,
+        messages,
+    );
+    let request_raw_tokens = jfc_core::context_budget::raw_tokens(request_budget);
+    let request_effective_tokens = jfc_core::context_budget::effective_tokens(request_budget);
+    let request_overhead_tokens = request_budget
+        .system_prompt_tokens
+        .saturating_add(request_budget.tool_definition_tokens)
+        .saturating_add(request_budget.memory_tokens)
+        .saturating_add(request_budget.project_instructions_tokens)
+        .min(usize::MAX as u64) as usize;
+    tracing::debug!(
+        target: "jfc::stream::budget",
+        system_prompt_tokens = request_budget.system_prompt_tokens,
+        tool_definition_tokens = request_budget.tool_definition_tokens,
+        memory_tokens = request_budget.memory_tokens,
+        replay_message_tokens = request_budget.user_message_tokens,
+        raw_tokens = request_raw_tokens,
+        effective_tokens = request_effective_tokens,
+        advertised_tool_count,
+        "proof-backed stream context budget estimate"
+    );
+
+    let mut base = StreamOptions::new(model.clone())
+        .system(system_prompt)
+        .tools(advertised_tools)
+        .max_tokens(max_out);
+    if matches!(
+        provider.stream_convention(),
+        StreamConvention::AnthropicNative
+    ) && !base.tools.is_empty()
+    {
+        base.provider_options.insert(
+            "tool_choice".to_owned(),
+            anthropic_tool_choice_value(overrides.tool_choice),
+        );
+    }
+    if let Some(advisor_model) = runtime_prompt.server_advisor_model {
+        base = base.advisor_model(advisor_model);
+    }
+    if crate::effort::active_fast_mode() {
+        base = base.fast_mode(true);
+    }
+    if pewter_owl_header {
+        base = base.narration_summaries(true);
+    }
+    let thinking_display = requested_thinking_display(&overrides);
+    if !overrides.custom_betas.is_empty() {
+        base = base.custom_betas(overrides.custom_betas);
+    }
+    if overrides.fine_grained_tool_streaming
+        || std::env::var("JFC_FINE_GRAINED_TOOL_STREAMING")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
+    {
+        base = base.eager_input_streaming(true);
+    }
+    if overrides.strict_tool_schemas
+        || std::env::var("JFC_STRICT_TOOL_SCHEMAS")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
+    {
+        base = base.strict_tool_schemas(true);
+    }
+    if let Some(tokens) = overrides.task_budget {
+        base = base.task_budget(tokens);
+    }
+    // Forward the post-compaction savings hint so the API's context-management
+    // assist (context-hint-2026-04-09) knows how much we just freed. The body
+    // builder gates on a >=20k floor (matching cli.js's `2e4`), so a trivial
+    // compaction won't emit the hint.
+    base.context_hint_tokens_saved = overrides.context_hint_tokens_saved;
+
+    let mut opts = thinking_mode.apply_to(base);
+    opts = crate::exploration::apply_to_stream_options(
+        opts,
+        &model_profile,
+        provider.name(),
+        provider.stream_convention(),
+    );
+    opts = model_profile.clamp_options(opts);
+    // Log the resolved request params after per-model clamping so every spawn's
+    // actual reasoning_effort, max_tokens, and thinking mode are observable.
+    // Critical for experiments comparing model tiers / effort levels — the
+    // post-clamp values are what the model actually sees, not the input strings.
+    tracing::debug!(
+        target: "jfc::stream",
+        model = %model,
+        reasoning_effort = ?opts.reasoning_effort,
+        max_tokens = opts.max_tokens,
+        adaptive_thinking = opts.adaptive_thinking,
+        thinking_budget = ?opts.thinking_budget,
+        "resolved request after clamp_options"
+    );
+    if let Some(max) = overrides.max_thinking_tokens
+        && let Some(budget) = opts.thinking_budget.as_mut()
+    {
+        *budget = (*budget).min(max);
+    }
+    enforce_thinking_budget_fits_max_tokens(&mut opts);
+    if opts.adaptive_thinking || opts.thinking_budget.is_some() {
+        let display = thinking_display.unwrap_or_else(|| "summarized".into());
+        opts = opts.thinking_display(display);
+        // Request server-authoritative thinking token estimates so the spinner
+        // can show a live thinking-token chip. Only meaningful when thinking is
+        // active; the API otherwise streams thinking_delta without estimates.
+        opts = opts.thinking_token_count(true);
+    }
+
+    PreparedStreamRequest {
+        opts,
+        system_prompt_tokens: request_overhead_tokens,
+        metadata: StreamRequestMetadata {
+            advertised_tool_count,
+            action_expected,
+            tool_choice: overrides.tool_choice,
+            resolved_model: Some(ResolvedModel::new(
+                ModelSpec::qualified(ProviderId::new(provider.name()), model.clone()),
+                ModelSpec::qualified(ProviderId::new(provider.name()), model.clone()),
+                ModelResolutionReason::Requested,
+                selected_model_info.as_ref(),
+            )),
+        },
+        recalled_memory_chars,
+    }
+}

@@ -8,17 +8,15 @@
 //! The structured `MessageView` path (rich tool blocks, reasoning collapse,
 //! etc.) is used when `bt.chat_messages` is non-empty.
 
-use ratatui::{
-    style::Style,
-    text::{Line, Span},
-};
+use ratatui::{style::Style, text::Line};
 
+use super::terminal_output;
 use crate::markdown;
 use crate::theme::Theme;
 
 /// Per-entry collapse threshold for the subagent task view. A single
 /// `BackgroundTask.messages[i]` longer than this (line count) renders as a
-/// 5-line preview + a muted "press o to expand" footer until the user toggles
+/// 5-line preview + a muted "ctrl+o to expand" footer until the user toggles
 /// it via `viewing_task_expanded`. Smaller than `LargeText::COLLAPSE_LINES`
 /// because subagent entries are *individual* turn outputs, not whole tool
 /// results — 80 lines is already a wall in a narrow drilled-in pane.
@@ -42,7 +40,7 @@ const TASK_VIEW_COLLAPSE_PREVIEW_LINES: usize = 5;
 /// pick up syntect highlighting.
 ///
 /// Long entries (>80 lines or >5 KB raw) collapse to a 5-line preview + a
-/// muted `… N more lines · press o to expand` row unless their index is in
+/// muted `… +N lines (ctrl+o to expand)` row unless their index is in
 /// `expanded`. Pure function so tests can assert behavior without standing
 /// up a `Frame`/`Buffer`.
 ///
@@ -81,10 +79,11 @@ pub fn task_view_body_lines(
             let mut preview_lines = markdown::to_lines(&preview, theme, inner_width);
             out.append(&mut preview_lines);
             let hidden = line_count.saturating_sub(TASK_VIEW_COLLAPSE_PREVIEW_LINES);
-            out.push(Line::from(Span::styled(
-                format!("… {hidden} more lines · press o to expand"),
+            out.push(terminal_output::expand_hint_line(
+                hidden,
+                "line",
                 Style::default().fg(theme.text_muted),
-            )));
+            ));
         } else {
             let mut lines = markdown::to_lines(raw, theme, inner_width);
             out.append(&mut lines);

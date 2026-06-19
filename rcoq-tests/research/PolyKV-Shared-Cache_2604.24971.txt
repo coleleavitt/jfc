@@ -1,0 +1,539 @@
+                                         PolyKV: A Shared Asymmetrically-Compressed KV
+                                                            Cache Pool
+                                                  for Multi-Agent LLM Inference
+                                                                          Ishan Patel1 and Ishan Joshi2
+                                                                             1
+                                                                                 Independent Researcher
+                                                                             2
+                                                                                 Independent Researcher
+
+
+
+
+arXiv:2604.24971v1 [cs.LG] 27 Apr 2026
+                                                                                      April 2026
+                                                                            DOI: 10.5281/zenodo.19686729
+
+
+
+                                                                                       Abstract
+
+                                                  We present PolyKV, a system in which multiple concurrent inference agents share
+                                              a single, asymmetrically-compressed KV cache pool. Rather than allocating a separate
+                                              KV cache per agent—the standard paradigm—PolyKV writes a compressed cache once
+                                              and injects it into N independent agent contexts via HuggingFace DynamicCache objects.
+                                              Compression is asymmetric: Keys are quantized at int8 (q8_0) to preserve softmax stability,
+                                              while Values are compressed using TurboQuant MSE—a Fast Walsh-Hadamard Transform
+                                              (FWHT) rotation followed by 3-bit Lloyd-Max quantization with centroids tuned to N (0, 1).
+                                                  We evaluate across two model scales (SmolLM2-1.7B-Instruct and Llama-3-8B-Instruct),
+                                              three context lengths (600–7,194 tokens), and up to 15 concurrent agents. PolyKV achieves
+                                              a stable 2.91× compression ratio across all configurations. On Llama-3-8B with 15 agents
+                                              sharing a 4K-token context, PolyKV reduces KV cache memory from 19.8 GB to 0.45 GB—a
+                                              97.7% reduction—while maintaining only +0.57% perplexity degradation and a mean
+                                              BERTScore F1 of 0.928. PPL delta does not grow with agent count and improves as
+                                              context length increases, inverting to −0.26% at 1,851 coherent tokens and dropping to
+                                              +0.57% at 7,194 tokens. This supports a hypothesis that TurboQuant FWHT noise acts as
+                                              implicit regularization on redundant coherent mid-document tokens. To our knowledge, no
+                                              prior work combines a single shared, lossy-compressed KV pool with multi-reader concurrent
+                                              agent access.
+
+                                         Keywords: KV cache compression, multi-agent LLM inference, TurboQuant, asymmetric
+                                         quantization, FWHT, shared memory, transformer inference, WikiText-2, Llama-3, BERTScore.
+
+
+                                         1    Introduction
+                                         The KV cache is the dominant memory bottleneck in transformer-based LLM inference. As
+                                         context length and model size grow, so does the memory required to store Key and Value tensors
+                                         for each attention head and layer. This scaling is particularly acute in multi-agent inference
+                                         systems, where N agents processing the same shared document context would naively require N
+                                         independent full-precision KV caches—one per agent.
+                                             Two lines of prior work address this problem in isolation. KV cache compression ap-
+                                         proaches Liu et al. [2024], Hooper et al. [2024], Zhang et al. [2024], Google Research [2026]
+                                         reduce memory per cache by quantizing K and/or V tensors to lower bit-widths. Multi-agent
+                                         KV sharing approaches Pan et al. [2025], Ye et al. [2025], Kim et al. [2026] reduce redundancy
+                                         across agents by reusing common prefix caches. However, no prior system combines both: all
+
+                                                                                           1
+multi-agent sharing systems to date use full-precision caches, and all compression systems operate
+on per-request isolated caches.
+    PolyKV occupies this intersection. We introduce a SharedKVPool abstraction that: (1)
+computes a single compressed KV state over a shared document context; (2) injects it directly
+into N agents’ transformers.cache_utils.DynamicCache objects; and (3) allows each agent
+to generate independently without cache contention or per-agent copy overhead.
+
+Contributions. This paper makes the following contributions:
+
+• The shared-pool architecture. A write-once, read-many compressed KV memory model
+  for concurrent agents, not previously implemented or empirically evaluated in the literature.
+
+• Asymmetric TurboQuant MSE compression in a shared pool. q8_0 for Keys and
+  FWHT+Lloyd-Max 3-bit for Values, achieving 2.91× compression, stable across all tested
+  configurations.
+
+• Cross-model validation. Results confirmed on both SmolLM2-1.7B-Instruct and Llama-3-
+  8B-Instruct (32 layers, GQA), demonstrating architecture-agnostic stability.
+
+• Agent scaling to 15 concurrent readers. PPL delta and compression ratio are invariant
+  across 3, 5, 10, and 15 agents. Memory saving grows with N : 88.5% at 3 agents, 97.7% at 15
+  agents.
+
+• Context length scaling. Evaluated from 600 to 7,194 tokens. PPL delta improves as
+  context grows: +1.59% at 2K tokens, +0.57% at 4K tokens on Llama-3-8B.
+
+• The PPL inversion finding, doubly confirmed. At 1,851 tokens of coherent context on
+  SmolLM2-1.7B, compressed cache quality surpasses the full-precision baseline (−0.26% PPL
+  delta), confirmed independently at both 3 and 5 concurrent agents.
+
+• BERTScore semantic validation. Replacing token overlap with BERTScore (roberta-
+  large) confirms that phrasing variation between compressed and baseline outputs preserves
+  semantic equivalence, with mean F1 of 0.957–0.970 across agent counts.
+
+
+2     Background
+2.1   TurboQuant
+TurboQuant Google Research [2026] is a vector quantization algorithm designed for online
+(data-oblivious) KV cache compression. Its MSE-optimized variant operates in two stages.
+
+Rotation. For an input vector x ∈ Rd , apply a random rotation Π ∈ Rd×d (computed via
+QR decomposition of a random Gaussian matrix). Each coordinate of Π · x follows a Beta
+distribution that converges to N (0, 1/d) in high dimensions by concentration of measure Google
+Research [2026].
+
+Lloyd-Max quantization. Quantize each coordinate independently using a precomputed
+scalar codebook solving the continuous k-means problem over the Beta/Gaussian distribution.
+For 3-bit quantization (b = 3, 2b = 8 centroids), the optimal N (0, 1) centroids are:
+
+              c = [−2.152, −1.344, −0.756, −0.245, 0.245, 0.756, 1.344, 2.152]
+
+
+
+
+                                                2
+Distortion bound. TurboQuant MSE achieves:
+                                               √
+                                                 3π 1
+                                      Dmse ≤        · b
+                                                 2   4
+                  √
+within a factor of 3π/2 ≈ 2.7 of the information-theoretic lower bound Google Research [2026].
+At b = 3, Dmse ≈ 0.03.
+
+Dequantization. Recover via inverse FWHT (exploiting H · H = d · I), scaling by 1/d.
+
+2.2   Asymmetric K/V Quantization
+Prior work establishes that Keys and Values have different sensitivity profiles in transformer
+attention. Keys participate in the softmax attention score computation and degrade rapidly
+under low-bit-width quantization Liu et al. [2024], Hooper et al. [2024]. Values are more robust
+to lossy compression. This motivates allocating higher precision to K than V—a pattern adopted
+directly in PolyKV: K at int8 (8-bit), V at TurboQuant MSE 3-bit.
+
+2.3   Multi-Agent KV Sharing
+KVFlow Pan et al. [2025] and KVCOMM Ye et al. [2025] address agents sharing a common
+context prefix using full-precision caches. LRAgent Kim et al. [2026] shares a base KV cache
+but requires LoRA adapters. Agent Memory Anonymous [2026] uses quantized per-agent caches
+(uniform Q4) but maintains isolated caches per agent, reporting PPL deltas of +2.8–3.0%. None
+combine a single compressed pool with concurrent multi-reader access.
+
+
+3     PolyKV Architecture
+3.1   Overview
+PolyKV introduces two core abstractions: SharedKVPool and PooledAgent.
+    SharedKVPool receives a shared document context and model reference. It runs a single
+forward prefill pass to compute the full KV state, then compresses it asymmetrically in-place.
+The compressed pool is stored as a single object in memory—O(1) in the number of agents, vs.
+O(N ) in all prior multi-agent systems.
+    PooledAgent represents an individual inference agent. Each agent receives a reference
+to the SharedKVPool and, at inference time, injects the decompressed KV tensors into its
+own fresh DynamicCache instance layer by layer, bypassing the standard per-forward-pass KV
+accumulation.
+
+3.2   Compression Scheme
+Key quantization (q8_0). Per-tensor linear int8 quantization. For each K tensor of shape
+[batch, heads, seq_len, head_dim]:
+
+                     max(|K|)                           K
+                                                                        
+                  s=          ,     Kquant = clip round   , −128, 127
+                       127                              s
+Dequantization: Kdequant = Kquant · s.
+
+
+
+
+                                               3
+Value quantization (TurboQuant MSE, 3-bit). For each V tensor:
+                                                   √
+1. Apply normalized FWHT rotation: Vrot = FWHT(V) / d
+
+2. Map each coordinate to the nearest 3-bit Lloyd-Max centroid: idx j = arg mink |Vrot,j − ck |
+
+3. Store indices as uint8.
+Dequantization: retrieve centroid values, apply unnormalized inverse FWHT, divide by d.
+
+Compression ratio. With K stored at 8 bits and V at 3 bits (vs. 16-bit bfloat16 baseline
+for equal K/V tensor sizes):
+                                       16       16
+                                  r=         =     ≈ 2.91×
+                                      8+3      5.5
+                                        2
+This matches the empirically observed ratio across all experiments.
+
+3.3   DynamicCache Injection
+Standard HuggingFace inference populates DynamicCache incrementally during the prefill pass.
+PolyKV bypasses this by building a fresh cache per agent with pre-decompressed tensors placed
+on the correct device for each transformer layer:
+ cache = DynamicCache()
+ for layer_idx in range(num_layers):
+     layer_device = model.model.layers[layer_idx].self_attn.q_proj.weight.device
+     k, v = pool.get_kv_for_layer(layer_idx)
+     cache.update(k.to(dtype).to(layer_device),
+                  v.to(dtype).to(layer_device), layer_idx)
+ agent.generate(query_tokens, past_key_values=cache)
+
+   No copy of the compressed pool tensors is made per agent; each agent receives its own
+DynamicCache shell populated from the single shared compressed source.
+
+
+4     Experimental Setup
+Models.
+• SmolLM2-1.7B-Instruct (HuggingFaceTB): proof-of-concept scale, CPU inference.
+
+• Llama-3-8B-Instruct (Meta): primary validation, 32 layers, GQA (8 KV heads), 4-bit NF4
+  weights, bfloat16 KV cache, Kaggle T4×2.
+
+Baseline. Full-precision per-agent DynamicCache with standard prefill. On Llama-3-8B,
+baseline KV tensors are cast to bfloat16 to match model precision.
+
+Shared contexts.
+• Short context (≈600 tokens): Apollo 11 mission document (SmolLM2-1.7B only).
+
+• Long context (1,851 tokens): ARPANET/Internet topology history, single-topic, high lexical
+  coherence (SmolLM2-1.7B only).
+
+• WikiText-2 2K (1,837–1,953 tokens): HuggingFace wikitext-2-raw-v1 test split, first ≈8,000
+  characters. Used for both models.
+
+• WikiText-2 4K (7,194 tokens): First ≈32,000 characters of the same split. Llama-3-8B only.
+
+                                              4
+Metrics.
+• Perplexity (PPL): Computed over the last 30% of context tokens. ∆ = (PPLc − PPLb ) / PPLb ×
+  100%.
+• BERTScore F1 (roberta-large): Semantic similarity between compressed and baseline agent
+  outputs. Threshold ≥ 0.92 scored ✓Good.
+• Token overlap: Unigram overlap (SmolLM2-1.7B experiments only).
+• KV cache memory: Measured in GB; compressed pool vs. N × full-precision per-agent.
+• Compression ratio: Theoretical (confirmed stable at 2.91× across all experiments).
+
+
+
+                          Table 1: PolyKV experimental test configurations.
+       Test       Model              Tokens   Agents   Context Type        Quality Metric
+       Phase 0    SmolLM2-1.7B       ≈600     3        Custom (coherent)   Token overlap
+       Test 1     SmolLM2-1.7B       ≈600     5        Custom (coherent)   Token overlap
+       Test 2     SmolLM2-1.7B       1,851    3        Custom (coherent)   Token overlap
+       Test 3     SmolLM2-1.7B       1,851    5        Custom (coherent)   Token overlap
+       Test 4     SmolLM2-1.7B       1,953    3        WikiText-2          Token overlap
+       Test 5     Llama-3-8B         1,837    3        WikiText-2 2K       BERTScore
+       Test 6     Llama-3-8B         1,837    5        WikiText-2 2K       BERTScore
+       Test 7     Llama-3-8B         1,837    10       WikiText-2 2K       BERTScore
+       Test 8     Llama-3-8B         7,194    10       WikiText-2 4K       BERTScore
+       Test 9     Llama-3-8B         7,194    15       WikiText-2 4K       BERTScore
+
+Test configurations.
+
+
+5     Results
+5.1    SmolLM2-1.7B: Perplexity and Token Overlap
+
+
+                 Table 2: PolyKV perplexity results on SmolLM2-1.7B-Instruct.
+    Test        Tokens     Agents     Ratio   Baseline PPL      Compressed PPL              ∆
+    Phase 0       ≈600           3    2.91×            14.085                 14.159    +0.53%
+    Test 1        ≈600           5    2.91×            14.085                 14.159    +0.53%
+    Test 2        1,851          3    2.91×            10.369                 10.342   −0.26%
+    Test 3        1,851          5    2.91×            10.369                 10.342   −0.26%
+    Test 4        1,953          3    2.91×             8.592                  8.671    +0.92%
+
+
+Finding 1 — PPL delta is stable across agent count. Scaling from 3 to 5 concurrent
+readers produces identical PPL delta at both context lengths: +0.53% at ≈600 tokens and
+−0.26% at 1,851 tokens. The shared-pool model introduces no additional quality degradation as
+reader count increases.
+
+Finding 2 — PPL delta inverts at longer coherent context. At 1,851 tokens of single-
+topic coherent context, the compressed cache achieves lower perplexity than the full-precision
+baseline (∆ = −0.26%). Confirmed independently at both 3 and 5 agents, eliminating agent
+count as a confounding variable. We discuss a regularization hypothesis in Section 5.5.
+
+                                                   5
+Finding 3 — WikiText-2: +0.92% PPL, perfect token overlap. On WikiText-2 (Test
+4), the PPL delta is +0.92%—well below the +2.8–3.0% reported by Agent Memory Anonymous
+[2026] for per-agent Q4 isolated caches. All three agents achieve 1.000 token overlap.
+
+5.2   Llama-3-8B: Cross-Model Validation
+
+
+Table 3: PolyKV results on Llama-3-8B-Instruct across agent counts and context lengths.
+Memory columns show KV cache only (not model weights).
+  Test    Tokens     Agents     Ratio   Baseline PPL       Compressed PPL                ∆   Mean F1
+ Test 5     1,837          3    2.91×              8.998                 9.141    +1.59%           0.957
+ Test 6     1,837          5    2.91×              8.998                 9.141    +1.59%           0.958
+ Test 7     1,837         10    2.91×              8.998                 9.141    +1.59%           0.970
+ Test 8     7,194         10    2.91×              9.665                 9.720    +0.57%           0.933
+ Test 9     7,194         15    2.91×              9.665                 9.720    +0.57%           0.928
+
+
+Finding 4 — Cross-model stability. The 2.91× compression ratio is identical across
+SmolLM2-1.7B and Llama-3-8B, confirming it is a mathematical property of the compression
+scheme rather than a model-specific artifact. Llama-3-8B uses GQA with 8 KV heads (vs.
+standard MHA), and the scheme adapts without modification.
+
+Finding 5 — PPL delta is invariant to agent count on Llama-3-8B. Tests 5, 6, and 7
+use identical context (1,837 tokens WikiText-2) with 3, 5, and 10 agents respectively. PPL delta
+holds at exactly +1.59% across all three, and mean BERTScore F1 slightly increases from 0.957
+to 0.970 as agent count grows—confirming that the pool itself is stable and variance comes from
+query difficulty, not compression.
+
+Finding 6 — PPL improves at longer context on Llama-3-8B. At 7,194 tokens (4K
+context), PPL delta drops from +1.59% to +0.57%, replicating the trend seen on SmolLM2-1.7B
+and consistent with the regularization hypothesis.
+
+5.3   Memory Scaling
+
+
+Table 4: KV cache memory: PolyKV shared pool vs. N full-precision per-agent caches on
+Llama-3-8B-Instruct.
+         Agents Tokens Without PolyKV With PolyKV Reduction
+                 3      1,837             1.011 GB           0.116 GB            88.5%
+                 5      1,837             1.684 GB           0.116 GB            93.1%
+                10      1,837             3.369 GB           0.116 GB            96.6%
+                10      7,194            13.199 GB           0.454 GB            96.6%
+                15      7,194            19.798 GB           0.454 GB            97.7%
+
+   The pool memory is O(1) in agent count—0.116 GB whether serving 3 or 10 agents at 2K
+context. At 15 agents sharing a 4K context, PolyKV saves 19.3 GB of KV cache memory while
+maintaining +0.57% PPL and 0.928 mean BERTScore F1.
+
+
+
+
+                                               6
+Table 5: Per-agent BERTScore F1 for Test 7 (10 agents, 1,837 tokens, Llama-3-8B). ✓ = F1 ≥
+0.92.
+                         Agent     Precision   Recall      F1     Status
+                         Agent 0     0.9797     0.9827   0.9812      ✓
+                         Agent 1     0.9155     0.8866   0.9008      ×
+                         Agent 2     0.9948     0.9857   0.9902      ✓
+                         Agent 3     0.9781     0.9892   0.9836      ✓
+                         Agent 4     0.9924     0.9903   0.9913      ✓
+                         Agent 5     0.9533     0.9446   0.9489      ✓
+                         Agent 6     0.9815     0.9789   0.9802      ✓
+                         Agent 7     0.9766     0.9718   0.9742      ✓
+                         Agent 8     0.9836     0.9820   0.9828      ✓
+                         Agent 9     0.9602     0.9636   0.9619      ✓
+                         Mean                            0.9695   9/10 ✓
+
+
+5.4   BERTScore per Agent (Llama-3-8B, Test 7: 10 Agents)
+Agent 1’s F1 of 0.9008 reflects a known BERTScore sensitivity to Wikipedia-style list formatting
+rather than a semantic quality failure. Manual inspection confirms both compressed and baseline
+responses correctly identify the passage subject with equivalent factual content.
+
+5.5   Hypothesis: Quantization Noise as Implicit Regularization
+The consistent improvement in PPL delta as context length grows—observed independently on
+SmolLM2-1.7B (inverting to −0.26% at 1,851 coherent tokens) and on Llama-3-8B (+1.59%
+at 2K dropping to +0.57% at 4K)— supports a document-coherence-dependent regularization
+effect.
+    At longer coherent contexts, attention heads attend repeatedly to a limited set of semantically
+related V tensor entries. Full-precision values preserve all spurious correlations and attention
+sink artifacts Hooper et al. [2024] exactly. TurboQuant MSE quantization noise, introduced
+uniformly across all V coordinates after FWHT rotation, disrupts these patterns—an effect
+analogous in mechanism (though not in design) to dropout regularization during inference.
+    This hypothesis predicts: (1) the inversion grows with document lexical coherence; (2)
+ablating FWHT (using uniform int8-V) reduces the improvement on coherent documents; (3) the
+crossover token length is shorter for high-repetition documents. We leave controlled empirical
+validation to future work.
+
+
+6     Related Work
+6.1   Asymmetric KV Quantization
+KIVI Liu et al. [2024] (ICML 2024) quantizes K per-channel and V per-token at 2-bit. KVQuant Hooper
+et al. [2024] (NeurIPS 2024) uses per-channel pre-RoPE Key quantization and Non-Uniform
+Quantization (NUQ) for Values. LeanKV Zhang et al. [2024] proposes Hetero-KV (K8V4 or
+K4V2) in vLLM. AsymKV Tao et al. [2024] assigns layer-wise extreme asymmetric bit-widths.
+None implement a shared pool or multi-agent evaluation.
+
+6.2   Rotation-Domain KV Compression
+RotateKV Chen et al. [2025] (IJCAI 2025) applies FWHT for outlier redistribution before
+2-bit quantization. KVLinC Saxena et al. [2025] uses Hadamard rotation with linear bias
+correction. TurboAngle Patel [2026] extends TurboQuant to FWHT-domain angle quantization.
+
+                                                7
+KVTC Staniszewski & Lancucki [2025] applies PCA decorrelation with entropy coding. All
+operate on per-request caches.
+
+6.3     Multi-Agent KV Sharing
+KVFlow Pan et al. [2025] (NeurIPS 2025) uses an Agent Step Graph for workflow-aware prefix
+caching—full-precision, no compression. KVCOMM Ye et al. [2025] (NeurIPS 2025) maintains
+an anchor pool with offset correction—full-precision. LRAgent Kim et al. [2026] shares a base
+KV cache across LoRA agents—full-precision. Agent Memory Anonymous [2026] uses per-agent
+isolated Q4 caches (not a shared pool), reporting +2.8–3.0% PPL deltas. RelayCaching Various
+[2026] transfers KV between agents sequentially—full-precision, not concurrent.
+
+6.4     Positioning
+Table 6 maps prior work against PolyKV’s five defining characteristics. PolyKV is the only
+system to satisfy all five simultaneously.
+
+Table 6: Feature comparison of PolyKV against prior work. ✓ = fully implemented; ≈ = partial;
+× = absent.
+                                          Asym.       FWHT/      Shared   Multi-    Shared +
+    Work                                  K/V         Rotation    Pool    Agent    Compressed
+    KIVI Liu et al. [2024]                 ✓             ×         ×        ×          ×
+    KVQuant Hooper et al. [2024]           ✓             ×         ×        ×          ×
+    LeanKV Zhang et al. [2024]             ✓             ×         ×        ×          ×
+    AsymKV Tao et al. [2024]               ✓             ×         ×        ×          ×
+    RotateKV Chen et al. [2025]            ≈             ✓         ×        ×          ×
+    KVLinC Saxena et al. [2025]            ×             ✓         ×        ×          ×
+    TurboAngle Patel [2026]                ≈             ✓         ×        ×          ×
+    KVTC Staniszewski & Lancucki [2025]    ×             ≈         ×        ×          ×
+    KVFlow Pan et al. [2025]               ×             ×         ≈        ✓          ×
+    KVCOMM Ye et al. [2025]                ×             ×         ≈        ✓          ×
+    LRAgent Kim et al. [2026]              ×             ×         ≈        ✓          ×
+    Agent Memory Anonymous [2026]          ≈             ×         ×        ✓          ×
+    RelayCaching Various [2026]            ×             ×         ×        ≈          ×
+    TurboQuant Google Research [2026]      ✓             ✓         ×        ×          ×
+    PolyKV [This work]                     ✓             ✓         ✓        ✓          ✓
+
+
+
+
+7      Limitations
+Model scale. Experiments cover SmolLM2-1.7B and Llama-3-8B. Behavior at 70B+ parameter
+scale is unknown, though the Gaussian approximation underlying TurboQuant MSE improves
+with larger head dimension d.
+
+WikiText-2 comparability. Our WikiText-2 results use a single fixed context window, not
+the standard stride-based full test-set evaluation used by KIVI and KVQuant. Direct numerical
+comparison with published tables requires standard evaluation protocol.
+
+
+
+
+                                                  8
+System metrics. We do not report time-to-first-token (TTFT), throughput, or end-to-end
+latency. These are central motivations for the shared-pool model and are deferred to future
+work.
+
+Context ceiling. On Kaggle T4×2 hardware, the prefill attention computation OOMs beyond
+≈8,000 tokens for Llama-3-8B. This is a hardware constraint, not a PolyKV limitation—the
+compressed pool itself scales linearly with context length.
+
+PPL inversion mechanism. The −0.26% finding on SmolLM2-1.7B and the PPL improve-
+ment trend on Llama-3-8B are consistent with the regularization hypothesis but require controlled
+ablation to confirm causally.
+
+
+8    Future Work
+ 1. Full WikiText-2/C4 stride-based PPL evaluation for direct comparison with KIVI, KVQuant,
+    and LeanKV published tables.
+
+ 2. TTFT, throughput, and end-to-end memory footprint measurement vs. per-agent isolated
+    Q4 (Agent Memory Anonymous [2026]) and KVFlow Pan et al. [2025].
+
+ 3. Evaluation on Qwen2.5-7B and larger models (70B) to establish cross-architecture generality.
+
+ 4. Ablation: uniform int8-V vs. TurboQuant MSE-V in the shared pool, to isolate the FWHT
+    rotation contribution to the PPL improvement on coherent and long-context documents.
+
+ 5. Controlled coherence experiment: vary document lexical repetition systematically to map
+    PPL delta as a function of coherence score.
+
+ 6. Agent count scaling beyond 15 on larger-memory hardware.
+
+
+9    Conclusion
+We presented PolyKV, a shared asymmetrically-compressed KV cache pool for multi-agent LLM
+inference. PolyKV writes a single compressed cache (K at int8, V at TurboQuant MSE 3-bit)
+once and distributes it to N concurrent agents via direct DynamicCache injection, achieving a
+stable 2.91× memory reduction across all tested configurations.
+    Across ten test configurations spanning two model scales, three context lengths, and up to
+15 concurrent agents, we demonstrate: (1) PPL delta is invariant to agent count; (2) quality
+improves as context length increases; (3) at 15 agents sharing a 4K context on Llama-3-8B,
+PolyKV reduces KV cache memory from 19.8 GB to 0.45 GB (97.7% reduction) while maintaining
++0.57% PPL degradation and 0.928 mean BERTScore F1; and (4) the 2.91× compression ratio
+is stable across model architectures including GQA.
+    To our knowledge, no prior work combines a single shared, lossy-compressed KV pool
+with multi-reader concurrent agent access. These results establish proof-of-concept viability
+across realistic model scales and motivate expansion to system-level benchmarks and larger
+architectures.
+
+
+References
+Liu, Z., et al. KIVI: A Tuning-Free Asymmetric 2-bit Quantization for KV Cache. In ICML
+  2024. arXiv:2402.02750.
+
+
+
+                                               9
+Hooper, C., et al. KVQuant: Towards 10 Million Context Length LLM Inference with KV Cache
+  Quantization. In NeurIPS 2024. arXiv:2401.18079.
+
+Zhang, Y., et al. Unifying KV Cache Compression for Large Language Models with LeanKV.
+  arXiv:2412.03131, December 2024.
+
+Tao, C., et al. AsymKV: Enabling 1-Bit Quantization of KV Cache with Layer-Wise Asymmetric
+  Quantization Configurations. arXiv:2410.13212, October 2024.
+
+Chen, J., et al. RotateKV: Accurate and Robust 2-Bit KV Cache Quantization for LLMs via
+ Outlier-Aware Adaptive Rotations. In IJCAI 2025. arXiv:2501.16383.
+
+Saxena, A., et al. KVLinC: KV Cache Quantization with Hadamard Rotation and Linear
+  Correction. arXiv:2510.05373, October 2025.
+
+Staniszewski, M., and Lancucki, L. KVTC: KV Cache Transform Coding for Compact Storage
+  in LLM Inference. arXiv:2511.01815, November 2025.
+
+Patel, A. TurboAngle: Near-Lossless KV Cache Compression via Uniform Angle Quantization.
+  arXiv:2603.27467, March 2026.
+
+Pan, R., et al. KVFlow: Efficient Prefix Caching for Accelerating LLM-Based Multi-Agent
+  Workflows. In NeurIPS 2025. arXiv:2507.07400.
+
+Ye, Z., et al. KVCOMM: Online Cross-Context KV Cache Communication for Efficient LLM-
+  Based Multi-Agent Systems. In NeurIPS 2025. arXiv:2510.12872.
+
+Kim, S., et al. LRAgent: Efficient KV Cache Sharing for Multi-LoRA LLM Agents.
+  arXiv:2602.01053, February 2026.
+
+Anonymous. Agent Memory Below the Prompt: Persistent Q4 KV Cache for Multi-Agent LLM
+ Inference on Edge Devices. arXiv:2603.04428, March 2026.
+
+Various. RelayCaching: Accelerating LLM Collaboration via Decoding KV Cache Reuse.
+  arXiv:2603.13289, February 2026.
+
+Google Research. TurboQuant. ICLR 2026. See also: llama.cpp Discussion #20969; github.
+ com/scos-lab/turboquant.
+
+Yoon, J. ITQ3_S: Interleaved Ternary Quantization with TurboQuant. arXiv:2603.27914, March
+  2026.
+
+Shi, Z., et al. LMCache: An Efficient KV Cache Layer for Enterprise-Scale LLM Inference. 2025.
+  lmcache.ai.
+
+Various. EvicPress: Joint KV-Cache Compression and Eviction for Efficient LLM Serving.
+  arXiv:2512.14946, December 2025.
+
+Chen, X., et al. Multi-Tier Dynamic Storage (MTDS) Framework for KV Cache Inference.
+ Complex & Intelligent Systems, Springer, January 2026.
+
+Shutova, E., et al. AQUA-KV: Cache Me If You Must—Adaptive Key-Value Quantization for
+  LLMs. OpenReview, 2025.
+
+Yang, Z., et al. PyramidInfer: Pyramid KV Cache Compression for High-throughput LLM
+  Inference. In ACL Findings 2024.
+
+
+
+                                             10
+

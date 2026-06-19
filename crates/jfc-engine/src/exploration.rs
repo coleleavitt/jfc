@@ -1,20 +1,14 @@
 //! Exploration/sampling controls.
 //!
-//! The controller owns a single bounded "exploration level" and resolves it
-//! to exactly one provider knob at request time:
-//!   * thinking/adaptive Anthropic shapes -> `reasoning_effort`
-//!   * non-thinking shapes -> `temperature`
-//!
-//! Explicit `/effort` and `/temp` pins still win. The adaptive level only
-//! fills the gap when neither knob has been pinned by the user/config.
-
 use std::sync::RwLock;
-
-use jfc_provider::{StreamConvention, StreamOptions};
 
 use crate::effort::ReasoningEffort;
 use crate::slate::QueryClass;
 use crate::types::ToolCall;
+
+mod request;
+
+pub use request::apply_to_stream_options;
 
 /// Process-global slot mirroring the active session's temperature pin.
 static ACTIVE_TEMPERATURE: RwLock<Option<f64>> = RwLock::new(None);
@@ -537,63 +531,6 @@ fn configured_category_level(category: &crate::config::CategoryConfig) -> Option
         .map(ExplorationLevel::from_temperature)
 }
 
-pub fn apply_to_stream_options(
-    mut opts: StreamOptions,
-    provider_name: &str,
-    convention: StreamConvention,
-) -> StreamOptions {
-    let has_anthropic_thinking = matches!(convention, StreamConvention::AnthropicNative)
-        && (opts.adaptive_thinking || opts.thinking_budget.is_some());
-    let oauth_locked_temperature = provider_name == "anthropic-oauth";
-    // A pending per-turn effort override wins over the session pin and is
-    // consumed here (one request only); otherwise fall back to the session pin.
-    let manual_effort = crate::effort::resolve_effort_for_request();
-    let manual_temperature = active_temperature();
-
-    if let Some(effort) = manual_effort {
-        opts = opts.reasoning_effort(effort);
-    }
-    if let Some(temperature) = manual_temperature {
-        if has_anthropic_thinking || oauth_locked_temperature {
-            tracing::debug!(
-                target: "jfc::exploration",
-                temperature,
-                has_anthropic_thinking,
-                oauth_locked_temperature,
-                "temperature pin not applied for this request shape"
-            );
-        } else {
-            opts = opts.temperature(temperature);
-        }
-    }
-
-    if opts.reasoning_effort.is_some() || opts.temperature.is_some() {
-        return opts;
-    }
-    let Some(level) = active_exploration_level() else {
-        return opts;
-    };
-    if has_anthropic_thinking {
-        opts = opts.reasoning_effort(level.to_effort().api_value());
-        tracing::debug!(
-            target: "jfc::exploration",
-            level = level.as_u8(),
-            effort = %level.to_effort(),
-            "adaptive exploration resolved to reasoning_effort"
-        );
-    } else if !oauth_locked_temperature {
-        let temperature = level.to_temperature();
-        opts = opts.temperature(temperature);
-        tracing::debug!(
-            target: "jfc::exploration",
-            level = level.as_u8(),
-            temperature,
-            "adaptive exploration resolved to temperature"
-        );
-    }
-    opts
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -724,33 +661,5 @@ mod tests {
         let mut state = ExplorationState::new();
         state.begin_turn("refactor all async code", &cfg);
         assert_eq!(state.baseline, ExplorationLevel::new(4));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn adaptive_resolves_to_effort_for_thinking_regression() {
-        let _guard = ExplorationGlobalGuard::new();
-        set_temperature_global(None);
-        set_exploration_level_global(Some(ExplorationLevel::new(2)));
-        let opts = StreamOptions::new("claude-opus-4-8").adaptive();
-
-        let opts = apply_to_stream_options(opts, "anthropic", StreamConvention::AnthropicNative);
-
-        assert_eq!(opts.reasoning_effort.as_deref(), Some("high"));
-        assert_eq!(opts.temperature, None);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn adaptive_resolves_to_temperature_without_thinking_normal() {
-        let _guard = ExplorationGlobalGuard::new();
-        set_temperature_global(None);
-        set_exploration_level_global(Some(ExplorationLevel::new(3)));
-        let opts = StreamOptions::new("claude-haiku-4-5");
-
-        let opts = apply_to_stream_options(opts, "anthropic", StreamConvention::AnthropicNative);
-
-        assert_eq!(opts.reasoning_effort, None);
-        assert_eq!(opts.temperature, Some(0.75));
     }
 }

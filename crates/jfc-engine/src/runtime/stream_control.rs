@@ -155,13 +155,13 @@ pub fn restart_stream_in_place_with_overrides(
     state.streaming_text = String::new();
     state.streaming_reasoning = String::new();
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
     state.turn_output_tokens = 0;
     state.refusal_fallback_attempted = false;
     state.refusal_resend_count = 0;
     state.refusal_rewrite_retry_count = 0;
     state.refusal_rewrite_attempts.clear();
     state.streaming_thinking_tokens = 0;
-    state.last_thinking_estimate = 0;
     state.streaming_assistant_idx = Some(assistant_idx);
     state.is_streaming = true;
     let now = std::time::Instant::now();
@@ -171,6 +171,7 @@ pub fn restart_stream_in_place_with_overrides(
     // Fresh rate window for the new turn; seed a zero-token sample at t=0 so
     // the first real sample has a baseline to measure throughput against.
     state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     state
         .token_rate_samples
         .push_back((std::time::Duration::ZERO, 0));

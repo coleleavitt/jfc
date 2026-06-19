@@ -8,10 +8,11 @@ use jfc_provider::{
     FallbackReason, ModelInfo, ProviderId, ResolvedModel, ServerToolResultKind, StopReason,
 };
 
-/// Bounded channel capacity for the main runtime event loop. 1024 accommodates
-/// typical streaming bursts (50-200 chunks) with headroom for concurrent tool
-/// result floods, while bounding memory at roughly 1024 runtime events.
-pub const APP_EVENT_BUFFER: usize = 1024;
+/// Bounded channel capacity for the main runtime event loop. Fine-grained
+/// provider streaming and concurrent tool result floods can briefly exceed a
+/// thousand events; keeping more headroom prevents the SSE reader from
+/// backpressuring the provider while still bounding memory.
+pub const APP_EVENT_BUFFER: usize = 4096;
 
 pub type EventSender = mpsc::Sender<EngineEvent>;
 pub type EventReceiver = mpsc::Receiver<EngineEvent>;

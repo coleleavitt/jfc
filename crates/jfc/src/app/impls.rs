@@ -38,7 +38,10 @@ impl App {
                 .engine
                 .toasts
                 .iter()
-                .any(|t| !t.is_expired_at(std::time::Instant::now()));
+                .any(|t| {
+                    matches!(t.kind, jfc_engine::toast::ToastKind::Error)
+                        && !t.is_expired_at(std::time::Instant::now())
+                });
         self.wants_animation_frame
             .store(dominated, Ordering::Relaxed);
     }

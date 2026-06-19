@@ -180,6 +180,10 @@ pub async fn load_session(state: &mut EngineState, session_id: crate::ids::Sessi
             state.streaming_text.clear();
             state.streaming_reasoning.clear();
             state.streaming_response_bytes = 0;
+            state.streaming_response_baseline = 0;
+            state.streaming_thinking_tokens = 0;
+            state.token_rate_samples.clear();
+            state.token_rate_sample_thinking = None;
             state.streaming_assistant_idx = None;
             state.clear_active_stream_scope();
             state.push_effect(crate::app::EngineEffect::SessionSwitched);
@@ -380,6 +384,10 @@ pub async fn submit_prompt(
         state.streaming_text.clear();
         state.streaming_reasoning.clear();
         state.streaming_response_bytes = 0;
+        state.streaming_response_baseline = 0;
+        state.streaming_thinking_tokens = 0;
+        state.token_rate_samples.clear();
+        state.token_rate_sample_thinking = None;
         state.turn_output_tokens = 0;
         state.refusal_fallback_attempted = false;
         state.refusal_resend_count = 0;
@@ -396,17 +404,15 @@ pub async fn submit_prompt(
     // line 382476 shows the same pre-submit check returning a "blocking_limit"
     // result before queryDirect ever fires.
     //
-    // Use `tool_ctx.approx_tokens` (the calibrated wire-truth, kept in sync
-    // by `recompute_token_estimate` on resume and by `StreamUsage` during a
-    // turn) rather than re-running the chars-based `estimate_tokens`
-    // heuristic. The doc comment on `compact::should_compact` warns
-    // explicitly that the raw estimator over-counts tool outputs (it sums
-    // their full byte length while the wire truncates each tool result to
-    // `MAX_TOOL_RESULT_CHARS`), and on prompt-cache-heavy sessions it can
-    // also under-count by missing the cache_read contribution. Using the
-    // calibrated value makes pre-submit and post-tool compaction agree on
-    // when the session is actually full.
-    let mut est = state.tool_ctx.approx_tokens;
+    // Use `tool_ctx.approx_tokens` (the calibrated wire-truth) as the baseline,
+    // then add the pending user text. The prompt is not pushed yet, but it is
+    // part of the request we're about to send; ignoring it makes huge pastes
+    // skip this gate and fall through to provider-side prompt_too_long.
+    let pending_prompt_tokens = crate::compact::estimate_tokens(&[ChatMessage::user(text.clone())]);
+    let mut est = state
+        .tool_ctx
+        .approx_tokens
+        .saturating_add(pending_prompt_tokens);
     let mut level = crate::compact::compact_level_with_output(
         est,
         state.max_context_tokens,
@@ -419,7 +425,10 @@ pub async fn submit_prompt(
             level,
         );
         if saved_tokens > 0 {
-            est = state.tool_ctx.approx_tokens;
+            est = state
+                .tool_ctx
+                .approx_tokens
+                .saturating_add(pending_prompt_tokens);
             level = crate::compact::compact_level_with_output(
                 est,
                 state.max_context_tokens,
@@ -455,6 +464,7 @@ pub async fn submit_prompt(
         tracing::info!(
             target: "jfc::compact",
             est, level = ?level, manual,
+            pending_prompt_tokens,
             model = %state.model,
             max_context_tokens = state.max_context_tokens,
             message_count = state.messages.len(),
@@ -466,10 +476,15 @@ pub async fn submit_prompt(
         let model = state.model.clone();
         let mut tool_ctx = state.tool_ctx.clone();
         let window = state.max_context_tokens;
+        let max_output_tokens = state.max_output_tokens;
         let tx_pre = tx.clone();
         let user_text = text.clone();
         let is_blocked = matches!(level, crate::compact::CompactLevel::Blocked);
         let session_id_for_compact = session_id_for_hook.clone();
+        state.compacting_started_at = Some(std::time::Instant::now());
+        state.compacting_output_chars = 0;
+        state.compacting_attempt_baseline = 0;
+        state.compacting_last_progress = 0;
         let _ = tx_pre
             .send(crate::runtime::EngineEvent::Compaction(
                 crate::runtime::CompactionEvent::Started,
@@ -488,6 +503,7 @@ pub async fn submit_prompt(
                 },
             ));
         });
+        let cancel_compact = state.cancel_token.clone();
         tokio::spawn(async move {
             let options = jfc_provider::StreamOptions::new(model.clone());
             tracing::debug!(
@@ -501,15 +517,34 @@ pub async fn submit_prompt(
                 crate::hooks::HookPoint::BeforeCompact,
                 &crate::hooks::HookContext::for_session(&session_id_for_compact),
             );
-            let result = crate::compact::compact(
-                &messages,
-                provider.as_ref(),
-                &options,
-                &mut tool_ctx,
-                window,
-                Some(on_progress),
-            )
-            .await;
+            let result = tokio::select! {
+                biased;
+                _ = cancel_compact.cancelled() => {
+                    tracing::info!(
+                        target: "jfc::compact",
+                        "pre-submit compaction cancelled via token"
+                    );
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: "Compaction cancelled by user".into(),
+                                calibrated_tokens: None,
+                                transient: true,
+                            },
+                        ))
+                        .await;
+                    return;
+                }
+                r = crate::compact::compact(
+                    &messages,
+                    provider.as_ref(),
+                    &options,
+                    &mut tool_ctx,
+                    window,
+                    max_output_tokens,
+                    Some(on_progress),
+                ) => r,
+            };
             match result {
                 crate::compact::CompactResult::Success {
                     messages,
@@ -885,6 +920,10 @@ pub async fn start_turn_from_transcript(
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     // New turn — restart the true output-token counter (it accumulates across
     // this turn's agentic sub-streams, but starts fresh per user turn) and the
     // refusal-fallback guard (each user turn gets one fallback attempt).
@@ -992,6 +1031,7 @@ pub async fn start_turn_from_transcript(
     let overrides = crate::runtime::StreamRequestOverrides {
         background_reminders: state.take_background_reminders(),
         disallowed_tools: state.effective_disallowed_tools(),
+        extra_dirs: state.extra_dirs.clone(),
         allowed_tools: state.allowed_tools.clone(),
         custom_betas: state.custom_betas.clone(),
         fine_grained_tool_streaming: state.fine_grained_tool_streaming,
@@ -1000,6 +1040,7 @@ pub async fn start_turn_from_transcript(
         max_thinking_tokens: state.cli_max_thinking_tokens,
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
+        context_hint_tokens_saved: state.take_context_hint_tokens_saved(),
         last_usage_input_tokens: Some(state.last_usage_input as u64),
         context_window_tokens: Some(state.max_context_tokens as u64),
         ..Default::default()
@@ -1158,6 +1199,35 @@ mod submit_prompt_tests {
                 .any(|toast| toast.text.contains("Budget cap reached")),
             "budget refusal should surface a user-visible toast"
         );
+    }
+
+    #[tokio::test]
+    async fn pre_submit_compact_counts_pending_prompt_and_sets_guard_robust() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.max_context_tokens = 200_000;
+        state.max_output_tokens = None;
+        state.tool_ctx.approx_tokens = 166_000;
+        state.messages = vec![
+            ChatMessage::user("first prompt".to_owned()),
+            ChatMessage::assistant("first reply".to_owned()),
+        ];
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(&mut state, &tx, "x".repeat(30_000), Vec::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::CompactingFirst);
+        assert!(
+            state.compacting_started_at.is_some(),
+            "pre-submit compaction must set the in-flight guard before returning"
+        );
+        assert_eq!(
+            state.messages.len(),
+            2,
+            "the pending user prompt should be requeued after compaction, not pushed before it"
+        );
+        state.cancel_token.cancel();
     }
 
     // Flag OFF (the default): the gate is a no-op pass-through and the prompt

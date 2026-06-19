@@ -151,7 +151,6 @@ impl AnthropicModelKind {
     }
 
     /// Whether this model supports effort="xhigh" (Opus 4.7+, Fable5, Mythos5).
-    /// xhigh is a Claude Code internal value, not an official API value.
     pub fn supports_xhigh_effort(self) -> bool {
         matches!(
             self,
@@ -170,14 +169,10 @@ impl AnthropicModelKind {
         if !self.supports_effort() {
             return None;
         }
-        // Anthropic API accepts: low, medium, high, max (model-dependent).
-        // xhigh is Claude Code internal — always clamp to high before sending.
-        // max is only supported on Opus 4.6+, Sonnet 4.6, Fable5, Mythos5.
         match requested {
             "xhigh" => {
                 if self.supports_xhigh_effort() {
-                    // xhigh maps to max for models that support it
-                    Some("max")
+                    Some("xhigh")
                 } else {
                     Some("high")
                 }
@@ -509,10 +504,23 @@ mod tests {
             profile.normalized_reasoning_effort("max").as_deref(),
             Some("max")
         );
-        // But xhigh clamps to high (only Opus 4.7+ supports xhigh)
         assert_eq!(
             profile.normalized_reasoning_effort("xhigh").as_deref(),
             Some("high")
+        );
+    }
+
+    #[test]
+    fn anthropic_oauth_opus_48_preserves_xhigh_effort_normal() {
+        let profile = ModelRequestProfile::from_provider_model(
+            "anthropic-oauth",
+            "claude-opus-4-8",
+            None,
+            None,
+        );
+        assert_eq!(
+            profile.normalized_reasoning_effort("xhigh").as_deref(),
+            Some("xhigh")
         );
     }
 

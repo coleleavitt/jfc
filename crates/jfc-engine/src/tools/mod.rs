@@ -91,8 +91,8 @@ pub use swarm::CURRENT_AGENT_NAME;
 
 // registry
 pub use registry::{
-    pop_undo_entry, push_undo_entry, register_active_provider, register_event_sender,
-    register_mcp_registry, restore_undo_entry,
+    agent_registry, pop_undo_entry, push_undo_entry, register_active_provider,
+    register_event_sender, register_mcp_registry, restore_undo_entry,
 };
 pub use registry::{snapshot_active_provider, snapshot_event_sender, snapshot_mcp_registry};
 

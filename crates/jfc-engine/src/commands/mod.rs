@@ -8,6 +8,7 @@
 pub mod account;
 pub mod automation;
 pub mod context;
+pub mod council;
 pub mod delegating;
 pub mod github;
 pub mod inbox;
@@ -99,7 +100,7 @@ engine_commands! {
         "/compact" [] "summarize earlier messages to free context" => cmd_compact,
         "/expand" [] "open raw messages saved before compaction (`/expand <archive-id>`)" => cmd_expand,
         "/advisor" [] "ask a parallel advisor without disturbing the main agent" => cmd_advisor,
-        "/council" [] "convene a multi-model council: fan a question to N models, synthesise (`/council <model-a,model-b> <question>`)" => cmd_council,
+        "/council" [] "council: one-shot fan-out (`/council <q>`) or a turn-based session (`/council start <topic>`, then continue/consensus/verdict)" => cmd_council,
         "/research" [] "deep research: plan sub-queries, search the web in steps, synthesise (`/research <question>`)" => cmd_research,
         "/brief" [] "toggle brief-only mode (hide plain text, only show SendUserMessage output)" => cmd_brief,
         "/autoloop" [] "start an autonomous loop tick (reads loop.md)" => cmd_autoloop,
@@ -552,6 +553,10 @@ fn start_synthetic_user_turn(
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     state.network_recovery_status = None;
     state.network_recovery_attempts = 0;
     state.streaming_assistant_idx = Some(assistant_idx);

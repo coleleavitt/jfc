@@ -14,10 +14,10 @@ tracing = { workspace = true }
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "stream", "rustls", "multipart", "http2"] }
 futures-util = "0.3"
 
-# Optional neural VAD backend (Silero VAD v5 via ONNX Runtime). Off by default
-# so the standard build stays dependency-light and the energy VAD remains the
-# default; enable with `--features vad-neural`. The crate bundles the ~2MB
-# Silero model and downloads a prebuilt ONNX Runtime at build time.
+# Optional neural VAD backend (Silero VAD v5 via ONNX Runtime). Compiling the
+# feature only makes the backend available; runtime construction is still
+# guarded by `JFC_VAD_ENABLE_NEURAL=1` because ORT can segfault before returning
+# a Rust error on some hosts. Energy VAD remains the safe default.
 voice_activity_detector = { version = "0.2.1", optional = true }
 
 # Optional neural speaker-embedding backend (ECAPA-TDNN / x-vector via ONNX
@@ -28,8 +28,8 @@ ort = { version = "=2.0.0-rc.10", features = ["ndarray"], optional = true }
 
 [features]
 default = []
-# Enable the neural (Silero) VAD engine, selectable at runtime via
-# JFC_VAD_ENGINE=neural (falls back to the energy VAD when unset/unavailable).
+# Enable the neural (Silero) VAD code path. At runtime it is selectable only when
+# both `JFC_VAD_ENGINE=neural` and `JFC_VAD_ENABLE_NEURAL=1` are set.
 vad-neural = ["dep:voice_activity_detector"]
 # Enable the neural speaker-embedding backend (ECAPA-TDNN/x-vector ONNX) for the
 # target-speaker gate. Requires a user-provided model via JFC_VOICE_SPEAKER_MODEL;

@@ -66,6 +66,8 @@ pub enum BackendId {
     Brave,
     SearXNG,
     DuckDuckGo,
+    MillionShort,
+    FourGet,
     Tavily,
     Exa,
     // Academic
@@ -91,6 +93,8 @@ impl BackendId {
             Self::Brave => "Brave",
             Self::SearXNG => "SearXNG",
             Self::DuckDuckGo => "DuckDuckGo",
+            Self::MillionShort => "Million Short",
+            Self::FourGet => "4get",
             Self::Tavily => "Tavily",
             Self::Exa => "Exa",
             Self::ArXiv => "arXiv",
@@ -119,6 +123,8 @@ impl BackendId {
             | Self::Brave
             | Self::SearXNG
             | Self::DuckDuckGo
+            | Self::MillionShort
+            | Self::FourGet
             | Self::Tavily
             | Self::Exa => BackendCategory::Web,
             Self::ArXiv
@@ -292,21 +298,46 @@ impl QueryClass {
     /// Get the backends to query for this class.
     pub fn backends(&self) -> Vec<BackendId> {
         match self {
-            Self::General => vec![BackendId::Google, BackendId::Brave, BackendId::SearXNG],
+            Self::General => vec![
+                BackendId::Google,
+                BackendId::MillionShort,
+                BackendId::FourGet,
+                BackendId::OpenAlex,
+                BackendId::DBLP,
+                BackendId::Primo,
+            ],
             Self::Academic => vec![
                 BackendId::ArXiv,
                 BackendId::SemanticScholar,
                 BackendId::OpenAlex,
                 BackendId::DBLP,
+                BackendId::Primo,
                 BackendId::Google, // Also include web for broader coverage
+                BackendId::MillionShort,
+                BackendId::FourGet,
             ],
-            Self::Code => vec![BackendId::Google, BackendId::Brave, BackendId::SearXNG],
+            Self::Code => vec![
+                BackendId::Google,
+                BackendId::MillionShort,
+                BackendId::FourGet,
+                BackendId::OpenAlex,
+                BackendId::DBLP,
+                BackendId::Primo,
+            ],
             Self::Reference => vec![
                 BackendId::Wikipedia,
                 BackendId::Google,
-                BackendId::DuckDuckGo,
+                BackendId::FourGet,
+                BackendId::OpenAlex,
+                BackendId::DBLP,
+                BackendId::Primo,
             ],
-            Self::News => vec![BackendId::Google, BackendId::Brave, BackendId::SearXNG],
+            Self::News => vec![
+                BackendId::Google,
+                BackendId::MillionShort,
+                BackendId::FourGet,
+                BackendId::OpenAlex,
+            ],
         }
     }
 }

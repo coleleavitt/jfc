@@ -132,13 +132,24 @@ pub async fn handle_done(
     state: &mut EngineState,
     tx: &EventSender,
     mut messages: Vec<ChatMessage>,
-    tool_ctx: ToolContext,
+    mut tool_ctx: ToolContext,
     pre_tokens: usize,
     post_tokens: usize,
 ) {
     // Feature: re-consult memory recall after compaction so the fresh context
     // window starts with relevant memories. Runs before the message swap.
     inject_post_compact_memory(state, &mut messages).await;
+    let compact_result_post_tokens = post_tokens;
+    let post_tokens = crate::compact::estimate_tokens(&messages);
+    tool_ctx.approx_tokens = post_tokens;
+    if post_tokens != compact_result_post_tokens {
+        tracing::debug!(
+            target: "jfc::compact",
+            compact_result_post_tokens,
+            post_tokens,
+            "post-compact token estimate adjusted after post-processing"
+        );
+    }
 
     // Reset post-compact read tracker so we can detect re-reads.
     state.post_compact_reads.clear();
@@ -168,33 +179,13 @@ pub async fn handle_done(
         );
     } else {
         state.messages = messages;
-        // Migrate cleanup flags (rapid_refill_count,
-        // last_compact_turn, etc.) from the compact
-        // worker's local tool_ctx, but preserve the
-        // calibrated `approx_tokens` already on state —
-        // either the wire-reported value from the most
-        // recent `StreamUsage` or the resume-time anchor
-        // from `recompute_token_estimate`. Overwriting
-        // with the post-compaction chars-based estimate
-        // (`post_tokens`) created a down-then-up flicker:
-        // gauge would drop to the local estimate (e.g.
-        // 60k) and then the next stream's first
-        // `StreamUsage` would snap it back to the
-        // wire-truth (e.g. 500k, dominated by cache_read
-        // of the still-cached system prompt + tool defs).
-        // Recompute from messages so the visible value
-        // reflects what's actually about to be sent on
-        // the next turn — both compaction and the
-        // pre-submit gate now use the same source.
-        let preserved = state.tool_ctx.approx_tokens;
+        // Migrate cleanup flags (rapid_refill_count, last_compact_turn, etc.)
+        // from the compact worker's local tool_ctx, then use the final
+        // post-processed transcript estimate. This includes restored files and
+        // post-compact memory recall, so the gauge/ceiling match the messages
+        // that will actually be sent next.
         state.tool_ctx = tool_ctx;
-        // Use the smaller of (preserved calibrated value)
-        // and post_tokens — preserved is wire-truth from
-        // before compact, post_tokens is a local
-        // estimate. After compaction the real prompt is
-        // ≤ pre-compact; clamping to min protects against
-        // showing the user a count larger than reality.
-        state.tool_ctx.approx_tokens = preserved.min(post_tokens);
+        state.tool_ctx.approx_tokens = post_tokens;
         // Add a fixed overhead estimate for system prompt, tool defs,
         // memories, etc. that the local message estimate doesn't include.
         // Without this, the gauge shows "safe" immediately post-compact
@@ -246,6 +237,7 @@ pub async fn handle_done(
     state.compacting_attempt_baseline = 0;
     state.compacting_last_progress = 0;
     state.compact_suppressed = false;
+    state.speculative_compact_fired = false;
     // Surface the compaction outcome to the user via a toast
     // — they don't have to scroll to see the boundary marker.
     let saved_k = saved / 1000;
@@ -334,6 +326,7 @@ pub async fn handle_failed(
     state.compacting_output_chars = 0;
     state.compacting_attempt_baseline = 0;
     state.compacting_last_progress = 0;
+    state.speculative_compact_fired = false;
     // Permanent failures (provider unsupported, exhausted retries,
     // breaker tripped) latch suppression so we stop spamming
     // compact attempts on every AllToolsComplete; the user clears

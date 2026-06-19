@@ -10,6 +10,10 @@ pub(super) async fn execute_palette_action(app: &mut App, label: &str) {
             app.engine.streaming_text.clear();
             app.engine.streaming_reasoning.clear();
             app.engine.streaming_response_bytes = 0;
+            app.engine.streaming_response_baseline = 0;
+            app.engine.streaming_thinking_tokens = 0;
+            app.engine.token_rate_samples.clear();
+            app.engine.token_rate_sample_thinking = None;
             app.engine.streaming_assistant_idx = None;
             app.switch_session(None);
         }

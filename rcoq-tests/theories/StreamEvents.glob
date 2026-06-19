@@ -1,0 +1,331 @@
+DIGEST 26f5f263ac2a58c689eb0e0d1eb8b6a0
+FJFC.StreamEvents
+R409:422 Stdlib.Lists.List <> <> lib
+R440:452 Stdlib.Bool.Bool <> <> lib
+R470:484 Stdlib.Arith.Arith <> <> lib
+R494:506 Stdlib.Lists.List ListNotations <> mod
+ind 644:656 <> FrameCategory
+constr 672:684 <> CommitsOutput
+constr 750:757 <> Advisory
+constr 821:828 <> Terminal
+constr 883:892 <> Structural
+scheme 644:656 <> FrameCategory_rect
+scheme 644:656 <> FrameCategory_ind
+scheme 644:656 <> FrameCategory_rec
+scheme 644:656 <> FrameCategory_sind
+ind 1001:1011 <> StreamEvent
+constr 1027:1035 <> TextDelta
+constr 1086:1097 <> ToolUseStart
+constr 1141:1154 <> ToolInputDelta
+constr 1196:1210 <> ToolUseComplete
+constr 1251:1262 <> MessageStart
+constr 1282:1292 <> MessageStop
+constr 1312:1328 <> ContentBlockStart
+constr 1348:1363 <> ContentBlockStop
+constr 1383:1387 <> Error
+constr 1407:1410 <> Ping
+R1042:1045 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1039:1041 Corelib.Init.Datatypes <> nat ind
+R1046:1056 JFC.StreamEvents <> StreamEvent:3 ind
+R1104:1107 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1101:1103 Corelib.Init.Datatypes <> nat ind
+R1108:1118 JFC.StreamEvents <> StreamEvent:3 ind
+R1161:1164 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1158:1160 Corelib.Init.Datatypes <> nat ind
+R1165:1175 JFC.StreamEvents <> StreamEvent:3 ind
+R1217:1220 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1214:1216 Corelib.Init.Datatypes <> nat ind
+R1221:1231 JFC.StreamEvents <> StreamEvent:3 ind
+R1266:1276 JFC.StreamEvents <> StreamEvent:3 ind
+R1296:1306 JFC.StreamEvents <> StreamEvent:3 ind
+R1332:1342 JFC.StreamEvents <> StreamEvent:3 ind
+R1367:1377 JFC.StreamEvents <> StreamEvent:3 ind
+R1391:1401 JFC.StreamEvents <> StreamEvent:3 ind
+R1414:1424 JFC.StreamEvents <> StreamEvent:3 ind
+scheme 1001:1011 <> StreamEvent_rect
+scheme 1001:1011 <> StreamEvent_ind
+scheme 1001:1011 <> StreamEvent_rec
+scheme 1001:1011 <> StreamEvent_sind
+def 1466:1473 <> category
+R1480:1490 JFC.StreamEvents <> StreamEvent ind
+binder 1476:1476 <> e:5
+R1495:1507 JFC.StreamEvents <> FrameCategory ind
+R1520:1520 JFC.StreamEvents <> e:5 var
+R1531:1539 JFC.StreamEvents <> TextDelta constr
+R1546:1558 JFC.StreamEvents <> CommitsOutput constr
+R1564:1578 JFC.StreamEvents <> ToolUseComplete constr
+R1585:1597 JFC.StreamEvents <> CommitsOutput constr
+R1603:1614 JFC.StreamEvents <> ToolUseStart constr
+R1621:1630 JFC.StreamEvents <> Structural constr
+R1636:1649 JFC.StreamEvents <> ToolInputDelta constr
+R1656:1663 JFC.StreamEvents <> Advisory constr
+R1669:1680 JFC.StreamEvents <> MessageStart constr
+R1685:1694 JFC.StreamEvents <> Structural constr
+R1700:1710 JFC.StreamEvents <> MessageStop constr
+R1715:1722 JFC.StreamEvents <> Terminal constr
+R1728:1744 JFC.StreamEvents <> ContentBlockStart constr
+R1749:1758 JFC.StreamEvents <> Structural constr
+R1764:1779 JFC.StreamEvents <> ContentBlockStop constr
+R1784:1793 JFC.StreamEvents <> Structural constr
+R1799:1803 JFC.StreamEvents <> Error constr
+R1808:1815 JFC.StreamEvents <> Terminal constr
+R1821:1824 JFC.StreamEvents <> Ping constr
+R1829:1836 JFC.StreamEvents <> Advisory constr
+def 1896:1909 <> commits_output
+R1916:1926 JFC.StreamEvents <> StreamEvent ind
+binder 1912:1912 <> e:7
+R1931:1934 Corelib.Init.Datatypes <> bool ind
+R1947:1954 JFC.StreamEvents <> category def
+R1956:1956 JFC.StreamEvents <> e:7 var
+R1967:1979 JFC.StreamEvents <> CommitsOutput constr
+R1984:1987 Corelib.Init.Datatypes <> true constr
+R1998:2002 Corelib.Init.Datatypes <> false constr
+ind 2046:2056 <> StreamState
+constr 2072:2075 <> Idle
+constr 2081:2097 <> MessageInProgress
+constr 2103:2120 <> ContentBlockActive
+constr 2126:2138 <> ToolUseActive
+constr 2187:2196 <> Terminated
+R2145:2148 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2142:2144 Corelib.Init.Datatypes <> nat ind
+R2149:2159 JFC.StreamEvents <> StreamState:8 ind
+scheme 2046:2056 <> StreamState_rect
+scheme 2046:2056 <> StreamState_ind
+scheme 2046:2056 <> StreamState_rec
+scheme 2046:2056 <> StreamState_sind
+def 2241:2257 <> stream_transition
+R2265:2275 JFC.StreamEvents <> StreamState ind
+binder 2260:2261 <> st:10
+R2283:2293 JFC.StreamEvents <> StreamEvent ind
+binder 2279:2279 <> e:11
+R2298:2303 Corelib.Init.Datatypes <> option ind
+R2305:2315 JFC.StreamEvents <> StreamState ind
+R2332:2332 JFC.StreamEvents <> e:11 var
+R2328:2329 JFC.StreamEvents <> st:10 var
+R2368:2371 JFC.StreamEvents <> Idle constr
+R2374:2385 JFC.StreamEvents <> MessageStart constr
+R2390:2393 Corelib.Init.Datatypes <> Some constr
+R2395:2411 JFC.StreamEvents <> MessageInProgress constr
+R2417:2420 JFC.StreamEvents <> Idle constr
+R2428:2431 Corelib.Init.Datatypes <> None constr
+R2503:2519 JFC.StreamEvents <> MessageInProgress constr
+R2522:2538 JFC.StreamEvents <> ContentBlockStart constr
+R2543:2546 Corelib.Init.Datatypes <> Some constr
+R2548:2565 JFC.StreamEvents <> ContentBlockActive constr
+R2571:2587 JFC.StreamEvents <> MessageInProgress constr
+R2590:2600 JFC.StreamEvents <> MessageStop constr
+R2605:2608 Corelib.Init.Datatypes <> Some constr
+R2610:2619 JFC.StreamEvents <> Terminated constr
+R2625:2641 JFC.StreamEvents <> MessageInProgress constr
+R2644:2648 JFC.StreamEvents <> Error constr
+R2653:2656 Corelib.Init.Datatypes <> Some constr
+R2658:2667 JFC.StreamEvents <> Terminated constr
+R2673:2689 JFC.StreamEvents <> MessageInProgress constr
+R2692:2695 JFC.StreamEvents <> Ping constr
+R2700:2703 Corelib.Init.Datatypes <> Some constr
+R2705:2721 JFC.StreamEvents <> MessageInProgress constr
+R2759:2776 JFC.StreamEvents <> ContentBlockActive constr
+R2779:2787 JFC.StreamEvents <> TextDelta constr
+R2794:2797 Corelib.Init.Datatypes <> Some constr
+R2799:2816 JFC.StreamEvents <> ContentBlockActive constr
+R2822:2839 JFC.StreamEvents <> ContentBlockActive constr
+R2842:2853 JFC.StreamEvents <> ToolUseStart constr
+R2861:2864 Corelib.Init.Datatypes <> Some constr
+R2867:2879 JFC.StreamEvents <> ToolUseActive constr
+R2889:2906 JFC.StreamEvents <> ContentBlockActive constr
+R2909:2924 JFC.StreamEvents <> ContentBlockStop constr
+R2929:2932 Corelib.Init.Datatypes <> Some constr
+R2934:2950 JFC.StreamEvents <> MessageInProgress constr
+R2983:2995 JFC.StreamEvents <> ToolUseActive constr
+R3001:3014 JFC.StreamEvents <> ToolInputDelta constr
+R3032:3038 Stdlib.Arith.PeanoNat Nat eqb def
+R3081:3084 Corelib.Init.Datatypes <> None constr
+R3052:3055 Corelib.Init.Datatypes <> Some constr
+R3058:3070 JFC.StreamEvents <> ToolUseActive constr
+R3090:3102 JFC.StreamEvents <> ToolUseActive constr
+R3108:3122 JFC.StreamEvents <> ToolUseComplete constr
+R3140:3146 Stdlib.Arith.PeanoNat Nat eqb def
+R3189:3192 Corelib.Init.Datatypes <> None constr
+R3160:3163 Corelib.Init.Datatypes <> Some constr
+R3165:3182 JFC.StreamEvents <> ContentBlockActive constr
+R3233:3242 JFC.StreamEvents <> Terminated constr
+R3250:3253 Corelib.Init.Datatypes <> None constr
+R3306:3309 Corelib.Init.Datatypes <> None constr
+def 3358:3371 <> process_stream
+R3379:3389 JFC.StreamEvents <> StreamState ind
+binder 3374:3375 <> st:14
+R3402:3405 Corelib.Init.Datatypes <> list ind
+R3407:3417 JFC.StreamEvents <> StreamEvent ind
+binder 3393:3398 <> events:15
+R3422:3427 Corelib.Init.Datatypes <> option ind
+R3429:3439 JFC.StreamEvents <> StreamState ind
+R3452:3457 JFC.StreamEvents <> events:15 var
+R3468:3469 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R3474:3477 Corelib.Init.Datatypes <> Some constr
+R3479:3480 JFC.StreamEvents <> st:14 var
+R3487:3490 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3511:3527 JFC.StreamEvents <> stream_transition def
+R3529:3530 JFC.StreamEvents <> st:14 var
+R3547:3550 Corelib.Init.Datatypes <> Some constr
+R3559:3572 JFC.StreamEvents <> process_stream:16 def
+R3591:3594 Corelib.Init.Datatypes <> None constr
+R3599:3602 Corelib.Init.Datatypes <> None constr
+def 3633:3650 <> well_formed_stream
+R3662:3665 Corelib.Init.Datatypes <> list ind
+R3667:3677 JFC.StreamEvents <> StreamEvent ind
+binder 3653:3658 <> events:18
+R3718:3721 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R3692:3705 JFC.StreamEvents <> process_stream def
+R3707:3710 JFC.StreamEvents <> Idle constr
+R3712:3717 JFC.StreamEvents <> events:18 var
+R3722:3725 Corelib.Init.Datatypes <> None constr
+prf 3808:3830 <> empty_stream_wellformed
+R3858:3860 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3836:3849 JFC.StreamEvents <> process_stream def
+R3851:3854 JFC.StreamEvents <> Idle constr
+R3856:3857 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R3861:3864 Corelib.Init.Datatypes <> Some constr
+R3866:3869 JFC.StreamEvents <> Idle constr
+prf 3954:3973 <> terminated_absorbing
+binder 3986:3986 <> e:19
+R4023:4025 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3993:4009 JFC.StreamEvents <> stream_transition def
+R4011:4020 JFC.StreamEvents <> Terminated constr
+R4022:4022 JFC.StreamEvents <> e:19 var
+R4026:4029 Corelib.Init.Datatypes <> None constr
+prf 4141:4164 <> no_events_after_terminal
+binder 4177:4182 <> events:20
+binder 4184:4184 <> e:21
+R4230:4232 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4191:4204 JFC.StreamEvents <> process_stream def
+R4206:4215 JFC.StreamEvents <> Terminated constr
+R4219:4222 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4218:4218 JFC.StreamEvents <> e:21 var
+R4223:4228 JFC.StreamEvents <> events:20 var
+R4233:4236 Corelib.Init.Datatypes <> None constr
+prf 4356:4377 <> message_before_content
+binder 4390:4395 <> events:22
+R4451:4453 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4402:4415 JFC.StreamEvents <> process_stream def
+R4417:4420 JFC.StreamEvents <> Idle constr
+R4440:4443 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4423:4439 JFC.StreamEvents <> ContentBlockStart constr
+R4444:4449 JFC.StreamEvents <> events:22 var
+R4454:4457 Corelib.Init.Datatypes <> None constr
+prf 4573:4604 <> valid_stream_starts_with_message
+binder 4617:4617 <> e:23
+binder 4619:4624 <> events:24
+R4672:4679 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4664:4667 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R4631:4644 JFC.StreamEvents <> process_stream def
+R4646:4649 JFC.StreamEvents <> Idle constr
+R4653:4656 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4652:4652 JFC.StreamEvents <> e:23 var
+R4657:4662 JFC.StreamEvents <> events:24 var
+R4668:4671 Corelib.Init.Datatypes <> None constr
+R4681:4683 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4680:4680 JFC.StreamEvents <> e:23 var
+R4684:4695 JFC.StreamEvents <> MessageStart constr
+def 4828:4846 <> count_output_events
+R4858:4861 Corelib.Init.Datatypes <> list ind
+R4863:4873 JFC.StreamEvents <> StreamEvent ind
+binder 4849:4854 <> events:25
+R4878:4880 Corelib.Init.Datatypes <> nat ind
+R4893:4898 JFC.StreamEvents <> events:25 var
+R4909:4910 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R4922:4925 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4940:4940 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4974:4977 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4944:4957 JFC.StreamEvents <> commits_output def
+R4978:4996 JFC.StreamEvents <> count_output_events:26 def
+prf 5082:5110 <> output_count_matches_category
+binder 5123:5128 <> events:28
+R5161:5167 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5135:5153 JFC.StreamEvents <> count_output_events def
+R5155:5160 JFC.StreamEvents <> events:28 var
+R5168:5173 Corelib.Init.Datatypes <> length def
+R5176:5181 Stdlib.Lists.List <> filter def
+R5198:5203 JFC.StreamEvents <> events:28 var
+R5183:5196 JFC.StreamEvents <> commits_output def
+R5305:5318 JFC.StreamEvents <> commits_output def
+R5305:5318 JFC.StreamEvents <> commits_output def
+ind 5528:5542 <> ToolUseSequence
+constr 5585:5596 <> ToolSeqStart
+constr 5658:5669 <> ToolSeqDelta
+constr 5787:5801 <> ToolSeqComplete
+R5549:5552 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5546:5548 Corelib.Init.Datatypes <> nat ind
+R5569:5572 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5553:5556 Corelib.Init.Datatypes <> list ind
+R5558:5568 JFC.StreamEvents <> StreamEvent ind
+binder 5607:5608 <> id:31
+R5617:5631 JFC.StreamEvents <> ToolUseSequence:29 ind
+R5636:5636 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R5652:5652 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R5637:5648 JFC.StreamEvents <> ToolUseStart constr
+R5650:5651 JFC.StreamEvents <> id:31 var
+R5633:5634 JFC.StreamEvents <> id:31 var
+binder 5680:5681 <> id:32
+binder 5683:5688 <> events:33
+R5722:5731 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5697:5711 JFC.StreamEvents <> ToolUseSequence:29 ind
+R5716:5721 JFC.StreamEvents <> events:33 var
+R5713:5714 JFC.StreamEvents <> id:32 var
+R5732:5746 JFC.StreamEvents <> ToolUseSequence:29 ind
+R5758:5761 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R5752:5757 JFC.StreamEvents <> events:33 var
+R5762:5762 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R5780:5780 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R5763:5776 JFC.StreamEvents <> ToolInputDelta constr
+R5778:5779 JFC.StreamEvents <> id:32 var
+R5748:5749 JFC.StreamEvents <> id:32 var
+binder 5812:5813 <> id:34
+binder 5815:5820 <> events:35
+R5854:5863 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5829:5843 JFC.StreamEvents <> ToolUseSequence:29 ind
+R5848:5853 JFC.StreamEvents <> events:35 var
+R5845:5846 JFC.StreamEvents <> id:34 var
+R5864:5878 JFC.StreamEvents <> ToolUseSequence:29 ind
+R5890:5893 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R5884:5889 JFC.StreamEvents <> events:35 var
+R5894:5894 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R5913:5913 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R5895:5909 JFC.StreamEvents <> ToolUseComplete constr
+R5911:5912 JFC.StreamEvents <> id:34 var
+R5880:5881 JFC.StreamEvents <> id:34 var
+scheme 5528:5542 <> ToolUseSequence_ind
+scheme 5528:5542 <> ToolUseSequence_sind
+prf 5987:6017 <> tool_sequence_starts_with_start
+binder 6030:6031 <> id:36
+binder 6033:6038 <> events:37
+R6070:6077 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6045:6059 JFC.StreamEvents <> ToolUseSequence ind
+R6061:6062 JFC.StreamEvents <> id:36 var
+R6064:6069 JFC.StreamEvents <> events:37 var
+R6078:6084 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R6089:6090 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 6085:6088 <> rest:38
+R6097:6099 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6091:6096 JFC.StreamEvents <> events:37 var
+R6115:6118 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6100:6111 JFC.StreamEvents <> ToolUseStart constr
+R6113:6114 JFC.StreamEvents <> id:36 var
+R6119:6122 JFC.StreamEvents <> rest:38 var
+R6180:6181 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R6180:6181 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R6261:6264 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R6265:6265 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6283:6283 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6266:6279 JFC.StreamEvents <> ToolInputDelta constr
+R6261:6264 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R6265:6265 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6283:6283 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6266:6279 JFC.StreamEvents <> ToolInputDelta constr
+R6381:6384 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R6385:6385 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6404:6404 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6386:6400 JFC.StreamEvents <> ToolUseComplete constr
+R6381:6384 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R6385:6385 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6404:6404 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6386:6400 JFC.StreamEvents <> ToolUseComplete constr

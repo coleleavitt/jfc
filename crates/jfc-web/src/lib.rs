@@ -1,12 +1,11 @@
 //! Web search backends for the `WebSearch` tool.
 //!
 //! Backends are selected by a query prefix (`prefix:` or `prefix `). With no
-//! prefix the query routes to Google CSE (general web), falling back to Brave
-//! Search if no Google keys are configured.
+//! prefix the query routes to native Google CSE plus other web backends.
 //!
 //! | Prefix | Backend | Key? | Example |
 //! |--------|---------|------|---------|
-//! | *(none)* | Google CSE → Brave fallback | optional | `rust async traits` |
+//! | *(none)* | Google CSE + Million Short + key-free fallbacks | optional | `rust async traits` |
 //! | `edu:` | Google CSE scoped to academic TLDs worldwide | optional | `edu: dark matter detection` |
 //! | `cn:` | Google CSE scoped to Chinese academic TLDs (`.edu.cn`/`.ac.cn`/…) | optional | `cn: superconductivity` |
 //! | `primo:` | ExLibris Primo — 8000+ university library discovery systems | no | `primo: cmu/decompiler` |
@@ -26,14 +25,17 @@
 //! | `brave:` | Brave Search (independent index) | yes | `brave: rust web framework` |
 //! | `tavily:` | Tavily (LLM-oriented search) | yes | `tavily: latest llm benchmarks` |
 //! | `exa:` | Exa (neural/semantic search) | yes | `exa: papers like AlphaFold` |
+//! | `millionshort:` | Million Short exploratory search | optional login | `millionshort: obscure search engines` |
 //! | `ddg:` | DuckDuckGo Instant Answer (facts/definitions) | no | `ddg: what is a monad` |
 //! | `searxng:` | SearXNG meta-search (key-free SERP; `SEARXNG_URL` env) | no | `searxng: rust web framework` |
 //! | `wiki:` | Wikipedia / MediaWiki search | no | `wiki: transformer model` |
 //!
 //! ## Google CSE
-//! Reads API keys from `~/.config/google-search-mcp/config.toml` (shared
-//! with the standalone google-cse-mcp-rs server). Falls back to
-//! `GOOGLE_CSE_API_KEY` + `GOOGLE_CSE_CX` env vars, then to Brave Search.
+//! Reads API keys from JFC's native `~/.config/jfc/credentials.toml`
+//! `[[google_cse.keys]]` entries. The old
+//! `~/.config/google-search-mcp/config.toml` file is still accepted as a
+//! compatibility fallback, followed by `GOOGLE_CSE_API_KEY` +
+//! `GOOGLE_CSE_CX` env vars.
 //!
 //! ## arXiv
 //! Uses the public Atom feed API at `export.arxiv.org`. No API key needed.
@@ -138,6 +140,25 @@ pub async fn search(query: &str, max_results: usize) -> Result<String, String> {
     }
     if let Some(q) = match_prefix(query, "exa") {
         return search_exa(q, max_results).await;
+    }
+    if let Some(q) = match_prefix(query, "millionshort").or_else(|| match_prefix(query, "million"))
+    {
+        let results = backends::search_millionshort_structured(q, max_results).await?;
+        if results.is_empty() {
+            return Err(format!("Million Short returned no results for: \"{q}\""));
+        }
+        return Ok(backend::format_results(
+            q,
+            &results,
+            &[BackendId::MillionShort],
+        ));
+    }
+    if let Some(q) = match_prefix(query, "4get").or_else(|| match_prefix(query, "fourget")) {
+        let results = backends::search_fourget_structured(q, max_results).await?;
+        if results.is_empty() {
+            return Err(format!("4get returned no results for: \"{q}\""));
+        }
+        return Ok(backend::format_results(q, &results, &[BackendId::FourGet]));
     }
     if let Some(q) = match_prefix(query, "ddg") {
         return search_duckduckgo(q).await;
@@ -403,6 +424,11 @@ struct GoogleConfigFile {
 }
 
 #[derive(Deserialize)]
+struct JfcCredentialsFile {
+    google_cse: Option<GoogleConfigFile>,
+}
+
+#[derive(Deserialize)]
 struct GoogleConfigKey {
     api_key: String,
     cx: String,
@@ -412,10 +438,22 @@ struct GoogleConfigKey {
 }
 
 fn load_google_keys() -> Vec<CseKey> {
-    if let Some(keys) = load_google_keys_from_config()
+    if let Some(keys) = load_google_keys_from_jfc_credentials()
         && !keys.is_empty()
     {
-        tracing::info!(count = keys.len(), "Google CSE keys loaded from config");
+        tracing::info!(
+            count = keys.len(),
+            "Google CSE keys loaded from JFC credentials"
+        );
+        return keys;
+    }
+    if let Some(keys) = load_google_keys_from_legacy_config()
+        && !keys.is_empty()
+    {
+        tracing::info!(
+            count = keys.len(),
+            "Google CSE keys loaded from legacy google-search-mcp config"
+        );
         return keys;
     }
     if let (Ok(api_key), Ok(cx)) = (
@@ -429,21 +467,37 @@ fn load_google_keys() -> Vec<CseKey> {
     Vec::new()
 }
 
-fn load_google_keys_from_config() -> Option<Vec<CseKey>> {
+fn load_google_keys_from_jfc_credentials() -> Option<Vec<CseKey>> {
+    let home = std::env::var("HOME").ok()?;
+    let path = PathBuf::from(home).join(".config/jfc/credentials.toml");
+    let content = std::fs::read_to_string(&path).ok()?;
+    parse_google_cse_keys_from_credentials(&content)
+}
+
+fn parse_google_cse_keys_from_credentials(content: &str) -> Option<Vec<CseKey>> {
+    let config: JfcCredentialsFile = toml::from_str(content).ok()?;
+    google_config_to_keys(config.google_cse?)
+}
+
+fn load_google_keys_from_legacy_config() -> Option<Vec<CseKey>> {
     let home = std::env::var("HOME").ok()?;
     let path = PathBuf::from(home).join(".config/google-search-mcp/config.toml");
     let content = std::fs::read_to_string(&path).ok()?;
     let config: GoogleConfigFile = toml::from_str(&content).ok()?;
-    Some(
-        config
-            .keys
-            .into_iter()
-            .map(|k| CseKey {
-                api_key: k.api_key,
-                cx: k.cx,
-            })
-            .collect(),
-    )
+    google_config_to_keys(config)
+}
+
+fn google_config_to_keys(config: GoogleConfigFile) -> Option<Vec<CseKey>> {
+    let keys: Vec<CseKey> = config
+        .keys
+        .into_iter()
+        .filter(|k| !k.api_key.is_empty() && !k.cx.is_empty())
+        .map(|k| CseKey {
+            api_key: k.api_key,
+            cx: k.cx,
+        })
+        .collect();
+    Some(keys)
 }
 
 #[derive(Deserialize)]
@@ -481,91 +535,107 @@ async fn search_google(query: &str, max_results: usize) -> Result<String, String
     let key = match pool.next() {
         Some(k) => k,
         None => {
-            // No Google keys — fall back to Brave Search if it's configured,
-            // otherwise surface a setup error covering both options.
-            tracing::info!("No Google CSE keys, attempting Brave Search fallback");
-            return brave_results(query, max_results)
+            tracing::info!("No Google CSE keys, attempting non-Google fallback");
+            return google_fallback(query, max_results)
                 .await
-                .map_err(|brave_err| {
+                .map_err(|fallback_err| {
                     format!(
                         "No Google CSE API keys configured (set GOOGLE_CSE_API_KEY + \
-                     GOOGLE_CSE_CX or ~/.config/google-search-mcp/config.toml), and \
-                     Brave fallback unavailable: {brave_err}"
+                      GOOGLE_CSE_CX or ~/.config/google-search-mcp/config.toml), and \
+                      fallback unavailable: {fallback_err}"
                     )
                 });
         }
     };
 
-    let num = max_results.clamp(1, 10);
+    let target = max_results.clamp(1, 100);
     let client = http_client()?;
-    let num_str = num.to_string();
+    let mut items = Vec::new();
+    let mut first_info = None;
+    let mut start = 1usize;
 
-    let resp = client
-        .get("https://www.googleapis.com/customsearch/v1")
-        .query(&[
-            ("key", key.api_key.as_str()),
-            ("cx", key.cx.as_str()),
-            ("q", query),
-            ("num", num_str.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("Google CSE request failed: {e}"))?;
+    while items.len() < target && start <= 91 {
+        let page_size = (target - items.len()).min(10);
+        let page_size_str = page_size.to_string();
+        let start_str = start.to_string();
+        let resp = client
+            .get("https://www.googleapis.com/customsearch/v1")
+            .query(&[
+                ("key", key.api_key.as_str()),
+                ("cx", key.cx.as_str()),
+                ("q", query),
+                ("num", page_size_str.as_str()),
+                ("start", start_str.as_str()),
+            ])
+            .send()
+            .await
+            .map_err(|e| format!("Google CSE request failed: {e}"))?;
 
-    let status = resp.status();
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| format!("Response read: {e}"))?;
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("Response read: {e}"))?;
 
-    let parsed: GoogleSearchResponse =
-        serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
+        let parsed: GoogleSearchResponse =
+            serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
 
-    if let Some(err) = parsed.error {
-        // Quota/rate-limit (429) and transient 5xx errors are recoverable via a
-        // different backend — don't make the whole search fail just because the
-        // Google CSE daily quota is exhausted. Fall back to Brave, then DDG.
-        if google_error_is_recoverable(err.code, &err.message) {
-            tracing::warn!(
-                code = err.code,
-                "Google CSE error {} ({}); falling back to an alternate backend",
-                err.code,
-                err.message
-            );
-            return google_fallback(query, max_results).await.map_err(|fb| {
-                format!(
-                    "Google CSE error {}: {} (and fallback failed: {fb})",
-                    err.code, err.message
-                )
-            });
+        if let Some(err) = parsed.error {
+            if google_error_is_recoverable(err.code, &err.message) {
+                tracing::warn!(
+                    code = err.code,
+                    "Google CSE error {} ({}); falling back to an alternate backend",
+                    err.code,
+                    err.message
+                );
+                return google_fallback(query, max_results).await.map_err(|fb| {
+                    format!(
+                        "Google CSE error {}: {} (and fallback failed: {fb})",
+                        err.code, err.message
+                    )
+                });
+            }
+            return Err(format!(
+                "Google CSE API error {}: {}",
+                err.code, err.message
+            ));
         }
-        return Err(format!(
-            "Google CSE API error {}: {}",
-            err.code, err.message
-        ));
-    }
-    if !status.is_success() {
-        if status.as_u16() == 429 || status.is_server_error() {
-            tracing::warn!(%status, "Google CSE HTTP {status}; falling back to an alternate backend");
-            return google_fallback(query, max_results).await.map_err(|fb| {
-                format!("Google CSE returned HTTP {status} (and fallback failed: {fb})")
-            });
+        if !status.is_success() {
+            if status.as_u16() == 429 || status.is_server_error() {
+                tracing::warn!(%status, "Google CSE HTTP {status}; falling back to an alternate backend");
+                return google_fallback(query, max_results).await.map_err(|fb| {
+                    format!("Google CSE returned HTTP {status} (and fallback failed: {fb})")
+                });
+            }
+            return Err(format!("Google CSE returned HTTP {status}"));
         }
-        return Err(format!("Google CSE returned HTTP {status}"));
+
+        if first_info.is_none() {
+            first_info = parsed.search_information;
+        }
+        let page_len = parsed.items.len();
+        if page_len == 0 {
+            break;
+        }
+        items.extend(parsed.items);
+        if page_len < page_size {
+            break;
+        }
+        start += 10;
     }
 
     let mut out = String::new();
-    if let Some(info) = &parsed.search_information {
+    if let Some(info) = &first_info {
         out.push_str(&format!(
             "Search: \"{query}\" — {total} results ({time:.2}s)\n\n",
             total = info.total_results,
             time = info.search_time,
         ));
     }
-    if parsed.items.is_empty() {
+    if items.is_empty() {
         out.push_str("No results found.\n");
     } else {
-        for (i, item) in parsed.items.iter().enumerate() {
+        for (i, item) in items.iter().enumerate() {
             out.push_str(&format!(
                 "{}. {}\n   URL: {}\n   {}\n\n",
                 i + 1,
@@ -592,21 +662,21 @@ fn google_error_is_recoverable(code: i32, message: &str) -> bool {
         || m.contains("exceeded")
 }
 
-/// Fallback chain for a failed/throttled Google CSE search: try Brave, then
-/// SearXNG (key-free meta-search SERP), then DuckDuckGo (instant answers).
-/// Returns the first backend that yields results, or the combined error.
 async fn google_fallback(query: &str, max_results: usize) -> Result<String, String> {
-    match brave_results(query, max_results).await {
-        Ok(out) => Ok(out),
-        Err(brave_err) => match search_searxng(query, max_results).await {
-            Ok(out) => Ok(out),
-            Err(searx_err) => match search_duckduckgo(query).await {
-                Ok(out) => Ok(out),
-                Err(ddg_err) => Err(format!(
-                    "Brave: {brave_err}; SearXNG: {searx_err}; DuckDuckGo: {ddg_err}"
-                )),
-            },
-        },
+    match backends::search_millionshort_structured(query, max_results).await {
+        Ok(results) if !results.is_empty() => Ok(backend::format_results(
+            query,
+            &results,
+            &[BackendId::MillionShort],
+        )),
+        Ok(_) | Err(_) => {
+            let results = backends::search_fourget_structured(query, max_results).await?;
+            Ok(backend::format_results(
+                query,
+                &results,
+                &[BackendId::FourGet],
+            ))
+        }
     }
 }
 
@@ -1374,33 +1444,57 @@ fn polite_pool_email(env_vars: &[&str]) -> Option<String> {
 // DBLP — computer-science bibliography (key-free)
 // ═══════════════════════════════════════════════════════════════════════════
 
+const DBLP_API_URLS: &[&str] = &[
+    "https://dblp.org/search/publ/api",
+    "https://dblp.uni-trier.de/search/publ/api",
+];
+
+async fn fetch_dblp_json(query: &str, limit: usize) -> Result<serde_json::Value, String> {
+    let limit_str = limit.to_string();
+    let client = http_client()?;
+    let mut errors = Vec::new();
+
+    for url in DBLP_API_URLS {
+        let response = client
+            .get(*url)
+            .header("User-Agent", "Mozilla/5.0 (compatible; jfc-web/1.0)")
+            .query(&[
+                ("q", query),
+                ("format", "json"),
+                ("h", limit_str.as_str()),
+                ("f", "0"),
+            ])
+            .send()
+            .await
+            .map_err(|e| format!("{url}: request failed: {e}"));
+
+        let response = match response {
+            Ok(response) => response,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
+        if !response.status().is_success() {
+            errors.push(format!("{url}: HTTP {}", response.status()));
+            continue;
+        }
+        let body = response
+            .text()
+            .await
+            .map_err(|e| format!("{url}: response read failed: {e}"))?;
+        return serde_json::from_str(&body).map_err(|e| format!("{url}: JSON parse failed: {e}"));
+    }
+
+    Err(format!("DBLP failed: {}", errors.join("; ")))
+}
+
 /// Search the DBLP publication API. Key-free, returns rich metadata (authors,
 /// venue, year, type, DOI, electronic-edition URL) for CS papers. The public
 /// endpoint is `https://dblp.org/search/publ/api?format=json`.
 async fn search_dblp(query: &str, max_results: usize) -> Result<String, String> {
-    let limit = max_results.clamp(1, 30);
-    let limit_str = limit.to_string();
-    let client = http_client()?;
-
-    let resp = client
-        .get("https://dblp.org/search/publ/api")
-        .query(&[
-            ("q", query),
-            ("format", "json"),
-            ("h", limit_str.as_str()),
-            ("f", "0"),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("DBLP request failed: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("DBLP returned HTTP {}", resp.status()));
-    }
-    let parsed: serde_json::Value = resp
-        .text()
-        .await
-        .map_err(|e| format!("Response read: {e}"))
-        .and_then(|b| serde_json::from_str(&b).map_err(|e| format!("JSON parse: {e}")))?;
+    let limit = max_results.clamp(1, 100);
+    let parsed = fetch_dblp_json(query, limit).await?;
 
     let hits = parsed.pointer("/result/hits");
     let total = hits
@@ -1703,7 +1797,7 @@ async fn search_openalex_entries(
     query: &str,
     max_results: usize,
 ) -> Result<Vec<PaperEntry>, String> {
-    let per_page = max_results.clamp(1, 25).to_string();
+    let per_page = max_results.clamp(1, 100).to_string();
     let client = http_client()?;
 
     let mut req = client
@@ -3947,7 +4041,7 @@ async fn search_primo(query: &str, max_results: usize) -> Result<String, String>
     let inst = find_primo_instance(inst_key).unwrap_or_else(|| &PRIMO_INSTANCES[0]); // fallback to CMU
     let (_key, host, vid, inst_code, tab, scope) = inst;
 
-    let limit = max_results.clamp(1, 10).to_string();
+    let limit = max_results.clamp(1, 50).to_string();
     let client = http_client()?;
 
     // Build URL manually — reqwest's .query() percent-encodes commas inside
@@ -4048,46 +4142,61 @@ pub async fn search_google_structured(
         None => return Err("No Google CSE API keys configured".into()),
     };
 
-    let num = max_results.clamp(1, 10);
     let client = http_client()?;
+    let target = max_results.clamp(1, 100);
+    let mut results = Vec::new();
+    let mut start = 1usize;
 
-    let resp = client
-        .get("https://www.googleapis.com/customsearch/v1")
-        .query(&[
-            ("key", key.api_key.as_str()),
-            ("cx", key.cx.as_str()),
-            ("q", query),
-            ("num", &num.to_string()),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("Google CSE request failed: {e}"))?;
+    while results.len() < target && start <= 91 {
+        let page_size = (target - results.len()).min(10);
+        let page_size_str = page_size.to_string();
+        let start_str = start.to_string();
+        let resp = client
+            .get("https://www.googleapis.com/customsearch/v1")
+            .query(&[
+                ("key", key.api_key.as_str()),
+                ("cx", key.cx.as_str()),
+                ("q", query),
+                ("num", page_size_str.as_str()),
+                ("start", start_str.as_str()),
+            ])
+            .send()
+            .await
+            .map_err(|e| format!("Google CSE request failed: {e}"))?;
 
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| format!("Response read: {e}"))?;
-    let parsed: GoogleSearchResponse =
-        serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("Response read: {e}"))?;
+        let parsed: GoogleSearchResponse =
+            serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
 
-    if let Some(err) = parsed.error {
-        return Err(format!("Google CSE error {}: {}", err.code, err.message));
+        if let Some(err) = parsed.error {
+            return Err(format!("Google CSE error {}: {}", err.code, err.message));
+        }
+        let page_len = parsed.items.len();
+        results.extend(
+            parsed
+                .items
+                .into_iter()
+                .enumerate()
+                .map(|(i, item)| SearchResult {
+                    title: item.title,
+                    url: item.link,
+                    snippet: item.snippet,
+                    doi: None,
+                    arxiv_id: None,
+                    source: BackendId::Google,
+                    rank: start + i,
+                }),
+        );
+        if page_len < page_size {
+            break;
+        }
+        start += 10;
     }
 
-    Ok(parsed
-        .items
-        .into_iter()
-        .enumerate()
-        .map(|(i, item)| SearchResult {
-            title: item.title,
-            url: item.link,
-            snippet: item.snippet,
-            doi: None,
-            arxiv_id: None,
-            source: BackendId::Google,
-            rank: i + 1,
-        })
-        .collect())
+    Ok(results)
 }
 
 /// Wrapper returning structured results for Brave Search.
@@ -4351,56 +4460,47 @@ pub async fn search_dblp_structured(
 ) -> Result<Vec<backend::SearchResult>, String> {
     use backend::{BackendId, SearchResult};
 
-    let client = http_client()?;
-    let resp = client
-        .get("https://dblp.org/search/publ/api")
-        .query(&[
-            ("q", query),
-            ("format", "json"),
-            ("h", &max_results.to_string()),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("DBLP request failed: {e}"))?;
-
-    let parsed: serde_json::Value = resp.json().await.map_err(|e| format!("JSON parse: {e}"))?;
+    let parsed = fetch_dblp_json(query, max_results.clamp(1, 100)).await?;
 
     let hits = parsed
         .get("result")
         .and_then(|r| r.get("hits"))
-        .and_then(|h| h.get("hit"))
-        .and_then(|h| h.as_array());
+        .and_then(|h| h.get("hit"));
 
-    let results = hits
-        .map(|arr| {
-            arr.iter()
-                .enumerate()
-                .filter_map(|(i, hit)| {
-                    let info = hit.get("info")?;
-                    let title = info.get("title")?.as_str()?;
-                    let url = info
-                        .get("ee")
-                        .and_then(|e| e.as_str())
-                        .or_else(|| info.get("url").and_then(|u| u.as_str()))?;
-                    let doi = info.get("doi").and_then(|d| d.as_str());
-                    let year = info.get("year").and_then(|y| y.as_str()).unwrap_or("");
-                    let venue = info.get("venue").and_then(|v| v.as_str()).unwrap_or("");
+    let hit_list: Vec<serde_json::Value> = match hits {
+        Some(serde_json::Value::Array(a)) => a.clone(),
+        Some(obj @ serde_json::Value::Object(_)) => vec![obj.clone()],
+        _ => Vec::new(),
+    };
 
-                    Some(SearchResult {
-                        title: decode_basic_entities(title),
-                        url: url.to_string(),
-                        snippet: format!("{year} · {venue}"),
-                        doi: doi.map(String::from),
-                        arxiv_id: None,
-                        source: BackendId::DBLP,
-                        rank: i + 1,
-                    })
-                })
-                .collect()
+    Ok(hit_list
+        .iter()
+        .enumerate()
+        .filter_map(|(i, hit)| {
+            let info = hit.get("info")?;
+            let title = info.get("title")?.as_str()?;
+            let url = info
+                .get("ee")
+                .and_then(|e| e.as_str())
+                .or_else(|| info.get("url").and_then(|u| u.as_str()))?;
+            let doi = info.get("doi").and_then(|d| d.as_str());
+            let year = info.get("year").and_then(|y| y.as_str()).unwrap_or("");
+            let venue = info
+                .get("venue")
+                .and_then(value_to_joined_string)
+                .unwrap_or_default();
+
+            Some(SearchResult {
+                title: decode_basic_entities(title),
+                url: url.to_string(),
+                snippet: format!("{year} · {venue}"),
+                doi: doi.map(String::from),
+                arxiv_id: None,
+                source: BackendId::DBLP,
+                rank: i + 1,
+            })
         })
-        .unwrap_or_default();
-
-    Ok(results)
+        .collect())
 }
 
 /// Wrapper returning structured results for Wikipedia.
@@ -4459,7 +4559,10 @@ pub async fn search_wikipedia_structured(
 
 #[cfg(test)]
 mod fallback_tests {
-    use super::{google_error_is_recoverable, match_prefix, searxng_base_url};
+    use super::{
+        google_error_is_recoverable, match_prefix, parse_google_cse_keys_from_credentials,
+        searxng_base_url,
+    };
 
     #[test]
     fn google_429_and_quota_are_recoverable_normal() {
@@ -4507,6 +4610,43 @@ mod fallback_tests {
             match_prefix("dblp transformers", "dblp"),
             Some("transformers")
         );
+    }
+
+    #[test]
+    fn millionshort_prefixes_parse_normal() {
+        assert_eq!(
+            match_prefix("millionshort: rust async traits", "millionshort"),
+            Some("rust async traits")
+        );
+        assert_eq!(
+            match_prefix("million short tail search", "million"),
+            Some("short tail search")
+        );
+    }
+
+    #[test]
+    fn google_cse_native_credentials_parse_normal() {
+        let credentials = r#"
+            [openai]
+            api_key = "sk-unrelated"
+
+            [[google_cse.keys]]
+            api_key = "google-key-1"
+            cx = "cx-1"
+            description = "first"
+
+            [[google_cse.keys]]
+            api_key = "google-key-2"
+            cx = "cx-2"
+        "#;
+
+        let keys = parse_google_cse_keys_from_credentials(credentials).expect("keys");
+
+        assert_eq!(keys.len(), 2);
+        assert_eq!(keys[0].api_key, "google-key-1");
+        assert_eq!(keys[0].cx, "cx-1");
+        assert_eq!(keys[1].api_key, "google-key-2");
+        assert_eq!(keys[1].cx, "cx-2");
     }
 }
 

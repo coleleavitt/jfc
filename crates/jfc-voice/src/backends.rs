@@ -18,6 +18,14 @@ use crate::config::{SttBackendKind, VoiceConfig};
 ///
 /// Returns `None` if the audio is silent or empty.
 pub async fn transcribe(pcm: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Option<String>> {
+    transcribe_with_token(pcm, cfg, None).await
+}
+
+pub async fn transcribe_with_token(
+    pcm: &[u8],
+    cfg: &VoiceConfig,
+    oauth_token: Option<&str>,
+) -> anyhow::Result<Option<String>> {
     if pcm.is_empty() {
         debug!(target: "jfc::voice::stt", "transcribe called with empty PCM");
         return Ok(None);
@@ -67,7 +75,7 @@ pub async fn transcribe(pcm: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Option<
             //   3. Fall through to OpenAI Whisper, then local.
             // Any error (e.g. no OAuth token) falls through; a successful-but-
             // empty result (Ok(None)) means the provider heard silence.
-            match try_anthropic_ws(pcm, cfg).await {
+            match try_anthropic_ws(pcm, cfg, oauth_token).await {
                 Ok(Some(text)) => {
                     debug!(target: "jfc::voice::stt", "Anthropic WS STT succeeded");
                     return Ok(Some(text));
@@ -84,7 +92,7 @@ pub async fn transcribe(pcm: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Option<
                     );
                 }
             }
-            match try_anthropic_batch(&wav, cfg).await {
+            match try_anthropic_batch(&wav, cfg, oauth_token).await {
                 Ok(Some(text)) => {
                     debug!(target: "jfc::voice::stt", "Anthropic gateway STT succeeded");
                     return Ok(Some(text));
@@ -139,11 +147,12 @@ pub async fn transcribe(pcm: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Option<
 /// Claude Code actually uses). Faithfully ported from the CLI — see
 /// [`crate::anthropic_ws`]. Needs an OAuth access token; errors (no token,
 /// connect failure) fall through to the gateway/OpenAI paths.
-async fn try_anthropic_ws(pcm: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Option<String>> {
-    let token = std::env::var("CLAUDE_ACCESS_TOKEN")
-        .or_else(|_| std::env::var("ANTHROPIC_ACCESS_TOKEN"))
-        .or_else(|_| std::env::var("JFC_ANTHROPIC_ACCESS_TOKEN"))
-        .context("no Anthropic OAuth token available for voice STT")?;
+async fn try_anthropic_ws(
+    pcm: &[u8],
+    cfg: &VoiceConfig,
+    oauth_token: Option<&str>,
+) -> anyhow::Result<Option<String>> {
+    let token = resolve_oauth_token(oauth_token)?;
 
     // Base WS origin: explicit override (VOICE_STREAM_BASE_URL or the configured
     // voice URL) → wss form; else the default api host. Mirrors the CLI, which
@@ -161,10 +170,15 @@ async fn try_anthropic_ws(pcm: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Optio
         });
 
     let user_agent = format!("jfc-voice/{}", env!("CARGO_PKG_VERSION"));
-    crate::anthropic_ws::transcribe_pcm(pcm, &token, &base_wss, &cfg.language, &user_agent).await
+    crate::anthropic_ws::transcribe_pcm(pcm, token.as_ref(), &base_wss, &cfg.language, &user_agent)
+        .await
 }
 
-async fn try_anthropic_batch(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Option<String>> {
+async fn try_anthropic_batch(
+    wav: &[u8],
+    cfg: &VoiceConfig,
+    oauth_token: Option<&str>,
+) -> anyhow::Result<Option<String>> {
     // IMPORTANT — Anthropic has no public batch REST transcription endpoint.
     //
     // Claude Code does speech-to-text over a *WebSocket* stream
@@ -192,11 +206,7 @@ async fn try_anthropic_batch(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Op
         ));
     };
 
-    // Read OAuth token from environment (set by the auth subsystem).
-    let token = std::env::var("CLAUDE_ACCESS_TOKEN")
-        .or_else(|_| std::env::var("ANTHROPIC_ACCESS_TOKEN"))
-        .or_else(|_| std::env::var("JFC_ANTHROPIC_ACCESS_TOKEN"))
-        .context("no Anthropic OAuth token available for voice STT")?;
+    let token = resolve_oauth_token(oauth_token)?;
 
     // The configured gateway must expose an OpenAI-compatible transcription
     // route. (We do not append to api.anthropic.com — that endpoint 404s.)
@@ -219,7 +229,7 @@ async fn try_anthropic_batch(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Op
 
     let resp = client
         .post(&url)
-        .bearer_auth(&token)
+        .bearer_auth(token.as_ref())
         .header("x-app", "cli")
         .multipart(form)
         .timeout(std::time::Duration::from_secs(30))
@@ -246,6 +256,17 @@ async fn try_anthropic_batch(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Op
         .map(str::to_owned)
         .unwrap_or_default();
     Ok(nonempty(text))
+}
+
+fn resolve_oauth_token(token: Option<&str>) -> anyhow::Result<std::borrow::Cow<'_, str>> {
+    if let Some(token) = token.filter(|token| !token.trim().is_empty()) {
+        return Ok(std::borrow::Cow::Borrowed(token));
+    }
+    std::env::var("CLAUDE_ACCESS_TOKEN")
+        .or_else(|_| std::env::var("ANTHROPIC_ACCESS_TOKEN"))
+        .or_else(|_| std::env::var("JFC_ANTHROPIC_ACCESS_TOKEN"))
+        .map(std::borrow::Cow::Owned)
+        .context("no Anthropic OAuth token available for voice STT")
 }
 
 // ── OpenAI Whisper API ────────────────────────────────────────────────────────
@@ -804,7 +825,7 @@ mod anthropic_backend_tests {
             ..Default::default()
         };
         let wav = vec![0u8; 64];
-        let err = try_anthropic_batch(&wav, &cfg)
+        let err = try_anthropic_batch(&wav, &cfg, None)
             .await
             .expect_err("must error without a configured gateway");
         let msg = err.to_string();
@@ -821,7 +842,9 @@ mod anthropic_backend_tests {
             anthropic_voice_url: Some(String::new()),
             ..Default::default()
         };
-        let err = try_anthropic_batch(&[0u8; 64], &cfg).await.unwrap_err();
+        let err = try_anthropic_batch(&[0u8; 64], &cfg, None)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("not available"));
     }
 }

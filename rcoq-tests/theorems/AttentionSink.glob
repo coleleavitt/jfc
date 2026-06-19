@@ -1,0 +1,862 @@
+DIGEST 74b05b6258d58da24c3c508afd769db2
+FJFCTheorems.AttentionSink
+R778:792 Stdlib.Arith.Arith <> <> lib
+R810:823 Stdlib.Lists.List <> <> lib
+R841:853 Stdlib.Bool.Bool <> <> lib
+R871:887 Stdlib.micromega.Lia <> <> lib
+R897:909 Stdlib.Lists.List ListNotations <> mod
+def 1040:1055 <> AttentionWeights
+R1060:1063 Corelib.Init.Datatypes <> list ind
+R1065:1067 Corelib.Init.Datatypes <> nat ind
+def 1159:1173 <> total_attention
+R1186:1201 JFCTheorems.AttentionSink <> AttentionWeights def
+binder 1176:1182 <> weights:1
+R1206:1208 Corelib.Init.Datatypes <> nat ind
+R1215:1223 Stdlib.Lists.List <> fold_left def
+R1233:1239 JFCTheorems.AttentionSink <> weights:1 var
+R1225:1231 Stdlib.Arith.PeanoNat Nat add def
+def 1287:1298 <> attention_at
+R1311:1326 JFCTheorems.AttentionSink <> AttentionWeights def
+binder 1301:1307 <> weights:2
+R1334:1336 Corelib.Init.Datatypes <> nat ind
+binder 1330:1330 <> i:3
+R1341:1343 Corelib.Init.Datatypes <> nat ind
+R1350:1352 Corelib.Lists.ListDef <> nth def
+R1356:1362 JFCTheorems.AttentionSink <> weights:2 var
+R1354:1354 JFCTheorems.AttentionSink <> i:3 var
+def 1482:1488 <> is_sink
+R1501:1516 JFCTheorems.AttentionSink <> AttentionWeights def
+binder 1491:1497 <> weights:4
+R1526:1528 Corelib.Init.Datatypes <> nat ind
+binder 1520:1522 <> pos:5
+R1544:1546 Corelib.Init.Datatypes <> nat ind
+binder 1532:1540 <> threshold:6
+R1551:1554 Corelib.Init.Datatypes <> bool ind
+R1620:1625 Corelib.Init.Datatypes <> length def
+R1627:1633 JFCTheorems.AttentionSink <> weights:4 var
+binder 1615:1615 <> n:7
+R1659:1661 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R1662:1664 Corelib.Init.Peano <> max abbrev
+R1668:1668 JFCTheorems.AttentionSink <> n:7 var
+binder 1644:1650 <> uniform:8
+R1712:1718 Stdlib.Arith.PeanoNat Nat leb def
+R1740:1742 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R1728:1730 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R1721:1727 JFCTheorems.AttentionSink <> uniform:8 var
+R1731:1739 JFCTheorems.AttentionSink <> threshold:6 var
+R1749:1760 JFCTheorems.AttentionSink <> attention_at def
+R1762:1768 JFCTheorems.AttentionSink <> weights:4 var
+R1770:1772 JFCTheorems.AttentionSink <> pos:5 var
+def 1839:1852 <> sink_positions
+R1865:1880 JFCTheorems.AttentionSink <> AttentionWeights def
+binder 1855:1861 <> weights:9
+R1896:1898 Corelib.Init.Datatypes <> nat ind
+binder 1884:1892 <> threshold:10
+R1903:1906 Corelib.Init.Datatypes <> list ind
+R1908:1910 Corelib.Init.Datatypes <> nat ind
+R1917:1922 Stdlib.Lists.List <> filter def
+R1964:1966 Corelib.Lists.ListDef <> seq def
+R1971:1976 Corelib.Init.Datatypes <> length def
+R1978:1984 JFCTheorems.AttentionSink <> weights:9 var
+binder 1929:1929 <> i:11
+R1934:1940 JFCTheorems.AttentionSink <> is_sink def
+R1942:1948 JFCTheorems.AttentionSink <> weights:9 var
+R1950:1950 JFCTheorems.AttentionSink <> i:11 var
+R1952:1960 JFCTheorems.AttentionSink <> threshold:10 var
+rec 2034:2048 <> StreamingWindow
+proj 2082:2092 <> sink_tokens
+proj 2157:2167 <> window_size
+proj 2210:2219 <> total_seen
+R2096:2098 Corelib.Init.Datatypes <> nat ind
+R2171:2173 Corelib.Init.Datatypes <> nat ind
+R2223:2225 Corelib.Init.Datatypes <> nat ind
+def 2317:2332 <> active_positions
+R2339:2353 JFCTheorems.AttentionSink <> StreamingWindow rec
+binder 2335:2335 <> w:16
+R2358:2361 Corelib.Init.Datatypes <> list ind
+R2363:2365 Corelib.Init.Datatypes <> nat ind
+R2472:2474 Corelib.Lists.ListDef <> seq def
+R2479:2489 JFCTheorems.AttentionSink <> sink_tokens proj
+R2491:2491 JFCTheorems.AttentionSink <> w:16 var
+binder 2463:2467 <> sinks:17
+R2531:2533 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R2519:2528 JFCTheorems.AttentionSink <> total_seen proj
+R2530:2530 JFCTheorems.AttentionSink <> w:16 var
+R2534:2536 Corelib.Init.Peano <> min abbrev
+R2539:2549 JFCTheorems.AttentionSink <> window_size proj
+R2551:2551 JFCTheorems.AttentionSink <> w:16 var
+R2555:2564 JFCTheorems.AttentionSink <> total_seen proj
+R2566:2566 JFCTheorems.AttentionSink <> w:16 var
+binder 2503:2514 <> window_start:18
+R2588:2590 Corelib.Lists.ListDef <> seq def
+R2606:2608 Corelib.Init.Peano <> min abbrev
+R2611:2621 JFCTheorems.AttentionSink <> window_size proj
+R2623:2623 JFCTheorems.AttentionSink <> w:16 var
+R2627:2636 JFCTheorems.AttentionSink <> total_seen proj
+R2638:2638 JFCTheorems.AttentionSink <> w:16 var
+R2592:2603 JFCTheorems.AttentionSink <> window_start:18 var
+binder 2578:2583 <> window:19
+R2647:2651 Stdlib.Lists.List <> nodup def
+R2670:2673 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R2665:2669 JFCTheorems.AttentionSink <> sinks:17 var
+R2674:2679 JFCTheorems.AttentionSink <> window:19 var
+R2653:2662 Stdlib.Arith.PeanoNat Nat eq_dec thm
+def 2715:2727 <> memory_tokens
+R2734:2748 JFCTheorems.AttentionSink <> StreamingWindow rec
+binder 2730:2730 <> w:20
+R2753:2755 Corelib.Init.Datatypes <> nat ind
+R2775:2777 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2762:2772 JFCTheorems.AttentionSink <> sink_tokens proj
+R2774:2774 JFCTheorems.AttentionSink <> w:20 var
+R2778:2780 Corelib.Init.Peano <> min abbrev
+R2783:2793 JFCTheorems.AttentionSink <> window_size proj
+R2795:2795 JFCTheorems.AttentionSink <> w:20 var
+R2799:2808 JFCTheorems.AttentionSink <> total_seen proj
+R2810:2810 JFCTheorems.AttentionSink <> w:20 var
+prf 2930:2943 <> memory_bounded
+binder 2956:2956 <> w:21
+R2978:2981 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R2963:2975 JFCTheorems.AttentionSink <> memory_tokens def
+R2977:2977 JFCTheorems.AttentionSink <> w:21 var
+R2995:2997 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2982:2992 JFCTheorems.AttentionSink <> sink_tokens proj
+R2994:2994 JFCTheorems.AttentionSink <> w:21 var
+R2998:3008 JFCTheorems.AttentionSink <> window_size proj
+R3010:3010 JFCTheorems.AttentionSink <> w:21 var
+R3041:3053 JFCTheorems.AttentionSink <> memory_tokens def
+prf 3133:3151 <> sinks_always_active
+binder 3164:3164 <> w:22
+binder 3166:3166 <> i:23
+R3190:3197 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3174:3176 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R3173:3173 JFCTheorems.AttentionSink <> i:23 var
+R3177:3187 JFCTheorems.AttentionSink <> sink_tokens proj
+R3189:3189 JFCTheorems.AttentionSink <> w:22 var
+R3198:3199 Stdlib.Lists.List <> In def
+R3204:3219 JFCTheorems.AttentionSink <> active_positions def
+R3221:3221 JFCTheorems.AttentionSink <> w:22 var
+R3201:3201 JFCTheorems.AttentionSink <> i:23 var
+R3258:3273 JFCTheorems.AttentionSink <> active_positions def
+R3284:3291 Stdlib.Lists.List <> nodup_In thm
+R3284:3291 Stdlib.Lists.List <> nodup_In thm
+R3302:3310 Stdlib.Lists.List <> in_or_app thm
+R3302:3310 Stdlib.Lists.List <> in_or_app thm
+R3329:3334 Stdlib.Lists.List <> in_seq thm
+R3329:3334 Stdlib.Lists.List <> in_seq thm
+prf 3620:3640 <> active_positions_spec
+binder 3653:3653 <> w:24
+binder 3655:3655 <> i:25
+R3687:3698 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R3811:3811 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R3662:3663 Stdlib.Lists.List <> In def
+R3668:3683 JFCTheorems.AttentionSink <> active_positions def
+R3685:3685 JFCTheorems.AttentionSink <> w:24 var
+R3665:3665 JFCTheorems.AttentionSink <> i:25 var
+R3716:3727 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R3810:3810 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R3700:3702 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R3699:3699 JFCTheorems.AttentionSink <> i:25 var
+R3703:3713 JFCTheorems.AttentionSink <> sink_tokens proj
+R3715:3715 JFCTheorems.AttentionSink <> w:24 var
+R3782:3793 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R3777:3780 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R3740:3742 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3728:3737 JFCTheorems.AttentionSink <> total_seen proj
+R3739:3739 JFCTheorems.AttentionSink <> w:24 var
+R3743:3745 Corelib.Init.Peano <> min abbrev
+R3748:3758 JFCTheorems.AttentionSink <> window_size proj
+R3760:3760 JFCTheorems.AttentionSink <> w:24 var
+R3764:3773 JFCTheorems.AttentionSink <> total_seen proj
+R3775:3775 JFCTheorems.AttentionSink <> w:24 var
+R3781:3781 JFCTheorems.AttentionSink <> i:25 var
+R3795:3797 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R3794:3794 JFCTheorems.AttentionSink <> i:25 var
+R3798:3807 JFCTheorems.AttentionSink <> total_seen proj
+R3809:3809 JFCTheorems.AttentionSink <> w:24 var
+R3842:3857 JFCTheorems.AttentionSink <> active_positions def
+R3885:3887 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3873:3882 JFCTheorems.AttentionSink <> total_seen proj
+R3888:3890 Corelib.Init.Peano <> min abbrev
+R3893:3903 JFCTheorems.AttentionSink <> window_size proj
+R3909:3918 JFCTheorems.AttentionSink <> total_seen proj
+R3885:3887 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3873:3882 JFCTheorems.AttentionSink <> total_seen proj
+R3888:3890 Corelib.Init.Peano <> min abbrev
+R3893:3903 JFCTheorems.AttentionSink <> window_size proj
+R3909:3918 JFCTheorems.AttentionSink <> total_seen proj
+R3939:3941 Corelib.Init.Peano <> min abbrev
+R3944:3954 JFCTheorems.AttentionSink <> window_size proj
+R3960:3969 JFCTheorems.AttentionSink <> total_seen proj
+R3939:3941 Corelib.Init.Peano <> min abbrev
+R3944:3954 JFCTheorems.AttentionSink <> window_size proj
+R3960:3969 JFCTheorems.AttentionSink <> total_seen proj
+R3986:3993 Stdlib.Lists.List <> nodup_In thm
+R3986:3993 Stdlib.Lists.List <> nodup_In thm
+R3986:3993 Stdlib.Lists.List <> nodup_In thm
+R4079:4081 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4073:4075 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4082:4091 JFCTheorems.AttentionSink <> total_seen proj
+R4079:4081 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4073:4075 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4082:4091 JFCTheorems.AttentionSink <> total_seen proj
+R4129:4140 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R4143:4153 JFCTheorems.AttentionSink <> window_size proj
+R4159:4168 JFCTheorems.AttentionSink <> total_seen proj
+R4129:4140 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R4143:4153 JFCTheorems.AttentionSink <> window_size proj
+R4159:4168 JFCTheorems.AttentionSink <> total_seen proj
+R4213:4221 Stdlib.Lists.List <> in_app_or thm
+R4213:4221 Stdlib.Lists.List <> in_app_or thm
+R4276:4281 Stdlib.Lists.List <> in_seq thm
+R4276:4281 Stdlib.Lists.List <> in_seq thm
+R4314:4319 Stdlib.Lists.List <> in_seq thm
+R4314:4319 Stdlib.Lists.List <> in_seq thm
+R4374:4382 Stdlib.Lists.List <> in_or_app thm
+R4374:4382 Stdlib.Lists.List <> in_or_app thm
+R4397:4402 Stdlib.Lists.List <> in_seq thm
+R4397:4402 Stdlib.Lists.List <> in_seq thm
+R4422:4430 Stdlib.Lists.List <> in_or_app thm
+R4422:4430 Stdlib.Lists.List <> in_or_app thm
+R4446:4451 Stdlib.Lists.List <> in_seq thm
+R4446:4451 Stdlib.Lists.List <> in_seq thm
+prf 4889:4907 <> endpoints_preserved
+binder 4920:4920 <> w:26
+R4945:4952 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4940:4943 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R4927:4937 JFCTheorems.AttentionSink <> sink_tokens proj
+R4939:4939 JFCTheorems.AttentionSink <> w:26 var
+R4970:4977 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4965:4968 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R4953:4962 JFCTheorems.AttentionSink <> total_seen proj
+R4964:4964 JFCTheorems.AttentionSink <> w:26 var
+R4996:5003 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4991:4994 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R4978:4988 JFCTheorems.AttentionSink <> window_size proj
+R4990:4990 JFCTheorems.AttentionSink <> w:26 var
+R5029:5032 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R5004:5005 Stdlib.Lists.List <> In def
+R5010:5025 JFCTheorems.AttentionSink <> active_positions def
+R5027:5027 JFCTheorems.AttentionSink <> w:26 var
+R5033:5034 Stdlib.Lists.List <> In def
+R5056:5071 JFCTheorems.AttentionSink <> active_positions def
+R5073:5073 JFCTheorems.AttentionSink <> w:26 var
+R5049:5051 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R5037:5046 JFCTheorems.AttentionSink <> total_seen proj
+R5048:5048 JFCTheorems.AttentionSink <> w:26 var
+R5194:5214 JFCTheorems.AttentionSink <> active_positions_spec thm
+R5194:5214 JFCTheorems.AttentionSink <> active_positions_spec thm
+R5298:5318 JFCTheorems.AttentionSink <> active_positions_spec thm
+R5298:5318 JFCTheorems.AttentionSink <> active_positions_spec thm
+R5381:5384 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R5347:5349 Corelib.Init.Peano <> min abbrev
+R5352:5362 JFCTheorems.AttentionSink <> window_size proj
+R5368:5377 JFCTheorems.AttentionSink <> total_seen proj
+R5381:5384 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R5347:5349 Corelib.Init.Peano <> min abbrev
+R5352:5362 JFCTheorems.AttentionSink <> window_size proj
+R5368:5377 JFCTheorems.AttentionSink <> total_seen proj
+R5407:5418 Stdlib.Arith.PeanoNat Nat le_min_l thm
+R5421:5431 JFCTheorems.AttentionSink <> window_size proj
+R5437:5446 JFCTheorems.AttentionSink <> total_seen proj
+R5407:5418 Stdlib.Arith.PeanoNat Nat le_min_l thm
+R5421:5431 JFCTheorems.AttentionSink <> window_size proj
+R5437:5446 JFCTheorems.AttentionSink <> total_seen proj
+R5471:5482 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R5485:5495 JFCTheorems.AttentionSink <> window_size proj
+R5501:5510 JFCTheorems.AttentionSink <> total_seen proj
+R5471:5482 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R5485:5495 JFCTheorems.AttentionSink <> window_size proj
+R5501:5510 JFCTheorems.AttentionSink <> total_seen proj
+R5540:5551 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R5554:5564 JFCTheorems.AttentionSink <> window_size proj
+R5570:5579 JFCTheorems.AttentionSink <> total_seen proj
+R5540:5551 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R5554:5564 JFCTheorems.AttentionSink <> window_size proj
+R5570:5579 JFCTheorems.AttentionSink <> total_seen proj
+prf 6024:6046 <> dropping_only_in_middle
+binder 6059:6059 <> w:27
+binder 6061:6061 <> i:28
+R6084:6091 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6069:6071 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R6068:6068 JFCTheorems.AttentionSink <> i:28 var
+R6072:6081 JFCTheorems.AttentionSink <> total_seen proj
+R6083:6083 JFCTheorems.AttentionSink <> w:27 var
+R6119:6126 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6092:6093 Corelib.Init.Logic <> ::type_scope:'~'_x not
+R6094:6095 Stdlib.Lists.List <> In def
+R6100:6115 JFCTheorems.AttentionSink <> active_positions def
+R6117:6117 JFCTheorems.AttentionSink <> w:27 var
+R6097:6097 JFCTheorems.AttentionSink <> i:28 var
+R6145:6152 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R6140:6143 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6127:6137 JFCTheorems.AttentionSink <> sink_tokens proj
+R6139:6139 JFCTheorems.AttentionSink <> w:27 var
+R6144:6144 JFCTheorems.AttentionSink <> i:28 var
+R6154:6156 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R6153:6153 JFCTheorems.AttentionSink <> i:28 var
+R6169:6171 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6157:6166 JFCTheorems.AttentionSink <> total_seen proj
+R6168:6168 JFCTheorems.AttentionSink <> w:27 var
+R6172:6174 Corelib.Init.Peano <> min abbrev
+R6177:6187 JFCTheorems.AttentionSink <> window_size proj
+R6189:6189 JFCTheorems.AttentionSink <> w:27 var
+R6193:6202 JFCTheorems.AttentionSink <> total_seen proj
+R6204:6204 JFCTheorems.AttentionSink <> w:27 var
+R6337:6357 JFCTheorems.AttentionSink <> active_positions_spec thm
+R6337:6357 JFCTheorems.AttentionSink <> active_positions_spec thm
+R6489:6500 Stdlib.Arith.PeanoNat Nat ltb_spec thm
+R6505:6515 JFCTheorems.AttentionSink <> sink_tokens proj
+R6489:6500 Stdlib.Arith.PeanoNat Nat ltb_spec thm
+R6505:6515 JFCTheorems.AttentionSink <> sink_tokens proj
+R6669:6680 Stdlib.Arith.PeanoNat Nat ltb_spec thm
+R6697:6699 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6685:6694 JFCTheorems.AttentionSink <> total_seen proj
+R6700:6702 Corelib.Init.Peano <> min abbrev
+R6705:6715 JFCTheorems.AttentionSink <> window_size proj
+R6721:6730 JFCTheorems.AttentionSink <> total_seen proj
+R6669:6680 Stdlib.Arith.PeanoNat Nat ltb_spec thm
+R6697:6699 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6685:6694 JFCTheorems.AttentionSink <> total_seen proj
+R6700:6702 Corelib.Init.Peano <> min abbrev
+R6705:6715 JFCTheorems.AttentionSink <> window_size proj
+R6721:6730 JFCTheorems.AttentionSink <> total_seen proj
+def 6955:6964 <> perplexity
+R6985:6987 Corelib.Init.Datatypes <> nat ind
+binder 6967:6981 <> context_quality:29
+R6992:6994 Corelib.Init.Datatypes <> nat ind
+R7056:7058 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R7059:7061 Corelib.Init.Peano <> max abbrev
+R7065:7079 JFCTheorems.AttentionSink <> context_quality:29 var
+def 7155:7174 <> naive_window_quality
+R7181:7195 JFCTheorems.AttentionSink <> StreamingWindow rec
+binder 7177:7177 <> w:30
+R7200:7202 Corelib.Init.Datatypes <> nat ind
+R7212:7218 Stdlib.Arith.PeanoNat Nat leb def
+R7221:7230 JFCTheorems.AttentionSink <> total_seen proj
+R7232:7232 JFCTheorems.AttentionSink <> w:30 var
+R7236:7246 JFCTheorems.AttentionSink <> window_size proj
+R7248:7248 JFCTheorems.AttentionSink <> w:30 var
+def 7405:7425 <> streaming_llm_quality
+R7432:7446 JFCTheorems.AttentionSink <> StreamingWindow rec
+binder 7428:7428 <> w:31
+R7451:7453 Corelib.Init.Datatypes <> nat ind
+R7463:7469 Stdlib.Arith.PeanoNat Nat leb def
+R7472:7482 JFCTheorems.AttentionSink <> sink_tokens proj
+R7484:7484 JFCTheorems.AttentionSink <> w:31 var
+prf 7677:7697 <> streaming_beats_naive
+binder 7710:7710 <> w:32
+R7735:7742 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7730:7733 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R7717:7727 JFCTheorems.AttentionSink <> sink_tokens proj
+R7729:7729 JFCTheorems.AttentionSink <> w:32 var
+R7771:7778 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7755:7757 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R7743:7752 JFCTheorems.AttentionSink <> total_seen proj
+R7754:7754 JFCTheorems.AttentionSink <> w:32 var
+R7758:7768 JFCTheorems.AttentionSink <> window_size proj
+R7770:7770 JFCTheorems.AttentionSink <> w:32 var
+R7815:7817 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R7779:7788 JFCTheorems.AttentionSink <> perplexity def
+R7791:7811 JFCTheorems.AttentionSink <> streaming_llm_quality def
+R7813:7813 JFCTheorems.AttentionSink <> w:32 var
+R7818:7827 JFCTheorems.AttentionSink <> perplexity def
+R7830:7849 JFCTheorems.AttentionSink <> naive_window_quality def
+R7851:7851 JFCTheorems.AttentionSink <> w:32 var
+R7897:7906 JFCTheorems.AttentionSink <> perplexity def
+R7909:7929 JFCTheorems.AttentionSink <> streaming_llm_quality def
+R7932:7951 JFCTheorems.AttentionSink <> naive_window_quality def
+R8109:8115 Stdlib.Arith.PeanoNat Nat leb def
+R8118:8128 JFCTheorems.AttentionSink <> sink_tokens proj
+R8109:8115 Stdlib.Arith.PeanoNat Nat leb def
+R8118:8128 JFCTheorems.AttentionSink <> sink_tokens proj
+R8189:8195 Stdlib.Arith.PeanoNat Nat leb def
+R8198:8207 JFCTheorems.AttentionSink <> total_seen proj
+R8213:8223 JFCTheorems.AttentionSink <> window_size proj
+R8189:8195 Stdlib.Arith.PeanoNat Nat leb def
+R8198:8207 JFCTheorems.AttentionSink <> total_seen proj
+R8213:8223 JFCTheorems.AttentionSink <> window_size proj
+R8251:8260 Stdlib.Arith.PeanoNat Nat leb_le thm
+R8251:8260 Stdlib.Arith.PeanoNat Nat leb_le thm
+R8308:8314 Stdlib.Arith.PeanoNat Nat leb def
+R8317:8326 JFCTheorems.AttentionSink <> total_seen proj
+R8332:8342 JFCTheorems.AttentionSink <> window_size proj
+R8308:8314 Stdlib.Arith.PeanoNat Nat leb def
+R8317:8326 JFCTheorems.AttentionSink <> total_seen proj
+R8332:8342 JFCTheorems.AttentionSink <> window_size proj
+R8370:8379 Stdlib.Arith.PeanoNat Nat leb_le thm
+R8370:8379 Stdlib.Arith.PeanoNat Nat leb_le thm
+def 8650:8668 <> sink_attention_mass
+R8681:8696 JFCTheorems.AttentionSink <> AttentionWeights def
+binder 8671:8677 <> weights:33
+R8710:8712 Corelib.Init.Datatypes <> nat ind
+binder 8700:8706 <> n_sinks:34
+R8717:8719 Corelib.Init.Datatypes <> nat ind
+R8726:8734 Stdlib.Lists.List <> fold_left def
+R8745:8750 Corelib.Lists.ListDef <> firstn def
+R8760:8766 JFCTheorems.AttentionSink <> weights:33 var
+R8752:8758 JFCTheorems.AttentionSink <> n_sinks:34 var
+R8736:8742 Stdlib.Arith.PeanoNat Nat add def
+prf 8909:8931 <> sink_capacity_sublinear
+binder 8944:8950 <> seq_len:35
+R8969:9148 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8964:8967 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R8957:8963 JFCTheorems.AttentionSink <> seq_len:35 var
+R9165:9168 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R9149:9156 Stdlib.Arith.PeanoNat Nat log2 def
+R9158:9164 JFCTheorems.AttentionSink <> seq_len:35 var
+R9169:9175 JFCTheorems.AttentionSink <> seq_len:35 var
+R9215:9229 Stdlib.Arith.PeanoNat Nat log2_le_lin thm
+R9215:9229 Stdlib.Arith.PeanoNat Nat log2_le_lin thm
+rec 9355:9367 <> HeadAttention
+proj 9399:9405 <> head_id
+proj 9416:9427 <> head_weights
+proj 9451:9465 <> head_sink_count
+R9409:9411 Corelib.Init.Datatypes <> nat ind
+R9431:9446 JFCTheorems.AttentionSink <> AttentionWeights def
+R9469:9471 Corelib.Init.Datatypes <> nat ind
+def 9527:9544 <> MultiHeadAttention
+R9549:9552 Corelib.Init.Datatypes <> list ind
+R9554:9566 JFCTheorems.AttentionSink <> HeadAttention rec
+def 9630:9638 <> max_sinks
+R9649:9666 JFCTheorems.AttentionSink <> MultiHeadAttention def
+binder 9641:9645 <> heads:40
+R9671:9673 Corelib.Init.Datatypes <> nat ind
+R9680:9688 Stdlib.Lists.List <> fold_left def
+R9695:9697 Corelib.Lists.ListDef <> map def
+R9715:9719 JFCTheorems.AttentionSink <> heads:40 var
+R9699:9713 JFCTheorems.AttentionSink <> head_sink_count proj
+R9690:9692 Corelib.Init.Peano <> max abbrev
+prf 9805:9821 <> fold_left_max_acc
+R9839:9842 Corelib.Init.Datatypes <> list ind
+R9844:9846 Corelib.Init.Datatypes <> nat ind
+binder 9835:9835 <> l:41
+R9854:9856 Corelib.Init.Datatypes <> nat ind
+binder 9850:9850 <> z:42
+R9861:9864 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R9860:9860 JFCTheorems.AttentionSink <> z:42 var
+R9865:9873 Stdlib.Lists.List <> fold_left def
+R9885:9885 JFCTheorems.AttentionSink <> z:42 var
+R9883:9883 JFCTheorems.AttentionSink <> l:41 var
+R9875:9881 Stdlib.Arith.PeanoNat Nat max def
+R9977:9983 Stdlib.Arith.PeanoNat Nat max def
+R9977:9983 Stdlib.Arith.PeanoNat Nat max def
+R10008:10019 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R10008:10019 Stdlib.Arith.PeanoNat Nat le_max_l thm
+prf 10116:10131 <> fold_left_max_in
+R10149:10152 Corelib.Init.Datatypes <> list ind
+R10154:10156 Corelib.Init.Datatypes <> nat ind
+binder 10145:10145 <> l:43
+R10166:10168 Corelib.Init.Datatypes <> nat ind
+binder 10160:10160 <> z:44
+binder 10162:10162 <> x:45
+R10182:10185 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10176:10177 Stdlib.Lists.List <> In def
+R10181:10181 JFCTheorems.AttentionSink <> l:43 var
+R10179:10179 JFCTheorems.AttentionSink <> x:45 var
+R10187:10190 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R10186:10186 JFCTheorems.AttentionSink <> x:45 var
+R10191:10199 Stdlib.Lists.List <> fold_left def
+R10211:10211 JFCTheorems.AttentionSink <> z:44 var
+R10209:10209 JFCTheorems.AttentionSink <> l:43 var
+R10201:10207 Stdlib.Arith.PeanoNat Nat max def
+R10351:10367 JFCTheorems.AttentionSink <> fold_left_max_acc thm
+R10373:10379 Stdlib.Arith.PeanoNat Nat max def
+R10351:10367 JFCTheorems.AttentionSink <> fold_left_max_acc thm
+R10373:10379 Stdlib.Arith.PeanoNat Nat max def
+R10414:10425 Stdlib.Arith.PeanoNat Nat le_max_r thm
+R10414:10425 Stdlib.Arith.PeanoNat Nat le_max_r thm
+prf 10989:11008 <> max_sinks_sufficient
+binder 11021:11025 <> heads:46
+binder 11027:11027 <> h:47
+R11044:11051 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11034:11035 Stdlib.Lists.List <> In def
+R11039:11043 JFCTheorems.AttentionSink <> heads:46 var
+R11037:11037 JFCTheorems.AttentionSink <> h:47 var
+R11069:11072 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11052:11066 JFCTheorems.AttentionSink <> head_sink_count proj
+R11068:11068 JFCTheorems.AttentionSink <> h:47 var
+R11073:11081 JFCTheorems.AttentionSink <> max_sinks def
+R11083:11087 JFCTheorems.AttentionSink <> heads:46 var
+R11128:11136 JFCTheorems.AttentionSink <> max_sinks def
+R11147:11162 JFCTheorems.AttentionSink <> fold_left_max_in thm
+R11147:11162 JFCTheorems.AttentionSink <> fold_left_max_in thm
+R11173:11178 Stdlib.Lists.List <> in_map thm
+R11173:11178 Stdlib.Lists.List <> in_map thm
+rec 11371:11387 <> ConversationState
+proj 11415:11434 <> system_prompt_tokens
+proj 11486:11507 <> project_context_tokens
+proj 11557:11569 <> recent_tokens
+proj 11610:11621 <> total_tokens
+R11438:11440 Corelib.Init.Datatypes <> nat ind
+R11511:11513 Corelib.Init.Datatypes <> nat ind
+R11573:11575 Corelib.Init.Datatypes <> nat ind
+R11625:11627 Corelib.Init.Datatypes <> nat ind
+def 11692:11705 <> semantic_sinks
+R11712:11728 JFCTheorems.AttentionSink <> ConversationState rec
+binder 11708:11708 <> s:53
+R11733:11735 Corelib.Init.Datatypes <> nat ind
+R11764:11766 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11742:11761 JFCTheorems.AttentionSink <> system_prompt_tokens proj
+R11763:11763 JFCTheorems.AttentionSink <> s:53 var
+R11767:11788 JFCTheorems.AttentionSink <> project_context_tokens proj
+R11790:11790 JFCTheorems.AttentionSink <> s:53 var
+def 11833:11852 <> jfc_effective_window
+R11859:11875 JFCTheorems.AttentionSink <> ConversationState rec
+binder 11855:11855 <> s:54
+R11888:11890 Corelib.Init.Datatypes <> nat ind
+binder 11879:11884 <> budget:55
+R11895:11897 Corelib.Init.Datatypes <> nat ind
+R11910:11912 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R11904:11909 JFCTheorems.AttentionSink <> budget:55 var
+R11913:11926 JFCTheorems.AttentionSink <> semantic_sinks def
+R11928:11928 JFCTheorems.AttentionSink <> s:54 var
+prf 12035:12062 <> jfc_preserves_semantic_sinks
+binder 12075:12075 <> s:56
+binder 12077:12082 <> budget:57
+R12115:12122 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12095:12098 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R12089:12094 JFCTheorems.AttentionSink <> budget:57 var
+R12099:12112 JFCTheorems.AttentionSink <> semantic_sinks def
+R12114:12114 JFCTheorems.AttentionSink <> s:56 var
+R12139:12142 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12123:12136 JFCTheorems.AttentionSink <> semantic_sinks def
+R12138:12138 JFCTheorems.AttentionSink <> s:56 var
+R12143:12148 JFCTheorems.AttentionSink <> budget:57 var
+def 12323:12345 <> sink_correct_compaction
+R12363:12366 Corelib.Init.Datatypes <> list ind
+R12368:12370 Corelib.Init.Datatypes <> nat ind
+binder 12348:12353 <> before:58
+binder 12355:12359 <> after:59
+R12382:12385 Corelib.Init.Datatypes <> list ind
+R12387:12389 Corelib.Init.Datatypes <> nat ind
+binder 12374:12378 <> sinks:60
+binder 12411:12411 <> s:61
+R12424:12427 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12414:12415 Stdlib.Lists.List <> In def
+R12419:12423 JFCTheorems.AttentionSink <> sinks:60 var
+R12417:12417 JFCTheorems.AttentionSink <> s:61 var
+R12439:12442 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12428:12429 Stdlib.Lists.List <> In def
+R12433:12438 JFCTheorems.AttentionSink <> before:58 var
+R12431:12431 JFCTheorems.AttentionSink <> s:61 var
+R12443:12444 Stdlib.Lists.List <> In def
+R12448:12452 JFCTheorems.AttentionSink <> after:59 var
+R12446:12446 JFCTheorems.AttentionSink <> s:61 var
+def 12538:12552 <> preserved_sinks
+R12576:12579 Corelib.Init.Datatypes <> list ind
+R12581:12583 Corelib.Init.Datatypes <> nat ind
+binder 12555:12560 <> before:62
+binder 12562:12566 <> after:63
+binder 12568:12572 <> sinks:64
+R12588:12590 Corelib.Init.Datatypes <> nat ind
+R12597:12602 Corelib.Init.Datatypes <> length def
+R12605:12610 Stdlib.Lists.List <> filter def
+R12717:12721 JFCTheorems.AttentionSink <> sinks:64 var
+binder 12617:12617 <> s:65
+R12622:12625 Corelib.Init.Datatypes <> andb def
+R12689:12695 Stdlib.Lists.List <> existsb def
+R12709:12713 JFCTheorems.AttentionSink <> after:63 var
+R12698:12704 Stdlib.Arith.PeanoNat Nat eqb def
+R12706:12706 JFCTheorems.AttentionSink <> s:65 var
+R12628:12634 Stdlib.Lists.List <> existsb def
+R12648:12653 JFCTheorems.AttentionSink <> before:62 var
+R12637:12643 Stdlib.Arith.PeanoNat Nat eqb def
+R12645:12645 JFCTheorems.AttentionSink <> s:65 var
+def 13084:13093 <> quality_of
+R13108:13110 Corelib.Init.Datatypes <> nat ind
+binder 13096:13104 <> preserved:66
+R13115:13117 Corelib.Init.Datatypes <> nat ind
+R13127:13133 Stdlib.Arith.PeanoNat Nat leb def
+R13137:13145 JFCTheorems.AttentionSink <> preserved:66 var
+prf 13399:13424 <> sink_correct_preserves_all
+binder 13437:13442 <> before:67
+binder 13444:13448 <> after:68
+binder 13450:13454 <> sinks:69
+R13503:13510 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13461:13483 JFCTheorems.AttentionSink <> sink_correct_compaction def
+R13485:13490 JFCTheorems.AttentionSink <> before:67 var
+R13492:13496 JFCTheorems.AttentionSink <> after:68 var
+R13498:13502 JFCTheorems.AttentionSink <> sinks:69 var
+R13511:13511 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13547:13555 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 13519:13519 <> s:70
+R13532:13535 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13522:13523 Stdlib.Lists.List <> In def
+R13527:13531 JFCTheorems.AttentionSink <> sinks:69 var
+R13525:13525 JFCTheorems.AttentionSink <> s:70 var
+R13536:13537 Stdlib.Lists.List <> In def
+R13541:13546 JFCTheorems.AttentionSink <> before:67 var
+R13539:13539 JFCTheorems.AttentionSink <> s:70 var
+R13590:13592 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13556:13570 JFCTheorems.AttentionSink <> preserved_sinks def
+R13572:13577 JFCTheorems.AttentionSink <> before:67 var
+R13579:13583 JFCTheorems.AttentionSink <> after:68 var
+R13585:13589 JFCTheorems.AttentionSink <> sinks:69 var
+R13593:13598 Corelib.Init.Datatypes <> length def
+R13600:13604 JFCTheorems.AttentionSink <> sinks:69 var
+R13658:13672 JFCTheorems.AttentionSink <> preserved_sinks def
+R13736:13741 Stdlib.Lists.List <> filter def
+R13743:13748 Corelib.Init.Datatypes <> length def
+R13770:13771 Stdlib.Lists.List <> In def
+R13770:13771 Stdlib.Lists.List <> In def
+R13836:13837 Stdlib.Lists.List <> In def
+R13836:13837 Stdlib.Lists.List <> In def
+R13984:13986 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13958:13964 Stdlib.Lists.List <> existsb def
+R13967:13973 Stdlib.Arith.PeanoNat Nat eqb def
+R13987:13990 Corelib.Init.Datatypes <> true constr
+R13984:13986 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13958:13964 Stdlib.Lists.List <> existsb def
+R13967:13973 Stdlib.Arith.PeanoNat Nat eqb def
+R13987:13990 Corelib.Init.Datatypes <> true constr
+R14006:14019 Stdlib.Lists.List <> existsb_exists thm
+R14006:14019 Stdlib.Lists.List <> existsb_exists thm
+R14059:14070 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R14059:14070 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R14119:14121 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14094:14100 Stdlib.Lists.List <> existsb def
+R14103:14109 Stdlib.Arith.PeanoNat Nat eqb def
+R14122:14125 Corelib.Init.Datatypes <> true constr
+R14119:14121 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14094:14100 Stdlib.Lists.List <> existsb def
+R14103:14109 Stdlib.Arith.PeanoNat Nat eqb def
+R14122:14125 Corelib.Init.Datatypes <> true constr
+R14141:14154 Stdlib.Lists.List <> existsb_exists thm
+R14141:14154 Stdlib.Lists.List <> existsb_exists thm
+R14194:14205 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R14194:14205 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R14237:14240 Corelib.Init.Datatypes <> andb def
+R14242:14247 Corelib.Init.Datatypes <> length def
+binder 14303:14304 <> s0:71
+binder 14306:14307 <> H0:72
+R14316:14317 JFCTheorems.AttentionSink <> s0:71 var
+R14320:14328 Corelib.Init.Logic <> or_intror constr
+R14330:14331 JFCTheorems.AttentionSink <> H0:72 var
+binder 14303:14304 <> s0:73
+binder 14306:14307 <> H0:74
+R14316:14317 JFCTheorems.AttentionSink <> s0:73 var
+R14320:14328 Corelib.Init.Logic <> or_intror constr
+R14330:14331 JFCTheorems.AttentionSink <> H0:74 var
+prf 15140:15169 <> sink_correct_maintains_quality
+binder 15182:15187 <> before:75
+binder 15189:15193 <> after:76
+binder 15195:15199 <> sinks:77
+R15248:15255 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15206:15228 JFCTheorems.AttentionSink <> sink_correct_compaction def
+R15230:15235 JFCTheorems.AttentionSink <> before:75 var
+R15237:15241 JFCTheorems.AttentionSink <> after:76 var
+R15243:15247 JFCTheorems.AttentionSink <> sinks:77 var
+R15256:15256 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15292:15300 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 15264:15264 <> s:78
+R15277:15280 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15267:15268 Stdlib.Lists.List <> In def
+R15272:15276 JFCTheorems.AttentionSink <> sinks:77 var
+R15270:15270 JFCTheorems.AttentionSink <> s:78 var
+R15281:15282 Stdlib.Lists.List <> In def
+R15286:15291 JFCTheorems.AttentionSink <> before:75 var
+R15284:15284 JFCTheorems.AttentionSink <> s:78 var
+R15318:15325 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15313:15316 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R15301:15306 Corelib.Init.Datatypes <> length def
+R15308:15312 JFCTheorems.AttentionSink <> sinks:77 var
+R15379:15382 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R15373:15375 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15326:15335 JFCTheorems.AttentionSink <> quality_of def
+R15338:15352 JFCTheorems.AttentionSink <> preserved_sinks def
+R15354:15359 JFCTheorems.AttentionSink <> before:75 var
+R15361:15365 JFCTheorems.AttentionSink <> after:76 var
+R15367:15371 JFCTheorems.AttentionSink <> sinks:77 var
+R15386:15388 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15453:15478 JFCTheorems.AttentionSink <> sink_correct_preserves_all thm
+R15453:15478 JFCTheorems.AttentionSink <> sink_correct_preserves_all thm
+R15453:15478 JFCTheorems.AttentionSink <> sink_correct_preserves_all thm
+R15518:15527 JFCTheorems.AttentionSink <> quality_of def
+R15569:15571 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15545:15551 Stdlib.Arith.PeanoNat Nat leb def
+R15556:15561 Corelib.Init.Datatypes <> length def
+R15572:15575 Corelib.Init.Datatypes <> true constr
+R15588:15597 Stdlib.Arith.PeanoNat Nat leb_le thm
+R15569:15571 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15545:15551 Stdlib.Arith.PeanoNat Nat leb def
+R15556:15561 Corelib.Init.Datatypes <> length def
+R15572:15575 Corelib.Init.Datatypes <> true constr
+R15588:15597 Stdlib.Arith.PeanoNat Nat leb_le thm
+def 15890:15902 <> position_bias
+R15917:15919 Corelib.Init.Datatypes <> nat ind
+binder 15905:15907 <> pos:79
+binder 15909:15913 <> total:80
+R15924:15926 Corelib.Init.Datatypes <> nat ind
+R15989:15991 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R15970:15970 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15982:15985 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15976:15978 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R15971:15975 JFCTheorems.AttentionSink <> total:80 var
+R15979:15981 JFCTheorems.AttentionSink <> pos:79 var
+R15992:15994 Corelib.Init.Peano <> max abbrev
+R15998:16002 JFCTheorems.AttentionSink <> total:80 var
+prf 16065:16086 <> position_zero_max_bias
+binder 16099:16103 <> total:81
+R16120:16127 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R16115:16118 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R16110:16114 JFCTheorems.AttentionSink <> total:81 var
+R16149:16151 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16128:16140 JFCTheorems.AttentionSink <> position_bias def
+R16144:16148 JFCTheorems.AttentionSink <> total:81 var
+R16193:16205 JFCTheorems.AttentionSink <> position_bias def
+R16218:16228 Stdlib.Arith.PeanoNat Nat sub_0_r thm
+R16218:16228 Stdlib.Arith.PeanoNat Nat sub_0_r thm
+R16218:16228 Stdlib.Arith.PeanoNat Nat sub_0_r thm
+R16287:16295 Stdlib.Arith.PeanoNat Nat max_r thm
+R16287:16295 Stdlib.Arith.PeanoNat Nat max_r thm
+R16287:16295 Stdlib.Arith.PeanoNat Nat max_r thm
+R16364:16366 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16381:16383 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16364:16366 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16381:16383 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16409:16419 Stdlib.Arith.PeanoNat Nat div_mul def
+R16409:16419 Stdlib.Arith.PeanoNat Nat div_mul def
+R16409:16419 Stdlib.Arith.PeanoNat Nat div_mul def
+prf 16507:16520 <> bias_monotonic
+binder 16533:16534 <> p1:82
+binder 16536:16537 <> p2:83
+binder 16539:16543 <> total:84
+R16558:16565 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R16552:16555 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16550:16551 JFCTheorems.AttentionSink <> p1:82 var
+R16556:16557 JFCTheorems.AttentionSink <> p2:83 var
+R16576:16583 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R16568:16570 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R16566:16567 JFCTheorems.AttentionSink <> p2:83 var
+R16571:16575 JFCTheorems.AttentionSink <> total:84 var
+R16606:16609 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R16584:16596 JFCTheorems.AttentionSink <> position_bias def
+R16598:16599 JFCTheorems.AttentionSink <> p1:82 var
+R16601:16605 JFCTheorems.AttentionSink <> total:84 var
+R16610:16622 JFCTheorems.AttentionSink <> position_bias def
+R16624:16625 JFCTheorems.AttentionSink <> p2:83 var
+R16627:16631 JFCTheorems.AttentionSink <> total:84 var
+R16680:16692 JFCTheorems.AttentionSink <> position_bias def
+R16703:16717 Stdlib.Arith.PeanoNat Nat div_le_mono abbrev
+R16703:16717 Stdlib.Arith.PeanoNat Nat div_le_mono abbrev
+R16739:16755 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R16739:16755 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+def 17047:17063 <> attention_entropy
+R17076:17091 JFCTheorems.AttentionSink <> AttentionWeights def
+binder 17066:17072 <> weights:85
+R17096:17098 Corelib.Init.Datatypes <> nat ind
+R17179:17184 Corelib.Init.Datatypes <> length def
+R17187:17192 Stdlib.Lists.List <> filter def
+R17218:17224 JFCTheorems.AttentionSink <> weights:85 var
+binder 17199:17199 <> w:86
+R17204:17210 Stdlib.Arith.PeanoNat Nat leb def
+R17215:17215 JFCTheorems.AttentionSink <> w:86 var
+def 17389:17396 <> attended
+R17403:17405 Corelib.Init.Datatypes <> nat ind
+binder 17399:17399 <> w:87
+R17410:17413 Corelib.Init.Datatypes <> bool ind
+R17418:17424 Stdlib.Arith.PeanoNat Nat leb def
+R17429:17429 JFCTheorems.AttentionSink <> w:87 var
+prf 17515:17535 <> attention_entropy_app
+binder 17548:17549 <> xs:88
+binder 17551:17552 <> ys:89
+R17587:17595 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17559:17575 JFCTheorems.AttentionSink <> attention_entropy def
+R17580:17583 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R17578:17579 JFCTheorems.AttentionSink <> xs:88 var
+R17584:17585 JFCTheorems.AttentionSink <> ys:89 var
+R17616:17618 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17596:17612 JFCTheorems.AttentionSink <> attention_entropy def
+R17614:17615 JFCTheorems.AttentionSink <> xs:88 var
+R17619:17635 JFCTheorems.AttentionSink <> attention_entropy def
+R17637:17638 JFCTheorems.AttentionSink <> ys:89 var
+R17671:17687 JFCTheorems.AttentionSink <> attention_entropy def
+R17700:17709 Stdlib.Lists.List <> filter_app thm
+R17712:17721 Stdlib.Lists.List <> length_app thm
+R17700:17709 Stdlib.Lists.List <> filter_app thm
+R17700:17709 Stdlib.Lists.List <> filter_app thm
+R17712:17721 Stdlib.Lists.List <> length_app thm
+R17712:17721 Stdlib.Lists.List <> length_app thm
+def 17829:17840 <> all_attended
+R17851:17866 JFCTheorems.AttentionSink <> AttentionWeights def
+binder 17843:17847 <> sinks:90
+binder 17888:17888 <> w:91
+R17901:17904 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17891:17892 Stdlib.Lists.List <> In def
+R17896:17900 JFCTheorems.AttentionSink <> sinks:90 var
+R17894:17894 JFCTheorems.AttentionSink <> w:91 var
+R17915:17917 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17905:17912 JFCTheorems.AttentionSink <> attended def
+R17914:17914 JFCTheorems.AttentionSink <> w:91 var
+R17918:17921 Corelib.Init.Datatypes <> true constr
+prf 18034:18053 <> all_attended_entropy
+binder 18066:18070 <> sinks:92
+R18095:18102 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18077:18088 JFCTheorems.AttentionSink <> all_attended def
+R18090:18094 JFCTheorems.AttentionSink <> sinks:92 var
+R18126:18128 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18103:18119 JFCTheorems.AttentionSink <> attention_entropy def
+R18121:18125 JFCTheorems.AttentionSink <> sinks:92 var
+R18129:18134 Corelib.Init.Datatypes <> length def
+R18136:18140 JFCTheorems.AttentionSink <> sinks:92 var
+R18242:18244 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18232:18239 JFCTheorems.AttentionSink <> attended def
+R18245:18248 Corelib.Init.Datatypes <> true constr
+R18242:18244 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18232:18239 JFCTheorems.AttentionSink <> attended def
+R18245:18248 Corelib.Init.Datatypes <> true constr
+R18298:18305 JFCTheorems.AttentionSink <> attended def
+R18325:18341 JFCTheorems.AttentionSink <> attention_entropy def
+R18354:18359 Stdlib.Lists.List <> filter def
+R18384:18389 Corelib.Init.Datatypes <> length def
+prf 19095:19116 <> sinks_increase_entropy
+binder 19129:19133 <> sinks:93
+binder 19135:19138 <> rest:94
+R19163:19170 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19145:19156 JFCTheorems.AttentionSink <> all_attended def
+R19158:19162 JFCTheorems.AttentionSink <> sinks:93 var
+R19204:19212 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19171:19187 JFCTheorems.AttentionSink <> attention_entropy def
+R19195:19198 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R19190:19194 JFCTheorems.AttentionSink <> sinks:93 var
+R19199:19202 JFCTheorems.AttentionSink <> rest:94 var
+R19225:19227 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R19213:19218 Corelib.Init.Datatypes <> length def
+R19220:19224 JFCTheorems.AttentionSink <> sinks:93 var
+R19228:19244 JFCTheorems.AttentionSink <> attention_entropy def
+R19246:19249 JFCTheorems.AttentionSink <> rest:94 var
+R19295:19315 JFCTheorems.AttentionSink <> attention_entropy_app thm
+R19295:19315 JFCTheorems.AttentionSink <> attention_entropy_app thm
+R19295:19315 JFCTheorems.AttentionSink <> attention_entropy_app thm
+R19329:19348 JFCTheorems.AttentionSink <> all_attended_entropy thm
+R19329:19348 JFCTheorems.AttentionSink <> all_attended_entropy thm
+R19329:19348 JFCTheorems.AttentionSink <> all_attended_entropy thm
+prf 19533:19559 <> sinks_increase_entropy_mono
+binder 19572:19576 <> sinks:95
+binder 19578:19581 <> rest:96
+R19606:19613 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19588:19599 JFCTheorems.AttentionSink <> all_attended def
+R19601:19605 JFCTheorems.AttentionSink <> sinks:95 var
+R19673:19681 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R19769:19769 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R19647:19650 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R19614:19630 JFCTheorems.AttentionSink <> attention_entropy def
+R19638:19641 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R19633:19637 JFCTheorems.AttentionSink <> sinks:95 var
+R19642:19645 JFCTheorems.AttentionSink <> rest:96 var
+R19651:19667 JFCTheorems.AttentionSink <> attention_entropy def
+R19669:19672 JFCTheorems.AttentionSink <> rest:96 var
+R19699:19710 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19694:19697 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R19682:19687 Corelib.Init.Datatypes <> length def
+R19689:19693 JFCTheorems.AttentionSink <> sinks:95 var
+R19744:19746 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R19711:19727 JFCTheorems.AttentionSink <> attention_entropy def
+R19735:19738 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R19730:19734 JFCTheorems.AttentionSink <> sinks:95 var
+R19739:19742 JFCTheorems.AttentionSink <> rest:96 var
+R19747:19763 JFCTheorems.AttentionSink <> attention_entropy def
+R19765:19768 JFCTheorems.AttentionSink <> rest:96 var
+R19816:19837 JFCTheorems.AttentionSink <> sinks_increase_entropy thm
+R19816:19837 JFCTheorems.AttentionSink <> sinks_increase_entropy thm
+R19816:19837 JFCTheorems.AttentionSink <> sinks_increase_entropy thm

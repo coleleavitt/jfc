@@ -724,11 +724,18 @@ async fn deliberate_agentic_member(
                 Ok(value) => serde_json::to_string_pretty(&value).unwrap_or(output),
                 Err(_) => output,
             };
+            // The task-backed path returns no token usage, so the budget gate
+            // was previously blind to agentic members (always 0). Estimate from
+            // the prompt + answer text via the same chars/4 fallback the direct
+            // path uses, so a runaway agentic fan-out is still bounded.
+            let prompt = agentic_member_prompt(question, context, options.intent, &label);
+            let fallback_chars = prompt.len() + answer.len();
+            let tokens_used = estimate_tokens(&jfc_provider::TokenUsage::default(), fallback_chars);
             return MemberSummary {
                 label,
                 model,
                 outcome: MemberOutcome::Answered(answer),
-                tokens_used: 0,
+                tokens_used,
             };
         }
 

@@ -673,6 +673,15 @@ impl HookRegistry {
         self.hooks.is_empty()
     }
 
+    /// Whether at least one handler is registered for `point`. This is used by
+    /// high-frequency stream sites to skip context construction entirely when
+    /// the hook surface is inactive.
+    pub fn has_hooks(&self, point: HookPoint) -> bool {
+        self.hooks
+            .iter()
+            .any(|(hook_point, _)| *hook_point == point)
+    }
+
     /// Get all registered hook points (unique).
     pub fn registered_points(&self) -> Vec<HookPoint> {
         let mut points: Vec<HookPoint> = self.hooks.iter().map(|(p, _)| *p).collect();
@@ -1075,6 +1084,15 @@ pub fn fire_async(point: HookPoint, ctx: &HookContext) {
     if let Some(reg) = GLOBAL_REGISTRY.get() {
         reg.fire_async(point, ctx);
     }
+}
+
+/// True when the global registry has at least one handler for `point`.
+/// Cheap guard for hot paths that would otherwise allocate hook context on
+/// every streaming chunk even when no hook can observe it.
+pub fn has_hooks(point: HookPoint) -> bool {
+    GLOBAL_REGISTRY
+        .get()
+        .is_some_and(|reg| reg.has_hooks(point))
 }
 
 /// Snapshot the global registry's per-handler activation metrics.

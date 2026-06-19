@@ -66,6 +66,10 @@ Use the MemoryCreate tool for new memories and MemoryDelete for stale ones.{cron
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     state.network_recovery_status = None;
     state.network_recovery_attempts = 0;
     state.streaming_assistant_idx = Some(assistant_idx);
@@ -262,6 +266,10 @@ Then immediately execute the prompt now (do not wait for the first cron fire)."
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     state.network_recovery_status = None;
     state.network_recovery_attempts = 0;
     state.streaming_assistant_idx = Some(assistant_idx);
@@ -403,6 +411,10 @@ and display the results in a readable table with columns: id, schedule, command,
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     state.network_recovery_status = None;
     state.network_recovery_attempts = 0;
     state.streaming_assistant_idx = Some(assistant_idx);

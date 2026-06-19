@@ -1,0 +1,632 @@
+                                                 MKA: Memory-Keyed Attention for Efficient Long-Context
+                                                                    Reasoning
+                                                                              Dong Liu                                                                  Yanxuan Yu
+                                                            University of California, Los Angeles                                                  Columbia University
+                                                               Los Angeles, California, USA                                                      New York, New York, USA
+                                                                     pikeliu@ucla.edu                                                             yy3523@columbia.edu
+
+                                                                          Ben Lengerich                                                               Ying Nian Wu
+                                                              University of Wisconsin-Madison                                              University of California, Los Angeles
+                                                                 Madison, Wisconsin, USA                                                      Los Angeles, California, USA
+
+
+
+
+arXiv:2603.20586v2 [cs.LG] 24 Mar 2026
+                                                                    lengerich@wisc.edu                                                              ywu@stat.ucla.edu
+
+                                         Abstract
+                                         As long-context language modeling becomes increasingly impor-
+                                         tant, the cost of maintaining and attending to large Key/Value (KV)
+                                         caches grows rapidly, becoming a major bottleneck in both training
+                                         and inference. While prior works such as Multi-Query Attention
+                                         (MQA) and Multi-Latent Attention (MLA) reduce memory by shar-
+                                         ing or compressing KV features, they often trade off representation
+                                         quality or incur runtime overhead. We propose Memory-Keyed
+                                         Attention (MKA), a hierarchical attention mechanism that inte-
+                                         grates multi-level KV caches—local, session, and long-term—and
+                                         learns to route attention across them dynamically. We further intro-
+                                         duce Route-Fused MKA (FastMKA), a broadcast-routed variant that
+                                         fuses memory sources before attention computation for enhanced                          Figure 1: MKA hierarchical memory design with three mem-
+                                         efficiency. Experiments on different sequence lengths show that                         ory levels (L1: local, L2: session, L3: long-term) and dynamic
+                                         FastMKA achieves a favorable accuracy-efficiency trade-off: com-                        routing gates.
+                                         parable perplexity to MLA while achieving up to 5× faster training
+                                         throughput and 1.8× lower evaluation latency. These results high-
+                                         light MKA as a practical and extensible framework for efficient
+                                         long-context attention.
+                                         ACM Reference Format:                                                                      In self-attention, each newly generated token must attend to
+                                         Dong Liu, Yanxuan Yu, Ben Lengerich, and Ying Nian Wu. 2026. MKA:                       all past tokens stored in the KV cache. This results in quadratic
+                                         Memory-Keyed Attention for Efficient Long-Context Reasoning. In Proceed-                compute and increasingly large memory reads. For instance, with a
+                                         ings of the 23rd ACM International Conference on Computing Frontiers (CF                context length of 32K, we measure that the KV cache for a LLaMA-
+                                         ’26), May 19–21, 2026, Catania, Italy. ACM, New York, NY, USA, 9 pages.                 7B model [25] occupies approximately 15.8GB on an NVIDIA A800
+                                         https://doi.org/10.1145/3801487.3801812                                                 GPU and requires 11.3ms to access during decode, which domi-
+                                                                                                                                 nates more than 50% of the inference latency. This cost limits the
+                                         1    Introduction                                                                       throughput of LLMs in production environments.
+                                         Large Language Models (LLMs) have rapidly advanced and are now                             Several methods have attempted to address the inefficiencies
+                                         capable of processing context lengths up to 128K or even 1M to-                         in attention computation. Multi-Query Attention (MQA) [20] and
+                                         kens [11, 17, 26]. This unprecedented expansion of context length                       Grouped-Query Attention (GQA) [1] reduce KV duplication by
+                                         unlocks new applications such as long-document reasoning and                            sharing them across heads. Multi-Latent Attention (MLA) [24] com-
+                                         multi-turn dialogue with persistent memory. However, supporting                         presses the KV cache via low-rank factorization. However, these
+                                         long contexts during inference introduces severe memory and la-                         methods sacrifice representation fidelity or lack the flexibility to
+                                         tency bottlenecks, particularly due to the scaling cost of attention                    differentiate among memory types.
+                                         with Key/Value (KV) caches.                                                                In this paper, we propose Memory-Keyed Attention (MKA),
+                                                                                                                                 a novel attention mechanism that hierarchically organizes mem-
+                                                                                                                                 ory into three levels—local (L1), session (L2), and long-term
+                                                                                                                                 (L3)—and dynamically learns how to route each query token across
+                                         This work is licensed under a Creative Commons Attribution 4.0 International License.   these sources. As illustrated in figure 1, MKA leverages lightweight
+                                         CF ’26, Catania, Italy                                                                  routing gates that modulate attention over heterogeneous memory
+                                         © 2026 Copyright held by the owner/author(s).
+                                         ACM ISBN 979-8-4007-2568-5/2026/05                                                      types. This design enables context-aware attention with signifi-
+                                         https://doi.org/10.1145/3801487.3801812                                                 cantly lower memory bandwidth and improved token reuse.
+CF ’26, May 19–21, 2026, Catania, Italy                                                        Dong Liu, Yanxuan Yu, Ben Lengerich, and Ying Nian Wu
+
+
+   To ensure scalability, MKA adopts a block-wise softmax im-                Retrieval-Augmented Generation (RAG) [14] and RETRO [3] re-
+plementation inspired by FlashAttention [8] and supports GPU-             trieve similar documents from a corpus during inference, effectively
+efficient kernel fusion. Moreover, long-term memory (L3) is indexed       serving as external long-term memory. However, these methods
+via semantic chunking and vectorized hashing, allowing the model          rely on external index structures and are typically applied at the se-
+to recall relevant historical content efficiently. Our experiments        quence level. By contrast, MKA integrates internal multi-level mem-
+show that MKA can reduce training time & evaluation latency sig-          ory—local, session, and long-term—within the model, and learns
+nificantly compared to MHA, MQA, GQA, MLA. Our contribution               per-token routing to dynamically select which level to attend to
+can be introduced as follows:                                             during each step of generation.
+      • We identify the inefficiencies of existing long-context atten-
+        tion mechanisms and propose a hierarchical memory system
+        tailored for attention routing.
+                                                                          2.3     Dynamic Routing and Query-aware
+      • We introduce Memory-Keyed Attention (MKA), a dynamic                      Attention
+        routing mechanism across local, session, and long-term mem-       Routing-based attention has recently gained interest due to its
+        ory with hardware-friendly implementations, we further ac-        potential for conditional computation. Sparse Mixture-of-Experts
+        celerate MKA training and inference by designing broadcast        (MoE) models [9, 13] route tokens through different feedforward
+        routing (FastMKA).                                                networks, though not through memory. Routing Transformers [19]
+      • We show that FastMKA outperforms prior methods in both
+                                                                          cluster tokens before performing sparse attention within groups,
+        accuracy and efficiency, making it suitable for high-throughput
+                                                                          but rely on static clustering and do not model multiple memory lev-
+        LLM inference with long-context inputs.
+                                                                          els. Query-aware caching methods such as TOVA [16] and Quest [23]
+                                                                          focus on loading the most relevant KV cache pages based on current
+2 Related Work                                                            queries, but typically discard unused tokens.
+2.1 Long-context Attention Mechanisms                                        A complementary line of work, PERK [5], treats long-context
+As LLMs are scaled to handle inputs of 32K, 128K, or even 1M to-          reasoning as parameter-efficient test-time learning, storing context
+kens [17, 21], the challenge of performing efficient attention over       in model weights rather than KV cache. In contrast, MKA retains
+long contexts has become a major bottleneck. A key issue lies             the full cache but dynamically routes attention across three memory
+in the size and bandwidth cost of Key/Value (KV) caches. Many             tiers. Our approach supports query-dependent access, soft selec-
+efforts have been proposed to reduce attention overhead in this           tion (via learned weights), and slot reuse—achieving high memory
+setting. FlashAttention [8] improves memory throughput by com-            efficiency without sacrificing accuracy.
+puting softmax in a tiled, IO-aware fashion. Multi-Query Attention
+(MQA) [20] and Grouped-Query Attention (GQA) [1] reduce KV
+duplication by sharing across heads, thus reducing cache size to 𝐻1       3     Motivation: Beyond MLA and MHA
+      𝑔
+and 𝐻 , respectively, where 𝐻 is the number of attention heads and        The design of MLA achieves KV compression through low-rank
+𝑔 is the number of KV groups (𝑔 < 𝐻 ).                                    projections and shared K/V structures across heads. However, it
+   More recent works like Multi-Latent Attention (MLA) [24] com-          does not explicitly support heterogeneous memory sources, nor
+press attention by factorizing the KV memory into a smaller la-           does it allow selective reuse of memory slots. MKA extends this
+tent space. Token-eviction approaches such as DynamicKV [15]              direction by introducing 3-level memory:
+and PyramidKV [4] adaptively prune the KV cache based on at-
+tention importance, while InfiniGen [12] manages the KV cache                   • L1: Local cache for current window tokens (standard causal
+dynamically during generation. Infinite Retrieval [28] enhances                   attention).
+long-context processing through attention-guided retrieval within               • L2: Session memory, derived from low-rank summary or
+a fixed cache budget. However, these approaches are limited to                    gated history.
+static memory layouts or rely on token eviction, which discards in-             • L3: Long-term memory, explicitly indexed and retrieved
+formation irreversibly. In contrast, our proposed MKA generalizes                 from a dynamic memory bank.
+these ideas through a hierarchical memory design with dynamic
+routing, enabling scalable and query-aware memory access across             To select between memory sources, MKA employs a routing
+different time horizons without evicting tokens.                          gate 𝜆ℓ ∈ R3 that is dynamically learned per query token.
+
+2.2     Hierarchical and External Memory Systems
+Incorporating multiple memory timescales has long been a goal in          4     Methodology
+neural network design. Early memory-augmented models such as              In this section, we present the design of Memory-Keyed Atten-
+Memory Networks [27] and Differentiable Neural Computers [10]             tion (MKA). We begin by analyzing the bottlenecks of long-context
+support explicit memory reads and writes, but are difficult to scale to   inference, then introduce the hierarchical MKA structure, and fol-
+large language models. More practical approaches such as Transformer-     low with symbolic and CUDA-style pseudocode, tiled execution,
+XL [6] cache segments of hidden states to extend effective context        and a theoretical formulation that supports recursive attention com-
+length, while Compressive Transformers [18] introduce a two-level         putation with memory efficiency. The detailed pseudocode can be
+memory with lossy compression.                                            found at appendix.
+MKA: Memory-Keyed Attention for Efficient Long-Context Reasoning                                                CF ’26, May 19–21, 2026, Catania, Italy
+
+
+                                                                             In Route-Fused MKA, the local, session, and long-term mem-
+                                                                          ory representations are fused via learned routing weights before a
+                                                                          single key-value projection. The resulting fused memory is used
+                                                                          to generate routed keys and values, which are cached and used
+                                                                          in attention computation over the full context. This mechanism
+                                                                          retains the benefits of multi-level memory while incurring only one
+                                                                          round of attention computation, making Route-Fused MKA highly
+                                                                          efficient and compatible with standard Transformer pipelines. Im-
+                                                                          portantly, Route-Fused MKA caches fused (routed) keys/values
+                                                                          instead of raw token KV, enabling efficient long-context attention
+                                                                          with reduced memory bandwidth.
+
+                                                                          Algorithm 2 FastMKA: Route-Fused MKA (RF-MKA)
+Figure 2: Hierarchical Memory-Keyed Attention (MKA) with                  Require: Input 𝑋 ; proj. matrices 𝑊𝑞 ,𝑊𝑘 ,𝑊𝑣 ,𝑊𝑜 ; routing MLP; opt.
+Multi-Level Routing: illustrates the three-tier memory archi-                 Retrieve(·); opt. cache (𝐾prev, 𝑉prev )
+tecture (L1/L2/L3) and query-based routing mechanism.                     Ensure: Output 𝑂; updated cache (𝐾, 𝑉 )
+                                                                           1: 𝑄 ← 𝑋𝑊𝑞 ; 𝑄ℎ ← reshape(𝑄) {Query proj.}
+                                                                           2: 𝐿1 ← 𝑋 {L1: local memory}
+Algorithm 1 Symbolic MKA: Memory-Keyed Attention with Hier-                3: 𝐿2 ← Summary(𝑋 ≤𝑡 ) {L2: session summary}
+archical Routing                                                           4: 𝐿3 ← Retrieve(𝑄ℎ ) ∪ {0} {L3: long-term memory}
+                                                                           5: 𝜆 ← softmax(MLP(𝑄)) ∈ R𝐵×𝑇 ×3 {Routing weights}
+Require: Input 𝑋 ∈ R𝐵×𝑆 ×𝐷 (batch size 𝐵, sequence length 𝑆,                              Í3
+                                                                           6: 𝑋 fused ← ℓ=1 𝜆ℓ ⊙ 𝐿ℓ {Route-fusion: 𝜆-weighted mix}
+    model dimension 𝐷)
+                                                                           7: 𝐾, 𝑉 ← 𝑋 fused𝑊𝑘 , 𝑋 fused𝑊𝑣 ; 𝐾ℎ , 𝑉ℎ ← reshape(𝐾, 𝑉 ) {KV proj.}
+Ensure: Output 𝑂 ∈ R𝐵×𝑆 ×𝐷 , KV cache (𝐾, 𝑉 )
+                                                                           8: 𝐾tot , 𝑉tot ← concat(𝐾prev , 𝐾ℎ ), concat(𝑉prev , 𝑉ℎ ) {Cache update}
+ 1: 𝑞 ← 𝑋𝑊𝑞 ,      𝑞 ∈ R𝐵×𝑆 ×𝐷
+                                                                           9: 𝐴 ← Attention(𝑄ℎ , 𝐾tot , 𝑉tot ; causal) {Single attn.}
+ 2: 𝑞ℎ ← reshape(𝑞) → R𝐵×𝐻 ×𝑆 ×𝑑ℎ
+                                                                          10: 𝑂 ← reshape(𝐴)𝑊𝑜 {Output proj.}
+ 3: {Define memory levels (causal)}
+                                                                          11: return (𝑂, (𝐾tot , 𝑉tot ))
+ 4: 𝑀1 ← 𝑋 {L1: Local memory (current tokens)}
+ 5: {L2: Causal session summary (prefix mean or EMA)}
+ 6: for 𝑡 = 1 to 𝑆 do                                                        When retrieval is disabled, Route-Fused MKA reduces to a 2-
+ 7:   𝑀2 [𝑡] ← Summary(𝑋 [:, 1 : 𝑡, :]) {Causal prefix summary}           tier (L1/L2) route-fused attention, serving as a drop-in efficient
+ 8: end for                                                               baseline. The causal L2 summary ensures no information leakage
+ 9: 𝑀3 ← 0 ∈ R𝐵×𝑆 ×𝐷 {L3: Long-term memory (optional retrieval)}          from future tokens, while the optional L3 retrieval enables long-
+10: 𝜆 ← softmax(MLP(𝑞)) ∈ R𝐵×𝑆 ×3 {Routing computed per-                  distance memory access when needed.
+    token, per-layer}
+11: for ℓ = 1 to 3 do                                                     4.2    Block-Memory Keyed Attention
+12:   𝑘 ℓ ← 𝑀ℓ𝑊𝑘 , 𝑣 ℓ ← 𝑀ℓ𝑊𝑣                                                    (Block-MKA) Design
+13:   𝑘 ℓℎ ← reshape(𝑘 ℓ ), 𝑣 ℎℓ ← reshape(𝑣 ℓ )                          Block-MKA introduces a multi-level memory design with the fol-
+                             ⊤
+14:   𝑎 ℓ ← softmax(𝑞ℎ · 𝑘 ℓℎ ) · 𝑣 ℎℓ                                    lowing key contributions:
+15: end for                                                               (1) Hierarchical Memory Design (L1/L2/L3): Inspired by com-
+           Í3
+16: 𝑂ℎ ← ℓ=1 𝜆ℓ ⊙ 𝑎 ℓ {Fused multi-memory output}                             puter architecture, we construct attention computation with
+17: 𝑂 ← reshape(𝑂ℎ ) · 𝑊𝑜                                                     distinct memory levels.
+18: 𝐾 ← [𝐾 ∥𝑘 1ℎ ],   𝑉 ← [𝑉 ∥𝑣 ℎ1 ] {Update cache}                           • L1 Memory (On-chip SRAM): Fast, high-bandwidth mem-
+19: return (𝑂, (𝐾, 𝑉 ))                                                         ory used for immediate attention computation and softmax
+                                                                                normalization within small local blocks.
+                                                                              • L2 Memory (High Bandwidth Memory - HBM): Medium
+                                                                                capacity memory storing intermediate activations, query-
+4.1    Route-Fused MKA (FastMKA): Causal                                        key-value representations, and cached softmax statistics.
+       Route-Fusion with KV-Cache                                             • L3 Memory (Vectorized Hash-based DRAM Cache): High-
+While MKA enables dynamic query-aware access to multi-level                     capacity, slower memory with chunk-based recalls to manage
+memories (L1, L2, L3), it requires repeated projection and attention            historical attention blocks, leveraging vectorized hashing for
+computation over each memory source, leading to non-trivial over-               efficient retrieval of attention patterns from past activations.
+head. To alleviate this, we propose Route-Fused MKA (FastMKA),            (2) Vectorized Hashing and Chunk-based Recall: We integrate
+a simplified yet effective variant that performs route-fusion—a token-        vectorized hashing mechanisms into the L3 memory to facilitate
+wise soft fusion of hierarchical memory levels before attention—thereby       rapid and efficient chunk-based recall of attention patterns,
+avoiding multiple attention paths and significantly reducing run-             enabling reuse of past computations and reducing redundant
+time cost.                                                                    calculations.
+CF ’26, May 19–21, 2026, Catania, Italy                                                                                   Dong Liu, Yanxuan Yu, Ben Lengerich, and Ying Nian Wu
+
+
+(3) CUDA Kernel Implementation with Tiled 𝛼/𝑧 Support:                                       Algorithm 3 Hierarchical Block-MKA Algorithm
+    We provide detailed CUDA kernel implementations for our                                  Require: Q, K, V ∈ R𝑁 ×𝑑 ; block size 𝐵; scaling factor 𝜏
+    block attention operations, supporting tile-based normaliza-
+                                                                                             Ensure: Output O ∈ R𝑁 ×𝑑
+    tion constants 𝛼 and partition functions 𝑧, optimizing parallel
+                                                                                              1: Partition Q, K, V into {Q𝑖 , K 𝑗 , V 𝑗 }𝑇𝑖,𝑗=1 , where 𝑇 = 𝑁 /𝐵
+    computation on GPUs.
+                                                                                              2: for 𝑖 = 1 to 𝑇 do
+                                                                                              3:   Load Q𝑖 into L2 (HBM)
+                                                                                              4:   Initialize O𝑖 ← 0, 𝑧𝑖 ← 0, 𝑚𝑖 ← −∞
+4.3     Hierarchical Block-wise MKA Algorithm                                                 5:   for 𝑗 = 1 to 𝑇 do
+Standard attention is computed as follows:                                                    6:      Load K 𝑗 , V 𝑗 into L2 (HBM)
+                                                                                              7:      S𝑖 𝑗 ← 𝜏 · Q𝑖 K⊤𝑗 in L1 (SRAM)
+                                                                                              8:      𝑚𝑖 ← max(𝑚𝑖 , max(S𝑖 𝑗 ))
+                                                                                              9:      S̃𝑖 𝑗 ← S𝑖 𝑗 − 𝑚𝑖
+                 S = QK⊤,          P = softmax(S),           O = PV                    (1)
+                                                                                             10:      𝛼𝑖 𝑗 ← exp( S̃𝑖 𝑗 )V 𝑗
+                                                                                                              Í
+                                                                                             11:      𝑧𝑖 𝑗 ← exp( S̃𝑖 𝑗 )
+                                                                                             12:      Retrieve 𝛼ˆ𝑖 𝑗 , 𝑧ˆ𝑖 𝑗 via vectorized hash from L3 (DRAM)
+   The quadratic complexity arises due to the computation of full                            13:      𝛼𝑖 𝑗 ← 𝛼𝑖 𝑗 + 𝛼ˆ𝑖 𝑗 , 𝑧𝑖 𝑗 ← 𝑧𝑖 𝑗 + 𝑧ˆ𝑖 𝑗
+S ∈ R𝑁 ×𝑁 . To mitigate this, Block-MKA computes attention in                                14:      O𝑖 ← O𝑖 + 𝛼𝑖 𝑗 , 𝑧𝑖 ← 𝑧𝑖 + 𝑧𝑖 𝑗
+blocks with intermediate memory management:                                                  15:   end for
+   Step 1: Divide sequences into 𝑇 blocks with dimension 𝐵, 𝑇 =                              16:   O𝑖 ← O𝑖 /𝑧𝑖
+𝑁 /𝐵:                                                                                        17: end for
+                                                                                             18: O ← [O1 ; . . . ; O𝑇 ]
+                                                                                             19: return O
+
+
+   Q = [Q1 ; . . . ; Q𝑇 ],      K = [K1 ; . . . ; K𝑇 ],      V = [V1 ; . . . ; V𝑇 ]    (2)
+                                                                                             5     Theoretical Formulation: Recursive MKA
+                                                                                                   with Online Softmax
+  Step 2 (L1 and L2): Perform local softmax normalization with                               We derive a memory-efficient and numerically stable formulation
+online 𝛼/𝑧 calculation within each block leveraging on-chip mem-                             of hierarchical attention using a gated mixture of exponentiated
+ory (L1) and HBM (L2):                                                                       scores. Our formulation computes attention as a weighted mixture
+                                                                                             of unnormalized scores from different memory levels, followed by
+                                                                                             a single global normalization:
+
+                                       exp(S𝑖 𝑗 − 𝛼𝑖 𝑗 )             ∑︁                                                   Í3               ⊤
+       S𝑖 𝑗 = 𝜏Q𝑖 K⊤𝑗 ,       P𝑖 𝑗 =                     ,    O𝑖 =          P𝑖 𝑗 V 𝑗   (3)                                  ℓ=1 𝜆ℓ · exp(𝑄𝐾ℓ )𝑉ℓ
+                                            𝑧𝑖 𝑗                                                              Attn(𝑄) = Í3                   ⊤
+                                                                                                                                                 ,           (5)
+                                                                                                                             ℓ=1 𝜆ℓ · exp(𝑄𝐾ℓ )
+                                                                       𝑗
+                                                                                                               Í
+                                                                                             where 𝜆ℓ ≥ 0 and ℓ 𝜆ℓ = 1. This formulation differs from a mixture
+                                                                                             of per-level softmax outputs (which would be ℓ 𝜆ℓ ·Softmax(𝑄𝐾ℓ⊤ )𝑉ℓ )
+                                                                                                                                           Í
+   Normalization constants 𝛼𝑖 𝑗 and 𝑧𝑖 𝑗 are computed online as:                             in that normalization occurs after mixing the unnormalized scores,
+                                                                                             enabling efficient online computation. Direct evaluation requires
+                                                                                             computing full attention maps, which is memory-intensive. We
+                                                  ∑︁                                         reformulate this as an online recursive computation that avoids
+               𝛼𝑖 𝑗 = max 𝑆𝑖 𝑗𝑘 ,        𝑧𝑖 𝑗 =        exp(𝑆𝑖 𝑗𝑘 − 𝛼𝑖 𝑗 )              (4)   storing attention weights explicitly.
+                          𝑘
+                                                  𝑘
+
+                                                                                             5.1    Recursive Reformulation
+                                                                                             Let 𝛼 (0) = 0, 𝑧 (0) = 0, and define the recursive update:
+   Step 3 (L3 - Hashing and Chunk Recall): Use vectorized hash-
+ing to retrieve similar past attention patterns from L3 memory. For                                           𝛼 (ℓ ) = 𝛼 (ℓ −1) + 𝜆ℓ · exp(𝑄𝐾ℓ⊤ )𝑉ℓ ,                       (6)
+                                                                                                                   (ℓ )        (ℓ −1)
+each block, a chunk-based recall method efficiently retrieves stored                                           𝑧          =𝑧            + 𝜆ℓ · exp(𝑄𝐾ℓ⊤ ),                  (7)
+historical attentions, achieving amortized subquadratic complexity
+O (𝐵𝑇𝑑 + 𝐵𝑅𝑑) with bounded recall count 𝑅 ≪ 𝑇 .                                              for ℓ = 1, 2, 3. We then define the final output as:
+                                                                                                                                                  ⊤
+                                                                                                                       𝛼 (3)
+                                                                                                                               Í3
+                                                                                                                                 ℓ=1 𝜆ℓ · exp(𝑄𝐾ℓ )𝑉ℓ
+                                                                                                           Attn(𝑄) := (3) = Í3                     ⊤
+                                                                                                                                                      .                     (8)
+4.4     Algorithm and Pseudocode                                                                                       𝑧           ℓ=1 𝜆ℓ · exp(𝑄𝐾ℓ )
+
+We provide detailed pseudocode illustrating hierarchical memory                              Theorem 5.1 (Recursive MKA Computes Gated Mixture Attention).
+use:                                                                                         The recursive formulation defined by Equations (6)-(8) computes the
+MKA: Memory-Keyed Attention for Efficient Long-Context Reasoning                                                                                CF ’26, May 19–21, 2026, Catania, Italy
+
+
+gated mixture attention:                                                                           (Table 2) and decode latency is 1.4–1.9× lower (Table 3), consistent
+                                             Í3              ⊤                                     with the predicted subquadratic scaling.
+                                              ℓ=1 𝜆ℓ · exp(𝑄𝐾ℓ )𝑉ℓ
+                             Attn(𝑄) =        Í3               ⊤
+                                                                   .
+                                               ℓ=1 𝜆ℓ · exp(𝑄𝐾ℓ )                                  6 Experiments
+   Proof. By expanding the recursive updates:                                                      6.1 Experimental Setup
+  𝛼 (3) = 𝜆1 exp(𝑄𝐾1⊤ )𝑉1 + 𝜆2 exp(𝑄𝐾2⊤ )𝑉2 + 𝜆3 exp(𝑄𝐾3⊤ )𝑉3,                               (9)      Models. We evaluate our methods on three model families cov-
+       (3)
+   𝑧         = 𝜆1 exp(𝑄𝐾1⊤ ) + 𝜆2 exp(𝑄𝐾2⊤ ) + 𝜆3 exp(𝑄𝐾3⊤ ),                               (10)   ering different architectures and KV compression strategies: (1)
+                                                                                                   Qwen2.5-7B and Qwen2.5-14B1 with native 128K context length
+where the sums are taken element-wise over the sequence dimen-
+                                                                                                   and Grouped-Query Attention (GQA) architecture, serving as our
+sion. Therefore,
+                                                                                                   main evaluation baseline; (2) Llama 3.1-8B2 with 128K context
+                                              ⊤
+                      𝛼 (3)
+                             Í3
+                               ℓ=1 𝜆ℓ · exp(𝑄𝐾ℓ )𝑉ℓ                                                as a widely-adopted community standard for long-context com-
+            Attn(𝑄) = (3) = Í3                  ⊤
+                                                    ,
+                      𝑧         ℓ=1 𝜆ℓ · exp(𝑄𝐾ℓ )
+                                                                                                   parisons; and (3) DeepSeek-V33 as an MLA-based architecture
+which matches the gated mixture formulation. This formulation                                      baseline, enabling direct comparison between MLA compression
+enables efficient online computation by accumulating unnormalized                                  and our hierarchical MKA routing approach. All models are initial-
+scores and values, then performing a single normalization step. □                                  ized from pre-trained checkpoints and fine-tuned with our attention
+                                                                                                   mechanisms. For each model, we replace its attention module with:
+5.2          Numerical Stability via Max-Shift                                                        (i) the original attention mechanism (MHA for base comparison,
+                                                                                                   or GQA/MLA as in pre-trained models); (ii) standard Multi-Latent
+To ensure stable computation of exp(𝑄𝐾ℓ⊤ ) across ℓ, we employ a
+                                                                                                   Attention (MLA) [24] (low-rank KV factorization); (iii) the pro-
+hierarchical max-shift. Let 𝜇 (0) = −∞, and define:                                                posed MKA featuring three-level memory (L1/L2/L3) and dynamic
+                 𝜇 (ℓ ) = max(𝜇 (ℓ −1) , max(𝑄𝐾ℓ⊤ )),                                       (11)   routing gates.
+                       𝑠 ℓ = exp(𝑄𝐾ℓ⊤ − 𝜇 (ℓ ) ),                                           (12)      Dataset. For fine-tuning and evaluation, we use WikiText-2
+                      (ℓ )    (ℓ −1)      (ℓ −1)                   (ℓ )                            (train=36,718, valid=3,760, test=4,358 sentences) as the primary
+                  𝑧          =𝑧            · exp(𝜇            −𝜇          ) + 𝜆ℓ 𝑠 ℓ ,      (13)
+                      (ℓ )        (ℓ −1)             (ℓ −1)        (ℓ )
+                                                                                                   dataset. To evaluate long-context capabilities, we also include a
+                 𝛼           =𝛼            · exp(𝜇            −𝜇          ) + 𝜆ℓ 𝑠 ℓ 𝑉ℓ .   (14)   subset of long-context evaluation tasks that require processing
+This mirrors FlashAttention’s scan update trick and ensures stable                                 sequences up to 128K tokens. We use each model’s native tokenizer
+operation in low-precision or long-context regimes.                                                (Qwen2.5, Llama, or DeepSeek tokenizers) and set pad_token=
+                                                                                                   eos_token.
+5.3          Local vs. Global MKA Modes
+                                                                                                      Hardware. All experiments are conducted on NVIDIA A800
+We define two instantiations of recursive MKA:                                                     80GB GPUs. For 7B models with sequences up to 32K, we use a
+    • Local-MKA: uses only 𝐾1, 𝑉1 and 𝐾2, 𝑉2 from local and ses-                                   single A800 GPU. For 14B models and longer sequences (64K, 128K,
+      sion memory. Computation is windowed and block-parallel,                                     256K), we use 4-8 NVIDIA A800 GPUs with distributed training.
+      scaling as O (𝑛).                                                                            DeepSeek-V3 experiments focus on inference-side latency and KV
+    • Global-MKA: includes long-term memory 𝐾3, 𝑉3 retrieved                                       cache efficiency analysis.
+      via hashing. Recursive scan with chunk recall yields amor-
+      tized sublinear complexity.                                                                     Training Details. Each model is fine-tuned for one epoch only4 ,
+                                                                                                   with batch size 2-4 (adjusted per model size and context length), se-
+5.4          Runtime Bounds and Complexity                                                         quence lengths of 4K, 8K, 16K, 32K, 64K, 128K, and 256K tokens. All
+We now analyze the complexity of MKA with respect to memory                                        reported training throughput and inference latency measurements
+levels:                                                                                            include the routing MLP overhead and memory fusion operations,
+                                                                                                   ensuring fair end-to-end comparisons with baselines. We use mixed
+     • L1 (Local Attention): Standard causal block attention over
+                                                                                                   precision training with bfloat16 (bf16), FlashAttention-2 [7] with
+        𝐵 tokens, cost O (𝐵 2𝑑), computed from on-chip SRAM.
+                                                                                                   block size 128, and gradient accumulation to maintain effective
+     • L2 (Session Memory): Pooled or low-rank block summaries
+                                                                                                   batch size. Optimizer: AdamW (lr= 1×10−5 to 5×10−5 depending
+        over 𝑇 = 𝑁 /𝐵 blocks, cost O (𝐵𝑇𝑑).
+                                                                                                   on model size, 𝛽=(0.9, 0.999), cosine learning rate schedule with
+     • L3 (Long-Term Memory): Vector-hash recall of 𝑅 ≪ 𝑇
+                                                                                                   warmup). For long sequences (≥64K), we use tensor parallelism
+        past blocks, each of size 𝐵, with cost O (𝐵𝑅𝑑).
+                                                                                                   (TP=2-4) to distribute KV cache across GPUs.
+   Let 𝑁 be total sequence length, 𝐵 block size. Total runtime per
+step is:                                                                                           1 Models from Qwen Team, available at https://huggingface.co/Qwen/Qwen2.5-7B-
+                    O (𝐵𝑇𝑑 + 𝐵𝑅𝑑) with 𝑅 ≪ 𝑇 ,                (15)                                 Instruct
+                                                                                                   2 Models from Meta AI, available at https://huggingface.co/meta-llama/Llama-3.1-8B-
+which is subquadratic in 𝑁 and superior to O (𝑁 2𝑑) full attention.                                Instruct
+Memory access is minimized via tiled L1 computation and chunk-                                     3 DeepSeek-V3 uses MLA architecture and supports 128K context. Structure analysis
+
+based L3 recall. This theoretical complexity advantage is empirically                              based on DeepSeek-V2 technical report [24].
+                                                                                                   4 The goal is to compare convergence speed and efficiency under equal compute budget;
+validated in Section 6: as sequence length scales from 4K to 256K,                                 additional epochs further improve perplexity but maintain the relative ranking of
+FastMKA’s training throughput remains 3.9–5.0× higher than MLA                                     methods.
+CF ’26, May 19–21, 2026, Catania, Italy                                                                      Dong Liu, Yanxuan Yu, Ben Lengerich, and Ying Nian Wu
+
+
+    Inference Details. For inference evaluation, we measure both pre-              Table 4: Prefill vs Decode latency breakdown on Qwen2.5-7B
+fill (processing input prompt) and decode (generating new tokens)                  (batch=1, bf16). Prefill: total time to process input tokens.
+phases separately. We use batch size 1 for single-user scenarios and               Decode: latency per generated token. Measurements use con-
+batch sizes 4, 8, 16 for throughput analysis. KV cache is stored in                tiguous KV layout for ≤32K and paged layout for longer
+contiguous memory layout for sequences ≤32K and paged layout                       contexts.
+for longer sequences to handle dynamic allocation. Measurements
+are averaged over 100 warmup iterations and 1000 inference itera-                   Context   Method      Prefill (s)   Decode (ms/tok)       Prefill Attn %   Decode Attn %
+tions. We report latency in ms/token, throughput in tokens/second,                              MHA          0.58            28.6                 68.4%            71.2%
+                                                                                                GQA          0.49            24.3                 64.7%            67.8%
+and memory bandwidth in GB/s using Nsight Compute profiling.                        32K
+                                                                                                MLA          0.35            16.4                 61.3%            64.2%
+                                                                                              FastMKA        0.21            10.3                 55.8%            58.6%
+   Metric. Language-model quality is measured by cross-entropy                                  MHA          1.12            39.2                 70.2%            73.1%
+loss L and its exponential form, Perplexity (PPL), PPL = 𝑒 L                        64K
+                                                                                                GQA          0.94            33.4                 66.8%            69.7%
+                                                                                                MLA          0.68            22.8                 63.1%            66.3%
+(lower is better).                                                                            FastMKA        0.42            13.6                 57.2%            60.1%
+                                                                                                MHA          2.34            58.3                 72.3%            74.8%
+6.2     Main Results                                                                128K
+                                                                                                GQA
+                                                                                                MLA
+                                                                                                             1.98
+                                                                                                             1.42
+                                                                                                                             49.8
+                                                                                                                             32.7
+                                                                                                                                                  68.7%
+                                                                                                                                                  65.2%
+                                                                                                                                                                   71.2%
+                                                                                                                                                                   68.4%
+                                                                                              FastMKA        0.87            18.4                 58.4%            61.7%
+                                                                                                MHA          4.87            87.6                 74.6%            76.8%
+                                                                                                GQA          4.12            75.2                 70.8%            73.4%
+Table 1: Comparison of attention mechanisms on Qwen2.5-                             256K
+                                                                                                MLA          2.96            48.9                 67.3%            70.2%
+7B (sequence length 16K). FastMKA achieves the best trade-                                    FastMKA        1.82            26.3                 60.1%            63.4%
+
+off between accuracy and efficiency.
+
+  Method                PPL ↓      Train Time (s) ↓        Decode (ms/tok) ↓       Table 5: Memory footprint and HBM bandwidth on Qwen2.5-
+  MHA (baseline)         3.31             6234.7                   21.4            7B. KV cache memory (GB) and effective bandwidth (GB/s)
+  GQA                    3.28             5012.4                   18.6            measured via Nsight Compute at 128K context, batch=1,
+  MLA                    3.22             4456.9                   12.8            bf16. FastMKA’s higher HBM bandwidth utilization despite
+  FastMKA (ours)         3.26             1248.3                   8.4             smaller KV cache is due to more contiguous memory access
+                                                                                   patterns (route-fusion creates a single fused KV tensor) and
+                                                                                   better kernel saturation (fewer but larger kernels), as vali-
+                                                                                   dated by Nsight Compute roofline analysis.
+
+                                                                                    Method               KV Cache (GB)     KV Read (GB)         HBM BW (GB/s)     Utilization
+Table 2: Training throughput (tokens/second) on Qwen2.5-
+                                                                                    MHA                       18.7              18.7                 1240              78.2%
+7B with batch size 2, bf16, FlashAttention-2. Note non-linear                       GQA                       12.4              12.4                 1156              72.9%
+scaling beyond 64K due to memory bandwidth and kernel                               MLA                        8.9               8.9                 1087              68.5%
+                                                                                    FastMKA (ours)            6.2               6.2                  1324              83.5%
+launch overhead.
+                                                                                    Reduction vs MHA         66.8%              66.8%               +6.8%              +5.3%
+
+
+ Method                4K        8K       16K      32K     64K     128K    256K
+ MHA                   347       289       231      184     142      98     68
+ GQA                   424       382       341      296     243     178    124     Table 6: Comparison across different model architectures
+ MLA                   468       428       387      342     287     212    148     on WikiText-2 (sequence length 32K, batch=2 for training,
+ FastMKA (ours)       1847      1732      1614     1453    1287    1032    742
+                                                                                   batch=1 for inference). Qwen2.5-14B experiments use 4 A800
+ Speedup vs MLA       3.94×     4.05×     4.17×    4.25×   4.48×   4.87×   5.01×   GPUs with tensor parallelism (TP=4); all other models use a
+                                                                                   single A800 GPU. FastMKA maintains efficiency advantages
+                                                                                   across architectures.
+
+                                                                                    Model               Method          PPL ↓       Train (tok/s) ↑       Decode (ms/tok) ↓
+Table 3: Decode latency (ms/token, batch=1) on Qwen2.5-7B                                            GQA (baseline)      3.24             296                   24.3
+with bf16. Latency scales non-linearly beyond 64K due to KV                                               MLA            3.18             342                   16.4
+                                                                                    Qwen2.5-7B
+                                                                                                     FastMKA (ours)      3.22            1453                   10.3
+cache paging and memory bandwidth saturation.
+                                                                                                     GQA (baseline)      3.12             158                   32.7
+                                                                                                          MLA            3.06             184                   21.8
+                                                                                    Qwen2.5-14B
+ Method                4K        8K       16K      32K     64K     128K    256K                      FastMKA (ours)      3.10             642                   13.6
+ MHA                   14.2     16.8      21.4     28.6    39.2    58.3    87.6                      GQA (baseline)      3.19             256                   26.2
+ GQA                   12.4     14.8      18.6     24.3    33.4    49.8    75.2                           MLA            3.13             294                   17.9
+                                                                                    Llama 3.1-8B
+ MLA                    8.7     10.2      12.8     16.4    22.8    32.7    48.9                      FastMKA (ours)      3.17            1078                   11.2
+ FastMKA (ours)        6.2      7.1       8.4      10.3    13.6    18.4    26.3
+                                                                                                      MLA (native)       3.08             –                     18.4
+ Speedup vs MLA       1.40×     1.44×     1.52×    1.59×   1.68×   1.78×   1.86×    DeepSeek-V3      FastMKA (ours)      3.11             –                     12.7
+MKA: Memory-Keyed Attention for Efficient Long-Context Reasoning                                                   CF ’26, May 19–21, 2026, Catania, Italy
+
+
+Table 7: Performance on LongBench benchmark (Qwen2.5-                       Table 9: Tier ablation study on Qwen2.5-7B (sequence length
+7B, sequence length 128K). We use the official LongBench                    32K, batch=2). Removing memory tiers degrades perfor-
+evaluation protocol: base models (not instruction-tuned)                    mance, validating the hierarchical design.
+with max_new_tokens=128, evaluated using the official Long-
+Bench evaluation scripts. Results show accuracy across dif-                  Variant                  PPL ↓     Train (tok/s) ↑    Decode (ms/tok) ↓
+ferent task categories (QA, Summarization, Code).
+                                                                             FastMKA (L1+L2+L3)       3.22           1453                   10.3
+                                                                               L1+L2 only             3.31           1562                   9.2
+       Method              QA     Summarization         Code       Avg         L1+L3 only             3.28           1508                   9.6
+       MHA                 42.3          58.7           51.2       50.7        L1 only (=MHA)         3.51           184                    28.6
+       GQA                 44.8          61.3           53.4       53.2
+       MLA                 46.2          63.8           55.1       55.0
+                                                                            Table 10: Routing mechanism ablation (Qwen2.5-7B, se-
+       FastMKA (ours)      45.7          63.2           54.6       54.5
+                                                                            quence length 32K). Learned soft routing outperforms fixed
+                                                                            and hard routing.
+
+Table 8: Passkey retrieval accuracy on RULER benchmark
+                                                                             Routing Method             PPL ↓     Train (s) ↓     Decode (ms/tok) ↓
+(Qwen2.5-7B). We use the official RULER passkey retrieval
+task: a random number is inserted at a random posi-                          Soft routing (learned)     3.22        2496.7                10.3
+tion in a long context, and the model must retrieve it.                      Fixed (𝜆 = 13 )            3.34        2534.2                10.5
+Evaluation uses base models (not instruction-tuned) with                     Hard top-2 routing         3.29        2512.8                10.4
+                                                                             Hard top-1 routing         3.41        2498.3                10.3
+max_new_tokens=1, following the official RULER evalua-
+tion protocol. Higher is better. Demonstrates L3 memory’s
+effectiveness for long-distance retrieval. FastMKA uses L3
+retrieval with R=8 (top-8 retrieved chunks per query).                      6.5    Ablation Studies
+                                                                            6.5.1 Memory Tier Ablation. We analyze the contribution of each
+      Method              4K      8K     16K     32K     64K       128K
+                                                                            memory tier by systematically removing L2 and L3 components.
+                                                                               Removing L3 (L1+L2 only) increases perplexity from 3.22 to
+      MHA                 98.4    97.2   94.8    87.3    72.6      45.2     3.31, demonstrating L3’s importance for long-range dependencies.
+      GQA                 98.6    97.8   96.2    91.4    81.7      58.3
+                                                                            Removing L2 (L1+L3 only) slightly degrades performance (3.28
+      MLA                 98.8    98.2   97.1    94.6    88.4      74.8
+                                                                            PPL), showing L2’s role in session-level summarization. L1 only
+      FastMKA (ours)      98.7    98.1   96.9    94.2    87.8      73.4
+                                                                            (equivalent to MHA) significantly degrades both accuracy (3.51
+                                                                            PPL) and efficiency (7.9× slower training throughput), confirming
+                                                                            the necessity of hierarchical memory.
+
+6.3    Experimental Results Analysis                                        6.5.2 Routing Mechanism Ablation. We compare different routing
+FastMKA delivers a strong accuracy–efficiency trade-off across              strategies: learned soft routing (FastMKA), fixed uniform routing,
+context lengths and architectures (Tables 1–6). On Qwen2.5-7B,              and hard top-k routing.
+FastMKA achieves 3.26 PPL (vs. MLA’s 3.22) while training 3.6×                 Learned soft routing achieves the best perplexity (3.22), out-
+faster and decoding 1.5× faster at 16K context—a favorable ex-              performing fixed uniform routing (3.34) by 3.7%. Hard top-k rout-
+change of 1.2% accuracy for substantial compute savings. Efficiency         ing shows intermediate performance, but soft routing’s ability to
+gains widen at longer contexts (Table 2–3), reaching 5.0× training          smoothly blend memory tiers provides better representation quality.
+speedup and 1.86× decode speedup at 256K, consistent with MKA’s             The routing overhead is minimal (1-2% latency increase), confirming
+subquadratic complexity derived in Section 5. This pattern holds            the efficiency of our learned routing gates.
+across model scales (7B, 14B) and architectures (Llama, DeepSeek),          6.5.3 Routing Weight Analysis. We analyze routing weight distri-
+confirming that FastMKA’s route-fusion mechanism—not imple-                 butions 𝜆𝐿1, 𝜆𝐿2, 𝜆𝐿3 across token positions, layers, and task types;
+mentation tuning—drives the speedup (Table 11: 3 kernel launches            extended qualitative observations are provided in the supplemen-
+vs. 9 for full MKA, single attention path vs. three). A full step-by-step   tary appendix.
+quantitative analysis is provided in the supplementary appendix.
+                                                                            6.6    System-Level Performance Analysis
+6.4    Long-Context Benchmark Evaluation                                    6.6.1 Prefill vs Decode Latency Breakdown. We decompose total la-
+To validate MKA’s effectiveness on long-context reasoning tasks,            tency into prefill (processing input prompt) and decode (generating
+we evaluate on LongBench [2] and RULER [22] benchmarks, which               new tokens) phases to identify bottlenecks. Table 4 shows detailed
+test various long-context capabilities including QA, summarization,         breakdowns measured on Qwen2.5-7B at 128K context with batch
+and long-distance retrieval.                                                size 1, bf16 precision, and paged KV layout. FastMKA reduces prefill
+   FastMKA achieves competitive long-context benchmark accu-                latency by 1.63× (0.87s vs 1.42s for MLA) and decode latency by
+racy while substantially reducing latency (Tables 7–8); additional          1.78× (18.4ms vs 32.7ms per token), with attention computation
+discussion is provided in the supplementary appendix.                       accounting for 58.4% of prefill time and 61.7% of decode time (vs
+CF ’26, May 19–21, 2026, Catania, Italy                                                                                 Dong Liu, Yanxuan Yu, Ben Lengerich, and Ying Nian Wu
+
+
+65.2%/68.4% for MLA). This demonstrates that FastMKA’s route-                                   The lightweight design of Route-Fused MKA, with a single KV
+fusion mechanism effectively reduces attention overhead in both                              projection and learned soft routing, makes it particularly suitable
+phases, enabling more efficient prefill processing and faster token                          for high-throughput inference and edge deployment. It offers a
+generation.                                                                                  practical balance between accuracy, latency, and memory usage,
+                                                                                             and serves as a strong drop-in replacement for traditional attention
+6.6.2 Computational Cost Analysis. To understand the source of
+                                                                                             in long-context scenarios.
+FastMKA’s speedup, we analyze per-token computational costs
+(FLOPs, memory access, and kernel launches) across different model
+architectures. Table 11 shows the breakdown for Qwen2.5-7B/14B,                              7    Conclusion
+Llama 3.1-8B, and DeepSeek-V3 at 128K context, batch=1, measured                             We introduce Memory-Keyed Attention (MKA), a hierarchical
+via Nsight Compute profiling. FastMKA’s route-fusion reduces the                             attention mechanism that enables efficient long-context modeling
+number of attention computations from 3 (one per memory level                                by routing queries across multiple levels of memory. MKA achieves
+in full MKA) to 1, while maintaining comparable accuracy through                             a favorable accuracy-efficiency trade-off, maintaining competitive
+learned routing. Additional observations and interpretation are                              perplexity while significantly reducing compute cost, making it a
+provided in the supplementary appendix.                                                      promising candidate for memory-aware transformer design.
+                                                                                                To further reduce overhead, we propose FastMKA, a broadcast-
+Table 11: Per-token computational cost breakdown across                                      routed variant that performs memory fusion before attention com-
+different model architectures (128K context, batch=1, bf16).                                 putation. FastMKA retains the architectural benefits of MKA while
+FLOPs and memory access measured via Nsight Compute.                                         achieving significantly lower latency and training cost. FastMKA
+FastMKA achieves speedup through algorithmic reduction                                       forms a flexible framework for scalable and efficient LLM inference
+of attention paths rather than implementation differences.                                   with long-sequence inputs.
+
+ Model              Method         FLOPs (B)   KV Read (GB)   Kernel Launches   Attn Paths
+                 GQA (baseline)      2.89          18.7             1               1
+                                                                                             Acknowledgments
+                     MLA             3.12          15.2             1               1
+ Qwen2.5-7B
+                MKA (full, ours)     6.87          14.8             9               3
+                                                                                             The authors would like to gratefully acknowledge the generous
+                FastMKA (ours)       2.34          6.2              3               1        support of Prof. Ying Nian Wu’s grant from Qualcomm and Prof.
+                 GQA (baseline)       5.76         37.4             1               1        Ben Lengerich’s grant from Intelligible Inc. Their support made
+                     MLA             6.24          30.4             1               1
+ Qwen2.5-14B                                                                                 this work possible and greatly facilitated the development of this
+                MKA (full, ours)     13.74         29.6             9               3
+                FastMKA (ours)       4.68          12.4             3               1        research.
+                 GQA (baseline)      3.42          21.3             1               1
+                     MLA             3.68          17.8             1               1
+ Llama 3.1-8B
+                MKA (full, ours)
+                FastMKA (ours)
+                                     8.14
+                                     2.78
+                                                   17.2
+                                                   7.1
+                                                                    9
+                                                                    3
+                                                                                    3
+                                                                                    1        References
+                  MLA (native)       4.52          19.6             1               1         [1] Joshua Ainslie, James Lee-Thorp, Michiel de Jong, Yury Zemlyanskiy, Federico
+ DeepSeek-V3                                                                                      Lebrón, and Sumit Sanghai. 2023. GQA: Training Generalized Multi-Query Trans-
+                FastMKA (ours)       3.41          8.3              3               1
+                                                                                                  former Models from Multi-Head Checkpoints. (2023). arXiv:2305.13245 [cs.CL]
+                                                                                                  https://arxiv.org/abs/2305.13245
+6.7      Discussion                                                                           [2] Yushi Bai, Xin Lv, Jiajie Zhang, Hongchang Lyu, Jiankai Tang, Zhidian Huang,
+                                                                                                  Zhengxiao Du, Xiao Liu, Aohan Zeng, Lei Hou, Yuxiao Dong, Jie Tang, and
+MKA improves perplexity through dynamic routing over hier-                                        Juanzi Li. 2024. LongBench: A Bilingual, Multitask Benchmark for Long Context
+                                                                                                  Understanding. (2024). arXiv:2408.13140 [cs.CL] https://arxiv.org/abs/2408.13140
+archical memory levels—local (L1), session (L2), and long-term                                [3] Sebastian Borgeaud, Arthur Mensch, Jordan Hoffmann, Trevor Cai, Eliza Ruther-
+(L3)—without increasing the model’s parameter count. This makes                                   ford, Katie Millican, George van den Driessche, Jean-Baptiste Lespiau, Bogdan
+MKA attractive for memory-intensive inference settings where                                      Damoc, Aidan Clark, Diego de Las Casas, Aurelia Guy, Jacob Menick, Roman Ring,
+                                                                                                  Tom Hennigan, Saffron Huang, Loren Maggiore, Chris Jones, Albin Cassirer, Andy
+representation fidelity and cache reusability are critical.                                       Brock, Michela Paganini, Geoffrey Irving, Oriol Vinyals, Simon Osindero, Karen
+   However, the full MKA formulation requires repeated projection                                 Simonyan, Jack W. Rae, Erich Elsen, and Laurent Sifre. 2022. Improving language
+and attention over all memory levels, which can be computation-                                   models by retrieving from trillions of tokens. (2022). arXiv:2112.04426 [cs.CL]
+                                                                                                  https://arxiv.org/abs/2112.04426
+ally expensive. To address this, we propose Route-Fused MKA                                   [4] Zefan Cai, Yichi Zhang, Bofei Gao, Yuliang Liu, Tianyu Liu, Keming Lu, Wayne
+(FastMKA), a route-fusion variant that fuses memory levels before                                 Xiong, Yue Dong, Baobao Chang, Junjie Hu, and Wen Xiao. 2024. PyramidKV:
+                                                                                                  Dynamic KV Cache Compression based on Pyramidal Information Funneling.
+attention computation. Route-Fused MKA uses token-wise routing                                    (2024). arXiv:2406.02069 [cs.CL] https://arxiv.org/abs/2406.02069
+to combine L1, L2, and optional L3 memories into a single fused                               [5] Zeming Chen, Angelika Romanou, Gail Weiss, and Antoine Bosselut. 2026.
+representation, then performs one KV projection and one atten-                                    PERK: Long-Context Reasoning as Parameter-Efficient Test-Time Learning. In
+                                                                                                  The Fourteenth International Conference on Learning Representations. https:
+tion computation. Critically, Route-Fused MKA caches the routed                                   //openreview.net/forum?id=qxDTe8fIyA
+(fused) KV instead of raw token KV, enabling efficient long-context                           [6] Zihang Dai, Zhilin Yang, Yiming Yang, Jaime Carbonell, Quoc V Le, and Ruslan
+attention with reduced memory bandwidth.                                                          Salakhutdinov. 2019. Transformer-XL: Attentive language models beyond a
+                                                                                                  fixed-length context. In Proceedings of ACL. 2978–2988.
+   On Caching Fused KV and Fairness: We discuss the seman-                                    [7] Tri Dao. 2023. FlashAttention-2: Faster Attention with Better Parallelism and
+tic implications of caching fused (routed) KV and our controlled                                  Work Partitioning. (2023). arXiv:2307.08691 [cs.LG] https://arxiv.org/abs/2307.
+                                                                                                  08691
+comparison protocol in the supplementary appendix.                                            [8] Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, and Christopher Ré. 2022.
+   Route-Fused MKA significantly reduces training and inference                                   FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness.
+latency while preserving most of MKA’s accuracy benefits, as val-                                 (2022). arXiv:2205.14135 [cs.LG] https://arxiv.org/abs/2205.14135
+                                                                                              [9] William Fedus, Barret Zoph, and Noam Shazeer. 2022. Switch Transformers:
+idated by experiments on different sequence lengths and long-                                     Scaling to Trillion Parameter Models with Simple and Efficient Sparsity. In Journal
+context benchmarks.                                                                               of Machine Learning Research, Vol. 23. 1–39.
+MKA: Memory-Keyed Attention for Efficient Long-Context Reasoning                                                                      CF ’26, May 19–21, 2026, Catania, Italy
+
+
+[10] Alex Graves, Greg Wayne, Malcolm Reynolds, Tim Harley, Ivo Danihelka, Ag-                Modelling. In International Conference on Learning Representations. https:
+     nieszka Grabska-Barwińska, Sergio Gómez Colmenarejo, Edward Grefenstette,                //openreview.net/forum?id=SylKikSYDH
+     Tiago Ramalho, John Agapiou, et al. 2016. Hybrid computing using a neural           [19] Aurko Roy, Mohammad Saffar, Ashish Vaswani, and David Grangier. 2021. Effi-
+     network with dynamic external memory. Nature 538, 7626 (2016), 471–476.                  cient content-based sparse attention with routing transformers. Transactions of
+[11] Huiqiang Jiang, Qianhui Wu, Xufang Luo, Dongsheng Li, Chin-Yew Lin,                      the Association for Computational Linguistics 9 (2021), 53–68.
+     Yuqing Yang, and Lili Qiu. 2024. LongLLMLingua: Accelerating and En-                [20] Noam Shazeer. 2019. Fast Transformer Decoding: One Write-Head is All You
+     hancing LLMs in Long Context Scenarios via Prompt Compression. (2024).                   Need. (2019). arXiv:1911.02150 [cs.NE] https://arxiv.org/abs/1911.02150
+     arXiv:2310.06839 [cs.CL] https://arxiv.org/abs/2310.06839                           [21] Mustafa Shukor, Enrico Fini, Victor Guilherme Turrisi da Costa, Matthieu Cord,
+[12] Wonbeom Lee, Jungi Lee, Junghwan Seo, and Jaewoong Sim. 2024. InfiniGen: Ef-             Joshua Susskind, and Alaaeldin El-Nouby. 2025. Scaling Laws for Native Multi-
+     ficient Generative Inference of Large Language Models with Dynamic KV Cache              modal Models. (2025). arXiv:2504.07951 [cs.CV] https://arxiv.org/abs/2504.07951
+     Management. In 18th USENIX Symposium on Operating Systems Design and Imple-         [22] Simeng Sun, Yang Liu, Dan Iter, Chenguang Zhu, Michael Zeng, and Mohit Iyyer.
+     mentation (OSDI 24). https://www.usenix.org/conference/osdi24/presentation/              2024. RULER: What’s the Real Context Size of Your Long-Context Language
+     lee-wonbeom                                                                              Models? (2024). arXiv:2404.06654 [cs.CL] https://arxiv.org/abs/2404.06654
+[13] Dmitry Lepikhin, HyoukJoong Lee, Yuanzhong Xu, Dehao Chen, Orhan Firat,             [23] Jiaming Tang, Yilong Zhao, Kan Zhu, Guangxuan Xiao, Baris Kasikci, and Song
+     Yanping Huang, Maxim Krikun, Noam Shazeer, and Zhifeng Chen. 2021. GShard:               Han. 2024. Quest: Query-Aware Sparsity for Efficient Long-Context LLM Infer-
+     Scaling giant models with conditional computation and automatic sharding. In             ence. (2024). arXiv:2406.10774 [cs.CL] https://arxiv.org/abs/2406.10774
+     International Conference on Learning Representations (ICLR).                        [24] DeepSeek Team. 2024. DeepSeek-V2 Technical Report. https://github.com/
+[14] Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin,        deepseek-ai/deepseek-v2. (2024).
+     Naman Goyal, Heinrich Küttler, Mike Lewis, Wen tau Yih, Tim Rocktäschel,            [25] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne
+     Sebastian Riedel, and Douwe Kiela. 2021. Retrieval-Augmented Generation                  Lachaux, Timothée Lacroix, Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal
+     for Knowledge-Intensive NLP Tasks. (2021). arXiv:2005.11401 [cs.CL] https:               Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lam-
+     //arxiv.org/abs/2005.11401                                                               ple. 2023. LLaMA: Open and Efficient Foundation Language Models. (2023).
+[15] Xiabin Liu, Yanan Zheng, Zhenglin Wang, et al. 2024. DynamicKV: Task-                    arXiv:2302.13971 [cs.CL] https://arxiv.org/abs/2302.13971
+     Aware Adaptive KV Cache Compression for Long Context LLMs. (2024).                  [26] Szymon Tworkowski, Konrad Staniszewski, Mikołaj Pacek, Yuhuai Wu, Henryk
+     arXiv:2412.14838 [cs.CL] https://arxiv.org/abs/2412.14838                                Michalewski, and Piotr Miłoś. 2023. Focused Transformer: Contrastive Training
+[16] Matanel Oren, Michael Hassid, Nir Yarden, Yossi Adi, and Roy Schwartz. 2024.             for Context Scaling. (2023). arXiv:2307.03170 [cs.CL] https://arxiv.org/abs/2307.
+     Transformers are Multi-State RNNs. (2024). arXiv:2401.06104 [cs.CL] https:               03170
+     //arxiv.org/abs/2401.06104                                                          [27] Jason Weston, Sumit Chopra, and Antoine Bordes. 2015. Memory Networks.
+[17] Bowen Peng, Jeffrey Quesnelle, Honglu Fan, and Enrico Shippole. 2023. YaRN:              (2015). arXiv:1410.3916 [cs.AI] https://arxiv.org/abs/1410.3916
+     Efficient Context Window Extension of Large Language Models. (2023).                [28] Xiaoju Ye, Shi Han, and Dongmei Zhang. 2024. Infinite Retrieval: Attention
+     arXiv:2309.00071 [cs.CL] https://arxiv.org/abs/2309.00071                                Enhanced LLMs in Long-Context Processing. (2024). arXiv:2407.19525 [cs.CL]
+[18] Jack W. Rae, Anna Potapenko, Siddhant M. Jayakumar, Chloe Hillier, and Timo-             https://arxiv.org/abs/2407.19525
+     thy P. Lillicrap. 2020. Compressive Transformers for Long-Range Sequence
+

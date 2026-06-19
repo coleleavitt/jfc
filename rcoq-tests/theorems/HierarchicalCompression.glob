@@ -1,0 +1,1321 @@
+DIGEST a67206a6fb615da93d8a38567a971803
+FJFCTheorems.HierarchicalCompression
+R2163:2177 Stdlib.Arith.Arith <> <> lib
+R2195:2208 Stdlib.Lists.List <> <> lib
+R2226:2238 Stdlib.Bool.Bool <> <> lib
+R2256:2267 Corelib.Init.Nat <> <> lib
+R2285:2301 Stdlib.micromega.Lia <> <> lib
+R2311:2323 Stdlib.Lists.List ListNotations <> mod
+rec 2370:2378 <> ConvGroup
+proj 2406:2413 <> group_id
+proj 2424:2438 <> group_timestamp
+proj 2449:2460 <> group_tokens
+proj 2471:2488 <> group_content_hash
+R2417:2419 Corelib.Init.Datatypes <> nat ind
+R2442:2444 Corelib.Init.Datatypes <> nat ind
+R2464:2466 Corelib.Init.Datatypes <> nat ind
+R2492:2494 Corelib.Init.Datatypes <> nat ind
+ind 2570:2580 <> SummaryTree
+constr 2596:2599 <> Leaf
+constr 2632:2635 <> Node
+R2612:2615 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2603:2611 JFCTheorems.HierarchicalCompression <> ConvGroup rec
+R2616:2626 JFCTheorems.HierarchicalCompression <> SummaryTree:6 ind
+R2650:2653 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2639:2649 JFCTheorems.HierarchicalCompression <> SummaryTree:6 ind
+R2665:2668 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2654:2664 JFCTheorems.HierarchicalCompression <> SummaryTree:6 ind
+R2672:2675 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2669:2671 Corelib.Init.Datatypes <> nat ind
+R2676:2686 JFCTheorems.HierarchicalCompression <> SummaryTree:6 ind
+scheme 2570:2580 <> SummaryTree_rect
+scheme 2570:2580 <> SummaryTree_ind
+scheme 2570:2580 <> SummaryTree_rec
+scheme 2570:2580 <> SummaryTree_sind
+def 2752:2761 <> tree_depth
+R2768:2778 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 2764:2764 <> t:8
+R2783:2785 Corelib.Init.Datatypes <> nat ind
+R2798:2798 JFCTheorems.HierarchicalCompression <> t:8 var
+R2809:2812 JFCTheorems.HierarchicalCompression <> Leaf constr
+R2825:2828 JFCTheorems.HierarchicalCompression <> Node constr
+R2840:2842 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R2843:2845 Corelib.Init.Nat <> max def
+R2848:2857 JFCTheorems.HierarchicalCompression <> tree_depth:9 def
+R2863:2872 JFCTheorems.HierarchicalCompression <> tree_depth:9 def
+def 2936:2945 <> leaf_count
+R2952:2962 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 2948:2948 <> t:11
+R2967:2969 Corelib.Init.Datatypes <> nat ind
+R2982:2982 JFCTheorems.HierarchicalCompression <> t:11 var
+R2993:2996 JFCTheorems.HierarchicalCompression <> Leaf constr
+R3009:3012 JFCTheorems.HierarchicalCompression <> Node constr
+R3035:3037 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R3023:3032 JFCTheorems.HierarchicalCompression <> leaf_count:12 def
+R3038:3047 JFCTheorems.HierarchicalCompression <> leaf_count:12 def
+def 3117:3127 <> tree_tokens
+R3134:3144 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 3130:3130 <> t:14
+R3149:3151 Corelib.Init.Datatypes <> nat ind
+R3164:3164 JFCTheorems.HierarchicalCompression <> t:14 var
+R3175:3178 JFCTheorems.HierarchicalCompression <> Leaf constr
+R3185:3196 JFCTheorems.HierarchicalCompression <> group_tokens proj
+R3204:3207 JFCTheorems.HierarchicalCompression <> Node constr
+R3263:3265 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R3247:3249 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R3250:3260 JFCTheorems.HierarchicalCompression <> tree_tokens:15 def
+R3266:3276 JFCTheorems.HierarchicalCompression <> tree_tokens:15 def
+def 3835:3844 <> build_fuel
+R3854:3856 Corelib.Init.Datatypes <> nat ind
+binder 3847:3850 <> fuel:17
+R3869:3872 Corelib.Init.Datatypes <> list ind
+R3874:3882 JFCTheorems.HierarchicalCompression <> ConvGroup rec
+binder 3860:3865 <> groups:18
+R3887:3892 Corelib.Init.Datatypes <> option ind
+R3894:3904 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+R3917:3920 JFCTheorems.HierarchicalCompression <> fuel:17 var
+R3936:3939 Corelib.Init.Datatypes <> None constr
+R3945:3945 Corelib.Init.Datatypes <> S constr
+R3968:3973 JFCTheorems.HierarchicalCompression <> groups:18 var
+R3988:3989 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R3994:3997 Corelib.Init.Datatypes <> None constr
+R4007:4007 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R4009:4009 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R4014:4017 Corelib.Init.Datatypes <> Some constr
+R4020:4023 JFCTheorems.HierarchicalCompression <> Leaf constr
+R4075:4077 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R4062:4067 Corelib.Init.Datatypes <> length def
+R4069:4074 JFCTheorems.HierarchicalCompression <> groups:18 var
+binder 4055:4057 <> mid:22
+R4153:4162 JFCTheorems.HierarchicalCompression <> build_fuel:19 def
+R4171:4175 Corelib.Lists.ListDef <> skipn def
+R4181:4186 JFCTheorems.HierarchicalCompression <> groups:18 var
+R4177:4179 JFCTheorems.HierarchicalCompression <> mid:22 var
+R4099:4108 JFCTheorems.HierarchicalCompression <> build_fuel:19 def
+R4117:4122 Corelib.Lists.ListDef <> firstn def
+R4128:4133 JFCTheorems.HierarchicalCompression <> groups:18 var
+R4124:4126 JFCTheorems.HierarchicalCompression <> mid:22 var
+R4206:4209 Corelib.Init.Datatypes <> Some constr
+R4214:4217 Corelib.Init.Datatypes <> Some constr
+R4224:4227 Corelib.Init.Datatypes <> Some constr
+R4230:4233 JFCTheorems.HierarchicalCompression <> Node constr
+R4289:4292 Corelib.Init.Datatypes <> Some constr
+R4297:4300 Corelib.Init.Datatypes <> None constr
+R4305:4308 Corelib.Init.Datatypes <> Some constr
+R4324:4327 Corelib.Init.Datatypes <> None constr
+R4330:4333 Corelib.Init.Datatypes <> Some constr
+R4340:4343 Corelib.Init.Datatypes <> Some constr
+R4359:4362 Corelib.Init.Datatypes <> None constr
+R4365:4368 Corelib.Init.Datatypes <> None constr
+R4373:4376 Corelib.Init.Datatypes <> None constr
+def 4472:4485 <> build_tree_aux
+R4497:4500 Corelib.Init.Datatypes <> list ind
+R4502:4510 JFCTheorems.HierarchicalCompression <> ConvGroup rec
+binder 4488:4493 <> groups:23
+R4515:4520 Corelib.Init.Datatypes <> option ind
+R4522:4532 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+R4539:4548 JFCTheorems.HierarchicalCompression <> build_fuel def
+R4551:4556 Corelib.Init.Datatypes <> length def
+R4558:4563 JFCTheorems.HierarchicalCompression <> groups:23 var
+R4566:4571 JFCTheorems.HierarchicalCompression <> groups:23 var
+prf 4924:4946 <> leaf_count_le_pow_depth
+binder 4959:4959 <> t:24
+R4974:4977 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R4962:4971 JFCTheorems.HierarchicalCompression <> leaf_count def
+R4973:4973 JFCTheorems.HierarchicalCompression <> t:24 var
+R4979:4981 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R4982:4991 JFCTheorems.HierarchicalCompression <> tree_depth def
+R4993:4993 JFCTheorems.HierarchicalCompression <> t:24 var
+R5050:5059 JFCTheorems.HierarchicalCompression <> leaf_count def
+R5061:5070 JFCTheorems.HierarchicalCompression <> tree_depth def
+R5079:5085 Stdlib.Arith.PeanoNat Nat pow def
+R5103:5112 JFCTheorems.HierarchicalCompression <> leaf_count def
+R5114:5123 JFCTheorems.HierarchicalCompression <> tree_depth def
+R5217:5226 JFCTheorems.HierarchicalCompression <> tree_depth def
+R5217:5226 JFCTheorems.HierarchicalCompression <> tree_depth def
+R5252:5261 JFCTheorems.HierarchicalCompression <> tree_depth def
+R5252:5261 JFCTheorems.HierarchicalCompression <> tree_depth def
+R5301:5304 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5289:5298 JFCTheorems.HierarchicalCompression <> leaf_count def
+R5306:5308 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R5309:5315 Stdlib.Arith.PeanoNat Nat max def
+R5301:5304 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5289:5298 JFCTheorems.HierarchicalCompression <> leaf_count def
+R5306:5308 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R5309:5315 Stdlib.Arith.PeanoNat Nat max def
+R5338:5349 Stdlib.Arith.PeanoNat Nat le_trans thm
+R5338:5349 Stdlib.Arith.PeanoNat Nat le_trans thm
+R5380:5396 Stdlib.Arith.PeanoNat Nat pow_le_mono_r thm
+R5413:5424 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R5380:5396 Stdlib.Arith.PeanoNat Nat pow_le_mono_r thm
+R5413:5424 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R5460:5463 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5448:5457 JFCTheorems.HierarchicalCompression <> leaf_count def
+R5465:5467 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R5468:5474 Stdlib.Arith.PeanoNat Nat max def
+R5460:5463 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5448:5457 JFCTheorems.HierarchicalCompression <> leaf_count def
+R5465:5467 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R5468:5474 Stdlib.Arith.PeanoNat Nat max def
+R5497:5508 Stdlib.Arith.PeanoNat Nat le_trans thm
+R5497:5508 Stdlib.Arith.PeanoNat Nat le_trans thm
+R5539:5555 Stdlib.Arith.PeanoNat Nat pow_le_mono_r thm
+R5572:5583 Stdlib.Arith.PeanoNat Nat le_max_r thm
+R5539:5555 Stdlib.Arith.PeanoNat Nat pow_le_mono_r thm
+R5572:5583 Stdlib.Arith.PeanoNat Nat le_max_r thm
+R5604:5606 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R5607:5613 Stdlib.Arith.PeanoNat Nat max def
+R5628:5628 Corelib.Init.Datatypes <> S constr
+R5631:5637 Stdlib.Arith.PeanoNat Nat max def
+R5604:5606 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R5607:5613 Stdlib.Arith.PeanoNat Nat max def
+R5628:5628 Corelib.Init.Datatypes <> S constr
+R5631:5637 Stdlib.Arith.PeanoNat Nat max def
+R5664:5670 Stdlib.Arith.PeanoNat Nat pow def
+prf 5735:5748 <> leaf_count_pos
+binder 5759:5759 <> t:25
+R5763:5765 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R5766:5775 JFCTheorems.HierarchicalCompression <> leaf_count def
+R5777:5777 JFCTheorems.HierarchicalCompression <> t:25 var
+R5834:5843 JFCTheorems.HierarchicalCompression <> leaf_count def
+R5861:5870 JFCTheorems.HierarchicalCompression <> leaf_count def
+prf 6805:6824 <> tree_depth_log_bound
+R6841:6851 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 6837:6837 <> t:26
+R6881:6884 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6858:6865 Stdlib.Arith.PeanoNat Nat log2 def
+R6868:6877 JFCTheorems.HierarchicalCompression <> leaf_count def
+R6879:6879 JFCTheorems.HierarchicalCompression <> t:26 var
+R6885:6894 JFCTheorems.HierarchicalCompression <> tree_depth def
+R6896:6896 JFCTheorems.HierarchicalCompression <> t:26 var
+R6932:6954 JFCTheorems.HierarchicalCompression <> leaf_count_le_pow_depth thm
+R6932:6954 JFCTheorems.HierarchicalCompression <> leaf_count_le_pow_depth thm
+R6975:6990 Stdlib.Arith.PeanoNat Nat log2_le_mono thm
+R6975:6990 Stdlib.Arith.PeanoNat Nat log2_le_mono thm
+R7010:7022 Stdlib.Arith.PeanoNat Nat log2_pow2 thm
+R7010:7022 Stdlib.Arith.PeanoNat Nat log2_pow2 thm
+R7010:7022 Stdlib.Arith.PeanoNat Nat log2_pow2 thm
+prf 7331:7351 <> balanced_tree_optimal
+R7368:7370 Corelib.Init.Datatypes <> nat ind
+binder 7364:7364 <> n:27
+R7382:7389 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7378:7380 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R7377:7377 JFCTheorems.HierarchicalCompression <> n:27 var
+R7401:7411 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 7397:7397 <> t:28
+R7436:7445 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7432:7434 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7420:7429 JFCTheorems.HierarchicalCompression <> leaf_count def
+R7431:7431 JFCTheorems.HierarchicalCompression <> t:28 var
+R7435:7435 JFCTheorems.HierarchicalCompression <> n:27 var
+R7458:7461 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R7446:7455 JFCTheorems.HierarchicalCompression <> tree_depth def
+R7457:7457 JFCTheorems.HierarchicalCompression <> t:28 var
+R7462:7469 Stdlib.Arith.PeanoNat Nat log2 def
+R7471:7471 JFCTheorems.HierarchicalCompression <> n:27 var
+R7525:7544 JFCTheorems.HierarchicalCompression <> tree_depth_log_bound thm
+R7525:7544 JFCTheorems.HierarchicalCompression <> tree_depth_log_bound thm
+def 7645:7659 <> leaf_timestamps
+R7666:7676 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 7662:7662 <> t:29
+R7681:7684 Corelib.Init.Datatypes <> list ind
+R7686:7688 Corelib.Init.Datatypes <> nat ind
+R7701:7701 JFCTheorems.HierarchicalCompression <> t:29 var
+R7712:7715 JFCTheorems.HierarchicalCompression <> Leaf constr
+R7722:7722 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7740:7740 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7723:7737 JFCTheorems.HierarchicalCompression <> group_timestamp proj
+R7746:7749 JFCTheorems.HierarchicalCompression <> Node constr
+R7777:7780 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R7760:7774 JFCTheorems.HierarchicalCompression <> leaf_timestamps:30 def
+R7781:7795 JFCTheorems.HierarchicalCompression <> leaf_timestamps:30 def
+def 7861:7869 <> is_sorted
+R7876:7879 Corelib.Init.Datatypes <> list ind
+R7881:7883 Corelib.Init.Datatypes <> nat ind
+binder 7872:7872 <> l:32
+R7904:7904 JFCTheorems.HierarchicalCompression <> l:32 var
+R7915:7916 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7921:7924 Corelib.Init.Logic <> True ind
+R7930:7930 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7932:7932 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7937:7940 Corelib.Init.Logic <> True ind
+R7947:7950 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R7953:7956 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R7977:7980 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R7972:7975 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R7981:7989 JFCTheorems.HierarchicalCompression <> is_sorted:33 def
+prf 8063:8076 <> is_sorted_tail
+binder 8087:8087 <> x:35
+binder 8089:8089 <> l:36
+R8110:8113 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8092:8100 JFCTheorems.HierarchicalCompression <> is_sorted def
+R8104:8107 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R8103:8103 JFCTheorems.HierarchicalCompression <> x:35 var
+R8108:8108 JFCTheorems.HierarchicalCompression <> l:36 var
+R8114:8122 JFCTheorems.HierarchicalCompression <> is_sorted def
+R8124:8124 JFCTheorems.HierarchicalCompression <> l:36 var
+R8191:8191 Corelib.Init.Logic <> I constr
+R8191:8191 Corelib.Init.Logic <> I constr
+prf 8420:8432 <> is_sorted_app
+binder 8445:8446 <> l1:37
+binder 8448:8449 <> l2:38
+R8468:8475 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8456:8464 JFCTheorems.HierarchicalCompression <> is_sorted def
+R8466:8467 JFCTheorems.HierarchicalCompression <> l1:37 var
+R8488:8495 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8476:8484 JFCTheorems.HierarchicalCompression <> is_sorted def
+R8486:8487 JFCTheorems.HierarchicalCompression <> l2:38 var
+R8496:8496 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8537:8545 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 8504:8504 <> x:39
+binder 8506:8506 <> y:40
+R8516:8519 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8509:8510 Stdlib.Lists.List <> In def
+R8514:8515 JFCTheorems.HierarchicalCompression <> l1:37 var
+R8512:8512 JFCTheorems.HierarchicalCompression <> x:39 var
+R8527:8530 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8520:8521 Stdlib.Lists.List <> In def
+R8525:8526 JFCTheorems.HierarchicalCompression <> l2:38 var
+R8523:8523 JFCTheorems.HierarchicalCompression <> y:40 var
+R8532:8535 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R8531:8531 JFCTheorems.HierarchicalCompression <> x:39 var
+R8536:8536 JFCTheorems.HierarchicalCompression <> y:40 var
+R8546:8554 JFCTheorems.HierarchicalCompression <> is_sorted def
+R8559:8562 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R8557:8558 JFCTheorems.HierarchicalCompression <> l1:37 var
+R8563:8564 JFCTheorems.HierarchicalCompression <> l2:38 var
+R8660:8662 Corelib.Init.Datatypes <> app def
+R8783:8783 Corelib.Init.Logic <> I constr
+R8783:8783 Corelib.Init.Logic <> I constr
+R8799:8801 Corelib.Init.Datatypes <> app def
+R8944:8952 JFCTheorems.HierarchicalCompression <> is_sorted def
+R9021:9029 JFCTheorems.HierarchicalCompression <> is_sorted def
+R9032:9032 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R9041:9045 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R9034:9037 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9021:9029 JFCTheorems.HierarchicalCompression <> is_sorted def
+R9032:9032 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R9041:9045 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R9034:9037 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9203:9205 Corelib.Init.Datatypes <> app def
+prf 9348:9362 <> build_fuel_some
+binder 9375:9378 <> fuel:41
+binder 9380:9385 <> groups:42
+R9413:9420 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9405:9408 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R9392:9397 Corelib.Init.Datatypes <> length def
+R9399:9404 JFCTheorems.HierarchicalCompression <> groups:42 var
+R9409:9412 JFCTheorems.HierarchicalCompression <> fuel:41 var
+R9433:9440 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9427:9430 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R9421:9426 JFCTheorems.HierarchicalCompression <> groups:42 var
+R9431:9432 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9441:9447 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R9449:9450 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 9448:9448 <> t:43
+R9473:9475 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9451:9460 JFCTheorems.HierarchicalCompression <> build_fuel def
+R9462:9465 JFCTheorems.HierarchicalCompression <> fuel:41 var
+R9467:9472 JFCTheorems.HierarchicalCompression <> groups:42 var
+R9476:9479 Corelib.Init.Datatypes <> Some constr
+R9481:9481 JFCTheorems.HierarchicalCompression <> t:43 var
+R9659:9664 Corelib.Init.Datatypes <> length def
+R9804:9807 JFCTheorems.HierarchicalCompression <> Leaf constr
+R9804:9807 JFCTheorems.HierarchicalCompression <> Leaf constr
+R9876:9879 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9882:9885 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9876:9879 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9882:9885 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9922:9925 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R9926:9931 Corelib.Init.Datatypes <> length def
+R9964:9969 Corelib.Init.Datatypes <> length def
+R9922:9925 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R9926:9931 Corelib.Init.Datatypes <> length def
+R10010:10012 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R9997:10002 Corelib.Init.Datatypes <> length def
+R10010:10012 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R9997:10002 Corelib.Init.Datatypes <> length def
+R10048:10051 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R10086:10107 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+R10048:10051 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R10086:10107 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+R10143:10145 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R10146:10151 Corelib.Init.Datatypes <> length def
+R10190:10199 Stdlib.Arith.PeanoNat Nat div_lt def
+R10143:10145 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R10146:10151 Corelib.Init.Datatypes <> length def
+R10190:10199 Stdlib.Arith.PeanoNat Nat div_lt def
+R10258:10260 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10232:10237 Corelib.Init.Datatypes <> length def
+R10240:10245 Corelib.Lists.ListDef <> firstn def
+R10284:10299 Stdlib.Lists.List <> firstn_length_le thm
+R10258:10260 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10232:10237 Corelib.Init.Datatypes <> length def
+R10240:10245 Corelib.Lists.ListDef <> firstn def
+R10284:10299 Stdlib.Lists.List <> firstn_length_le thm
+R10357:10359 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10332:10337 Corelib.Init.Datatypes <> length def
+R10340:10344 Corelib.Lists.ListDef <> skipn def
+R10373:10375 Corelib.Init.Nat <> ::nat_scope:x_'-'_x not
+R10360:10365 Corelib.Init.Datatypes <> length def
+R10399:10410 Stdlib.Lists.List <> length_skipn thm
+R10357:10359 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10332:10337 Corelib.Init.Datatypes <> length def
+R10340:10344 Corelib.Lists.ListDef <> skipn def
+R10373:10375 Corelib.Init.Nat <> ::nat_scope:x_'-'_x not
+R10360:10365 Corelib.Init.Datatypes <> length def
+R10399:10410 Stdlib.Lists.List <> length_skipn thm
+R10454:10457 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R10437:10442 Corelib.Lists.ListDef <> firstn def
+R10458:10459 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10454:10457 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R10437:10442 Corelib.Lists.ListDef <> firstn def
+R10458:10459 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10488:10494 Corelib.Init.Logic <> f_equal thm
+R10498:10503 Corelib.Init.Datatypes <> length def
+R10488:10494 Corelib.Init.Logic <> f_equal thm
+R10498:10503 Corelib.Init.Datatypes <> length def
+R10552:10557 Corelib.Init.Datatypes <> length def
+R10613:10616 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R10597:10601 Corelib.Lists.ListDef <> skipn def
+R10617:10618 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10613:10616 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R10597:10601 Corelib.Lists.ListDef <> skipn def
+R10617:10618 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10647:10653 Corelib.Init.Logic <> f_equal thm
+R10657:10662 Corelib.Init.Datatypes <> length def
+R10647:10653 Corelib.Init.Logic <> f_equal thm
+R10657:10662 Corelib.Init.Datatypes <> length def
+R10711:10716 Corelib.Init.Datatypes <> length def
+R10753:10758 Corelib.Lists.ListDef <> firstn def
+R10753:10758 Corelib.Lists.ListDef <> firstn def
+R10849:10853 Corelib.Lists.ListDef <> skipn def
+R10849:10853 Corelib.Lists.ListDef <> skipn def
+R10938:10941 JFCTheorems.HierarchicalCompression <> Node constr
+R10938:10941 JFCTheorems.HierarchicalCompression <> Node constr
+R11011:11023 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10985:10994 JFCTheorems.HierarchicalCompression <> build_fuel def
+R10997:10997 Corelib.Init.Datatypes <> S constr
+R11083:11092 JFCTheorems.HierarchicalCompression <> build_fuel def
+R11100:11104 Corelib.Lists.ListDef <> skipn def
+R11030:11039 JFCTheorems.HierarchicalCompression <> build_fuel def
+R11047:11052 Corelib.Lists.ListDef <> firstn def
+R11135:11138 Corelib.Init.Datatypes <> Some constr
+R11143:11146 Corelib.Init.Datatypes <> Some constr
+R11153:11156 Corelib.Init.Datatypes <> Some constr
+R11159:11162 JFCTheorems.HierarchicalCompression <> Node constr
+R11183:11186 Corelib.Init.Datatypes <> Some constr
+R11191:11194 Corelib.Init.Datatypes <> None constr
+R11199:11202 Corelib.Init.Datatypes <> Some constr
+R11218:11221 Corelib.Init.Datatypes <> None constr
+R11224:11227 Corelib.Init.Datatypes <> Some constr
+R11234:11237 Corelib.Init.Datatypes <> Some constr
+R11253:11256 Corelib.Init.Datatypes <> None constr
+R11259:11262 Corelib.Init.Datatypes <> None constr
+R11267:11270 Corelib.Init.Datatypes <> None constr
+R11011:11023 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10985:10994 JFCTheorems.HierarchicalCompression <> build_fuel def
+R10997:10997 Corelib.Init.Datatypes <> S constr
+R11083:11092 JFCTheorems.HierarchicalCompression <> build_fuel def
+R11100:11104 Corelib.Lists.ListDef <> skipn def
+R11030:11039 JFCTheorems.HierarchicalCompression <> build_fuel def
+R11047:11052 Corelib.Lists.ListDef <> firstn def
+R11135:11138 Corelib.Init.Datatypes <> Some constr
+R11143:11146 Corelib.Init.Datatypes <> Some constr
+R11153:11156 Corelib.Init.Datatypes <> Some constr
+R11159:11162 JFCTheorems.HierarchicalCompression <> Node constr
+R11183:11186 Corelib.Init.Datatypes <> Some constr
+R11191:11194 Corelib.Init.Datatypes <> None constr
+R11199:11202 Corelib.Init.Datatypes <> Some constr
+R11218:11221 Corelib.Init.Datatypes <> None constr
+R11224:11227 Corelib.Init.Datatypes <> Some constr
+R11234:11237 Corelib.Init.Datatypes <> Some constr
+R11253:11256 Corelib.Init.Datatypes <> None constr
+R11259:11262 Corelib.Init.Datatypes <> None constr
+R11267:11270 Corelib.Init.Datatypes <> None constr
+R11319:11328 JFCTheorems.HierarchicalCompression <> build_fuel def
+prf 11825:11850 <> build_fuel_leaf_timestamps
+binder 11863:11866 <> fuel:44
+binder 11868:11873 <> groups:45
+binder 11875:11875 <> t:46
+R11903:11910 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11895:11898 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11882:11887 Corelib.Init.Datatypes <> length def
+R11889:11894 JFCTheorems.HierarchicalCompression <> groups:45 var
+R11899:11902 JFCTheorems.HierarchicalCompression <> fuel:44 var
+R11942:11949 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11933:11935 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11911:11920 JFCTheorems.HierarchicalCompression <> build_fuel def
+R11922:11925 JFCTheorems.HierarchicalCompression <> fuel:44 var
+R11927:11932 JFCTheorems.HierarchicalCompression <> groups:45 var
+R11936:11939 Corelib.Init.Datatypes <> Some constr
+R11941:11941 JFCTheorems.HierarchicalCompression <> t:46 var
+R11967:11969 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11950:11964 JFCTheorems.HierarchicalCompression <> leaf_timestamps def
+R11966:11966 JFCTheorems.HierarchicalCompression <> t:46 var
+R11970:11972 Corelib.Lists.ListDef <> map def
+R11990:11995 JFCTheorems.HierarchicalCompression <> groups:45 var
+R11974:11988 JFCTheorems.HierarchicalCompression <> group_timestamp proj
+R12367:12370 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R12373:12376 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R12367:12370 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R12373:12376 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R12415:12418 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12419:12424 Corelib.Init.Datatypes <> length def
+R12457:12462 Corelib.Init.Datatypes <> length def
+R12415:12418 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12419:12424 Corelib.Init.Datatypes <> length def
+R12505:12507 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R12492:12497 Corelib.Init.Datatypes <> length def
+R12505:12507 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R12492:12497 Corelib.Init.Datatypes <> length def
+R12545:12548 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12585:12606 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+R12545:12548 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12585:12606 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+R12644:12646 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R12647:12652 Corelib.Init.Datatypes <> length def
+R12693:12702 Stdlib.Arith.PeanoNat Nat div_lt def
+R12644:12646 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R12647:12652 Corelib.Init.Datatypes <> length def
+R12693:12702 Stdlib.Arith.PeanoNat Nat div_lt def
+R12763:12765 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12737:12742 Corelib.Init.Datatypes <> length def
+R12745:12750 Corelib.Lists.ListDef <> firstn def
+R12791:12806 Stdlib.Lists.List <> firstn_length_le thm
+R12763:12765 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12737:12742 Corelib.Init.Datatypes <> length def
+R12745:12750 Corelib.Lists.ListDef <> firstn def
+R12791:12806 Stdlib.Lists.List <> firstn_length_le thm
+R12866:12868 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12841:12846 Corelib.Init.Datatypes <> length def
+R12849:12853 Corelib.Lists.ListDef <> skipn def
+R12882:12884 Corelib.Init.Nat <> ::nat_scope:x_'-'_x not
+R12869:12874 Corelib.Init.Datatypes <> length def
+R12910:12921 Stdlib.Lists.List <> length_skipn thm
+R12866:12868 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12841:12846 Corelib.Init.Datatypes <> length def
+R12849:12853 Corelib.Lists.ListDef <> skipn def
+R12882:12884 Corelib.Init.Nat <> ::nat_scope:x_'-'_x not
+R12869:12874 Corelib.Init.Datatypes <> length def
+R12910:12921 Stdlib.Lists.List <> length_skipn thm
+R12967:12970 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R12950:12955 Corelib.Lists.ListDef <> firstn def
+R12971:12972 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R12967:12970 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R12950:12955 Corelib.Lists.ListDef <> firstn def
+R12971:12972 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13003:13009 Corelib.Init.Logic <> f_equal thm
+R13013:13018 Corelib.Init.Datatypes <> length def
+R13003:13009 Corelib.Init.Logic <> f_equal thm
+R13013:13018 Corelib.Init.Datatypes <> length def
+R13069:13074 Corelib.Init.Datatypes <> length def
+R13132:13135 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R13116:13120 Corelib.Lists.ListDef <> skipn def
+R13136:13137 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13132:13135 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R13116:13120 Corelib.Lists.ListDef <> skipn def
+R13136:13137 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13168:13174 Corelib.Init.Logic <> f_equal thm
+R13178:13183 Corelib.Init.Datatypes <> length def
+R13168:13174 Corelib.Init.Logic <> f_equal thm
+R13178:13183 Corelib.Init.Datatypes <> length def
+R13234:13239 Corelib.Init.Datatypes <> length def
+R13344:13358 JFCTheorems.HierarchicalCompression <> build_fuel_some thm
+R13366:13371 Corelib.Lists.ListDef <> firstn def
+R13344:13358 JFCTheorems.HierarchicalCompression <> build_fuel_some thm
+R13366:13371 Corelib.Lists.ListDef <> firstn def
+R13472:13486 JFCTheorems.HierarchicalCompression <> build_fuel_some thm
+R13494:13498 Corelib.Lists.ListDef <> skipn def
+R13472:13486 JFCTheorems.HierarchicalCompression <> build_fuel_some thm
+R13494:13498 Corelib.Lists.ListDef <> skipn def
+R13643:13657 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13617:13626 JFCTheorems.HierarchicalCompression <> build_fuel def
+R13629:13629 Corelib.Init.Datatypes <> S constr
+R13719:13728 JFCTheorems.HierarchicalCompression <> build_fuel def
+R13736:13740 Corelib.Lists.ListDef <> skipn def
+R13664:13673 JFCTheorems.HierarchicalCompression <> build_fuel def
+R13681:13686 Corelib.Lists.ListDef <> firstn def
+R13773:13776 Corelib.Init.Datatypes <> Some constr
+R13781:13784 Corelib.Init.Datatypes <> Some constr
+R13791:13794 Corelib.Init.Datatypes <> Some constr
+R13797:13800 JFCTheorems.HierarchicalCompression <> Node constr
+R13823:13826 Corelib.Init.Datatypes <> Some constr
+R13831:13834 Corelib.Init.Datatypes <> None constr
+R13839:13842 Corelib.Init.Datatypes <> Some constr
+R13860:13863 Corelib.Init.Datatypes <> None constr
+R13866:13869 Corelib.Init.Datatypes <> Some constr
+R13876:13879 Corelib.Init.Datatypes <> Some constr
+R13897:13900 Corelib.Init.Datatypes <> None constr
+R13903:13906 Corelib.Init.Datatypes <> None constr
+R13911:13914 Corelib.Init.Datatypes <> None constr
+R13643:13657 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13617:13626 JFCTheorems.HierarchicalCompression <> build_fuel def
+R13629:13629 Corelib.Init.Datatypes <> S constr
+R13719:13728 JFCTheorems.HierarchicalCompression <> build_fuel def
+R13736:13740 Corelib.Lists.ListDef <> skipn def
+R13664:13673 JFCTheorems.HierarchicalCompression <> build_fuel def
+R13681:13686 Corelib.Lists.ListDef <> firstn def
+R13773:13776 Corelib.Init.Datatypes <> Some constr
+R13781:13784 Corelib.Init.Datatypes <> Some constr
+R13791:13794 Corelib.Init.Datatypes <> Some constr
+R13797:13800 JFCTheorems.HierarchicalCompression <> Node constr
+R13823:13826 Corelib.Init.Datatypes <> Some constr
+R13831:13834 Corelib.Init.Datatypes <> None constr
+R13839:13842 Corelib.Init.Datatypes <> Some constr
+R13860:13863 Corelib.Init.Datatypes <> None constr
+R13866:13869 Corelib.Init.Datatypes <> Some constr
+R13876:13879 Corelib.Init.Datatypes <> Some constr
+R13897:13900 Corelib.Init.Datatypes <> None constr
+R13903:13906 Corelib.Init.Datatypes <> None constr
+R13911:13914 Corelib.Init.Datatypes <> None constr
+R13967:13976 JFCTheorems.HierarchicalCompression <> build_fuel def
+R14085:14099 JFCTheorems.HierarchicalCompression <> leaf_timestamps def
+R14124:14129 Corelib.Lists.ListDef <> firstn def
+R14124:14129 Corelib.Lists.ListDef <> firstn def
+R14124:14129 Corelib.Lists.ListDef <> firstn def
+R14201:14205 Corelib.Lists.ListDef <> skipn def
+R14201:14205 Corelib.Lists.ListDef <> skipn def
+R14201:14205 Corelib.Lists.ListDef <> skipn def
+R14275:14281 Stdlib.Lists.List <> map_app thm
+R14275:14281 Stdlib.Lists.List <> map_app thm
+R14275:14281 Stdlib.Lists.List <> map_app thm
+R14300:14311 Stdlib.Lists.List <> firstn_skipn thm
+R14300:14311 Stdlib.Lists.List <> firstn_skipn thm
+R14300:14311 Stdlib.Lists.List <> firstn_skipn thm
+prf 14417:14442 <> build_tree_leaf_timestamps
+binder 14455:14455 <> t:47
+binder 14457:14462 <> groups:48
+R14499:14506 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14490:14492 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14469:14482 JFCTheorems.HierarchicalCompression <> build_tree_aux def
+R14484:14489 JFCTheorems.HierarchicalCompression <> groups:48 var
+R14493:14496 Corelib.Init.Datatypes <> Some constr
+R14498:14498 JFCTheorems.HierarchicalCompression <> t:47 var
+R14524:14526 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14507:14521 JFCTheorems.HierarchicalCompression <> leaf_timestamps def
+R14523:14523 JFCTheorems.HierarchicalCompression <> t:47 var
+R14527:14529 Corelib.Lists.ListDef <> map def
+R14547:14552 JFCTheorems.HierarchicalCompression <> groups:48 var
+R14531:14545 JFCTheorems.HierarchicalCompression <> group_timestamp proj
+R14597:14610 JFCTheorems.HierarchicalCompression <> build_tree_aux def
+R14632:14657 JFCTheorems.HierarchicalCompression <> build_fuel_leaf_timestamps thm
+R14660:14665 Corelib.Init.Datatypes <> length def
+R14632:14657 JFCTheorems.HierarchicalCompression <> build_fuel_leaf_timestamps thm
+R14660:14665 Corelib.Init.Datatypes <> length def
+prf 15001:15020 <> tree_preserves_order
+R15042:15045 Corelib.Init.Datatypes <> list ind
+R15047:15055 JFCTheorems.HierarchicalCompression <> ConvGroup rec
+binder 15033:15038 <> groups:49
+R15100:15107 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15062:15070 JFCTheorems.HierarchicalCompression <> is_sorted def
+R15073:15075 Corelib.Lists.ListDef <> map def
+R15093:15098 JFCTheorems.HierarchicalCompression <> groups:49 var
+R15077:15091 JFCTheorems.HierarchicalCompression <> group_timestamp proj
+binder 15115:15115 <> t:50
+R15154:15163 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15145:15147 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15124:15137 JFCTheorems.HierarchicalCompression <> build_tree_aux def
+R15139:15144 JFCTheorems.HierarchicalCompression <> groups:49 var
+R15148:15151 Corelib.Init.Datatypes <> Some constr
+R15153:15153 JFCTheorems.HierarchicalCompression <> t:50 var
+R15164:15172 JFCTheorems.HierarchicalCompression <> is_sorted def
+R15175:15189 JFCTheorems.HierarchicalCompression <> leaf_timestamps def
+R15191:15191 JFCTheorems.HierarchicalCompression <> t:50 var
+R15247:15272 JFCTheorems.HierarchicalCompression <> build_tree_leaf_timestamps thm
+R15247:15272 JFCTheorems.HierarchicalCompression <> build_tree_leaf_timestamps thm
+R15247:15272 JFCTheorems.HierarchicalCompression <> build_tree_leaf_timestamps thm
+def 15383:15393 <> leaf_hashes
+R15400:15410 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 15396:15396 <> t:51
+R15415:15418 Corelib.Init.Datatypes <> list ind
+R15420:15422 Corelib.Init.Datatypes <> nat ind
+R15435:15435 JFCTheorems.HierarchicalCompression <> t:51 var
+R15446:15449 JFCTheorems.HierarchicalCompression <> Leaf constr
+R15456:15456 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15477:15477 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15457:15474 JFCTheorems.HierarchicalCompression <> group_content_hash proj
+R15483:15486 JFCTheorems.HierarchicalCompression <> Node constr
+R15510:15513 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R15497:15507 JFCTheorems.HierarchicalCompression <> leaf_hashes:52 def
+R15514:15524 JFCTheorems.HierarchicalCompression <> leaf_hashes:52 def
+def 15677:15682 <> covers
+R15700:15702 Corelib.Init.Datatypes <> nat ind
+binder 15685:15696 <> summary_hash:54
+R15710:15720 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 15706:15706 <> t:55
+R15747:15749 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15735:15746 JFCTheorems.HierarchicalCompression <> summary_hash:54 var
+R15750:15758 Stdlib.Lists.List <> fold_left def
+R15770:15780 JFCTheorems.HierarchicalCompression <> leaf_hashes def
+R15782:15782 JFCTheorems.HierarchicalCompression <> t:55 var
+R15760:15767 Stdlib.Arith.PeanoNat Nat lxor def
+prf 16538:16557 <> fold_left_lxor_shift
+binder 16570:16570 <> l:56
+binder 16572:16572 <> a:57
+R16597:16599 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16575:16583 Stdlib.Lists.List <> fold_left def
+R16596:16596 JFCTheorems.HierarchicalCompression <> a:57 var
+R16594:16594 JFCTheorems.HierarchicalCompression <> l:56 var
+R16585:16592 Stdlib.Arith.PeanoNat Nat lxor def
+R16600:16607 Stdlib.Arith.PeanoNat Nat lxor def
+R16609:16609 JFCTheorems.HierarchicalCompression <> a:57 var
+R16612:16620 Stdlib.Lists.List <> fold_left def
+R16631:16631 JFCTheorems.HierarchicalCompression <> l:56 var
+R16622:16629 Stdlib.Arith.PeanoNat Nat lxor def
+R16692:16700 Stdlib.Lists.List <> fold_left def
+R16712:16723 Stdlib.Arith.PeanoNat Nat lxor_0_r thm
+R16712:16723 Stdlib.Arith.PeanoNat Nat lxor_0_r thm
+R16712:16723 Stdlib.Arith.PeanoNat Nat lxor_0_r thm
+R16748:16756 Stdlib.Lists.List <> fold_left def
+R16777:16784 Stdlib.Arith.PeanoNat Nat lxor def
+R16777:16784 Stdlib.Arith.PeanoNat Nat lxor def
+R16777:16784 Stdlib.Arith.PeanoNat Nat lxor def
+R16810:16817 Stdlib.Arith.PeanoNat Nat lxor def
+R16810:16817 Stdlib.Arith.PeanoNat Nat lxor def
+R16810:16817 Stdlib.Arith.PeanoNat Nat lxor def
+R16838:16849 Stdlib.Arith.PeanoNat Nat lxor_0_l thm
+R16838:16849 Stdlib.Arith.PeanoNat Nat lxor_0_l thm
+R16838:16849 Stdlib.Arith.PeanoNat Nat lxor_0_l thm
+R16864:16877 Stdlib.Arith.PeanoNat Nat lxor_assoc thm
+R16864:16877 Stdlib.Arith.PeanoNat Nat lxor_assoc thm
+R16864:16877 Stdlib.Arith.PeanoNat Nat lxor_assoc thm
+prf 16907:16931 <> summary_covers_all_leaves
+binder 16944:16944 <> l:58
+binder 16946:16946 <> r:59
+binder 16948:16948 <> s:60
+R17002:17009 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R16955:16960 JFCTheorems.HierarchicalCompression <> covers def
+R16963:16971 Stdlib.Lists.List <> fold_left def
+R16983:16993 JFCTheorems.HierarchicalCompression <> leaf_hashes def
+R16995:16995 JFCTheorems.HierarchicalCompression <> l:58 var
+R16973:16980 Stdlib.Arith.PeanoNat Nat lxor def
+R17001:17001 JFCTheorems.HierarchicalCompression <> l:58 var
+R17057:17141 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17010:17015 JFCTheorems.HierarchicalCompression <> covers def
+R17018:17026 Stdlib.Lists.List <> fold_left def
+R17038:17048 JFCTheorems.HierarchicalCompression <> leaf_hashes def
+R17050:17050 JFCTheorems.HierarchicalCompression <> r:59 var
+R17028:17035 Stdlib.Arith.PeanoNat Nat lxor def
+R17056:17056 JFCTheorems.HierarchicalCompression <> r:59 var
+R17189:17197 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17142:17150 Stdlib.Lists.List <> fold_left def
+R17162:17172 JFCTheorems.HierarchicalCompression <> leaf_hashes def
+R17175:17178 JFCTheorems.HierarchicalCompression <> Node constr
+R17180:17180 JFCTheorems.HierarchicalCompression <> l:58 var
+R17182:17182 JFCTheorems.HierarchicalCompression <> r:59 var
+R17184:17184 JFCTheorems.HierarchicalCompression <> s:60 var
+R17152:17159 Stdlib.Arith.PeanoNat Nat lxor def
+R17198:17205 Stdlib.Arith.PeanoNat Nat lxor def
+R17208:17216 Stdlib.Lists.List <> fold_left def
+R17228:17238 JFCTheorems.HierarchicalCompression <> leaf_hashes def
+R17240:17240 JFCTheorems.HierarchicalCompression <> l:58 var
+R17218:17225 Stdlib.Arith.PeanoNat Nat lxor def
+R17264:17272 Stdlib.Lists.List <> fold_left def
+R17284:17294 JFCTheorems.HierarchicalCompression <> leaf_hashes def
+R17296:17296 JFCTheorems.HierarchicalCompression <> r:59 var
+R17274:17281 Stdlib.Arith.PeanoNat Nat lxor def
+R17337:17347 JFCTheorems.HierarchicalCompression <> leaf_hashes def
+R17361:17373 Stdlib.Lists.List <> fold_left_app thm
+R17361:17373 Stdlib.Lists.List <> fold_left_app thm
+R17361:17373 Stdlib.Lists.List <> fold_left_app thm
+R17384:17403 JFCTheorems.HierarchicalCompression <> fold_left_lxor_shift thm
+R17384:17403 JFCTheorems.HierarchicalCompression <> fold_left_lxor_shift thm
+def 17497:17505 <> add_group
+R17512:17522 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 17508:17508 <> t:61
+R17530:17538 JFCTheorems.HierarchicalCompression <> ConvGroup rec
+binder 17526:17526 <> g:62
+R17543:17553 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+R17560:17563 JFCTheorems.HierarchicalCompression <> Node constr
+R17565:17565 JFCTheorems.HierarchicalCompression <> t:61 var
+R17568:17571 JFCTheorems.HierarchicalCompression <> Leaf constr
+R17573:17573 JFCTheorems.HierarchicalCompression <> g:62 var
+prf 17679:17698 <> add_group_leaf_count
+binder 17711:17711 <> t:63
+binder 17713:17713 <> g:64
+R17746:17748 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17720:17729 JFCTheorems.HierarchicalCompression <> leaf_count def
+R17732:17740 JFCTheorems.HierarchicalCompression <> add_group def
+R17742:17742 JFCTheorems.HierarchicalCompression <> t:63 var
+R17744:17744 JFCTheorems.HierarchicalCompression <> g:64 var
+R17761:17763 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R17749:17758 JFCTheorems.HierarchicalCompression <> leaf_count def
+R17760:17760 JFCTheorems.HierarchicalCompression <> t:63 var
+R17797:17805 JFCTheorems.HierarchicalCompression <> add_group def
+prf 17896:17910 <> add_group_depth
+binder 17923:17923 <> t:65
+binder 17925:17925 <> g:66
+R17958:17961 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R17932:17941 JFCTheorems.HierarchicalCompression <> tree_depth def
+R17944:17952 JFCTheorems.HierarchicalCompression <> add_group def
+R17954:17954 JFCTheorems.HierarchicalCompression <> t:65 var
+R17956:17956 JFCTheorems.HierarchicalCompression <> g:66 var
+R17974:17976 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R17962:17971 JFCTheorems.HierarchicalCompression <> tree_depth def
+R17973:17973 JFCTheorems.HierarchicalCompression <> t:65 var
+R18010:18018 JFCTheorems.HierarchicalCompression <> add_group def
+def 18807:18816 <> compressed
+R18830:18832 Corelib.Init.Datatypes <> nat ind
+binder 18819:18820 <> n0:67
+binder 18822:18822 <> b:68
+binder 18824:18824 <> c:69
+binder 18826:18826 <> k:70
+R18837:18839 Corelib.Init.Datatypes <> nat ind
+R18852:18852 JFCTheorems.HierarchicalCompression <> k:70 var
+R18868:18869 JFCTheorems.HierarchicalCompression <> n0:67 var
+R18875:18875 Corelib.Init.Datatypes <> S constr
+R18907:18909 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R18903:18905 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R18883:18892 JFCTheorems.HierarchicalCompression <> compressed:71 def
+R18899:18899 JFCTheorems.HierarchicalCompression <> c:69 var
+R18897:18897 JFCTheorems.HierarchicalCompression <> b:68 var
+R18894:18895 JFCTheorems.HierarchicalCompression <> n0:67 var
+R18906:18906 JFCTheorems.HierarchicalCompression <> b:68 var
+R18910:18910 JFCTheorems.HierarchicalCompression <> c:69 var
+prf 19142:19156 <> compressed_step
+binder 19169:19170 <> n0:73
+binder 19172:19172 <> b:74
+binder 19174:19174 <> c:75
+binder 19176:19176 <> k:76
+R19206:19208 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19183:19192 JFCTheorems.HierarchicalCompression <> compressed def
+R19194:19195 JFCTheorems.HierarchicalCompression <> n0:73 var
+R19197:19197 JFCTheorems.HierarchicalCompression <> b:74 var
+R19199:19199 JFCTheorems.HierarchicalCompression <> c:75 var
+R19202:19202 Corelib.Init.Datatypes <> S constr
+R19204:19204 JFCTheorems.HierarchicalCompression <> k:76 var
+R19232:19234 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R19228:19230 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R19209:19218 JFCTheorems.HierarchicalCompression <> compressed def
+R19220:19221 JFCTheorems.HierarchicalCompression <> n0:73 var
+R19223:19223 JFCTheorems.HierarchicalCompression <> b:74 var
+R19225:19225 JFCTheorems.HierarchicalCompression <> c:75 var
+R19227:19227 JFCTheorems.HierarchicalCompression <> k:76 var
+R19231:19231 JFCTheorems.HierarchicalCompression <> b:74 var
+R19235:19235 JFCTheorems.HierarchicalCompression <> c:75 var
+R19260:19269 JFCTheorems.HierarchicalCompression <> compressed def
+prf 19642:19670 <> compressed_strictly_decreases
+binder 19683:19684 <> n0:77
+binder 19686:19686 <> b:78
+binder 19688:19688 <> c:79
+binder 19690:19690 <> k:80
+R19703:19710 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19698:19701 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R19702:19702 JFCTheorems.HierarchicalCompression <> b:78 var
+R19738:19745 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19716:19718 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R19712:19714 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R19715:19715 JFCTheorems.HierarchicalCompression <> c:79 var
+R19719:19728 JFCTheorems.HierarchicalCompression <> compressed def
+R19730:19731 JFCTheorems.HierarchicalCompression <> n0:77 var
+R19733:19733 JFCTheorems.HierarchicalCompression <> b:78 var
+R19735:19735 JFCTheorems.HierarchicalCompression <> c:79 var
+R19737:19737 JFCTheorems.HierarchicalCompression <> k:80 var
+R19769:19771 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R19746:19755 JFCTheorems.HierarchicalCompression <> compressed def
+R19757:19758 JFCTheorems.HierarchicalCompression <> n0:77 var
+R19760:19760 JFCTheorems.HierarchicalCompression <> b:78 var
+R19762:19762 JFCTheorems.HierarchicalCompression <> c:79 var
+R19765:19765 Corelib.Init.Datatypes <> S constr
+R19767:19767 JFCTheorems.HierarchicalCompression <> k:80 var
+R19772:19781 JFCTheorems.HierarchicalCompression <> compressed def
+R19783:19784 JFCTheorems.HierarchicalCompression <> n0:77 var
+R19786:19786 JFCTheorems.HierarchicalCompression <> b:78 var
+R19788:19788 JFCTheorems.HierarchicalCompression <> c:79 var
+R19790:19790 JFCTheorems.HierarchicalCompression <> k:80 var
+R19837:19851 JFCTheorems.HierarchicalCompression <> compressed_step thm
+R19837:19851 JFCTheorems.HierarchicalCompression <> compressed_step thm
+R19837:19851 JFCTheorems.HierarchicalCompression <> compressed_step thm
+R19866:19875 JFCTheorems.HierarchicalCompression <> compressed def
+R19866:19875 JFCTheorems.HierarchicalCompression <> compressed def
+R19974:19977 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R19970:19972 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R19979:19981 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R19974:19977 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R19970:19972 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R19979:19981 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R19996:20014 Stdlib.Arith.PeanoNat Nat div_le_compat_l def
+R19996:20014 Stdlib.Arith.PeanoNat Nat div_le_compat_l def
+R20082:20095 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R20082:20095 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R20124:20142 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R20124:20142 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+prf 20924:20936 <> div_add_2c_le
+binder 20949:20949 <> a:81
+binder 20951:20951 <> c:82
+binder 20953:20953 <> b:83
+R20962:20965 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20957:20960 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20961:20961 JFCTheorems.HierarchicalCompression <> b:83 var
+R20981:20984 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20966:20966 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R20976:20979 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R20968:20970 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R20967:20967 JFCTheorems.HierarchicalCompression <> a:81 var
+R20972:20974 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R20975:20975 JFCTheorems.HierarchicalCompression <> c:82 var
+R20980:20980 JFCTheorems.HierarchicalCompression <> b:83 var
+R20990:20992 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R20986:20988 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R20985:20985 JFCTheorems.HierarchicalCompression <> a:81 var
+R20989:20989 JFCTheorems.HierarchicalCompression <> b:83 var
+R20993:20993 JFCTheorems.HierarchicalCompression <> c:82 var
+R21036:21049 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R21036:21049 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R21077:21090 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R21094:21096 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21098:21100 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R21077:21090 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R21094:21096 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21098:21100 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R21129:21147 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R21129:21147 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R21187:21205 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R21209:21211 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21213:21215 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R21187:21205 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R21209:21211 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21213:21215 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+prf 21263:21288 <> compressed_geometric_bound
+binder 21301:21302 <> n0:84
+binder 21304:21304 <> b:85
+binder 21306:21306 <> c:86
+binder 21308:21308 <> k:87
+R21321:21328 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R21316:21319 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R21320:21320 JFCTheorems.HierarchicalCompression <> b:85 var
+R21348:21351 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R21329:21338 JFCTheorems.HierarchicalCompression <> compressed def
+R21340:21341 JFCTheorems.HierarchicalCompression <> n0:84 var
+R21343:21343 JFCTheorems.HierarchicalCompression <> b:85 var
+R21345:21345 JFCTheorems.HierarchicalCompression <> c:86 var
+R21347:21347 JFCTheorems.HierarchicalCompression <> k:87 var
+R21364:21366 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21354:21357 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21363:21363 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21352:21353 JFCTheorems.HierarchicalCompression <> n0:84 var
+R21359:21361 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R21358:21358 JFCTheorems.HierarchicalCompression <> b:85 var
+R21362:21362 JFCTheorems.HierarchicalCompression <> k:87 var
+R21368:21370 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R21371:21371 JFCTheorems.HierarchicalCompression <> c:86 var
+R21460:21469 JFCTheorems.HierarchicalCompression <> compressed def
+R21471:21477 Stdlib.Arith.PeanoNat Nat pow def
+R21489:21499 Stdlib.Arith.PeanoNat Nat div_1_r def
+R21489:21499 Stdlib.Arith.PeanoNat Nat div_1_r def
+R21489:21499 Stdlib.Arith.PeanoNat Nat div_1_r def
+R21519:21533 JFCTheorems.HierarchicalCompression <> compressed_step thm
+R21519:21533 JFCTheorems.HierarchicalCompression <> compressed_step thm
+R21519:21533 JFCTheorems.HierarchicalCompression <> compressed_step thm
+R21633:21636 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R21629:21631 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21610:21619 JFCTheorems.HierarchicalCompression <> compressed def
+R21637:21637 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21658:21661 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21650:21652 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21640:21643 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21649:21649 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21645:21647 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R21654:21656 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R21633:21636 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R21629:21631 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21610:21619 JFCTheorems.HierarchicalCompression <> compressed def
+R21637:21637 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21658:21661 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21650:21652 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21640:21643 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21649:21649 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21645:21647 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R21654:21656 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R21678:21697 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R21678:21697 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R21723:21734 Stdlib.Arith.PeanoNat Nat le_trans thm
+R21723:21734 Stdlib.Arith.PeanoNat Nat le_trans thm
+R21749:21765 Stdlib.Arith.PeanoNat Nat add_le_mono_r thm
+R21749:21765 Stdlib.Arith.PeanoNat Nat add_le_mono_r thm
+R21853:21856 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21862:21862 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21858:21860 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R21853:21856 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21862:21862 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21858:21860 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R21907:21910 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R21892:21892 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21902:21905 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21894:21896 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21898:21900 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R21916:21918 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21912:21914 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21932:21944 JFCTheorems.HierarchicalCompression <> div_add_2c_le thm
+R21907:21910 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R21892:21892 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21902:21905 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21894:21896 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21898:21900 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R21916:21918 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R21912:21914 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21932:21944 JFCTheorems.HierarchicalCompression <> div_add_2c_le thm
+R21977:21979 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R21973:21975 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21982:21985 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21993:21993 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21987:21989 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R21990:21990 Corelib.Init.Datatypes <> S constr
+R21977:21979 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R21973:21975 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21982:21985 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21993:21993 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R21987:21989 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R21990:21990 Corelib.Init.Datatypes <> S constr
+R22020:22035 Stdlib.Arith.PeanoNat Nat.Div0 div_div thm
+R22020:22035 Stdlib.Arith.PeanoNat Nat.Div0 div_div thm
+R22020:22035 Stdlib.Arith.PeanoNat Nat.Div0 div_div thm
+R22049:22055 Stdlib.Arith.PeanoNat Nat pow def
+R22068:22079 Stdlib.Arith.PeanoNat Nat mul_comm thm
+R22085:22087 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R22068:22079 Stdlib.Arith.PeanoNat Nat mul_comm thm
+R22085:22087 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R22068:22079 Stdlib.Arith.PeanoNat Nat mul_comm thm
+R22085:22087 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+def 22775:22787 <> flat_compress
+R22798:22800 Corelib.Init.Datatypes <> nat ind
+binder 22790:22790 <> n:88
+binder 22792:22792 <> b:89
+binder 22794:22794 <> c:90
+R22805:22807 Corelib.Init.Datatypes <> nat ind
+R22817:22819 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R22813:22815 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R22812:22812 JFCTheorems.HierarchicalCompression <> n:88 var
+R22816:22816 JFCTheorems.HierarchicalCompression <> b:89 var
+R22820:22820 JFCTheorems.HierarchicalCompression <> c:90 var
+prf 23276:23295 <> hierarchical_le_flat
+binder 23308:23308 <> n:91
+binder 23310:23310 <> b:92
+binder 23312:23312 <> c:93
+R23337:23339 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R23319:23328 JFCTheorems.HierarchicalCompression <> compressed def
+R23330:23330 JFCTheorems.HierarchicalCompression <> n:91 var
+R23332:23332 JFCTheorems.HierarchicalCompression <> b:92 var
+R23334:23334 JFCTheorems.HierarchicalCompression <> c:93 var
+R23340:23352 JFCTheorems.HierarchicalCompression <> flat_compress def
+R23354:23354 JFCTheorems.HierarchicalCompression <> n:91 var
+R23356:23356 JFCTheorems.HierarchicalCompression <> b:92 var
+R23358:23358 JFCTheorems.HierarchicalCompression <> c:93 var
+R23391:23400 JFCTheorems.HierarchicalCompression <> compressed def
+R23411:23423 JFCTheorems.HierarchicalCompression <> flat_compress def
+prf 23659:23680 <> hierarchical_sublinear
+binder 23693:23693 <> n:94
+binder 23695:23695 <> b:95
+binder 23697:23697 <> c:96
+binder 23699:23699 <> k:97
+R23712:23719 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R23707:23710 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R23711:23711 JFCTheorems.HierarchicalCompression <> b:95 var
+R23738:23741 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R23720:23729 JFCTheorems.HierarchicalCompression <> compressed def
+R23731:23731 JFCTheorems.HierarchicalCompression <> n:94 var
+R23733:23733 JFCTheorems.HierarchicalCompression <> b:95 var
+R23735:23735 JFCTheorems.HierarchicalCompression <> c:96 var
+R23737:23737 JFCTheorems.HierarchicalCompression <> k:97 var
+R23753:23755 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R23743:23746 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R23752:23752 Corelib.Init.Nat <> ::nat_scope:x_'/'_x not
+R23742:23742 JFCTheorems.HierarchicalCompression <> n:94 var
+R23748:23750 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R23747:23747 JFCTheorems.HierarchicalCompression <> b:95 var
+R23751:23751 JFCTheorems.HierarchicalCompression <> k:97 var
+R23757:23759 Corelib.Init.Nat <> ::nat_scope:x_'*'_x not
+R23760:23760 JFCTheorems.HierarchicalCompression <> c:96 var
+R23799:23824 JFCTheorems.HierarchicalCompression <> compressed_geometric_bound thm
+R23799:23824 JFCTheorems.HierarchicalCompression <> compressed_geometric_bound thm
+def 23929:23947 <> valid_summarization
+R23983:23985 Corelib.Init.Datatypes <> nat ind
+binder 23950:23964 <> original_tokens:98
+binder 23966:23979 <> summary_tokens:99
+R24014:24017 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R24000:24013 JFCTheorems.HierarchicalCompression <> summary_tokens:99 var
+R24018:24032 JFCTheorems.HierarchicalCompression <> original_tokens:98 var
+def 24084:24097 <> summarize_node
+R24104:24114 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 24100:24100 <> t:100
+R24135:24137 Corelib.Init.Datatypes <> nat ind
+binder 24118:24131 <> summary_tokens:101
+R24142:24152 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+R24165:24165 JFCTheorems.HierarchicalCompression <> t:100 var
+R24176:24179 JFCTheorems.HierarchicalCompression <> Leaf constr
+R24186:24189 JFCTheorems.HierarchicalCompression <> Leaf constr
+R24227:24230 JFCTheorems.HierarchicalCompression <> Node constr
+R24241:24244 JFCTheorems.HierarchicalCompression <> Node constr
+R24250:24263 JFCTheorems.HierarchicalCompression <> summary_tokens:101 var
+prf 25142:25162 <> summarization_reduces
+binder 25175:25175 <> l:103
+binder 25177:25177 <> r:104
+binder 25179:25189 <> old_summary:105
+binder 25191:25201 <> new_summary:106
+R25233:25240 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R25219:25221 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R25208:25218 JFCTheorems.HierarchicalCompression <> new_summary:106 var
+R25222:25232 JFCTheorems.HierarchicalCompression <> old_summary:105 var
+R25275:25281 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R25241:25251 JFCTheorems.HierarchicalCompression <> tree_tokens def
+R25254:25257 JFCTheorems.HierarchicalCompression <> Node constr
+R25259:25259 JFCTheorems.HierarchicalCompression <> l:103 var
+R25261:25261 JFCTheorems.HierarchicalCompression <> r:104 var
+R25263:25273 JFCTheorems.HierarchicalCompression <> new_summary:106 var
+R25282:25292 JFCTheorems.HierarchicalCompression <> tree_tokens def
+R25295:25298 JFCTheorems.HierarchicalCompression <> Node constr
+R25300:25300 JFCTheorems.HierarchicalCompression <> l:103 var
+R25302:25302 JFCTheorems.HierarchicalCompression <> r:104 var
+R25304:25314 JFCTheorems.HierarchicalCompression <> old_summary:105 var
+R25376:25386 JFCTheorems.HierarchicalCompression <> tree_tokens def
+def 25475:25489 <> find_duplicates
+R25496:25506 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 25492:25492 <> t:107
+R25511:25514 Corelib.Init.Datatypes <> list ind
+R25520:25522 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R25517:25519 Corelib.Init.Datatypes <> nat ind
+R25523:25525 Corelib.Init.Datatypes <> nat ind
+R25636:25637 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+ind 25948:25956 <> prunes_to
+constr 26002:26011 <> prune_refl
+constr 26043:26057 <> prune_drop_left
+constr 26179:26194 <> prune_drop_right
+constr 26247:26256 <> prune_node
+constr 26434:26444 <> prune_trans
+R25971:25974 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R25960:25970 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+R25986:25989 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R25975:25985 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 26022:26022 <> t:110
+R26025:26033 JFCTheorems.HierarchicalCompression <> prunes_to:108 ind
+R26037:26037 JFCTheorems.HierarchicalCompression <> t:110 var
+R26035:26035 JFCTheorems.HierarchicalCompression <> t:110 var
+binder 26068:26068 <> l:111
+binder 26070:26070 <> r:112
+binder 26072:26072 <> s:113
+R26150:26158 JFCTheorems.HierarchicalCompression <> prunes_to:108 ind
+R26173:26173 JFCTheorems.HierarchicalCompression <> r:112 var
+R26161:26164 JFCTheorems.HierarchicalCompression <> Node constr
+R26166:26166 JFCTheorems.HierarchicalCompression <> l:111 var
+R26168:26168 JFCTheorems.HierarchicalCompression <> r:112 var
+R26170:26170 JFCTheorems.HierarchicalCompression <> s:113 var
+binder 26205:26205 <> l:114
+binder 26207:26207 <> r:115
+binder 26209:26209 <> s:116
+R26218:26226 JFCTheorems.HierarchicalCompression <> prunes_to:108 ind
+R26241:26241 JFCTheorems.HierarchicalCompression <> l:114 var
+R26229:26232 JFCTheorems.HierarchicalCompression <> Node constr
+R26234:26234 JFCTheorems.HierarchicalCompression <> l:114 var
+R26236:26236 JFCTheorems.HierarchicalCompression <> r:115 var
+R26238:26238 JFCTheorems.HierarchicalCompression <> s:116 var
+binder 26267:26267 <> l:117
+binder 26269:26270 <> l':118
+binder 26272:26272 <> r:119
+binder 26274:26275 <> r':120
+binder 26277:26277 <> s:121
+R26300:26303 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R26286:26294 JFCTheorems.HierarchicalCompression <> prunes_to:108 ind
+R26298:26299 JFCTheorems.HierarchicalCompression <> l':118 var
+R26296:26296 JFCTheorems.HierarchicalCompression <> l:117 var
+R26318:26327 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R26304:26312 JFCTheorems.HierarchicalCompression <> prunes_to:108 ind
+R26316:26317 JFCTheorems.HierarchicalCompression <> r':120 var
+R26314:26314 JFCTheorems.HierarchicalCompression <> r:119 var
+R26382:26391 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R26354:26357 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R26328:26338 JFCTheorems.HierarchicalCompression <> tree_tokens def
+R26341:26344 JFCTheorems.HierarchicalCompression <> Node constr
+R26346:26347 JFCTheorems.HierarchicalCompression <> l':118 var
+R26349:26350 JFCTheorems.HierarchicalCompression <> r':120 var
+R26352:26352 JFCTheorems.HierarchicalCompression <> s:121 var
+R26358:26368 JFCTheorems.HierarchicalCompression <> tree_tokens def
+R26371:26374 JFCTheorems.HierarchicalCompression <> Node constr
+R26376:26376 JFCTheorems.HierarchicalCompression <> l:117 var
+R26378:26378 JFCTheorems.HierarchicalCompression <> r:119 var
+R26380:26380 JFCTheorems.HierarchicalCompression <> s:121 var
+R26392:26400 JFCTheorems.HierarchicalCompression <> prunes_to:108 ind
+R26416:26419 JFCTheorems.HierarchicalCompression <> Node constr
+R26421:26422 JFCTheorems.HierarchicalCompression <> l':118 var
+R26424:26425 JFCTheorems.HierarchicalCompression <> r':120 var
+R26427:26427 JFCTheorems.HierarchicalCompression <> s:121 var
+R26403:26406 JFCTheorems.HierarchicalCompression <> Node constr
+R26408:26408 JFCTheorems.HierarchicalCompression <> l:117 var
+R26410:26410 JFCTheorems.HierarchicalCompression <> r:119 var
+R26412:26412 JFCTheorems.HierarchicalCompression <> s:121 var
+binder 26455:26455 <> a:122
+binder 26457:26457 <> b:123
+binder 26459:26459 <> d:124
+R26481:26484 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R26468:26476 JFCTheorems.HierarchicalCompression <> prunes_to:108 ind
+R26480:26480 JFCTheorems.HierarchicalCompression <> b:123 var
+R26478:26478 JFCTheorems.HierarchicalCompression <> a:122 var
+R26498:26501 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R26485:26493 JFCTheorems.HierarchicalCompression <> prunes_to:108 ind
+R26497:26497 JFCTheorems.HierarchicalCompression <> d:124 var
+R26495:26495 JFCTheorems.HierarchicalCompression <> b:123 var
+R26502:26510 JFCTheorems.HierarchicalCompression <> prunes_to:108 ind
+R26514:26514 JFCTheorems.HierarchicalCompression <> d:124 var
+R26512:26512 JFCTheorems.HierarchicalCompression <> a:122 var
+scheme 25948:25956 <> prunes_to_ind
+scheme 25948:25956 <> prunes_to_sind
+prf 27280:27299 <> dedup_reduces_tokens
+binder 27312:27312 <> t:125
+binder 27314:27315 <> t':126
+R27336:27343 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R27322:27330 JFCTheorems.HierarchicalCompression <> prunes_to ind
+R27332:27332 JFCTheorems.HierarchicalCompression <> t:125 var
+R27334:27335 JFCTheorems.HierarchicalCompression <> t':126 var
+R27358:27361 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R27344:27354 JFCTheorems.HierarchicalCompression <> tree_tokens def
+R27356:27357 JFCTheorems.HierarchicalCompression <> t':126 var
+R27362:27372 JFCTheorems.HierarchicalCompression <> tree_tokens def
+R27374:27374 JFCTheorems.HierarchicalCompression <> t:125 var
+R27484:27494 JFCTheorems.HierarchicalCompression <> tree_tokens def
+R27550:27560 JFCTheorems.HierarchicalCompression <> tree_tokens def
+def 27739:27749 <> merge_trees
+R27760:27770 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 27752:27753 <> t1:127
+binder 27755:27756 <> t2:128
+R27775:27785 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+R27792:27795 JFCTheorems.HierarchicalCompression <> Node constr
+R27797:27798 JFCTheorems.HierarchicalCompression <> t1:127 var
+R27800:27801 JFCTheorems.HierarchicalCompression <> t2:128 var
+prf 27858:27879 <> merge_preserves_leaves
+binder 27892:27893 <> t1:129
+binder 27895:27896 <> t2:130
+R27933:27935 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R27903:27912 JFCTheorems.HierarchicalCompression <> leaf_count def
+R27915:27925 JFCTheorems.HierarchicalCompression <> merge_trees def
+R27927:27928 JFCTheorems.HierarchicalCompression <> t1:129 var
+R27930:27931 JFCTheorems.HierarchicalCompression <> t2:130 var
+R27949:27951 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R27936:27945 JFCTheorems.HierarchicalCompression <> leaf_count def
+R27947:27948 JFCTheorems.HierarchicalCompression <> t1:129 var
+R27952:27961 JFCTheorems.HierarchicalCompression <> leaf_count def
+R27963:27964 JFCTheorems.HierarchicalCompression <> t2:130 var
+R27999:28009 JFCTheorems.HierarchicalCompression <> merge_trees def
+prf 28113:28133 <> merge_preserves_order
+binder 28146:28147 <> t1:131
+binder 28149:28150 <> t2:132
+R28187:28194 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R28157:28165 JFCTheorems.HierarchicalCompression <> is_sorted def
+R28168:28182 JFCTheorems.HierarchicalCompression <> leaf_timestamps def
+R28184:28185 JFCTheorems.HierarchicalCompression <> t1:131 var
+R28225:28232 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R28195:28203 JFCTheorems.HierarchicalCompression <> is_sorted def
+R28206:28220 JFCTheorems.HierarchicalCompression <> leaf_timestamps def
+R28222:28223 JFCTheorems.HierarchicalCompression <> t2:132 var
+R28233:28233 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R28340:28348 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 28241:28243 <> ts1:133
+binder 28245:28247 <> ts2:134
+R28283:28292 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R28256:28257 Stdlib.Lists.List <> In def
+R28264:28278 JFCTheorems.HierarchicalCompression <> leaf_timestamps def
+R28280:28281 JFCTheorems.HierarchicalCompression <> t1:131 var
+R28259:28261 JFCTheorems.HierarchicalCompression <> ts1:133 var
+R28320:28329 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R28293:28294 Stdlib.Lists.List <> In def
+R28301:28315 JFCTheorems.HierarchicalCompression <> leaf_timestamps def
+R28317:28318 JFCTheorems.HierarchicalCompression <> t2:132 var
+R28296:28298 JFCTheorems.HierarchicalCompression <> ts2:134 var
+R28333:28336 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R28330:28332 JFCTheorems.HierarchicalCompression <> ts1:133 var
+R28337:28339 JFCTheorems.HierarchicalCompression <> ts2:134 var
+R28349:28357 JFCTheorems.HierarchicalCompression <> is_sorted def
+R28360:28374 JFCTheorems.HierarchicalCompression <> leaf_timestamps def
+R28377:28387 JFCTheorems.HierarchicalCompression <> merge_trees def
+R28389:28390 JFCTheorems.HierarchicalCompression <> t1:131 var
+R28392:28393 JFCTheorems.HierarchicalCompression <> t2:132 var
+R28445:28455 JFCTheorems.HierarchicalCompression <> merge_trees def
+R28463:28477 JFCTheorems.HierarchicalCompression <> leaf_timestamps def
+R28489:28501 JFCTheorems.HierarchicalCompression <> is_sorted_app thm
+R28489:28501 JFCTheorems.HierarchicalCompression <> is_sorted_app thm
+def 28591:28601 <> insert_cost
+R28608:28618 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 28604:28604 <> t:135
+R28623:28625 Corelib.Init.Datatypes <> nat ind
+R28630:28639 JFCTheorems.HierarchicalCompression <> tree_depth def
+R28641:28641 JFCTheorems.HierarchicalCompression <> t:135 var
+def 28655:28668 <> summarize_cost
+R28675:28685 JFCTheorems.HierarchicalCompression <> SummaryTree ind
+binder 28671:28671 <> t:136
+R28690:28692 Corelib.Init.Datatypes <> nat ind
+R28697:28706 JFCTheorems.HierarchicalCompression <> leaf_count def
+R28708:28708 JFCTheorems.HierarchicalCompression <> t:136 var
+prf 29496:29515 <> amortized_insert_log
+binder 29528:29528 <> t:137
+R29558:29561 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R29535:29542 Stdlib.Arith.PeanoNat Nat log2 def
+R29545:29554 JFCTheorems.HierarchicalCompression <> leaf_count def
+R29556:29556 JFCTheorems.HierarchicalCompression <> t:137 var
+R29562:29572 JFCTheorems.HierarchicalCompression <> insert_cost def
+R29574:29574 JFCTheorems.HierarchicalCompression <> t:137 var
+R29605:29615 JFCTheorems.HierarchicalCompression <> insert_cost def
+R29626:29645 JFCTheorems.HierarchicalCompression <> tree_depth_log_bound thm
+R29626:29645 JFCTheorems.HierarchicalCompression <> tree_depth_log_bound thm
+def 29777:29793 <> flat_compact_cost
+R29807:29809 Corelib.Init.Datatypes <> nat ind
+binder 29796:29803 <> n_groups:138
+R29814:29816 Corelib.Init.Datatypes <> nat ind
+R29821:29828 JFCTheorems.HierarchicalCompression <> n_groups:138 var
+def 29897:29921 <> hierarchical_compact_cost
+R29935:29937 Corelib.Init.Datatypes <> nat ind
+binder 29924:29931 <> n_groups:139
+R29942:29944 Corelib.Init.Datatypes <> nat ind
+R29966:29968 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R29949:29956 Stdlib.Arith.PeanoNat Nat log2 def
+R29958:29965 JFCTheorems.HierarchicalCompression <> n_groups:139 var
+prf 30040:30066 <> hierarchical_more_efficient
+binder 30079:30079 <> n:140
+R30092:30099 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R30087:30090 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R30086:30086 JFCTheorems.HierarchicalCompression <> n:140 var
+R30127:30129 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R30100:30124 JFCTheorems.HierarchicalCompression <> hierarchical_compact_cost def
+R30126:30126 JFCTheorems.HierarchicalCompression <> n:140 var
+R30130:30146 JFCTheorems.HierarchicalCompression <> flat_compact_cost def
+R30148:30148 JFCTheorems.HierarchicalCompression <> n:140 var
+R30182:30206 JFCTheorems.HierarchicalCompression <> hierarchical_compact_cost def
+R30209:30225 JFCTheorems.HierarchicalCompression <> flat_compact_cost def
+R30291:30293 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R30281:30288 Stdlib.Arith.PeanoNat Nat log2 def
+R30291:30293 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R30281:30288 Stdlib.Arith.PeanoNat Nat log2 def
+R30308:30322 Stdlib.Arith.PeanoNat Nat log2_lt_lin thm
+R30308:30322 Stdlib.Arith.PeanoNat Nat log2_lt_lin thm
+R30475:30478 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R30465:30472 Stdlib.Arith.PeanoNat Nat log2 def
+R30480:30482 Corelib.Init.Nat <> ::nat_scope:x_'-'_x not
+R30475:30478 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R30465:30472 Stdlib.Arith.PeanoNat Nat log2 def
+R30480:30482 Corelib.Init.Nat <> ::nat_scope:x_'-'_x not
+R30929:30941 Stdlib.Arith.PeanoNat Nat log2_spec thm
+R30929:30941 Stdlib.Arith.PeanoNat Nat log2_spec thm
+R31092:31099 Stdlib.Arith.PeanoNat Nat log2 def
+R31092:31099 Stdlib.Arith.PeanoNat Nat log2 def
+R31129:31132 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R31129:31132 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R31167:31174 Stdlib.Arith.PeanoNat Nat log2 def
+R31167:31174 Stdlib.Arith.PeanoNat Nat log2 def
+R31192:31207 Stdlib.Arith.PeanoNat Nat log2_le_mono thm
+R31192:31207 Stdlib.Arith.PeanoNat Nat log2_le_mono thm
+R31309:31312 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R31305:31307 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R31314:31316 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R31309:31312 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R31305:31307 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R31314:31316 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R31407:31421 Stdlib.Arith.PeanoNat Nat le_gt_cases thm
+R31407:31421 Stdlib.Arith.PeanoNat Nat le_gt_cases thm
+R31455:31461 Stdlib.Arith.PeanoNat Nat pow def
+R31478:31481 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R31474:31476 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R31483:31485 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R31478:31481 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R31474:31476 Corelib.Init.Nat <> ::nat_scope:x_'+'_x not
+R31483:31485 Corelib.Init.Nat <> ::nat_scope:x_'^'_x not
+R31605:31607 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R31605:31607 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R31633:31639 Stdlib.Arith.PeanoNat Nat pow def

@@ -38,6 +38,13 @@ impl VadDetector {
     fn select(cfg: &VoiceConfig) -> Self {
         match cfg.vad_engine {
             VadEngine::Neural => {
+                if !VadEngine::neural_runtime_enabled() {
+                    warn!(
+                        target: "jfc::voice::vad",
+                        "neural VAD requested but JFC_VAD_ENABLE_NEURAL=1 is not set; using energy VAD"
+                    );
+                    return Self::Energy(Vad::new());
+                }
                 #[cfg(feature = "vad-neural")]
                 {
                     match crate::neural_vad::NeuralVad::new() {
@@ -401,8 +408,18 @@ impl VoiceRecorder {
         let events = self.events.clone();
         let state = Arc::clone(&self.state);
         let cancel_flag = Arc::clone(&self.cancel_flag);
+        let token_provider = self.token_provider.clone();
         tokio::spawn(async move {
-            vad_listen_loop(backend, cfg, events, state, vad_stop_rx, cancel_flag).await;
+            vad_listen_loop(
+                backend,
+                cfg,
+                events,
+                state,
+                vad_stop_rx,
+                cancel_flag,
+                token_provider,
+            )
+            .await;
         });
     }
 
@@ -604,6 +621,7 @@ async fn vad_listen_loop(
     state: Arc<Mutex<VoiceState>>,
     stop_rx: tokio::sync::oneshot::Receiver<()>,
     cancel_flag: Arc<std::sync::atomic::AtomicBool>,
+    token_provider: Option<TokenProvider>,
 ) {
     debug!(target: "jfc::voice::vad", "VAD loop starting");
     tokio::pin!(stop_rx);
@@ -802,7 +820,11 @@ async fn vad_listen_loop(
             backend = ?cfg.effective_backend(),
             "transcribing utterance"
         );
-        let result = backends::transcribe(&pcm, &cfg).await;
+        let token = match token_provider.as_ref() {
+            Some(provider) => provider().await,
+            None => None,
+        };
+        let result = backends::transcribe_with_token(&pcm, &cfg, token.as_deref()).await;
 
         *state.lock().await = VoiceState::Idle;
         send_or_debug(

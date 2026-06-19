@@ -1,0 +1,880 @@
+DIGEST e350e88120c3c9489f44d6bc40bab7b6
+FJFCTheorems.MessageQueue
+R507:521 Stdlib.Arith.Arith <> <> lib
+R539:552 Stdlib.Lists.List <> <> lib
+R570:582 Stdlib.Bool.Bool <> <> lib
+R600:616 Stdlib.micromega.Lia <> <> lib
+R626:638 Stdlib.Lists.List ListNotations <> mod
+ind 704:716 <> QueuePriority
+constr 732:736 <> Later
+constr 784:787 <> Next
+constr 842:844 <> Now
+scheme 704:716 <> QueuePriority_rect
+scheme 704:716 <> QueuePriority_ind
+scheme 704:716 <> QueuePriority_rec
+scheme 704:716 <> QueuePriority_sind
+def 934:945 <> priority_leb
+R956:968 JFCTheorems.MessageQueue <> QueuePriority ind
+binder 948:949 <> p1:3
+binder 951:952 <> p2:4
+R973:976 Corelib.Init.Datatypes <> bool ind
+R993:994 JFCTheorems.MessageQueue <> p2:4 var
+R989:990 JFCTheorems.MessageQueue <> p1:3 var
+R1005:1009 JFCTheorems.MessageQueue <> Later constr
+R1017:1020 Corelib.Init.Datatypes <> true constr
+R1026:1029 JFCTheorems.MessageQueue <> Next constr
+R1032:1036 JFCTheorems.MessageQueue <> Later constr
+R1041:1045 Corelib.Init.Datatypes <> false constr
+R1051:1054 JFCTheorems.MessageQueue <> Next constr
+R1062:1065 Corelib.Init.Datatypes <> true constr
+R1071:1073 JFCTheorems.MessageQueue <> Now constr
+R1076:1078 JFCTheorems.MessageQueue <> Now constr
+R1083:1086 Corelib.Init.Datatypes <> true constr
+R1092:1094 JFCTheorems.MessageQueue <> Now constr
+R1102:1106 Corelib.Init.Datatypes <> false constr
+def 1127:1137 <> priority_lt
+R1148:1160 JFCTheorems.MessageQueue <> QueuePriority ind
+binder 1140:1141 <> p1:7
+binder 1143:1144 <> p2:8
+R1165:1168 Corelib.Init.Datatypes <> bool ind
+R1185:1186 JFCTheorems.MessageQueue <> p2:8 var
+R1181:1182 JFCTheorems.MessageQueue <> p1:7 var
+R1197:1201 JFCTheorems.MessageQueue <> Later constr
+R1204:1207 JFCTheorems.MessageQueue <> Next constr
+R1212:1215 Corelib.Init.Datatypes <> true constr
+R1221:1225 JFCTheorems.MessageQueue <> Later constr
+R1228:1230 JFCTheorems.MessageQueue <> Now constr
+R1235:1238 Corelib.Init.Datatypes <> true constr
+R1244:1247 JFCTheorems.MessageQueue <> Next constr
+R1250:1252 JFCTheorems.MessageQueue <> Now constr
+R1257:1260 Corelib.Init.Datatypes <> true constr
+R1274:1278 Corelib.Init.Datatypes <> false constr
+rec 1327:1338 <> QueuedPrompt
+proj 1363:1373 <> prompt_text
+proj 1422:1435 <> prompt_is_meta
+proj 1447:1461 <> prompt_priority
+R1377:1379 Corelib.Init.Datatypes <> nat ind
+R1439:1442 Corelib.Init.Datatypes <> bool ind
+R1465:1477 JFCTheorems.MessageQueue <> QueuePriority ind
+def 1495:1506 <> MessageQueue
+R1511:1514 Corelib.Init.Datatypes <> list ind
+R1516:1527 JFCTheorems.MessageQueue <> QueuedPrompt rec
+def 1599:1602 <> push
+R1613:1624 JFCTheorems.MessageQueue <> MessageQueue def
+binder 1605:1609 <> queue:15
+R1637:1648 JFCTheorems.MessageQueue <> QueuedPrompt rec
+binder 1628:1633 <> prompt:16
+R1653:1664 JFCTheorems.MessageQueue <> MessageQueue def
+R1676:1679 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R1671:1675 JFCTheorems.MessageQueue <> queue:15 var
+R1680:1680 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R1687:1687 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R1681:1686 JFCTheorems.MessageQueue <> prompt:16 var
+def 1738:1749 <> max_priority
+R1760:1771 JFCTheorems.MessageQueue <> MessageQueue def
+binder 1752:1756 <> queue:17
+R1776:1781 Corelib.Init.Datatypes <> option ind
+R1783:1795 JFCTheorems.MessageQueue <> QueuePriority ind
+R1808:1812 JFCTheorems.MessageQueue <> queue:17 var
+R1823:1824 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R1829:1832 Corelib.Init.Datatypes <> None constr
+R1839:1842 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1863:1874 JFCTheorems.MessageQueue <> max_priority:18 def
+R1894:1897 Corelib.Init.Datatypes <> None constr
+R1902:1905 Corelib.Init.Datatypes <> Some constr
+R1908:1922 JFCTheorems.MessageQueue <> prompt_priority proj
+R1935:1938 Corelib.Init.Datatypes <> Some constr
+R1959:1970 JFCTheorems.MessageQueue <> priority_leb def
+R1976:1990 JFCTheorems.MessageQueue <> prompt_priority proj
+R2064:2067 Corelib.Init.Datatypes <> Some constr
+R2012:2015 Corelib.Init.Datatypes <> Some constr
+R2018:2032 JFCTheorems.MessageQueue <> prompt_priority proj
+def 2145:2161 <> find_priority_idx
+R2172:2183 JFCTheorems.MessageQueue <> MessageQueue def
+binder 2164:2168 <> queue:20
+R2196:2208 JFCTheorems.MessageQueue <> QueuePriority ind
+binder 2187:2192 <> target:21
+R2223:2225 Corelib.Init.Datatypes <> nat ind
+binder 2217:2219 <> idx:22
+R2230:2235 Corelib.Init.Datatypes <> option ind
+R2237:2239 Corelib.Init.Datatypes <> nat ind
+R2252:2256 JFCTheorems.MessageQueue <> queue:20 var
+R2267:2268 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2273:2276 Corelib.Init.Datatypes <> None constr
+R2283:2286 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2307:2321 JFCTheorems.MessageQueue <> prompt_priority proj
+R2367:2372 JFCTheorems.MessageQueue <> target:21 var
+R2394:2398 JFCTheorems.MessageQueue <> Later constr
+R2401:2405 JFCTheorems.MessageQueue <> Later constr
+R2409:2412 JFCTheorems.MessageQueue <> Next constr
+R2415:2418 JFCTheorems.MessageQueue <> Next constr
+R2422:2424 JFCTheorems.MessageQueue <> Now constr
+R2427:2429 JFCTheorems.MessageQueue <> Now constr
+R2434:2437 Corelib.Init.Datatypes <> true constr
+R2434:2437 Corelib.Init.Datatypes <> true constr
+R2434:2437 Corelib.Init.Datatypes <> true constr
+R2462:2466 Corelib.Init.Datatypes <> false constr
+R2524:2540 JFCTheorems.MessageQueue <> find_priority_idx:23 def
+R2555:2555 Corelib.Init.Datatypes <> S constr
+R2557:2559 JFCTheorems.MessageQueue <> idx:22 var
+R2547:2552 JFCTheorems.MessageQueue <> target:21 var
+R2500:2503 Corelib.Init.Datatypes <> Some constr
+R2505:2507 JFCTheorems.MessageQueue <> idx:22 var
+def 2620:2628 <> remove_at
+binder 2631:2631 <> A:27
+R2646:2649 Corelib.Init.Datatypes <> list ind
+R2651:2651 JFCTheorems.MessageQueue <> A:27 var
+binder 2642:2642 <> l:28
+R2661:2663 Corelib.Init.Datatypes <> nat ind
+binder 2655:2657 <> idx:29
+R2668:2671 Corelib.Init.Datatypes <> list ind
+R2673:2673 JFCTheorems.MessageQueue <> A:27 var
+R2689:2691 JFCTheorems.MessageQueue <> idx:29 var
+R2686:2686 JFCTheorems.MessageQueue <> l:28 var
+R2702:2703 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2711:2712 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2719:2722 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2729:2729 Corelib.Init.Datatypes <> O constr
+R2744:2747 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2754:2754 Corelib.Init.Datatypes <> S constr
+R2762:2765 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2766:2774 JFCTheorems.MessageQueue <> remove_at:30 def
+def 2857:2872 <> pop_max_priority
+R2883:2894 JFCTheorems.MessageQueue <> MessageQueue def
+binder 2875:2879 <> queue:33
+R2899:2904 Corelib.Init.Datatypes <> option ind
+R2919:2921 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R2907:2918 JFCTheorems.MessageQueue <> QueuedPrompt rec
+R2922:2933 JFCTheorems.MessageQueue <> MessageQueue def
+R2947:2958 JFCTheorems.MessageQueue <> max_priority def
+R2960:2964 JFCTheorems.MessageQueue <> queue:33 var
+R2975:2978 Corelib.Init.Datatypes <> None constr
+R2983:2986 Corelib.Init.Datatypes <> None constr
+R2992:2995 Corelib.Init.Datatypes <> Some constr
+R3015:3031 JFCTheorems.MessageQueue <> find_priority_idx def
+R3033:3037 JFCTheorems.MessageQueue <> queue:33 var
+R3057:3060 Corelib.Init.Datatypes <> None constr
+R3065:3068 Corelib.Init.Datatypes <> None constr
+R3078:3081 Corelib.Init.Datatypes <> Some constr
+R3106:3114 Stdlib.Lists.List <> nth_error def
+R3116:3120 JFCTheorems.MessageQueue <> queue:33 var
+R3143:3146 Corelib.Init.Datatypes <> None constr
+R3151:3154 Corelib.Init.Datatypes <> None constr
+R3168:3171 Corelib.Init.Datatypes <> Some constr
+R3183:3186 Corelib.Init.Datatypes <> Some constr
+R3188:3188 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3195:3196 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3216:3216 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3197:3205 JFCTheorems.MessageQueue <> remove_at def
+R3207:3211 JFCTheorems.MessageQueue <> queue:33 var
+def 3317:3330 <> drain_at_least
+R3341:3352 JFCTheorems.MessageQueue <> MessageQueue def
+binder 3333:3337 <> queue:34
+R3371:3383 JFCTheorems.MessageQueue <> QueuePriority ind
+binder 3356:3367 <> min_priority:35
+R3411:3413 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R3394:3397 Corelib.Init.Datatypes <> list ind
+R3399:3410 JFCTheorems.MessageQueue <> QueuedPrompt rec
+R3414:3425 JFCTheorems.MessageQueue <> MessageQueue def
+R3461:3469 Stdlib.Lists.List <> partition def
+R3544:3548 JFCTheorems.MessageQueue <> queue:34 var
+binder 3481:3481 <> p:36
+R3486:3489 Corelib.Init.Datatypes <> negb def
+R3492:3502 JFCTheorems.MessageQueue <> priority_lt def
+R3505:3519 JFCTheorems.MessageQueue <> prompt_priority proj
+R3521:3521 JFCTheorems.MessageQueue <> p:36 var
+R3524:3535 JFCTheorems.MessageQueue <> min_priority:35 var
+binder 3438:3444 <> drained:37
+binder 3447:3455 <> remaining:38
+R3625:3625 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3633:3634 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3644:3644 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3626:3632 JFCTheorems.MessageQueue <> drained:37 var
+R3635:3643 JFCTheorems.MessageQueue <> remaining:38 var
+def 3936:3943 <> prio_eqb
+R3952:3964 JFCTheorems.MessageQueue <> QueuePriority ind
+binder 3946:3946 <> p:39
+binder 3948:3948 <> t:40
+R3969:3972 Corelib.Init.Datatypes <> bool ind
+R3988:3988 JFCTheorems.MessageQueue <> t:40 var
+R3985:3985 JFCTheorems.MessageQueue <> p:39 var
+R3999:4003 JFCTheorems.MessageQueue <> Later constr
+R4006:4010 JFCTheorems.MessageQueue <> Later constr
+R4014:4017 JFCTheorems.MessageQueue <> Next constr
+R4020:4023 JFCTheorems.MessageQueue <> Next constr
+R4027:4029 JFCTheorems.MessageQueue <> Now constr
+R4032:4034 JFCTheorems.MessageQueue <> Now constr
+R4039:4042 Corelib.Init.Datatypes <> true constr
+R4039:4042 Corelib.Init.Datatypes <> true constr
+R4039:4042 Corelib.Init.Datatypes <> true constr
+R4056:4060 Corelib.Init.Datatypes <> false constr
+prf 4076:4088 <> prio_eqb_true
+binder 4099:4099 <> p:43
+binder 4101:4101 <> t:44
+R4123:4126 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4116:4118 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4104:4111 JFCTheorems.MessageQueue <> prio_eqb def
+R4113:4113 JFCTheorems.MessageQueue <> p:43 var
+R4115:4115 JFCTheorems.MessageQueue <> t:44 var
+R4119:4122 Corelib.Init.Datatypes <> true constr
+R4128:4130 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4127:4127 JFCTheorems.MessageQueue <> p:43 var
+R4131:4131 JFCTheorems.MessageQueue <> t:44 var
+prf 4299:4316 <> inline_eq_prio_eqb
+binder 4329:4329 <> p:45
+binder 4331:4331 <> t:46
+R4428:4430 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4347:4347 JFCTheorems.MessageQueue <> t:46 var
+R4344:4344 JFCTheorems.MessageQueue <> p:45 var
+R4360:4364 JFCTheorems.MessageQueue <> Later constr
+R4367:4371 JFCTheorems.MessageQueue <> Later constr
+R4375:4378 JFCTheorems.MessageQueue <> Next constr
+R4381:4384 JFCTheorems.MessageQueue <> Next constr
+R4388:4390 JFCTheorems.MessageQueue <> Now constr
+R4393:4395 JFCTheorems.MessageQueue <> Now constr
+R4400:4403 Corelib.Init.Datatypes <> true constr
+R4400:4403 Corelib.Init.Datatypes <> true constr
+R4400:4403 Corelib.Init.Datatypes <> true constr
+R4419:4423 Corelib.Init.Datatypes <> false constr
+R4431:4438 JFCTheorems.MessageQueue <> prio_eqb def
+R4440:4440 JFCTheorems.MessageQueue <> p:45 var
+R4442:4442 JFCTheorems.MessageQueue <> t:46 var
+prf 4567:4582 <> remove_at_length
+binder 4596:4596 <> A:49
+R4604:4607 Corelib.Init.Datatypes <> list ind
+R4609:4609 JFCTheorems.MessageQueue <> A:49 var
+binder 4600:4600 <> l:50
+binder 4612:4614 <> idx:51
+R4635:4642 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4624:4626 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R4621:4623 JFCTheorems.MessageQueue <> idx:51 var
+R4627:4632 Corelib.Init.Datatypes <> length def
+R4634:4634 JFCTheorems.MessageQueue <> l:50 var
+R4667:4669 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4643:4648 Corelib.Init.Datatypes <> length def
+R4651:4659 JFCTheorems.MessageQueue <> remove_at def
+R4663:4665 JFCTheorems.MessageQueue <> idx:51 var
+R4661:4661 JFCTheorems.MessageQueue <> l:50 var
+R4678:4680 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4670:4675 Corelib.Init.Datatypes <> length def
+R4677:4677 JFCTheorems.MessageQueue <> l:50 var
+prf 4960:4978 <> remove_at_preserves
+binder 4992:4992 <> A:52
+R5000:5003 Corelib.Init.Datatypes <> list ind
+R5005:5005 JFCTheorems.MessageQueue <> A:52 var
+binder 4996:4996 <> l:53
+binder 5008:5010 <> idx:54
+binder 5012:5012 <> j:55
+binder 5014:5014 <> x:56
+R5029:5036 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5022:5025 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R5021:5021 JFCTheorems.MessageQueue <> j:55 var
+R5026:5028 JFCTheorems.MessageQueue <> idx:54 var
+R5059:5066 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5050:5052 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5037:5045 Stdlib.Lists.List <> nth_error def
+R5049:5049 JFCTheorems.MessageQueue <> j:55 var
+R5047:5047 JFCTheorems.MessageQueue <> l:53 var
+R5053:5056 Corelib.Init.Datatypes <> Some constr
+R5058:5058 JFCTheorems.MessageQueue <> x:56 var
+R5067:5068 Stdlib.Lists.List <> In def
+R5073:5081 JFCTheorems.MessageQueue <> remove_at def
+R5085:5087 JFCTheorems.MessageQueue <> idx:54 var
+R5083:5083 JFCTheorems.MessageQueue <> l:53 var
+R5070:5070 JFCTheorems.MessageQueue <> x:56 var
+R5301:5312 Stdlib.Lists.List <> nth_error_In thm
+R5301:5312 Stdlib.Lists.List <> nth_error_In thm
+prf 5603:5625 <> find_priority_idx_bound
+binder 5638:5642 <> queue:57
+binder 5644:5649 <> target:58
+binder 5651:5655 <> start:59
+binder 5657:5657 <> i:60
+R5709:5716 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5700:5702 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5664:5680 JFCTheorems.MessageQueue <> find_priority_idx def
+R5682:5686 JFCTheorems.MessageQueue <> queue:57 var
+R5688:5693 JFCTheorems.MessageQueue <> target:58 var
+R5695:5699 JFCTheorems.MessageQueue <> start:59 var
+R5703:5706 Corelib.Init.Datatypes <> Some constr
+R5708:5708 JFCTheorems.MessageQueue <> i:60 var
+R5722:5725 Corelib.Init.Peano <> ::nat_scope:x_'<='_x_'<'_x not
+R5727:5729 Corelib.Init.Peano <> ::nat_scope:x_'<='_x_'<'_x not
+R5717:5721 JFCTheorems.MessageQueue <> start:59 var
+R5726:5726 JFCTheorems.MessageQueue <> i:60 var
+R5726:5726 JFCTheorems.MessageQueue <> i:60 var
+R5735:5737 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R5730:5734 JFCTheorems.MessageQueue <> start:59 var
+R5738:5743 Corelib.Init.Datatypes <> length def
+R5745:5749 JFCTheorems.MessageQueue <> queue:57 var
+R5873:5890 JFCTheorems.MessageQueue <> inline_eq_prio_eqb thm
+R5873:5890 JFCTheorems.MessageQueue <> inline_eq_prio_eqb thm
+R5873:5890 JFCTheorems.MessageQueue <> inline_eq_prio_eqb thm
+R5912:5919 JFCTheorems.MessageQueue <> prio_eqb def
+R5922:5936 JFCTheorems.MessageQueue <> prompt_priority proj
+R5912:5919 JFCTheorems.MessageQueue <> prio_eqb def
+R5922:5936 JFCTheorems.MessageQueue <> prompt_priority proj
+prf 6130:6155 <> find_priority_idx_priority
+binder 6168:6172 <> queue:61
+binder 6174:6179 <> target:62
+binder 6181:6185 <> start:63
+binder 6187:6187 <> i:64
+R6239:6246 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6230:6232 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6194:6210 JFCTheorems.MessageQueue <> find_priority_idx def
+R6212:6216 JFCTheorems.MessageQueue <> queue:61 var
+R6218:6223 JFCTheorems.MessageQueue <> target:62 var
+R6225:6229 JFCTheorems.MessageQueue <> start:63 var
+R6233:6236 Corelib.Init.Datatypes <> Some constr
+R6238:6238 JFCTheorems.MessageQueue <> i:64 var
+R6247:6253 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R6255:6256 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 6254:6254 <> p:65
+R6293:6296 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R6284:6286 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6257:6265 Stdlib.Lists.List <> nth_error def
+R6275:6277 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6274:6274 JFCTheorems.MessageQueue <> i:64 var
+R6278:6282 JFCTheorems.MessageQueue <> start:63 var
+R6267:6271 JFCTheorems.MessageQueue <> queue:61 var
+R6287:6290 Corelib.Init.Datatypes <> Some constr
+R6292:6292 JFCTheorems.MessageQueue <> p:65 var
+R6314:6316 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6297:6311 JFCTheorems.MessageQueue <> prompt_priority proj
+R6313:6313 JFCTheorems.MessageQueue <> p:65 var
+R6317:6322 JFCTheorems.MessageQueue <> target:62 var
+R6446:6463 JFCTheorems.MessageQueue <> inline_eq_prio_eqb thm
+R6446:6463 JFCTheorems.MessageQueue <> inline_eq_prio_eqb thm
+R6446:6463 JFCTheorems.MessageQueue <> inline_eq_prio_eqb thm
+R6485:6492 JFCTheorems.MessageQueue <> prio_eqb def
+R6495:6509 JFCTheorems.MessageQueue <> prompt_priority proj
+R6485:6492 JFCTheorems.MessageQueue <> prio_eqb def
+R6495:6509 JFCTheorems.MessageQueue <> prompt_priority proj
+R6583:6585 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6583:6585 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6644:6656 JFCTheorems.MessageQueue <> prio_eqb_true thm
+R6644:6656 JFCTheorems.MessageQueue <> prio_eqb_true thm
+R6683:6705 JFCTheorems.MessageQueue <> find_priority_idx_bound thm
+R6683:6705 JFCTheorems.MessageQueue <> find_priority_idx_bound thm
+R6824:6827 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R6828:6828 Corelib.Init.Datatypes <> S constr
+R6824:6827 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R6828:6828 Corelib.Init.Datatypes <> S constr
+R6861:6863 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6877:6877 Corelib.Init.Datatypes <> S constr
+R6881:6883 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6884:6884 Corelib.Init.Datatypes <> S constr
+R6861:6863 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6877:6877 Corelib.Init.Datatypes <> S constr
+R6881:6883 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6884:6884 Corelib.Init.Datatypes <> S constr
+prf 7081:7103 <> find_priority_idx_first
+binder 7116:7120 <> queue:66
+binder 7122:7127 <> target:67
+binder 7129:7133 <> start:68
+binder 7135:7135 <> i:69
+binder 7137:7137 <> j:70
+binder 7139:7139 <> p:71
+R7191:7198 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7182:7184 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7146:7162 JFCTheorems.MessageQueue <> find_priority_idx def
+R7164:7168 JFCTheorems.MessageQueue <> queue:66 var
+R7170:7175 JFCTheorems.MessageQueue <> target:67 var
+R7177:7181 JFCTheorems.MessageQueue <> start:68 var
+R7185:7188 Corelib.Init.Datatypes <> Some constr
+R7190:7190 JFCTheorems.MessageQueue <> i:69 var
+R7209:7212 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7204:7207 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R7199:7203 JFCTheorems.MessageQueue <> start:68 var
+R7208:7208 JFCTheorems.MessageQueue <> j:70 var
+R7218:7225 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7214:7216 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R7213:7213 JFCTheorems.MessageQueue <> j:70 var
+R7217:7217 JFCTheorems.MessageQueue <> i:69 var
+R7262:7269 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7253:7255 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7226:7234 Stdlib.Lists.List <> nth_error def
+R7244:7246 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7243:7243 JFCTheorems.MessageQueue <> j:70 var
+R7247:7251 JFCTheorems.MessageQueue <> start:68 var
+R7236:7240 JFCTheorems.MessageQueue <> queue:66 var
+R7256:7259 Corelib.Init.Datatypes <> Some constr
+R7261:7261 JFCTheorems.MessageQueue <> p:71 var
+R7287:7290 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R7270:7284 JFCTheorems.MessageQueue <> prompt_priority proj
+R7286:7286 JFCTheorems.MessageQueue <> p:71 var
+R7291:7296 JFCTheorems.MessageQueue <> target:67 var
+R7437:7454 JFCTheorems.MessageQueue <> inline_eq_prio_eqb thm
+R7437:7454 JFCTheorems.MessageQueue <> inline_eq_prio_eqb thm
+R7437:7454 JFCTheorems.MessageQueue <> inline_eq_prio_eqb thm
+R7476:7483 JFCTheorems.MessageQueue <> prio_eqb def
+R7486:7500 JFCTheorems.MessageQueue <> prompt_priority proj
+R7476:7483 JFCTheorems.MessageQueue <> prio_eqb def
+R7486:7500 JFCTheorems.MessageQueue <> prompt_priority proj
+R7577:7586 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R7577:7586 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R7642:7644 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7642:7644 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7773:7780 JFCTheorems.MessageQueue <> prio_eqb def
+R7800:7814 JFCTheorems.MessageQueue <> prompt_priority proj
+R7800:7814 JFCTheorems.MessageQueue <> prompt_priority proj
+R7865:7867 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7857:7859 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7868:7868 Corelib.Init.Datatypes <> S constr
+R7872:7874 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7875:7875 Corelib.Init.Datatypes <> S constr
+R7865:7867 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7857:7859 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7868:7868 Corelib.Init.Datatypes <> S constr
+R7872:7874 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7875:7875 Corelib.Init.Datatypes <> S constr
+R7965:7965 Corelib.Init.Datatypes <> S constr
+R7965:7965 Corelib.Init.Datatypes <> S constr
+prf 8102:8122 <> priority_lt_false_leb
+binder 8135:8135 <> a:72
+binder 8137:8137 <> b:73
+R8163:8166 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8155:8157 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8140:8150 JFCTheorems.MessageQueue <> priority_lt def
+R8152:8152 JFCTheorems.MessageQueue <> a:72 var
+R8154:8154 JFCTheorems.MessageQueue <> b:73 var
+R8158:8162 Corelib.Init.Datatypes <> false constr
+R8183:8185 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8167:8178 JFCTheorems.MessageQueue <> priority_leb def
+R8180:8180 JFCTheorems.MessageQueue <> b:73 var
+R8182:8182 JFCTheorems.MessageQueue <> a:72 var
+R8186:8189 Corelib.Init.Datatypes <> true constr
+prf 8364:8384 <> push_increases_length
+binder 8397:8401 <> queue:74
+binder 8403:8408 <> prompt:75
+R8441:8443 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8415:8420 Corelib.Init.Datatypes <> length def
+R8423:8426 JFCTheorems.MessageQueue <> push def
+R8428:8432 JFCTheorems.MessageQueue <> queue:74 var
+R8434:8439 JFCTheorems.MessageQueue <> prompt:75 var
+R8444:8444 Corelib.Init.Datatypes <> S constr
+R8447:8452 Corelib.Init.Datatypes <> length def
+R8454:8458 JFCTheorems.MessageQueue <> queue:74 var
+R8501:8504 JFCTheorems.MessageQueue <> push def
+R8517:8526 Stdlib.Lists.List <> app_length abbrev
+R8517:8526 Stdlib.Lists.List <> app_length abbrev
+R8517:8526 Stdlib.Lists.List <> app_length abbrev
+prf 8623:8642 <> pop_decreases_length
+binder 8655:8659 <> queue:76
+binder 8661:8666 <> prompt:77
+binder 8668:8673 <> queue':78
+R8726:8733 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8702:8704 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8680:8695 JFCTheorems.MessageQueue <> pop_max_priority def
+R8697:8701 JFCTheorems.MessageQueue <> queue:76 var
+R8705:8708 Corelib.Init.Datatypes <> Some constr
+R8710:8710 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8717:8718 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8725:8725 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8711:8716 JFCTheorems.MessageQueue <> prompt:77 var
+R8719:8724 JFCTheorems.MessageQueue <> queue':78 var
+R8747:8749 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8734:8739 Corelib.Init.Datatypes <> length def
+R8741:8746 JFCTheorems.MessageQueue <> queue':78 var
+R8762:8764 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R8750:8755 Corelib.Init.Datatypes <> length def
+R8757:8761 JFCTheorems.MessageQueue <> queue:76 var
+R8819:8834 JFCTheorems.MessageQueue <> pop_max_priority def
+R8857:8868 JFCTheorems.MessageQueue <> max_priority def
+R8857:8868 JFCTheorems.MessageQueue <> max_priority def
+R8925:8941 JFCTheorems.MessageQueue <> find_priority_idx def
+R8925:8941 JFCTheorems.MessageQueue <> find_priority_idx def
+R9005:9013 Stdlib.Lists.List <> nth_error def
+R9005:9013 Stdlib.Lists.List <> nth_error def
+R9103:9125 JFCTheorems.MessageQueue <> find_priority_idx_bound thm
+R9103:9125 JFCTheorems.MessageQueue <> find_priority_idx_bound thm
+R9145:9160 JFCTheorems.MessageQueue <> remove_at_length thm
+R9145:9160 JFCTheorems.MessageQueue <> remove_at_length thm
+prf 9236:9250 <> pop_returns_max
+binder 9263:9267 <> queue:79
+binder 9269:9274 <> prompt:80
+binder 9276:9281 <> queue':81
+R9334:9341 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9310:9312 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9288:9303 JFCTheorems.MessageQueue <> pop_max_priority def
+R9305:9309 JFCTheorems.MessageQueue <> queue:79 var
+R9313:9316 Corelib.Init.Datatypes <> Some constr
+R9318:9318 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9325:9326 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9333:9333 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9319:9324 JFCTheorems.MessageQueue <> prompt:80 var
+R9327:9332 JFCTheorems.MessageQueue <> queue':81 var
+R9360:9362 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9342:9353 JFCTheorems.MessageQueue <> max_priority def
+R9355:9359 JFCTheorems.MessageQueue <> queue:79 var
+R9363:9366 Corelib.Init.Datatypes <> Some constr
+R9369:9383 JFCTheorems.MessageQueue <> prompt_priority proj
+R9385:9390 JFCTheorems.MessageQueue <> prompt:80 var
+R9445:9460 JFCTheorems.MessageQueue <> pop_max_priority def
+R9483:9494 JFCTheorems.MessageQueue <> max_priority def
+R9483:9494 JFCTheorems.MessageQueue <> max_priority def
+R9551:9567 JFCTheorems.MessageQueue <> find_priority_idx def
+R9551:9567 JFCTheorems.MessageQueue <> find_priority_idx def
+R9631:9639 Stdlib.Lists.List <> nth_error def
+R9631:9639 Stdlib.Lists.List <> nth_error def
+R9750:9775 JFCTheorems.MessageQueue <> find_priority_idx_priority thm
+R9750:9775 JFCTheorems.MessageQueue <> find_priority_idx_priority thm
+R9822:9824 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R9822:9824 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+prf 10008:10027 <> fifo_within_priority
+binder 10040:10044 <> queue:82
+binder 10046:10047 <> p1:83
+binder 10049:10050 <> p2:84
+binder 10052:10055 <> idx1:85
+binder 10057:10060 <> idx2:86
+R10106:10113 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10085:10087 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10067:10081 JFCTheorems.MessageQueue <> prompt_priority proj
+R10083:10084 JFCTheorems.MessageQueue <> p1:83 var
+R10088:10102 JFCTheorems.MessageQueue <> prompt_priority proj
+R10104:10105 JFCTheorems.MessageQueue <> p2:84 var
+R10144:10151 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10134:10136 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10114:10122 Stdlib.Lists.List <> nth_error def
+R10130:10133 JFCTheorems.MessageQueue <> idx1:85 var
+R10124:10128 JFCTheorems.MessageQueue <> queue:82 var
+R10137:10140 Corelib.Init.Datatypes <> Some constr
+R10142:10143 JFCTheorems.MessageQueue <> p1:83 var
+R10182:10189 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10172:10174 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10152:10160 Stdlib.Lists.List <> nth_error def
+R10168:10171 JFCTheorems.MessageQueue <> idx2:86 var
+R10162:10166 JFCTheorems.MessageQueue <> queue:82 var
+R10175:10178 Corelib.Init.Datatypes <> Some constr
+R10180:10181 JFCTheorems.MessageQueue <> p2:84 var
+R10201:10253 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10194:10196 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R10190:10193 JFCTheorems.MessageQueue <> idx1:85 var
+R10197:10200 JFCTheorems.MessageQueue <> idx2:86 var
+binder 10261:10266 <> queue':87
+binder 10268:10273 <> prompt:88
+R10328:10337 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10304:10306 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10282:10297 JFCTheorems.MessageQueue <> pop_max_priority def
+R10299:10303 JFCTheorems.MessageQueue <> queue:82 var
+R10307:10310 Corelib.Init.Datatypes <> Some constr
+R10312:10312 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R10319:10320 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R10327:10327 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R10313:10318 JFCTheorems.MessageQueue <> prompt:88 var
+R10321:10326 JFCTheorems.MessageQueue <> queue':87 var
+R10381:10390 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10360:10362 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10338:10352 JFCTheorems.MessageQueue <> prompt_priority proj
+R10354:10359 JFCTheorems.MessageQueue <> prompt:88 var
+R10363:10377 JFCTheorems.MessageQueue <> prompt_priority proj
+R10379:10380 JFCTheorems.MessageQueue <> p1:83 var
+R10402:10405 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R10397:10399 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10391:10396 JFCTheorems.MessageQueue <> prompt:88 var
+R10400:10401 JFCTheorems.MessageQueue <> p1:83 var
+R10406:10407 Stdlib.Lists.List <> In def
+R10412:10417 JFCTheorems.MessageQueue <> queue':87 var
+R10409:10410 JFCTheorems.MessageQueue <> p2:84 var
+R10905:10920 JFCTheorems.MessageQueue <> pop_max_priority def
+R10943:10954 JFCTheorems.MessageQueue <> max_priority def
+R10943:10954 JFCTheorems.MessageQueue <> max_priority def
+R11011:11027 JFCTheorems.MessageQueue <> find_priority_idx def
+R11011:11027 JFCTheorems.MessageQueue <> find_priority_idx def
+R11091:11099 Stdlib.Lists.List <> nth_error def
+R11091:11099 Stdlib.Lists.List <> nth_error def
+R11208:11233 JFCTheorems.MessageQueue <> find_priority_idx_priority thm
+R11208:11233 JFCTheorems.MessageQueue <> find_priority_idx_priority thm
+R11301:11303 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R11301:11303 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R11411:11413 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11414:11428 JFCTheorems.MessageQueue <> prompt_priority proj
+R11411:11413 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11414:11428 JFCTheorems.MessageQueue <> prompt_priority proj
+R11492:11495 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11492:11495 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11517:11525 Stdlib.Arith.Compare_dec <> le_lt_dec def
+R11517:11525 Stdlib.Arith.Compare_dec <> le_lt_dec def
+R11608:11611 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R11590:11604 JFCTheorems.MessageQueue <> prompt_priority proj
+R11608:11611 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R11590:11604 JFCTheorems.MessageQueue <> prompt_priority proj
+R11630:11652 JFCTheorems.MessageQueue <> find_priority_idx_first thm
+R11726:11728 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R11630:11652 JFCTheorems.MessageQueue <> find_priority_idx_first thm
+R11726:11728 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R11824:11827 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R11824:11827 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R11850:11868 JFCTheorems.MessageQueue <> remove_at_preserves thm
+R11850:11868 JFCTheorems.MessageQueue <> remove_at_preserves thm
+prf 11979:11993 <> drain_partition
+binder 12006:12010 <> queue:89
+binder 12012:12023 <> min_priority:90
+binder 12025:12031 <> drained:91
+binder 12033:12041 <> remaining:92
+R12104:12111 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12081:12083 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12048:12061 JFCTheorems.MessageQueue <> drain_at_least def
+R12063:12067 JFCTheorems.MessageQueue <> queue:89 var
+R12069:12080 JFCTheorems.MessageQueue <> min_priority:90 var
+R12084:12084 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12092:12093 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12103:12103 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12085:12091 JFCTheorems.MessageQueue <> drained:91 var
+R12094:12102 JFCTheorems.MessageQueue <> remaining:92 var
+binder 12119:12119 <> p:93
+R12128:12128 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R12218:12229 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R12322:12322 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R12141:12145 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R12129:12130 Stdlib.Lists.List <> In def
+R12134:12140 JFCTheorems.MessageQueue <> drained:91 var
+R12132:12132 JFCTheorems.MessageQueue <> p:93 var
+R12156:12159 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R12146:12147 Stdlib.Lists.List <> In def
+R12151:12155 JFCTheorems.MessageQueue <> queue:89 var
+R12149:12149 JFCTheorems.MessageQueue <> p:93 var
+R12211:12213 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12160:12163 Corelib.Init.Datatypes <> negb def
+R12166:12176 JFCTheorems.MessageQueue <> priority_lt def
+R12179:12193 JFCTheorems.MessageQueue <> prompt_priority proj
+R12195:12195 JFCTheorems.MessageQueue <> p:93 var
+R12198:12209 JFCTheorems.MessageQueue <> min_priority:90 var
+R12214:12217 Corelib.Init.Datatypes <> true constr
+R12244:12248 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R12230:12231 Stdlib.Lists.List <> In def
+R12235:12243 JFCTheorems.MessageQueue <> remaining:92 var
+R12233:12233 JFCTheorems.MessageQueue <> p:93 var
+R12259:12262 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R12249:12250 Stdlib.Lists.List <> In def
+R12254:12258 JFCTheorems.MessageQueue <> queue:89 var
+R12252:12252 JFCTheorems.MessageQueue <> p:93 var
+R12314:12316 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12263:12266 Corelib.Init.Datatypes <> negb def
+R12269:12279 JFCTheorems.MessageQueue <> priority_lt def
+R12282:12296 JFCTheorems.MessageQueue <> prompt_priority proj
+R12298:12298 JFCTheorems.MessageQueue <> p:93 var
+R12301:12312 JFCTheorems.MessageQueue <> min_priority:90 var
+R12317:12321 Corelib.Init.Datatypes <> false constr
+R12397:12410 JFCTheorems.MessageQueue <> drain_at_least def
+R12433:12451 Stdlib.Lists.List <> partition_as_filter thm
+R12433:12451 Stdlib.Lists.List <> partition_as_filter thm
+R12433:12451 Stdlib.Lists.List <> partition_as_filter thm
+R12539:12547 Stdlib.Lists.List <> filter_In thm
+R12539:12547 Stdlib.Lists.List <> filter_In thm
+R12539:12547 Stdlib.Lists.List <> filter_In thm
+R12575:12583 Stdlib.Lists.List <> filter_In thm
+R12575:12583 Stdlib.Lists.List <> filter_In thm
+R12575:12583 Stdlib.Lists.List <> filter_In thm
+R12654:12666 Stdlib.Bool.Bool <> negb_true_iff thm
+R12654:12666 Stdlib.Bool.Bool <> negb_true_iff thm
+R12744:12756 Stdlib.Bool.Bool <> negb_true_iff thm
+R12744:12756 Stdlib.Bool.Bool <> negb_true_iff thm
+prf 12831:12854 <> drain_preserves_elements
+binder 12867:12871 <> queue:94
+binder 12873:12884 <> min_priority:95
+binder 12886:12892 <> drained:96
+binder 12894:12902 <> remaining:97
+R12965:12972 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12942:12944 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12909:12922 JFCTheorems.MessageQueue <> drain_at_least def
+R12924:12928 JFCTheorems.MessageQueue <> queue:94 var
+R12930:12941 JFCTheorems.MessageQueue <> min_priority:95 var
+R12945:12945 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12953:12954 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12964:12964 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12946:12952 JFCTheorems.MessageQueue <> drained:96 var
+R12955:12963 JFCTheorems.MessageQueue <> remaining:97 var
+R13006:13008 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12987:12989 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R12973:12978 Corelib.Init.Datatypes <> length def
+R12980:12986 JFCTheorems.MessageQueue <> drained:96 var
+R12990:12995 Corelib.Init.Datatypes <> length def
+R12997:13005 JFCTheorems.MessageQueue <> remaining:97 var
+R13009:13014 Corelib.Init.Datatypes <> length def
+R13016:13020 JFCTheorems.MessageQueue <> queue:94 var
+R13093:13106 JFCTheorems.MessageQueue <> drain_at_least def
+R13131:13139 Stdlib.Lists.List <> partition def
+binder 13150:13150 <> p:98
+R13155:13158 Corelib.Init.Datatypes <> negb def
+R13161:13171 JFCTheorems.MessageQueue <> priority_lt def
+R13174:13188 JFCTheorems.MessageQueue <> prompt_priority proj
+R13190:13190 JFCTheorems.MessageQueue <> p:98 var
+R13131:13139 Stdlib.Lists.List <> partition def
+binder 13150:13150 <> p:99
+R13155:13158 Corelib.Init.Datatypes <> negb def
+R13161:13171 JFCTheorems.MessageQueue <> priority_lt def
+R13174:13188 JFCTheorems.MessageQueue <> prompt_priority proj
+R13190:13190 JFCTheorems.MessageQueue <> p:99 var
+R13284:13299 Stdlib.Lists.List <> partition_length thm
+R13284:13299 Stdlib.Lists.List <> partition_length thm
+prf 13385:13405 <> drained_have_priority
+binder 13418:13422 <> queue:100
+binder 13424:13435 <> min_priority:101
+binder 13437:13443 <> drained:102
+binder 13445:13453 <> remaining:103
+binder 13455:13455 <> p:104
+R13518:13525 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13495:13497 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13462:13475 JFCTheorems.MessageQueue <> drain_at_least def
+R13477:13481 JFCTheorems.MessageQueue <> queue:100 var
+R13483:13494 JFCTheorems.MessageQueue <> min_priority:101 var
+R13498:13498 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R13506:13507 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R13517:13517 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R13499:13505 JFCTheorems.MessageQueue <> drained:102 var
+R13508:13516 JFCTheorems.MessageQueue <> remaining:103 var
+R13538:13545 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13526:13527 Stdlib.Lists.List <> In def
+R13531:13537 JFCTheorems.MessageQueue <> drained:102 var
+R13529:13529 JFCTheorems.MessageQueue <> p:104 var
+R13591:13593 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13546:13557 JFCTheorems.MessageQueue <> priority_leb def
+R13559:13570 JFCTheorems.MessageQueue <> min_priority:101 var
+R13573:13587 JFCTheorems.MessageQueue <> prompt_priority proj
+R13589:13589 JFCTheorems.MessageQueue <> p:104 var
+R13594:13597 Corelib.Init.Datatypes <> true constr
+R13676:13689 JFCTheorems.MessageQueue <> drain_at_least def
+R13712:13730 Stdlib.Lists.List <> partition_as_filter thm
+R13712:13730 Stdlib.Lists.List <> partition_as_filter thm
+R13712:13730 Stdlib.Lists.List <> partition_as_filter thm
+R13805:13813 Stdlib.Lists.List <> filter_In thm
+R13805:13813 Stdlib.Lists.List <> filter_In thm
+R13856:13868 Stdlib.Bool.Bool <> negb_true_iff thm
+R13856:13868 Stdlib.Bool.Bool <> negb_true_iff thm
+R13886:13906 JFCTheorems.MessageQueue <> priority_lt_false_leb thm
+R13886:13906 JFCTheorems.MessageQueue <> priority_lt_false_leb thm
+rec 13968:13982 <> DeferredToolUse
+proj 14009:14019 <> deferred_id
+proj 14030:14042 <> deferred_name
+proj 14053:14067 <> deferred_reason
+proj 14078:14095 <> deferred_queued_at
+R14023:14025 Corelib.Init.Datatypes <> nat ind
+R14046:14048 Corelib.Init.Datatypes <> nat ind
+R14071:14073 Corelib.Init.Datatypes <> nat ind
+R14099:14101 Corelib.Init.Datatypes <> nat ind
+def 14136:14148 <> DeferredQueue
+R14153:14156 Corelib.Init.Datatypes <> list ind
+R14158:14172 JFCTheorems.MessageQueue <> DeferredToolUse rec
+def 14250:14261 <> DEFERRED_CAP
+R14265:14267 Corelib.Init.Datatypes <> nat ind
+def 14341:14353 <> push_deferred
+R14364:14376 JFCTheorems.MessageQueue <> DeferredQueue def
+binder 14356:14360 <> queue:110
+R14384:14398 JFCTheorems.MessageQueue <> DeferredToolUse rec
+binder 14380:14380 <> d:111
+R14403:14415 JFCTheorems.MessageQueue <> DeferredQueue def
+R14444:14447 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R14439:14443 JFCTheorems.MessageQueue <> queue:110 var
+R14448:14448 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R14450:14450 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R14449:14449 JFCTheorems.MessageQueue <> d:111 var
+binder 14426:14434 <> new_queue:112
+R14460:14466 Stdlib.Arith.PeanoNat Nat leb def
+R14469:14474 Corelib.Init.Datatypes <> length def
+R14476:14484 JFCTheorems.MessageQueue <> new_queue:112 var
+R14487:14498 JFCTheorems.MessageQueue <> DEFERRED_CAP def
+R14530:14534 Corelib.Lists.ListDef <> skipn def
+R14538:14546 JFCTheorems.MessageQueue <> new_queue:112 var
+R14509:14517 JFCTheorems.MessageQueue <> new_queue:112 var
+prf 14626:14646 <> deferred_respects_cap
+binder 14659:14663 <> queue:113
+binder 14665:14665 <> d:114
+R14700:14707 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14684:14687 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14672:14677 Corelib.Init.Datatypes <> length def
+R14679:14683 JFCTheorems.MessageQueue <> queue:113 var
+R14688:14699 JFCTheorems.MessageQueue <> DEFERRED_CAP def
+R14738:14741 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14708:14713 Corelib.Init.Datatypes <> length def
+R14716:14728 JFCTheorems.MessageQueue <> push_deferred def
+R14730:14734 JFCTheorems.MessageQueue <> queue:113 var
+R14736:14736 JFCTheorems.MessageQueue <> d:114 var
+R14742:14753 JFCTheorems.MessageQueue <> DEFERRED_CAP def
+R14794:14806 JFCTheorems.MessageQueue <> push_deferred def
+R14821:14827 Stdlib.Arith.PeanoNat Nat leb def
+R14830:14835 Corelib.Init.Datatypes <> length def
+R14843:14846 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R14847:14847 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R14849:14849 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R14853:14864 JFCTheorems.MessageQueue <> DEFERRED_CAP def
+R14821:14827 Stdlib.Arith.PeanoNat Nat leb def
+R14830:14835 Corelib.Init.Datatypes <> length def
+R14843:14846 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R14847:14847 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R14849:14849 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R14853:14864 JFCTheorems.MessageQueue <> DEFERRED_CAP def
+R14887:14896 Stdlib.Arith.PeanoNat Nat leb_le thm
+R14887:14896 Stdlib.Arith.PeanoNat Nat leb_le thm
+R14931:14942 Stdlib.Lists.List <> skipn_length abbrev
+R14931:14942 Stdlib.Lists.List <> skipn_length abbrev
+R14931:14942 Stdlib.Lists.List <> skipn_length abbrev
+R14957:14966 Stdlib.Lists.List <> app_length abbrev
+R14957:14966 Stdlib.Lists.List <> app_length abbrev
+R14957:14966 Stdlib.Lists.List <> app_length abbrev
+rec 15032:15045 <> ToolUseSummary
+proj 15071:15082 <> summary_text
+proj 15093:15113 <> summary_preceding_ids
+proj 15129:15146 <> summary_created_at
+R15086:15088 Corelib.Init.Datatypes <> nat ind
+R15117:15120 Corelib.Init.Datatypes <> list ind
+R15122:15124 Corelib.Init.Datatypes <> nat ind
+R15150:15152 Corelib.Init.Datatypes <> nat ind
+def 15170:15181 <> SummaryQueue
+R15186:15189 Corelib.Init.Datatypes <> list ind
+R15191:15204 JFCTheorems.MessageQueue <> ToolUseSummary rec
+def 15219:15229 <> SUMMARY_CAP
+R15233:15235 Corelib.Init.Datatypes <> nat ind
+prf 15291:15305 <> summary_bounded
+R15327:15338 JFCTheorems.MessageQueue <> SummaryQueue def
+binder 15319:15323 <> queue:119
+R15346:15359 JFCTheorems.MessageQueue <> ToolUseSummary rec
+binder 15342:15342 <> s:120
+R15393:15400 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15379:15381 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R15367:15372 Corelib.Init.Datatypes <> length def
+R15374:15378 JFCTheorems.MessageQueue <> queue:119 var
+R15382:15392 JFCTheorems.MessageQueue <> SUMMARY_CAP def
+R15422:15425 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15401:15406 Corelib.Init.Datatypes <> length def
+R15414:15417 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R15409:15413 JFCTheorems.MessageQueue <> queue:119 var
+R15418:15418 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15420:15420 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15419:15419 JFCTheorems.MessageQueue <> s:120 var
+R15426:15436 JFCTheorems.MessageQueue <> SUMMARY_CAP def
+R15478:15487 Stdlib.Lists.List <> length_app thm
+R15478:15487 Stdlib.Lists.List <> length_app thm
+R15478:15487 Stdlib.Lists.List <> length_app thm
+def 15641:15655 <> should_preserve
+R15662:15673 JFCTheorems.MessageQueue <> QueuedPrompt rec
+binder 15658:15658 <> p:121
+R15697:15700 Corelib.Init.Datatypes <> bool ind
+binder 15677:15693 <> compaction_active:122
+R15705:15708 Corelib.Init.Datatypes <> bool ind
+R15740:15754 JFCTheorems.MessageQueue <> prompt_priority proj
+R15756:15756 JFCTheorems.MessageQueue <> p:121 var
+R15721:15737 JFCTheorems.MessageQueue <> compaction_active:122 var
+R15767:15770 Corelib.Init.Datatypes <> true constr
+R15773:15775 JFCTheorems.MessageQueue <> Now constr
+R15780:15783 Corelib.Init.Datatypes <> true constr
+R15832:15835 Corelib.Init.Datatypes <> true constr
+R15838:15841 JFCTheorems.MessageQueue <> Next constr
+R15846:15849 Corelib.Init.Datatypes <> true constr
+R15891:15894 Corelib.Init.Datatypes <> true constr
+R15897:15901 JFCTheorems.MessageQueue <> Later constr
+R15906:15910 Corelib.Init.Datatypes <> false constr
+R15938:15942 Corelib.Init.Datatypes <> false constr
+R15950:15953 Corelib.Init.Datatypes <> true constr
+prf 16073:16095 <> high_priority_preserved
+binder 16108:16108 <> p:124
+R16138:16145 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R16132:16134 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16115:16129 JFCTheorems.MessageQueue <> prompt_priority proj
+R16131:16131 JFCTheorems.MessageQueue <> p:124 var
+R16135:16137 JFCTheorems.MessageQueue <> Now constr
+R16168:16170 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16146:16160 JFCTheorems.MessageQueue <> should_preserve def
+R16162:16162 JFCTheorems.MessageQueue <> p:124 var
+R16164:16167 Corelib.Init.Datatypes <> true constr
+R16171:16174 Corelib.Init.Datatypes <> true constr
+R16211:16225 JFCTheorems.MessageQueue <> should_preserve def

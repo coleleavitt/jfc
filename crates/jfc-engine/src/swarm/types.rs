@@ -7,8 +7,6 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
-use crate::app::PermissionMode;
-
 // ─── Team File ───────────────────────────────────────────────────────────────
 
 /// The team configuration file stored at `~/.claude/teams/{name}/config.json`.
@@ -191,56 +189,6 @@ pub struct PermissionResolution {
 pub enum PermissionDecision {
     Approved,
     Rejected,
-}
-
-// ─── In-Process Teammate Task State ──────────────────────────────────────────
-
-/// Status of an in-process teammate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TeammateStatus {
-    Running,
-    Idle,
-    Completed,
-    Failed,
-    Killed,
-}
-
-/// Progress tracking for a running teammate.
-#[derive(Debug, Clone, Default)]
-pub struct TeammateProgress {
-    pub token_count: u64,
-    pub tool_use_count: u64,
-    pub recent_activities: Vec<TeammateActivity>,
-}
-
-/// A single tool activity entry for the progress display.
-#[derive(Debug, Clone)]
-pub struct TeammateActivity {
-    pub tool_name: String,
-    pub input_summary: String,
-}
-
-/// Full state for an in-process teammate task. This is the Rust equivalent
-/// of v126's `InProcessTeammateTaskState`.
-#[derive(Debug)]
-pub struct InProcessTeammateState {
-    pub identity: TeammateIdentity,
-    pub task_id: String,
-    pub status: TeammateStatus,
-    pub prompt: String,
-    pub description: String,
-    pub model: Option<String>,
-    pub progress: TeammateProgress,
-    pub is_idle: bool,
-    pub shutdown_requested: bool,
-    pub permission_mode: PermissionMode,
-    pub started_at: Instant,
-    pub ended_at: Option<Instant>,
-    pub error: Option<String>,
-    /// Pending messages from the user/leader injected while the teammate is running.
-    pub pending_user_messages: Vec<String>,
-    /// Abort handle to kill this teammate.
-    pub abort_tx: watch::Sender<bool>,
 }
 
 // ─── Team Context (in-memory state for the leader) ───────────────────────────

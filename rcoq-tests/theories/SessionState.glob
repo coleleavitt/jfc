@@ -1,0 +1,399 @@
+DIGEST e7897d3720756bb6a61bf6b83aae6dd9
+FJFC.SessionState
+R357:370 Stdlib.Lists.List <> <> lib
+R388:400 Stdlib.Bool.Bool <> <> lib
+R418:432 Stdlib.Arith.Arith <> <> lib
+R450:466 Stdlib.micromega.Lia <> <> lib
+R476:488 Stdlib.Lists.List ListNotations <> mod
+R507:525 JFC.ExecutionStatus <> <> lib
+ind 617:628 <> SessionState
+constr 644:655 <> Initializing
+constr 661:666 <> Active
+constr 672:680 <> Suspended
+constr 686:693 <> Resuming
+constr 699:704 <> Closed
+constr 710:715 <> Failed
+scheme 617:628 <> SessionState_rect
+scheme 617:628 <> SessionState_ind
+scheme 617:628 <> SessionState_rec
+scheme 617:628 <> SessionState_sind
+def 758:776 <> is_session_terminal
+R783:794 JFC.SessionState <> SessionState ind
+binder 779:779 <> s:3
+R799:802 Corelib.Init.Datatypes <> bool ind
+R815:815 JFC.SessionState <> s:3 var
+R826:831 JFC.SessionState <> Closed constr
+R835:840 JFC.SessionState <> Failed constr
+R845:848 Corelib.Init.Datatypes <> true constr
+R845:848 Corelib.Init.Datatypes <> true constr
+R859:863 Corelib.Init.Datatypes <> false constr
+def 884:900 <> is_session_active
+R907:918 JFC.SessionState <> SessionState ind
+binder 903:903 <> s:5
+R923:926 Corelib.Init.Datatypes <> bool ind
+R939:939 JFC.SessionState <> s:5 var
+R950:955 JFC.SessionState <> Active constr
+R960:963 Corelib.Init.Datatypes <> true constr
+R974:978 Corelib.Init.Datatypes <> false constr
+def 999:1014 <> can_accept_input
+R1021:1032 JFC.SessionState <> SessionState ind
+binder 1017:1017 <> s:7
+R1037:1040 Corelib.Init.Datatypes <> bool ind
+R1053:1053 JFC.SessionState <> s:7 var
+R1064:1069 JFC.SessionState <> Active constr
+R1074:1077 Corelib.Init.Datatypes <> true constr
+R1088:1092 Corelib.Init.Datatypes <> false constr
+def 1142:1159 <> session_transition
+R1166:1177 JFC.SessionState <> SessionState ind
+binder 1162:1162 <> s:9
+R1190:1192 Corelib.Init.Datatypes <> nat ind
+binder 1181:1186 <> action:10
+R1197:1202 Corelib.Init.Datatypes <> option ind
+R1204:1215 JFC.SessionState <> SessionState ind
+R1231:1236 JFC.SessionState <> action:10 var
+R1228:1228 JFC.SessionState <> s:9 var
+R1280:1291 JFC.SessionState <> Initializing constr
+R1319:1322 Corelib.Init.Datatypes <> Some constr
+R1324:1329 JFC.SessionState <> Active constr
+R1335:1346 JFC.SessionState <> Initializing constr
+R1372:1375 Corelib.Init.Datatypes <> Some constr
+R1377:1382 JFC.SessionState <> Failed constr
+R1418:1423 JFC.SessionState <> Active constr
+R1445:1448 Corelib.Init.Datatypes <> Some constr
+R1450:1458 JFC.SessionState <> Suspended constr
+R1464:1469 JFC.SessionState <> Active constr
+R1489:1492 Corelib.Init.Datatypes <> Some constr
+R1494:1499 JFC.SessionState <> Closed constr
+R1505:1510 JFC.SessionState <> Active constr
+R1530:1533 Corelib.Init.Datatypes <> Some constr
+R1535:1540 JFC.SessionState <> Failed constr
+R1579:1587 JFC.SessionState <> Suspended constr
+R1608:1611 Corelib.Init.Datatypes <> Some constr
+R1613:1620 JFC.SessionState <> Resuming constr
+R1626:1634 JFC.SessionState <> Suspended constr
+R1654:1657 Corelib.Init.Datatypes <> Some constr
+R1659:1664 JFC.SessionState <> Closed constr
+R1702:1709 JFC.SessionState <> Resuming constr
+R1739:1742 Corelib.Init.Datatypes <> Some constr
+R1744:1749 JFC.SessionState <> Active constr
+R1755:1762 JFC.SessionState <> Resuming constr
+R1790:1793 Corelib.Init.Datatypes <> Some constr
+R1795:1800 JFC.SessionState <> Failed constr
+R1833:1838 JFC.SessionState <> Closed constr
+R1846:1849 Corelib.Init.Datatypes <> None constr
+R1855:1860 JFC.SessionState <> Failed constr
+R1868:1871 Corelib.Init.Datatypes <> None constr
+R1888:1891 Corelib.Init.Datatypes <> None constr
+rec 1935:1946 <> SessionEvent
+proj 1977:1991 <> event_timestamp
+proj 2002:2013 <> event_action
+proj 2024:2039 <> event_from_state
+proj 2059:2072 <> event_to_state
+R1995:1997 Corelib.Init.Datatypes <> nat ind
+R2017:2019 Corelib.Init.Datatypes <> nat ind
+R2043:2054 JFC.SessionState <> SessionState ind
+R2076:2087 JFC.SessionState <> SessionState ind
+def 2105:2118 <> SessionHistory
+R2123:2126 Corelib.Init.Datatypes <> list ind
+R2128:2139 JFC.SessionState <> SessionEvent rec
+def 2199:2211 <> valid_history
+R2218:2231 JFC.SessionState <> SessionHistory def
+binder 2214:2214 <> h:18
+R2245:2256 JFC.SessionState <> SessionState ind
+binder 2235:2241 <> initial:19
+R2277:2277 JFC.SessionState <> h:18 var
+R2288:2289 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2294:2297 Corelib.Init.Logic <> True ind
+R2304:2307 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2350:2359 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R2340:2342 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2322:2337 JFC.SessionState <> event_from_state proj
+R2343:2349 JFC.SessionState <> initial:19 var
+R2442:2451 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R2416:2418 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2360:2377 JFC.SessionState <> session_transition def
+R2380:2395 JFC.SessionState <> event_from_state proj
+R2401:2412 JFC.SessionState <> event_action proj
+R2419:2422 Corelib.Init.Datatypes <> Some constr
+R2425:2438 JFC.SessionState <> event_to_state proj
+R2452:2464 JFC.SessionState <> valid_history:20 def
+R2472:2485 JFC.SessionState <> event_to_state proj
+prf 2580:2605 <> session_terminal_absorbing
+binder 2618:2618 <> s:22
+binder 2620:2625 <> action:23
+R2660:2667 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2653:2655 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2632:2650 JFC.SessionState <> is_session_terminal def
+R2652:2652 JFC.SessionState <> s:22 var
+R2656:2659 Corelib.Init.Datatypes <> true constr
+R2695:2697 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2668:2685 JFC.SessionState <> session_transition def
+R2687:2687 JFC.SessionState <> s:22 var
+R2689:2694 JFC.SessionState <> action:23 var
+R2698:2701 Corelib.Init.Datatypes <> None constr
+prf 2935:2959 <> only_active_accepts_input
+binder 2972:2972 <> s:24
+R3004:3008 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R2997:2999 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2979:2994 JFC.SessionState <> can_accept_input def
+R2996:2996 JFC.SessionState <> s:24 var
+R3000:3003 Corelib.Init.Datatypes <> true constr
+R3010:3012 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3009:3009 JFC.SessionState <> s:24 var
+R3013:3018 JFC.SessionState <> Active constr
+prf 3214:3232 <> init_binary_outcome
+binder 3245:3250 <> action:25
+binder 3252:3253 <> s':26
+R3308:3315 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3298:3300 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3260:3277 JFC.SessionState <> session_transition def
+R3279:3290 JFC.SessionState <> Initializing constr
+R3292:3297 JFC.SessionState <> action:25 var
+R3301:3304 Corelib.Init.Datatypes <> Some constr
+R3306:3307 JFC.SessionState <> s':26 var
+R3327:3330 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R3318:3320 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3316:3317 JFC.SessionState <> s':26 var
+R3321:3326 JFC.SessionState <> Active constr
+R3333:3335 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3331:3332 JFC.SessionState <> s':26 var
+R3336:3341 JFC.SessionState <> Failed constr
+rec 3510:3526 <> PersistentSession
+proj 3562:3571 <> session_id
+proj 3582:3594 <> persist_state
+proj 3614:3626 <> message_count
+proj 3637:3651 <> tool_call_count
+proj 3662:3669 <> checksum
+R3575:3577 Corelib.Init.Datatypes <> nat ind
+R3598:3609 JFC.SessionState <> SessionState ind
+R3630:3632 Corelib.Init.Datatypes <> nat ind
+R3655:3657 Corelib.Init.Datatypes <> nat ind
+R3673:3675 Corelib.Init.Datatypes <> nat ind
+def 3748:3763 <> compute_checksum
+R3771:3787 JFC.SessionState <> PersistentSession rec
+binder 3766:3767 <> ps:33
+R3792:3794 Corelib.Init.Datatypes <> nat ind
+R3833:3835 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3814:3816 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3801:3810 JFC.SessionState <> session_id proj
+R3812:3813 JFC.SessionState <> ps:33 var
+R3817:3829 JFC.SessionState <> message_count proj
+R3831:3832 JFC.SessionState <> ps:33 var
+R3836:3850 JFC.SessionState <> tool_call_count proj
+R3852:3853 JFC.SessionState <> ps:33 var
+def 3868:3881 <> checksum_valid
+R3889:3905 JFC.SessionState <> PersistentSession rec
+binder 3884:3885 <> ps:34
+R3931:3933 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3920:3927 JFC.SessionState <> checksum proj
+R3929:3930 JFC.SessionState <> ps:34 var
+R3934:3949 JFC.SessionState <> compute_checksum def
+R3951:3952 JFC.SessionState <> ps:34 var
+def 4055:4076 <> resume_preserves_state
+R4094:4110 JFC.SessionState <> PersistentSession rec
+binder 4079:4084 <> before:35
+binder 4086:4090 <> after:36
+R4161:4166 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R4142:4144 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4125:4134 JFC.SessionState <> session_id proj
+R4136:4141 JFC.SessionState <> before:35 var
+R4145:4154 JFC.SessionState <> session_id proj
+R4156:4160 JFC.SessionState <> after:36 var
+R4209:4280 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R4345:4345 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R4187:4189 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4167:4179 JFC.SessionState <> message_count proj
+R4181:4186 JFC.SessionState <> before:35 var
+R4190:4202 JFC.SessionState <> message_count proj
+R4204:4208 JFC.SessionState <> after:36 var
+R4313:4316 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4301:4303 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4281:4293 JFC.SessionState <> persist_state proj
+R4295:4300 JFC.SessionState <> before:35 var
+R4304:4312 JFC.SessionState <> Suspended constr
+R4336:4338 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4317:4329 JFC.SessionState <> persist_state proj
+R4331:4335 JFC.SessionState <> after:36 var
+R4339:4344 JFC.SessionState <> Active constr
+prf 4409:4436 <> resume_goes_through_resuming
+binder 4449:4449 <> s:37
+binder 4451:4452 <> s':38
+binder 4454:4459 <> action:39
+R4479:4486 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4467:4469 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4466:4466 JFC.SessionState <> s:37 var
+R4470:4478 JFC.SessionState <> Suspended constr
+R4524:4531 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4514:4516 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4487:4504 JFC.SessionState <> session_transition def
+R4506:4506 JFC.SessionState <> s:37 var
+R4508:4513 JFC.SessionState <> action:39 var
+R4517:4520 Corelib.Init.Datatypes <> Some constr
+R4522:4523 JFC.SessionState <> s':38 var
+R4545:4548 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R4534:4536 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4532:4533 JFC.SessionState <> s':38 var
+R4537:4544 JFC.SessionState <> Resuming constr
+R4551:4553 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4549:4550 JFC.SessionState <> s':38 var
+R4554:4559 JFC.SessionState <> Closed constr
+def 4823:4836 <> replay_history
+R4843:4856 JFC.SessionState <> SessionHistory def
+binder 4839:4839 <> h:40
+R4864:4875 JFC.SessionState <> SessionState ind
+binder 4860:4860 <> s:41
+R4880:4885 Corelib.Init.Datatypes <> option ind
+R4887:4898 JFC.SessionState <> SessionState ind
+R4911:4911 JFC.SessionState <> h:40 var
+R4922:4923 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R4928:4931 Corelib.Init.Datatypes <> Some constr
+R4933:4933 JFC.SessionState <> s:41 var
+R4940:4943 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4964:4981 JFC.SessionState <> session_transition def
+R4983:4983 JFC.SessionState <> s:41 var
+R4986:4997 JFC.SessionState <> event_action proj
+R5015:5018 Corelib.Init.Datatypes <> Some constr
+R5026:5039 JFC.SessionState <> replay_history:42 def
+R5057:5060 Corelib.Init.Datatypes <> None constr
+R5065:5068 Corelib.Init.Datatypes <> None constr
+prf 5147:5167 <> valid_history_replays
+binder 5180:5180 <> h:44
+binder 5182:5188 <> initial:45
+R5218:5225 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5195:5207 JFC.SessionState <> valid_history def
+R5209:5209 JFC.SessionState <> h:44 var
+R5211:5217 JFC.SessionState <> initial:45 var
+R5250:5253 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R5226:5239 JFC.SessionState <> replay_history def
+R5241:5241 JFC.SessionState <> h:44 var
+R5243:5249 JFC.SessionState <> initial:45 var
+R5254:5257 Corelib.Init.Datatypes <> None constr
+rec 5534:5541 <> Message'
+proj 5568:5576 <> msg_index
+proj 5587:5599 <> msg_timestamp
+R5580:5582 Corelib.Init.Datatypes <> nat ind
+R5603:5605 Corelib.Init.Datatypes <> nat ind
+def 5623:5638 <> messages_ordered
+R5648:5651 Corelib.Init.Datatypes <> list ind
+R5653:5660 JFC.SessionState <> Message' rec
+binder 5641:5644 <> msgs:49
+binder 5682:5682 <> i:50
+binder 5684:5684 <> j:51
+binder 5686:5688 <> m_i:52
+binder 5690:5692 <> m_j:53
+R5726:5733 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5715:5717 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5699:5707 Stdlib.Lists.List <> nth_error def
+R5714:5714 JFC.SessionState <> i:50 var
+R5709:5712 JFC.SessionState <> msgs:49 var
+R5718:5721 Corelib.Init.Datatypes <> Some constr
+R5723:5725 JFC.SessionState <> m_i:52 var
+R5761:5768 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5750:5752 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5734:5742 Stdlib.Lists.List <> nth_error def
+R5749:5749 JFC.SessionState <> j:51 var
+R5744:5747 JFC.SessionState <> msgs:49 var
+R5753:5756 Corelib.Init.Datatypes <> Some constr
+R5758:5760 JFC.SessionState <> m_j:53 var
+R5774:5781 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5770:5772 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R5769:5769 JFC.SessionState <> i:50 var
+R5773:5773 JFC.SessionState <> j:51 var
+R5811:5818 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R5795:5797 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R5782:5790 JFC.SessionState <> msg_index proj
+R5792:5794 JFC.SessionState <> m_i:52 var
+R5798:5806 JFC.SessionState <> msg_index proj
+R5808:5810 JFC.SessionState <> m_j:53 var
+R5836:5839 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5819:5831 JFC.SessionState <> msg_timestamp proj
+R5833:5835 JFC.SessionState <> m_i:52 var
+R5840:5852 JFC.SessionState <> msg_timestamp proj
+R5854:5856 JFC.SessionState <> m_j:53 var
+prf 5910:5931 <> append_preserves_order
+binder 5944:5947 <> msgs:54
+binder 5949:5949 <> m:55
+R5977:5984 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5956:5971 JFC.SessionState <> messages_ordered def
+R5973:5976 JFC.SessionState <> msgs:54 var
+R5985:5985 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6037:6045 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 5993:5994 <> m':56
+R6007:6010 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5997:5998 Stdlib.Lists.List <> In def
+R6003:6006 JFC.SessionState <> msgs:54 var
+R6000:6001 JFC.SessionState <> m':56 var
+R6023:6025 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R6011:6019 JFC.SessionState <> msg_index proj
+R6021:6022 JFC.SessionState <> m':56 var
+R6026:6034 JFC.SessionState <> msg_index proj
+R6036:6036 JFC.SessionState <> m:55 var
+R6046:6046 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6107:6115 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 6054:6055 <> m':57
+R6068:6071 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6058:6059 Stdlib.Lists.List <> In def
+R6064:6067 JFC.SessionState <> msgs:54 var
+R6061:6062 JFC.SessionState <> m':57 var
+R6088:6091 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6072:6084 JFC.SessionState <> msg_timestamp proj
+R6086:6087 JFC.SessionState <> m':57 var
+R6092:6104 JFC.SessionState <> msg_timestamp proj
+R6106:6106 JFC.SessionState <> m:55 var
+R6116:6131 JFC.SessionState <> messages_ordered def
+R6138:6141 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R6134:6137 JFC.SessionState <> msgs:54 var
+R6142:6142 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6144:6144 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6143:6143 JFC.SessionState <> m:55 var
+R6195:6210 JFC.SessionState <> messages_ordered def
+R6222:6237 JFC.SessionState <> messages_ordered def
+R6292:6306 Stdlib.Arith.PeanoNat Nat lt_ge_cases thm
+R6311:6316 Corelib.Init.Datatypes <> length def
+R6292:6306 Stdlib.Arith.PeanoNat Nat lt_ge_cases thm
+R6311:6316 Corelib.Init.Datatypes <> length def
+R6385:6398 Stdlib.Lists.List <> nth_error_app1 thm
+R6385:6398 Stdlib.Lists.List <> nth_error_app1 thm
+R6385:6398 Stdlib.Lists.List <> nth_error_app1 thm
+R6426:6439 Stdlib.Lists.List <> nth_error_app1 thm
+R6426:6439 Stdlib.Lists.List <> nth_error_app1 thm
+R6426:6439 Stdlib.Lists.List <> nth_error_app1 thm
+R6531:6533 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6534:6539 Corelib.Init.Datatypes <> length def
+R6531:6533 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6534:6539 Corelib.Init.Datatypes <> length def
+R6571:6573 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R6574:6579 Corelib.Init.Datatypes <> length def
+R6586:6589 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R6590:6590 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6592:6592 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6571:6573 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R6574:6579 Corelib.Init.Datatypes <> length def
+R6586:6589 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R6590:6590 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6592:6592 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6622:6635 Stdlib.Lists.List <> nth_error_Some thm
+R6622:6635 Stdlib.Lists.List <> nth_error_Some thm
+R6680:6689 Stdlib.Lists.List <> app_length abbrev
+R6680:6689 Stdlib.Lists.List <> app_length abbrev
+R6680:6689 Stdlib.Lists.List <> app_length abbrev
+R6759:6772 Stdlib.Lists.List <> nth_error_app2 thm
+R6759:6772 Stdlib.Lists.List <> nth_error_app2 thm
+R6759:6772 Stdlib.Lists.List <> nth_error_app2 thm
+R6812:6814 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6801:6806 Corelib.Init.Datatypes <> length def
+R6815:6820 Corelib.Init.Datatypes <> length def
+R6812:6814 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6801:6806 Corelib.Init.Datatypes <> length def
+R6815:6820 Corelib.Init.Datatypes <> length def
+R6949:6951 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R6952:6957 Corelib.Init.Datatypes <> length def
+R6949:6951 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R6952:6957 Corelib.Init.Datatypes <> length def
+R6993:7006 Stdlib.Lists.List <> nth_error_app1 thm
+R6993:7006 Stdlib.Lists.List <> nth_error_app1 thm
+R6993:7006 Stdlib.Lists.List <> nth_error_app1 thm
+R7064:7075 Stdlib.Lists.List <> nth_error_In thm
+R7064:7075 Stdlib.Lists.List <> nth_error_In thm
+R7118:7129 Stdlib.Lists.List <> nth_error_In thm
+R7118:7129 Stdlib.Lists.List <> nth_error_In thm

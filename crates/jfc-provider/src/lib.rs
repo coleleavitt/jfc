@@ -578,14 +578,11 @@ pub enum StreamEvent {
     ThinkingDelta {
         index: usize,
         delta: String,
-        /// Server-provided thinking-token estimate: the *cumulative running
-        /// total* for the current thinking block (the API's `estimated_tokens`,
-        /// NOT the per-event `estimated_tokens_delta`). Consumers must take the
-        /// delta against the previous value rather than summing, or they'll
-        /// over-count. Approximate progress for spinners, not billed tokens.
-        /// (Anthropic's official client accumulates these to report live thinking
-        /// tok/s).
         estimated_tokens: Option<u32>,
+    },
+    ThinkingTokens {
+        index: usize,
+        delta: u32,
     },
     ThinkingDone {
         index: usize,
@@ -703,9 +700,9 @@ impl StreamEvent {
             | StreamEvent::RedactedThinkingDone { .. } => FrameCategory::Reasoning,
             StreamEvent::ToolDelta { .. } | StreamEvent::ToolDone { .. } => FrameCategory::ToolCall,
             StreamEvent::ServerToolResult { .. } => FrameCategory::ToolResult,
-            StreamEvent::Usage { .. } | StreamEvent::ResponseMetadata { .. } => {
-                FrameCategory::Usage
-            }
+            StreamEvent::Usage { .. }
+            | StreamEvent::ResponseMetadata { .. }
+            | StreamEvent::ThinkingTokens { .. } => FrameCategory::Usage,
             StreamEvent::FallbackTriggered(_) => FrameCategory::ModelResolution,
             StreamEvent::Done { .. } => FrameCategory::Finish,
             StreamEvent::Keepalive | StreamEvent::Error { .. } => FrameCategory::Control,

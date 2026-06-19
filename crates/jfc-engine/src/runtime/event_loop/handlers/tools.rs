@@ -601,6 +601,7 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
             let model = state.model.clone();
             let mut tool_ctx = state.tool_ctx.clone();
             let window = state.max_context_tokens;
+            let state_max_output_tokens = state.max_output_tokens;
             let tx_compact = tx.clone();
             let progress_tx = tx_compact.clone();
             let session_id_for_compact = state
@@ -663,6 +664,7 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
                         &options,
                         &mut tool_ctx,
                         window,
+                        state_max_output_tokens,
                         Some(on_progress),
                     ) => r,
                 };
@@ -791,11 +793,14 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
         state.last_stream_event_at = None;
         state.streaming_last_token_at = None;
         state.token_rate_samples.clear();
+        state.token_rate_sample_thinking = None;
         state.thinking_started_at = None;
         state.thinking_ended_at = None;
         state.streaming_text.clear();
         state.streaming_reasoning.clear();
         state.streaming_response_bytes = 0;
+        state.streaming_response_baseline = 0;
+        state.streaming_thinking_tokens = 0;
         state.streaming_assistant_idx = None;
         state.clear_active_stream_scope();
         state.current_stream_request = None;

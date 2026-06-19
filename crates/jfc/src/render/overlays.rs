@@ -4,6 +4,16 @@ use crate::input::slash_commands_table;
 pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     use jfc_engine::toast::ToastKind;
     let t = app.theme;
+    let visible_toasts = app
+        .engine
+        .toasts
+        .iter()
+        .filter(|toast| matches!(toast.kind, ToastKind::Error))
+        .collect::<Vec<_>>();
+    if visible_toasts.is_empty() {
+        *app.toasts_rect.borrow_mut() = None;
+        return;
+    }
     let frame_area = f.area();
     if frame_area.width < 30 || frame_area.height < 4 {
         return;
@@ -13,7 +23,7 @@ pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     // reads as a contained unit rather than text bleeding into the
     // transcript below it.
     let w = MAX_W.min(frame_area.width.saturating_sub(2));
-    let count = app.engine.toasts.len() as u16;
+    let count = visible_toasts.len() as u16;
     let body_h = count.min(5); // MAX_TOASTS, but bound to layout
     if body_h == 0 {
         *app.toasts_rect.borrow_mut() = None;
@@ -27,9 +37,7 @@ pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     let slide_offset: u16 = if crate::spinner::reduced_motion() {
         0
     } else {
-        let freshest_age = app
-            .engine
-            .toasts
+        let freshest_age = visible_toasts
             .iter()
             .map(|tt| tt.created_at.elapsed())
             .min()
@@ -69,28 +77,7 @@ pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     }
     *app.toasts_rect.borrow_mut() = Some(area);
     f.render_widget(Clear, area);
-    // Border color tracks the highest-severity toast in the strip so
-    // an Error toast pulls a red border even when surrounded by Info
-    // entries. The user's eye finds the strip faster than reading
-    // each row.
-    let border_color = app
-        .engine
-        .toasts
-        .iter()
-        .map(|tt| match tt.kind {
-            ToastKind::Error => 3,
-            ToastKind::Warning => 2,
-            ToastKind::Success => 1,
-            ToastKind::Info => 0,
-        })
-        .max()
-        .map(|rank| match rank {
-            3 => t.error,
-            2 => t.warning,
-            1 => t.success,
-            _ => t.border,
-        })
-        .unwrap_or(t.border);
+    let border_color = t.error;
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
@@ -99,20 +86,8 @@ pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     let mut lines: Vec<Line> = Vec::new();
-    for toast in app
-        .engine
-        .toasts
-        .iter()
-        .rev()
-        .take(inner.height as usize)
-        .collect::<Vec<_>>()
-    {
-        let (icon, color) = match toast.kind {
-            ToastKind::Info => ("ℹ", t.text_secondary),
-            ToastKind::Success => ("✓", t.success),
-            ToastKind::Warning => ("⚠", t.warning),
-            ToastKind::Error => ("✘", t.error),
-        };
+    for toast in visible_toasts.into_iter().rev().take(inner.height as usize) {
+        let (icon, color) = ("✘", t.error);
         let max_text = (inner.width as usize).saturating_sub(4);
         let text: String = if toast.text.chars().count() > max_text {
             let mut out: String = toast

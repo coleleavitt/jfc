@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JFC Agent Flow — Message & Stream Architecture</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { 
+  font-family: system-ui, -apple-system, sans-serif; 
+  background: #0d1117; 
+  color: #c9d1d9;
+  min-height: 100vh;
+  padding: 24px;
+}
+h1 { 
+  text-align: center; 
+  padding: 24px; 
+  font-weight: 500;
+  color: #58a6ff;
+  font-size: 1.5rem;
+}
+h2 {
+  color: #8b949e;
+  font-size: 0.9rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 32px 0 16px;
+  padding-left: 8px;
+  border-left: 3px solid #30363d;
+}
+.diagram-container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+svg { 
+  display: block; 
+  margin: 0 auto 32px;
+  max-width: 100%;
+}
+.node rect, .node ellipse { 
+  stroke-width: 2; 
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+.node text { 
+  font-size: 11px; 
+  font-weight: 500;
+  fill: #fff;
+}
+.edge { 
+  fill: none; 
+  stroke-width: 1.5;
+}
+.edge-label {
+  font-size: 9px;
+  fill: #8b949e;
+}
+/* Colors */
+.user rect { fill: #238636; stroke: #2ea043; }
+.tui rect { fill: #1f6feb; stroke: #388bfd; }
+.engine rect { fill: #8957e5; stroke: #a371f7; }
+.provider rect { fill: #da3633; stroke: #f85149; }
+.swarm rect { fill: #f0883e; stroke: #d29922; }
+.storage ellipse { fill: #6e7681; stroke: #8b949e; }
+.api rect { fill: #bf4b8a; stroke: #db61a2; rx: 12; }
+
+/* Legend */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.legend-box {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+.legend-line {
+  width: 24px;
+  height: 2px;
+}
+/* Arrow markers */
+marker path { fill: #30363d; }
+
+.section {
+  background: #161b22;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+.flow-desc {
+  font-size: 13px;
+  color: #8b949e;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+.flow-desc code {
+  background: #21262d;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #c9d1d9;
+}
+</style>
+</head>
+<body>
+<h1>JFC Agent Invocation Flow</h1>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-box" style="background:#238636"></div>User</div>
+  <div class="legend-item"><div class="legend-box" style="background:#1f6feb"></div>TUI (jfc crate)</div>
+  <div class="legend-item"><div class="legend-box" style="background:#8957e5"></div>Engine</div>
+  <div class="legend-item"><div class="legend-box" style="background:#da3633"></div>Provider</div>
+  <div class="legend-item"><div class="legend-box" style="background:#f0883e"></div>Swarm/Teams</div>
+  <div class="legend-item"><div class="legend-box" style="background:#bf4b8a;border-radius:8px"></div>External API</div>
+  <div class="legend-item"><div class="legend-box" style="background:#6e7681;border-radius:50%"></div>Storage</div>
+</div>
+
+<div class="diagram-container">
+
+<h2>1. User Message → Stream Response</h2>
+<div class="section">
+<p class="flow-desc">
+When you type a message, it flows: <code>TUI input</code> → <code>EngineEvent::UserMessage</code> → 
+<code>stream::start_stream()</code> → <code>Provider::stream()</code> → SSE chunks → 
+<code>AgentTurn</code> accumulation → tool dispatch or text rendering.
+</p>
+<svg viewBox="0 0 1100 280" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#388bfd"/>
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a371f7"/>
+    </marker>
+  </defs>
+
+  <!-- User -->
+  <g class="node user" transform="translate(20,100)">
+    <rect width="80" height="40" rx="4"/>
+    <text x="40" y="24" text-anchor="middle">User</text>
+  </g>
+
+  <!-- TUI -->
+  <g class="node tui" transform="translate(140,100)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">TUI (main.rs)</text>
+  </g>
+
+  <!-- Engine Event Loop -->
+  <g class="node engine" transform="translate(280,100)">
+    <rect width="120" height="40" rx="4"/>
+    <text x="60" y="24" text-anchor="middle">Engine Loop</text>
+  </g>
+
+  <!-- Stream module -->
+  <g class="node engine" transform="translate(440,100)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">stream.rs</text>
+  </g>
+
+  <!-- Provider -->
+  <g class="node provider" transform="translate(580,100)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">Provider</text>
+  </g>
+
+  <!-- API -->
+  <g class="node api" transform="translate(720,100)">
+    <rect width="100" height="40"/>
+    <text x="50" y="24" text-anchor="middle">Claude API</text>
+  </g>
+
+  <!-- AgentTurn -->
+  <g class="node engine" transform="translate(580,200)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">AgentTurn</text>
+  </g>
+
+  <!-- Tool Dispatch -->
+  <g class="node engine" transform="translate(440,200)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">tool_dispatch</text>
+  </g>
+
+  <!-- Session -->
+  <g class="node storage" transform="translate(920,120)">
+    <ellipse cx="50" cy="20" rx="50" ry="20"/>
+    <text x="50" y="24" text-anchor="middle" fill="#fff">session.json</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="edge" stroke="#2ea043" d="M 100,120 L 138,120" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="110" y="112">input</text>
+
+  <path class="edge" stroke="#388bfd" d="M 240,120 L 278,120" marker-end="url(#arrow-blue)"/>
+  <text class="edge-label" x="245" y="112">UserMessage</text>
+
+  <path class="edge" stroke="#a371f7" d="M 400,120 L 438,120" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="405" y="112">start_stream</text>
+
+  <path class="edge" stroke="#a371f7" d="M 540,120 L 578,120" marker-end="url(#arrow-purple)"/>
+
+  <path class="edge" stroke="#f85149" d="M 680,120 L 718,120" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="690" y="112">stream()</text>
+
+  <path class="edge" stroke="#db61a2" d="M 770,150 Q 770,180 680,210" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="735" y="175">SSE chunks</text>
+
+  <path class="edge" stroke="#a371f7" d="M 580,220 L 542,220" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="550" y="212">tool_use</text>
+
+  <path class="edge" stroke="#a371f7" d="M 440,220 Q 340,220 340,150" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="350" y="200">result</text>
+
+  <path class="edge" stroke="#8b949e" d="M 820,120 L 868,120" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="835" y="112">persist</text>
+</svg>
+</div>
+
+<h2>2. Task Tool → Subagent Spawn</h2>
+<div class="section">
+<p class="flow-desc">
+When the model calls the <code>Task</code> tool with <code>run_in_background: true</code>, the dispatcher
+spawns a background agent: <code>tool_dispatch</code> → <code>background::spawn()</code> → 
+new tokio task with its own stream loop. Results come back via <code>BackgroundTask</code> completion events.
+</p>
+<svg viewBox="0 0 1100 320" xmlns="http://www.w3.org/2000/svg">
+  <!-- Tool dispatch -->
+  <g class="node engine" transform="translate(20,120)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">tool_dispatch</text>
+  </g>
+
+  <!-- handlers/task.rs -->
+  <g class="node engine" transform="translate(160,120)">
+    <rect width="120" height="40" rx="4"/>
+    <text x="60" y="24" text-anchor="middle">handlers/task.rs</text>
+  </g>
+
+  <!-- background.rs -->
+  <g class="node engine" transform="translate(320,120)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">background.rs</text>
+  </g>
+
+  <!-- tokio::spawn -->
+  <g class="node engine" transform="translate(460,120)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">tokio::spawn</text>
+  </g>
+
+  <!-- Subagent stream -->
+  <g class="node engine" transform="translate(600,120)">
+    <rect width="120" height="40" rx="4"/>
+    <text x="60" y="24" text-anchor="middle">subagent stream</text>
+  </g>
+
+  <!-- Provider -->
+  <g class="node provider" transform="translate(760,120)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">Provider</text>
+  </g>
+
+  <!-- BackgroundTask registry -->
+  <g class="node storage" transform="translate(320,220)">
+    <ellipse cx="70" cy="20" rx="70" ry="20"/>
+    <text x="70" y="24" text-anchor="middle" fill="#fff">BackgroundTask map</text>
+  </g>
+
+  <!-- Daemon state -->
+  <g class="node storage" transform="translate(520,220)">
+    <ellipse cx="60" cy="20" rx="60" ry="20"/>
+    <text x="60" y="24" text-anchor="middle" fill="#fff">daemon state</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="edge" stroke="#a371f7" d="M 120,140 L 158,140" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="125" y="132">Task tool</text>
+
+  <path class="edge" stroke="#a371f7" d="M 280,140 L 318,140" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="285" y="132">spawn()</text>
+
+  <path class="edge" stroke="#a371f7" d="M 420,140 L 458,140" marker-end="url(#arrow-purple)"/>
+
+  <path class="edge" stroke="#a371f7" d="M 560,140 L 598,140" marker-end="url(#arrow-purple)"/>
+
+  <path class="edge" stroke="#a371f7" d="M 720,140 L 758,140" marker-end="url(#arrow-purple)"/>
+
+  <path class="edge" stroke="#8b949e" d="M 370,160 L 370,198" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="380" y="180">register</text>
+
+  <path class="edge" stroke="#8b949e" d="M 510,160 Q 540,180 560,198" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="545" y="180">persist</text>
+
+  <path class="edge" stroke="#a371f7" d="M 660,170 Q 660,260 450,260 Q 240,260 200,170" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="420" y="275">completion event</text>
+</svg>
+</div>
+
+<h2>3. Team / Swarm Architecture</h2>
+<div class="section">
+<p class="flow-desc">
+Teams are file-based: <code>~/.claude/teams/{name}/config.json</code> holds the roster,
+<code>inboxes/</code> holds per-agent mailbox JSON files. The leader spawns teammates via
+<code>swarm::runner::start_teammate()</code>. Teammates poll their inbox, process messages,
+send results via <code>SendMessage</code> tool → <code>mailbox::write_to_mailbox()</code>.
+</p>
+<svg viewBox="0 0 1100 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Leader -->
+  <g class="node swarm" transform="translate(100,40)">
+    <rect width="120" height="50" rx="4"/>
+    <text x="60" y="20" text-anchor="middle">Team Leader</text>
+    <text x="60" y="36" text-anchor="middle" font-size="9">(main session)</text>
+  </g>
+
+  <!-- TeamContext -->
+  <g class="node engine" transform="translate(280,40)">
+    <rect width="100" height="50" rx="4"/>
+    <text x="50" y="20" text-anchor="middle">TeamContext</text>
+    <text x="50" y="36" text-anchor="middle" font-size="9">in-memory</text>
+  </g>
+
+  <!-- Team File -->
+  <g class="node storage" transform="translate(430,50)">
+    <ellipse cx="55" cy="20" rx="55" ry="20"/>
+    <text x="55" y="24" text-anchor="middle" fill="#fff">config.json</text>
+  </g>
+
+  <!-- Teammate 1 -->
+  <g class="node swarm" transform="translate(100,160)">
+    <rect width="120" height="50" rx="4"/>
+    <text x="60" y="20" text-anchor="middle">Teammate A</text>
+    <text x="60" y="36" text-anchor="middle" font-size="9">(researcher)</text>
+  </g>
+
+  <!-- Teammate 2 -->
+  <g class="node swarm" transform="translate(280,160)">
+    <rect width="120" height="50" rx="4"/>
+    <text x="60" y="20" text-anchor="middle">Teammate B</text>
+    <text x="60" y="36" text-anchor="middle" font-size="9">(verifier)</text>
+  </g>
+
+  <!-- runner.rs -->
+  <g class="node engine" transform="translate(460,160)">
+    <rect width="100" height="50" rx="4"/>
+    <text x="50" y="20" text-anchor="middle">runner.rs</text>
+    <text x="50" y="36" text-anchor="middle" font-size="9">start_teammate</text>
+  </g>
+
+  <!-- coordinator.rs -->
+  <g class="node engine" transform="translate(620,160)">
+    <rect width="120" height="50" rx="4"/>
+    <text x="60" y="20" text-anchor="middle">coordinator.rs</text>
+    <text x="60" y="36" text-anchor="middle" font-size="9">run_teammate_loop</text>
+  </g>
+
+  <!-- Mailbox A -->
+  <g class="node storage" transform="translate(100,280)">
+    <ellipse cx="60" cy="20" rx="60" ry="20"/>
+    <text x="60" y="24" text-anchor="middle" fill="#fff">inboxes/a.json</text>
+  </g>
+
+  <!-- Mailbox B -->
+  <g class="node storage" transform="translate(280,280)">
+    <ellipse cx="60" cy="20" rx="60" ry="20"/>
+    <text x="60" y="24" text-anchor="middle" fill="#fff">inboxes/b.json</text>
+  </g>
+
+  <!-- Leader mailbox -->
+  <g class="node storage" transform="translate(460,280)">
+    <ellipse cx="70" cy="20" rx="70" ry="20"/>
+    <text x="70" y="24" text-anchor="middle" fill="#fff">inboxes/team-lead</text>
+  </g>
+
+  <!-- Task Store -->
+  <g class="node storage" transform="translate(680,280)">
+    <ellipse cx="55" cy="20" rx="55" ry="20"/>
+    <text x="55" y="24" text-anchor="middle" fill="#fff">tasks.json</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="edge" stroke="#d29922" d="M 220,65 L 278,65" marker-end="url(#arrow)"/>
+  <path class="edge" stroke="#8b949e" d="M 380,65 L 373,65" marker-end="url(#arrow)"/>
+
+  <path class="edge" stroke="#d29922" d="M 160,90 L 160,158" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="115" y="125">spawn</text>
+
+  <path class="edge" stroke="#d29922" d="M 200,90 Q 280,120 340,158" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="260" y="115">spawn</text>
+
+  <path class="edge" stroke="#a371f7" d="M 400,185 L 458,185" marker-end="url(#arrow-purple)"/>
+
+  <path class="edge" stroke="#a371f7" d="M 560,185 L 618,185" marker-end="url(#arrow-purple)"/>
+
+  <!-- Teammate → mailbox -->
+  <path class="edge" stroke="#8b949e" d="M 160,210 L 160,258" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="115" y="240">poll</text>
+
+  <path class="edge" stroke="#8b949e" d="M 340,210 L 340,258" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="295" y="240">poll</text>
+
+  <!-- SendMessage flow -->
+  <path class="edge" stroke="#d29922" d="M 220,185 Q 390,220 460,260" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="320" y="230">SendMessage</text>
+
+  <!-- Task list access -->
+  <path class="edge" stroke="#8b949e" d="M 680,210 L 680,258" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="690" y="240">claim</text>
+
+  <path class="edge" stroke="#8b949e" d="M 740,185 L 736,210" style="stroke-dasharray: 4"/>
+</svg>
+</div>
+
+<h2>4. Council (Multi-Model Deliberation)</h2>
+<div class="section">
+<p class="flow-desc">
+The <code>Council</code> tool fans a question to multiple models in parallel, then an arbiter
+synthesizes their independent answers. Each council member runs as a direct-mode subagent
+(no tools, just streaming text). The arbiter sees all responses and produces a consolidated reply.
+</p>
+<svg viewBox="0 0 1100 340" xmlns="http://www.w3.org/2000/svg">
+  <!-- Main session -->
+  <g class="node engine" transform="translate(20,140)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">Main Session</text>
+  </g>
+
+  <!-- Council tool -->
+  <g class="node engine" transform="translate(160,140)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">Council tool</text>
+  </g>
+
+  <!-- Fan-out -->
+  <g class="node engine" transform="translate(310,140)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">fan-out</text>
+  </g>
+
+  <!-- Member 1 -->
+  <g class="node provider" transform="translate(460,40)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">Claude</text>
+  </g>
+
+  <!-- Member 2 -->
+  <g class="node provider" transform="translate(460,140)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">GPT-4</text>
+  </g>
+
+  <!-- Member 3 -->
+  <g class="node provider" transform="translate(460,240)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">Gemini</text>
+  </g>
+
+  <!-- Collect -->
+  <g class="node engine" transform="translate(610,140)">
+    <rect width="80" height="40" rx="4"/>
+    <text x="40" y="24" text-anchor="middle">collect</text>
+  </g>
+
+  <!-- Arbiter -->
+  <g class="node engine" transform="translate(740,140)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">Arbiter</text>
+  </g>
+
+  <!-- Synthesis -->
+  <g class="node engine" transform="translate(890,140)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">Synthesis</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="edge" stroke="#a371f7" d="M 120,160 L 158,160" marker-end="url(#arrow-purple)"/>
+
+  <path class="edge" stroke="#a371f7" d="M 260,160 L 308,160" marker-end="url(#arrow-purple)"/>
+
+  <!-- Fan-out arrows -->
+  <path class="edge" stroke="#a371f7" d="M 410,150 Q 430,80 458,60" marker-end="url(#arrow-purple)"/>
+  <path class="edge" stroke="#a371f7" d="M 410,160 L 458,160" marker-end="url(#arrow-purple)"/>
+  <path class="edge" stroke="#a371f7" d="M 410,170 Q 430,220 458,260" marker-end="url(#arrow-purple)"/>
+
+  <text class="edge-label" x="420" y="100">parallel</text>
+
+  <!-- Collect arrows -->
+  <path class="edge" stroke="#f85149" d="M 560,60 Q 580,100 608,150" marker-end="url(#arrow)"/>
+  <path class="edge" stroke="#f85149" d="M 560,160 L 608,160" marker-end="url(#arrow)"/>
+  <path class="edge" stroke="#f85149" d="M 560,260 Q 580,220 608,170" marker-end="url(#arrow)"/>
+
+  <path class="edge" stroke="#a371f7" d="M 690,160 L 738,160" marker-end="url(#arrow-purple)"/>
+
+  <path class="edge" stroke="#a371f7" d="M 840,160 L 888,160" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="850" y="152">consolidated</text>
+</svg>
+</div>
+
+<h2>5. Economy / Bounty Market</h2>
+<div class="section">
+<p class="flow-desc">
+The bounty system (<code>jfc-economy</code>) runs competitive solver/validator cycles:
+<code>post_bounty</code> → spawn N solvers in parallel worktrees → each produces a patch →
+validators adversarially challenge → settlement ranks winners and distributes trust/tokens.
+</p>
+<svg viewBox="0 0 1100 360" xmlns="http://www.w3.org/2000/svg">
+  <!-- Post bounty -->
+  <g class="node engine" transform="translate(20,140)">
+    <rect width="100" height="40" rx="4"/>
+    <text x="50" y="24" text-anchor="middle">post_bounty</text>
+  </g>
+
+  <!-- Orchestrator -->
+  <g class="node engine" transform="translate(160,140)">
+    <rect width="120" height="40" rx="4"/>
+    <text x="60" y="24" text-anchor="middle">MarketOrchestrator</text>
+  </g>
+
+  <!-- Solver 1 -->
+  <g class="node swarm" transform="translate(340,40)">
+    <rect width="90" height="40" rx="4"/>
+    <text x="45" y="24" text-anchor="middle">Solver 1</text>
+  </g>
+
+  <!-- Solver 2 -->
+  <g class="node swarm" transform="translate(340,140)">
+    <rect width="90" height="40" rx="4"/>
+    <text x="45" y="24" text-anchor="middle">Solver 2</text>
+  </g>
+
+  <!-- Solver 3 -->
+  <g class="node swarm" transform="translate(340,240)">
+    <rect width="90" height="40" rx="4"/>
+    <text x="45" y="24" text-anchor="middle">Solver 3</text>
+  </g>
+
+  <!-- Worktrees -->
+  <g class="node storage" transform="translate(480,40)">
+    <ellipse cx="45" cy="20" rx="45" ry="20"/>
+    <text x="45" y="24" text-anchor="middle" fill="#fff">worktree</text>
+  </g>
+  <g class="node storage" transform="translate(480,140)">
+    <ellipse cx="45" cy="20" rx="45" ry="20"/>
+    <text x="45" y="24" text-anchor="middle" fill="#fff">worktree</text>
+  </g>
+  <g class="node storage" transform="translate(480,240)">
+    <ellipse cx="45" cy="20" rx="45" ry="20"/>
+    <text x="45" y="24" text-anchor="middle" fill="#fff">worktree</text>
+  </g>
+
+  <!-- Solutions -->
+  <g class="node engine" transform="translate(600,140)">
+    <rect width="80" height="40" rx="4"/>
+    <text x="40" y="24" text-anchor="middle">Solutions</text>
+  </g>
+
+  <!-- Validators -->
+  <g class="node swarm" transform="translate(720,80)">
+    <rect width="90" height="40" rx="4"/>
+    <text x="45" y="24" text-anchor="middle">Validator 1</text>
+  </g>
+  <g class="node swarm" transform="translate(720,180)">
+    <rect width="90" height="40" rx="4"/>
+    <text x="45" y="24" text-anchor="middle">Validator 2</text>
+  </g>
+
+  <!-- Settlement -->
+  <g class="node engine" transform="translate(860,140)">
+    <rect width="90" height="40" rx="4"/>
+    <text x="45" y="24" text-anchor="middle">Settlement</text>
+  </g>
+
+  <!-- Trust/Ledger -->
+  <g class="node storage" transform="translate(980,80)">
+    <ellipse cx="40" cy="20" rx="40" ry="20"/>
+    <text x="40" y="24" text-anchor="middle" fill="#fff">Trust</text>
+  </g>
+  <g class="node storage" transform="translate(980,180)">
+    <ellipse cx="40" cy="20" rx="40" ry="20"/>
+    <text x="40" y="24" text-anchor="middle" fill="#fff">Ledger</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="edge" stroke="#a371f7" d="M 120,160 L 158,160" marker-end="url(#arrow-purple)"/>
+
+  <path class="edge" stroke="#d29922" d="M 280,150 Q 300,80 338,60" marker-end="url(#arrow)"/>
+  <path class="edge" stroke="#d29922" d="M 280,160 L 338,160" marker-end="url(#arrow)"/>
+  <path class="edge" stroke="#d29922" d="M 280,170 Q 300,220 338,260" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="290" y="100">spawn</text>
+
+  <path class="edge" stroke="#8b949e" d="M 430,60 L 433,60" marker-end="url(#arrow)"/>
+  <path class="edge" stroke="#8b949e" d="M 430,160 L 433,160" marker-end="url(#arrow)"/>
+  <path class="edge" stroke="#8b949e" d="M 430,260 L 433,260" marker-end="url(#arrow)"/>
+
+  <path class="edge" stroke="#a371f7" d="M 570,60 Q 590,100 598,150" marker-end="url(#arrow-purple)"/>
+  <path class="edge" stroke="#a371f7" d="M 570,160 L 598,160" marker-end="url(#arrow-purple)"/>
+  <path class="edge" stroke="#a371f7" d="M 570,260 Q 590,200 598,170" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="575" y="100">patch</text>
+
+  <path class="edge" stroke="#a371f7" d="M 680,150 Q 700,110 718,100" marker-end="url(#arrow-purple)"/>
+  <path class="edge" stroke="#a371f7" d="M 680,170 Q 700,190 718,200" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="690" y="145">challenge</text>
+
+  <path class="edge" stroke="#d29922" d="M 810,100 L 858,140" marker-end="url(#arrow)"/>
+  <path class="edge" stroke="#d29922" d="M 810,200 L 858,170" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="815" y="130">verdict</text>
+
+  <path class="edge" stroke="#8b949e" d="M 950,150 Q 970,110 978,100" marker-end="url(#arrow)"/>
+  <path class="edge" stroke="#8b949e" d="M 950,170 Q 970,190 978,200" marker-end="url(#arrow)"/>
+</svg>
+</div>
+
+<h2>Key Files</h2>
+<div class="section" style="font-size: 13px; line-height: 1.8;">
+<table style="width: 100%; border-collapse: collapse;">
+<tr style="border-bottom: 1px solid #30363d;">
+  <td style="padding: 8px; color: #58a6ff; font-family: monospace;">crates/jfc-engine/src/stream.rs</td>
+  <td style="padding: 8px; color: #8b949e;">Main streaming loop, tool dispatch entry</td>
+</tr>
+<tr style="border-bottom: 1px solid #30363d;">
+  <td style="padding: 8px; color: #58a6ff; font-family: monospace;">crates/jfc-engine/src/swarm/</td>
+  <td style="padding: 8px; color: #8b949e;">Team orchestration — types, mailbox, runner, coordinator</td>
+</tr>
+<tr style="border-bottom: 1px solid #30363d;">
+  <td style="padding: 8px; color: #58a6ff; font-family: monospace;">crates/jfc-engine/src/background.rs</td>
+  <td style="padding: 8px; color: #8b949e;">Background task registry, spawn/complete tracking</td>
+</tr>
+<tr style="border-bottom: 1px solid #30363d;">
+  <td style="padding: 8px; color: #58a6ff; font-family: monospace;">crates/jfc-economy/</td>
+  <td style="padding: 8px; color: #8b949e;">Bounty market — orchestrator, solver, validator, settlement</td>
+</tr>
+<tr style="border-bottom: 1px solid #30363d;">
+  <td style="padding: 8px; color: #58a6ff; font-family: monospace;">crates/jfc-session/src/task_store.rs</td>
+  <td style="padding: 8px; color: #8b949e;">Task list persistence, claim_next_available</td>
+</tr>
+<tr>
+  <td style="padding: 8px; color: #58a6ff; font-family: monospace;">crates/jfc-provider/</td>
+  <td style="padding: 8px; color: #8b949e;">Provider trait, ModelId, streaming abstractions</td>
+</tr>
+</table>
+</div>
+
+</div>
+
+<div style="text-align: center; color: #6e7681; font-size: 12px; padding: 24px;">
+  Teams + Mailbox + Council merged in jfc-engine/src/swarm/ · Economy is a separate bounded context in jfc-economy/
+</div>
+</body>
+</html>

@@ -47,6 +47,10 @@ pub(super) async fn cmd_clear(
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     state.streaming_assistant_idx = None;
     state.clear_active_stream_scope();
     // Mint a fresh session id and wipe per-session state (tasks,
@@ -85,6 +89,10 @@ pub(super) async fn cmd_continue(
             state.streaming_text.clear();
             state.streaming_reasoning.clear();
             state.streaming_response_bytes = 0;
+            state.streaming_response_baseline = 0;
+            state.streaming_thinking_tokens = 0;
+            state.token_rate_samples.clear();
+            state.token_rate_sample_thinking = None;
             state.streaming_assistant_idx = None;
             state.clear_active_stream_scope();
             state.push_effect(crate::app::EngineEffect::ScrollToBottom);
@@ -183,6 +191,10 @@ pub(super) async fn cmd_resume(
             state.streaming_text.clear();
             state.streaming_reasoning.clear();
             state.streaming_response_bytes = 0;
+            state.streaming_response_baseline = 0;
+            state.streaming_thinking_tokens = 0;
+            state.token_rate_samples.clear();
+            state.token_rate_sample_thinking = None;
             state.streaming_assistant_idx = None;
             state.clear_active_stream_scope();
             state.push_effect(crate::app::EngineEffect::ScrollToBottom);
@@ -442,6 +454,10 @@ pub(super) async fn cmd_fork(
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     state.streaming_assistant_idx = None;
     state.clear_active_stream_scope();
     // Mint a fresh session id (same flow as /clear) — the next

@@ -1,0 +1,377 @@
+DIGEST 43151f9e399714c61e3789c91dc2ed76
+FJFC.ToolCallFlow
+R460:473 Stdlib.Lists.List <> <> lib
+R491:505 Stdlib.Arith.Arith <> <> lib
+R523:535 Stdlib.Bool.Bool <> <> lib
+R545:557 Stdlib.Lists.List ListNotations <> mod
+R576:594 JFC.ExecutionStatus <> <> lib
+rec 668:675 <> ToolCall
+proj 702:708 <> tool_id
+proj 719:727 <> tool_kind
+proj 781:786 <> status
+R712:714 Corelib.Init.Datatypes <> nat ind
+R731:733 Corelib.Init.Datatypes <> nat ind
+R790:804 JFC.ExecutionStatus <> ExecutionStatus ind
+def 844:852 <> ToolBatch
+R857:860 Corelib.Init.Datatypes <> list ind
+R862:869 JFC.ToolCallFlow <> ToolCall rec
+def 926:942 <> batch_all_pending
+R953:961 JFC.ToolCallFlow <> ToolBatch def
+binder 945:949 <> batch:5
+binder 983:984 <> tc:6
+R998:1001 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R987:988 Stdlib.Lists.List <> In def
+R993:997 JFC.ToolCallFlow <> batch:5 var
+R990:991 JFC.ToolCallFlow <> tc:6 var
+R1011:1013 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R1002:1007 JFC.ToolCallFlow <> status proj
+R1009:1010 JFC.ToolCallFlow <> tc:6 var
+R1014:1020 JFC.ExecutionStatus <> Pending constr
+def 1198:1213 <> dispatch_ordered
+R1224:1232 JFC.ToolCallFlow <> ToolBatch def
+binder 1216:1220 <> batch:7
+R1260:1262 Corelib.Init.Datatypes <> nat ind
+binder 1254:1254 <> i:8
+binder 1256:1256 <> j:9
+R1274:1281 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1270:1272 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R1269:1269 JFC.ToolCallFlow <> i:8 var
+R1273:1273 JFC.ToolCallFlow <> j:9 var
+R1298:1305 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1283:1285 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R1282:1282 JFC.ToolCallFlow <> j:9 var
+R1286:1291 Corelib.Init.Datatypes <> length def
+R1293:1297 JFC.ToolCallFlow <> batch:7 var
+binder 1313:1316 <> tc_j:10
+R1348:1355 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1336:1338 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R1319:1327 Stdlib.Lists.List <> nth_error def
+R1335:1335 JFC.ToolCallFlow <> j:9 var
+R1329:1333 JFC.ToolCallFlow <> batch:7 var
+R1339:1342 Corelib.Init.Datatypes <> Some constr
+R1344:1347 JFC.ToolCallFlow <> tc_j:10 var
+R1377:1384 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1367:1369 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R1356:1361 JFC.ToolCallFlow <> status proj
+R1363:1366 JFC.ToolCallFlow <> tc_j:10 var
+R1370:1376 JFC.ExecutionStatus <> Running constr
+R1385:1391 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R1396:1397 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 1392:1395 <> tc_i:11
+R1427:1448 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R1506:1506 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R1415:1417 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R1398:1406 Stdlib.Lists.List <> nth_error def
+R1414:1414 JFC.ToolCallFlow <> i:8 var
+R1408:1412 JFC.ToolCallFlow <> batch:7 var
+R1418:1421 Corelib.Init.Datatypes <> Some constr
+R1423:1426 JFC.ToolCallFlow <> tc_i:11 var
+R1470:1473 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R1460:1462 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R1449:1454 JFC.ToolCallFlow <> status proj
+R1456:1459 JFC.ToolCallFlow <> tc_i:11 var
+R1463:1469 JFC.ExecutionStatus <> Running constr
+R1499:1501 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R1474:1484 JFC.ExecutionStatus <> is_terminal def
+R1487:1492 JFC.ToolCallFlow <> status proj
+R1494:1497 JFC.ToolCallFlow <> tc_i:11 var
+R1502:1505 Corelib.Init.Datatypes <> true constr
+ind 1656:1671 <> ApprovalDecision
+constr 1687:1694 <> Approved
+constr 1700:1705 <> Denied
+constr 1711:1725 <> PendingDecision
+scheme 1656:1671 <> ApprovalDecision_rect
+scheme 1656:1671 <> ApprovalDecision_ind
+scheme 1656:1671 <> ApprovalDecision_rec
+scheme 1656:1671 <> ApprovalDecision_sind
+rec 1736:1745 <> QueuedTool
+proj 1774:1784 <> queued_tool
+proj 1800:1807 <> decision
+R1788:1795 JFC.ToolCallFlow <> ToolCall rec
+R1811:1826 JFC.ToolCallFlow <> ApprovalDecision ind
+def 1844:1856 <> ApprovalQueue
+R1861:1864 Corelib.Init.Datatypes <> list ind
+R1866:1875 JFC.ToolCallFlow <> QueuedTool rec
+def 1927:1942 <> can_resolve_head
+R1949:1961 JFC.ToolCallFlow <> ApprovalQueue def
+binder 1945:1945 <> q:17
+R1966:1969 Corelib.Init.Datatypes <> bool ind
+R1982:1982 JFC.ToolCallFlow <> q:17 var
+R1993:1994 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R1999:2003 Corelib.Init.Datatypes <> false constr
+R2011:2014 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2026:2033 JFC.ToolCallFlow <> decision proj
+R2060:2074 JFC.ToolCallFlow <> PendingDecision constr
+R2079:2082 Corelib.Init.Datatypes <> true constr
+R2106:2110 Corelib.Init.Datatypes <> false constr
+def 2179:2190 <> resolve_head
+R2197:2209 JFC.ToolCallFlow <> ApprovalQueue def
+binder 2193:2193 <> q:19
+R2217:2232 JFC.ToolCallFlow <> ApprovalDecision ind
+binder 2213:2213 <> d:20
+R2237:2249 JFC.ToolCallFlow <> ApprovalQueue def
+R2262:2262 JFC.ToolCallFlow <> q:19 var
+R2273:2274 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2279:2280 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2288:2291 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2331:2334 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2300:2311 JFC.ToolCallFlow <> mkQueuedTool constr
+R2314:2324 JFC.ToolCallFlow <> queued_tool proj
+R2330:2330 JFC.ToolCallFlow <> d:20 var
+def 2402:2414 <> advance_queue
+R2421:2433 JFC.ToolCallFlow <> ApprovalQueue def
+binder 2417:2417 <> q:22
+R2438:2450 JFC.ToolCallFlow <> ApprovalQueue def
+R2463:2463 JFC.ToolCallFlow <> q:22 var
+R2474:2475 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2480:2481 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2489:2492 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2507:2514 JFC.ToolCallFlow <> decision proj
+R2544:2558 JFC.ToolCallFlow <> PendingDecision constr
+R2563:2563 JFC.ToolCallFlow <> q:22 var
+prf 2744:2769 <> resolve_head_sets_decision
+binder 2782:2782 <> q:24
+binder 2784:2784 <> d:25
+binder 2786:2787 <> qt:26
+binder 2789:2792 <> rest:27
+R2813:2820 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2800:2802 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2799:2799 JFC.ToolCallFlow <> q:24 var
+R2805:2808 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2803:2804 JFC.ToolCallFlow <> qt:26 var
+R2809:2812 JFC.ToolCallFlow <> rest:27 var
+R2850:2857 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2832:2834 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2821:2828 JFC.ToolCallFlow <> decision proj
+R2830:2831 JFC.ToolCallFlow <> qt:26 var
+R2835:2849 JFC.ToolCallFlow <> PendingDecision constr
+R2878:2885 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2859:2862 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R2858:2858 JFC.ToolCallFlow <> d:25 var
+R2863:2877 JFC.ToolCallFlow <> PendingDecision constr
+R2886:2892 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R2896:2897 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 2893:2895 <> qt':28
+R2936:2955 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R2925:2927 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2898:2905 Stdlib.Lists.List <> hd_error def
+R2908:2919 JFC.ToolCallFlow <> resolve_head def
+R2921:2921 JFC.ToolCallFlow <> q:24 var
+R2923:2923 JFC.ToolCallFlow <> d:25 var
+R2928:2931 Corelib.Init.Datatypes <> Some constr
+R2933:2935 JFC.ToolCallFlow <> qt':28 var
+R2968:2970 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2956:2963 JFC.ToolCallFlow <> decision proj
+R2965:2967 JFC.ToolCallFlow <> qt':28 var
+R2971:2971 JFC.ToolCallFlow <> d:25 var
+R3051:3062 JFC.ToolCallFlow <> mkQueuedTool constr
+R3065:3075 JFC.ToolCallFlow <> queued_tool proj
+R3051:3062 JFC.ToolCallFlow <> mkQueuedTool constr
+R3065:3075 JFC.ToolCallFlow <> queued_tool proj
+prf 3174:3200 <> advance_requires_resolution
+binder 3213:3213 <> q:29
+binder 3215:3216 <> qt:30
+binder 3218:3221 <> rest:31
+R3242:3249 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3229:3231 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3228:3228 JFC.ToolCallFlow <> q:29 var
+R3234:3237 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3232:3233 JFC.ToolCallFlow <> qt:30 var
+R3238:3241 JFC.ToolCallFlow <> rest:31 var
+R3279:3286 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3261:3263 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3250:3257 JFC.ToolCallFlow <> decision proj
+R3259:3260 JFC.ToolCallFlow <> qt:30 var
+R3264:3278 JFC.ToolCallFlow <> PendingDecision constr
+R3302:3304 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3287:3299 JFC.ToolCallFlow <> advance_queue def
+R3301:3301 JFC.ToolCallFlow <> q:29 var
+R3305:3305 JFC.ToolCallFlow <> q:29 var
+def 3510:3526 <> well_formed_batch
+R3537:3545 JFC.ToolCallFlow <> ToolBatch def
+binder 3529:3533 <> batch:32
+R3560:3576 JFC.ToolCallFlow <> batch_all_pending def
+R3578:3582 JFC.ToolCallFlow <> batch:32 var
+def 3653:3669 <> dispatch_complete
+R3680:3688 JFC.ToolCallFlow <> ToolBatch def
+binder 3672:3676 <> batch:33
+binder 3710:3711 <> tc:34
+R3725:3728 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3714:3715 Stdlib.Lists.List <> In def
+R3720:3724 JFC.ToolCallFlow <> batch:33 var
+R3717:3718 JFC.ToolCallFlow <> tc:34 var
+R3752:3754 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3729:3739 JFC.ExecutionStatus <> is_terminal def
+R3742:3747 JFC.ToolCallFlow <> status proj
+R3749:3750 JFC.ToolCallFlow <> tc:34 var
+R3755:3758 Corelib.Init.Datatypes <> true constr
+def 3830:3849 <> dispatch_in_progress
+R3860:3868 JFC.ToolCallFlow <> ToolBatch def
+binder 3852:3856 <> batch:35
+R3883:3889 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R3892:3893 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 3890:3891 <> tc:36
+R3905:3908 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R3894:3895 Stdlib.Lists.List <> In def
+R3900:3904 JFC.ToolCallFlow <> batch:35 var
+R3897:3898 JFC.ToolCallFlow <> tc:36 var
+R3929:3931 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3909:3916 JFC.ExecutionStatus <> is_alive def
+R3919:3924 JFC.ToolCallFlow <> status proj
+R3926:3927 JFC.ToolCallFlow <> tc:36 var
+R3932:3935 Corelib.Init.Datatypes <> true constr
+prf 4286:4312 <> batch_alive_or_all_terminal
+R4333:4341 JFC.ToolCallFlow <> ToolBatch def
+binder 4325:4329 <> batch:37
+R4348:4348 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R4402:4411 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R4468:4468 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R4349:4355 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R4358:4359 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 4356:4357 <> tc:38
+R4371:4374 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R4360:4361 Stdlib.Lists.List <> In def
+R4366:4370 JFC.ToolCallFlow <> batch:37 var
+R4363:4364 JFC.ToolCallFlow <> tc:38 var
+R4395:4397 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4375:4382 JFC.ExecutionStatus <> is_alive def
+R4385:4390 JFC.ToolCallFlow <> status proj
+R4392:4393 JFC.ToolCallFlow <> tc:38 var
+R4398:4401 Corelib.Init.Datatypes <> true constr
+binder 4419:4420 <> tc:39
+R4434:4437 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4423:4424 Stdlib.Lists.List <> In def
+R4429:4433 JFC.ToolCallFlow <> batch:37 var
+R4426:4427 JFC.ToolCallFlow <> tc:39 var
+R4461:4463 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4438:4448 JFC.ExecutionStatus <> is_terminal def
+R4451:4456 JFC.ToolCallFlow <> status proj
+R4458:4459 JFC.ToolCallFlow <> tc:39 var
+R4464:4467 Corelib.Init.Datatypes <> true constr
+R4615:4622 JFC.ExecutionStatus <> is_alive def
+R4625:4630 JFC.ToolCallFlow <> status proj
+R4615:4622 JFC.ExecutionStatus <> is_alive def
+R4625:4630 JFC.ToolCallFlow <> status proj
+R4840:4842 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4817:4827 JFC.ExecutionStatus <> is_terminal def
+R4830:4835 JFC.ToolCallFlow <> status proj
+R4843:4846 Corelib.Init.Datatypes <> true constr
+R4840:4842 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4817:4827 JFC.ExecutionStatus <> is_terminal def
+R4830:4835 JFC.ToolCallFlow <> status proj
+R4843:4846 Corelib.Init.Datatypes <> true constr
+R4879:4902 JFC.ExecutionStatus <> terminal_alive_partition thm
+R4905:4910 JFC.ToolCallFlow <> status proj
+R4879:4902 JFC.ExecutionStatus <> terminal_alive_partition thm
+R4905:4910 JFC.ToolCallFlow <> status proj
+R4978:4988 JFC.ExecutionStatus <> is_terminal def
+R4991:4996 JFC.ToolCallFlow <> status proj
+R4978:4988 JFC.ExecutionStatus <> is_terminal def
+R4991:4996 JFC.ToolCallFlow <> status proj
+prf 5776:5801 <> batch_progress_or_complete
+R5822:5830 JFC.ToolCallFlow <> ToolBatch def
+binder 5814:5818 <> batch:40
+R5848:5855 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5842:5845 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R5837:5841 JFC.ToolCallFlow <> batch:40 var
+R5846:5847 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R5856:5856 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R5910:5918 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R5883:5886 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R5857:5876 JFC.ToolCallFlow <> dispatch_in_progress def
+R5878:5882 JFC.ToolCallFlow <> batch:40 var
+R5887:5903 JFC.ToolCallFlow <> dispatch_complete def
+R5905:5909 JFC.ToolCallFlow <> batch:40 var
+R5919:5925 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R5928:5929 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 5926:5927 <> tc:41
+R5941:5944 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R5930:5931 Stdlib.Lists.List <> In def
+R5936:5940 JFC.ToolCallFlow <> batch:40 var
+R5933:5934 JFC.ToolCallFlow <> tc:41 var
+R5954:5956 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5945:5950 JFC.ToolCallFlow <> status proj
+R5952:5953 JFC.ToolCallFlow <> tc:41 var
+R5957:5963 JFC.ExecutionStatus <> Pending constr
+R6003:6029 JFC.ToolCallFlow <> batch_alive_or_all_terminal thm
+R6003:6029 JFC.ToolCallFlow <> batch_alive_or_all_terminal thm
+def 6355:6372 <> monotonic_progress
+R6390:6398 JFC.ToolCallFlow <> ToolBatch def
+binder 6375:6380 <> before:42
+binder 6382:6386 <> after:43
+R6441:6446 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R6426:6428 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6413:6418 Corelib.Init.Datatypes <> length def
+R6420:6425 JFC.ToolCallFlow <> before:42 var
+R6429:6434 Corelib.Init.Datatypes <> length def
+R6436:6440 JFC.ToolCallFlow <> after:43 var
+binder 6454:6454 <> i:44
+binder 6456:6459 <> tc_b:45
+binder 6461:6464 <> tc_a:46
+R6501:6508 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6489:6491 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6471:6479 Stdlib.Lists.List <> nth_error def
+R6488:6488 JFC.ToolCallFlow <> i:44 var
+R6481:6486 JFC.ToolCallFlow <> before:42 var
+R6492:6495 Corelib.Init.Datatypes <> Some constr
+R6497:6500 JFC.ToolCallFlow <> tc_b:45 var
+R6538:6545 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6526:6528 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6509:6517 Stdlib.Lists.List <> nth_error def
+R6525:6525 JFC.ToolCallFlow <> i:44 var
+R6519:6523 JFC.ToolCallFlow <> after:43 var
+R6529:6532 Corelib.Init.Datatypes <> Some constr
+R6534:6537 JFC.ToolCallFlow <> tc_a:46 var
+R6573:6581 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R6643:6643 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R6558:6560 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6546:6552 JFC.ToolCallFlow <> tool_id proj
+R6554:6557 JFC.ToolCallFlow <> tc_b:45 var
+R6561:6567 JFC.ToolCallFlow <> tool_id proj
+R6569:6572 JFC.ToolCallFlow <> tc_a:46 var
+R6614:6617 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6607:6609 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6582:6592 JFC.ExecutionStatus <> is_terminal def
+R6595:6600 JFC.ToolCallFlow <> status proj
+R6602:6605 JFC.ToolCallFlow <> tc_b:45 var
+R6610:6613 Corelib.Init.Datatypes <> true constr
+R6629:6631 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6618:6623 JFC.ToolCallFlow <> status proj
+R6625:6628 JFC.ToolCallFlow <> tc_a:46 var
+R6632:6637 JFC.ToolCallFlow <> status proj
+R6639:6642 JFC.ToolCallFlow <> tc_b:45 var
+prf 6701:6718 <> terminal_preserved
+binder 6731:6736 <> before:47
+binder 6738:6742 <> after:48
+binder 6744:6744 <> i:49
+binder 6746:6749 <> tc_b:50
+binder 6751:6754 <> tc_a:51
+R6792:6799 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6761:6778 JFC.ToolCallFlow <> monotonic_progress def
+R6780:6785 JFC.ToolCallFlow <> before:47 var
+R6787:6791 JFC.ToolCallFlow <> after:48 var
+R6830:6837 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6818:6820 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6800:6808 Stdlib.Lists.List <> nth_error def
+R6817:6817 JFC.ToolCallFlow <> i:49 var
+R6810:6815 JFC.ToolCallFlow <> before:47 var
+R6821:6824 Corelib.Init.Datatypes <> Some constr
+R6826:6829 JFC.ToolCallFlow <> tc_b:50 var
+R6867:6874 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6855:6857 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6838:6846 Stdlib.Lists.List <> nth_error def
+R6854:6854 JFC.ToolCallFlow <> i:49 var
+R6848:6852 JFC.ToolCallFlow <> after:48 var
+R6858:6861 Corelib.Init.Datatypes <> Some constr
+R6863:6866 JFC.ToolCallFlow <> tc_a:51 var
+R6907:6914 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6900:6902 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6875:6885 JFC.ExecutionStatus <> is_terminal def
+R6888:6893 JFC.ToolCallFlow <> status proj
+R6895:6898 JFC.ToolCallFlow <> tc_b:50 var
+R6903:6906 Corelib.Init.Datatypes <> true constr
+R6926:6928 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6915:6920 JFC.ToolCallFlow <> status proj
+R6922:6925 JFC.ToolCallFlow <> tc_a:51 var
+R6929:6934 JFC.ToolCallFlow <> status proj
+R6936:6939 JFC.ToolCallFlow <> tc_b:50 var

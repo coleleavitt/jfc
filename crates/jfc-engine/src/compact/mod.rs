@@ -208,7 +208,7 @@ pub fn compact_level_with_output(
     let eff_window = effective_window(window, max_output_tokens);
     let compact = compact_threshold_with_output(window, max_output_tokens);
     let warn = compact.saturating_sub(20_000);
-    let blocked = blocked_override().unwrap_or_else(|| eff_window.saturating_sub(BLOCKED_HEADROOM));
+    let blocked = blocked_threshold_with_output(window, max_output_tokens);
     // Precompute threshold: 80% of the compact threshold. When context
     // hits this level, the system could start a speculative compact in
     // the background so it's ready if the session continues growing.
@@ -251,6 +251,16 @@ pub fn compact_level_with_output(
 /// symptom.
 pub fn should_compact(current_tokens: usize, max_context_tokens: usize) -> bool {
     should_compact_with_output(current_tokens, max_context_tokens, None)
+}
+
+/// Compute the hard blocked threshold with the same output-headroom reserve as
+/// [`compact_level_with_output`]. Compaction retry validation must use this
+/// same threshold; otherwise a compact can report success while the next
+/// normal gate immediately classifies the result as blocked again.
+pub fn blocked_threshold_with_output(window: usize, max_output_tokens: Option<usize>) -> usize {
+    blocked_override().unwrap_or_else(|| {
+        effective_window(window, max_output_tokens).saturating_sub(BLOCKED_HEADROOM)
+    })
 }
 
 /// Decide whether compaction should fire, with explicit max_output_tokens.

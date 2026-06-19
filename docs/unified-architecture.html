@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JFC Unified Invocation Architecture</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #238636;
+  --purple: #8957e5;
+  --orange: #f0883e;
+  --red: #da3633;
+  --pink: #bf4b8a;
+  --yellow: #d29922;
+  --cyan: #3fb950;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 32px;
+  line-height: 1.6;
+}
+h1 {
+  text-align: center;
+  font-weight: 500;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.subtitle {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-bottom: 32px;
+}
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.section-title {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+svg {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+}
+.node {
+  cursor: default;
+}
+.node rect {
+  stroke-width: 2;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+}
+.node text {
+  font-size: 11px;
+  font-weight: 500;
+  fill: #fff;
+}
+.node-label {
+  font-size: 9px;
+  fill: var(--text-muted);
+}
+.edge {
+  fill: none;
+  stroke-width: 1.5;
+}
+.edge-dashed {
+  stroke-dasharray: 4;
+}
+/* Node types */
+.ingress rect { fill: var(--green); stroke: #2ea043; }
+.router rect { fill: var(--purple); stroke: #a371f7; }
+.executor rect { fill: #1f6feb; stroke: #388bfd; }
+.storage { fill: var(--text-muted); stroke: #8b949e; }
+.api rect { fill: var(--pink); stroke: #db61a2; }
+.economy rect { fill: var(--orange); stroke: #d29922; }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  margin-bottom: 24px;
+  font-size: 12px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend-box {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+.code {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  padding: 12px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 12px 0;
+  border: 1px solid var(--border);
+}
+.flow-step {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.flow-num {
+  background: var(--purple);
+  color: #fff;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.flow-text {
+  color: var(--text);
+}
+.flow-text code {
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 12px;
+}
+th, td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+td:first-child {
+  font-family: 'SF Mono', Consolas, monospace;
+  color: var(--accent);
+}
+</style>
+</head>
+<body>
+<h1>JFC Unified Invocation Architecture</h1>
+<p class="subtitle">How user messages, tool calls, teams, and the economy connect</p>
+
+<div class="container">
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-box" style="background:var(--green)"></div>Ingress</div>
+  <div class="legend-item"><div class="legend-box" style="background:var(--purple)"></div>Router/Dispatcher</div>
+  <div class="legend-item"><div class="legend-box" style="background:#1f6feb"></div>Executor</div>
+  <div class="legend-item"><div class="legend-box" style="background:var(--orange)"></div>Economy</div>
+  <div class="legend-item"><div class="legend-box" style="background:var(--pink)"></div>External API</div>
+  <div class="legend-item"><div class="legend-box" style="background:var(--text-muted);border-radius:50%"></div>Storage</div>
+</div>
+
+<!-- Main Architecture Diagram -->
+<div class="section">
+<div class="section-title">The Unified Flow</div>
+
+<svg viewBox="0 0 1000 650" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#30363d"/>
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a371f7"/>
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/>
+    </marker>
+  </defs>
+
+  <!-- Layer labels -->
+  <text x="20" y="55" fill="#6e7681" font-size="10" font-weight="500">INGRESS</text>
+  <text x="20" y="155" fill="#6e7681" font-size="10" font-weight="500">DISPATCH</text>
+  <text x="20" y="295" fill="#6e7681" font-size="10" font-weight="500">EXECUTION</text>
+  <text x="20" y="495" fill="#6e7681" font-size="10" font-weight="500">LIFECYCLE</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- LAYER 1: INGRESS -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  
+  <g class="node ingress" transform="translate(420,30)">
+    <rect width="160" height="40" rx="6"/>
+    <text x="80" y="24" text-anchor="middle">User Message</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- LAYER 2: ROUTING & DISPATCH -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  
+  <g class="node router" transform="translate(420,120)">
+    <rect width="160" height="40" rx="6"/>
+    <text x="80" y="16" text-anchor="middle">stream.rs</text>
+    <text x="80" y="30" text-anchor="middle" font-size="9" fill="#c9d1d9">Provider::stream()</text>
+  </g>
+
+  <g class="node router" transform="translate(420,200)">
+    <rect width="160" height="40" rx="6"/>
+    <text x="80" y="16" text-anchor="middle">tool_dispatch</text>
+    <text x="80" y="30" text-anchor="middle" font-size="9" fill="#c9d1d9">execute_tool()</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- LAYER 3: EXECUTION PATHS (fan out) -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Solo tools -->
+  <g class="node executor" transform="translate(80,280)">
+    <rect width="100" height="50" rx="6"/>
+    <text x="50" y="20" text-anchor="middle">Solo Tools</text>
+    <text x="50" y="35" text-anchor="middle" font-size="9" fill="#c9d1d9">Bash, Read,</text>
+    <text x="50" y="46" text-anchor="middle" font-size="9" fill="#c9d1d9">Write, Glob...</text>
+  </g>
+
+  <!-- Task/Subagent -->
+  <g class="node executor" transform="translate(220,280)">
+    <rect width="100" height="50" rx="6"/>
+    <text x="50" y="20" text-anchor="middle">Task Tool</text>
+    <text x="50" y="35" text-anchor="middle" font-size="9" fill="#c9d1d9">subagent.rs</text>
+    <text x="50" y="46" text-anchor="middle" font-size="9" fill="#c9d1d9">background.rs</text>
+  </g>
+
+  <!-- Team/Swarm -->
+  <g class="node executor" transform="translate(360,280)">
+    <rect width="120" height="50" rx="6"/>
+    <text x="60" y="20" text-anchor="middle">Team Swarm</text>
+    <text x="60" y="35" text-anchor="middle" font-size="9" fill="#c9d1d9">SendMessage</text>
+    <text x="60" y="46" text-anchor="middle" font-size="9" fill="#c9d1d9">swarm/runner.rs</text>
+  </g>
+
+  <!-- Council -->
+  <g class="node executor" transform="translate(520,280)">
+    <rect width="100" height="50" rx="6"/>
+    <text x="50" y="20" text-anchor="middle">Council</text>
+    <text x="50" y="35" text-anchor="middle" font-size="9" fill="#c9d1d9">AskModel</text>
+    <text x="50" y="46" text-anchor="middle" font-size="9" fill="#c9d1d9">fan-out/arbiter</text>
+  </g>
+
+  <!-- Bounty/Economy -->
+  <g class="node economy" transform="translate(660,280)">
+    <rect width="120" height="50" rx="6"/>
+    <text x="60" y="20" text-anchor="middle">Bounty Market</text>
+    <text x="60" y="35" text-anchor="middle" font-size="9" fill="#fff">post_bounty</text>
+    <text x="60" y="46" text-anchor="middle" font-size="9" fill="#fff">run_bounty</text>
+  </g>
+
+  <!-- MCP -->
+  <g class="node executor" transform="translate(820,280)">
+    <rect width="100" height="50" rx="6"/>
+    <text x="50" y="20" text-anchor="middle">MCP Tools</text>
+    <text x="50" y="35" text-anchor="middle" font-size="9" fill="#c9d1d9">codegraph</text>
+    <text x="50" y="46" text-anchor="middle" font-size="9" fill="#c9d1d9">external...</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- LAYER 4: EXECUTION DETAILS -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Background task -->
+  <g class="node executor" transform="translate(220,380)">
+    <rect width="100" height="40" rx="6"/>
+    <text x="50" y="16" text-anchor="middle">Background</text>
+    <text x="50" y="30" text-anchor="middle" font-size="9" fill="#c9d1d9">tokio::spawn</text>
+  </g>
+
+  <!-- Teammate runners -->
+  <g class="node executor" transform="translate(360,380)">
+    <rect width="120" height="40" rx="6"/>
+    <text x="60" y="16" text-anchor="middle">Teammate Loop</text>
+    <text x="60" y="30" text-anchor="middle" font-size="9" fill="#c9d1d9">coordinator.rs</text>
+  </g>
+
+  <!-- Council members -->
+  <g class="node api" transform="translate(520,380)">
+    <rect width="100" height="40" rx="6"/>
+    <text x="50" y="16" text-anchor="middle">Model N</text>
+    <text x="50" y="30" text-anchor="middle" font-size="9" fill="#c9d1d9">parallel calls</text>
+  </g>
+
+  <!-- Solver pool -->
+  <g class="node economy" transform="translate(660,380)">
+    <rect width="120" height="40" rx="6"/>
+    <text x="60" y="16" text-anchor="middle">Solver Pool</text>
+    <text x="60" y="30" text-anchor="middle" font-size="9" fill="#fff">git worktrees</text>
+  </g>
+
+  <!-- Validator pool -->
+  <g class="node economy" transform="translate(660,450)">
+    <rect width="120" height="40" rx="6"/>
+    <text x="60" y="16" text-anchor="middle">Validator Pool</text>
+    <text x="60" y="30" text-anchor="middle" font-size="9" fill="#fff">adversarial</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- LAYER 5: STORAGE / LIFECYCLE SINK -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Mailbox -->
+  <g transform="translate(300,520)">
+    <ellipse class="storage" cx="60" cy="20" rx="60" ry="20"/>
+    <text x="60" y="24" text-anchor="middle" fill="#fff" font-size="11">Mailbox</text>
+  </g>
+  <text x="360" y="560" class="node-label" text-anchor="middle">inboxes/*.json</text>
+
+  <!-- Task Store -->
+  <g transform="translate(460,520)">
+    <ellipse class="storage" cx="50" cy="20" rx="50" ry="20"/>
+    <text x="50" y="24" text-anchor="middle" fill="#fff" font-size="11">TaskStore</text>
+  </g>
+  <text x="510" y="560" class="node-label" text-anchor="middle">tasks.json</text>
+
+  <!-- Session -->
+  <g transform="translate(600,520)">
+    <ellipse class="storage" cx="50" cy="20" rx="50" ry="20"/>
+    <text x="50" y="24" text-anchor="middle" fill="#fff" font-size="11">Session</text>
+  </g>
+  <text x="650" y="560" class="node-label" text-anchor="middle">session.jsonl</text>
+
+  <!-- Ledger/Trust -->
+  <g transform="translate(740,520)">
+    <ellipse class="storage" cx="60" cy="20" rx="60" ry="20"/>
+    <text x="60" y="24" text-anchor="middle" fill="#fff" font-size="11">Ledger/Trust</text>
+  </g>
+  <text x="800" y="560" class="node-label" text-anchor="middle">economy state</text>
+
+  <!-- BackgroundTask map -->
+  <g transform="translate(120,520)">
+    <ellipse class="storage" cx="70" cy="20" rx="70" ry="20"/>
+    <text x="70" y="24" text-anchor="middle" fill="#fff" font-size="11">BackgroundTask</text>
+  </g>
+  <text x="190" y="560" class="node-label" text-anchor="middle">in-memory registry</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- EDGES -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Ingress → stream -->
+  <path class="edge" stroke="#30363d" d="M 500,70 L 500,118" marker-end="url(#arrow)"/>
+
+  <!-- stream → dispatch -->
+  <path class="edge" stroke="#a371f7" d="M 500,160 L 500,198" marker-end="url(#arrow-purple)"/>
+  <text x="510" y="182" fill="#8b949e" font-size="9">tool_use</text>
+
+  <!-- dispatch → all executors -->
+  <path class="edge" stroke="#a371f7" d="M 420,220 Q 200,250 130,278" marker-end="url(#arrow-purple)"/>
+  <path class="edge" stroke="#a371f7" d="M 440,240 L 270,278" marker-end="url(#arrow-purple)"/>
+  <path class="edge" stroke="#a371f7" d="M 480,240 L 420,278" marker-end="url(#arrow-purple)"/>
+  <path class="edge" stroke="#a371f7" d="M 520,240 L 570,278" marker-end="url(#arrow-purple)"/>
+  <path class="edge" stroke="#a371f7" d="M 560,220 Q 700,250 720,278" marker-end="url(#arrow-purple)"/>
+  <path class="edge" stroke="#a371f7" d="M 580,220 Q 800,250 870,278" marker-end="url(#arrow-purple)"/>
+
+  <!-- Task → background -->
+  <path class="edge" stroke="#388bfd" d="M 270,330 L 270,378" marker-end="url(#arrow)"/>
+
+  <!-- Team → teammates -->
+  <path class="edge" stroke="#388bfd" d="M 420,330 L 420,378" marker-end="url(#arrow)"/>
+
+  <!-- Council → models -->
+  <path class="edge" stroke="#db61a2" d="M 570,330 L 570,378" marker-end="url(#arrow)"/>
+
+  <!-- Bounty → solvers -->
+  <path class="edge" stroke="#d29922" d="M 720,330 L 720,378" marker-end="url(#arrow-orange)"/>
+
+  <!-- Solvers → validators -->
+  <path class="edge" stroke="#d29922" d="M 720,420 L 720,448" marker-end="url(#arrow-orange)"/>
+  <text x="730" y="438" fill="#8b949e" font-size="9">challenge</text>
+
+  <!-- Teammates → mailbox -->
+  <path class="edge" stroke="#8b949e" d="M 420,420 L 360,518" marker-end="url(#arrow)"/>
+  
+  <!-- Background → registry -->
+  <path class="edge" stroke="#8b949e" d="M 270,420 L 190,518" marker-end="url(#arrow)"/>
+
+  <!-- All → TaskStore -->
+  <path class="edge edge-dashed" stroke="#6e7681" d="M 420,420 L 510,518" marker-end="url(#arrow)"/>
+  <path class="edge edge-dashed" stroke="#6e7681" d="M 270,420 L 510,518" marker-end="url(#arrow)"/>
+
+  <!-- Validators → ledger -->
+  <path class="edge" stroke="#d29922" d="M 780,470 L 800,518" marker-end="url(#arrow-orange)"/>
+  <text x="810" y="500" fill="#8b949e" font-size="9">settle</text>
+
+  <!-- Results back to stream (completion loop) -->
+  <path class="edge edge-dashed" stroke="#3fb950" d="M 190,500 Q 50,400 50,200 Q 50,140 418,140" marker-end="url(#arrow)"/>
+  <text x="70" y="250" fill="#3fb950" font-size="9" transform="rotate(-90, 70, 250)">completion</text>
+</svg>
+</div>
+
+<!-- Tool Dispatch Routing -->
+<div class="section">
+<div class="section-title">Tool Dispatch Routing (dispatch.rs)</div>
+<p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+  Every tool call flows through <code>execute_tool()</code>. The match arms route to specialized handlers:
+</p>
+
+<table>
+<tr><th>Tool</th><th>Handler</th><th>Execution Mode</th></tr>
+<tr><td>Bash, Read, Write, Glob, Grep</td><td>Solo handlers (filesystem, search)</td><td>Synchronous, inline</td></tr>
+<tr><td>Task</td><td>subagent.rs → background.rs</td><td>tokio::spawn, BackgroundTask registry</td></tr>
+<tr><td>SendMessage</td><td>swarm/mailbox.rs</td><td>File write to recipient inbox</td></tr>
+<tr><td>Council, AskModel</td><td>council handler</td><td>Parallel provider calls, arbiter synthesis</td></tr>
+<tr><td>post_bounty, run_bounty</td><td>dispatch_heavy.rs → jfc-economy</td><td>MarketOrchestrator cycle</td></tr>
+<tr><td>MCP tools</td><td>mcp/tool_dispatch.rs</td><td>JSON-RPC to MCP server</td></tr>
+<tr><td>TaskCreate/Update/List</td><td>tasks.rs</td><td>TaskStore (team or session)</td></tr>
+</table>
+</div>
+
+<!-- Team/Swarm System -->
+<div class="section">
+<div class="section-title">Team / Swarm System (swarm/)</div>
+
+<div class="flow-step"><div class="flow-num">1</div><div class="flow-text">Leader spawns teammate via <code>Task</code> tool with <code>name</code> + <code>team_name</code></div></div>
+<div class="flow-step"><div class="flow-num">2</div><div class="flow-text"><code>swarm::runner::start_teammate()</code> creates <code>TeammateRunnerConfig</code>, spawns tokio task</div></div>
+<div class="flow-step"><div class="flow-num">3</div><div class="flow-text"><code>coordinator::run_teammate_loop()</code> runs: stream turn → go idle → poll inbox → repeat</div></div>
+<div class="flow-step"><div class="flow-num">4</div><div class="flow-text">Teammate polls its <code>~/.claude/teams/{name}/inboxes/{agent}.json</code> for messages</div></div>
+<div class="flow-step"><div class="flow-num">5</div><div class="flow-text"><code>SendMessage</code> tool writes to target's inbox via <code>mailbox::write_to_mailbox()</code></div></div>
+<div class="flow-step"><div class="flow-num">6</div><div class="flow-text">Leader polls its inbox via <code>runner::poll_leader_inbox()</code> for teammate replies</div></div>
+
+<div class="code">
+~/.claude/teams/{team-name}/
+├── config.json         # TeamFile: roster, lead_agent_id, members[]
+├── inboxes/
+│   ├── team-lead.json  # Leader's inbox
+│   ├── researcher.json # Teammate inbox
+│   └── verifier.json   # Another teammate
+└── permissions/        # Worker permission sync (plan mode)
+</div>
+</div>
+
+<!-- Bounty/Economy System -->
+<div class="section">
+<div class="section-title">Bounty / Economy System (jfc-economy)</div>
+
+<div class="flow-step"><div class="flow-num">1</div><div class="flow-text"><code>post_bounty</code> tool → <code>MarketOrchestrator::post_bounty()</code> → bounty enters <code>Open</code> state</div></div>
+<div class="flow-step"><div class="flow-num">2</div><div class="flow-text"><code>run_bounty</code> tool → <code>run_bounty_cycle()</code> drives the full solve→validate→settle loop</div></div>
+<div class="flow-step"><div class="flow-num">3</div><div class="flow-text"><b>Solver phase:</b> N solvers spawned in parallel git worktrees via <code>SwarmProvider::create_worktree()</code></div></div>
+<div class="flow-step"><div class="flow-num">4</div><div class="flow-text">Each solver runs <code>AgentInvoker::invoke_solver()</code> → produces <code>Solution</code> with patch</div></div>
+<div class="flow-step"><div class="flow-num">5</div><div class="flow-text"><b>Validation phase:</b> validators challenge each solution, look for flaws</div></div>
+<div class="flow-step"><div class="flow-num">6</div><div class="flow-text"><b>Settlement:</b> <code>settle()</code> ranks solutions, pays winner, updates trust scores</div></div>
+
+<div class="code">
+MarketOrchestrator
+├── ledger: TokenLedger         # Budget tracking, agent balances
+├── trust: TrustRegistry        # Agent reputation scores
+├── bounties: BountyManager     # State machine: Open→Bidding→Executing→Validating→Settling→Complete
+├── solvers: SolverPool         # Active solver agents
+├── validators: ValidationPool  # Adversarial validators
+└── charter: Charter            # Rules: max_solvers, payment_floor, collusion thresholds
+</div>
+
+<p style="color: var(--text-muted); font-size: 13px; margin-top: 16px;">
+  <b>Key integration point:</b> <code>dispatch_heavy.rs</code> implements <code>execute_post_bounty()</code> and <code>execute_run_bounty()</code>
+  which hold the global <code>market_orchestrator()</code> mutex and run the full LLM-backed cycle.
+</p>
+</div>
+
+<!-- Where Everything Lives -->
+<div class="section">
+<div class="section-title">File Map</div>
+
+<table>
+<tr><th>Path</th><th>Responsibility</th></tr>
+<tr><td>jfc-engine/src/stream.rs</td><td>Main streaming loop, provider calls, chunk accumulation</td></tr>
+<tr><td>jfc-engine/src/tools/dispatch.rs</td><td>Master switch: routes tool_use → specialized handlers</td></tr>
+<tr><td>jfc-engine/src/tools/dispatch_heavy.rs</td><td>Expensive tools: bounty, council (hold mutexes)</td></tr>
+<tr><td>jfc-engine/src/tools/subagent.rs</td><td>Task tool spawn logic, background agent setup</td></tr>
+<tr><td>jfc-engine/src/background.rs</td><td>BackgroundTask registry, completion tracking</td></tr>
+<tr><td>jfc-engine/src/swarm/</td><td>Teams, mailbox, coordinator, runner, permission_sync</td></tr>
+<tr><td>jfc-economy/src/orchestrator.rs</td><td>MarketOrchestrator: post_bounty, run_bounty_cycle</td></tr>
+<tr><td>jfc-economy/src/settlement.rs</td><td>Settlement: payouts, trust updates</td></tr>
+<tr><td>jfc-session/src/task_store.rs</td><td>TaskStore: shared task list for teams/factory</td></tr>
+</table>
+</div>
+
+<!-- Connection Points -->
+<div class="section">
+<div class="section-title">What Connects What</div>
+
+<table>
+<tr><th>A</th><th>B</th><th>Integration</th></tr>
+<tr><td>stream.rs</td><td>dispatch.rs</td><td>tool_use events → execute_tool()</td></tr>
+<tr><td>dispatch.rs</td><td>swarm/</td><td>SendMessage, TeamCreate tools</td></tr>
+<tr><td>dispatch.rs</td><td>dispatch_heavy.rs</td><td>post_bounty, run_bounty</td></tr>
+<tr><td>dispatch_heavy.rs</td><td>jfc-economy</td><td>MarketOrchestrator::run_bounty_cycle()</td></tr>
+<tr><td>swarm/runner.rs</td><td>coordinator.rs</td><td>start_teammate() → run_teammate_loop()</td></tr>
+<tr><td>coordinator.rs</td><td>mailbox.rs</td><td>poll_for_next_message() → read_mailbox()</td></tr>
+<tr><td>subagent.rs</td><td>background.rs</td><td>spawn() → BackgroundTask registry</td></tr>
+<tr><td>background.rs</td><td>stream.rs</td><td>completion events → conversation injection</td></tr>
+<tr><td>economy</td><td>tools/economy.rs</td><td>EconomySwarmProvider: git worktrees for solvers</td></tr>
+</table>
+</div>
+
+</div>
+</body>
+</html>

@@ -150,7 +150,7 @@ pub struct PromptRewriteProposal {
 
 pub const SPINNER: &[&str] = crate::glyphs::TASK_FRAMES;
 pub const IDLE_TICK_MS: u64 = 80;
-pub const ANIM_TICK_MS: u64 = 100;
+pub const ANIM_TICK_MS: u64 = 33;
 
 pub struct App {
     /// The frontend-neutral engine state: conversation, streaming,
@@ -526,17 +526,16 @@ pub struct App {
     /// `--json`: structured JSON output mode for CI.
     pub json_mode: bool,
 
-    /// View-layer reveal pacer for live streaming text — animates the *display*
-    /// of the engine's (already-immediate) streaming output at the adaptive
-    /// smooth/catch-up cadence. The engine still holds the full text (single
-    /// source of truth); this only gates how fast lines appear on screen.
-    /// Ported from Codex's stream chunking. See
-    /// `crate::render::codex_stream::stream_pacer`.
+    /// View-layer reveal cap for live streaming text. The default tick path
+    /// reveals all received text immediately (Claude/Codex parity); the cap
+    /// exists so the renderer has one stable source for "how much of the live
+    /// part may be shown" and tests can exercise optional pacing behavior.
+    /// See `crate::render::codex_stream::stream_pacer`.
     pub(crate) stream_pacer: crate::render::codex_stream::stream_pacer::StreamPacer,
-    /// `(streaming_assistant_idx, part_count)` the pacer is currently animating.
+    /// `(streaming_assistant_idx, part_count)` the reveal cap currently tracks.
     /// When it changes — a new streaming message, or a new part within it (e.g.
-    /// the second text block after a tool call) — the pacer resets so each text
-    /// segment animates in from the start instead of inheriting the prior count.
+    /// the second text block after a tool call) — the cap resets instead of
+    /// inheriting the prior part's count.
     pub(crate) paced_stream_key: Option<(usize, usize)>,
 }
 

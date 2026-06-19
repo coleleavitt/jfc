@@ -15,9 +15,11 @@ pub fn handle_chunk(state: &mut EngineState, text: Option<String>, reasoning: Op
     // First-byte trace: log exactly once per turn, when the very first
     // text/reasoning delta lands. This is the "connection opened, model is
     // producing output" signal — the boundary the interrupt-on-submit and
-    // superseded-cancel logic keys off. One line per turn (gated on
-    // `streaming_response_bytes == 0`), so it's cheap even on long streams.
-    if state.streaming_response_bytes == 0 {
+    // superseded-cancel logic keys off.
+    let first_content_delta = state.streaming_text.is_empty()
+        && state.streaming_reasoning.is_empty()
+        && state.streaming_response_bytes == 0;
+    if first_content_delta {
         // Time-to-first-token: gap from this stream round's open to its first
         // content delta. Re-captured each round (this block only runs when
         // `streaming_response_bytes == 0`, i.e. on the round's first byte), so
@@ -41,13 +43,12 @@ pub fn handle_chunk(state: &mut EngineState, text: Option<String>, reasoning: Op
     // time-since-stream-start.
     let now = std::time::Instant::now();
     state.streaming_last_token_at = Some(now);
-    // v126 responseLengthRef: accumulate ALL content bytes for the
-    // spinner's chars/4 token estimate.
+    // v126/177 responseLengthRef: text bytes grow directly, while thinking
+    // progress is driven by `thinking_delta.estimated_tokens` / signature
+    // estimates in handle_thinking_tokens. Raw reasoning bytes are preserved in
+    // the transcript below but do not inflate the shared response-length meter.
     if let Some(ref t) = text {
         state.streaming_response_bytes += t.len();
-    }
-    if let Some(ref r) = reasoning {
-        state.streaming_response_bytes += r.len();
     }
     if let Some(chunk) = text {
         // First text byte after a thinking phase ⇒ thinking
@@ -108,25 +109,29 @@ pub fn handle_chunk(state: &mut EngineState, text: Option<String>, reasoning: Op
 
         // CC 2.1.167 MessageDisplay hook — fires on each text chunk when a
         // registered handler wants to intercept/rewrite displayed content.
-        // Fast path: no-op when no MessageDisplay hooks are registered.
-        // Fire-and-forget (async, non-blocking) — display hooks must not
-        // stall the stream.
-        crate::hooks::fire_async(
-            crate::hooks::HookPoint::OnMessageDisplay,
-            &crate::hooks::HookContext::for_session(session_id_for_chunk)
-                .with_extra("chunk_len", chunk.len().to_string()),
-        );
+        // This is a hot path, and `fire_async` is synchronous despite its
+        // name, so skip context allocation entirely when no hook can observe
+        // the event.
+        if crate::hooks::has_hooks(crate::hooks::HookPoint::OnMessageDisplay) {
+            crate::hooks::fire_async(
+                crate::hooks::HookPoint::OnMessageDisplay,
+                &crate::hooks::HookContext::for_session(session_id_for_chunk)
+                    .with_extra("chunk_len", chunk.len().to_string()),
+            );
+        }
 
         // OnModelResponse hook — fires on every text delta so external
         // scripts can observe the raw stream. High-frequency site: only
         // costs anything when Shell handlers are registered for this point.
-        crate::hooks::fire_async(
-            crate::hooks::HookPoint::OnModelResponse,
-            &crate::hooks::HookContext::for_session(session_id_for_chunk)
-                .with_extra("chunk", chunk.clone())
-                .with_extra("chunk_len", chunk.len().to_string())
-                .with_extra("is_final", "false"),
-        );
+        if crate::hooks::has_hooks(crate::hooks::HookPoint::OnModelResponse) {
+            crate::hooks::fire_async(
+                crate::hooks::HookPoint::OnModelResponse,
+                &crate::hooks::HookContext::for_session(session_id_for_chunk)
+                    .with_extra("chunk", chunk.clone())
+                    .with_extra("chunk_len", chunk.len().to_string())
+                    .with_extra("is_final", "false"),
+            );
+        }
 
         if let Some(msg) = streaming_assistant_mut(state) {
             // Append to the *last* part if it's still a Text
@@ -206,7 +211,7 @@ pub fn handle_redacted_thinking(state: &mut EngineState, data: String) {
 /// `thinking …` verb surface during that phase, and the running total feeds
 /// the `⟳ N thinking` chip. Mirrors cli.js's `thinkingTokenEstimate +=`
 /// accumulation (cli.beautified.js:574722).
-pub fn handle_thinking_tokens(state: &mut EngineState, tokens: u32) {
+pub fn handle_thinking_tokens(state: &mut EngineState, token_delta: u32) {
     state.record_stream_activity();
     state.stream_lifecycle = None;
     let now = std::time::Instant::now();
@@ -220,25 +225,18 @@ pub fn handle_thinking_tokens(state: &mut EngineState, tokens: u32) {
     if state.thinking_started_at.is_none() && state.thinking_ended_at.is_none() {
         state.thinking_started_at = Some(now);
     }
-    // `tokens` is the API's `estimated_tokens` — the *cumulative running total*
-    // for the current thinking block (per cli.js: "running total … not the
-    // authoritative billed output_tokens"). Accumulate only the delta against
-    // the last total we saw, exactly as the output-token path does with
-    // `last_usage_output`. Adding the cumulative total each event triple-counts.
-    let delta = if tokens >= state.last_thinking_estimate {
-        tokens - state.last_thinking_estimate
-    } else {
-        // A new thinking block restarted the total lower → its growth so far is
-        // the full `tokens` (it began from 0).
-        tokens
-    };
-    state.last_thinking_estimate = tokens;
-    state.streaming_thinking_tokens = state.streaming_thinking_tokens.saturating_add(delta as u64);
+    state.streaming_thinking_tokens = state
+        .streaming_thinking_tokens
+        .saturating_add(token_delta as u64);
+    let progress_bytes =
+        usize::try_from(token_delta).map_or(usize::MAX, |tokens| tokens.saturating_mul(4));
+    state.streaming_response_bytes = state
+        .streaming_response_bytes
+        .saturating_add(progress_bytes);
 }
 
 pub fn handle_response_id(state: &mut EngineState, id: String) {
     state.record_stream_activity();
-    state.stream_lifecycle = None;
     crate::cache_lineage::record_response_id(state, id);
 }
 
@@ -278,24 +276,32 @@ mod tests {
         EngineState::new(Arc::new(TestProvider), "test-model")
     }
 
-    // Summarized/redacted thinking: estimates arrive with no visible reasoning
-    // text, so this handler is the only thing that can light up the thinking
-    // phase. It must both accumulate the count AND mark thinking started.
-    // `estimated_tokens` is the CUMULATIVE running total for the thinking block,
-    // so the counter must follow the latest total — not sum every event. A
-    // monotonically-rising 40 → 90 → 130 means the block is at 130, not 260.
     #[test]
-    fn thinking_tokens_track_cumulative_total_normal() {
+    fn response_id_keeps_pre_output_lifecycle_regression() {
+        let mut state = test_app();
+        state.stream_lifecycle = Some(crate::runtime::StreamLifecycleStatus::new(
+            crate::runtime::StreamLifecyclePhase::StreamOpened,
+            Some("waiting for first event".to_owned()),
+        ));
+
+        handle_response_id(&mut state, "msg_123".to_owned());
+
+        assert!(state.stream_lifecycle.is_some());
+        assert_eq!(state.last_response_id.as_deref(), Some("msg_123"));
+    }
+
+    #[test]
+    fn thinking_tokens_accumulate_delta_frames_normal() {
         let mut state = test_app();
         assert!(state.thinking_started_at.is_none());
 
         handle_thinking_tokens(&mut state, 40);
-        handle_thinking_tokens(&mut state, 90);
-        handle_thinking_tokens(&mut state, 130);
+        handle_thinking_tokens(&mut state, 50);
+        handle_thinking_tokens(&mut state, 40);
 
         assert_eq!(
             state.streaming_thinking_tokens, 130,
-            "must equal the latest cumulative total, not the sum of events"
+            "raw estimated_tokens frames are deltas in Claude Code 2.1.177"
         );
         assert!(
             state.thinking_started_at.is_some(),
@@ -304,35 +310,27 @@ mod tests {
         assert!(state.thinking_ended_at.is_none());
     }
 
-    // REGRESSION (thinking-token triple-count): adding the cumulative total on
-    // each event inflated the count (100,250,400 → 750). The delta-accumulation
-    // fix must report the true block total (400).
     #[test]
-    fn thinking_tokens_do_not_triple_count_regression() {
+    fn repeated_equal_thinking_token_deltas_keep_advancing_regression() {
         let mut state = test_app();
-        for total in [100u32, 250, 400] {
-            handle_thinking_tokens(&mut state, total);
+        for delta in [50u32, 50, 50] {
+            handle_thinking_tokens(&mut state, delta);
         }
         assert_eq!(
-            state.streaming_thinking_tokens, 400,
-            "cumulative totals must not be summed (was 750 before the fix)"
+            state.streaming_thinking_tokens, 150,
+            "equal 50-token delta frames must not be mistaken for a stuck cumulative total"
         );
     }
 
-    // A second thinking block restarts `estimated_tokens` lower; its tokens must
-    // ADD to the first block's total (turn-cumulative across blocks).
     #[test]
     fn thinking_tokens_sum_across_blocks_robust() {
         let mut state = test_app();
-        // Block 1 reaches 400.
         handle_thinking_tokens(&mut state, 150);
-        handle_thinking_tokens(&mut state, 400);
-        // Block 2 restarts low (50) then grows to 120.
         handle_thinking_tokens(&mut state, 50);
         handle_thinking_tokens(&mut state, 120);
         assert_eq!(
-            state.streaming_thinking_tokens, 520,
-            "block totals accumulate across the turn (400 + 120)"
+            state.streaming_thinking_tokens, 320,
+            "delta frames accumulate across the turn"
         );
     }
 
@@ -362,5 +360,28 @@ mod tests {
         // First event from a zero baseline → delta == tokens == 100.
         handle_thinking_tokens(&mut state, 100);
         assert_eq!(state.streaming_thinking_tokens, u64::MAX);
+    }
+
+    #[test]
+    fn reasoning_text_does_not_advance_response_length_regression() {
+        let mut state = test_app();
+
+        handle_chunk(&mut state, None, Some("thinking text".to_owned()));
+
+        assert_eq!(
+            state.streaming_response_bytes, 0,
+            "Claude 2.1.177 drives responseLengthRef for thinking from token estimates, not raw reasoning bytes"
+        );
+        assert_eq!(state.streaming_reasoning, "thinking text");
+    }
+
+    #[test]
+    fn thinking_tokens_floor_response_length_normal() {
+        let mut state = test_app();
+
+        handle_thinking_tokens(&mut state, 12);
+
+        assert_eq!(state.streaming_thinking_tokens, 12);
+        assert_eq!(state.streaming_response_bytes, 48);
     }
 }

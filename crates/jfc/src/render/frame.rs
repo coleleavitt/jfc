@@ -108,15 +108,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         .engine
         .task_store
         .list(jfc_session::DeletedFilter::Exclude);
-    let tp_open: usize = tp_all
-        .iter()
-        .filter(|t| {
-            matches!(
-                t.status,
-                jfc_session::TaskStatus::Pending | jfc_session::TaskStatus::InProgress
-            )
-        })
-        .count();
+    let tp_open: usize = tp_all.iter().filter(|t| t.status.is_open()).count();
     let now_tp = std::time::Instant::now();
     let tp_recent_done: usize = tp_all
         .iter()

@@ -1,0 +1,585 @@
+DIGEST 2db5d2d910a44fff66c109ff8e299322
+FJFCTheorems.ContextBudget
+R769:783 Stdlib.Arith.Arith <> <> lib
+R801:814 Stdlib.Lists.List <> <> lib
+R832:844 Stdlib.Bool.Bool <> <> lib
+R862:878 Stdlib.micromega.Lia <> <> lib
+R888:900 Stdlib.Lists.List ListNotations <> mod
+rec 948:960 <> ContextBudget
+proj 992:1011 <> system_prompt_tokens
+proj 1022:1043 <> tool_definition_tokens
+proj 1054:1066 <> memory_tokens
+proj 1077:1103 <> project_instructions_tokens
+proj 1114:1132 <> user_message_tokens
+R1015:1017 Corelib.Init.Datatypes <> nat ind
+R1047:1049 Corelib.Init.Datatypes <> nat ind
+R1070:1072 Corelib.Init.Datatypes <> nat ind
+R1107:1109 Corelib.Init.Datatypes <> nat ind
+R1136:1138 Corelib.Init.Datatypes <> nat ind
+def 1196:1205 <> raw_tokens
+R1212:1224 JFCTheorems.ContextBudget <> ContextBudget rec
+binder 1208:1208 <> b:7
+R1229:1231 Corelib.Init.Datatypes <> nat ind
+R1343:1347 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R1309:1313 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R1289:1293 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R1260:1264 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R1238:1257 JFCTheorems.ContextBudget <> system_prompt_tokens proj
+R1259:1259 JFCTheorems.ContextBudget <> b:7 var
+R1265:1286 JFCTheorems.ContextBudget <> tool_definition_tokens proj
+R1288:1288 JFCTheorems.ContextBudget <> b:7 var
+R1294:1306 JFCTheorems.ContextBudget <> memory_tokens proj
+R1308:1308 JFCTheorems.ContextBudget <> b:7 var
+R1314:1340 JFCTheorems.ContextBudget <> project_instructions_tokens proj
+R1342:1342 JFCTheorems.ContextBudget <> b:7 var
+R1348:1366 JFCTheorems.ContextBudget <> user_message_tokens proj
+R1368:1368 JFCTheorems.ContextBudget <> b:7 var
+def 1455:1466 <> OVERHEAD_NUM
+R1470:1472 Corelib.Init.Datatypes <> nat ind
+def 1491:1502 <> OVERHEAD_DEN
+R1506:1508 Corelib.Init.Datatypes <> nat ind
+def 1528:1540 <> with_overhead
+R1552:1554 Corelib.Init.Datatypes <> nat ind
+binder 1543:1548 <> tokens:8
+R1559:1561 Corelib.Init.Datatypes <> nat ind
+R1568:1568 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R1590:1593 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R1575:1577 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R1569:1574 JFCTheorems.ContextBudget <> tokens:8 var
+R1578:1589 JFCTheorems.ContextBudget <> OVERHEAD_NUM def
+R1594:1605 JFCTheorems.ContextBudget <> OVERHEAD_DEN def
+def 1657:1672 <> effective_tokens
+R1679:1691 JFCTheorems.ContextBudget <> ContextBudget rec
+binder 1675:1675 <> b:9
+R1696:1698 Corelib.Init.Datatypes <> nat ind
+R1705:1717 JFCTheorems.ContextBudget <> with_overhead def
+R1720:1729 JFCTheorems.ContextBudget <> raw_tokens def
+R1731:1731 JFCTheorems.ContextBudget <> b:9 var
+rec 1814:1820 <> ToolDef
+proj 1846:1861 <> tool_name_tokens
+proj 1872:1894 <> tool_description_tokens
+proj 1905:1922 <> tool_schema_tokens
+R1865:1867 Corelib.Init.Datatypes <> nat ind
+R1898:1900 Corelib.Init.Datatypes <> nat ind
+R1926:1928 Corelib.Init.Datatypes <> nat ind
+def 1946:1956 <> tool_tokens
+R1963:1969 JFCTheorems.ContextBudget <> ToolDef rec
+binder 1959:1959 <> t:14
+R1974:1976 Corelib.Init.Datatypes <> nat ind
+R2029:2031 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2001:2003 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R1983:1998 JFCTheorems.ContextBudget <> tool_name_tokens proj
+R2000:2000 JFCTheorems.ContextBudget <> t:14 var
+R2004:2026 JFCTheorems.ContextBudget <> tool_description_tokens proj
+R2028:2028 JFCTheorems.ContextBudget <> t:14 var
+R2032:2049 JFCTheorems.ContextBudget <> tool_schema_tokens proj
+R2051:2051 JFCTheorems.ContextBudget <> t:14 var
+def 2092:2101 <> small_tool
+R2105:2111 JFCTheorems.ContextBudget <> ToolDef rec
+R2116:2124 JFCTheorems.ContextBudget <> mkToolDef constr
+def 2167:2177 <> medium_tool
+R2181:2187 JFCTheorems.ContextBudget <> ToolDef rec
+R2192:2200 JFCTheorems.ContextBudget <> mkToolDef constr
+def 2242:2251 <> large_tool
+R2255:2261 JFCTheorems.ContextBudget <> ToolDef rec
+R2266:2274 JFCTheorems.ContextBudget <> mkToolDef constr
+def 2348:2361 <> jfc_core_tools
+R2365:2367 Corelib.Init.Datatypes <> nat ind
+def 2428:2440 <> jfc_mcp_tools
+R2444:2446 Corelib.Init.Datatypes <> nat ind
+def 2494:2507 <> jfc_task_tools
+R2511:2513 Corelib.Init.Datatypes <> nat ind
+def 2560:2574 <> jfc_skill_tools
+R2578:2580 Corelib.Init.Datatypes <> nat ind
+def 2628:2638 <> total_tools
+R2642:2644 Corelib.Init.Datatypes <> nat ind
+R2699:2701 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2682:2684 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2666:2668 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2652:2665 JFCTheorems.ContextBudget <> jfc_core_tools def
+R2669:2681 JFCTheorems.ContextBudget <> jfc_mcp_tools def
+R2685:2698 JFCTheorems.ContextBudget <> jfc_task_tools def
+R2702:2716 JFCTheorems.ContextBudget <> jfc_skill_tools def
+def 2773:2793 <> estimated_tool_tokens
+R2797:2799 Corelib.Init.Datatypes <> nat ind
+R2934:2938 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2890:2894 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2846:2850 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2820:2822 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R2806:2819 JFCTheorems.ContextBudget <> jfc_core_tools def
+R2823:2833 JFCTheorems.ContextBudget <> tool_tokens def
+R2835:2845 JFCTheorems.ContextBudget <> medium_tool def
+R2864:2866 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R2851:2863 JFCTheorems.ContextBudget <> jfc_mcp_tools def
+R2867:2877 JFCTheorems.ContextBudget <> tool_tokens def
+R2879:2889 JFCTheorems.ContextBudget <> medium_tool def
+R2909:2911 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R2895:2908 JFCTheorems.ContextBudget <> jfc_task_tools def
+R2912:2922 JFCTheorems.ContextBudget <> tool_tokens def
+R2924:2933 JFCTheorems.ContextBudget <> small_tool def
+R2954:2956 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R2939:2953 JFCTheorems.ContextBudget <> jfc_skill_tools def
+R2957:2967 JFCTheorems.ContextBudget <> tool_tokens def
+R2969:2978 JFCTheorems.ContextBudget <> small_tool def
+prf 3093:3117 <> tool_overhead_significant
+R3144:3147 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R3123:3143 JFCTheorems.ContextBudget <> estimated_tool_tokens def
+R3384:3404 JFCTheorems.ContextBudget <> estimated_tool_tokens def
+R3407:3420 JFCTheorems.ContextBudget <> jfc_core_tools def
+R3423:3435 JFCTheorems.ContextBudget <> jfc_mcp_tools def
+R3442:3455 JFCTheorems.ContextBudget <> jfc_task_tools def
+R3458:3472 JFCTheorems.ContextBudget <> jfc_skill_tools def
+R3475:3485 JFCTheorems.ContextBudget <> tool_tokens def
+R3488:3498 JFCTheorems.ContextBudget <> medium_tool def
+R3501:3510 JFCTheorems.ContextBudget <> small_tool def
+def 3597:3614 <> system_prompt_base
+R3618:3620 Corelib.Init.Datatypes <> nat ind
+def 3667:3685 <> system_prompt_rules
+R3689:3691 Corelib.Init.Datatypes <> nat ind
+def 3738:3757 <> system_prompt_memory
+R3761:3763 Corelib.Init.Datatypes <> nat ind
+def 3804:3823 <> system_prompt_agents
+R3827:3829 Corelib.Init.Datatypes <> nat ind
+def 3868:3886 <> total_system_prompt
+R3890:3892 Corelib.Init.Datatypes <> nat ind
+R3962:3964 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3939:3941 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3917:3919 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3899:3916 JFCTheorems.ContextBudget <> system_prompt_base def
+R3920:3938 JFCTheorems.ContextBudget <> system_prompt_rules def
+R3942:3961 JFCTheorems.ContextBudget <> system_prompt_memory def
+R3965:3984 JFCTheorems.ContextBudget <> system_prompt_agents def
+prf 4041:4065 <> system_prompt_substantial
+R4090:4093 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R4071:4089 JFCTheorems.ContextBudget <> total_system_prompt def
+R4427:4436 Stdlib.Arith.PeanoNat Nat leb_le thm
+R4427:4436 Stdlib.Arith.PeanoNat Nat leb_le thm
+def 4513:4534 <> typical_initial_budget
+R4538:4550 JFCTheorems.ContextBudget <> ContextBudget rec
+R4555:4569 JFCTheorems.ContextBudget <> mkContextBudget constr
+R4573:4591 JFCTheorems.ContextBudget <> total_system_prompt def
+R4613:4633 JFCTheorems.ContextBudget <> estimated_tool_tokens def
+prf 4869:4890 <> initial_query_uses_50k
+R4910:4931 JFCTheorems.ContextBudget <> typical_initial_budget def
+binder 4900:4905 <> budget:15
+R4955:4970 JFCTheorems.ContextBudget <> effective_tokens def
+R4972:4977 JFCTheorems.ContextBudget <> budget:15 var
+binder 4942:4950 <> effective:16
+R5002:5005 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R4993:4996 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R4984:4992 JFCTheorems.ContextBudget <> effective:16 var
+R5015:5018 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5006:5014 JFCTheorems.ContextBudget <> effective:16 var
+R5376:5385 Stdlib.Arith.PeanoNat Nat leb_le thm
+R5376:5385 Stdlib.Arith.PeanoNat Nat leb_le thm
+R5423:5432 Stdlib.Arith.PeanoNat Nat leb_le thm
+R5423:5432 Stdlib.Arith.PeanoNat Nat leb_le thm
+def 5584:5600 <> progressive_tools
+R5616:5618 Corelib.Init.Datatypes <> nat ind
+binder 5603:5612 <> query_type:17
+R5623:5625 Corelib.Init.Datatypes <> nat ind
+R5638:5647 JFCTheorems.ContextBudget <> query_type:17 var
+prf 5892:5915 <> progressive_saves_tokens
+binder 5928:5937 <> query_type:19
+R5958:5965 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5954:5956 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R5944:5953 JFCTheorems.ContextBudget <> query_type:19 var
+R6020:6022 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R5994:5996 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R5966:5982 JFCTheorems.ContextBudget <> progressive_tools def
+R5984:5993 JFCTheorems.ContextBudget <> query_type:19 var
+R5997:6007 JFCTheorems.ContextBudget <> tool_tokens def
+R6009:6019 JFCTheorems.ContextBudget <> medium_tool def
+R6023:6043 JFCTheorems.ContextBudget <> estimated_tool_tokens def
+R6469:6478 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R6469:6478 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R6516:6525 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R6516:6525 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R6563:6572 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R6563:6572 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R6683:6698 Stdlib.Arith.PeanoNat Nat succ_lt_mono thm
+R6683:6698 Stdlib.Arith.PeanoNat Nat succ_lt_mono thm
+R6683:6698 Stdlib.Arith.PeanoNat Nat succ_lt_mono thm
+R6683:6698 Stdlib.Arith.PeanoNat Nat succ_lt_mono thm
+R6719:6729 Stdlib.Arith.PeanoNat Nat nlt_0_r thm
+R6719:6729 Stdlib.Arith.PeanoNat Nat nlt_0_r thm
+def 6823:6840 <> lazy_memory_tokens
+R6865:6867 Corelib.Init.Datatypes <> nat ind
+binder 6843:6861 <> relevance_threshold:20
+R6888:6890 Corelib.Init.Datatypes <> nat ind
+binder 6871:6884 <> total_memories:21
+R6895:6897 Corelib.Init.Datatypes <> nat ind
+R6904:6904 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R6941:6944 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R6919:6921 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R6905:6918 JFCTheorems.ContextBudget <> total_memories:21 var
+R6922:6940 JFCTheorems.ContextBudget <> relevance_threshold:20 var
+prf 7027:7043 <> lazy_memory_saves
+binder 7056:7069 <> total_memories:22
+R7098:7105 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7090:7093 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R7076:7089 JFCTheorems.ContextBudget <> total_memories:22 var
+R7142:7145 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R7106:7123 JFCTheorems.ContextBudget <> lazy_memory_tokens def
+R7128:7141 JFCTheorems.ContextBudget <> total_memories:22 var
+R7160:7162 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R7146:7159 JFCTheorems.ContextBudget <> total_memories:22 var
+R7211:7228 JFCTheorems.ContextBudget <> lazy_memory_tokens def
+R7511:7513 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R7511:7513 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R7544:7563 Stdlib.Arith.PeanoNat Nat div_mul_cancel_r abbrev
+R7544:7563 Stdlib.Arith.PeanoNat Nat div_mul_cancel_r abbrev
+R7544:7563 Stdlib.Arith.PeanoNat Nat div_mul_cancel_r abbrev
+R7590:7608 Stdlib.Arith.PeanoNat Nat div_le_compat_l def
+R7590:7608 Stdlib.Arith.PeanoNat Nat div_le_compat_l def
+R7654:7666 Stdlib.Arith.PeanoNat Nat lt_0_succ thm
+R7654:7666 Stdlib.Arith.PeanoNat Nat lt_0_succ thm
+def 7800:7818 <> post_compact_tokens
+R7831:7833 Corelib.Init.Datatypes <> nat ind
+binder 7821:7827 <> initial:23
+R7857:7859 Corelib.Init.Datatypes <> nat ind
+binder 7837:7853 <> compression_ratio:24
+R7864:7866 Corelib.Init.Datatypes <> nat ind
+R7873:7873 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R7901:7904 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R7881:7883 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R7874:7880 JFCTheorems.ContextBudget <> initial:23 var
+R7884:7900 JFCTheorems.ContextBudget <> compression_ratio:24 var
+prf 7989:8015 <> compression_controls_growth
+binder 8028:8041 <> initial_tokens:25
+R8071:8078 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8062:8065 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R8048:8061 JFCTheorems.ContextBudget <> initial_tokens:25 var
+R8116:8119 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R8079:8097 JFCTheorems.ContextBudget <> post_compact_tokens def
+R8099:8112 JFCTheorems.ContextBudget <> initial_tokens:25 var
+R8172:8190 JFCTheorems.ContextBudget <> post_compact_tokens def
+R8321:8347 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R8321:8347 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R8387:8389 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8358:8369 Stdlib.Arith.PeanoNat Nat le_trans thm
+R8387:8389 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8358:8369 Stdlib.Arith.PeanoNat Nat le_trans thm
+R8405:8421 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R8405:8421 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R8445:8454 Stdlib.Arith.PeanoNat Nat leb_le thm
+R8445:8454 Stdlib.Arith.PeanoNat Nat leb_le thm
+def 8620:8645 <> compressible_system_prompt
+R8649:8651 Corelib.Init.Datatypes <> nat ind
+R8678:8680 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8659:8677 JFCTheorems.ContextBudget <> system_prompt_rules def
+R8681:8700 JFCTheorems.ContextBudget <> system_prompt_memory def
+def 8758:8777 <> static_system_prompt
+R8781:8783 Corelib.Init.Datatypes <> nat ind
+R8808:8810 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8790:8807 JFCTheorems.ContextBudget <> system_prompt_base def
+R8811:8830 JFCTheorems.ContextBudget <> system_prompt_agents def
+prf 8938:8953 <> static_cacheable
+R8979:8982 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R8959:8978 JFCTheorems.ContextBudget <> static_system_prompt def
+R9002:9004 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8983:9001 JFCTheorems.ContextBudget <> total_system_prompt def
+R9156:9165 Stdlib.Arith.PeanoNat Nat leb_le thm
+R9156:9165 Stdlib.Arith.PeanoNat Nat leb_le thm
+def 9510:9525 <> optimized_budget
+R9529:9541 JFCTheorems.ContextBudget <> ContextBudget rec
+R9546:9560 JFCTheorems.ContextBudget <> mkContextBudget constr
+R9588:9590 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R9584:9586 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R9565:9583 JFCTheorems.ContextBudget <> total_system_prompt def
+R9652:9654 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R9631:9651 JFCTheorems.ContextBudget <> estimated_tool_tokens def
+prf 9944:9965 <> optimization_effective
+R10004:10006 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R9971:9986 JFCTheorems.ContextBudget <> effective_tokens def
+R9988:10003 JFCTheorems.ContextBudget <> optimized_budget def
+R10050:10052 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R10046:10048 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R10007:10022 JFCTheorems.ContextBudget <> effective_tokens def
+R10024:10045 JFCTheorems.ContextBudget <> typical_initial_budget def
+R10332:10341 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R10332:10341 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+rec 11091:11100 <> CompBudget
+proj 11129:11138 <> ins_budget
+proj 11207:11217 <> dems_budget
+proj 11286:11295 <> que_budget
+R11143:11145 Corelib.Init.Datatypes <> nat ind
+R11221:11223 Corelib.Init.Datatypes <> nat ind
+R11300:11302 Corelib.Init.Datatypes <> nat ind
+def 11432:11443 <> total_budget
+R11450:11459 JFCTheorems.ContextBudget <> CompBudget rec
+binder 11446:11446 <> b:30
+R11464:11466 Corelib.Init.Datatypes <> nat ind
+R11501:11503 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11485:11487 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11473:11482 JFCTheorems.ContextBudget <> ins_budget proj
+R11484:11484 JFCTheorems.ContextBudget <> b:30 var
+R11488:11498 JFCTheorems.ContextBudget <> dems_budget proj
+R11500:11500 JFCTheorems.ContextBudget <> b:30 var
+R11504:11513 JFCTheorems.ContextBudget <> que_budget proj
+R11515:11515 JFCTheorems.ContextBudget <> b:30 var
+prf 11941:11959 <> budget_conservation
+R11987:11989 Corelib.Init.Datatypes <> nat ind
+binder 11972:11974 <> ins:31
+binder 11976:11979 <> dems:32
+binder 11981:11983 <> que:33
+R12036:12038 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11996:12007 JFCTheorems.ContextBudget <> total_budget def
+R12010:12021 JFCTheorems.ContextBudget <> mkCompBudget constr
+R12023:12025 JFCTheorems.ContextBudget <> ins:31 var
+R12027:12030 JFCTheorems.ContextBudget <> dems:32 var
+R12032:12034 JFCTheorems.ContextBudget <> que:33 var
+R12049:12051 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R12042:12044 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R12039:12041 JFCTheorems.ContextBudget <> ins:31 var
+R12045:12048 JFCTheorems.ContextBudget <> dems:32 var
+R12052:12054 JFCTheorems.ContextBudget <> que:33 var
+R12094:12105 JFCTheorems.ContextBudget <> total_budget def
+prf 12248:12264 <> budget_no_leakage
+R12281:12290 JFCTheorems.ContextBudget <> CompBudget rec
+binder 12277:12277 <> b:34
+R12311:12319 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12297:12308 JFCTheorems.ContextBudget <> total_budget def
+R12310:12310 JFCTheorems.ContextBudget <> b:34 var
+R12348:12350 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R12332:12334 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R12320:12329 JFCTheorems.ContextBudget <> ins_budget proj
+R12331:12331 JFCTheorems.ContextBudget <> b:34 var
+R12335:12345 JFCTheorems.ContextBudget <> dems_budget proj
+R12347:12347 JFCTheorems.ContextBudget <> b:34 var
+R12351:12360 JFCTheorems.ContextBudget <> que_budget proj
+R12362:12362 JFCTheorems.ContextBudget <> b:34 var
+R12391:12402 JFCTheorems.ContextBudget <> total_budget def
+def 12771:12780 <> granular_k
+R12784:12786 Corelib.Init.Datatypes <> nat ind
+def 12850:12857 <> demo_cap
+R12864:12873 JFCTheorems.ContextBudget <> CompBudget rec
+binder 12860:12860 <> b:35
+R12878:12880 Corelib.Init.Datatypes <> nat ind
+R12895:12897 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R12885:12894 JFCTheorems.ContextBudget <> granular_k def
+R12898:12908 JFCTheorems.ContextBudget <> dems_budget proj
+R12910:12910 JFCTheorems.ContextBudget <> b:35 var
+def 13117:13131 <> demo_select_aux
+R13140:13142 Corelib.Init.Datatypes <> nat ind
+binder 13134:13136 <> cap:36
+R13154:13157 Corelib.Init.Datatypes <> list ind
+R13159:13161 Corelib.Init.Datatypes <> nat ind
+binder 13146:13150 <> demos:37
+R13171:13173 Corelib.Init.Datatypes <> nat ind
+binder 13165:13167 <> acc:38
+R13178:13180 Corelib.Init.Datatypes <> nat ind
+R13193:13197 JFCTheorems.ContextBudget <> demos:37 var
+R13208:13209 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13214:13216 JFCTheorems.ContextBudget <> acc:38 var
+R13223:13226 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R13244:13250 Stdlib.Arith.PeanoNat Nat leb def
+R13256:13258 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13253:13255 JFCTheorems.ContextBudget <> acc:38 var
+R13262:13264 JFCTheorems.ContextBudget <> cap:36 var
+R13323:13325 JFCTheorems.ContextBudget <> acc:38 var
+R13277:13291 JFCTheorems.ContextBudget <> demo_select_aux:39 def
+R13306:13308 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13303:13305 JFCTheorems.ContextBudget <> acc:38 var
+R13293:13295 JFCTheorems.ContextBudget <> cap:36 var
+def 13423:13433 <> demo_select
+R13442:13444 Corelib.Init.Datatypes <> nat ind
+binder 13436:13438 <> cap:41
+R13456:13459 Corelib.Init.Datatypes <> list ind
+R13461:13463 Corelib.Init.Datatypes <> nat ind
+binder 13448:13452 <> demos:42
+R13468:13470 Corelib.Init.Datatypes <> nat ind
+R13477:13491 JFCTheorems.ContextBudget <> demo_select_aux def
+R13493:13495 JFCTheorems.ContextBudget <> cap:41 var
+R13497:13501 JFCTheorems.ContextBudget <> demos:42 var
+prf 13584:13602 <> demo_select_aux_cap
+binder 13615:13619 <> demos:43
+binder 13621:13623 <> cap:44
+binder 13625:13627 <> acc:45
+R13644:13651 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13637:13640 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13634:13636 JFCTheorems.ContextBudget <> acc:45 var
+R13641:13643 JFCTheorems.ContextBudget <> cap:44 var
+R13681:13684 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13652:13666 JFCTheorems.ContextBudget <> demo_select_aux def
+R13668:13670 JFCTheorems.ContextBudget <> cap:44 var
+R13672:13676 JFCTheorems.ContextBudget <> demos:43 var
+R13678:13680 JFCTheorems.ContextBudget <> acc:45 var
+R13685:13687 JFCTheorems.ContextBudget <> cap:44 var
+R13797:13803 Stdlib.Arith.PeanoNat Nat leb def
+R13809:13811 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13797:13803 Stdlib.Arith.PeanoNat Nat leb def
+R13809:13811 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13839:13848 Stdlib.Arith.PeanoNat Nat leb_le thm
+R13839:13848 Stdlib.Arith.PeanoNat Nat leb_le thm
+prf 14059:14076 <> demo_cap_respected
+binder 14089:14089 <> b:46
+binder 14091:14095 <> demos:47
+R14132:14135 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14102:14112 JFCTheorems.ContextBudget <> demo_select def
+R14115:14122 JFCTheorems.ContextBudget <> demo_cap def
+R14124:14124 JFCTheorems.ContextBudget <> b:46 var
+R14127:14131 JFCTheorems.ContextBudget <> demos:47 var
+R14136:14143 JFCTheorems.ContextBudget <> demo_cap def
+R14145:14145 JFCTheorems.ContextBudget <> b:46 var
+R14180:14190 JFCTheorems.ContextBudget <> demo_select def
+R14201:14219 JFCTheorems.ContextBudget <> demo_select_aux_cap thm
+R14201:14219 JFCTheorems.ContextBudget <> demo_select_aux_cap thm
+R14228:14237 Stdlib.Arith.PeanoNat Nat le_0_l thm
+R14228:14237 Stdlib.Arith.PeanoNat Nat le_0_l thm
+def 14570:14579 <> demo_slack
+R14588:14590 Corelib.Init.Datatypes <> nat ind
+binder 14582:14584 <> cap:48
+R14602:14605 Corelib.Init.Datatypes <> list ind
+R14607:14609 Corelib.Init.Datatypes <> nat ind
+binder 14594:14598 <> demos:49
+R14614:14616 Corelib.Init.Datatypes <> nat ind
+R14626:14628 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R14623:14625 JFCTheorems.ContextBudget <> cap:48 var
+R14629:14639 JFCTheorems.ContextBudget <> demo_select def
+R14641:14643 JFCTheorems.ContextBudget <> cap:48 var
+R14645:14649 JFCTheorems.ContextBudget <> demos:49 var
+prf 14869:14894 <> slack_nonneg_and_conserves
+binder 14907:14907 <> b:50
+binder 14909:14913 <> demos:51
+R14954:14961 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R14921:14924 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14925:14934 JFCTheorems.ContextBudget <> demo_slack def
+R14937:14944 JFCTheorems.ContextBudget <> demo_cap def
+R14946:14946 JFCTheorems.ContextBudget <> b:50 var
+R14949:14953 JFCTheorems.ContextBudget <> demos:51 var
+R15024:15032 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14992:14994 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14962:14972 JFCTheorems.ContextBudget <> demo_select def
+R14975:14982 JFCTheorems.ContextBudget <> demo_cap def
+R14984:14984 JFCTheorems.ContextBudget <> b:50 var
+R14987:14991 JFCTheorems.ContextBudget <> demos:51 var
+R14995:15004 JFCTheorems.ContextBudget <> demo_slack def
+R15007:15014 JFCTheorems.ContextBudget <> demo_cap def
+R15016:15016 JFCTheorems.ContextBudget <> b:50 var
+R15019:15023 JFCTheorems.ContextBudget <> demos:51 var
+R15033:15040 JFCTheorems.ContextBudget <> demo_cap def
+R15042:15042 JFCTheorems.ContextBudget <> b:50 var
+R15087:15096 Stdlib.Arith.PeanoNat Nat le_0_l thm
+R15087:15096 Stdlib.Arith.PeanoNat Nat le_0_l thm
+R15110:15119 JFCTheorems.ContextBudget <> demo_slack def
+R15138:15155 JFCTheorems.ContextBudget <> demo_cap_respected thm
+R15138:15155 JFCTheorems.ContextBudget <> demo_cap_respected thm
+R15251:15262 Stdlib.Arith.PeanoNat Nat add_comm thm
+R15251:15262 Stdlib.Arith.PeanoNat Nat add_comm thm
+R15251:15262 Stdlib.Arith.PeanoNat Nat add_comm thm
+R15271:15281 Stdlib.Arith.PeanoNat Nat sub_add thm
+R15271:15281 Stdlib.Arith.PeanoNat Nat sub_add thm
+def 15516:15527 <> redistribute
+R15534:15543 JFCTheorems.ContextBudget <> CompBudget rec
+binder 15530:15530 <> b:52
+R15555:15557 Corelib.Init.Datatypes <> nat ind
+binder 15547:15548 <> d1:53
+binder 15550:15551 <> d2:54
+R15562:15571 JFCTheorems.ContextBudget <> CompBudget rec
+R15578:15589 JFCTheorems.ContextBudget <> mkCompBudget constr
+R15604:15606 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15592:15601 JFCTheorems.ContextBudget <> ins_budget proj
+R15603:15603 JFCTheorems.ContextBudget <> b:52 var
+R15607:15608 JFCTheorems.ContextBudget <> d1:53 var
+R15612:15622 JFCTheorems.ContextBudget <> dems_budget proj
+R15624:15624 JFCTheorems.ContextBudget <> b:52 var
+R15640:15642 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15628:15637 JFCTheorems.ContextBudget <> que_budget proj
+R15639:15639 JFCTheorems.ContextBudget <> b:52 var
+R15643:15644 JFCTheorems.ContextBudget <> d2:54 var
+prf 15809:15832 <> redistribution_conserves
+binder 15845:15845 <> b:55
+binder 15847:15848 <> d1:56
+binder 15850:15851 <> d2:57
+R15893:15895 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15858:15869 JFCTheorems.ContextBudget <> total_budget def
+R15872:15883 JFCTheorems.ContextBudget <> redistribute def
+R15885:15885 JFCTheorems.ContextBudget <> b:55 var
+R15887:15888 JFCTheorems.ContextBudget <> d1:56 var
+R15890:15891 JFCTheorems.ContextBudget <> d2:57 var
+R15915:15917 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15910:15912 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15896:15907 JFCTheorems.ContextBudget <> total_budget def
+R15909:15909 JFCTheorems.ContextBudget <> b:55 var
+R15913:15914 JFCTheorems.ContextBudget <> d1:56 var
+R15918:15919 JFCTheorems.ContextBudget <> d2:57 var
+R15954:15965 JFCTheorems.ContextBudget <> redistribute def
+R15968:15979 JFCTheorems.ContextBudget <> total_budget def
+prf 16378:16404 <> demo_budget_fully_accounted
+binder 16417:16417 <> b:58
+binder 16419:16423 <> demos:59
+binder 16425:16426 <> d1:60
+binder 16428:16429 <> d2:61
+R16475:16482 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R16443:16445 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16438:16440 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16436:16437 JFCTheorems.ContextBudget <> d1:60 var
+R16441:16442 JFCTheorems.ContextBudget <> d2:61 var
+R16446:16455 JFCTheorems.ContextBudget <> demo_slack def
+R16458:16465 JFCTheorems.ContextBudget <> demo_cap def
+R16467:16467 JFCTheorems.ContextBudget <> b:58 var
+R16470:16474 JFCTheorems.ContextBudget <> demos:59 var
+R16523:16525 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16518:16520 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16513:16515 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16483:16493 JFCTheorems.ContextBudget <> demo_select def
+R16496:16503 JFCTheorems.ContextBudget <> demo_cap def
+R16505:16505 JFCTheorems.ContextBudget <> b:58 var
+R16508:16512 JFCTheorems.ContextBudget <> demos:59 var
+R16516:16517 JFCTheorems.ContextBudget <> d1:60 var
+R16521:16522 JFCTheorems.ContextBudget <> d2:61 var
+R16526:16533 JFCTheorems.ContextBudget <> demo_cap def
+R16535:16535 JFCTheorems.ContextBudget <> b:58 var
+R16589:16601 Stdlib.Arith.PeanoNat Nat add_assoc thm
+R16589:16601 Stdlib.Arith.PeanoNat Nat add_assoc thm
+R16589:16601 Stdlib.Arith.PeanoNat Nat add_assoc thm
+R16632:16657 JFCTheorems.ContextBudget <> slack_nonneg_and_conserves thm
+R16632:16657 JFCTheorems.ContextBudget <> slack_nonneg_and_conserves thm
+def 16936:16946 <> tau_ins_pct
+R16951:16953 Corelib.Init.Datatypes <> nat ind
+def 17006:17016 <> tau_que_pct
+R17021:17023 Corelib.Init.Datatypes <> nat ind
+def 17073:17084 <> tau_dems_pct
+R17088:17090 Corelib.Init.Datatypes <> nat ind
+prf 17379:17401 <> component_rate_ordering
+R17433:17438 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R17419:17421 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R17407:17418 JFCTheorems.ContextBudget <> tau_dems_pct def
+R17422:17432 JFCTheorems.ContextBudget <> tau_ins_pct def
+R17465:17470 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R17451:17453 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R17439:17450 JFCTheorems.ContextBudget <> tau_dems_pct def
+R17454:17464 JFCTheorems.ContextBudget <> tau_que_pct def
+R17482:17485 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R17471:17481 JFCTheorems.ContextBudget <> tau_ins_pct def
+R17486:17496 JFCTheorems.ContextBudget <> tau_que_pct def
+R17515:17526 JFCTheorems.ContextBudget <> tau_dems_pct def
+R17529:17539 JFCTheorems.ContextBudget <> tau_ins_pct def
+R17542:17552 JFCTheorems.ContextBudget <> tau_que_pct def
+R17581:17590 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R17581:17590 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R17628:17637 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R17628:17637 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R17675:17684 Stdlib.Arith.PeanoNat Nat leb_le thm
+R17675:17684 Stdlib.Arith.PeanoNat Nat leb_le thm
+prf 18065:18086 <> higher_rate_keeps_more
+R18105:18107 Corelib.Init.Datatypes <> nat ind
+binder 18099:18101 <> len:62
+R18138:18141 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R18132:18134 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R18126:18128 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R18114:18125 JFCTheorems.ContextBudget <> tau_dems_pct def
+R18129:18131 JFCTheorems.ContextBudget <> len:62 var
+R18159:18161 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R18153:18155 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R18142:18152 JFCTheorems.ContextBudget <> tau_que_pct def
+R18156:18158 JFCTheorems.ContextBudget <> len:62 var
+R18196:18215 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R18196:18215 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R18226:18242 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R18226:18242 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R18254:18265 JFCTheorems.ContextBudget <> tau_dems_pct def
+R18268:18278 JFCTheorems.ContextBudget <> tau_que_pct def
+R18289:18298 Stdlib.Arith.PeanoNat Nat leb_le thm
+R18289:18298 Stdlib.Arith.PeanoNat Nat leb_le thm

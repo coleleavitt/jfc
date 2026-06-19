@@ -1,0 +1,1048 @@
+DIGEST a15632a4aef803b2fc40f32b30dcef53
+FJFCTheorems.RecencyRetention
+R473:487 Stdlib.Arith.Arith <> <> lib
+R505:518 Stdlib.Lists.List <> <> lib
+R536:548 Stdlib.Bool.Bool <> <> lib
+R566:582 Stdlib.micromega.Lia <> <> lib
+R592:604 Stdlib.Lists.List ListNotations <> mod
+rec 642:649 <> TurnCost
+proj 676:682 <> turn_id
+proj 693:703 <> turn_tokens
+R686:688 Corelib.Init.Datatypes <> nat ind
+R707:709 Corelib.Init.Datatypes <> nat ind
+def 946:962 <> select_newest_aux
+R973:976 Corelib.Init.Datatypes <> list ind
+R978:985 JFCTheorems.RecencyRetention <> TurnCost rec
+binder 965:969 <> turns:4
+R998:1000 Corelib.Init.Datatypes <> nat ind
+binder 989:994 <> budget:5
+R1015:1018 Corelib.Init.Datatypes <> list ind
+R1020:1027 JFCTheorems.RecencyRetention <> TurnCost rec
+binder 1009:1011 <> acc:6
+R1032:1035 Corelib.Init.Datatypes <> list ind
+R1037:1044 JFCTheorems.RecencyRetention <> TurnCost rec
+R1057:1061 JFCTheorems.RecencyRetention <> turns:4 var
+R1072:1073 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R1078:1080 JFCTheorems.RecencyRetention <> acc:6 var
+R1087:1090 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1108:1114 Stdlib.Arith.PeanoNat Nat leb def
+R1117:1127 JFCTheorems.RecencyRetention <> turn_tokens proj
+R1132:1137 JFCTheorems.RecencyRetention <> budget:5 var
+R1230:1232 JFCTheorems.RecencyRetention <> acc:6 var
+R1152:1168 JFCTheorems.RecencyRetention <> select_newest_aux:7 def
+R1202:1205 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1206:1208 JFCTheorems.RecencyRetention <> acc:6 var
+R1182:1184 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R1176:1181 JFCTheorems.RecencyRetention <> budget:5 var
+R1185:1195 JFCTheorems.RecencyRetention <> turn_tokens proj
+def 1317:1331 <> select_retained
+R1342:1345 Corelib.Init.Datatypes <> list ind
+R1347:1354 JFCTheorems.RecencyRetention <> TurnCost rec
+binder 1334:1338 <> turns:9
+R1367:1369 Corelib.Init.Datatypes <> nat ind
+binder 1358:1363 <> budget:10
+R1374:1377 Corelib.Init.Datatypes <> list ind
+R1379:1386 JFCTheorems.RecencyRetention <> TurnCost rec
+R1393:1409 JFCTheorems.RecencyRetention <> select_newest_aux def
+R1412:1414 Stdlib.Lists.List <> rev def
+R1416:1420 JFCTheorems.RecencyRetention <> turns:9 var
+R1423:1428 JFCTheorems.RecencyRetention <> budget:10 var
+R1430:1431 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+def 1477:1490 <> retained_count
+R1501:1504 Corelib.Init.Datatypes <> list ind
+R1506:1513 JFCTheorems.RecencyRetention <> TurnCost rec
+binder 1493:1497 <> turns:11
+R1526:1528 Corelib.Init.Datatypes <> nat ind
+binder 1517:1522 <> budget:12
+R1533:1535 Corelib.Init.Datatypes <> nat ind
+R1542:1547 Corelib.Init.Datatypes <> length def
+R1550:1564 JFCTheorems.RecencyRetention <> select_retained def
+R1566:1570 JFCTheorems.RecencyRetention <> turns:11 var
+R1572:1577 JFCTheorems.RecencyRetention <> budget:12 var
+def 1671:1678 <> mapi_aux
+binder 1681:1681 <> A:13
+binder 1683:1683 <> B:14
+R1701:1704 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1698:1700 Corelib.Init.Datatypes <> nat ind
+R1706:1709 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1705:1705 JFCTheorems.RecencyRetention <> A:13 var
+R1710:1710 JFCTheorems.RecencyRetention <> B:14 var
+binder 1694:1694 <> f:15
+R1718:1720 Corelib.Init.Datatypes <> nat ind
+binder 1714:1714 <> n:16
+R1728:1731 Corelib.Init.Datatypes <> list ind
+R1733:1733 JFCTheorems.RecencyRetention <> A:13 var
+binder 1724:1724 <> l:17
+R1738:1741 Corelib.Init.Datatypes <> list ind
+R1743:1743 JFCTheorems.RecencyRetention <> B:14 var
+R1756:1756 JFCTheorems.RecencyRetention <> l:17 var
+R1767:1768 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R1773:1774 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R1781:1784 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1796:1799 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1791:1791 JFCTheorems.RecencyRetention <> f:15 var
+R1793:1793 JFCTheorems.RecencyRetention <> n:16 var
+R1800:1807 JFCTheorems.RecencyRetention <> mapi_aux:18 def
+R1812:1812 Corelib.Init.Datatypes <> S constr
+R1814:1814 JFCTheorems.RecencyRetention <> n:16 var
+R1809:1809 JFCTheorems.RecencyRetention <> f:15 var
+def 1839:1842 <> mapi
+binder 1845:1845 <> A:20
+binder 1847:1847 <> B:21
+R1865:1868 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1862:1864 Corelib.Init.Datatypes <> nat ind
+R1870:1873 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1869:1869 JFCTheorems.RecencyRetention <> A:20 var
+R1874:1874 JFCTheorems.RecencyRetention <> B:21 var
+binder 1858:1858 <> f:22
+R1882:1885 Corelib.Init.Datatypes <> list ind
+R1887:1887 JFCTheorems.RecencyRetention <> A:20 var
+binder 1878:1878 <> l:23
+R1892:1895 Corelib.Init.Datatypes <> list ind
+R1897:1897 JFCTheorems.RecencyRetention <> B:21 var
+R1904:1911 JFCTheorems.RecencyRetention <> mapi_aux def
+R1917:1917 JFCTheorems.RecencyRetention <> l:23 var
+R1913:1913 JFCTheorems.RecencyRetention <> f:22 var
+def 2101:2129 <> RECENCY_PRESERVE_FRACTION_NUM
+R2133:2135 Corelib.Init.Datatypes <> nat ind
+def 2155:2183 <> RECENCY_PRESERVE_FRACTION_DEN
+R2187:2189 Corelib.Init.Datatypes <> nat ind
+def 2211:2224 <> recency_budget
+R2236:2238 Corelib.Init.Datatypes <> nat ind
+binder 2227:2232 <> window:24
+R2243:2245 Corelib.Init.Datatypes <> nat ind
+R2252:2252 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R2291:2294 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R2259:2261 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R2253:2258 JFCTheorems.RecencyRetention <> window:24 var
+R2262:2290 JFCTheorems.RecencyRetention <> RECENCY_PRESERVE_FRACTION_NUM def
+R2295:2323 JFCTheorems.RecencyRetention <> RECENCY_PRESERVE_FRACTION_DEN def
+def 2338:2359 <> recency_preserve_floor
+R2377:2380 Corelib.Init.Datatypes <> list ind
+R2382:2384 Corelib.Init.Datatypes <> nat ind
+binder 2362:2373 <> group_tokens:25
+R2397:2399 Corelib.Init.Datatypes <> nat ind
+binder 2388:2393 <> window:26
+R2404:2406 Corelib.Init.Datatypes <> nat ind
+R2427:2440 JFCTheorems.RecencyRetention <> recency_budget def
+R2442:2447 JFCTheorems.RecencyRetention <> window:26 var
+binder 2417:2422 <> budget:27
+R2467:2470 JFCTheorems.RecencyRetention <> mapi def
+R2500:2511 JFCTheorems.RecencyRetention <> group_tokens:25 var
+binder 2477:2477 <> i:28
+binder 2479:2479 <> t:29
+R2484:2493 JFCTheorems.RecencyRetention <> mkTurnCost constr
+R2495:2495 JFCTheorems.RecencyRetention <> i:28 var
+R2497:2497 JFCTheorems.RecencyRetention <> t:29 var
+binder 2458:2462 <> turns:30
+R2534:2548 JFCTheorems.RecencyRetention <> select_retained def
+R2550:2554 JFCTheorems.RecencyRetention <> turns:30 var
+R2556:2561 JFCTheorems.RecencyRetention <> budget:27 var
+binder 2522:2529 <> retained:31
+R2581:2586 Corelib.Init.Datatypes <> length def
+R2588:2595 JFCTheorems.RecencyRetention <> retained:31 var
+binder 2572:2576 <> count:32
+R2634:2640 Stdlib.Arith.PeanoNat Nat max def
+R2645:2651 Stdlib.Arith.PeanoNat Nat min def
+R2653:2657 JFCTheorems.RecencyRetention <> count:32 var
+R2679:2681 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R2660:2665 Corelib.Init.Datatypes <> length def
+R2667:2678 JFCTheorems.RecencyRetention <> group_tokens:25 var
+prf 2991:3009 <> fold_left_add_shift
+binder 3023:3023 <> A:33
+R3039:3042 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3038:3038 JFCTheorems.RecencyRetention <> A:33 var
+R3043:3045 Corelib.Init.Datatypes <> nat ind
+binder 3034:3034 <> f:34
+R3053:3056 Corelib.Init.Datatypes <> list ind
+R3058:3058 JFCTheorems.RecencyRetention <> A:33 var
+binder 3049:3049 <> l:35
+R3066:3068 Corelib.Init.Datatypes <> nat ind
+binder 3062:3062 <> z:36
+R3114:3122 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3076:3084 Stdlib.Lists.List <> fold_left def
+R3113:3113 JFCTheorems.RecencyRetention <> z:36 var
+R3111:3111 JFCTheorems.RecencyRetention <> l:35 var
+binder 3091:3093 <> acc:37
+binder 3095:3095 <> x:38
+R3103:3105 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3100:3102 JFCTheorems.RecencyRetention <> acc:37 var
+R3106:3106 JFCTheorems.RecencyRetention <> f:34 var
+R3108:3108 JFCTheorems.RecencyRetention <> x:38 var
+R3124:3126 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3123:3123 JFCTheorems.RecencyRetention <> z:36 var
+R3127:3135 Stdlib.Lists.List <> fold_left def
+R3162:3162 JFCTheorems.RecencyRetention <> l:35 var
+binder 3142:3144 <> acc:39
+binder 3146:3146 <> x:40
+R3154:3156 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3151:3153 JFCTheorems.RecencyRetention <> acc:39 var
+R3157:3157 JFCTheorems.RecencyRetention <> f:34 var
+R3159:3159 JFCTheorems.RecencyRetention <> x:40 var
+R3268:3270 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3268:3270 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3268:3270 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+def 3368:3379 <> total_tokens
+R3390:3393 Corelib.Init.Datatypes <> list ind
+R3395:3402 JFCTheorems.RecencyRetention <> TurnCost rec
+binder 3382:3386 <> turns:41
+R3407:3409 Corelib.Init.Datatypes <> nat ind
+R3416:3424 Stdlib.Lists.List <> fold_left def
+R3461:3465 JFCTheorems.RecencyRetention <> turns:41 var
+binder 3431:3433 <> acc:42
+binder 3435:3435 <> t:43
+R3443:3445 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3440:3442 JFCTheorems.RecencyRetention <> acc:42 var
+R3446:3456 JFCTheorems.RecencyRetention <> turn_tokens proj
+R3458:3458 JFCTheorems.RecencyRetention <> t:43 var
+prf 3477:3493 <> total_tokens_cons
+binder 3506:3506 <> t:44
+binder 3508:3508 <> l:45
+R3532:3534 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3511:3522 JFCTheorems.RecencyRetention <> total_tokens def
+R3526:3529 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3525:3525 JFCTheorems.RecencyRetention <> t:44 var
+R3530:3530 JFCTheorems.RecencyRetention <> l:45 var
+R3548:3550 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3535:3545 JFCTheorems.RecencyRetention <> turn_tokens proj
+R3547:3547 JFCTheorems.RecencyRetention <> t:44 var
+R3551:3562 JFCTheorems.RecencyRetention <> total_tokens def
+R3564:3564 JFCTheorems.RecencyRetention <> l:45 var
+R3595:3606 JFCTheorems.RecencyRetention <> total_tokens def
+R3627:3645 JFCTheorems.RecencyRetention <> fold_left_add_shift thm
+R3647:3654 JFCTheorems.RecencyRetention <> TurnCost rec
+R3656:3666 JFCTheorems.RecencyRetention <> turn_tokens proj
+R3671:3681 JFCTheorems.RecencyRetention <> turn_tokens proj
+R3627:3645 JFCTheorems.RecencyRetention <> fold_left_add_shift thm
+R3647:3654 JFCTheorems.RecencyRetention <> TurnCost rec
+R3656:3666 JFCTheorems.RecencyRetention <> turn_tokens proj
+R3671:3681 JFCTheorems.RecencyRetention <> turn_tokens proj
+R3627:3645 JFCTheorems.RecencyRetention <> fold_left_add_shift thm
+R3647:3654 JFCTheorems.RecencyRetention <> TurnCost rec
+R3656:3666 JFCTheorems.RecencyRetention <> turn_tokens proj
+R3671:3681 JFCTheorems.RecencyRetention <> turn_tokens proj
+prf 3705:3720 <> total_tokens_app
+binder 3733:3734 <> l1:46
+binder 3736:3737 <> l2:47
+R3763:3765 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3740:3751 JFCTheorems.RecencyRetention <> total_tokens def
+R3756:3759 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R3754:3755 JFCTheorems.RecencyRetention <> l1:46 var
+R3760:3761 JFCTheorems.RecencyRetention <> l2:47 var
+R3781:3783 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3766:3777 JFCTheorems.RecencyRetention <> total_tokens def
+R3779:3780 JFCTheorems.RecencyRetention <> l1:46 var
+R3784:3795 JFCTheorems.RecencyRetention <> total_tokens def
+R3797:3798 JFCTheorems.RecencyRetention <> l2:47 var
+R3860:3871 JFCTheorems.RecencyRetention <> total_tokens def
+R3911:3927 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R3911:3927 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R3911:3927 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R3911:3927 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R3911:3927 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+prf 3951:3969 <> total_tokens_single
+binder 3982:3982 <> x:48
+R4001:4003 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3985:3996 JFCTheorems.RecencyRetention <> total_tokens def
+R3998:3998 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R4000:4000 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R3999:3999 JFCTheorems.RecencyRetention <> x:48 var
+R4004:4014 JFCTheorems.RecencyRetention <> turn_tokens proj
+R4016:4016 JFCTheorems.RecencyRetention <> x:48 var
+R4046:4062 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R4046:4062 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R4046:4062 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R4072:4083 JFCTheorems.RecencyRetention <> total_tokens def
+prf 4110:4125 <> total_tokens_rev
+binder 4138:4138 <> l:49
+R4161:4163 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4141:4152 JFCTheorems.RecencyRetention <> total_tokens def
+R4155:4157 Stdlib.Lists.List <> rev def
+R4159:4159 JFCTheorems.RecencyRetention <> l:49 var
+R4164:4175 JFCTheorems.RecencyRetention <> total_tokens def
+R4177:4177 JFCTheorems.RecencyRetention <> l:49 var
+R4252:4267 JFCTheorems.RecencyRetention <> total_tokens_app thm
+R4270:4288 JFCTheorems.RecencyRetention <> total_tokens_single thm
+R4302:4318 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R4252:4267 JFCTheorems.RecencyRetention <> total_tokens_app thm
+R4252:4267 JFCTheorems.RecencyRetention <> total_tokens_app thm
+R4270:4288 JFCTheorems.RecencyRetention <> total_tokens_single thm
+R4270:4288 JFCTheorems.RecencyRetention <> total_tokens_single thm
+R4302:4318 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R4302:4318 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+def 4414:4417 <> sumn
+R4424:4427 Corelib.Init.Datatypes <> list ind
+R4429:4431 Corelib.Init.Datatypes <> nat ind
+binder 4420:4420 <> l:50
+R4436:4438 Corelib.Init.Datatypes <> nat ind
+R4451:4451 JFCTheorems.RecencyRetention <> l:50 var
+R4462:4463 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R4475:4478 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4485:4487 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4488:4491 JFCTheorems.RecencyRetention <> sumn:51 def
+prf 4509:4516 <> sumn_app
+binder 4529:4530 <> l1:53
+binder 4532:4533 <> l2:54
+R4551:4553 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4536:4539 JFCTheorems.RecencyRetention <> sumn def
+R4544:4547 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R4542:4543 JFCTheorems.RecencyRetention <> l1:53 var
+R4548:4549 JFCTheorems.RecencyRetention <> l2:54 var
+R4561:4563 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4554:4557 JFCTheorems.RecencyRetention <> sumn def
+R4559:4560 JFCTheorems.RecencyRetention <> l1:53 var
+R4564:4567 JFCTheorems.RecencyRetention <> sumn def
+R4569:4570 JFCTheorems.RecencyRetention <> l2:54 var
+prf 4678:4685 <> sumn_rev
+binder 4698:4698 <> l:55
+R4713:4715 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4701:4704 JFCTheorems.RecencyRetention <> sumn def
+R4707:4709 Stdlib.Lists.List <> rev def
+R4711:4711 JFCTheorems.RecencyRetention <> l:55 var
+R4716:4719 JFCTheorems.RecencyRetention <> sumn def
+R4721:4721 JFCTheorems.RecencyRetention <> l:55 var
+R4796:4803 JFCTheorems.RecencyRetention <> sumn_app thm
+R4796:4803 JFCTheorems.RecencyRetention <> sumn_app thm
+R4796:4803 JFCTheorems.RecencyRetention <> sumn_app thm
+prf 4886:4903 <> fold_left_add_sumn
+binder 4916:4916 <> l:56
+R4940:4942 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4919:4927 Stdlib.Lists.List <> fold_left def
+R4937:4937 JFCTheorems.RecencyRetention <> l:56 var
+R4929:4935 Stdlib.Arith.PeanoNat Nat add def
+R4943:4946 JFCTheorems.RecencyRetention <> sumn def
+R4948:4948 JFCTheorems.RecencyRetention <> l:56 var
+binder 4991:4991 <> z:57
+R5015:5017 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4994:5002 Stdlib.Lists.List <> fold_left def
+R5014:5014 JFCTheorems.RecencyRetention <> z:57 var
+R5004:5010 Stdlib.Arith.PeanoNat Nat add def
+R5019:5021 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R5018:5018 JFCTheorems.RecencyRetention <> z:57 var
+R5022:5025 JFCTheorems.RecencyRetention <> sumn def
+binder 4991:4991 <> z:58
+R5015:5017 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4994:5002 Stdlib.Lists.List <> fold_left def
+R5014:5014 JFCTheorems.RecencyRetention <> z:58 var
+R5004:5010 Stdlib.Arith.PeanoNat Nat add def
+R5019:5021 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R5018:5018 JFCTheorems.RecencyRetention <> z:58 var
+R5022:5025 JFCTheorems.RecencyRetention <> sumn def
+prf 5308:5323 <> sumn_firstn_mono
+R5341:5344 Corelib.Init.Datatypes <> list ind
+R5346:5348 Corelib.Init.Datatypes <> nat ind
+binder 5337:5337 <> l:59
+R5358:5360 Corelib.Init.Datatypes <> nat ind
+binder 5352:5352 <> a:60
+binder 5354:5354 <> b:61
+R5374:5377 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5369:5372 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5368:5368 JFCTheorems.RecencyRetention <> a:60 var
+R5373:5373 JFCTheorems.RecencyRetention <> b:61 var
+R5395:5398 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5378:5381 JFCTheorems.RecencyRetention <> sumn def
+R5384:5389 Corelib.Lists.ListDef <> firstn def
+R5393:5393 JFCTheorems.RecencyRetention <> l:59 var
+R5391:5391 JFCTheorems.RecencyRetention <> a:60 var
+R5399:5402 JFCTheorems.RecencyRetention <> sumn def
+R5405:5410 Corelib.Lists.ListDef <> firstn def
+R5414:5414 JFCTheorems.RecencyRetention <> l:59 var
+R5412:5412 JFCTheorems.RecencyRetention <> b:61 var
+R5483:5492 Stdlib.Lists.List <> firstn_nil thm
+R5483:5492 Stdlib.Lists.List <> firstn_nil thm
+R5483:5492 Stdlib.Lists.List <> firstn_nil thm
+R5483:5492 Stdlib.Lists.List <> firstn_nil thm
+R5483:5492 Stdlib.Lists.List <> firstn_nil thm
+R5605:5621 Stdlib.Arith.PeanoNat Nat add_le_mono_l thm
+R5605:5621 Stdlib.Arith.PeanoNat Nat add_le_mono_l thm
+prf 5730:5747 <> floor_at_least_one
+binder 5760:5771 <> group_tokens:62
+binder 5773:5778 <> window:63
+R5827:5830 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R5785:5806 JFCTheorems.RecencyRetention <> recency_preserve_floor def
+R5808:5819 JFCTheorems.RecencyRetention <> group_tokens:62 var
+R5821:5826 JFCTheorems.RecencyRetention <> window:63 var
+R5880:5901 JFCTheorems.RecencyRetention <> recency_preserve_floor def
+R5912:5923 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R5912:5923 Stdlib.Arith.PeanoNat Nat le_max_l thm
+prf 6022:6038 <> floor_leaves_room
+binder 6051:6062 <> group_tokens:64
+binder 6064:6069 <> window:65
+R6100:6107 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6095:6098 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R6076:6081 Corelib.Init.Datatypes <> length def
+R6083:6094 JFCTheorems.RecencyRetention <> group_tokens:64 var
+R6150:6152 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R6108:6129 JFCTheorems.RecencyRetention <> recency_preserve_floor def
+R6131:6142 JFCTheorems.RecencyRetention <> group_tokens:64 var
+R6144:6149 JFCTheorems.RecencyRetention <> window:65 var
+R6153:6158 Corelib.Init.Datatypes <> length def
+R6160:6171 JFCTheorems.RecencyRetention <> group_tokens:64 var
+R6225:6246 JFCTheorems.RecencyRetention <> recency_preserve_floor def
+R6488:6493 Corelib.Init.Datatypes <> length def
+R6496:6510 JFCTheorems.RecencyRetention <> select_retained def
+R6517:6520 JFCTheorems.RecencyRetention <> mapi def
+binder 6527:6527 <> i:66
+binder 6529:6529 <> t:67
+R6534:6543 JFCTheorems.RecencyRetention <> mkTurnCost constr
+R6545:6545 JFCTheorems.RecencyRetention <> i:66 var
+R6547:6547 JFCTheorems.RecencyRetention <> t:67 var
+R6565:6578 JFCTheorems.RecencyRetention <> recency_budget def
+R6488:6493 Corelib.Init.Datatypes <> length def
+R6496:6510 JFCTheorems.RecencyRetention <> select_retained def
+R6517:6520 JFCTheorems.RecencyRetention <> mapi def
+binder 6527:6527 <> i:68
+binder 6529:6529 <> t:69
+R6534:6543 JFCTheorems.RecencyRetention <> mkTurnCost constr
+R6545:6545 JFCTheorems.RecencyRetention <> i:68 var
+R6547:6547 JFCTheorems.RecencyRetention <> t:69 var
+R6565:6578 JFCTheorems.RecencyRetention <> recency_budget def
+R6605:6616 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R6644:6646 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6625:6630 Corelib.Init.Datatypes <> length def
+R6605:6616 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R6644:6646 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6625:6630 Corelib.Init.Datatypes <> length def
+R6674:6684 Stdlib.Arith.PeanoNat Nat max_lub thm
+R6689:6695 Stdlib.Arith.PeanoNat Nat min def
+R6723:6725 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6704:6709 Corelib.Init.Datatypes <> length def
+R6766:6768 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6747:6752 Corelib.Init.Datatypes <> length def
+R6674:6684 Stdlib.Arith.PeanoNat Nat max_lub thm
+R6689:6695 Stdlib.Arith.PeanoNat Nat min def
+R6723:6725 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6704:6709 Corelib.Init.Datatypes <> length def
+R6766:6768 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6747:6752 Corelib.Init.Datatypes <> length def
+prf 6899:6926 <> larger_window_more_preserved
+R6955:6958 Corelib.Init.Datatypes <> list ind
+R6960:6962 Corelib.Init.Datatypes <> nat ind
+binder 6940:6951 <> group_tokens:70
+R6974:6976 Corelib.Init.Datatypes <> nat ind
+binder 6966:6967 <> w1:71
+binder 6969:6970 <> w2:72
+R6992:6999 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6986:6989 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6984:6985 JFCTheorems.RecencyRetention <> w1:71 var
+R6990:6991 JFCTheorems.RecencyRetention <> w2:72 var
+R7017:7020 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R7000:7013 JFCTheorems.RecencyRetention <> recency_budget def
+R7015:7016 JFCTheorems.RecencyRetention <> w1:71 var
+R7021:7034 JFCTheorems.RecencyRetention <> recency_budget def
+R7036:7037 JFCTheorems.RecencyRetention <> w2:72 var
+R7089:7102 JFCTheorems.RecencyRetention <> recency_budget def
+R7105:7133 JFCTheorems.RecencyRetention <> RECENCY_PRESERVE_FRACTION_DEN def
+R7136:7164 JFCTheorems.RecencyRetention <> RECENCY_PRESERVE_FRACTION_NUM def
+R7175:7194 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R7175:7194 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R7205:7221 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R7205:7221 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+rec 7279:7296 <> RecencyMeasurement
+proj 7333:7349 <> tokens_with_floor
+proj 7360:7374 <> tokens_baseline
+proj 7412:7428 <> groups_with_floor
+R7353:7355 Corelib.Init.Datatypes <> nat ind
+R7378:7380 Corelib.Init.Datatypes <> nat ind
+R7432:7434 Corelib.Init.Datatypes <> nat ind
+def 7503:7514 <> extra_tokens
+R7521:7538 JFCTheorems.RecencyRetention <> RecencyMeasurement rec
+binder 7517:7517 <> m:77
+R7543:7545 Corelib.Init.Datatypes <> nat ind
+R7571:7573 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7552:7568 JFCTheorems.RecencyRetention <> tokens_with_floor proj
+R7570:7570 JFCTheorems.RecencyRetention <> m:77 var
+R7574:7588 JFCTheorems.RecencyRetention <> tokens_baseline proj
+R7590:7590 JFCTheorems.RecencyRetention <> m:77 var
+def 7668:7682 <> measure_recency
+R7700:7703 Corelib.Init.Datatypes <> list ind
+R7705:7707 Corelib.Init.Datatypes <> nat ind
+binder 7685:7696 <> group_tokens:78
+R7720:7722 Corelib.Init.Datatypes <> nat ind
+binder 7711:7716 <> window:79
+R7727:7744 JFCTheorems.RecencyRetention <> RecencyMeasurement rec
+R7771:7792 JFCTheorems.RecencyRetention <> recency_preserve_floor def
+R7794:7805 JFCTheorems.RecencyRetention <> group_tokens:78 var
+R7807:7812 JFCTheorems.RecencyRetention <> window:79 var
+binder 7755:7766 <> floor_groups:80
+binder 7841:7841 <> n:81
+R7846:7854 Stdlib.Lists.List <> fold_left def
+R7865:7867 Stdlib.Lists.List <> rev def
+R7870:7875 Corelib.Lists.ListDef <> firstn def
+R7880:7882 Stdlib.Lists.List <> rev def
+R7884:7895 JFCTheorems.RecencyRetention <> group_tokens:78 var
+R7877:7877 JFCTheorems.RecencyRetention <> n:81 var
+R7856:7862 Stdlib.Arith.PeanoNat Nat add def
+binder 7823:7832 <> sum_newest:82
+R7907:7926 JFCTheorems.RecencyRetention <> mkRecencyMeasurement constr
+R7933:7942 JFCTheorems.RecencyRetention <> sum_newest:82 var
+R7944:7955 JFCTheorems.RecencyRetention <> floor_groups:80 var
+R7963:7972 JFCTheorems.RecencyRetention <> sum_newest:82 var
+R7981:7992 JFCTheorems.RecencyRetention <> floor_groups:80 var
+prf 8072:8094 <> floor_at_least_baseline
+binder 8107:8118 <> group_tokens:83
+binder 8120:8125 <> window:84
+R8156:8163 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8151:8154 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R8132:8137 Corelib.Init.Datatypes <> length def
+R8139:8150 JFCTheorems.RecencyRetention <> group_tokens:83 var
+R8219:8227 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R8164:8180 JFCTheorems.RecencyRetention <> tokens_with_floor proj
+R8183:8197 JFCTheorems.RecencyRetention <> measure_recency def
+R8199:8210 JFCTheorems.RecencyRetention <> group_tokens:83 var
+R8212:8217 JFCTheorems.RecencyRetention <> window:84 var
+R8228:8242 JFCTheorems.RecencyRetention <> tokens_baseline proj
+R8245:8259 JFCTheorems.RecencyRetention <> measure_recency def
+R8261:8272 JFCTheorems.RecencyRetention <> group_tokens:83 var
+R8274:8279 JFCTheorems.RecencyRetention <> window:84 var
+R8334:8348 JFCTheorems.RecencyRetention <> measure_recency def
+R8351:8367 JFCTheorems.RecencyRetention <> tokens_with_floor proj
+R8370:8384 JFCTheorems.RecencyRetention <> tokens_baseline proj
+R8535:8552 JFCTheorems.RecencyRetention <> fold_left_add_sumn thm
+R8556:8563 JFCTheorems.RecencyRetention <> sumn_rev thm
+R8535:8552 JFCTheorems.RecencyRetention <> fold_left_add_sumn thm
+R8535:8552 JFCTheorems.RecencyRetention <> fold_left_add_sumn thm
+R8535:8552 JFCTheorems.RecencyRetention <> fold_left_add_sumn thm
+R8535:8552 JFCTheorems.RecencyRetention <> fold_left_add_sumn thm
+R8556:8563 JFCTheorems.RecencyRetention <> sumn_rev thm
+R8556:8563 JFCTheorems.RecencyRetention <> sumn_rev thm
+R8556:8563 JFCTheorems.RecencyRetention <> sumn_rev thm
+R8556:8563 JFCTheorems.RecencyRetention <> sumn_rev thm
+R8699:8702 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R8657:8678 JFCTheorems.RecencyRetention <> recency_preserve_floor def
+R8719:8736 JFCTheorems.RecencyRetention <> floor_at_least_one thm
+R8699:8702 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R8657:8678 JFCTheorems.RecencyRetention <> recency_preserve_floor def
+R8719:8736 JFCTheorems.RecencyRetention <> floor_at_least_one thm
+R8747:8762 JFCTheorems.RecencyRetention <> sumn_firstn_mono thm
+R8747:8762 JFCTheorems.RecencyRetention <> sumn_firstn_mono thm
+def 9982:9996 <> recovery_factor
+R10000:10002 Corelib.Init.Datatypes <> nat ind
+def 10069:10091 <> predicted_output_length
+R10138:10140 Corelib.Init.Datatypes <> nat ind
+binder 10094:10104 <> base_output:85
+binder 10106:10121 <> preserved_tokens:86
+binder 10123:10134 <> total_tokens:87
+R10145:10147 Corelib.Init.Datatypes <> nat ind
+R10178:10180 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R10166:10177 JFCTheorems.RecencyRetention <> total_tokens:87 var
+R10181:10196 JFCTheorems.RecencyRetention <> preserved_tokens:86 var
+binder 10158:10161 <> lost:88
+R10214:10216 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R10203:10213 JFCTheorems.RecencyRetention <> base_output:85 var
+R10217:10217 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R10240:10243 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R10222:10224 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R10218:10221 JFCTheorems.RecencyRetention <> lost:88 var
+R10225:10239 JFCTheorems.RecencyRetention <> recovery_factor def
+def 10322:10331 <> total_cost
+R10367:10369 Corelib.Init.Datatypes <> nat ind
+binder 10334:10349 <> preserved_tokens:89
+binder 10351:10363 <> output_tokens:90
+R10374:10376 Corelib.Init.Datatypes <> nat ind
+R10399:10401 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R10383:10398 JFCTheorems.RecencyRetention <> preserved_tokens:89 var
+R10402:10414 JFCTheorems.RecencyRetention <> output_tokens:90 var
+prf 10956:10972 <> cost_conservation
+binder 10985:10995 <> base_output:91
+binder 10997:11005 <> preserved:92
+binder 11007:11018 <> total_tokens:93
+R11050:11057 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11034:11037 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11025:11033 JFCTheorems.RecencyRetention <> preserved:92 var
+R11038:11049 JFCTheorems.RecencyRetention <> total_tokens:93 var
+R11139:11147 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11058:11067 JFCTheorems.RecencyRetention <> total_cost def
+R11069:11077 JFCTheorems.RecencyRetention <> preserved:92 var
+R11080:11102 JFCTheorems.RecencyRetention <> predicted_output_length def
+R11104:11114 JFCTheorems.RecencyRetention <> base_output:91 var
+R11116:11124 JFCTheorems.RecencyRetention <> preserved:92 var
+R11126:11137 JFCTheorems.RecencyRetention <> total_tokens:93 var
+R11159:11161 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11148:11158 JFCTheorems.RecencyRetention <> base_output:91 var
+R11162:11173 JFCTheorems.RecencyRetention <> total_tokens:93 var
+R11241:11250 JFCTheorems.RecencyRetention <> total_cost def
+R11253:11275 JFCTheorems.RecencyRetention <> predicted_output_length def
+R11278:11292 JFCTheorems.RecencyRetention <> recovery_factor def
+R11373:11383 Stdlib.Arith.PeanoNat Nat div_mul def
+R11373:11383 Stdlib.Arith.PeanoNat Nat div_mul def
+R11373:11383 Stdlib.Arith.PeanoNat Nat div_mul def
+prf 12032:12056 <> moderate_beats_aggressive
+binder 12069:12080 <> total_tokens:94
+binder 12082:12092 <> base_output:95
+R12119:12126 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12111:12114 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R12099:12110 JFCTheorems.RecencyRetention <> total_tokens:94 var
+R12145:12152 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12138:12141 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R12127:12137 JFCTheorems.RecencyRetention <> base_output:95 var
+R12193:12195 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R12181:12192 JFCTheorems.RecencyRetention <> total_tokens:94 var
+binder 12157:12176 <> aggressive_preserved:96
+R12272:12274 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R12268:12270 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R12256:12267 JFCTheorems.RecencyRetention <> total_tokens:94 var
+binder 12234:12251 <> moderate_preserved:97
+R12341:12348 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12325:12328 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12307:12324 JFCTheorems.RecencyRetention <> moderate_preserved:97 var
+R12329:12340 JFCTheorems.RecencyRetention <> total_tokens:94 var
+R12374:12396 JFCTheorems.RecencyRetention <> predicted_output_length def
+R12398:12408 JFCTheorems.RecencyRetention <> base_output:95 var
+R12410:12429 JFCTheorems.RecencyRetention <> aggressive_preserved:96 var
+R12431:12442 JFCTheorems.RecencyRetention <> total_tokens:94 var
+binder 12353:12369 <> aggressive_output:98
+R12474:12496 JFCTheorems.RecencyRetention <> predicted_output_length def
+R12498:12508 JFCTheorems.RecencyRetention <> base_output:95 var
+R12510:12527 JFCTheorems.RecencyRetention <> moderate_preserved:97 var
+R12529:12540 JFCTheorems.RecencyRetention <> total_tokens:94 var
+binder 12455:12469 <> moderate_output:99
+R12594:12601 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12549:12558 JFCTheorems.RecencyRetention <> total_cost def
+R12560:12577 JFCTheorems.RecencyRetention <> moderate_preserved:97 var
+R12579:12593 JFCTheorems.RecencyRetention <> moderate_output:99 var
+R12602:12611 JFCTheorems.RecencyRetention <> total_cost def
+R12613:12632 JFCTheorems.RecencyRetention <> aggressive_preserved:96 var
+R12634:12650 JFCTheorems.RecencyRetention <> aggressive_output:98 var
+R12930:12946 JFCTheorems.RecencyRetention <> cost_conservation thm
+R12930:12946 JFCTheorems.RecencyRetention <> cost_conservation thm
+R12930:12946 JFCTheorems.RecencyRetention <> cost_conservation thm
+R13036:13039 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13036:13039 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13094:13120 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R13094:13120 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R13141:13157 JFCTheorems.RecencyRetention <> cost_conservation thm
+R13141:13157 JFCTheorems.RecencyRetention <> cost_conservation thm
+R13141:13157 JFCTheorems.RecencyRetention <> cost_conservation thm
+def 13423:13438 <> cost_at_fraction
+R13494:13496 Corelib.Init.Datatypes <> nat ind
+binder 13441:13452 <> total_tokens:100
+binder 13454:13464 <> base_output:101
+binder 13466:13477 <> fraction_num:102
+binder 13479:13490 <> fraction_den:103
+R13501:13503 Corelib.Init.Datatypes <> nat ind
+R13527:13527 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R13555:13558 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R13540:13542 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R13528:13539 JFCTheorems.RecencyRetention <> total_tokens:100 var
+R13543:13554 JFCTheorems.RecencyRetention <> fraction_num:102 var
+R13559:13570 JFCTheorems.RecencyRetention <> fraction_den:103 var
+binder 13514:13522 <> preserved:104
+R13591:13613 JFCTheorems.RecencyRetention <> predicted_output_length def
+R13615:13625 JFCTheorems.RecencyRetention <> base_output:101 var
+R13627:13635 JFCTheorems.RecencyRetention <> preserved:104 var
+R13637:13648 JFCTheorems.RecencyRetention <> total_tokens:100 var
+binder 13581:13586 <> output:105
+R13655:13664 JFCTheorems.RecencyRetention <> total_cost def
+R13666:13674 JFCTheorems.RecencyRetention <> preserved:104 var
+R13676:13681 JFCTheorems.RecencyRetention <> output:105 var
+prf 13765:13789 <> cost_at_fraction_in_range
+binder 13802:13813 <> total_tokens:106
+binder 13815:13826 <> fraction_num:107
+binder 13828:13839 <> fraction_den:108
+R13874:13881 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13858:13861 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13846:13857 JFCTheorems.RecencyRetention <> fraction_num:107 var
+R13862:13873 JFCTheorems.RecencyRetention <> fraction_den:108 var
+R13899:13906 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13894:13897 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R13882:13893 JFCTheorems.RecencyRetention <> fraction_den:108 var
+R13951:13954 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13907:13907 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R13935:13938 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R13920:13922 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R13908:13919 JFCTheorems.RecencyRetention <> total_tokens:106 var
+R13923:13934 JFCTheorems.RecencyRetention <> fraction_num:107 var
+R13939:13950 JFCTheorems.RecencyRetention <> fraction_den:108 var
+R13955:13966 JFCTheorems.RecencyRetention <> total_tokens:106 var
+R14044:14070 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R14044:14070 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+prf 14173:14194 <> cost_at_fraction_const
+binder 14207:14218 <> total_tokens:109
+binder 14220:14230 <> base_output:110
+binder 14232:14243 <> fraction_num:111
+binder 14245:14256 <> fraction_den:112
+R14291:14298 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14275:14278 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14263:14274 JFCTheorems.RecencyRetention <> fraction_num:111 var
+R14279:14290 JFCTheorems.RecencyRetention <> fraction_den:112 var
+R14316:14323 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14311:14314 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R14299:14310 JFCTheorems.RecencyRetention <> fraction_den:112 var
+R14391:14399 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14324:14339 JFCTheorems.RecencyRetention <> cost_at_fraction def
+R14341:14352 JFCTheorems.RecencyRetention <> total_tokens:109 var
+R14354:14364 JFCTheorems.RecencyRetention <> base_output:110 var
+R14366:14377 JFCTheorems.RecencyRetention <> fraction_num:111 var
+R14379:14390 JFCTheorems.RecencyRetention <> fraction_den:112 var
+R14411:14413 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14400:14410 JFCTheorems.RecencyRetention <> base_output:110 var
+R14414:14425 JFCTheorems.RecencyRetention <> total_tokens:109 var
+R14516:14531 JFCTheorems.RecencyRetention <> cost_at_fraction def
+R14542:14558 JFCTheorems.RecencyRetention <> cost_conservation thm
+R14542:14558 JFCTheorems.RecencyRetention <> cost_conservation thm
+R14569:14593 JFCTheorems.RecencyRetention <> cost_at_fraction_in_range thm
+R14569:14593 JFCTheorems.RecencyRetention <> cost_at_fraction_in_range thm
+prf 15371:15397 <> thirty_percent_near_optimal
+binder 15410:15421 <> total_tokens:113
+binder 15423:15433 <> base_output:114
+R15461:15468 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15452:15455 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R15440:15451 JFCTheorems.RecencyRetention <> total_tokens:113 var
+R15487:15494 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15480:15483 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R15469:15479 JFCTheorems.RecencyRetention <> base_output:114 var
+R15599:15606 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R15543:15550 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15495:15510 JFCTheorems.RecencyRetention <> cost_at_fraction def
+R15512:15523 JFCTheorems.RecencyRetention <> total_tokens:113 var
+R15525:15535 JFCTheorems.RecencyRetention <> base_output:114 var
+R15551:15566 JFCTheorems.RecencyRetention <> cost_at_fraction def
+R15568:15579 JFCTheorems.RecencyRetention <> total_tokens:113 var
+R15581:15591 JFCTheorems.RecencyRetention <> base_output:114 var
+R15655:15662 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15607:15622 JFCTheorems.RecencyRetention <> cost_at_fraction def
+R15624:15635 JFCTheorems.RecencyRetention <> total_tokens:113 var
+R15637:15647 JFCTheorems.RecencyRetention <> base_output:114 var
+R15663:15678 JFCTheorems.RecencyRetention <> cost_at_fraction def
+R15680:15691 JFCTheorems.RecencyRetention <> total_tokens:113 var
+R15693:15703 JFCTheorems.RecencyRetention <> base_output:114 var
+R15779:15800 JFCTheorems.RecencyRetention <> cost_at_fraction_const thm
+R15779:15800 JFCTheorems.RecencyRetention <> cost_at_fraction_const thm
+R15779:15800 JFCTheorems.RecencyRetention <> cost_at_fraction_const thm
+R15854:15875 JFCTheorems.RecencyRetention <> cost_at_fraction_const thm
+R15854:15875 JFCTheorems.RecencyRetention <> cost_at_fraction_const thm
+R15854:15875 JFCTheorems.RecencyRetention <> cost_at_fraction_const thm
+R15929:15950 JFCTheorems.RecencyRetention <> cost_at_fraction_const thm
+R15929:15950 JFCTheorems.RecencyRetention <> cost_at_fraction_const thm
+R15929:15950 JFCTheorems.RecencyRetention <> cost_at_fraction_const thm
+prf 16380:16395 <> aux_budget_bound
+binder 16408:16412 <> turns:115
+binder 16414:16419 <> budget:116
+binder 16421:16423 <> acc:117
+R16479:16488 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16430:16441 JFCTheorems.RecencyRetention <> total_tokens def
+R16444:16460 JFCTheorems.RecencyRetention <> select_newest_aux def
+R16462:16466 JFCTheorems.RecencyRetention <> turns:115 var
+R16468:16473 JFCTheorems.RecencyRetention <> budget:116 var
+R16475:16477 JFCTheorems.RecencyRetention <> acc:117 var
+R16505:16507 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16489:16500 JFCTheorems.RecencyRetention <> total_tokens def
+R16502:16504 JFCTheorems.RecencyRetention <> acc:117 var
+R16508:16513 JFCTheorems.RecencyRetention <> budget:116 var
+R16614:16620 Stdlib.Arith.PeanoNat Nat leb def
+R16623:16633 JFCTheorems.RecencyRetention <> turn_tokens proj
+R16614:16620 Stdlib.Arith.PeanoNat Nat leb def
+R16623:16633 JFCTheorems.RecencyRetention <> turn_tokens proj
+R16667:16676 Stdlib.Arith.PeanoNat Nat leb_le thm
+R16667:16676 Stdlib.Arith.PeanoNat Nat leb_le thm
+R16714:16716 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R16717:16727 JFCTheorems.RecencyRetention <> turn_tokens proj
+R16734:16737 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R16714:16716 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R16717:16727 JFCTheorems.RecencyRetention <> turn_tokens proj
+R16734:16737 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R16759:16775 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R16759:16775 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R16759:16775 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+prf 16884:16906 <> selection_within_budget
+binder 16919:16923 <> turns:118
+binder 16925:16930 <> budget:119
+R17014:17017 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16937:16945 Stdlib.Lists.List <> fold_left def
+R16983:16997 JFCTheorems.RecencyRetention <> select_retained def
+R16999:17003 JFCTheorems.RecencyRetention <> turns:118 var
+R17005:17010 JFCTheorems.RecencyRetention <> budget:119 var
+binder 16952:16954 <> acc:120
+binder 16956:16956 <> t:121
+R16964:16966 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16961:16963 JFCTheorems.RecencyRetention <> acc:120 var
+R16967:16977 JFCTheorems.RecencyRetention <> turn_tokens proj
+R16979:16979 JFCTheorems.RecencyRetention <> t:121 var
+R17018:17023 JFCTheorems.RecencyRetention <> budget:119 var
+R17183:17186 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R17140:17151 JFCTheorems.RecencyRetention <> total_tokens def
+R17154:17168 JFCTheorems.RecencyRetention <> select_retained def
+R17183:17186 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R17140:17151 JFCTheorems.RecencyRetention <> total_tokens def
+R17154:17168 JFCTheorems.RecencyRetention <> select_retained def
+R17205:17219 JFCTheorems.RecencyRetention <> select_retained def
+R17236:17251 JFCTheorems.RecencyRetention <> aux_budget_bound thm
+R17254:17256 Stdlib.Lists.List <> rev def
+R17272:17273 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R17236:17251 JFCTheorems.RecencyRetention <> aux_budget_bound thm
+R17254:17256 Stdlib.Lists.List <> rev def
+R17272:17273 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R17291:17302 JFCTheorems.RecencyRetention <> total_tokens def
+prf 18831:18854 <> select_newest_aux_prefix
+binder 18867:18867 <> l:122
+binder 18869:18874 <> budget:123
+binder 18876:18878 <> acc:124
+R18885:18891 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R18893:18900 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 18892:18892 <> k:125
+R18914:18923 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R18902:18905 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R18901:18901 JFCTheorems.RecencyRetention <> k:125 var
+R18906:18911 Corelib.Init.Datatypes <> length def
+R18913:18913 JFCTheorems.RecencyRetention <> l:122 var
+R18980:18989 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R18954:18956 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18924:18940 JFCTheorems.RecencyRetention <> select_newest_aux def
+R18942:18942 JFCTheorems.RecencyRetention <> l:122 var
+R18944:18949 JFCTheorems.RecencyRetention <> budget:123 var
+R18951:18953 JFCTheorems.RecencyRetention <> acc:124 var
+R18973:18976 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R18957:18959 Stdlib.Lists.List <> rev def
+R18962:18967 Corelib.Lists.ListDef <> firstn def
+R18971:18971 JFCTheorems.RecencyRetention <> l:122 var
+R18969:18969 JFCTheorems.RecencyRetention <> k:125 var
+R18977:18979 JFCTheorems.RecencyRetention <> acc:124 var
+R19025:19191 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R19318:19318 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R19015:19018 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R18990:19001 JFCTheorems.RecencyRetention <> total_tokens def
+R19004:19009 Corelib.Lists.ListDef <> firstn def
+R19013:19013 JFCTheorems.RecencyRetention <> l:122 var
+R19011:19011 JFCTheorems.RecencyRetention <> k:125 var
+R19019:19024 JFCTheorems.RecencyRetention <> budget:123 var
+R19204:19214 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R19193:19195 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19192:19192 JFCTheorems.RecencyRetention <> k:125 var
+R19196:19201 Corelib.Init.Datatypes <> length def
+R19203:19203 JFCTheorems.RecencyRetention <> l:122 var
+R19215:19221 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R19223:19224 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 19222:19222 <> b:126
+R19247:19267 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R19238:19240 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19225:19233 Stdlib.Lists.List <> nth_error def
+R19237:19237 JFCTheorems.RecencyRetention <> k:125 var
+R19235:19235 JFCTheorems.RecencyRetention <> l:122 var
+R19241:19244 Corelib.Init.Datatypes <> Some constr
+R19246:19246 JFCTheorems.RecencyRetention <> b:126 var
+R19281:19283 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R19268:19278 JFCTheorems.RecencyRetention <> turn_tokens proj
+R19280:19280 JFCTheorems.RecencyRetention <> b:126 var
+R19290:19292 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R19284:19289 JFCTheorems.RecencyRetention <> budget:123 var
+R19293:19304 JFCTheorems.RecencyRetention <> total_tokens def
+R19307:19312 Corelib.Lists.ListDef <> firstn def
+R19316:19316 JFCTheorems.RecencyRetention <> l:122 var
+R19314:19314 JFCTheorems.RecencyRetention <> k:125 var
+R19397:19402 Corelib.Lists.ListDef <> firstn def
+R19404:19406 Stdlib.Lists.List <> rev def
+R19408:19413 Corelib.Init.Datatypes <> length def
+R19415:19423 Stdlib.Lists.List <> nth_error def
+R19425:19441 JFCTheorems.RecencyRetention <> select_newest_aux def
+R19443:19445 Corelib.Init.Datatypes <> app def
+R19517:19528 JFCTheorems.RecencyRetention <> total_tokens def
+R19577:19593 JFCTheorems.RecencyRetention <> select_newest_aux def
+R19607:19613 Stdlib.Arith.PeanoNat Nat leb def
+R19616:19626 JFCTheorems.RecencyRetention <> turn_tokens proj
+R19607:19613 Stdlib.Arith.PeanoNat Nat leb def
+R19616:19626 JFCTheorems.RecencyRetention <> turn_tokens proj
+R19724:19733 Stdlib.Arith.PeanoNat Nat leb_le thm
+R19724:19733 Stdlib.Arith.PeanoNat Nat leb_le thm
+R19769:19771 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R19772:19782 JFCTheorems.RecencyRetention <> turn_tokens proj
+R19789:19792 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R19769:19771 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R19772:19782 JFCTheorems.RecencyRetention <> turn_tokens proj
+R19789:19792 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R19853:19853 Corelib.Init.Datatypes <> S constr
+R19853:19853 Corelib.Init.Datatypes <> S constr
+R20054:20079 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20015:20026 JFCTheorems.RecencyRetention <> total_tokens def
+R20029:20034 Corelib.Lists.ListDef <> firstn def
+R20044:20047 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R20037:20037 Corelib.Init.Datatypes <> S constr
+R20093:20095 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20080:20090 JFCTheorems.RecencyRetention <> turn_tokens proj
+R20096:20107 JFCTheorems.RecencyRetention <> total_tokens def
+R20110:20115 Corelib.Lists.ListDef <> firstn def
+R20054:20079 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20015:20026 JFCTheorems.RecencyRetention <> total_tokens def
+R20029:20034 Corelib.Lists.ListDef <> firstn def
+R20044:20047 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R20037:20037 Corelib.Init.Datatypes <> S constr
+R20093:20095 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20080:20090 JFCTheorems.RecencyRetention <> turn_tokens proj
+R20096:20107 JFCTheorems.RecencyRetention <> total_tokens def
+R20110:20115 Corelib.Lists.ListDef <> firstn def
+R20140:20145 Corelib.Lists.ListDef <> firstn def
+R20157:20173 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R20157:20173 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R20157:20173 JFCTheorems.RecencyRetention <> total_tokens_cons thm
+R20211:20216 Corelib.Init.Datatypes <> length def
+R20287:20292 Corelib.Lists.ListDef <> firstn def
+R20294:20296 Stdlib.Lists.List <> rev def
+R20324:20332 Stdlib.Lists.List <> app_assoc thm
+R20324:20332 Stdlib.Lists.List <> app_assoc thm
+R20324:20332 Stdlib.Lists.List <> app_assoc thm
+R20522:20527 Corelib.Init.Datatypes <> length def
+R20566:20574 Stdlib.Lists.List <> nth_error def
+R20719:20728 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R20719:20728 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R20759:20764 Corelib.Lists.ListDef <> firstn def
+R20766:20768 Stdlib.Lists.List <> rev def
+R20770:20775 Corelib.Init.Datatypes <> length def
+R20777:20785 Stdlib.Lists.List <> nth_error def
+R20787:20803 JFCTheorems.RecencyRetention <> select_newest_aux def
+R20805:20807 Corelib.Init.Datatypes <> app def
+R20895:20906 JFCTheorems.RecencyRetention <> total_tokens def
+R20995:21006 JFCTheorems.RecencyRetention <> total_tokens def
+prf 21245:21270 <> selection_is_newest_suffix
+binder 21283:21287 <> turns:127
+binder 21289:21294 <> budget:128
+R21301:21307 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R21309:21316 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 21308:21308 <> k:129
+R21334:21343 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R21318:21321 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R21317:21317 JFCTheorems.RecencyRetention <> k:129 var
+R21322:21327 Corelib.Init.Datatypes <> length def
+R21329:21333 JFCTheorems.RecencyRetention <> turns:127 var
+R21401:21410 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R21372:21374 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R21344:21358 JFCTheorems.RecencyRetention <> select_retained def
+R21360:21364 JFCTheorems.RecencyRetention <> turns:127 var
+R21366:21371 JFCTheorems.RecencyRetention <> budget:128 var
+R21375:21377 Stdlib.Lists.List <> rev def
+R21380:21385 Corelib.Lists.ListDef <> firstn def
+R21390:21392 Stdlib.Lists.List <> rev def
+R21394:21398 JFCTheorems.RecencyRetention <> turns:127 var
+R21387:21387 JFCTheorems.RecencyRetention <> k:129 var
+R21454:21457 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R21411:21422 JFCTheorems.RecencyRetention <> total_tokens def
+R21425:21439 JFCTheorems.RecencyRetention <> select_retained def
+R21441:21445 JFCTheorems.RecencyRetention <> turns:127 var
+R21447:21452 JFCTheorems.RecencyRetention <> budget:128 var
+R21458:21463 JFCTheorems.RecencyRetention <> budget:128 var
+R21503:21517 JFCTheorems.RecencyRetention <> select_retained def
+R21532:21555 JFCTheorems.RecencyRetention <> select_newest_aux_prefix thm
+R21558:21560 Stdlib.Lists.List <> rev def
+R21576:21577 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R21532:21555 JFCTheorems.RecencyRetention <> select_newest_aux_prefix thm
+R21558:21560 Stdlib.Lists.List <> rev def
+R21576:21577 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R21632:21641 Stdlib.Lists.List <> length_rev thm
+R21632:21641 Stdlib.Lists.List <> length_rev thm
+R21632:21641 Stdlib.Lists.List <> length_rev thm
+R21701:21709 Stdlib.Lists.List <> app_nil_r thm
+R21701:21709 Stdlib.Lists.List <> app_nil_r thm
+R21701:21709 Stdlib.Lists.List <> app_nil_r thm
+R21742:21750 Stdlib.Lists.List <> app_nil_r thm
+R21753:21768 JFCTheorems.RecencyRetention <> total_tokens_rev thm
+R21742:21750 Stdlib.Lists.List <> app_nil_r thm
+R21742:21750 Stdlib.Lists.List <> app_nil_r thm
+R21753:21768 JFCTheorems.RecencyRetention <> total_tokens_rev thm
+R21753:21768 JFCTheorems.RecencyRetention <> total_tokens_rev thm
+prf 22046:22071 <> selection_blocking_exceeds
+binder 22084:22088 <> turns:130
+binder 22090:22095 <> budget:131
+R22111:22113 Stdlib.Lists.List <> rev def
+R22115:22119 JFCTheorems.RecencyRetention <> turns:130 var
+binder 22106:22106 <> l:132
+R22137:22142 Corelib.Init.Datatypes <> length def
+R22145:22159 JFCTheorems.RecencyRetention <> select_retained def
+R22161:22165 JFCTheorems.RecencyRetention <> turns:130 var
+R22167:22172 JFCTheorems.RecencyRetention <> budget:131 var
+binder 22132:22132 <> k:133
+R22198:22205 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22183:22185 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R22182:22182 JFCTheorems.RecencyRetention <> k:133 var
+R22186:22191 Corelib.Init.Datatypes <> length def
+R22193:22197 JFCTheorems.RecencyRetention <> turns:130 var
+R22206:22212 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R22214:22221 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 22213:22213 <> b:134
+R22244:22253 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R22235:22237 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R22222:22230 Stdlib.Lists.List <> nth_error def
+R22234:22234 JFCTheorems.RecencyRetention <> k:133 var
+R22232:22232 JFCTheorems.RecencyRetention <> l:132 var
+R22238:22241 Corelib.Init.Datatypes <> Some constr
+R22243:22243 JFCTheorems.RecencyRetention <> b:134 var
+R22267:22269 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R22254:22264 JFCTheorems.RecencyRetention <> turn_tokens proj
+R22266:22266 JFCTheorems.RecencyRetention <> b:134 var
+R22276:22278 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R22270:22275 JFCTheorems.RecencyRetention <> budget:131 var
+R22279:22290 JFCTheorems.RecencyRetention <> total_tokens def
+R22293:22298 Corelib.Lists.ListDef <> firstn def
+R22302:22302 JFCTheorems.RecencyRetention <> l:132 var
+R22300:22300 JFCTheorems.RecencyRetention <> k:133 var
+R22359:22373 JFCTheorems.RecencyRetention <> select_retained def
+R22393:22416 JFCTheorems.RecencyRetention <> select_newest_aux_prefix thm
+R22419:22421 Stdlib.Lists.List <> rev def
+R22437:22438 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R22393:22416 JFCTheorems.RecencyRetention <> select_newest_aux_prefix thm
+R22419:22421 Stdlib.Lists.List <> rev def
+R22437:22438 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R22587:22589 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R22539:22544 Corelib.Init.Datatypes <> length def
+R22547:22563 JFCTheorems.RecencyRetention <> select_newest_aux def
+R22566:22568 Stdlib.Lists.List <> rev def
+R22584:22585 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R22587:22589 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R22539:22544 Corelib.Init.Datatypes <> length def
+R22547:22563 JFCTheorems.RecencyRetention <> select_newest_aux def
+R22566:22568 Stdlib.Lists.List <> rev def
+R22584:22585 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R22612:22620 Stdlib.Lists.List <> app_nil_r thm
+R22623:22632 Stdlib.Lists.List <> length_rev thm
+R22635:22647 Stdlib.Lists.List <> length_firstn thm
+R22612:22620 Stdlib.Lists.List <> app_nil_r thm
+R22612:22620 Stdlib.Lists.List <> app_nil_r thm
+R22623:22632 Stdlib.Lists.List <> length_rev thm
+R22623:22632 Stdlib.Lists.List <> length_rev thm
+R22635:22647 Stdlib.Lists.List <> length_firstn thm
+R22635:22647 Stdlib.Lists.List <> length_firstn thm
+R22786:22795 Stdlib.Lists.List <> length_rev thm
+R22786:22795 Stdlib.Lists.List <> length_rev thm
+R22786:22795 Stdlib.Lists.List <> length_rev thm
+prf 23055:23086 <> selection_maximal_counterexample
+R23105:23105 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R23120:23121 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R23138:23138 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R23106:23115 JFCTheorems.RecencyRetention <> mkTurnCost constr
+R23122:23131 JFCTheorems.RecencyRetention <> mkTurnCost constr
+binder 23096:23100 <> turns:135
+binder 23149:23154 <> budget:136
+R23183:23197 JFCTheorems.RecencyRetention <> select_retained def
+R23199:23203 JFCTheorems.RecencyRetention <> turns:135 var
+R23205:23210 JFCTheorems.RecencyRetention <> budget:136 var
+binder 23171:23178 <> selected:137
+R23240:23242 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R23234:23239 JFCTheorems.RecencyRetention <> budget:136 var
+R23243:23254 JFCTheorems.RecencyRetention <> total_tokens def
+R23256:23263 JFCTheorems.RecencyRetention <> selected:137 var
+binder 23221:23229 <> remaining:138
+R23270:23276 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R23278:23283 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 23277:23277 <> t:139
+R23294:23297 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R23284:23285 Stdlib.Lists.List <> In def
+R23289:23293 JFCTheorems.RecencyRetention <> turns:135 var
+R23287:23287 JFCTheorems.RecencyRetention <> t:139 var
+R23313:23316 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R23298:23299 Corelib.Init.Logic <> ::type_scope:'~'_x not
+R23300:23301 Stdlib.Lists.List <> In def
+R23305:23312 JFCTheorems.RecencyRetention <> selected:137 var
+R23303:23303 JFCTheorems.RecencyRetention <> t:139 var
+R23330:23333 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R23317:23327 JFCTheorems.RecencyRetention <> turn_tokens proj
+R23329:23329 JFCTheorems.RecencyRetention <> t:139 var
+R23334:23342 JFCTheorems.RecencyRetention <> remaining:138 var
+R23362:23371 JFCTheorems.RecencyRetention <> mkTurnCost constr
+R23362:23371 JFCTheorems.RecencyRetention <> mkTurnCost constr
+R23546:23560 JFCTheorems.RecencyRetention <> select_retained def
+R23562:23578 JFCTheorems.RecencyRetention <> select_newest_aux def
+R23580:23582 Stdlib.Lists.List <> rev def
+R23584:23586 Corelib.Init.Datatypes <> app def
+R23588:23593 Corelib.Lists.ListDef <> firstn def
+R23595:23606 JFCTheorems.RecencyRetention <> total_tokens def
+R23615:23623 Stdlib.Lists.List <> fold_left def
+R23625:23635 JFCTheorems.RecencyRetention <> turn_tokens proj
+R23637:23643 Stdlib.Arith.PeanoNat Nat leb def

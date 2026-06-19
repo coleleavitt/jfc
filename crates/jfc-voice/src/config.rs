@@ -51,37 +51,33 @@ pub enum VadEngine {
 impl VadEngine {
     /// Resolve the configured engine from `JFC_VAD_ENGINE`.
     ///
-    /// - An explicit value always wins: `neural`/`silero`/`onnx`/`ml` → Neural,
-    ///   `energy`/`classic`/`default` → Energy.
-    /// - When unset, the default depends on the build: if compiled with the
-    ///   `vad-neural` feature the neural Silero engine is the default (it's the
-    ///   more robust detector); otherwise Energy. This means a `vad-neural`
-    ///   build is hands-free-neural out of the box, and `JFC_VAD_ENGINE=energy`
-    ///   is the opt-out.
+    /// - `energy`/`classic`/`default` → Energy.
+    /// - `neural`/`silero`/`onnx`/`ml` → Neural only when
+    ///   `JFC_VAD_ENABLE_NEURAL=1` is also set.
+    /// - When unset, or when neural is requested without the unsafe opt-in, use
+    ///   Energy. ONNX Runtime can segfault during environment construction on
+    ///   some hosts, before Rust can return an error.
     pub fn from_env() -> Self {
         match std::env::var("JFC_VAD_ENGINE")
             .unwrap_or_default()
             .to_lowercase()
             .as_str()
         {
-            "neural" | "silero" | "onnx" | "ml" => Self::Neural,
+            "neural" | "silero" | "onnx" | "ml" if Self::neural_runtime_enabled() => Self::Neural,
             "energy" | "classic" | "default" => Self::Energy,
-            // Unset / unrecognized → build-dependent default.
+            // Unset / unrecognized / neural without opt-in → safe default.
             _ => Self::build_default(),
         }
     }
 
-    /// The default engine for this build: Neural when the `vad-neural` feature
-    /// is compiled in, Energy otherwise.
+    /// The safe default engine for every build.
     pub const fn build_default() -> Self {
-        #[cfg(feature = "vad-neural")]
-        {
-            Self::Neural
-        }
-        #[cfg(not(feature = "vad-neural"))]
-        {
-            Self::Energy
-        }
+        Self::Energy
+    }
+
+    /// Whether this process is allowed to construct the native neural VAD.
+    pub fn neural_runtime_enabled() -> bool {
+        env_flag("JFC_VAD_ENABLE_NEURAL")
     }
 
     /// Parse from a config-file string. `None` for unrecognized values.
@@ -200,7 +196,12 @@ impl VoiceConfig {
         if let Some(engine_str) = v.get("vadEngine").and_then(|m| m.as_str()) {
             if std::env::var("JFC_VAD_ENGINE").is_err() {
                 if let Some(engine) = VadEngine::from_str(engine_str) {
-                    cfg.vad_engine = engine;
+                    cfg.vad_engine =
+                        if engine == VadEngine::Neural && !VadEngine::neural_runtime_enabled() {
+                            VadEngine::Energy
+                        } else {
+                            engine
+                        };
                 }
             }
         }
@@ -319,8 +320,8 @@ mod tests {
         let cfg = VoiceConfig::from_settings(None);
         assert!(!cfg.enabled);
         assert_eq!(cfg.mode, VoiceMode::Hold);
-        // The engine comes from the env resolver, which uses the build default
-        // when JFC_VAD_ENGINE is unset (Neural for a vad-neural build).
+        // The engine comes from the env resolver, which uses the safe default
+        // when JFC_VAD_ENGINE is unset.
         if std::env::var("JFC_VAD_ENGINE").is_err() {
             assert_eq!(cfg.vad_engine, VadEngine::build_default());
         }
@@ -344,25 +345,18 @@ mod tests {
         assert_eq!(VadEngine::Neural.label(), "neural");
     }
 
-    #[cfg(feature = "vad-neural")]
     #[test]
-    fn build_default_is_neural_with_feature_normal() {
-        assert_eq!(VadEngine::build_default(), VadEngine::Neural);
-    }
-
-    #[cfg(not(feature = "vad-neural"))]
-    #[test]
-    fn build_default_is_energy_without_feature_normal() {
+    fn build_default_is_energy_even_with_neural_feature_regression() {
         assert_eq!(VadEngine::build_default(), VadEngine::Energy);
     }
 
     #[test]
-    fn voice_config_reads_vad_engine_from_settings_normal() {
+    fn voice_config_ignores_neural_settings_without_native_opt_in_regression() {
         // Only when the env override isn't set (env wins over file).
         if std::env::var("JFC_VAD_ENGINE").is_err() {
             let val = json!({"enabled": true, "mode": "vad", "vadEngine": "neural"});
             let cfg = VoiceConfig::from_settings(Some(&val));
-            assert_eq!(cfg.vad_engine, VadEngine::Neural);
+            assert_eq!(cfg.vad_engine, VadEngine::Energy);
         }
     }
 }

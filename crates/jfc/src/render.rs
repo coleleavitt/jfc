@@ -36,6 +36,8 @@ pub(crate) mod visual;
 pub(crate) mod voice_cursor;
 
 #[cfg(test)]
+mod teammates_panel_tests;
+#[cfg(test)]
 mod tests;
 
 // Re-export the top-level entry point

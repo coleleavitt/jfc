@@ -1,15 +1,16 @@
 //! Streaming-status model for the spinner row.
 //!
-//! Elapsed time, token counts, thinking tokens, throughput, and silence
+//! Elapsed time, token counts, thinking status, throughput, and silence
 //! reflect real stream signals. The active verb follows Claude Code's
 //! spinner vocabulary and user-configurable `spinnerVerbs`; the renderer
-//! picks one verb per activity instead of changing it every redraw.
+//! picks one verb per activity instead of exposing lifecycle states such
+//! as "requesting" or "responding".
 //!
 //! ## Format (one line)
 //!
 //! ```text
-//! ✦ Thinking · 1m04s · 1.2k tokens · 18 tok/s
-//! ✦ Responding · 1m22s · 2.4k tokens · 47 tok/s
+//! ✦ Percolating… (1m04s · ↓ 1.2k tokens · thinking)
+//! ✦ Unfurling… (1m22s · ↓ 2.4k tokens · 47 tok/s)
 //! ```
 //!
 //! The glyph advances one frame per render tick *while streaming* — that
@@ -347,7 +348,7 @@ const SPINNER_TIPS: &[&str] = &[
     "Use Esc Esc to interrupt the current turn",
     "Press ? for keybindings",
     "Ctrl+P opens the command palette",
-    "Press o to expand collapsed tool output",
+    "Press Ctrl+O to expand collapsed tool output",
     "Use /cost to check session token usage",
 ];
 
@@ -375,13 +376,18 @@ pub fn spinner_tip(frame: usize) -> Option<&'static str> {
     if !spinner_tips_enabled() {
         return None;
     }
-    // Show a tip after ~5 seconds of streaming, then rotate every ~12s.
-    // At 10 Hz (100ms ticks), frame 50 = 5s, cycle every 120 frames = 12s.
-    if frame < 50 {
+    let first_tip_frame = frames_for_duration(Duration::from_secs(5));
+    let rotate_frames = frames_for_duration(Duration::from_secs(12)).max(1);
+    if frame < first_tip_frame {
         return None;
     }
-    let tip_idx = ((frame - 50) / 120) % SPINNER_TIPS.len();
+    let tip_idx = ((frame - first_tip_frame) / rotate_frames) % SPINNER_TIPS.len();
     Some(SPINNER_TIPS[tip_idx])
+}
+
+fn frames_for_duration(duration: Duration) -> usize {
+    let tick_ms = crate::app::ANIM_TICK_MS.max(1);
+    duration.as_millis().div_ceil(tick_ms as u128) as usize
 }
 
 /// Format an elapsed duration compactly: `4s`, `47s`, `1m04s`, `61m01s`.
@@ -474,9 +480,11 @@ pub fn windowed_token_rate(samples: &std::collections::VecDeque<(Duration, u64)>
 /// took). `None` means it didn't use extended thinking this turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThinkingStatus {
-    /// Reasoning chunks are arriving — the phase label reads `Thinking`.
-    Live,
-    /// Reasoning ended; text has started. We show a `thought Ns` chip.
+    /// Reasoning chunks are arriving. Carries the current burst duration so
+    /// the tail can use Claude's staged vocabulary (`thinking`, `still
+    /// thinking`, ...).
+    Live(Duration),
+    /// Reasoning ended; text has started. We show a `thought for Ns` chip.
     Done(Duration),
 }
 
@@ -631,10 +639,24 @@ pub fn next_phase(
     desired
 }
 
-/// Build the honest status row. `thinking` selects the phase label and
-/// which token counter leads; `output_tokens` / `thinking_tokens` /
-/// `token_rate` come straight off the wire; `time_since_last_token`
-/// drives the quiet chip and the `dim` flag.
+fn live_thinking_label(duration: Duration) -> &'static str {
+    let ms = duration.as_millis();
+    if ms >= 45_000 {
+        "almost done thinking"
+    } else if ms >= 30_000 {
+        "thinking some more"
+    } else if ms >= 20_000 {
+        "thinking more"
+    } else if ms >= 10_000 {
+        "still thinking"
+    } else {
+        "thinking"
+    }
+}
+
+/// Build the status tail. The headline verb is a Claude spinner verb; this
+/// function only emits the parenthesized metadata tail (`elapsed`, token count,
+/// rate, `thinking`/`thought for Ns`, quiet status).
 pub fn status_segments(
     tick: usize,
     elapsed: Duration,
@@ -652,31 +674,23 @@ pub fn status_segments(
     };
 
     match thinking {
-        Some(ThinkingStatus::Live) => {
-            // The leading `elapsed` chip already shows the live duration (and
-            // during the Thinking phase that duration *is* the thinking time),
-            // so don't repeat it as a redundant `thinking {elapsed}` chip —
-            // that rendered the same number twice (`Thinking · 1m04s ·
-            // thinking 1m04s`). Show the cumulative thinking-token total
-            // instead, without repeating the phase word: the same honest count
-            // Claude Code surfaces (not a `~`-marked estimate). The server's
-            // running total may plateau at a steady state, but it's still the
-            // real count.
+        Some(ThinkingStatus::Live(thinking_elapsed)) => {
             if thinking_tokens > 0 {
-                parts.push(format!("{} tokens", fmt_tokens(thinking_tokens)));
+                parts.push(format!("↓ {} tokens", fmt_tokens(thinking_tokens)));
             }
             push_rate(&mut parts);
+            parts.push(live_thinking_label(thinking_elapsed).to_owned());
         }
         Some(ThinkingStatus::Done(d)) => {
-            parts.push(format!("thought {}s", d.as_secs().max(1)));
+            parts.push(format!("thought for {}s", d.as_secs().max(1)));
             if output_tokens > 0 {
-                parts.push(format!("{} tokens", fmt_tokens(output_tokens)));
+                parts.push(format!("↓ {} tokens", fmt_tokens(output_tokens)));
                 push_rate(&mut parts);
             }
         }
         None => {
             if output_tokens > 0 {
-                parts.push(format!("{} tokens", fmt_tokens(output_tokens)));
+                parts.push(format!("↓ {} tokens", fmt_tokens(output_tokens)));
                 push_rate(&mut parts);
             }
         }
@@ -858,6 +872,21 @@ mod tests {
     }
 
     #[test]
+    fn spinner_tip_timing_tracks_animation_cadence_regression() {
+        let first = frames_for_duration(Duration::from_secs(5));
+        let rotate = frames_for_duration(Duration::from_secs(12));
+
+        assert!(
+            first > 50,
+            "33ms animation cadence needs more than 50 frames"
+        );
+        assert!(
+            rotate > 120,
+            "33ms animation cadence needs more than 120 frames"
+        );
+    }
+
+    #[test]
     fn quiet_status_is_honest_normal() {
         // Fresh / brief gaps say nothing.
         assert_eq!(quiet_status(Duration::from_secs(0)), None);
@@ -887,7 +916,11 @@ mod tests {
         );
         assert_eq!(s.glyph, frame_for(2));
         assert!(s.body.contains("1m22s"), "elapsed missing: {}", s.body);
-        assert!(s.body.contains("2.4k tokens"), "tokens missing: {}", s.body);
+        assert!(
+            s.body.contains("↓ 2.4k tokens"),
+            "tokens missing: {}",
+            s.body
+        );
         assert!(s.body.contains("47 tok/s"), "rate missing: {}", s.body);
         assert!(!s.dim, "fresh stream should not be dim");
     }
@@ -900,7 +933,7 @@ mod tests {
             0,
             Some(18.0),
             Duration::from_secs(2),
-            Some(ThinkingStatus::Live),
+            Some(ThinkingStatus::Live(Duration::from_secs(64))),
             1_200,
         );
         // The leading elapsed chip shows the live duration once.
@@ -919,16 +952,16 @@ mod tests {
             "elapsed should appear exactly once: {}",
             s.body
         );
-        // Cumulative thinking-token total, rendered as `1.2k tokens`
-        // under the `Thinking` phase label, no `~` estimate marker.
+        // Cumulative thinking-token total, rendered with Claude's down-arrow
+        // token chip and no `~` estimate marker.
         assert!(
-            s.body.contains("1.2k tokens"),
+            s.body.contains("↓ 1.2k tokens"),
             "thinking token total missing: {}",
             s.body
         );
         assert!(
-            !s.body.contains("thinking"),
-            "phase label should carry `Thinking`; body should not repeat it: {}",
+            s.body.contains("almost done thinking"),
+            "live thinking tail missing: {}",
             s.body
         );
         assert!(
@@ -955,12 +988,12 @@ mod tests {
             0,
         );
         assert!(
-            s.body.contains("thought 12s"),
+            s.body.contains("thought for 12s"),
             "thought chip missing: {}",
             s.body
         );
         assert!(
-            s.body.contains("5.0k tokens"),
+            s.body.contains("↓ 5.0k tokens"),
             "output tokens missing: {}",
             s.body
         );
@@ -978,7 +1011,7 @@ mod tests {
             0,
         );
         assert!(
-            s.body.contains("thought 1s"),
+            s.body.contains("thought for 1s"),
             "expected 1s floor: {}",
             s.body
         );

@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JFC Crate Dependency Graph</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { 
+  font-family: system-ui, -apple-system, sans-serif; 
+  background: #0d1117; 
+  color: #c9d1d9;
+  min-height: 100vh;
+}
+h1 { 
+  text-align: center; 
+  padding: 24px; 
+  font-weight: 500;
+  color: #58a6ff;
+}
+.legend {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  padding: 0 24px 24px;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.legend-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+svg { 
+  display: block; 
+  margin: 0 auto;
+  max-width: 100%;
+}
+.node rect { 
+  stroke-width: 2; 
+  rx: 6;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+.node text { 
+  font-size: 11px; 
+  font-weight: 500;
+  fill: #fff;
+}
+.edge { 
+  fill: none; 
+  stroke: #30363d; 
+  stroke-width: 1.5;
+  marker-end: url(#arrow);
+}
+.edge:hover {
+  stroke: #58a6ff;
+  stroke-width: 2;
+}
+/* Layer colors */
+.layer-app rect { fill: #238636; stroke: #2ea043; }
+.layer-engine rect { fill: #8957e5; stroke: #a371f7; }
+.layer-feature rect { fill: #1f6feb; stroke: #388bfd; }
+.layer-infra rect { fill: #da3633; stroke: #f85149; }
+.layer-core rect { fill: #6e7681; stroke: #8b949e; }
+</style>
+</head>
+<body>
+<h1>JFC Workspace — Crate Dependency Graph</h1>
+<div class="legend">
+  <div class="legend-item"><div class="legend-box" style="background:#238636"></div>App (TUI)</div>
+  <div class="legend-item"><div class="legend-box" style="background:#8957e5"></div>Engine</div>
+  <div class="legend-item"><div class="legend-box" style="background:#1f6feb"></div>Feature</div>
+  <div class="legend-item"><div class="legend-box" style="background:#da3633"></div>Infrastructure</div>
+  <div class="legend-item"><div class="legend-box" style="background:#6e7681"></div>Core</div>
+</div>
+<svg viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#30363d"/>
+    </marker>
+  </defs>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- EDGES (drawn first so nodes render on top) -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  
+  <!-- jfc (TUI) -> everything -->
+  <path class="edge" d="M 600,80 L 600,140"/><!-- jfc -> jfc-engine -->
+  <path class="edge" d="M 560,70 Q 200,100 200,200"/><!-- jfc -> jfc-agents -->
+  <path class="edge" d="M 640,70 Q 400,100 400,200"/><!-- jfc -> jfc-session -->
+  <path class="edge" d="M 560,70 Q 600,100 600,200"/><!-- jfc -> jfc-economy -->
+  <path class="edge" d="M 640,70 Q 800,100 800,200"/><!-- jfc -> jfc-providers -->
+  <path class="edge" d="M 640,70 Q 1000,100 1000,200"/><!-- jfc -> jfc-mcp -->
+  <path class="edge" d="M 560,70 Q 100,120 100,380"/><!-- jfc -> jfc-config -->
+  <path class="edge" d="M 560,70 Q 280,120 280,380"/><!-- jfc -> jfc-tools -->
+  <path class="edge" d="M 640,70 Q 460,120 460,380"/><!-- jfc -> jfc-memory -->
+  <path class="edge" d="M 640,70 Q 640,120 640,380"/><!-- jfc -> jfc-daemon -->
+  <path class="edge" d="M 640,70 Q 820,120 820,380"/><!-- jfc -> jfc-learn -->
+  <path class="edge" d="M 640,70 Q 1000,140 1000,380"/><!-- jfc -> other infra -->
+  <path class="edge" d="M 560,70 Q 200,500 200,540"/><!-- jfc -> jfc-provider -->
+  <path class="edge" d="M 640,70 Q 600,500 600,540"/><!-- jfc -> jfc-core -->
+
+  <!-- jfc-engine -> feature crates -->
+  <path class="edge" d="M 560,170 Q 200,190 200,200"/><!-- engine -> agents -->
+  <path class="edge" d="M 560,170 Q 400,190 400,200"/><!-- engine -> session -->
+  <path class="edge" d="M 600,180 L 600,200"/><!-- engine -> economy -->
+  <path class="edge" d="M 640,170 Q 800,190 800,200"/><!-- engine -> providers -->
+  <path class="edge" d="M 640,170 Q 1000,190 1000,200"/><!-- engine -> mcp -->
+  
+  <!-- jfc-engine -> infra crates -->
+  <path class="edge" d="M 560,180 Q 100,300 100,380"/><!-- engine -> config -->
+  <path class="edge" d="M 560,180 Q 280,300 280,380"/><!-- engine -> tools -->
+  <path class="edge" d="M 560,180 Q 460,300 460,380"/><!-- engine -> memory -->
+  <path class="edge" d="M 600,180 L 640,380"/><!-- engine -> daemon -->
+  <path class="edge" d="M 640,180 Q 820,300 820,380"/><!-- engine -> learn -->
+  <path class="edge" d="M 640,180 Q 1000,300 1000,380"/><!-- engine -> infra -->
+
+  <!-- jfc-engine -> core layer -->
+  <path class="edge" d="M 560,180 Q 200,450 200,540"/><!-- engine -> provider -->
+  <path class="edge" d="M 600,180 Q 600,450 600,540"/><!-- engine -> core -->
+
+  <!-- Feature crates -> infra/core -->
+  <path class="edge" d="M 200,260 Q 100,320 100,380"/><!-- agents -> config -->
+  <path class="edge" d="M 200,260 Q 600,400 600,540"/><!-- agents -> core -->
+  
+  <path class="edge" d="M 400,260 Q 600,400 600,540"/><!-- session -> core -->
+  
+  <path class="edge" d="M 600,260 Q 600,400 600,540"/><!-- economy -> core -->
+  
+  <path class="edge" d="M 800,260 Q 200,400 200,540"/><!-- providers -> provider -->
+  <path class="edge" d="M 800,260 Q 600,400 600,540"/><!-- providers -> core -->
+  <path class="edge" d="M 800,260 Q 1100,320 1100,380"/><!-- providers -> anthropic-sdk -->
+  <path class="edge" d="M 800,260 Q 920,320 920,380"/><!-- providers -> auth -->
+  
+  <path class="edge" d="M 1000,260 Q 200,400 200,540"/><!-- mcp -> provider -->
+  <path class="edge" d="M 1000,260 Q 600,400 600,540"/><!-- mcp -> core -->
+
+  <!-- Infra crates -> core layer -->
+  <path class="edge" d="M 100,440 Q 1000,460 1000,500"/><!-- config -> mcp (back-ref) -->
+  <path class="edge" d="M 280,440 Q 600,480 600,540"/><!-- tools -> core -->
+  <path class="edge" d="M 460,440 Q 200,480 200,540"/><!-- memory -> provider -->
+  <path class="edge" d="M 640,440 Q 600,480 600,540"/><!-- daemon -> core -->
+  <path class="edge" d="M 640,440 Q 200,480 200,540"/><!-- daemon -> provider -->
+  <path class="edge" d="M 820,440 Q 600,480 600,540"/><!-- learn -> core -->
+
+  <!-- Provider -> core -->
+  <path class="edge" d="M 200,600 Q 400,620 600,600"/>
+
+  <!-- Markdown -> theme -->
+  <path class="edge" d="M 370,760 L 430,760"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- NODES -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Layer 0: App -->
+  <g class="node layer-app" transform="translate(540,40)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc</text>
+  </g>
+
+  <!-- Layer 1: Engine -->
+  <g class="node layer-engine" transform="translate(540,140)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-engine</text>
+  </g>
+
+  <!-- Layer 2: Feature crates -->
+  <g class="node layer-feature" transform="translate(140,220)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-agents</text>
+  </g>
+  <g class="node layer-feature" transform="translate(340,220)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-session</text>
+  </g>
+  <g class="node layer-feature" transform="translate(540,220)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-economy</text>
+  </g>
+  <g class="node layer-feature" transform="translate(740,220)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-providers</text>
+  </g>
+  <g class="node layer-feature" transform="translate(940,220)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-mcp</text>
+  </g>
+
+  <!-- Layer 3: Infrastructure crates -->
+  <g class="node layer-infra" transform="translate(40,400)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-config</text>
+  </g>
+  <g class="node layer-infra" transform="translate(220,400)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-tools</text>
+  </g>
+  <g class="node layer-infra" transform="translate(400,400)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-memory</text>
+  </g>
+  <g class="node layer-infra" transform="translate(580,400)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-daemon</text>
+  </g>
+  <g class="node layer-infra" transform="translate(760,400)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-learn</text>
+  </g>
+  <g class="node layer-infra" transform="translate(860,400)">
+    <rect width="100" height="36"/>
+    <text x="50" y="22" text-anchor="middle">jfc-auth</text>
+  </g>
+  <g class="node layer-infra" transform="translate(1020,400)">
+    <rect width="140" height="36"/>
+    <text x="70" y="22" text-anchor="middle">jfc-anthropic-sdk</text>
+  </g>
+
+  <!-- More infra row 2 -->
+  <g class="node layer-infra" transform="translate(40,480)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-audit</text>
+  </g>
+  <g class="node layer-infra" transform="translate(220,480)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-bridge</text>
+  </g>
+  <g class="node layer-infra" transform="translate(400,480)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-changeset</text>
+  </g>
+  <g class="node layer-infra" transform="translate(580,480)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-design</text>
+  </g>
+  <g class="node layer-infra" transform="translate(760,480)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-remote</text>
+  </g>
+  <g class="node layer-infra" transform="translate(940,480)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-web</text>
+  </g>
+  <g class="node layer-infra" transform="translate(1080,480)">
+    <rect width="100" height="36"/>
+    <text x="50" y="22" text-anchor="middle">jfc-voice</text>
+  </g>
+  <g class="node layer-infra" transform="translate(40,560)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-compress</text>
+  </g>
+
+  <!-- Layer 4: Core crates -->
+  <g class="node layer-core" transform="translate(140,580)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-provider</text>
+  </g>
+  <g class="node layer-core" transform="translate(540,580)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-core</text>
+  </g>
+
+  <!-- Standalone / utility -->
+  <g class="node layer-infra" transform="translate(280,760)">
+    <rect width="120" height="36"/>
+    <text x="60" y="22" text-anchor="middle">jfc-markdown</text>
+  </g>
+  <g class="node layer-core" transform="translate(460,760)">
+    <rect width="100" height="36"/>
+    <text x="50" y="22" text-anchor="middle">jfc-theme</text>
+  </g>
+
+  <!-- Labels for layers -->
+  <text x="20" y="58" fill="#8b949e" font-size="10">APP</text>
+  <text x="20" y="158" fill="#8b949e" font-size="10">ENGINE</text>
+  <text x="20" y="238" fill="#8b949e" font-size="10">FEATURE</text>
+  <text x="20" y="418" fill="#8b949e" font-size="10">INFRA</text>
+  <text x="20" y="598" fill="#8b949e" font-size="10">CORE</text>
+</svg>
+
+<div style="padding: 24px; text-align: center; color: #8b949e; font-size: 13px;">
+  26 crates · Arrows show compile-time dependencies · <code>jfc-core</code> and <code>jfc-provider</code> are foundational
+</div>
+</body>
+</html>

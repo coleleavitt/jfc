@@ -1,0 +1,388 @@
+DIGEST d413916142e2ed9763a288d3baf2f942
+FJFC.Compaction
+R426:440 Stdlib.Arith.Arith <> <> lib
+R458:471 Stdlib.Lists.List <> <> lib
+R489:501 Stdlib.Bool.Bool <> <> lib
+R519:535 Stdlib.micromega.Lia <> <> lib
+R545:557 Stdlib.Lists.List ListNotations <> mod
+rec 603:609 <> Message
+proj 635:644 <> msg_tokens
+proj 655:662 <> msg_role
+R648:650 Corelib.Init.Datatypes <> nat ind
+R666:668 Corelib.Init.Datatypes <> nat ind
+def 723:734 <> MessageGroup
+R739:742 Corelib.Init.Datatypes <> list ind
+R744:750 JFC.Compaction <> Message rec
+def 765:776 <> group_tokens
+R783:794 JFC.Compaction <> MessageGroup def
+binder 779:779 <> g:4
+R799:801 Corelib.Init.Datatypes <> nat ind
+R808:816 Stdlib.Lists.List <> fold_left def
+R852:852 JFC.Compaction <> g:4 var
+binder 823:825 <> acc:5
+binder 827:827 <> m:6
+R835:837 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R832:834 JFC.Compaction <> acc:5 var
+R838:847 JFC.Compaction <> msg_tokens proj
+R849:849 JFC.Compaction <> m:6 var
+rec 901:913 <> CompactConfig
+proj 945:958 <> context_window
+proj 969:980 <> max_attempts
+proj 991:1011 <> circuit_breaker_limit
+proj 1022:1039 <> thrash_turn_window
+proj 1050:1065 <> blocked_headroom
+R962:964 Corelib.Init.Datatypes <> nat ind
+R984:986 Corelib.Init.Datatypes <> nat ind
+R1015:1017 Corelib.Init.Datatypes <> nat ind
+R1043:1045 Corelib.Init.Datatypes <> nat ind
+R1069:1071 Corelib.Init.Datatypes <> nat ind
+rec 1113:1124 <> CompactState
+proj 1155:1160 <> groups
+proj 1185:1198 <> preserve_count
+proj 1209:1215 <> attempt
+proj 1226:1243 <> rapid_refill_count
+proj 1254:1270 <> last_compact_turn
+proj 1281:1296 <> total_user_turns
+R1164:1167 Corelib.Init.Datatypes <> list ind
+R1169:1180 JFC.Compaction <> MessageGroup def
+R1202:1204 Corelib.Init.Datatypes <> nat ind
+R1219:1221 Corelib.Init.Datatypes <> nat ind
+R1247:1249 Corelib.Init.Datatypes <> nat ind
+R1274:1276 Corelib.Init.Datatypes <> nat ind
+R1300:1302 Corelib.Init.Datatypes <> nat ind
+def 1348:1359 <> total_tokens
+R1367:1370 Corelib.Init.Datatypes <> list ind
+R1372:1383 JFC.Compaction <> MessageGroup def
+binder 1362:1363 <> gs:20
+R1388:1390 Corelib.Init.Datatypes <> nat ind
+R1397:1405 Stdlib.Lists.List <> fold_left def
+R1443:1444 JFC.Compaction <> gs:20 var
+binder 1412:1414 <> acc:21
+binder 1416:1416 <> g:22
+R1424:1426 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R1421:1423 JFC.Compaction <> acc:21 var
+R1427:1438 JFC.Compaction <> group_tokens def
+R1440:1440 JFC.Compaction <> g:22 var
+def 1461:1476 <> summarize_tokens
+R1484:1487 Corelib.Init.Datatypes <> list ind
+R1489:1500 JFC.Compaction <> MessageGroup def
+binder 1479:1480 <> gs:23
+R1515:1517 Corelib.Init.Datatypes <> nat ind
+binder 1504:1511 <> preserve:24
+R1522:1524 Corelib.Init.Datatypes <> nat ind
+R1531:1542 JFC.Compaction <> total_tokens def
+R1545:1550 Corelib.Lists.ListDef <> firstn def
+R1575:1576 JFC.Compaction <> gs:23 var
+R1562:1564 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R1553:1558 Corelib.Init.Datatypes <> length def
+R1560:1561 JFC.Compaction <> gs:23 var
+R1565:1572 JFC.Compaction <> preserve:24 var
+def 1592:1606 <> preserve_tokens
+R1614:1617 Corelib.Init.Datatypes <> list ind
+R1619:1630 JFC.Compaction <> MessageGroup def
+binder 1609:1610 <> gs:25
+R1645:1647 Corelib.Init.Datatypes <> nat ind
+binder 1634:1641 <> preserve:26
+R1652:1654 Corelib.Init.Datatypes <> nat ind
+R1661:1672 JFC.Compaction <> total_tokens def
+R1675:1679 Corelib.Lists.ListDef <> skipn def
+R1704:1705 JFC.Compaction <> gs:25 var
+R1691:1693 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R1682:1687 Corelib.Init.Datatypes <> length def
+R1689:1690 JFC.Compaction <> gs:25 var
+R1694:1701 JFC.Compaction <> preserve:26 var
+ind 1749:1761 <> CompactResult
+constr 1777:1783 <> Success
+constr 1867:1878 <> TooFewGroups
+constr 1900:1908 <> Exhausted
+constr 1953:1973 <> CircuitBreakerTripped
+constr 1995:2005 <> Unsupported
+R1804:1807 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1787:1790 Corelib.Init.Datatypes <> list ind
+R1792:1803 JFC.Compaction <> MessageGroup def
+R1811:1814 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1808:1810 Corelib.Init.Datatypes <> nat ind
+R1818:1821 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1815:1817 Corelib.Init.Datatypes <> nat ind
+R1822:1834 JFC.Compaction <> CompactResult:27 ind
+R1882:1894 JFC.Compaction <> CompactResult:27 ind
+R1915:1918 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1912:1914 Corelib.Init.Datatypes <> nat ind
+R1919:1931 JFC.Compaction <> CompactResult:27 ind
+R1977:1989 JFC.Compaction <> CompactResult:27 ind
+R2009:2021 JFC.Compaction <> CompactResult:27 ind
+scheme 1749:1761 <> CompactResult_rect
+scheme 1749:1761 <> CompactResult_ind
+scheme 1749:1761 <> CompactResult_rec
+scheme 1749:1761 <> CompactResult_sind
+def 2107:2129 <> circuit_breaker_tripped
+R2137:2148 JFC.Compaction <> CompactState rec
+binder 2132:2133 <> st:29
+R2158:2170 JFC.Compaction <> CompactConfig rec
+binder 2152:2154 <> cfg:30
+R2175:2178 Corelib.Init.Datatypes <> bool ind
+R2185:2191 Stdlib.Arith.PeanoNat Nat leb def
+R2194:2214 JFC.Compaction <> circuit_breaker_limit proj
+R2216:2218 JFC.Compaction <> cfg:30 var
+R2222:2239 JFC.Compaction <> rapid_refill_count proj
+R2241:2242 JFC.Compaction <> st:29 var
+def 2293:2309 <> needs_more_groups
+R2317:2328 JFC.Compaction <> CompactState rec
+binder 2312:2313 <> st:31
+R2333:2336 Corelib.Init.Datatypes <> bool ind
+R2343:2349 Stdlib.Arith.PeanoNat Nat ltb def
+R2352:2357 Corelib.Init.Datatypes <> length def
+R2360:2365 JFC.Compaction <> groups proj
+R2367:2368 JFC.Compaction <> st:31 var
+def 2430:2447 <> preserve_exhausted
+R2455:2466 JFC.Compaction <> CompactState rec
+binder 2450:2451 <> st:32
+R2471:2474 Corelib.Init.Datatypes <> bool ind
+R2481:2487 Stdlib.Arith.PeanoNat Nat leb def
+R2490:2495 Corelib.Init.Datatypes <> length def
+R2498:2503 JFC.Compaction <> groups proj
+R2505:2506 JFC.Compaction <> st:32 var
+R2511:2524 JFC.Compaction <> preserve_count proj
+R2526:2527 JFC.Compaction <> st:32 var
+def 2571:2590 <> max_attempts_reached
+R2598:2609 JFC.Compaction <> CompactState rec
+binder 2593:2594 <> st:33
+R2619:2631 JFC.Compaction <> CompactConfig rec
+binder 2613:2615 <> cfg:34
+R2636:2639 Corelib.Init.Datatypes <> bool ind
+R2646:2652 Stdlib.Arith.PeanoNat Nat ltb def
+R2655:2666 JFC.Compaction <> max_attempts proj
+R2668:2670 JFC.Compaction <> cfg:34 var
+R2674:2680 JFC.Compaction <> attempt proj
+R2682:2683 JFC.Compaction <> st:33 var
+def 2985:2996 <> can_continue
+R3004:3015 JFC.Compaction <> CompactState rec
+binder 2999:3000 <> st:35
+R3025:3037 JFC.Compaction <> CompactConfig rec
+binder 3019:3021 <> cfg:36
+R3042:3045 Corelib.Init.Datatypes <> bool ind
+R3162:3167 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3122:3127 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3089:3094 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3052:3055 Corelib.Init.Datatypes <> negb def
+R3058:3080 JFC.Compaction <> circuit_breaker_tripped def
+R3082:3083 JFC.Compaction <> st:35 var
+R3085:3087 JFC.Compaction <> cfg:36 var
+R3095:3098 Corelib.Init.Datatypes <> negb def
+R3101:3117 JFC.Compaction <> needs_more_groups def
+R3119:3120 JFC.Compaction <> st:35 var
+R3128:3131 Corelib.Init.Datatypes <> negb def
+R3134:3153 JFC.Compaction <> max_attempts_reached def
+R3155:3156 JFC.Compaction <> st:35 var
+R3158:3160 JFC.Compaction <> cfg:36 var
+R3168:3171 Corelib.Init.Datatypes <> negb def
+R3174:3191 JFC.Compaction <> preserve_exhausted def
+R3193:3194 JFC.Compaction <> st:35 var
+prf 3307:3327 <> compaction_terminates
+binder 3340:3341 <> st:37
+binder 3343:3345 <> cfg:38
+R3379:3386 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R3371:3373 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3352:3363 JFC.Compaction <> can_continue def
+R3365:3366 JFC.Compaction <> st:37 var
+R3368:3370 JFC.Compaction <> cfg:38 var
+R3374:3378 Corelib.Init.Datatypes <> false constr
+R3404:3406 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R3387:3400 JFC.Compaction <> preserve_count proj
+R3402:3403 JFC.Compaction <> st:37 var
+R3407:3412 Corelib.Init.Datatypes <> length def
+R3415:3420 JFC.Compaction <> groups proj
+R3422:3423 JFC.Compaction <> st:37 var
+R3463:3480 JFC.Compaction <> preserve_exhausted def
+R3463:3480 JFC.Compaction <> preserve_exhausted def
+R3513:3524 JFC.Compaction <> can_continue def
+R3560:3571 Stdlib.Bool.Bool <> andb_false_r thm
+R3560:3571 Stdlib.Bool.Bool <> andb_false_r thm
+R3560:3571 Stdlib.Bool.Bool <> andb_false_r thm
+R3560:3571 Stdlib.Bool.Bool <> andb_false_r thm
+R3609:3626 JFC.Compaction <> preserve_exhausted def
+R3647:3656 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R3647:3656 Stdlib.Arith.PeanoNat Nat leb_gt thm
+def 3803:3823 <> preserves_token_bound
+R3851:3853 Corelib.Init.Datatypes <> nat ind
+binder 3826:3835 <> pre_tokens:39
+binder 3837:3847 <> post_tokens:40
+R3879:3882 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R3868:3878 JFC.Compaction <> post_tokens:40 var
+R3883:3892 JFC.Compaction <> pre_tokens:39 var
+def 3957:3975 <> summary_compression
+R4011:4013 Corelib.Init.Datatypes <> nat ind
+binder 3978:3992 <> summarize_count:41
+binder 3994:4007 <> summary_tokens:42
+R4042:4044 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R4028:4041 JFC.Compaction <> summary_tokens:42 var
+R4045:4059 JFC.Compaction <> summarize_count:41 var
+prf 4163:4192 <> circuit_breaker_bounds_refills
+binder 4205:4206 <> st:43
+binder 4208:4210 <> cfg:44
+R4254:4261 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4247:4249 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4217:4239 JFC.Compaction <> circuit_breaker_tripped def
+R4241:4242 JFC.Compaction <> st:43 var
+R4244:4246 JFC.Compaction <> cfg:44 var
+R4250:4253 Corelib.Init.Datatypes <> true constr
+R4283:4286 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R4262:4279 JFC.Compaction <> rapid_refill_count proj
+R4281:4282 JFC.Compaction <> st:43 var
+R4287:4307 JFC.Compaction <> circuit_breaker_limit proj
+R4309:4311 JFC.Compaction <> cfg:44 var
+R4349:4371 JFC.Compaction <> circuit_breaker_tripped def
+R4387:4396 Stdlib.Arith.PeanoNat Nat leb_le thm
+R4387:4396 Stdlib.Arith.PeanoNat Nat leb_le thm
+def 4487:4507 <> rapid_refill_detected
+R4532:4534 Corelib.Init.Datatypes <> nat ind
+binder 4510:4528 <> turns_since_compact:45
+R4547:4549 Corelib.Init.Datatypes <> nat ind
+binder 4538:4543 <> window:46
+R4554:4557 Corelib.Init.Datatypes <> bool ind
+R4564:4570 Stdlib.Arith.PeanoNat Nat leb def
+R4572:4590 JFC.Compaction <> turns_since_compact:45 var
+R4592:4597 JFC.Compaction <> window:46 var
+prf 4609:4639 <> rapid_refill_increments_counter
+binder 4652:4662 <> turns_since:47
+binder 4664:4669 <> window:48
+R4723:4730 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4716:4718 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4676:4696 JFC.Compaction <> rapid_refill_detected def
+R4698:4708 JFC.Compaction <> turns_since:47 var
+R4710:4715 JFC.Compaction <> window:48 var
+R4719:4722 Corelib.Init.Datatypes <> true constr
+R4742:4745 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R4731:4741 JFC.Compaction <> turns_since:47 var
+R4746:4751 JFC.Compaction <> window:48 var
+R4794:4803 Stdlib.Arith.PeanoNat Nat leb_le thm
+R4794:4803 Stdlib.Arith.PeanoNat Nat leb_le thm
+def 4898:4914 <> valid_split_point
+R4947:4949 Corelib.Init.Datatypes <> nat ind
+binder 4917:4928 <> total_groups:49
+binder 4930:4943 <> preserve_count:50
+R4978:4980 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R4964:4977 JFC.Compaction <> preserve_count:50 var
+R4981:4992 JFC.Compaction <> total_groups:49 var
+prf 5078:5097 <> valid_split_nonempty
+binder 5110:5114 <> total:51
+binder 5116:5123 <> preserve:52
+R5162:5169 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5130:5146 JFC.Compaction <> valid_split_point def
+R5148:5152 JFC.Compaction <> total:51 var
+R5154:5161 JFC.Compaction <> preserve:52 var
+R5179:5186 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5175:5177 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R5170:5174 JFC.Compaction <> total:51 var
+R5207:5210 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R5203:5205 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R5192:5194 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R5187:5191 JFC.Compaction <> total:51 var
+R5195:5202 JFC.Compaction <> preserve:52 var
+R5219:5222 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R5211:5218 JFC.Compaction <> preserve:52 var
+R5281:5297 JFC.Compaction <> valid_split_point def
+def 5593:5606 <> token_gap_step
+R5615:5620 Corelib.Init.Datatypes <> option ind
+R5622:5624 Corelib.Init.Datatypes <> nat ind
+binder 5609:5611 <> gap:53
+R5643:5646 Corelib.Init.Datatypes <> list ind
+R5648:5650 Corelib.Init.Datatypes <> nat ind
+binder 5628:5639 <> group_tokens:54
+R5662:5664 Corelib.Init.Datatypes <> nat ind
+binder 5654:5658 <> split:55
+R5669:5671 Corelib.Init.Datatypes <> nat ind
+R5684:5686 JFC.Compaction <> gap:53 var
+R5697:5700 Corelib.Init.Datatypes <> Some constr
+R5806:5808 Corelib.Init.Peano <> max abbrev
+R5814:5816 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R5850:5853 Corelib.Init.Datatypes <> None constr
+prf 5916:5928 <> step_positive
+binder 5941:5943 <> gap:57
+binder 5945:5949 <> gtoks:58
+binder 5951:5955 <> split:59
+R5992:5995 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R5962:5975 JFC.Compaction <> token_gap_step def
+R5977:5979 JFC.Compaction <> gap:57 var
+R5981:5985 JFC.Compaction <> gtoks:58 var
+R5987:5991 JFC.Compaction <> split:59 var
+R6041:6054 JFC.Compaction <> token_gap_step def
+R6083:6094 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R6083:6094 Stdlib.Arith.PeanoNat Nat le_max_l thm
+ind 6277:6291 <> CompactProgress
+constr 6339:6362 <> ProgressIncreasePreserve
+constr 6462:6478 <> ProgressTerminate
+R6307:6310 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6295:6306 JFC.Compaction <> CompactState rec
+R6323:6326 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6311:6322 JFC.Compaction <> CompactState rec
+binder 6373:6374 <> st:62
+binder 6376:6378 <> st':63
+R6425:6434 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6405:6407 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R6387:6400 JFC.Compaction <> preserve_count proj
+R6402:6404 JFC.Compaction <> st':63 var
+R6408:6421 JFC.Compaction <> preserve_count proj
+R6423:6424 JFC.Compaction <> st:62 var
+R6435:6449 JFC.Compaction <> CompactProgress:60 ind
+R6454:6456 JFC.Compaction <> st':63 var
+R6451:6452 JFC.Compaction <> st:62 var
+binder 6489:6490 <> st:64
+binder 6492:6494 <> st':65
+binder 6496:6498 <> cfg:66
+R6535:6544 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6527:6529 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6507:6518 JFC.Compaction <> can_continue def
+R6520:6522 JFC.Compaction <> st':65 var
+R6524:6526 JFC.Compaction <> cfg:66 var
+R6530:6534 Corelib.Init.Datatypes <> false constr
+R6545:6559 JFC.Compaction <> CompactProgress:60 ind
+R6564:6566 JFC.Compaction <> st':65 var
+R6561:6562 JFC.Compaction <> st:64 var
+scheme 6277:6291 <> CompactProgress_ind
+scheme 6277:6291 <> CompactProgress_sind
+prf 6624:6648 <> compaction_makes_progress
+binder 6661:6662 <> st:67
+binder 6664:6666 <> cfg:68
+R6699:6706 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6692:6694 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6673:6684 JFC.Compaction <> can_continue def
+R6686:6687 JFC.Compaction <> st:67 var
+R6689:6691 JFC.Compaction <> cfg:68 var
+R6695:6698 Corelib.Init.Datatypes <> true constr
+R6707:6713 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R6717:6718 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 6714:6716 <> st':69
+R6719:6733 JFC.Compaction <> CompactProgress ind
+R6735:6736 JFC.Compaction <> st:67 var
+R6738:6740 JFC.Compaction <> st':69 var
+R6847:6860 JFC.Compaction <> mkCompactState constr
+R6876:6881 JFC.Compaction <> groups proj
+R6917:6919 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R6900:6913 JFC.Compaction <> preserve_count proj
+R6946:6948 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R6936:6942 JFC.Compaction <> attempt proj
+R6965:6982 JFC.Compaction <> rapid_refill_count proj
+R7001:7017 JFC.Compaction <> last_compact_turn proj
+R7036:7051 JFC.Compaction <> total_user_turns proj
+R6847:6860 JFC.Compaction <> mkCompactState constr
+R6876:6881 JFC.Compaction <> groups proj
+R6917:6919 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R6900:6913 JFC.Compaction <> preserve_count proj
+R6946:6948 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R6936:6942 JFC.Compaction <> attempt proj
+R6965:6982 JFC.Compaction <> rapid_refill_count proj
+R7001:7017 JFC.Compaction <> last_compact_turn proj
+R7036:7051 JFC.Compaction <> total_user_turns proj
+R7067:7090 JFC.Compaction <> ProgressIncreasePreserve constr
+R7067:7090 JFC.Compaction <> ProgressIncreasePreserve constr
+R7130:7132 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R7113:7126 JFC.Compaction <> preserve_count proj
+R7142:7142 Corelib.Init.Datatypes <> S constr
+R7145:7158 JFC.Compaction <> preserve_count proj
+R7130:7132 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R7113:7126 JFC.Compaction <> preserve_count proj
+R7142:7142 Corelib.Init.Datatypes <> S constr
+R7145:7158 JFC.Compaction <> preserve_count proj
+R7181:7198 Stdlib.Arith.PeanoNat Nat lt_succ_diag_r thm
+R7181:7198 Stdlib.Arith.PeanoNat Nat lt_succ_diag_r thm

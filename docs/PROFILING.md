@@ -1,5 +1,142 @@
 # Rust Profiling & Debugging Tools
 
+## JFC quickstart
+
+Installed locally for this workspace:
+
+- `cargo flamegraph` / `flamegraph` 0.6.12
+- Linux `perf` 6.14
+- `cargo-call-stack` 0.1.16
+- Rust `nightly-2023-11-13` with `rust-src` for `cargo-call-stack`
+- VS Code extensions: `chanhx.crabviz`, `jebbs.plantuml`
+
+System Graphviz / PlantUML CLIs are not installed by Cargo. Install them with
+your package manager when you need command-line rendering:
+
+```bash
+sudo apt-get install graphviz plantuml
+```
+
+If `sudo` is unavailable, use the VS Code PlantUML extension for PlantUML and
+Crabviz's built-in HTML/SVG export for LSP call graphs.
+
+### CPU flamegraphs for JFC
+
+Use the workspace profiling profile; it keeps release optimizations and full
+debug symbols:
+
+```bash
+cargo flamegraph --profile profiling -p jfc --bin jfc -- \
+  --help
+```
+
+For an interactive TUI session, run the binary under `flamegraph` directly so
+you can pass environment toggles cleanly:
+
+```bash
+cargo build --profile profiling -p jfc
+JFC_DISABLE_MCP=1 JFC_DISABLE_LSP=1 flamegraph \
+  -o /tmp/jfc-tui.svg -- ./target/profiling/jfc
+```
+
+Linux may require lowering `perf_event_paranoid` before user-space sampling:
+
+```bash
+sudo sysctl kernel.perf_event_paranoid=1
+sudo sysctl kernel.kptr_restrict=0
+```
+
+If `sudo` is unavailable, `cargo flamegraph` may fail even though it is installed.
+
+### Static call graphs and stack usage
+
+`cargo-call-stack` is installed, but it is a narrow embedded/no-std-oriented tool.
+JFC is a large std/Tokio/TUI program with dynamic dispatch, so use it for focused
+call-graph exploration, not authoritative stack bounds.
+
+Use the tested nightly from the crate docs:
+
+```bash
+CARGO_PROFILE_RELEASE_LTO=fat \
+  cargo +nightly-2023-11-13 call-stack --target x86_64-unknown-linux-gnu \
+  --bin jfc --format dot > /tmp/jfc-call-stack.dot
+```
+
+Render the dot file when Graphviz is available:
+
+```bash
+dot -Tsvg /tmp/jfc-call-stack.dot > /tmp/jfc-call-stack.svg
+```
+
+Expected caveats for this repo:
+
+- std formatting and panicking paths create many indirect/dynamic edges.
+- Tokio and trait-object provider/tool dispatch mean stack bounds are lower-bound
+  estimates, not complete safety proofs.
+- Dynamic linking is unsupported by `cargo-call-stack`; prefer a narrow `START`
+  symbol or small example if the full `jfc` binary is noisy.
+
+### Crabviz and PlantUML
+
+- Crabviz is a VS Code extension, not a Cargo CLI. Use it from VS Code's command
+  palette to generate file/function call graphs from rust-analyzer.
+- PlantUML is available through the VS Code extension. CLI rendering still needs
+  the `plantuml` command or a PlantUML server.
+
+### Existing JFC benchmark coverage
+
+Current tracked performance surfaces:
+
+- `crates/jfc/benches/hooks.rs` — hook dispatch latency.
+- `crates/jfc/benches/markdown.rs` — streamed markdown sanitization/wrapping.
+- `crates/jfc-changeset/benches/changeset.rs` — change-set and ledger Criterion
+  benchmarks for CodSpeed.
+- `crates/jfc-changeset/tests/perf_baseline.rs` — CI regression gate for
+  change-set/ledger persistence.
+- `.github/workflows/codspeed.yml` — CodSpeed simulation runs for `jfc` and
+  `jfc-changeset` benches.
+- `.github/workflows/ci.yml` — generous performance baseline gate.
+
+Run locally:
+
+```bash
+cargo bench -p jfc
+cargo bench -p jfc-changeset
+JFC_PERF_SLACK=3 cargo test -p jfc-changeset --test perf_baseline
+```
+
+### Missing high-value benchmarks
+
+Add these before relying on subjective TUI speed comparisons:
+
+1. **TUI render frame benchmark**: build a transcript with many text, tool, and
+   reasoning messages, render into `ratatui::backend::TestBackend`, and measure
+   `frame::draw_synchronized` / message-window rendering.
+2. **Height index / render cache benchmark**: repeated streaming appends with a
+   fixed viewport; assert changed-message-only remeasure stays near O(window).
+3. **SSE translator benchmark**: feed representative Anthropic event JSON into
+   `jfc_providers::sse` parsing/translation, including thinking deltas,
+   `signature_delta`, tool JSON deltas, keepalives, and `message_delta` usage.
+4. **Request-prep benchmark**: `prepare_stream_request` with large history,
+   tool catalog, CLAUDE.md/project context, memory recall miss, and MCP metadata.
+5. **OAuth request hot-path benchmark**: body/header construction and account
+   rotation selection with mocked accounts, excluding network.
+6. **Voice VAD benchmark**: energy VAD over silence, fan noise, and voiced
+   synthetic samples; separate neural VAD behind the runtime opt-in because ONNX
+   construction can crash before Rust can recover.
+7. **Token-rate/render spinner benchmark**: rapid `StreamEvent` bursts through
+   runtime handlers plus tick sampling, validating no dropped thinking-token or
+   text reveal regressions.
+
+Suggested initial files:
+
+```text
+crates/jfc/benches/render_frame.rs
+crates/jfc-providers/benches/sse.rs
+crates/jfc-engine/benches/request_prep.rs
+crates/jfc-voice/benches/vad.rs
+```
+
 ## 1. Memory Profiling (Heap / Allocations)
 
 ### `dhat` crate (pure Rust, cross-platform)

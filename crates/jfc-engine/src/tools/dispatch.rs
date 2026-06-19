@@ -974,7 +974,7 @@ pub async fn execute_tool(
             ExecutionResult::success(format!("GET {url} → {status}\n\n{prompt_hint}{truncated}"))
         }
         (ToolKind::WebSearch, ToolInput::WebSearch { query, max_results }) => {
-            let num = max_results.unwrap_or(5) as usize;
+            let num = max_results.unwrap_or(50).min(100) as usize;
             match crate::web_search::search(&query, num).await {
                 Ok(results) => ExecutionResult::success(results),
                 Err(e) => ExecutionResult::failure(e),

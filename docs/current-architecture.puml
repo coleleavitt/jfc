@@ -1,0 +1,299 @@
+@startuml JFC Current Architecture
+!theme plain
+skinparam backgroundColor #0d1117
+skinparam defaultFontColor #c9d1d9
+skinparam defaultFontSize 11
+skinparam ArrowColor #30363d
+skinparam ArrowFontColor #8b949e
+skinparam ArrowFontSize 9
+
+skinparam package {
+  BackgroundColor #161b22
+  BorderColor #30363d
+  FontColor #58a6ff
+}
+
+skinparam component {
+  BackgroundColor #238636
+  BorderColor #2ea043
+  FontColor #ffffff
+}
+
+skinparam database {
+  BackgroundColor #8b949e
+  BorderColor #6e7681
+  FontColor #ffffff
+}
+
+skinparam rectangle {
+  BackgroundColor #1f6feb
+  BorderColor #388bfd
+  FontColor #ffffff
+}
+
+skinparam collections {
+  BackgroundColor #8957e5
+  BorderColor #a371f7
+  FontColor #ffffff
+}
+
+title JFC Current Architecture - Full Flow\n
+
+' ============================================================================
+' LAYER 1: INGRESS
+' ============================================================================
+
+package "Ingress Layer" as ingress {
+  [User Input] as user_input #238636
+  [CLI Args] as cli_args #238636
+  [Remote Trigger] as remote #238636
+  [Scheduled Task] as scheduled #238636
+}
+
+' ============================================================================
+' LAYER 2: TUI / APP
+' ============================================================================
+
+package "TUI Layer (jfc crate)" as tui {
+  [App] as app
+  [EngineState] as engine_state
+  [Render Loop] as render
+  
+  note right of engine_state
+    Contains:
+    - background_tasks: HashMap<String, BackgroundTask>
+    - team_context: TeamContext
+    - current_session_id
+    - task_store: Arc<TaskStore>
+  end note
+}
+
+' ============================================================================
+' LAYER 3: STREAM / EVENT LOOP
+' ============================================================================
+
+package "Stream Layer (jfc-engine)" as stream_layer {
+  rectangle "stream.rs" as stream {
+    [prepare_stream_request] as prepare
+    [Provider::stream()] as provider_stream
+    [chunk accumulator] as accumulator
+    [tool_use handler] as tool_handler
+  }
+  
+  rectangle "event_loop/" as event_loop {
+    [handlers/stream_tool.rs] as stream_tool_handler
+    [handlers/task.rs] as task_handler
+    [handlers/tools.rs] as tools_handler
+  }
+}
+
+' ============================================================================
+' LAYER 4: TOOL DISPATCH
+' ============================================================================
+
+package "Tool Dispatch (jfc-engine/tools/)" as dispatch_layer {
+  collections "dispatch.rs\nexecute_tool()" as dispatch #8957e5
+  
+  rectangle "Solo Tools" as solo {
+    [bash.rs] as bash
+    [filesystem.rs] as filesystem
+    [search.rs] as search
+    [memory.rs] as memory
+  }
+  
+  rectangle "Agent Tools" as agent_tools {
+    [subagent.rs] as subagent
+    [tasks.rs] as tasks
+  }
+  
+  rectangle "Team Tools" as team_tools {
+    [swarm.rs\nSendMessage, TeamCreate] as swarm_tools
+  }
+  
+  rectangle "Heavy Tools" as heavy {
+    [dispatch_heavy.rs] as dispatch_heavy
+  }
+  
+  rectangle "MCP Tools" as mcp_tools {
+    [mcp/tool_dispatch.rs] as mcp_dispatch
+  }
+}
+
+' ============================================================================
+' LAYER 5: EXECUTION BACKENDS
+' ============================================================================
+
+package "Background Execution" as bg_exec {
+  rectangle "In-Process (tokio)" as in_process #1f6feb {
+    [spawn_background_task] as spawn_bg
+    [BackgroundTask registry] as bg_registry
+  }
+  
+  rectangle "Daemon Workers" as daemon_exec #1f6feb {
+    [spawn_background_agent_worker] as spawn_daemon
+    [DaemonState] as daemon_state
+    [worker.rs loop] as worker_loop
+  }
+}
+
+package "Swarm Execution (swarm/)" as swarm_exec {
+  rectangle "Team Coordination" as team_coord #1f6feb {
+    [coordinator.rs\nrun_teammate_loop] as coordinator
+    [runner.rs\nstart_teammate] as runner
+    [mailbox.rs] as mailbox
+  }
+  
+  rectangle "Team State" as team_state #1f6feb {
+    [TeamContext] as team_ctx
+    [InProcessTeammateState] as teammate_state
+    [TeammateInfo] as teammate_info
+  }
+}
+
+package "Economy Execution (jfc-economy)" as econ_exec {
+  rectangle "Market Orchestrator" as market #f0883e {
+    [MarketOrchestrator] as orch #f0883e
+    [SolverPool] as solver_pool #f0883e
+    [ValidationPool] as validator_pool #f0883e
+  }
+  
+  rectangle "Economy Support" as econ_support #f0883e {
+    [TokenLedger] as ledger #f0883e
+    [TrustRegistry] as trust #f0883e
+    [Charter] as charter #f0883e
+  }
+}
+
+package "Council Execution" as council_exec {
+  rectangle "Multi-Model" as council #bf4b8a {
+    [council.rs] as council_handler #bf4b8a
+    [parallel Provider::stream] as parallel_stream #bf4b8a
+    [arbiter synthesis] as arbiter #bf4b8a
+  }
+}
+
+' ============================================================================
+' LAYER 6: PERSISTENCE
+' ============================================================================
+
+package "Persistence Layer" as persistence {
+  database "session.jsonl" as session_file
+  database "tasks.json\n(TaskStore)" as tasks_file
+  database "daemon_state.json\n(BackgroundAgentInfo)" as daemon_file
+  database "inboxes/*.json\n(Mailbox)" as inbox_files
+  database "teams/{name}/config.json\n(TeamFile)" as team_file
+  database "background-results/*.md" as bg_results
+}
+
+' ============================================================================
+' LAYER 7: PROVIDERS
+' ============================================================================
+
+package "Provider Layer (jfc-providers)" as providers {
+  [Anthropic] as anthropic #bf4b8a
+  [OpenAI] as openai #bf4b8a
+  [Bedrock] as bedrock #bf4b8a
+  [Vertex] as vertex #bf4b8a
+  [Local] as local #bf4b8a
+}
+
+' ============================================================================
+' FLOWS
+' ============================================================================
+
+' Ingress to TUI
+user_input --> app
+cli_args --> app
+remote --> app
+scheduled --> app
+
+' TUI to Stream
+app --> engine_state
+engine_state --> stream
+app --> render
+
+' Stream internal flow
+stream --> prepare
+prepare --> provider_stream
+provider_stream --> accumulator
+accumulator --> tool_handler
+tool_handler --> stream_tool_handler
+
+' Stream to dispatch
+stream_tool_handler --> dispatch : "tool_use event"
+
+' Dispatch routing
+dispatch --> bash : "Bash"
+dispatch --> filesystem : "Read/Write/Edit"
+dispatch --> search : "Glob/Grep"
+dispatch --> memory : "Memory*"
+dispatch --> subagent : "Task"
+dispatch --> tasks : "TaskCreate/Update/List"
+dispatch --> swarm_tools : "SendMessage/TeamCreate"
+dispatch --> dispatch_heavy : "PostBounty/RunBounty/Council"
+dispatch --> mcp_dispatch : "mcp__*"
+
+' Subagent execution paths
+subagent --> spawn_bg : "run_in_background=false"
+subagent --> spawn_daemon : "run_in_background=true"
+spawn_bg --> bg_registry
+spawn_daemon --> daemon_state
+daemon_state --> worker_loop
+
+' Team execution
+swarm_tools --> runner : "spawn teammate"
+runner --> coordinator
+coordinator --> mailbox : "poll inbox"
+runner --> teammate_state
+teammate_state --> team_ctx
+
+' Economy execution
+dispatch_heavy --> orch : "post_bounty/run_bounty"
+orch --> solver_pool
+orch --> validator_pool
+solver_pool --> ledger
+validator_pool --> trust
+
+' Council execution
+dispatch_heavy --> council_handler
+council_handler --> parallel_stream
+parallel_stream --> arbiter
+
+' Provider connections
+provider_stream --> anthropic
+provider_stream --> openai
+provider_stream --> bedrock
+parallel_stream --> anthropic
+parallel_stream --> openai
+worker_loop --> anthropic
+
+' Persistence writes
+engine_state --> session_file
+tasks --> tasks_file
+daemon_state --> daemon_file
+mailbox --> inbox_files
+swarm_tools --> team_file
+spawn_daemon --> bg_results
+
+' Completion flows (back to stream)
+bg_registry ..> task_handler : "completion event"
+worker_loop ..> daemon_state : "status update"
+daemon_state ..> engine_state : "sync_detached_background_tasks"
+coordinator ..> team_ctx : "TeammateEvent"
+orch ..> dispatch_heavy : "CycleOutcome"
+
+' ============================================================================
+' LEGEND
+' ============================================================================
+
+legend right
+  |= Color |= Meaning |
+  | <#238636> | Ingress / Core |
+  | <#1f6feb> | Execution Backends |
+  | <#8957e5> | Routing / Dispatch |
+  | <#f0883e> | Economy |
+  | <#bf4b8a> | Providers / External |
+  | <#8b949e> | Storage |
+endlegend
+
+@enduml

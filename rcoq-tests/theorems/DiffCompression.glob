@@ -1,0 +1,1694 @@
+DIGEST 03291cce6abe45f0291f01b19beccb2c
+FJFCTheorems.DiffCompression
+R1736:1750 Stdlib.Arith.Arith <> <> lib
+R1768:1781 Stdlib.Lists.List <> <> lib
+R1799:1811 Stdlib.Bool.Bool <> <> lib
+R1829:1845 Stdlib.micromega.Lia <> <> lib
+R1855:1867 Stdlib.Lists.List ListNotations <> mod
+def 1981:1988 <> TokenSeq
+R1993:1996 Corelib.Init.Datatypes <> list ind
+R1998:2000 Corelib.Init.Datatypes <> nat ind
+ind 2041:2046 <> DiffOp
+constr 2062:2065 <> Keep
+constr 2138:2143 <> Insert
+R2072:2075 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2069:2071 Corelib.Init.Datatypes <> nat ind
+R2079:2082 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2076:2078 Corelib.Init.Datatypes <> nat ind
+R2083:2088 JFCTheorems.DiffCompression <> DiffOp:1 ind
+R2155:2158 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2147:2154 JFCTheorems.DiffCompression <> TokenSeq def
+R2159:2164 JFCTheorems.DiffCompression <> DiffOp:1 ind
+scheme 2041:2046 <> DiffOp_rect
+scheme 2041:2046 <> DiffOp_ind
+scheme 2041:2046 <> DiffOp_rec
+scheme 2041:2046 <> DiffOp_sind
+def 2201:2210 <> DiffScript
+R2215:2218 Corelib.Init.Datatypes <> list ind
+R2220:2225 JFCTheorems.DiffCompression <> DiffOp ind
+def 2279:2287 <> diff_size
+R2299:2308 JFCTheorems.DiffCompression <> DiffScript def
+binder 2290:2295 <> script:3
+R2313:2315 Corelib.Init.Datatypes <> nat ind
+R2328:2333 JFCTheorems.DiffCompression <> script:3 var
+R2344:2345 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2366:2369 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2356:2359 JFCTheorems.DiffCompression <> Keep constr
+R2379:2381 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2382:2390 JFCTheorems.DiffCompression <> diff_size:4 def
+R2446:2449 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2435:2440 JFCTheorems.DiffCompression <> Insert constr
+R2473:2475 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2459:2461 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2462:2467 Corelib.Init.Datatypes <> length def
+R2476:2484 JFCTheorems.DiffCompression <> diff_size:4 def
+def 2565:2574 <> apply_diff
+R2584:2591 JFCTheorems.DiffCompression <> TokenSeq def
+binder 2577:2580 <> base:6
+R2604:2613 JFCTheorems.DiffCompression <> DiffScript def
+binder 2595:2600 <> script:7
+R2618:2625 JFCTheorems.DiffCompression <> TokenSeq def
+R2638:2643 JFCTheorems.DiffCompression <> script:7 var
+R2654:2655 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2660:2661 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2682:2685 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2667:2670 JFCTheorems.DiffCompression <> Keep constr
+R2730:2733 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R2700:2705 Corelib.Lists.ListDef <> firstn def
+R2712:2716 Corelib.Lists.ListDef <> skipn def
+R2725:2728 JFCTheorems.DiffCompression <> base:6 var
+R2734:2743 JFCTheorems.DiffCompression <> apply_diff:8 def
+R2745:2748 JFCTheorems.DiffCompression <> base:6 var
+R2770:2773 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2759:2764 JFCTheorems.DiffCompression <> Insert constr
+R2792:2795 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R2796:2805 JFCTheorems.DiffCompression <> apply_diff:8 def
+R2807:2810 JFCTheorems.DiffCompression <> base:6 var
+def 3373:3389 <> common_prefix_len
+R3400:3407 JFCTheorems.DiffCompression <> TokenSeq def
+binder 3392:3393 <> s1:10
+binder 3395:3396 <> s2:11
+R3412:3414 Corelib.Init.Datatypes <> nat ind
+R3431:3432 JFCTheorems.DiffCompression <> s2:11 var
+R3427:3428 JFCTheorems.DiffCompression <> s1:10 var
+R3444:3447 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3453:3456 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3472:3478 Stdlib.Arith.PeanoNat Nat eqb def
+R3489:3489 Corelib.Init.Datatypes <> S constr
+R3492:3508 JFCTheorems.DiffCompression <> common_prefix_len:12 def
+def 3557:3568 <> compute_diff
+R3585:3592 JFCTheorems.DiffCompression <> TokenSeq def
+binder 3571:3574 <> base:15
+binder 3576:3581 <> target:16
+R3597:3606 JFCTheorems.DiffCompression <> DiffScript def
+R3622:3638 JFCTheorems.DiffCompression <> common_prefix_len def
+R3640:3643 JFCTheorems.DiffCompression <> base:15 var
+R3645:3650 JFCTheorems.DiffCompression <> target:16 var
+binder 3617:3617 <> p:17
+R3657:3657 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R3666:3667 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R3691:3691 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R3658:3661 JFCTheorems.DiffCompression <> Keep constr
+R3665:3665 JFCTheorems.DiffCompression <> p:17 var
+R3668:3673 JFCTheorems.DiffCompression <> Insert constr
+R3676:3680 Corelib.Lists.ListDef <> skipn def
+R3684:3689 JFCTheorems.DiffCompression <> target:16 var
+R3682:3682 JFCTheorems.DiffCompression <> p:17 var
+prf 3819:3840 <> common_prefix_len_le_l
+binder 3853:3854 <> s1:18
+binder 3856:3857 <> s2:19
+R3883:3886 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R3860:3876 JFCTheorems.DiffCompression <> common_prefix_len def
+R3878:3879 JFCTheorems.DiffCompression <> s1:18 var
+R3881:3882 JFCTheorems.DiffCompression <> s2:19 var
+R3887:3892 Corelib.Init.Datatypes <> length def
+R3894:3895 JFCTheorems.DiffCompression <> s1:18 var
+R3951:3967 JFCTheorems.DiffCompression <> common_prefix_len def
+R3969:3974 Corelib.Init.Datatypes <> length def
+R4042:4048 Stdlib.Arith.PeanoNat Nat eqb def
+R4042:4048 Stdlib.Arith.PeanoNat Nat eqb def
+prf 4114:4135 <> common_prefix_len_le_r
+binder 4148:4149 <> s1:20
+binder 4151:4152 <> s2:21
+R4178:4181 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R4155:4171 JFCTheorems.DiffCompression <> common_prefix_len def
+R4173:4174 JFCTheorems.DiffCompression <> s1:20 var
+R4176:4177 JFCTheorems.DiffCompression <> s2:21 var
+R4182:4187 Corelib.Init.Datatypes <> length def
+R4189:4190 JFCTheorems.DiffCompression <> s2:21 var
+R4246:4262 JFCTheorems.DiffCompression <> common_prefix_len def
+R4308:4313 Corelib.Init.Datatypes <> length def
+R4344:4350 Stdlib.Arith.PeanoNat Nat eqb def
+R4344:4350 Stdlib.Arith.PeanoNat Nat eqb def
+prf 4621:4643 <> firstn_common_prefix_eq
+binder 4656:4657 <> s1:22
+binder 4659:4660 <> s2:23
+R4702:4704 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4667:4672 Corelib.Lists.ListDef <> firstn def
+R4700:4701 JFCTheorems.DiffCompression <> s1:22 var
+R4675:4691 JFCTheorems.DiffCompression <> common_prefix_len def
+R4693:4694 JFCTheorems.DiffCompression <> s1:22 var
+R4696:4697 JFCTheorems.DiffCompression <> s2:23 var
+R4705:4710 Corelib.Lists.ListDef <> firstn def
+R4738:4739 JFCTheorems.DiffCompression <> s2:23 var
+R4713:4729 JFCTheorems.DiffCompression <> common_prefix_len def
+R4731:4732 JFCTheorems.DiffCompression <> s1:22 var
+R4734:4735 JFCTheorems.DiffCompression <> s2:23 var
+R4799:4815 JFCTheorems.DiffCompression <> common_prefix_len def
+R4871:4887 JFCTheorems.DiffCompression <> common_prefix_len def
+R4915:4931 JFCTheorems.DiffCompression <> common_prefix_len def
+R4951:4957 Stdlib.Arith.PeanoNat Nat eqb def
+R4951:4957 Stdlib.Arith.PeanoNat Nat eqb def
+R4987:4996 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R4987:4996 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R5028:5033 Corelib.Lists.ListDef <> firstn def
+R5069:5074 Corelib.Lists.ListDef <> firstn def
+prf 5273:5285 <> identity_diff
+R5305:5312 JFCTheorems.DiffCompression <> TokenSeq def
+binder 5298:5301 <> base:24
+R5357:5359 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5319:5328 JFCTheorems.DiffCompression <> apply_diff def
+R5330:5333 JFCTheorems.DiffCompression <> base:24 var
+R5335:5335 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R5356:5356 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R5336:5339 JFCTheorems.DiffCompression <> Keep constr
+R5344:5349 Corelib.Init.Datatypes <> length def
+R5351:5354 JFCTheorems.DiffCompression <> base:24 var
+R5360:5363 JFCTheorems.DiffCompression <> base:24 var
+R5395:5404 JFCTheorems.DiffCompression <> apply_diff def
+R5418:5424 Stdlib.Lists.List <> skipn_O abbrev
+R5418:5424 Stdlib.Lists.List <> skipn_O abbrev
+R5418:5424 Stdlib.Lists.List <> skipn_O abbrev
+R5437:5446 Stdlib.Lists.List <> firstn_all thm
+R5437:5446 Stdlib.Lists.List <> firstn_all thm
+R5437:5446 Stdlib.Lists.List <> firstn_all thm
+R5459:5467 Stdlib.Lists.List <> app_nil_r thm
+R5459:5467 Stdlib.Lists.List <> app_nil_r thm
+R5459:5467 Stdlib.Lists.List <> app_nil_r thm
+prf 5800:5822 <> compute_diff_round_trip
+R5849:5856 JFCTheorems.DiffCompression <> TokenSeq def
+binder 5835:5838 <> base:25
+binder 5840:5845 <> target:26
+R5905:5907 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5863:5872 JFCTheorems.DiffCompression <> apply_diff def
+R5874:5877 JFCTheorems.DiffCompression <> base:25 var
+R5880:5891 JFCTheorems.DiffCompression <> compute_diff def
+R5893:5896 JFCTheorems.DiffCompression <> base:25 var
+R5898:5903 JFCTheorems.DiffCompression <> target:26 var
+R5908:5913 JFCTheorems.DiffCompression <> target:26 var
+R5954:5965 JFCTheorems.DiffCompression <> compute_diff def
+R5980:5996 JFCTheorems.DiffCompression <> common_prefix_len def
+R5980:5996 JFCTheorems.DiffCompression <> common_prefix_len def
+R6019:6028 JFCTheorems.DiffCompression <> apply_diff def
+R6042:6048 Stdlib.Lists.List <> skipn_O abbrev
+R6042:6048 Stdlib.Lists.List <> skipn_O abbrev
+R6042:6048 Stdlib.Lists.List <> skipn_O abbrev
+R6061:6069 Stdlib.Lists.List <> app_nil_r thm
+R6061:6069 Stdlib.Lists.List <> app_nil_r thm
+R6061:6069 Stdlib.Lists.List <> app_nil_r thm
+R6149:6171 JFCTheorems.DiffCompression <> firstn_common_prefix_eq thm
+R6149:6171 JFCTheorems.DiffCompression <> firstn_common_prefix_eq thm
+R6149:6171 JFCTheorems.DiffCompression <> firstn_common_prefix_eq thm
+R6247:6258 Stdlib.Lists.List <> firstn_skipn thm
+R6247:6258 Stdlib.Lists.List <> firstn_skipn thm
+prf 6616:6636 <> compute_diff_identity
+R6653:6660 JFCTheorems.DiffCompression <> TokenSeq def
+binder 6649:6649 <> x:27
+R6698:6700 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6667:6676 JFCTheorems.DiffCompression <> apply_diff def
+R6678:6678 JFCTheorems.DiffCompression <> x:27 var
+R6681:6692 JFCTheorems.DiffCompression <> compute_diff def
+R6694:6694 JFCTheorems.DiffCompression <> x:27 var
+R6696:6696 JFCTheorems.DiffCompression <> x:27 var
+R6701:6701 JFCTheorems.DiffCompression <> x:27 var
+R6729:6751 JFCTheorems.DiffCompression <> compute_diff_round_trip thm
+R6729:6751 JFCTheorems.DiffCompression <> compute_diff_round_trip thm
+prf 6997:7031 <> compute_diff_self_is_identity_shape
+R7048:7055 JFCTheorems.DiffCompression <> TokenSeq def
+binder 7044:7044 <> x:28
+R7078:7080 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7062:7073 JFCTheorems.DiffCompression <> compute_diff def
+R7075:7075 JFCTheorems.DiffCompression <> x:28 var
+R7077:7077 JFCTheorems.DiffCompression <> x:28 var
+R7081:7081 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R7099:7100 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R7110:7110 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R7082:7085 JFCTheorems.DiffCompression <> Keep constr
+R7090:7095 Corelib.Init.Datatypes <> length def
+R7097:7097 JFCTheorems.DiffCompression <> x:28 var
+R7101:7106 JFCTheorems.DiffCompression <> Insert constr
+R7108:7109 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7139:7150 JFCTheorems.DiffCompression <> compute_diff def
+R7191:7193 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7170:7186 JFCTheorems.DiffCompression <> common_prefix_len def
+R7194:7199 Corelib.Init.Datatypes <> length def
+R7191:7193 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7170:7186 JFCTheorems.DiffCompression <> common_prefix_len def
+R7194:7199 Corelib.Init.Datatypes <> length def
+R7240:7256 JFCTheorems.DiffCompression <> common_prefix_len def
+R7258:7263 Corelib.Init.Datatypes <> length def
+R7300:7311 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R7300:7311 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R7300:7311 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R7367:7375 Stdlib.Lists.List <> skipn_all thm
+R7367:7375 Stdlib.Lists.List <> skipn_all thm
+R7367:7375 Stdlib.Lists.List <> skipn_all thm
+prf 7479:7500 <> diff_bounded_by_insert
+R7520:7527 JFCTheorems.DiffCompression <> TokenSeq def
+binder 7513:7516 <> toks:29
+R7557:7559 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7534:7542 JFCTheorems.DiffCompression <> diff_size def
+R7544:7544 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7556:7556 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7545:7550 JFCTheorems.DiffCompression <> Insert constr
+R7552:7555 JFCTheorems.DiffCompression <> toks:29 var
+R7561:7563 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R7564:7569 Corelib.Init.Datatypes <> length def
+R7571:7574 JFCTheorems.DiffCompression <> toks:29 var
+R7606:7614 JFCTheorems.DiffCompression <> diff_size def
+prf 8101:8125 <> compute_diff_size_bounded
+R8152:8159 JFCTheorems.DiffCompression <> TokenSeq def
+binder 8138:8141 <> base:30
+binder 8143:8148 <> target:31
+R8202:8205 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R8166:8174 JFCTheorems.DiffCompression <> diff_size def
+R8177:8188 JFCTheorems.DiffCompression <> compute_diff def
+R8190:8193 JFCTheorems.DiffCompression <> base:30 var
+R8195:8200 JFCTheorems.DiffCompression <> target:31 var
+R8207:8209 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8210:8215 Corelib.Init.Datatypes <> length def
+R8217:8222 JFCTheorems.DiffCompression <> target:31 var
+R8261:8272 JFCTheorems.DiffCompression <> compute_diff def
+R8282:8290 JFCTheorems.DiffCompression <> diff_size def
+R8371:8382 Stdlib.Lists.List <> length_skipn thm
+R8371:8382 Stdlib.Lists.List <> length_skipn thm
+R8371:8382 Stdlib.Lists.List <> length_skipn thm
+R8399:8420 JFCTheorems.DiffCompression <> common_prefix_len_le_r thm
+R8399:8420 JFCTheorems.DiffCompression <> common_prefix_len_le_r thm
+prf 8702:8739 <> compute_diff_size_shrinks_with_overlap
+R8766:8773 JFCTheorems.DiffCompression <> TokenSeq def
+binder 8752:8755 <> base:32
+binder 8757:8762 <> target:33
+R8816:8824 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8780:8788 JFCTheorems.DiffCompression <> diff_size def
+R8791:8802 JFCTheorems.DiffCompression <> compute_diff def
+R8804:8807 JFCTheorems.DiffCompression <> base:32 var
+R8809:8814 JFCTheorems.DiffCompression <> target:33 var
+R8826:8829 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8875:8875 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8843:8845 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R8830:8835 Corelib.Init.Datatypes <> length def
+R8837:8842 JFCTheorems.DiffCompression <> target:33 var
+R8846:8862 JFCTheorems.DiffCompression <> common_prefix_len def
+R8864:8867 JFCTheorems.DiffCompression <> base:32 var
+R8869:8874 JFCTheorems.DiffCompression <> target:33 var
+R8914:8925 JFCTheorems.DiffCompression <> compute_diff def
+R8935:8943 JFCTheorems.DiffCompression <> diff_size def
+R8955:8966 Stdlib.Lists.List <> length_skipn thm
+R8955:8966 Stdlib.Lists.List <> length_skipn thm
+R8955:8966 Stdlib.Lists.List <> length_skipn thm
+prf 9389:9412 <> apply_diff_deterministic
+binder 9425:9429 <> base1:34
+binder 9431:9435 <> base2:35
+binder 9437:9443 <> script1:36
+binder 9445:9451 <> script2:37
+R9471:9478 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9463:9465 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9458:9462 JFCTheorems.DiffCompression <> base1:34 var
+R9466:9470 JFCTheorems.DiffCompression <> base2:35 var
+R9496:9503 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9486:9488 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9479:9485 JFCTheorems.DiffCompression <> script1:36 var
+R9489:9495 JFCTheorems.DiffCompression <> script2:37 var
+R9528:9530 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9504:9513 JFCTheorems.DiffCompression <> apply_diff def
+R9515:9519 JFCTheorems.DiffCompression <> base1:34 var
+R9521:9527 JFCTheorems.DiffCompression <> script1:36 var
+R9531:9540 JFCTheorems.DiffCompression <> apply_diff def
+R9542:9546 JFCTheorems.DiffCompression <> base2:35 var
+R9548:9554 JFCTheorems.DiffCompression <> script2:37 var
+prf 9642:9667 <> compute_diff_deterministic
+binder 9680:9684 <> base1:38
+binder 9686:9690 <> base2:39
+binder 9692:9698 <> target1:40
+binder 9700:9706 <> target2:41
+R9726:9733 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9718:9720 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9713:9717 JFCTheorems.DiffCompression <> base1:38 var
+R9721:9725 JFCTheorems.DiffCompression <> base2:39 var
+R9751:9758 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9741:9743 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9734:9740 JFCTheorems.DiffCompression <> target1:40 var
+R9744:9750 JFCTheorems.DiffCompression <> target2:41 var
+R9785:9787 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9759:9770 JFCTheorems.DiffCompression <> compute_diff def
+R9772:9776 JFCTheorems.DiffCompression <> base1:38 var
+R9778:9784 JFCTheorems.DiffCompression <> target1:40 var
+R9788:9799 JFCTheorems.DiffCompression <> compute_diff def
+R9801:9805 JFCTheorems.DiffCompression <> base2:39 var
+R9807:9813 JFCTheorems.DiffCompression <> target2:41 var
+def 10287:10296 <> lcs_length
+R10304:10311 JFCTheorems.DiffCompression <> TokenSeq def
+binder 10299:10300 <> s1:42
+R10324:10327 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10316:10323 JFCTheorems.DiffCompression <> TokenSeq def
+R10328:10330 Corelib.Init.Datatypes <> nat ind
+R10343:10344 JFCTheorems.DiffCompression <> s1:42 var
+R10355:10356 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10377:10380 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R10411:10418 JFCTheorems.DiffCompression <> TokenSeq def
+binder 10406:10407 <> s2:45
+R10423:10425 Corelib.Init.Datatypes <> nat ind
+R10444:10445 JFCTheorems.DiffCompression <> s2:45 var
+R10462:10463 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10481:10484 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R10506:10512 Stdlib.Arith.PeanoNat Nat eqb def
+R10589:10591 Corelib.Init.Peano <> max abbrev
+R10594:10603 JFCTheorems.DiffCompression <> lcs_length:43 def
+R10610:10613 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R10620:10626 JFCTheorems.DiffCompression <> lcs_aux:46 var
+R10538:10540 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R10541:10550 JFCTheorems.DiffCompression <> lcs_length:43 def
+prf 10830:10845 <> lcs_length_nil_l
+binder 10856:10857 <> s2:48
+R10876:10878 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10860:10869 JFCTheorems.DiffCompression <> lcs_length def
+R10871:10872 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10874:10875 JFCTheorems.DiffCompression <> s2:48 var
+prf 10914:10929 <> lcs_length_nil_r
+binder 10940:10941 <> s1:49
+R10960:10962 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10944:10953 JFCTheorems.DiffCompression <> lcs_length def
+R10955:10956 JFCTheorems.DiffCompression <> s1:49 var
+R10958:10959 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+prf 11011:11025 <> lcs_length_cons
+binder 11038:11038 <> x:50
+binder 11040:11041 <> xs:51
+binder 11043:11043 <> y:52
+binder 11045:11046 <> ys:53
+R11083:11091 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11053:11062 JFCTheorems.DiffCompression <> lcs_length def
+R11066:11069 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11065:11065 JFCTheorems.DiffCompression <> x:50 var
+R11070:11071 JFCTheorems.DiffCompression <> xs:51 var
+R11076:11079 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11075:11075 JFCTheorems.DiffCompression <> y:52 var
+R11080:11081 JFCTheorems.DiffCompression <> ys:53 var
+R11095:11101 Stdlib.Arith.PeanoNat Nat eqb def
+R11103:11103 JFCTheorems.DiffCompression <> x:50 var
+R11105:11105 JFCTheorems.DiffCompression <> y:52 var
+R11146:11148 Corelib.Init.Peano <> max abbrev
+R11151:11160 JFCTheorems.DiffCompression <> lcs_length def
+R11162:11163 JFCTheorems.DiffCompression <> xs:51 var
+R11167:11170 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11166:11166 JFCTheorems.DiffCompression <> y:52 var
+R11171:11172 JFCTheorems.DiffCompression <> ys:53 var
+R11177:11186 JFCTheorems.DiffCompression <> lcs_length def
+R11190:11193 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11189:11189 JFCTheorems.DiffCompression <> x:50 var
+R11194:11195 JFCTheorems.DiffCompression <> xs:51 var
+R11198:11199 JFCTheorems.DiffCompression <> ys:53 var
+R11113:11115 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11116:11125 JFCTheorems.DiffCompression <> lcs_length def
+R11127:11128 JFCTheorems.DiffCompression <> xs:51 var
+R11130:11131 JFCTheorems.DiffCompression <> ys:53 var
+prf 11434:11457 <> common_prefix_len_le_lcs
+binder 11470:11471 <> s1:54
+binder 11473:11474 <> s2:55
+R11500:11503 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11477:11493 JFCTheorems.DiffCompression <> common_prefix_len def
+R11495:11496 JFCTheorems.DiffCompression <> s1:54 var
+R11498:11499 JFCTheorems.DiffCompression <> s2:55 var
+R11504:11513 JFCTheorems.DiffCompression <> lcs_length def
+R11515:11516 JFCTheorems.DiffCompression <> s1:54 var
+R11518:11519 JFCTheorems.DiffCompression <> s2:55 var
+R11579:11595 JFCTheorems.DiffCompression <> common_prefix_len def
+R11607:11622 JFCTheorems.DiffCompression <> lcs_length_nil_l thm
+R11607:11622 JFCTheorems.DiffCompression <> lcs_length_nil_l thm
+R11607:11622 JFCTheorems.DiffCompression <> lcs_length_nil_l thm
+R11669:11685 JFCTheorems.DiffCompression <> common_prefix_len def
+R11697:11712 JFCTheorems.DiffCompression <> lcs_length_nil_r thm
+R11697:11712 JFCTheorems.DiffCompression <> lcs_length_nil_r thm
+R11697:11712 JFCTheorems.DiffCompression <> lcs_length_nil_r thm
+R11731:11747 JFCTheorems.DiffCompression <> common_prefix_len def
+R11759:11773 JFCTheorems.DiffCompression <> lcs_length_cons thm
+R11759:11773 JFCTheorems.DiffCompression <> lcs_length_cons thm
+R11759:11773 JFCTheorems.DiffCompression <> lcs_length_cons thm
+R11792:11798 Stdlib.Arith.PeanoNat Nat eqb def
+R11792:11798 Stdlib.Arith.PeanoNat Nat eqb def
+def 11947:11956 <> similarity
+R11967:11974 JFCTheorems.DiffCompression <> TokenSeq def
+binder 11959:11960 <> s1:56
+binder 11962:11963 <> s2:57
+R11979:11981 Corelib.Init.Datatypes <> nat ind
+R11999:12008 JFCTheorems.DiffCompression <> lcs_length def
+R12010:12011 JFCTheorems.DiffCompression <> s1:56 var
+R12013:12014 JFCTheorems.DiffCompression <> s2:57 var
+binder 11992:11994 <> lcs:58
+R12043:12045 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R12034:12039 Corelib.Init.Datatypes <> length def
+R12041:12042 JFCTheorems.DiffCompression <> s1:56 var
+R12046:12051 Corelib.Init.Datatypes <> length def
+R12053:12054 JFCTheorems.DiffCompression <> s2:57 var
+binder 12025:12029 <> total:59
+R12064:12070 Stdlib.Arith.PeanoNat Nat eqb def
+R12072:12076 JFCTheorems.DiffCompression <> total:59 var
+R12096:12096 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R12106:12109 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R12100:12102 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R12097:12099 JFCTheorems.DiffCompression <> lcs:58 var
+R12110:12114 JFCTheorems.DiffCompression <> total:59 var
+prf 12597:12614 <> lcs_length_le_both
+binder 12627:12627 <> n:60
+binder 12629:12630 <> s1:61
+binder 12632:12633 <> s2:62
+R12666:12673 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12661:12664 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12649:12651 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R12640:12645 Corelib.Init.Datatypes <> length def
+R12647:12648 JFCTheorems.DiffCompression <> s1:61 var
+R12652:12657 Corelib.Init.Datatypes <> length def
+R12659:12660 JFCTheorems.DiffCompression <> s2:62 var
+R12665:12665 JFCTheorems.DiffCompression <> n:60 var
+R12703:12706 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R12690:12693 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12674:12683 JFCTheorems.DiffCompression <> lcs_length def
+R12685:12686 JFCTheorems.DiffCompression <> s1:61 var
+R12688:12689 JFCTheorems.DiffCompression <> s2:62 var
+R12694:12699 Corelib.Init.Datatypes <> length def
+R12701:12702 JFCTheorems.DiffCompression <> s1:61 var
+R12723:12726 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12707:12716 JFCTheorems.DiffCompression <> lcs_length def
+R12718:12719 JFCTheorems.DiffCompression <> s1:61 var
+R12721:12722 JFCTheorems.DiffCompression <> s2:62 var
+R12727:12732 Corelib.Init.Datatypes <> length def
+R12734:12735 JFCTheorems.DiffCompression <> s2:62 var
+R12860:12865 Corelib.Init.Datatypes <> length def
+R12895:12910 JFCTheorems.DiffCompression <> lcs_length_nil_l thm
+R12895:12910 JFCTheorems.DiffCompression <> lcs_length_nil_l thm
+R12895:12910 JFCTheorems.DiffCompression <> lcs_length_nil_l thm
+R12918:12923 Corelib.Init.Datatypes <> length def
+R12974:12989 JFCTheorems.DiffCompression <> lcs_length_nil_l thm
+R12974:12989 JFCTheorems.DiffCompression <> lcs_length_nil_l thm
+R12974:12989 JFCTheorems.DiffCompression <> lcs_length_nil_l thm
+R12997:13002 Corelib.Init.Datatypes <> length def
+R13057:13072 JFCTheorems.DiffCompression <> lcs_length_nil_r thm
+R13057:13072 JFCTheorems.DiffCompression <> lcs_length_nil_r thm
+R13057:13072 JFCTheorems.DiffCompression <> lcs_length_nil_r thm
+R13080:13085 Corelib.Init.Datatypes <> length def
+R13110:13124 JFCTheorems.DiffCompression <> lcs_length_cons thm
+R13110:13124 JFCTheorems.DiffCompression <> lcs_length_cons thm
+R13110:13124 JFCTheorems.DiffCompression <> lcs_length_cons thm
+R13132:13137 Corelib.Init.Datatypes <> length def
+R13164:13170 Stdlib.Arith.PeanoNat Nat eqb def
+R13164:13170 Stdlib.Arith.PeanoNat Nat eqb def
+R13385:13388 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R13404:13409 Corelib.Init.Datatypes <> length def
+R13385:13388 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R13404:13409 Corelib.Init.Datatypes <> length def
+R13459:13462 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R13481:13486 Corelib.Init.Datatypes <> length def
+R13459:13462 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R13481:13486 Corelib.Init.Datatypes <> length def
+R13526:13531 Corelib.Init.Datatypes <> length def
+prf 13557:13571 <> lcs_length_le_l
+binder 13584:13585 <> s1:63
+binder 13587:13588 <> s2:64
+R13607:13610 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13591:13600 JFCTheorems.DiffCompression <> lcs_length def
+R13602:13603 JFCTheorems.DiffCompression <> s1:63 var
+R13605:13606 JFCTheorems.DiffCompression <> s2:64 var
+R13611:13616 Corelib.Init.Datatypes <> length def
+R13618:13619 JFCTheorems.DiffCompression <> s1:63 var
+R13657:13674 JFCTheorems.DiffCompression <> lcs_length_le_both thm
+R13686:13688 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13677:13682 Corelib.Init.Datatypes <> length def
+R13689:13694 Corelib.Init.Datatypes <> length def
+R13707:13710 Corelib.Init.Peano <> le_n constr
+R13657:13674 JFCTheorems.DiffCompression <> lcs_length_le_both thm
+R13686:13688 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13677:13682 Corelib.Init.Datatypes <> length def
+R13689:13694 Corelib.Init.Datatypes <> length def
+R13707:13710 Corelib.Init.Peano <> le_n constr
+prf 13749:13763 <> lcs_length_le_r
+binder 13776:13777 <> s1:65
+binder 13779:13780 <> s2:66
+R13799:13802 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13783:13792 JFCTheorems.DiffCompression <> lcs_length def
+R13794:13795 JFCTheorems.DiffCompression <> s1:65 var
+R13797:13798 JFCTheorems.DiffCompression <> s2:66 var
+R13803:13808 Corelib.Init.Datatypes <> length def
+R13810:13811 JFCTheorems.DiffCompression <> s2:66 var
+R13849:13866 JFCTheorems.DiffCompression <> lcs_length_le_both thm
+R13878:13880 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13869:13874 Corelib.Init.Datatypes <> length def
+R13881:13886 Corelib.Init.Datatypes <> length def
+R13899:13902 Corelib.Init.Peano <> le_n constr
+R13849:13866 JFCTheorems.DiffCompression <> lcs_length_le_both thm
+R13878:13880 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13869:13874 Corelib.Init.Datatypes <> length def
+R13881:13886 Corelib.Init.Datatypes <> length def
+R13899:13902 Corelib.Init.Peano <> le_n constr
+prf 14368:14385 <> similarity_bounded
+R14406:14413 JFCTheorems.DiffCompression <> TokenSeq def
+binder 14398:14399 <> s1:67
+binder 14401:14402 <> s2:68
+R14436:14439 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14420:14429 JFCTheorems.DiffCompression <> similarity def
+R14431:14432 JFCTheorems.DiffCompression <> s1:67 var
+R14434:14435 JFCTheorems.DiffCompression <> s2:68 var
+R14475:14484 JFCTheorems.DiffCompression <> similarity def
+R14499:14505 Stdlib.Arith.PeanoNat Nat eqb def
+R14517:14519 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14508:14513 Corelib.Init.Datatypes <> length def
+R14520:14525 Corelib.Init.Datatypes <> length def
+R14499:14505 Stdlib.Arith.PeanoNat Nat eqb def
+R14517:14519 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14508:14513 Corelib.Init.Datatypes <> length def
+R14520:14525 Corelib.Init.Datatypes <> length def
+R14563:14573 Stdlib.Arith.PeanoNat Nat eqb_neq thm
+R14563:14573 Stdlib.Arith.PeanoNat Nat eqb_neq thm
+R14594:14620 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R14594:14620 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R14639:14653 JFCTheorems.DiffCompression <> lcs_length_le_l thm
+R14639:14653 JFCTheorems.DiffCompression <> lcs_length_le_l thm
+R14685:14699 JFCTheorems.DiffCompression <> lcs_length_le_r thm
+R14685:14699 JFCTheorems.DiffCompression <> lcs_length_le_r thm
+prf 15303:15327 <> overlap_beats_full_insert
+R15354:15361 JFCTheorems.DiffCompression <> TokenSeq def
+binder 15340:15343 <> base:69
+binder 15345:15350 <> target:70
+R15402:15409 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15397:15400 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R15368:15384 JFCTheorems.DiffCompression <> common_prefix_len def
+R15386:15389 JFCTheorems.DiffCompression <> base:69 var
+R15391:15396 JFCTheorems.DiffCompression <> target:70 var
+R15446:15449 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15410:15418 JFCTheorems.DiffCompression <> diff_size def
+R15421:15432 JFCTheorems.DiffCompression <> compute_diff def
+R15434:15437 JFCTheorems.DiffCompression <> base:69 var
+R15439:15444 JFCTheorems.DiffCompression <> target:70 var
+R15450:15458 JFCTheorems.DiffCompression <> diff_size def
+R15460:15460 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15474:15474 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15461:15466 JFCTheorems.DiffCompression <> Insert constr
+R15468:15473 JFCTheorems.DiffCompression <> target:70 var
+R15519:15556 JFCTheorems.DiffCompression <> compute_diff_size_shrinks_with_overlap thm
+R15519:15556 JFCTheorems.DiffCompression <> compute_diff_size_shrinks_with_overlap thm
+R15519:15556 JFCTheorems.DiffCompression <> compute_diff_size_shrinks_with_overlap thm
+R15566:15574 JFCTheorems.DiffCompression <> diff_size def
+R15592:15613 JFCTheorems.DiffCompression <> common_prefix_len_le_r thm
+R15592:15613 JFCTheorems.DiffCompression <> common_prefix_len_le_r thm
+rec 15695:15701 <> Message
+proj 15727:15734 <> msg_role
+proj 15772:15781 <> msg_tokens
+R15738:15740 Corelib.Init.Datatypes <> nat ind
+R15785:15792 JFCTheorems.DiffCompression <> TokenSeq def
+def 15810:15821 <> Conversation
+R15826:15829 Corelib.Init.Datatypes <> list ind
+R15831:15837 JFCTheorems.DiffCompression <> Message rec
+rec 15973:15989 <> DeltaConversation
+proj 16025:16036 <> base_message
+proj 16051:16056 <> deltas
+R16040:16046 JFCTheorems.DiffCompression <> Message rec
+R16060:16063 Corelib.Init.Datatypes <> list ind
+R16069:16071 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R16066:16068 Corelib.Init.Datatypes <> nat ind
+R16072:16081 JFCTheorems.DiffCompression <> DiffScript def
+prf 16197:16215 <> fold_left_add_shift
+binder 16229:16229 <> A:77
+R16245:16248 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R16244:16244 JFCTheorems.DiffCompression <> A:77 var
+R16249:16251 Corelib.Init.Datatypes <> nat ind
+binder 16240:16240 <> f:78
+R16259:16262 Corelib.Init.Datatypes <> list ind
+R16264:16264 JFCTheorems.DiffCompression <> A:77 var
+binder 16255:16255 <> l:79
+R16272:16274 Corelib.Init.Datatypes <> nat ind
+binder 16268:16268 <> z:80
+R16320:16328 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16282:16290 Stdlib.Lists.List <> fold_left def
+R16319:16319 JFCTheorems.DiffCompression <> z:80 var
+R16317:16317 JFCTheorems.DiffCompression <> l:79 var
+binder 16297:16299 <> acc:81
+binder 16301:16301 <> x:82
+R16309:16311 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16306:16308 JFCTheorems.DiffCompression <> acc:81 var
+R16312:16312 JFCTheorems.DiffCompression <> f:78 var
+R16314:16314 JFCTheorems.DiffCompression <> x:82 var
+R16330:16332 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16329:16329 JFCTheorems.DiffCompression <> z:80 var
+R16333:16341 Stdlib.Lists.List <> fold_left def
+R16368:16368 JFCTheorems.DiffCompression <> l:79 var
+binder 16348:16350 <> acc:83
+binder 16352:16352 <> x:84
+R16360:16362 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16357:16359 JFCTheorems.DiffCompression <> acc:83 var
+R16363:16363 JFCTheorems.DiffCompression <> f:78 var
+R16365:16365 JFCTheorems.DiffCompression <> x:84 var
+R16474:16476 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16474:16476 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16474:16476 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+def 16635:16649 <> delta_conv_size
+R16657:16673 JFCTheorems.DiffCompression <> DeltaConversation rec
+binder 16652:16653 <> dc:85
+R16678:16680 Corelib.Init.Datatypes <> nat ind
+R16724:16728 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16687:16692 Corelib.Init.Datatypes <> length def
+R16695:16704 JFCTheorems.DiffCompression <> msg_tokens proj
+R16707:16718 JFCTheorems.DiffCompression <> base_message proj
+R16720:16721 JFCTheorems.DiffCompression <> dc:85 var
+R16729:16737 Stdlib.Lists.List <> fold_left def
+R16779:16784 JFCTheorems.DiffCompression <> deltas proj
+R16786:16787 JFCTheorems.DiffCompression <> dc:85 var
+binder 16744:16746 <> acc:86
+binder 16748:16748 <> p:87
+R16756:16758 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16753:16755 JFCTheorems.DiffCompression <> acc:86 var
+R16759:16767 JFCTheorems.DiffCompression <> diff_size def
+R16770:16772 Corelib.Init.Datatypes <> snd def
+R16774:16774 JFCTheorems.DiffCompression <> p:87 var
+def 16881:16893 <> raw_conv_size
+R16903:16914 JFCTheorems.DiffCompression <> Conversation def
+binder 16896:16899 <> conv:88
+R16919:16921 Corelib.Init.Datatypes <> nat ind
+R16928:16936 Stdlib.Lists.List <> fold_left def
+R16981:16984 JFCTheorems.DiffCompression <> conv:88 var
+binder 16943:16945 <> acc:89
+binder 16947:16947 <> m:90
+R16955:16957 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16952:16954 JFCTheorems.DiffCompression <> acc:89 var
+R16958:16963 Corelib.Init.Datatypes <> length def
+R16966:16975 JFCTheorems.DiffCompression <> msg_tokens proj
+R16977:16977 JFCTheorems.DiffCompression <> m:90 var
+prf 17058:17075 <> raw_conv_size_cons
+binder 17088:17088 <> m:91
+binder 17090:17090 <> l:92
+R17119:17121 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17097:17109 JFCTheorems.DiffCompression <> raw_conv_size def
+R17113:17116 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R17112:17112 JFCTheorems.DiffCompression <> m:91 var
+R17117:17117 JFCTheorems.DiffCompression <> l:92 var
+R17143:17145 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17122:17127 Corelib.Init.Datatypes <> length def
+R17130:17139 JFCTheorems.DiffCompression <> msg_tokens proj
+R17141:17141 JFCTheorems.DiffCompression <> m:91 var
+R17146:17158 JFCTheorems.DiffCompression <> raw_conv_size def
+R17160:17160 JFCTheorems.DiffCompression <> l:92 var
+R17191:17203 JFCTheorems.DiffCompression <> raw_conv_size def
+R17224:17242 JFCTheorems.DiffCompression <> fold_left_add_shift thm
+R17244:17250 JFCTheorems.DiffCompression <> Message rec
+binder 17257:17257 <> m:93
+R17262:17267 Corelib.Init.Datatypes <> length def
+R17270:17279 JFCTheorems.DiffCompression <> msg_tokens proj
+R17281:17281 JFCTheorems.DiffCompression <> m:93 var
+R17300:17305 Corelib.Init.Datatypes <> length def
+R17308:17317 JFCTheorems.DiffCompression <> msg_tokens proj
+R17224:17242 JFCTheorems.DiffCompression <> fold_left_add_shift thm
+R17244:17250 JFCTheorems.DiffCompression <> Message rec
+binder 17257:17257 <> m:94
+R17262:17267 Corelib.Init.Datatypes <> length def
+R17270:17279 JFCTheorems.DiffCompression <> msg_tokens proj
+R17281:17281 JFCTheorems.DiffCompression <> m:94 var
+R17300:17305 Corelib.Init.Datatypes <> length def
+R17308:17317 JFCTheorems.DiffCompression <> msg_tokens proj
+R17224:17242 JFCTheorems.DiffCompression <> fold_left_add_shift thm
+R17244:17250 JFCTheorems.DiffCompression <> Message rec
+binder 17257:17257 <> m:95
+R17262:17267 Corelib.Init.Datatypes <> length def
+R17270:17279 JFCTheorems.DiffCompression <> msg_tokens proj
+R17281:17281 JFCTheorems.DiffCompression <> m:95 var
+R17300:17305 Corelib.Init.Datatypes <> length def
+R17308:17317 JFCTheorems.DiffCompression <> msg_tokens proj
+prf 17390:17405 <> deltas_fold_cons
+R17426:17428 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R17423:17425 Corelib.Init.Datatypes <> nat ind
+R17429:17438 JFCTheorems.DiffCompression <> DiffScript def
+binder 17419:17419 <> p:96
+R17446:17449 Corelib.Init.Datatypes <> list ind
+R17455:17457 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R17452:17454 Corelib.Init.Datatypes <> nat ind
+R17458:17467 JFCTheorems.DiffCompression <> DiffScript def
+binder 17442:17442 <> l:97
+R17535:17543 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17476:17484 Stdlib.Lists.List <> fold_left def
+R17527:17530 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R17526:17526 JFCTheorems.DiffCompression <> p:96 var
+R17531:17531 JFCTheorems.DiffCompression <> l:97 var
+binder 17491:17493 <> acc:98
+binder 17495:17495 <> q:99
+R17503:17505 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17500:17502 JFCTheorems.DiffCompression <> acc:98 var
+R17506:17514 JFCTheorems.DiffCompression <> diff_size def
+R17517:17519 Corelib.Init.Datatypes <> snd def
+R17521:17521 JFCTheorems.DiffCompression <> q:99 var
+R17561:17571 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17544:17552 JFCTheorems.DiffCompression <> diff_size def
+R17555:17557 Corelib.Init.Datatypes <> snd def
+R17559:17559 JFCTheorems.DiffCompression <> p:96 var
+R17572:17580 Stdlib.Lists.List <> fold_left def
+R17621:17621 JFCTheorems.DiffCompression <> l:97 var
+binder 17587:17589 <> acc:100
+binder 17591:17591 <> q:101
+R17599:17601 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17596:17598 JFCTheorems.DiffCompression <> acc:100 var
+R17602:17610 JFCTheorems.DiffCompression <> diff_size def
+R17613:17615 Corelib.Init.Datatypes <> snd def
+R17617:17617 JFCTheorems.DiffCompression <> q:101 var
+R17665:17683 JFCTheorems.DiffCompression <> fold_left_add_shift thm
+R17689:17691 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R17686:17688 Corelib.Init.Datatypes <> nat ind
+R17692:17701 JFCTheorems.DiffCompression <> DiffScript def
+binder 17709:17709 <> q:102
+R17714:17722 JFCTheorems.DiffCompression <> diff_size def
+R17725:17727 Corelib.Init.Datatypes <> snd def
+R17729:17729 JFCTheorems.DiffCompression <> q:102 var
+R17748:17756 JFCTheorems.DiffCompression <> diff_size def
+R17759:17761 Corelib.Init.Datatypes <> snd def
+R17665:17683 JFCTheorems.DiffCompression <> fold_left_add_shift thm
+R17689:17691 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R17686:17688 Corelib.Init.Datatypes <> nat ind
+R17692:17701 JFCTheorems.DiffCompression <> DiffScript def
+binder 17709:17709 <> q:103
+R17714:17722 JFCTheorems.DiffCompression <> diff_size def
+R17725:17727 Corelib.Init.Datatypes <> snd def
+R17729:17729 JFCTheorems.DiffCompression <> q:103 var
+R17748:17756 JFCTheorems.DiffCompression <> diff_size def
+R17759:17761 Corelib.Init.Datatypes <> snd def
+R17665:17683 JFCTheorems.DiffCompression <> fold_left_add_shift thm
+R17689:17691 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R17686:17688 Corelib.Init.Datatypes <> nat ind
+R17692:17701 JFCTheorems.DiffCompression <> DiffScript def
+binder 17709:17709 <> q:104
+R17714:17722 JFCTheorems.DiffCompression <> diff_size def
+R17725:17727 Corelib.Init.Datatypes <> snd def
+R17729:17729 JFCTheorems.DiffCompression <> q:104 var
+R17748:17756 JFCTheorems.DiffCompression <> diff_size def
+R17759:17761 Corelib.Init.Datatypes <> snd def
+def 18061:18074 <> faithful_delta
+R18082:18098 JFCTheorems.DiffCompression <> DeltaConversation rec
+binder 18077:18078 <> dc:105
+R18109:18120 JFCTheorems.DiffCompression <> Conversation def
+binder 18102:18105 <> conv:106
+R18167:18172 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R18153:18155 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18135:18140 Corelib.Init.Datatypes <> length def
+R18143:18148 JFCTheorems.DiffCompression <> deltas proj
+R18150:18151 JFCTheorems.DiffCompression <> dc:105 var
+R18156:18161 Corelib.Init.Datatypes <> length def
+R18163:18166 JFCTheorems.DiffCompression <> conv:106 var
+binder 18180:18180 <> i:107
+binder 18182:18182 <> d:108
+binder 18184:18184 <> m:109
+R18223:18230 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18214:18216 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18191:18199 Stdlib.Lists.List <> nth_error def
+R18213:18213 JFCTheorems.DiffCompression <> i:107 var
+R18202:18207 JFCTheorems.DiffCompression <> deltas proj
+R18209:18210 JFCTheorems.DiffCompression <> dc:105 var
+R18217:18220 Corelib.Init.Datatypes <> Some constr
+R18222:18222 JFCTheorems.DiffCompression <> d:108 var
+R18256:18263 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18247:18249 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18231:18239 Stdlib.Lists.List <> nth_error def
+R18246:18246 JFCTheorems.DiffCompression <> i:107 var
+R18241:18244 JFCTheorems.DiffCompression <> conv:106 var
+R18250:18253 Corelib.Init.Datatypes <> Some constr
+R18255:18255 JFCTheorems.DiffCompression <> m:109 var
+R18313:18315 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18264:18273 JFCTheorems.DiffCompression <> apply_diff def
+R18276:18285 JFCTheorems.DiffCompression <> msg_tokens proj
+R18288:18299 JFCTheorems.DiffCompression <> base_message proj
+R18301:18302 JFCTheorems.DiffCompression <> dc:105 var
+R18307:18309 Corelib.Init.Datatypes <> snd def
+R18311:18311 JFCTheorems.DiffCompression <> d:108 var
+R18316:18325 JFCTheorems.DiffCompression <> msg_tokens proj
+R18327:18327 JFCTheorems.DiffCompression <> m:109 var
+def 18618:18629 <> delta_encode
+R18639:18645 JFCTheorems.DiffCompression <> Message rec
+binder 18632:18635 <> base:110
+R18656:18667 JFCTheorems.DiffCompression <> Conversation def
+binder 18649:18652 <> conv:111
+R18672:18688 JFCTheorems.DiffCompression <> DeltaConversation rec
+R18695:18713 JFCTheorems.DiffCompression <> mkDeltaConversation constr
+R18715:18718 JFCTheorems.DiffCompression <> base:110 var
+R18725:18727 Corelib.Lists.ListDef <> map def
+R18791:18794 JFCTheorems.DiffCompression <> conv:111 var
+binder 18734:18734 <> m:112
+R18739:18739 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18741:18742 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18788:18788 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18743:18754 JFCTheorems.DiffCompression <> compute_diff def
+R18757:18766 JFCTheorems.DiffCompression <> msg_tokens proj
+R18768:18771 JFCTheorems.DiffCompression <> base:110 var
+R18775:18784 JFCTheorems.DiffCompression <> msg_tokens proj
+R18786:18786 JFCTheorems.DiffCompression <> m:112 var
+prf 18807:18827 <> delta_encode_faithful
+binder 18840:18843 <> base:113
+binder 18845:18848 <> conv:114
+R18855:18868 JFCTheorems.DiffCompression <> faithful_delta def
+R18871:18882 JFCTheorems.DiffCompression <> delta_encode def
+R18884:18887 JFCTheorems.DiffCompression <> base:113 var
+R18889:18892 JFCTheorems.DiffCompression <> conv:114 var
+R18895:18898 JFCTheorems.DiffCompression <> conv:114 var
+R18935:18948 JFCTheorems.DiffCompression <> faithful_delta def
+R18951:18962 JFCTheorems.DiffCompression <> delta_encode def
+R18970:18975 JFCTheorems.DiffCompression <> deltas proj
+R18977:18988 JFCTheorems.DiffCompression <> base_message proj
+R19013:19022 Stdlib.Lists.List <> length_map thm
+R19013:19022 Stdlib.Lists.List <> length_map thm
+R19013:19022 Stdlib.Lists.List <> length_map thm
+R19149:19161 Stdlib.Lists.List <> nth_error_map thm
+R19149:19161 Stdlib.Lists.List <> nth_error_map thm
+R19149:19161 Stdlib.Lists.List <> nth_error_map thm
+R19184:19192 Stdlib.Lists.List <> nth_error def
+R19224:19233 Corelib.Init.Datatypes <> option_map def
+R19184:19192 Stdlib.Lists.List <> nth_error def
+R19317:19319 Corelib.Init.Datatypes <> snd def
+R19333:19355 JFCTheorems.DiffCompression <> compute_diff_round_trip thm
+R19333:19355 JFCTheorems.DiffCompression <> compute_diff_round_trip thm
+prf 20131:20155 <> delta_encode_size_bounded
+binder 20168:20171 <> base:115
+binder 20173:20176 <> conv:116
+R20223:20232 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20183:20197 JFCTheorems.DiffCompression <> delta_conv_size def
+R20200:20211 JFCTheorems.DiffCompression <> delta_encode def
+R20213:20216 JFCTheorems.DiffCompression <> base:115 var
+R20218:20221 JFCTheorems.DiffCompression <> conv:116 var
+R20278:20280 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20257:20259 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20233:20238 Corelib.Init.Datatypes <> length def
+R20241:20250 JFCTheorems.DiffCompression <> msg_tokens proj
+R20252:20255 JFCTheorems.DiffCompression <> base:115 var
+R20260:20272 JFCTheorems.DiffCompression <> raw_conv_size def
+R20274:20277 JFCTheorems.DiffCompression <> conv:116 var
+R20282:20284 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R20285:20290 Corelib.Init.Datatypes <> length def
+R20292:20295 JFCTheorems.DiffCompression <> conv:116 var
+R20332:20346 JFCTheorems.DiffCompression <> delta_conv_size def
+R20349:20360 JFCTheorems.DiffCompression <> delta_encode def
+R20368:20379 JFCTheorems.DiffCompression <> base_message proj
+R20381:20386 JFCTheorems.DiffCompression <> deltas proj
+R20622:20631 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20493:20501 Stdlib.Lists.List <> fold_left def
+R20549:20551 Corelib.Lists.ListDef <> map def
+binder 20558:20558 <> m:117
+R20563:20563 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20565:20566 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20612:20612 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20567:20578 JFCTheorems.DiffCompression <> compute_diff def
+R20581:20590 JFCTheorems.DiffCompression <> msg_tokens proj
+R20599:20608 JFCTheorems.DiffCompression <> msg_tokens proj
+R20610:20610 JFCTheorems.DiffCompression <> m:117 var
+binder 20508:20510 <> acc:118
+binder 20512:20512 <> p:119
+R20520:20522 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20517:20519 JFCTheorems.DiffCompression <> acc:118 var
+R20523:20531 JFCTheorems.DiffCompression <> diff_size def
+R20534:20536 Corelib.Init.Datatypes <> snd def
+R20538:20538 JFCTheorems.DiffCompression <> p:119 var
+R20650:20652 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20632:20644 JFCTheorems.DiffCompression <> raw_conv_size def
+R20654:20656 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R20657:20662 Corelib.Init.Datatypes <> length def
+R20622:20631 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20493:20501 Stdlib.Lists.List <> fold_left def
+R20549:20551 Corelib.Lists.ListDef <> map def
+binder 20558:20558 <> m:120
+R20563:20563 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20565:20566 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20612:20612 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20567:20578 JFCTheorems.DiffCompression <> compute_diff def
+R20581:20590 JFCTheorems.DiffCompression <> msg_tokens proj
+R20599:20608 JFCTheorems.DiffCompression <> msg_tokens proj
+R20610:20610 JFCTheorems.DiffCompression <> m:120 var
+binder 20508:20510 <> acc:121
+binder 20512:20512 <> p:122
+R20520:20522 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20517:20519 JFCTheorems.DiffCompression <> acc:121 var
+R20523:20531 JFCTheorems.DiffCompression <> diff_size def
+R20534:20536 Corelib.Init.Datatypes <> snd def
+R20538:20538 JFCTheorems.DiffCompression <> p:122 var
+R20650:20652 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20632:20644 JFCTheorems.DiffCompression <> raw_conv_size def
+R20654:20656 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R20657:20662 Corelib.Init.Datatypes <> length def
+R20718:20720 Corelib.Lists.ListDef <> map def
+R20722:20730 Stdlib.Lists.List <> fold_left def
+R20732:20737 Corelib.Init.Datatypes <> length def
+R20748:20760 JFCTheorems.DiffCompression <> raw_conv_size def
+R20768:20776 Stdlib.Lists.List <> fold_left def
+R20796:20798 Corelib.Lists.ListDef <> map def
+R20816:20831 JFCTheorems.DiffCompression <> deltas_fold_cons thm
+R20816:20831 JFCTheorems.DiffCompression <> deltas_fold_cons thm
+R20816:20831 JFCTheorems.DiffCompression <> deltas_fold_cons thm
+R20848:20865 JFCTheorems.DiffCompression <> raw_conv_size_cons thm
+R20848:20865 JFCTheorems.DiffCompression <> raw_conv_size_cons thm
+R20848:20865 JFCTheorems.DiffCompression <> raw_conv_size_cons thm
+R20879:20884 Corelib.Init.Datatypes <> length def
+R20886:20888 Corelib.Init.Datatypes <> snd def
+R20910:20934 JFCTheorems.DiffCompression <> compute_diff_size_bounded thm
+R20937:20946 JFCTheorems.DiffCompression <> msg_tokens proj
+R20955:20964 JFCTheorems.DiffCompression <> msg_tokens proj
+R20910:20934 JFCTheorems.DiffCompression <> compute_diff_size_bounded thm
+R20937:20946 JFCTheorems.DiffCompression <> msg_tokens proj
+R20955:20964 JFCTheorems.DiffCompression <> msg_tokens proj
+def 21116:21132 <> count_occurrences
+R21153:21160 JFCTheorems.DiffCompression <> TokenSeq def
+binder 21135:21140 <> needle:123
+binder 21142:21149 <> haystack:124
+R21165:21167 Corelib.Init.Datatypes <> nat ind
+R21180:21187 JFCTheorems.DiffCompression <> haystack:124 var
+R21198:21199 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R21211:21214 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R21229:21229 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R21317:21320 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R21233:21243 Stdlib.Lists.List <> list_eq_dec thm
+R21290:21295 JFCTheorems.DiffCompression <> needle:123 var
+R21257:21262 Corelib.Lists.ListDef <> firstn def
+R21280:21287 JFCTheorems.DiffCompression <> haystack:124 var
+R21265:21270 Corelib.Init.Datatypes <> length def
+R21272:21277 JFCTheorems.DiffCompression <> needle:123 var
+R21245:21254 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R21321:21337 JFCTheorems.DiffCompression <> count_occurrences:125 def
+R21339:21344 JFCTheorems.DiffCompression <> needle:123 var
+def 21447:21465 <> is_repeated_context
+R21474:21481 JFCTheorems.DiffCompression <> TokenSeq def
+binder 21468:21470 <> seq:127
+R21492:21503 JFCTheorems.DiffCompression <> Conversation def
+binder 21485:21488 <> conv:128
+R21536:21543 Stdlib.Lists.List <> flat_map def
+R21556:21559 JFCTheorems.DiffCompression <> conv:128 var
+R21545:21554 JFCTheorems.DiffCompression <> msg_tokens proj
+binder 21522:21531 <> all_tokens:129
+R21598:21601 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R21566:21582 JFCTheorems.DiffCompression <> count_occurrences def
+R21584:21586 JFCTheorems.DiffCompression <> seq:127 var
+R21588:21597 JFCTheorems.DiffCompression <> all_tokens:129 var
+def 21905:21918 <> repeat_savings
+R21945:21947 Corelib.Init.Datatypes <> nat ind
+binder 21921:21931 <> occurrences:130
+binder 21933:21941 <> block_len:131
+R21952:21954 Corelib.Init.Datatypes <> nat ind
+R21961:21961 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R21977:21981 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R21995:21995 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R21973:21975 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R21962:21972 JFCTheorems.DiffCompression <> occurrences:130 var
+R21991:21993 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R21982:21990 JFCTheorems.DiffCompression <> block_len:131 var
+prf 22537:22565 <> repeated_context_compressible
+binder 22578:22580 <> seq:132
+binder 22582:22585 <> conv:133
+R22620:22627 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22592:22610 JFCTheorems.DiffCompression <> is_repeated_context def
+R22612:22614 JFCTheorems.DiffCompression <> seq:132 var
+R22616:22619 JFCTheorems.DiffCompression <> conv:133 var
+R22643:22650 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22638:22641 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R22628:22633 Corelib.Init.Datatypes <> length def
+R22635:22637 JFCTheorems.DiffCompression <> seq:132 var
+R22729:22732 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R22651:22664 JFCTheorems.DiffCompression <> repeat_savings def
+R22667:22683 JFCTheorems.DiffCompression <> count_occurrences def
+R22685:22687 JFCTheorems.DiffCompression <> seq:132 var
+R22690:22697 Stdlib.Lists.List <> flat_map def
+R22710:22713 JFCTheorems.DiffCompression <> conv:133 var
+R22699:22708 JFCTheorems.DiffCompression <> msg_tokens proj
+R22718:22723 Corelib.Init.Datatypes <> length def
+R22725:22727 JFCTheorems.DiffCompression <> seq:132 var
+R22781:22799 JFCTheorems.DiffCompression <> is_repeated_context def
+R22837:22850 JFCTheorems.DiffCompression <> repeat_savings def
+R22944:22960 JFCTheorems.DiffCompression <> count_occurrences def
+R22967:22974 Stdlib.Lists.List <> flat_map def
+R22976:22985 JFCTheorems.DiffCompression <> msg_tokens proj
+R22944:22960 JFCTheorems.DiffCompression <> count_occurrences def
+R22967:22974 Stdlib.Lists.List <> flat_map def
+R22976:22985 JFCTheorems.DiffCompression <> msg_tokens proj
+rec 23070:23082 <> SlidingWindow
+proj 23114:23124 <> window_size
+proj 23135:23148 <> window_content
+R23128:23130 Corelib.Init.Datatypes <> nat ind
+R23152:23159 JFCTheorems.DiffCompression <> TokenSeq def
+def 23290:23298 <> window_wf
+R23305:23317 JFCTheorems.DiffCompression <> SlidingWindow rec
+binder 23301:23301 <> w:137
+R23357:23360 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R23332:23337 Corelib.Init.Datatypes <> length def
+R23340:23353 JFCTheorems.DiffCompression <> window_content proj
+R23355:23355 JFCTheorems.DiffCompression <> w:137 var
+R23361:23371 JFCTheorems.DiffCompression <> window_size proj
+R23373:23373 JFCTheorems.DiffCompression <> w:137 var
+def 23611:23624 <> find_match_aux
+R23644:23651 JFCTheorems.DiffCompression <> TokenSeq def
+binder 23627:23632 <> needle:138
+binder 23634:23640 <> content:139
+R23664:23666 Corelib.Init.Datatypes <> nat ind
+binder 23655:23660 <> offset:140
+R23675:23680 Corelib.Init.Datatypes <> option ind
+R23686:23688 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R23683:23685 Corelib.Init.Datatypes <> nat ind
+R23689:23691 Corelib.Init.Datatypes <> nat ind
+R23705:23711 JFCTheorems.DiffCompression <> content:139 var
+R23722:23723 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R23728:23731 Corelib.Init.Datatypes <> None constr
+R23738:23741 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R23759:23769 Stdlib.Lists.List <> list_eq_dec thm
+R23815:23820 JFCTheorems.DiffCompression <> needle:138 var
+R23783:23788 Corelib.Lists.ListDef <> firstn def
+R23806:23812 JFCTheorems.DiffCompression <> content:139 var
+R23791:23796 Corelib.Init.Datatypes <> length def
+R23798:23803 JFCTheorems.DiffCompression <> needle:138 var
+R23771:23780 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R23873:23886 JFCTheorems.DiffCompression <> find_match_aux:141 def
+R23901:23901 Corelib.Init.Datatypes <> S constr
+R23903:23908 JFCTheorems.DiffCompression <> offset:140 var
+R23888:23893 JFCTheorems.DiffCompression <> needle:138 var
+R23833:23836 Corelib.Init.Datatypes <> Some constr
+R23838:23838 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R23845:23846 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R23860:23860 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R23839:23844 JFCTheorems.DiffCompression <> offset:140 var
+R23847:23852 Corelib.Init.Datatypes <> length def
+R23854:23859 JFCTheorems.DiffCompression <> needle:138 var
+def 23930:23939 <> find_match
+R23951:23958 JFCTheorems.DiffCompression <> TokenSeq def
+binder 23942:23947 <> needle:143
+R23966:23978 JFCTheorems.DiffCompression <> SlidingWindow rec
+binder 23962:23962 <> w:144
+R23983:23988 Corelib.Init.Datatypes <> option ind
+R23994:23996 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R23991:23993 Corelib.Init.Datatypes <> nat ind
+R23997:23999 Corelib.Init.Datatypes <> nat ind
+R24007:24020 JFCTheorems.DiffCompression <> find_match_aux def
+R24022:24027 JFCTheorems.DiffCompression <> needle:143 var
+R24030:24043 JFCTheorems.DiffCompression <> window_content proj
+R24045:24045 JFCTheorems.DiffCompression <> w:144 var
+prf 24179:24202 <> find_match_aux_offset_ge
+binder 24215:24220 <> needle:145
+binder 24222:24228 <> content:146
+binder 24230:24237 <> base_off:147
+binder 24239:24241 <> off:148
+binder 24243:24245 <> len:149
+R24308:24315 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R24290:24292 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R24252:24265 JFCTheorems.DiffCompression <> find_match_aux def
+R24267:24272 JFCTheorems.DiffCompression <> needle:145 var
+R24274:24280 JFCTheorems.DiffCompression <> content:146 var
+R24282:24289 JFCTheorems.DiffCompression <> base_off:147 var
+R24293:24296 Corelib.Init.Datatypes <> Some constr
+R24298:24298 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R24302:24303 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R24307:24307 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R24299:24301 JFCTheorems.DiffCompression <> off:148 var
+R24304:24306 JFCTheorems.DiffCompression <> len:149 var
+R24324:24327 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R24316:24323 JFCTheorems.DiffCompression <> base_off:147 var
+R24328:24330 JFCTheorems.DiffCompression <> off:148 var
+R24440:24453 JFCTheorems.DiffCompression <> find_match_aux def
+R24485:24498 JFCTheorems.DiffCompression <> find_match_aux def
+R24521:24531 Stdlib.Lists.List <> list_eq_dec thm
+R24545:24550 Corelib.Lists.ListDef <> firstn def
+R24570:24573 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R24553:24558 Corelib.Init.Datatypes <> length def
+R24533:24542 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R24521:24531 Stdlib.Lists.List <> list_eq_dec thm
+R24545:24550 Corelib.Lists.ListDef <> firstn def
+R24570:24573 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R24553:24558 Corelib.Init.Datatypes <> length def
+R24533:24542 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R24651:24651 Corelib.Init.Datatypes <> S constr
+R24651:24651 Corelib.Init.Datatypes <> S constr
+prf 24852:24871 <> find_match_aux_sound
+binder 24884:24889 <> needle:150
+binder 24891:24897 <> content:151
+binder 24899:24906 <> base_off:152
+binder 24908:24910 <> off:153
+binder 24912:24914 <> len:154
+R24977:24984 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R24959:24961 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R24921:24934 JFCTheorems.DiffCompression <> find_match_aux def
+R24936:24941 JFCTheorems.DiffCompression <> needle:150 var
+R24943:24949 JFCTheorems.DiffCompression <> content:151 var
+R24951:24958 JFCTheorems.DiffCompression <> base_off:152 var
+R24962:24965 Corelib.Init.Datatypes <> Some constr
+R24967:24967 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R24971:24972 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R24976:24976 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R24968:24970 JFCTheorems.DiffCompression <> off:153 var
+R24973:24975 JFCTheorems.DiffCompression <> len:154 var
+R25004:25011 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R24988:24990 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R24985:24987 JFCTheorems.DiffCompression <> len:154 var
+R24991:24996 Corelib.Init.Datatypes <> length def
+R24998:25003 JFCTheorems.DiffCompression <> needle:150 var
+R25055:25057 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R25012:25017 Corelib.Lists.ListDef <> firstn def
+R25024:25028 Corelib.Lists.ListDef <> skipn def
+R25047:25053 JFCTheorems.DiffCompression <> content:151 var
+R25034:25036 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R25031:25033 JFCTheorems.DiffCompression <> off:153 var
+R25037:25044 JFCTheorems.DiffCompression <> base_off:152 var
+R25019:25021 JFCTheorems.DiffCompression <> len:154 var
+R25058:25063 JFCTheorems.DiffCompression <> needle:150 var
+R25173:25186 JFCTheorems.DiffCompression <> find_match_aux def
+R25218:25231 JFCTheorems.DiffCompression <> find_match_aux def
+R25254:25264 Stdlib.Lists.List <> list_eq_dec thm
+R25278:25283 Corelib.Lists.ListDef <> firstn def
+R25303:25306 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R25286:25291 Corelib.Init.Datatypes <> length def
+R25266:25275 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R25254:25264 Stdlib.Lists.List <> list_eq_dec thm
+R25278:25283 Corelib.Lists.ListDef <> firstn def
+R25303:25306 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R25286:25291 Corelib.Init.Datatypes <> length def
+R25266:25275 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R25381:25387 Stdlib.Arith.PeanoNat Nat sub def
+R25405:25416 Stdlib.Arith.PeanoNat Nat sub_diag thm
+R25405:25416 Stdlib.Arith.PeanoNat Nat sub_diag thm
+R25405:25416 Stdlib.Arith.PeanoNat Nat sub_diag thm
+R25424:25428 Corelib.Lists.ListDef <> skipn def
+R25497:25520 JFCTheorems.DiffCompression <> find_match_aux_offset_ge thm
+R25535:25535 Corelib.Init.Datatypes <> S constr
+R25497:25520 JFCTheorems.DiffCompression <> find_match_aux_offset_ge thm
+R25535:25535 Corelib.Init.Datatypes <> S constr
+R25588:25588 Corelib.Init.Datatypes <> S constr
+R25588:25588 Corelib.Init.Datatypes <> S constr
+R25697:25699 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R25716:25716 Corelib.Init.Datatypes <> S constr
+R25722:25724 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R25725:25725 Corelib.Init.Datatypes <> S constr
+R25697:25699 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R25716:25716 Corelib.Init.Datatypes <> S constr
+R25722:25724 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R25725:25725 Corelib.Init.Datatypes <> S constr
+R25757:25761 Corelib.Lists.ListDef <> skipn def
+prf 25926:25941 <> find_match_sound
+binder 25954:25959 <> needle:155
+binder 25961:25961 <> w:156
+binder 25963:25965 <> off:157
+binder 25967:25969 <> len:158
+R26013:26020 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R25995:25997 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R25976:25985 JFCTheorems.DiffCompression <> find_match def
+R25987:25992 JFCTheorems.DiffCompression <> needle:155 var
+R25994:25994 JFCTheorems.DiffCompression <> w:156 var
+R25998:26001 Corelib.Init.Datatypes <> Some constr
+R26003:26003 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R26007:26008 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R26012:26012 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R26004:26006 JFCTheorems.DiffCompression <> off:157 var
+R26009:26011 JFCTheorems.DiffCompression <> len:158 var
+R26062:26064 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R26021:26026 Corelib.Lists.ListDef <> firstn def
+R26033:26037 Corelib.Lists.ListDef <> skipn def
+R26044:26057 JFCTheorems.DiffCompression <> window_content proj
+R26059:26059 JFCTheorems.DiffCompression <> w:156 var
+R26039:26041 JFCTheorems.DiffCompression <> off:157 var
+R26028:26030 JFCTheorems.DiffCompression <> len:158 var
+R26065:26070 JFCTheorems.DiffCompression <> needle:155 var
+R26116:26125 JFCTheorems.DiffCompression <> find_match def
+R26141:26160 JFCTheorems.DiffCompression <> find_match_aux_sound thm
+R26141:26160 JFCTheorems.DiffCompression <> find_match_aux_sound thm
+R26204:26214 Stdlib.Arith.PeanoNat Nat sub_0_r thm
+R26204:26214 Stdlib.Arith.PeanoNat Nat sub_0_r thm
+R26204:26214 Stdlib.Arith.PeanoNat Nat sub_0_r thm
+prf 26935:26953 <> find_match_aux_fits
+binder 26966:26971 <> needle:159
+binder 26973:26979 <> content:160
+binder 26981:26988 <> base_off:161
+binder 26990:26992 <> off:162
+binder 26994:26996 <> len:163
+R27059:27066 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R27041:27043 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R27003:27016 JFCTheorems.DiffCompression <> find_match_aux def
+R27018:27023 JFCTheorems.DiffCompression <> needle:159 var
+R27025:27031 JFCTheorems.DiffCompression <> content:160 var
+R27033:27040 JFCTheorems.DiffCompression <> base_off:161 var
+R27044:27047 Corelib.Init.Datatypes <> Some constr
+R27049:27049 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R27053:27054 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R27058:27058 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R27050:27052 JFCTheorems.DiffCompression <> off:162 var
+R27055:27057 JFCTheorems.DiffCompression <> len:163 var
+R27080:27083 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R27067:27072 Corelib.Init.Datatypes <> length def
+R27074:27079 JFCTheorems.DiffCompression <> needle:159 var
+R27084:27089 Corelib.Init.Datatypes <> length def
+R27091:27097 JFCTheorems.DiffCompression <> content:160 var
+R27207:27220 JFCTheorems.DiffCompression <> find_match_aux def
+R27252:27265 JFCTheorems.DiffCompression <> find_match_aux def
+R27288:27298 Stdlib.Lists.List <> list_eq_dec thm
+R27312:27317 Corelib.Lists.ListDef <> firstn def
+R27337:27340 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R27320:27325 Corelib.Init.Datatypes <> length def
+R27300:27309 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R27288:27298 Stdlib.Lists.List <> list_eq_dec thm
+R27312:27317 Corelib.Lists.ListDef <> firstn def
+R27337:27340 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R27320:27325 Corelib.Init.Datatypes <> length def
+R27300:27309 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R27623:27625 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R27610:27615 Corelib.Init.Datatypes <> length def
+R27626:27631 Corelib.Init.Datatypes <> length def
+R27634:27639 Corelib.Lists.ListDef <> firstn def
+R27659:27662 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R27642:27647 Corelib.Init.Datatypes <> length def
+R27623:27625 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R27610:27615 Corelib.Init.Datatypes <> length def
+R27626:27631 Corelib.Init.Datatypes <> length def
+R27634:27639 Corelib.Lists.ListDef <> firstn def
+R27659:27662 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R27642:27647 Corelib.Init.Datatypes <> length def
+R27724:27736 Stdlib.Lists.List <> length_firstn thm
+R27724:27736 Stdlib.Lists.List <> length_firstn thm
+R27724:27736 Stdlib.Lists.List <> length_firstn thm
+R27843:27843 Corelib.Init.Datatypes <> S constr
+R27843:27843 Corelib.Init.Datatypes <> S constr
+R27872:27877 Corelib.Init.Datatypes <> length def
+prf 28360:28380 <> find_match_aux_extend
+binder 28393:28398 <> needle:164
+binder 28400:28401 <> c1:165
+binder 28403:28404 <> c2:166
+binder 28406:28413 <> base_off:167
+binder 28415:28417 <> off:168
+binder 28419:28421 <> len:169
+R28479:28486 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R28461:28463 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R28428:28441 JFCTheorems.DiffCompression <> find_match_aux def
+R28443:28448 JFCTheorems.DiffCompression <> needle:164 var
+R28450:28451 JFCTheorems.DiffCompression <> c1:165 var
+R28453:28460 JFCTheorems.DiffCompression <> base_off:167 var
+R28464:28467 Corelib.Init.Datatypes <> Some constr
+R28469:28469 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R28473:28474 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R28478:28478 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R28470:28472 JFCTheorems.DiffCompression <> off:168 var
+R28475:28477 JFCTheorems.DiffCompression <> len:169 var
+R28528:28530 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R28487:28500 JFCTheorems.DiffCompression <> find_match_aux def
+R28502:28507 JFCTheorems.DiffCompression <> needle:164 var
+R28512:28515 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R28510:28511 JFCTheorems.DiffCompression <> c1:165 var
+R28516:28517 JFCTheorems.DiffCompression <> c2:166 var
+R28520:28527 JFCTheorems.DiffCompression <> base_off:167 var
+R28531:28534 Corelib.Init.Datatypes <> Some constr
+R28536:28536 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R28540:28541 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R28545:28545 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R28537:28539 JFCTheorems.DiffCompression <> off:168 var
+R28542:28544 JFCTheorems.DiffCompression <> len:169 var
+R28642:28655 JFCTheorems.DiffCompression <> find_match_aux def
+R28687:28689 Corelib.Init.Datatypes <> app def
+R28698:28711 JFCTheorems.DiffCompression <> find_match_aux def
+R29065:29068 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R29052:29057 Corelib.Init.Datatypes <> length def
+R29069:29074 Corelib.Init.Datatypes <> length def
+R29078:29081 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29065:29068 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R29052:29057 Corelib.Init.Datatypes <> length def
+R29069:29074 Corelib.Init.Datatypes <> length def
+R29078:29081 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29104:29114 Stdlib.Lists.List <> list_eq_dec thm
+R29128:29133 Corelib.Lists.ListDef <> firstn def
+R29153:29156 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29136:29141 Corelib.Init.Datatypes <> length def
+R29116:29125 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R29104:29114 Stdlib.Lists.List <> list_eq_dec thm
+R29128:29133 Corelib.Lists.ListDef <> firstn def
+R29153:29156 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29136:29141 Corelib.Init.Datatypes <> length def
+R29116:29125 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R29226:29228 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R29213:29218 Corelib.Init.Datatypes <> length def
+R29229:29234 Corelib.Init.Datatypes <> length def
+R29237:29242 Corelib.Lists.ListDef <> firstn def
+R29262:29265 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29245:29250 Corelib.Init.Datatypes <> length def
+R29226:29228 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R29213:29218 Corelib.Init.Datatypes <> length def
+R29229:29234 Corelib.Init.Datatypes <> length def
+R29237:29242 Corelib.Lists.ListDef <> firstn def
+R29262:29265 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29245:29250 Corelib.Init.Datatypes <> length def
+R29329:29341 Stdlib.Lists.List <> length_firstn thm
+R29329:29341 Stdlib.Lists.List <> length_firstn thm
+R29329:29341 Stdlib.Lists.List <> length_firstn thm
+R29369:29387 JFCTheorems.DiffCompression <> find_match_aux_fits thm
+R29369:29387 JFCTheorems.DiffCompression <> find_match_aux_fits thm
+R29400:29405 Corelib.Init.Datatypes <> length def
+R29478:29499 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R29440:29445 Corelib.Lists.ListDef <> firstn def
+R29465:29468 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29471:29474 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R29448:29453 Corelib.Init.Datatypes <> length def
+R29500:29505 Corelib.Lists.ListDef <> firstn def
+R29525:29528 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29508:29513 Corelib.Init.Datatypes <> length def
+R29478:29499 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R29440:29445 Corelib.Lists.ListDef <> firstn def
+R29465:29468 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29471:29474 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R29448:29453 Corelib.Init.Datatypes <> length def
+R29500:29505 Corelib.Lists.ListDef <> firstn def
+R29525:29528 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29508:29513 Corelib.Init.Datatypes <> length def
+R29551:29554 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29557:29560 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R29571:29571 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R29579:29583 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R29573:29576 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29551:29554 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29557:29560 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R29571:29571 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R29579:29583 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R29573:29576 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29618:29627 Stdlib.Lists.List <> firstn_app thm
+R29618:29627 Stdlib.Lists.List <> firstn_app thm
+R29618:29627 Stdlib.Lists.List <> firstn_app thm
+R29658:29660 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R29645:29650 Corelib.Init.Datatypes <> length def
+R29661:29666 Corelib.Init.Datatypes <> length def
+R29670:29673 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29658:29660 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R29645:29650 Corelib.Init.Datatypes <> length def
+R29661:29666 Corelib.Init.Datatypes <> length def
+R29670:29673 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29705:29710 Corelib.Lists.ListDef <> firstn def
+R29722:29730 Stdlib.Lists.List <> app_nil_r thm
+R29722:29730 Stdlib.Lists.List <> app_nil_r thm
+R29722:29730 Stdlib.Lists.List <> app_nil_r thm
+R29780:29790 Stdlib.Lists.List <> list_eq_dec thm
+R29804:29809 Corelib.Lists.ListDef <> firstn def
+R29829:29832 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29812:29817 Corelib.Init.Datatypes <> length def
+R29792:29801 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R29780:29790 Stdlib.Lists.List <> list_eq_dec thm
+R29804:29809 Corelib.Lists.ListDef <> firstn def
+R29829:29832 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R29812:29817 Corelib.Init.Datatypes <> length def
+R29792:29801 Stdlib.Arith.PeanoNat Nat eq_dec thm
+prf 29920:29945 <> larger_window_more_matches
+binder 29958:29963 <> needle:170
+binder 29965:29966 <> w1:171
+binder 29968:29969 <> w2:172
+binder 29971:29973 <> off:173
+binder 29975:29977 <> len:174
+binder 29979:29983 <> extra:175
+R30036:30043 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R30007:30009 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R29990:30003 JFCTheorems.DiffCompression <> window_content proj
+R30005:30006 JFCTheorems.DiffCompression <> w2:172 var
+R30027:30030 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R30010:30023 JFCTheorems.DiffCompression <> window_content proj
+R30025:30026 JFCTheorems.DiffCompression <> w1:171 var
+R30031:30035 JFCTheorems.DiffCompression <> extra:175 var
+R30082:30089 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R30064:30066 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R30044:30053 JFCTheorems.DiffCompression <> find_match def
+R30055:30060 JFCTheorems.DiffCompression <> needle:170 var
+R30062:30063 JFCTheorems.DiffCompression <> w1:171 var
+R30067:30070 Corelib.Init.Datatypes <> Some constr
+R30072:30072 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30076:30077 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30081:30081 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30073:30075 JFCTheorems.DiffCompression <> off:173 var
+R30078:30080 JFCTheorems.DiffCompression <> len:174 var
+R30110:30112 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R30090:30099 JFCTheorems.DiffCompression <> find_match def
+R30101:30106 JFCTheorems.DiffCompression <> needle:170 var
+R30108:30109 JFCTheorems.DiffCompression <> w2:172 var
+R30113:30116 Corelib.Init.Datatypes <> Some constr
+R30118:30118 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30122:30123 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30127:30127 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30119:30121 JFCTheorems.DiffCompression <> off:173 var
+R30124:30126 JFCTheorems.DiffCompression <> len:174 var
+R30196:30205 JFCTheorems.DiffCompression <> find_match def
+R30239:30259 JFCTheorems.DiffCompression <> find_match_aux_extend thm
+R30239:30259 JFCTheorems.DiffCompression <> find_match_aux_extend thm
+def 30561:30578 <> preprocess_savings
+R30588:30595 JFCTheorems.DiffCompression <> TokenSeq def
+binder 30581:30584 <> base:176
+R30606:30609 Corelib.Init.Datatypes <> list ind
+R30611:30618 JFCTheorems.DiffCompression <> TokenSeq def
+binder 30599:30602 <> msgs:177
+R30623:30625 Corelib.Init.Datatypes <> nat ind
+R30638:30641 JFCTheorems.DiffCompression <> msgs:177 var
+R30652:30653 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R30665:30668 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R30701:30703 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R30677:30693 JFCTheorems.DiffCompression <> common_prefix_len def
+R30695:30698 JFCTheorems.DiffCompression <> base:176 var
+R30704:30721 JFCTheorems.DiffCompression <> preprocess_savings:178 def
+R30723:30726 JFCTheorems.DiffCompression <> base:176 var
+prf 31266:31290 <> preprocess_savings_le_raw
+binder 31303:31306 <> base:180
+binder 31308:31311 <> conv:181
+R31363:31366 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R31318:31335 JFCTheorems.DiffCompression <> preprocess_savings def
+R31337:31340 JFCTheorems.DiffCompression <> base:180 var
+R31343:31345 Corelib.Lists.ListDef <> map def
+R31358:31361 JFCTheorems.DiffCompression <> conv:181 var
+R31347:31356 JFCTheorems.DiffCompression <> msg_tokens proj
+R31367:31379 JFCTheorems.DiffCompression <> raw_conv_size def
+R31381:31384 JFCTheorems.DiffCompression <> conv:181 var
+R31455:31457 Corelib.Lists.ListDef <> map def
+R31459:31476 JFCTheorems.DiffCompression <> preprocess_savings def
+R31487:31499 JFCTheorems.DiffCompression <> raw_conv_size def
+R31507:31515 Stdlib.Lists.List <> fold_left def
+R31533:31535 Corelib.Lists.ListDef <> map def
+R31537:31554 JFCTheorems.DiffCompression <> preprocess_savings def
+R31570:31587 JFCTheorems.DiffCompression <> raw_conv_size_cons thm
+R31570:31587 JFCTheorems.DiffCompression <> raw_conv_size_cons thm
+R31570:31587 JFCTheorems.DiffCompression <> raw_conv_size_cons thm
+R31606:31627 JFCTheorems.DiffCompression <> common_prefix_len_le_r thm
+R31635:31644 JFCTheorems.DiffCompression <> msg_tokens proj
+R31606:31627 JFCTheorems.DiffCompression <> common_prefix_len_le_r thm
+R31635:31644 JFCTheorems.DiffCompression <> msg_tokens proj
+prf 31681:31706 <> diff_reduces_compact_input
+binder 31719:31722 <> base:182
+binder 31724:31727 <> conv:183
+R31800:31809 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R31752:31754 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R31734:31746 JFCTheorems.DiffCompression <> raw_conv_size def
+R31748:31751 JFCTheorems.DiffCompression <> conv:183 var
+R31755:31772 JFCTheorems.DiffCompression <> preprocess_savings def
+R31774:31777 JFCTheorems.DiffCompression <> base:182 var
+R31780:31782 Corelib.Lists.ListDef <> map def
+R31795:31798 JFCTheorems.DiffCompression <> conv:183 var
+R31784:31793 JFCTheorems.DiffCompression <> msg_tokens proj
+R31810:31822 JFCTheorems.DiffCompression <> raw_conv_size def
+R31824:31827 JFCTheorems.DiffCompression <> conv:183 var
+rec 31928:31931 <> Hunk
+proj 31954:31963 <> hunk_start
+proj 31974:31984 <> hunk_length
+proj 31995:32006 <> hunk_content
+proj 32022:32035 <> hunk_is_common
+R31967:31969 Corelib.Init.Datatypes <> nat ind
+R31988:31990 Corelib.Init.Datatypes <> nat ind
+R32010:32017 JFCTheorems.DiffCompression <> TokenSeq def
+R32039:32042 Corelib.Init.Datatypes <> bool ind
+def 32102:32109 <> HunkList
+R32114:32117 Corelib.Init.Datatypes <> list ind
+R32119:32122 JFCTheorems.DiffCompression <> Hunk rec
+def 32295:32306 <> select_hunks
+R32317:32324 JFCTheorems.DiffCompression <> HunkList def
+binder 32309:32313 <> hunks:189
+R32337:32339 Corelib.Init.Datatypes <> nat ind
+binder 32328:32333 <> budget:190
+R32344:32351 JFCTheorems.DiffCompression <> HunkList def
+R32398:32403 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R32358:32363 Stdlib.Lists.List <> filter def
+R32393:32397 JFCTheorems.DiffCompression <> hunks:189 var
+binder 32370:32370 <> h:191
+R32375:32388 JFCTheorems.DiffCompression <> hunk_is_common proj
+R32390:32390 JFCTheorems.DiffCompression <> h:191 var
+R32404:32409 Corelib.Lists.ListDef <> firstn def
+R32419:32424 Stdlib.Lists.List <> filter def
+R32461:32465 JFCTheorems.DiffCompression <> hunks:189 var
+binder 32431:32431 <> h:192
+R32436:32439 Corelib.Init.Datatypes <> negb def
+R32442:32455 JFCTheorems.DiffCompression <> hunk_is_common proj
+R32457:32457 JFCTheorems.DiffCompression <> h:192 var
+R32411:32416 JFCTheorems.DiffCompression <> budget:190 var
+prf 32624:32655 <> filter_common_then_noncommon_nil
+binder 32668:32672 <> hunks:193
+R32774:32776 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R32679:32684 Stdlib.Lists.List <> filter def
+R32733:32738 Stdlib.Lists.List <> filter def
+R32768:32772 JFCTheorems.DiffCompression <> hunks:193 var
+binder 32745:32745 <> h:194
+R32750:32763 JFCTheorems.DiffCompression <> hunk_is_common proj
+R32765:32765 JFCTheorems.DiffCompression <> h:194 var
+binder 32691:32691 <> h:195
+R32696:32699 Corelib.Init.Datatypes <> negb def
+R32702:32715 JFCTheorems.DiffCompression <> hunk_is_common proj
+R32717:32717 JFCTheorems.DiffCompression <> h:195 var
+R32777:32778 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R32842:32847 Stdlib.Lists.List <> filter def
+R32882:32895 JFCTheorems.DiffCompression <> hunk_is_common proj
+R32913:32918 Stdlib.Lists.List <> filter def
+R32882:32895 JFCTheorems.DiffCompression <> hunk_is_common proj
+R32945:32948 Corelib.Init.Datatypes <> negb def
+prf 33037:33057 <> filter_noncommon_idem
+binder 33070:33074 <> hunks:196
+R33183:33191 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R33081:33086 Stdlib.Lists.List <> filter def
+R33135:33140 Stdlib.Lists.List <> filter def
+R33177:33181 JFCTheorems.DiffCompression <> hunks:196 var
+binder 33147:33147 <> h:197
+R33152:33155 Corelib.Init.Datatypes <> negb def
+R33158:33171 JFCTheorems.DiffCompression <> hunk_is_common proj
+R33173:33173 JFCTheorems.DiffCompression <> h:197 var
+binder 33093:33093 <> h:198
+R33098:33101 Corelib.Init.Datatypes <> negb def
+R33104:33117 JFCTheorems.DiffCompression <> hunk_is_common proj
+R33119:33119 JFCTheorems.DiffCompression <> h:198 var
+R33192:33197 Stdlib.Lists.List <> filter def
+R33234:33238 JFCTheorems.DiffCompression <> hunks:196 var
+binder 33204:33204 <> h:199
+R33209:33212 Corelib.Init.Datatypes <> negb def
+R33215:33228 JFCTheorems.DiffCompression <> hunk_is_common proj
+R33230:33230 JFCTheorems.DiffCompression <> h:199 var
+R33302:33307 Stdlib.Lists.List <> filter def
+R33342:33345 Corelib.Init.Datatypes <> negb def
+R33348:33361 JFCTheorems.DiffCompression <> hunk_is_common proj
+R33380:33385 Stdlib.Lists.List <> filter def
+R33342:33345 Corelib.Init.Datatypes <> negb def
+R33348:33361 JFCTheorems.DiffCompression <> hunk_is_common proj
+prf 33522:33530 <> In_firstn
+binder 33544:33544 <> A:200
+R33559:33559 JFCTheorems.DiffCompression <> A:200 var
+binder 33555:33555 <> x:201
+binder 33562:33562 <> n:202
+R33569:33572 Corelib.Init.Datatypes <> list ind
+R33574:33574 JFCTheorems.DiffCompression <> A:200 var
+binder 33565:33565 <> l:203
+R33599:33602 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R33582:33583 Stdlib.Lists.List <> In def
+R33588:33593 Corelib.Lists.ListDef <> firstn def
+R33597:33597 JFCTheorems.DiffCompression <> l:203 var
+R33595:33595 JFCTheorems.DiffCompression <> n:202 var
+R33585:33585 JFCTheorems.DiffCompression <> x:201 var
+R33603:33604 Stdlib.Lists.List <> In def
+R33608:33608 JFCTheorems.DiffCompression <> l:203 var
+R33606:33606 JFCTheorems.DiffCompression <> x:201 var
+R33654:33665 Stdlib.Lists.List <> firstn_skipn thm
+R33654:33665 Stdlib.Lists.List <> firstn_skipn thm
+R33654:33665 Stdlib.Lists.List <> firstn_skipn thm
+R33681:33689 Stdlib.Lists.List <> in_or_app thm
+R33681:33689 Stdlib.Lists.List <> in_or_app thm
+prf 34027:34045 <> select_hunks_budget
+binder 34058:34062 <> hunks:204
+binder 34064:34069 <> budget:205
+R34154:34163 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R34076:34081 Corelib.Init.Datatypes <> length def
+R34084:34089 Stdlib.Lists.List <> filter def
+R34127:34138 JFCTheorems.DiffCompression <> select_hunks def
+R34140:34144 JFCTheorems.DiffCompression <> hunks:204 var
+R34146:34151 JFCTheorems.DiffCompression <> budget:205 var
+binder 34096:34096 <> h:206
+R34101:34104 Corelib.Init.Datatypes <> negb def
+R34107:34120 JFCTheorems.DiffCompression <> hunk_is_common proj
+R34122:34122 JFCTheorems.DiffCompression <> h:206 var
+R34164:34169 JFCTheorems.DiffCompression <> budget:205 var
+R34209:34220 JFCTheorems.DiffCompression <> select_hunks def
+R34233:34242 Stdlib.Lists.List <> filter_app thm
+R34233:34242 Stdlib.Lists.List <> filter_app thm
+R34233:34242 Stdlib.Lists.List <> filter_app thm
+R34255:34286 JFCTheorems.DiffCompression <> filter_common_then_noncommon_nil thm
+R34255:34286 JFCTheorems.DiffCompression <> filter_common_then_noncommon_nil thm
+R34255:34286 JFCTheorems.DiffCompression <> filter_common_then_noncommon_nil thm
+R34296:34298 Corelib.Init.Datatypes <> app def
+R34399:34404 Stdlib.Lists.List <> filter def
+binder 34411:34411 <> h:207
+R34416:34419 Corelib.Init.Datatypes <> negb def
+R34422:34435 JFCTheorems.DiffCompression <> hunk_is_common proj
+R34437:34437 JFCTheorems.DiffCompression <> h:207 var
+R34399:34404 Stdlib.Lists.List <> filter def
+binder 34411:34411 <> h:208
+R34416:34419 Corelib.Init.Datatypes <> negb def
+R34422:34435 JFCTheorems.DiffCompression <> hunk_is_common proj
+R34437:34437 JFCTheorems.DiffCompression <> h:208 var
+R34600:34619 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R34541:34546 Stdlib.Lists.List <> filter def
+R34584:34589 Corelib.Lists.ListDef <> firstn def
+binder 34553:34553 <> h:209
+R34558:34561 Corelib.Init.Datatypes <> negb def
+R34564:34577 JFCTheorems.DiffCompression <> hunk_is_common proj
+R34579:34579 JFCTheorems.DiffCompression <> h:209 var
+R34620:34625 Corelib.Lists.ListDef <> firstn def
+R34600:34619 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R34541:34546 Stdlib.Lists.List <> filter def
+R34584:34589 Corelib.Lists.ListDef <> firstn def
+binder 34553:34553 <> h:210
+R34558:34561 Corelib.Init.Datatypes <> negb def
+R34564:34577 JFCTheorems.DiffCompression <> hunk_is_common proj
+R34579:34579 JFCTheorems.DiffCompression <> h:210 var
+R34620:34625 Corelib.Lists.ListDef <> firstn def
+binder 34732:34732 <> h:211
+R34741:34744 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R34735:34736 Stdlib.Lists.List <> In def
+R34738:34738 JFCTheorems.DiffCompression <> h:211 var
+R34768:34770 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R34745:34748 Corelib.Init.Datatypes <> negb def
+R34751:34764 JFCTheorems.DiffCompression <> hunk_is_common proj
+R34766:34766 JFCTheorems.DiffCompression <> h:211 var
+R34771:34774 Corelib.Init.Datatypes <> true constr
+binder 34732:34732 <> h:212
+R34741:34744 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R34735:34736 Stdlib.Lists.List <> In def
+R34738:34738 JFCTheorems.DiffCompression <> h:212 var
+R34768:34770 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R34745:34748 Corelib.Init.Datatypes <> negb def
+R34751:34764 JFCTheorems.DiffCompression <> hunk_is_common proj
+R34766:34766 JFCTheorems.DiffCompression <> h:212 var
+R34771:34774 Corelib.Init.Datatypes <> true constr
+R34827:34835 Stdlib.Lists.List <> filter_In thm
+R34827:34835 Stdlib.Lists.List <> filter_In thm
+binder 34987:34987 <> h:213
+R35012:35015 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R34990:34991 Stdlib.Lists.List <> In def
+R34996:35001 Corelib.Lists.ListDef <> firstn def
+R34993:34993 JFCTheorems.DiffCompression <> h:213 var
+R35039:35041 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R35016:35019 Corelib.Init.Datatypes <> negb def
+R35022:35035 JFCTheorems.DiffCompression <> hunk_is_common proj
+R35037:35037 JFCTheorems.DiffCompression <> h:213 var
+R35042:35045 Corelib.Init.Datatypes <> true constr
+binder 34987:34987 <> h:214
+R35012:35015 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R34990:34991 Stdlib.Lists.List <> In def
+R34996:35001 Corelib.Lists.ListDef <> firstn def
+R34993:34993 JFCTheorems.DiffCompression <> h:214 var
+R35039:35041 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R35016:35019 Corelib.Init.Datatypes <> negb def
+R35022:35035 JFCTheorems.DiffCompression <> hunk_is_common proj
+R35037:35037 JFCTheorems.DiffCompression <> h:214 var
+R35042:35045 Corelib.Init.Datatypes <> true constr
+R35092:35100 JFCTheorems.DiffCompression <> In_firstn thm
+R35092:35100 JFCTheorems.DiffCompression <> In_firstn thm
+R35155:35160 Corelib.Lists.ListDef <> firstn def
+R35155:35160 Corelib.Lists.ListDef <> firstn def
+R35238:35243 Stdlib.Lists.List <> filter def
+R35308:35310 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R35285:35288 Corelib.Init.Datatypes <> negb def
+R35291:35304 JFCTheorems.DiffCompression <> hunk_is_common proj
+R35311:35314 Corelib.Init.Datatypes <> true constr
+R35308:35310 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R35285:35288 Corelib.Init.Datatypes <> negb def
+R35291:35304 JFCTheorems.DiffCompression <> hunk_is_common proj
+R35311:35314 Corelib.Init.Datatypes <> true constr
+R35475:35487 Stdlib.Lists.List <> length_firstn thm
+R35475:35487 Stdlib.Lists.List <> length_firstn thm
+R35475:35487 Stdlib.Lists.List <> length_firstn thm
+R35498:35509 Stdlib.Arith.PeanoNat Nat le_min_l thm
+R35498:35509 Stdlib.Arith.PeanoNat Nat le_min_l thm
+def 35863:35876 <> semantic_match
+R35887:35889 Corelib.Init.Datatypes <> nat ind
+binder 35879:35880 <> t1:215
+binder 35882:35883 <> t2:216
+R35894:35897 Corelib.Init.Datatypes <> bool ind
+R35902:35908 Stdlib.Arith.PeanoNat Nat eqb def
+R35910:35911 JFCTheorems.DiffCompression <> t1:215 var
+R35913:35914 JFCTheorems.DiffCompression <> t2:216 var
+def 35929:35947 <> semantic_lcs_length
+R35958:35965 JFCTheorems.DiffCompression <> TokenSeq def
+binder 35950:35951 <> s1:217
+binder 35953:35954 <> s2:218
+R35970:35972 Corelib.Init.Datatypes <> nat ind
+R35977:35986 JFCTheorems.DiffCompression <> lcs_length def
+R35988:35989 JFCTheorems.DiffCompression <> s1:217 var
+R35991:35992 JFCTheorems.DiffCompression <> s2:218 var
+prf 36219:36237 <> semantic_finds_more
+binder 36250:36251 <> s1:219
+binder 36253:36254 <> s2:220
+R36277:36280 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R36261:36270 JFCTheorems.DiffCompression <> lcs_length def
+R36272:36273 JFCTheorems.DiffCompression <> s1:219 var
+R36275:36276 JFCTheorems.DiffCompression <> s2:220 var
+R36281:36299 JFCTheorems.DiffCompression <> semantic_lcs_length def
+R36301:36302 JFCTheorems.DiffCompression <> s1:219 var
+R36304:36305 JFCTheorems.DiffCompression <> s2:220 var
+R36340:36358 JFCTheorems.DiffCompression <> semantic_lcs_length def

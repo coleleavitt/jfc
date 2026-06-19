@@ -180,7 +180,7 @@ mod tests {
         // List
         cmd_inbox(&mut state, &["/inbox", ""], "/inbox", None).await;
         let last = state.messages.last().unwrap().parts[0].text_only();
-        assert!(last.contains("message(s) in inbox`ses_target`"));
+        assert!(last.contains("message(s) in inbox `ses_target`"));
 
         // Clear
         cmd_inbox(&mut state, &["/inbox", "clear"], "/inbox clear", None).await;

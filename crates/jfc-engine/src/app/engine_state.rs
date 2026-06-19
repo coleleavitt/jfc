@@ -329,12 +329,12 @@ pub struct EngineState {
     /// (a new message began); self-heals to 0 if it ever exceeds the live
     /// accumulator (a missed turn-boundary reset).
     pub streaming_response_baseline: usize,
-    /// True output tokens displayed in the status row, straight from the wire
-    /// `message_delta` usage events (no chars/4 estimate). Accumulated by real
-    /// per-event deltas, so it holds steady between usage events then steps by
-    /// the exact increment. Tracks the same lifecycle as
-    /// `streaming_response_bytes` (reset together) — just true values instead
-    /// of an estimate. Updated in `stream_usage.rs`.
+    /// True output tokens straight from the wire `message_delta` usage events
+    /// (no chars/4 estimate). Used for accounting and persisted usage; the
+    /// status row deliberately reads `streaming_response_bytes / 4` so its live
+    /// activity count advances smoothly between provider usage batches. Tracks
+    /// the same lifecycle as `streaming_response_bytes` (reset together) — just
+    /// true values instead of a display estimate. Updated in `stream_usage.rs`.
     pub turn_output_tokens: u64,
     /// Loop guard for the refusal-fallback: set once this turn has already
     /// switched to the fallback model after a refusal, so a second refusal
@@ -371,14 +371,6 @@ pub struct EngineState {
     /// or redacted-thinking blocks. Reset at the start of each streaming turn.
     /// Displayed separately from output tokens.
     pub streaming_thinking_tokens: u64,
-    /// Last cumulative `thinking_delta.estimated_tokens` value seen *within the
-    /// current thinking block*. The API sends `estimated_tokens` as a running
-    /// total per block (e.g. 100, 250, 400), so — exactly like `last_usage_output`
-    /// for output tokens — we accumulate the *delta* against this baseline, not
-    /// the raw total (which would triple-count: 100+250+400 instead of 400). A
-    /// new block restarts the total lower, which we detect and treat as a fresh
-    /// block's growth from zero.
-    pub last_thinking_estimate: u32,
     /// Tokens freed by the most recent compaction, pending forward to the next
     /// outbound request as `context_hint.target_tokens_saved`
     /// (context-hint-2026-04-09 beta). Set by the CompactionDone handler;
@@ -490,6 +482,7 @@ pub struct EngineState {
     /// Rolling (elapsed, output_tokens) samples for the live tokens/sec
     /// readout. Fed by engine stream handlers; rendered by the frontend.
     pub token_rate_samples: std::collections::VecDeque<(std::time::Duration, u64)>,
+    pub token_rate_sample_thinking: Option<bool>,
     /// Per-turn total token counts for the sidebar sparkline. Fed by the
     /// stream-done handler; rendered by the frontend.
     pub token_history: std::collections::VecDeque<u64>,
@@ -683,9 +676,10 @@ pub struct EngineState {
     /// `Compacting…` spinner whenever this is `Some`, so a long pre-submit
     /// compaction doesn't look like a frozen UI.
     pub compacting_started_at: Option<Instant>,
-    /// Whether a speculative (precomputed) compact has already been
-    /// triggered for this session. Prevents repeated spawns. Resets
-    /// on compaction completion or /clear.
+    /// Whether the speculative precompute threshold was already observed for
+    /// this session. This is advisory only; actual compaction still waits for
+    /// Compact/Blocked or an explicit manual compact. Resets on compaction
+    /// completion or /clear.
     pub speculative_compact_fired: bool,
     /// Cumulative summary-text length collected during the in-flight
     /// compact (across all retry attempts). The spinner divides by 4 to
@@ -910,6 +904,11 @@ pub struct EngineState {
     /// `JFC_COUNCIL_VERDICT` env var. Requires the advisor to be available; with
     /// no second model it transparently degrades to the single-model evaluator.
     pub council_verdict_enabled: bool,
+    /// Active persistent council session (RoundTable-style turn-based
+    /// deliberation), if one is running. Created by `/council start` and driven
+    /// by the `/council` subcommands; `None` until then. Kept on the engine so
+    /// the resumable debate survives across turns like the advisor session.
+    pub council_session: Option<crate::council_session::CouncilSession>,
     /// Active local/client-side advisor model. When set, JFC advertises the
     /// normal `Advisor` tool and executes it through the local provider path,
     /// returning the advisor reply as a regular tool result.
@@ -1084,7 +1083,6 @@ impl EngineState {
             refusal_rewrite_retry_enabled: false,
             refusal_rewrite_retry_max: None,
             streaming_thinking_tokens: 0,
-            last_thinking_estimate: 0,
             pending_context_hint_tokens_saved: None,
             network_recovery_status: None,
             network_recovery_attempts: 0,
@@ -1101,6 +1099,7 @@ impl EngineState {
             streaming_started_at: None,
             streaming_last_token_at: None,
             token_rate_samples: std::collections::VecDeque::new(),
+            token_rate_sample_thinking: None,
             token_history: std::collections::VecDeque::with_capacity(super::TOKEN_HISTORY_CAP),
             last_active_agent_task: None,
             thinking_started_at: None,
@@ -1225,6 +1224,7 @@ impl EngineState {
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
+            council_session: None,
             local_advisor_model: crate::advisor::active_local_advisor_model(),
             local_advisor_provider: crate::advisor::active_local_advisor_provider(),
             server_advisor_model: crate::advisor::active_server_advisor_model(),
@@ -1607,11 +1607,14 @@ impl EngineState {
         self.last_stream_event_at = None;
         self.streaming_last_token_at = None;
         self.token_rate_samples.clear();
+        self.token_rate_sample_thinking = None;
         self.thinking_started_at = None;
         self.thinking_ended_at = None;
         self.streaming_text.clear();
         self.streaming_reasoning.clear();
         self.streaming_response_bytes = 0;
+        self.streaming_response_baseline = 0;
+        self.streaming_thinking_tokens = 0;
         self.streaming_assistant_idx = None;
         self.current_stream_request = None;
         self.stream_lifecycle = None;
@@ -1730,6 +1733,7 @@ impl EngineState {
         self.in_progress_tool_use_ids.clear();
         self.tool_use_summaries.clear();
         self.compact_suppressed = false;
+        self.speculative_compact_fired = false;
     }
 
     pub fn selected_model_info(&self) -> Option<ModelInfo> {

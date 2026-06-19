@@ -1,0 +1,71 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - generic [ref=e5]: adk-rs
+    - generic [ref=e6]:
+      - generic [ref=e7]: Rust port workbench
+      - generic [ref=e8]: running on :8087
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - paragraph [ref=e11]: ADK Python browser UI · Rust runtime parity
+      - heading "A real workbench for runs, sessions, artifacts, evals, graphs, traces, routes, and missing parity." [level=1] [ref=e12]
+      - paragraph [ref=e13]: I mapped the upstream ADK CLI/browser/dev-server surfaces around run/SSE/live, sessions, artifacts, eval sets, event graphs, debug traces, tools, models, A2A, auth, and replay gaps.
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - paragraph [ref=e17]: "8"
+        - paragraph [ref=e18]: UI surfaces
+      - generic [ref=e19]:
+        - paragraph [ref=e20]: "37"
+        - paragraph [ref=e21]: tool specs
+      - generic [ref=e22]:
+        - paragraph [ref=e23]: "5"
+        - paragraph [ref=e24]: known gaps
+  - generic [ref=e25]:
+    - button "Workbench" [ref=e26] [cursor=pointer]
+    - button "Parity" [ref=e27] [cursor=pointer]
+    - button "Runtime" [ref=e28] [cursor=pointer]
+    - button "Gaps" [active] [ref=e29] [cursor=pointer]
+  - generic [ref=e215]:
+    - generic [ref=e216]:
+      - paragraph [ref=e217]: Map
+      - heading "Still missing / partial" [level=2] [ref=e218]
+    - generic [ref=e219]:
+      - article [ref=e220]:
+        - generic [ref=e221]:
+          - generic [ref=e222]:
+            - heading "Visual agent builder" [level=3] [ref=e223]
+            - paragraph [ref=e224]: missing
+          - generic [ref=e225]: Not yet built
+        - paragraph [ref=e226]: Need editor/state model for YAML agents and graph image/DOT round trips.
+        - paragraph [ref=e227]: YAML builder endpoints + generated graph UI
+      - article [ref=e228]:
+        - generic [ref=e229]:
+          - generic [ref=e230]:
+            - heading "Replay recordings" [level=3] [ref=e231]
+            - paragraph [ref=e232]: missing
+          - generic [ref=e233]: Not yet built
+        - paragraph [ref=e234]: Need persisted invocation recordings and deterministic replay runner.
+        - paragraph [ref=e235]: recordings_plugin + replay_plugin
+      - article [ref=e236]:
+        - generic [ref=e237]:
+          - generic [ref=e238]:
+            - heading "Live media adapters" [level=3] [ref=e239]
+            - paragraph [ref=e240]: partial
+          - generic [ref=e241]: Queue only
+        - paragraph [ref=e242]: Need provider-specific websocket/live adapters and media blob handling.
+        - paragraph [ref=e243]: Gemini live audio/video + reconnect
+      - article [ref=e244]:
+        - generic [ref=e245]:
+          - generic [ref=e246]:
+            - heading "Cloud backends" [level=3] [ref=e247]
+            - paragraph [ref=e248]: partial
+          - generic [ref=e249]: Trait/config surfaces
+        - paragraph [ref=e250]: Need real authenticated cloud implementations when credentials are available.
+        - paragraph [ref=e251]: Vertex, GCS, DB, Cloud Run/GKE deploy
+      - article [ref=e252]:
+        - generic [ref=e253]:
+          - generic [ref=e254]:
+            - heading "Metric executors" [level=3] [ref=e255]
+            - paragraph [ref=e256]: partial
+          - generic [ref=e257]: Eval storage only
+        - paragraph [ref=e258]: Need concrete metric evaluator registry and evaluator implementations.
+        - paragraph [ref=e259]: LLM-as-judge, safety, hallucination, trajectory

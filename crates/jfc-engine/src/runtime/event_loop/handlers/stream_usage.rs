@@ -13,7 +13,6 @@ pub fn handle_stream_usage(
     cache_write_tokens: u32,
 ) {
     state.record_stream_activity();
-    state.stream_lifecycle = None;
     // Anthropic sends *cumulative* token counts in every
     // `message_delta` event (sse.rs:212-218 — see also
     // anthropic-messaging spec). Naively calling `add_delta`
@@ -25,6 +24,9 @@ pub fn handle_stream_usage(
     // baseline before adding.
     let partial_input_only =
         output_tokens == 0 && cache_read_tokens == 0 && cache_write_tokens == 0;
+    if !partial_input_only {
+        state.stream_lifecycle = None;
+    }
     // Floor the `responseLengthRef` accumulator up to the wire-truth output
     // count so the spinner's `bytes/4` token estimate is corrected upward and
     // then keeps growing by chars from there — cli.js's `i54` reducer
@@ -47,11 +49,13 @@ pub fn handle_stream_usage(
         }
         let wire_floor = state.streaming_response_baseline + output_tokens as usize * 4;
         state.streaming_response_bytes = state.streaming_response_bytes.max(wire_floor);
-        // True output tokens (what the status row shows) — accumulate the real
-        // per-event delta. `output_tokens` is cumulative within a sub-stream, so
-        // the delta vs the previous event is its growth; a regression (a new
-        // sub-stream restarting lower) contributes its tokens from zero. No
-        // chars/4 anywhere.
+        // True output tokens for accounting/persisted usage — accumulate the
+        // real per-event delta. The visible status row reads
+        // `streaming_response_bytes / 4` so it can advance smoothly between
+        // provider usage batches. `output_tokens` is cumulative within a
+        // sub-stream, so the delta vs the previous event is its growth; a
+        // regression (a new sub-stream restarting lower) contributes its tokens
+        // from zero. No chars/4 in this accounting field.
         let token_delta = if output_tokens >= state.last_usage_output {
             output_tokens - state.last_usage_output
         } else {
@@ -224,6 +228,33 @@ mod tests {
 
     fn test_app() -> EngineState {
         EngineState::new(Arc::new(TestProvider), "test-model")
+    }
+
+    #[test]
+    fn input_only_usage_keeps_pre_output_lifecycle_regression() {
+        let mut state = test_app();
+        state.stream_lifecycle = Some(crate::runtime::StreamLifecycleStatus::new(
+            crate::runtime::StreamLifecyclePhase::StreamOpened,
+            Some("waiting for first event".to_owned()),
+        ));
+
+        handle_stream_usage(&mut state, 42, 0, 0, 0);
+
+        assert!(state.stream_lifecycle.is_some());
+        assert_eq!(state.tool_ctx.approx_tokens, 42);
+    }
+
+    #[test]
+    fn output_usage_clears_pre_output_lifecycle_normal() {
+        let mut state = test_app();
+        state.stream_lifecycle = Some(crate::runtime::StreamLifecycleStatus::new(
+            crate::runtime::StreamLifecyclePhase::StreamOpened,
+            Some("waiting for first event".to_owned()),
+        ));
+
+        handle_stream_usage(&mut state, 42, 3, 0, 0);
+
+        assert!(state.stream_lifecycle.is_none());
     }
 
     #[test]

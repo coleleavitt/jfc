@@ -1,0 +1,1052 @@
+                                            Can LLMs Reason Like Automated Theorem Provers for Rust Verification?
+                                                  VCoT-Bench: Evaluating via Verification Chain of Thought
+
+
+                                                                                        Zichen Xie        Wenxi Wang
+
+                                                                  Abstract                                    the programs functionally incorrect. Consequently, formally
+                                                                                                              verifying the correctness of Rust programs, by mathemat-
+                                              As Large Language Models (LLMs) increasingly                    ically proving that programs satisfy precise specifications
+                                              assist secure software development, their ability               under all possible inputs, has become increasingly critical
+
+
+
+
+arXiv:2603.18334v1 [cs.SE] 18 Mar 2026
+                                              to meet the rigorous demands of Rust program                    for establishing reliable and trustworthy systems.
+                                              verification remains unclear. Existing evaluations
+                                              treat Rust verification as a black box, assessing               Verus (Lattuada et al., 2024) is a state-of-the-art formal ver-
+                                              models only by binary pass or fail outcomes for                 ification framework for Rust programs. A Verus program
+                                              proof hints. This obscures whether models truly                 consists of three components: (1) executable Rust code,
+                                              understand the logical deductions required for                  (2) specifications that precisely describe intended behav-
+                                              verifying nontrivial Rust code. To bridge this                  ior through preconditions (requires) and postconditions
+                                              gap, we introduce VCoT-Lift, a framework that                   (ensures), and (3) user-provided proof hints, including
+                                              lifts low-level solver reasoning into high-level,               loop invariants, assertions, and lemma functions, which
+                                              human-readable verification steps. By exposing                  guide the verifier. Figure 1a presents a running Verus pro-
+                                              solver-level reasoning as an explicit Verification              gram. Verus operates as an Automated Theorem Proving
+                                              Chain-of-Thought, VCoT-Lift provides a concrete                 (ATP) system: it translates the program into SMT formulas
+                                              ground truth for fine-grained evaluation. Leverag-              and, with the assistance of user-provided proof hints, checks
+                                              ing VCoT-Lift, we introduce VCoT-Bench, a com-                  whether the Rust code satisfies the specifications using the
+                                              prehensive benchmark of 1,988 VCoT comple-                      SMT solver Z3 (De Moura & Bjørner, 2008).
+                                              tion tasks for rigorously evaluating LLMs’ under-               To the best of our knowledge, existing work on LLMs
+                                              standing of the entire verification process. VCoT-              for Verus focuses exclusively on automatic proof-hint syn-
+                                              Bench measures performance along three orthog-                  thesis. Systems such as AlphaVerus (Aggarwal et al.,
+                                              onal dimensions: robustness to varying degrees                  2024), SAFE (Chen et al., 2024), AutoVerus (Yang et al.,
+                                              of missing proofs, competence across different                  2024), RagVerus (Zhong & Si, 2025), and VeriStruct (Sun
+                                              proof types, and sensitivity to the proof locations.            et al., 2025) specialize LLMs for generating proof hints,
+                                              Evaluation of ten state-of-the-art models reveals               while VeruSAGE (Yang et al., 2025a) evaluates model
+                                              severe fragility, indicating that current LLMs fall             performance on this task. However, existing approaches
+                                              well short of the reasoning capabilities exhibited              treat verification process as a black box, measuring success
+                                              by automated theorem provers.                                   solely by a binary outcome: whether the program verifies
+                                                                                                              with the generated proof hints.
+                                         1. Introduction
+                                                                                                              However, such binary evaluation obscures the central ques-
+                                         Rust (Matsakis & Klock, 2014) has emerged as the cor-                tion: Do LLMs actually understand the verification logic,
+                                         nerstone of modern systems programming, adopted by the               or are they merely exploiting statistical patterns? Judg-
+                                         Linux kernel and major technology infrastructure for its rig-        ing a model solely by whether a program verifies reveals
+                                         orous guarantees of memory safety, concurrency correctness,          nothing about how verification was achieved. It cannot dis-
+                                         and high performance. However, as the software industry              tinguish a model that constructs a sound deductive chain
+                                         increasingly relies on Large Language Models (LLMs) to               from one that succeeds through chance syntactic alignment.
+                                         synthesize complex code (Zhuo et al., 2024; Zhang et al.,            To meaningfully assess whether LLMs exhibit reasoning
+                                         2024; Ishibashi & Nishimura, 2024; Yang et al., 2025b;               capabilities comparable to automated theorem provers (e.g.,
+                                         Zhang et al., 2023), subtle errors can be introduced to make         Z3 SMT solver), we must open the black box and exam-
+                                                                                                              ine whether they can construct a Verification Chain-of-
+                                          University of Virginia. Zichen Xie <graysonxie@virginia.edu>,       Thought (VCoT), the step-by-step deductive process un-
+                                         Wenxi Wang <wenxiw@virginia.edu>                                     derlying formal verification, analogous to chain-of-thought
+                                                                                                              reasoning in natural language.
+
+
+                                                                                                          1
+                                   VCoT-Bench: Evaluating via Verification Chain of Thought
+
+
+
+
+            (a) A running example of a Verus program.                           (b) The Z3 proof for the example program.
+Figure 1. (a). The program is about replacing the last element of the first vector (first) with all elements of the second (second).
+Executable Rust code, specifications, and proof hints are highlighted. The specifications define the precondition (requires) and
+postcondition (ensures), and verification relies on three parts of proof hints: two blocks of loop invariants and one assertion.
+(b) Shows the Z3 proof of the running example with high-level, medium-level, and low-level proofs highlighted. The high-level
+rule unit-resolution (line 491) establishes the property |seq.subrange(s, j, k)| = k − j, while medium-level rules such as
+monotonicity and rewrite (line 622) prove index bounds. Low-level rules encode trivial reasoning, e.g., refl (lines 653–654),
+which simply asserts $x775 = $x775.
+
+Opening the verification black box is fundamentally hin-               redundant reasoning.
+dered by the nature of the ATP solver. When verification
+                                                                       Leveraging VCoT-Lift, we introduce VCoT-Bench, a com-
+succeeds, Z3 can emit a proof trace, but these traces are
+                                                                       prehensive benchmark that moves LLM evaluation beyond
+designed for machine consumption rather than human un-
+                                                                       binary pass/fail outcomes to a fine-grained analysis of ver-
+derstanding. As shown in Figure 1b, the Z3 proof for our
+                                                                       ification reasoning. VCoT-Bench consists of 1,988 VCoT
+small running example spans 10,003 lines, yet 81.69% of it
+                                                                       completion tasks constructed by digging structured “proof
+consists of low-level reasoning, such as trivial equalities like
+                                                                       holes” across the entire VCoT at the level of semantic blocks.
+$x775 = $x775. This extreme verbosity creates a seman-
+                                                                       The benchmark evaluates model understanding along three
+tic gap that obscures the solver’s internal reasoning, leaving
+                                                                       orthogonal dimensions: 1) robustness to varying degrees
+existing research confined to a results-oriented paradigm
+                                                                       of missing reasoning; 2) competence across proof types;
+that cannot inspect, analyze, or evaluate the underlying veri-
+                                                                       and 3) sensitivity to the position of missing reasoning steps.
+fication process.
+                                                                       We conducted a comprehensive study of ten state-of-the-art
+To bridge this gap, we introduce VCoT-Lift, an LLM-based
+                                                                       LLMs using VCoT-Bench, revealing a substantial gap be-
+framework that lifts low-level Z3 solver reasoning into ex-
+                                                                       tween LLMs and automated theorem provers. While LLMs
+plicit, human-readable Verus verification steps, exposing
+                                                                       can often complete verification steps given sufficient local
+the solver’s internal reasoning as a VCoT and providing
+                                                                       context, their performance drops sharply even under modest
+transparent ground truth for program verification. Con-
+                                                                       information loss, exposing a heavy reliance on syntactic
+structing such a VCoT is fundamentally a semantic abstrac-
+                                                                       scaffolding rather than principled deduction. This weakness
+tion problem, raising three core challenges: soundness,
+                                                                       is most pronounced in intermediate, connective proof steps
+completeness, and conciseness. VCoT-Lift addresses these
+                                                                       that require tracking program state and composing multi-
+challenges through a four-stage pipeline that enforces sound-
+                                                                       step reasoning, as well as in assertion proofs demanding
+ness via direct interaction with the Verus verifier, improves
+                                                                       precise, state-dependent logic.
+completeness through an interactive loop between global
+transformation and targeted completeness checking, and                 In summary, this paper makes the following contributions:
+enhances conciseness by principled pruning of trivial and              • Concept: We propose the new concept of VCoT.
+
+                                                                   2
+                                                VCoT-Bench: Evaluating via Verification Chain of Thought
+
+
+
+   Verified
+   Program
+                         LLM                                          LLM                                             LLM                                      LLM
+
+
+                    Z3     Verus
+                    Z3     Verus
+   Z3 Proof                Verus
+                                             Intermediate                                 Transformed                                   Pruned                                Final
+                    Z3
+                                             Verus Proof                                  Verus Proof                                 Verus Proof                          Verus Proof
+                  Transformer                                   Checker                                          Pruner                                   Repair
+                                   Z3 Segments (lemma)       Z3 Segments (quant)            Z3 Segments (mp)
+                                                                                                                              Trivial Proof           Expert                 Error
+                                                                                                                                                    Knowledge               Messages
+                                             LLM                       LLM                            LLM
+                                                                                                                            Examples Definitions
+                                    Filter         Mapping   Filter          Mapping   ... Filter           Mapping
+                                                                                                                                                    Grammar
+                                            lemma                  quantifier                         mp                                              Rules
+                  Intermediate           Instructions             Instructions                   Instructions               Redundant Proof
+                  Verus Proof
+       Z3 Rule                                                                                MP Checker
+      Hierarchy                     Lemma Checker            Quantifier Checker                                             Examples Definitions     Repair
+                                                                                                                                                    Examples      Verus
+                                                                                                                                                                 Program    Verus
+                                                                      Figure 2. Overview of VCoT-Lift.
+• Tool: We develop VCoT-Lift, the first framework that lifts                                        2.1. Overview
+  low-level reasoning into high-level VCoT.                                                         To address these challenges, we present VCoT-Lift as a
+• Benchmark: We introduce VCoT-Bench, the first bench-                                              four-stage pipeline (Figure 2). The pipeline starts with an
+  mark for VCoT completion, containing 1,988 tasks strati-                                          iterative transformer–checker loop that improves proof com-
+  fied by three orthogonal evaluation dimensions.                                                   pleteness: the transformer synthesizes Verus proofs from Z3
+• Study: We perform a comprehensive study of ten LLMs,                                              proofs, and the checker evaluates their completeness until
+  uncovering their critical limitations in formal verification.                                     predefined criteria are met. Next, the Proof Pruner removes
+                                                                                                    trivial or redundant steps to improve conciseness. Finally,
+2. VCoT-Lift                                                                                        Proof Repair enforces soundness by interacting with Verus
+In this section, we introduce VCoT-Lift, an LLM-based                                               to detect and fix syntactic and semantic errors. We detail
+framework that lifts low-level reasoning from Z3 proofs                                             each stage and its interactions in the following.
+into explicit Verus-level verification steps, forming a VCoT
+                                                                                                    Figure 8 in Appendix A shows the complete VCoT exposed
+that exposes how verification unfolds at the program level.
+                                                                                                    by VCoT-Lift for the running example, including 82 lines of
+Why use LLMs? Transforming Z3 proofs into Verus-level                                               additional lifted Verus proofs, which naturally unfold into
+verification steps is a semantic abstraction challenge: Z3                                          five verification phases.
+proofs are extremely fine-grained, while Verus operates over
+high-level constructs such as invariants, assertions, and lem-                                      2.2. Proof Transformer
+mas, making the required semantic compression beyond                                                Given a Verus program and its corresponding Z3 proof,
+static pattern matching or deterministic symbolic transla-                                          Proof Transformer aims to transform the internal reasoning
+tion (Böhme & Nipkow, 2010; Blanchette et al., 2013; Mo-                                            of the Z3 proof into semantically equivalent Verus proofs.
+hamed et al., 2025). LLMs can recover this abstraction by
+                                                                                                    The key challenge is that Z3 proofs are long and dominated
+jointly analyzing Z3 proofs and Verus programs to infer log-
+                                                                                                    by low-level reasoning, with critical logical steps tightly
+ical intent and synthesize equivalent high-level verification
+                                                                                                    entangled throughout. Disentangling this structure requires
+steps (Li et al., 2023; Liu et al., 2024; Wei et al., 2025; Wen
+                                                                                                    a holistic view of the entire proof: because the reasoning
+et al., 2024; Li et al., 2022; Jiang et al., 2024; Islam et al.,
+                                                                                                    is globally interconnected, the transformer cannot safely
+2024; Zhuo et al., 2024), and thus VCoT-Lift adopts LLMs
+                                                                                                    decompose proofs without losing context and must process
+as its central reasoning engine.
+                                                                                                    them end to end to recover the underlying semantics. How-
+Transformation Challenges. Even with LLMs, transform-                                               ever, such long-context comprehension remains a major
+ing Z3 proofs into Verus-level verification steps remains                                           bottleneck for current LLMs (Li et al., 2024; Dong et al.,
+difficult. This process must simultaneously address three                                           2024; Hosseini et al., 2025; Du et al., 2025).
+fundamental challenges:
+                                                                                                    To address this challenge, we introduce a Z3 rule hierarchy
+• Soundness: The transformed verification steps should                                              that explicitly steers LLM attention toward reasoning steps
+  faithfully preserve the semantics of the original Z3 proof.                                       more likely to be semantically informative. Our classifica-
+• Completeness: The transformed verification should cap-                                            tion is based on syntactic cues of proof rules, but is moti-
+  ture the entire reasoning process of the Z3 proof, with no                                        vated by empirical observations of how often such syntactic
+  essential steps omitted.                                                                          patterns tend to surface semantically meaningful reasoning
+• Conciseness: The resulting verification steps should be                                           in practice. Concretely, we organize all 36 Z3 proof rules
+  concise, free from trivial or redundant steps.                                                    (Z3Prover, 2026) into three importance levels:
+
+
+                                                                                             3
+                                  VCoT-Bench: Evaluating via Verification Chain of Thought
+
+                                                                        Aggregated Z3 Proof Segments
+                                                                                              mp segments           mp
+                                                                                              aggregation
+                                                                                                                                  Modus Ponens          Complete?
+                                                                        mp     lem     lem                                          Checker
+                                                                                                              lem        lem
+                                                                                 lem                                                 Lemma              Complete?
+                                                                                             lemma segments     lem                  Checker
+                                                                                               aggregation
+
+
+
+                                                                        Mapping From Modus Ponens Checker
+                                                                       ...
+                                                                                        Z3 Proof                                    Verus-level Proof
+                                                                       (let (($x5602 (forall ((A&. Dcr) (A&                proof fn lemma_subrange_all<A>(
+                                                                       Type) (s! Poly) (j! Poly) (k! Poly) )                 s: Seq<A>)
+                                                                         (! (let ((?x1951                                    ensures s.subrange(0, s.len()
+                                                                       (vstd!seq.Seq.subrange.? A&.                              as int) == s,
+                                                                       A& s! j! k!)))
+                                                                       ...                                                 ...
+                                                                       (let (($x12319 (>= ?x12318 0)))
+                                                                       (let ((?x12243 (vstd!seq.Seq.len.? $                    Missing Corresponding
+                                                                       ?x1373 ?x11703)))
+                                                                       (let ((@x3395 (mp~ ...                                     Verus-level Proof
+                                                                       ...
+                                                                       ...                                                 assert(second@.subrange(0, index)
+                                                                       (let ((@x13404 (unit-resolution                     == second@) by {
+                                                                       @x12316 @x105 (unit-resolution
+                                                                       @x5568 ...(or $x12275 $x12317))))                     lemma_subrange_all(second@);
+                                                                       ...                                                 }
+
+                                                                      Figure 4. Conceptual visualization of: ⃝1 Aggregated Z3 proof
+                                                                      segments for the running example, where mp and lemma segments
+                                                                      are grouped and passed to the corresponding checkers; 2 ⃝ the
+                                                                      mapping mechanism, where the modus ponens checker identifies
+                                                                      a Z3 proof without a corresponding Verus-level proof and marks
+                                                                      the transformation incomplete.
+
+                                                                      2.3. Proof Checker
+                                                                      The Proof Checker is a key component of VCoT-Lift that
+                                                                      evaluates the completeness of proofs produced by the
+                                                                      Proof Transformer. To improve efficiency and focus on
+                                                                      essential reasoning, completeness checking is restricted
+                                                                      to high-level Z3 proof rules, verifying only whether crit-
+                                                                      ical proof steps are correctly transformed. Because these
+                                                                      rules share common reasoning patterns, we group the eight
+                                                                      high-level rules into five categories: lemma (lemma), theory
+                                                                      lemma (th-lemma), modus ponens (mp, mp∼), quantifier
+                                                                      (quant-intro, quant-inst, skolemize), and unit reso-
+                                                                      lution (unit-resolution).
+                                                                      To enable precise and specialized completeness assessment,
+                                                                      we design a dedicated checker agent for each proof-rule
+Figure 3. The intermediate VCoT for the running example’s sec-        category to evaluate the completeness of its corresponding
+ond while loop across stages of VCoT-Lift. ⃝ 1 Shows the Verus        transformations.
+program with original proof hints and transformed proofs; after
+three transformer–checker loops, several assertions and a lemma       Inputs: Aggregated Z3 Proof Segments. To enable fo-
+establishing a key property s.subrange(0, s.len()) ==                 cused completeness check, each checker agent receives only
+s are introduced. 2 ⃝ Shows the pruned proofs. ⃝   3 Shows the        the Z3 proof segments relevant to the proof rules it assesses.
+repaired proofs, fixing a syntactic error.                            VCoT-Lift constructs an abstract syntax tree of the Z3 proof,
+                                                                      where each node represents a proof statement, and its subtree
+                                                                      contains all steps required to derive that statement, referred
+• High-level rules (8): frequently corresponds to explicit            to as the rule’s dependency. By locating the node for a target
+  Verus verification steps (e.g., unit-resolution).                   proof rule and extracting its subtree, VCoT-Lift precisely
+• Medium-level rules (12): support intermediate proof con-            isolates the proof segments associated with that rule.
+  struction (e.g., trans and rewrite).
+• Low-level rules (16): primarily encode tautologies, syn-            Even high-level proof rules occur frequently in Z3 proofs,
+  tactic artifacts, or proof metadata (e.g., refl and symm).          and processing each segment independently would require
+Table 2 in Appendix B.1 presents the full categorization.             many LLM invocations. Moreover, proof segments, espe-
+Figure 1b illustrates a Z3 proof of our running example               cially within the same category, are often interdependent;
+annotated by rule importance. Figure 3 part ⃝   1 shows the           for example, one lemma may depend on another, as shown
+verification steps transformed from the Z3 proof by Proof                              ⃝. Evaluating segments in isolation would
+                                                                      in Figure 4, part 1
+Transformer.                                                          thus introduce redundant context and unnecessary LLM
+
+                                                                  4
+                                  VCoT-Bench: Evaluating via Verification Chain of Thought
+
+calls.                                                               bility and enables rigorous human validation.
+To address this issue, VCoT-Lift aggregates all segments             Checking Mechanism 3: Specialization. For each checker
+from the same proof-rule category and provides them as a             agent, we describe the semantics and usage of the associated
+single input to the corresponding checker agent. As shown            Z3 proof rules and specify the forms of Verus proofs into
+                  ⃝, the lemma checker receives all lemma
+in Figure 4, part 1                                                  which they are commonly transformed. For example, for the
+rules together with their dependencies in one batch, enabling        lemma checker, we explain that lemmas discharge hypothe-
+joint assessment and avoiding redundant processing.                  ses and that a lemma proof rule is often transformed into a
+                                                                     lemma function, a proof block, or a sequence of assertions.
+Checking Mechanism 2: Abstraction Filter. Although
+essential reasoning is often expressed with high-level proof         2.4. Transformer–Checker Loop
+rules, such rules can also encode trivial or redundant               VCoT-Lift further addresses extremely long proof contexts
+steps. For example, the Z3 proof unit-resolution                     with a perform-all-check-partial architecture that deliber-
+@x11036 @x3395 $x11026 uses the high-level rule
+                                                                     ately separates responsibilities: the Proof Transformer op-
+unit-resolution but merely establishes 0 = 0. A
+                                                                     erates with a global view of the entire Z3 proof, while the
+checker agent may mistakenly treat such trivial steps as             checker validates only a targeted subset of high-level, essen-
+essential missing logic, causing it to diverge (e.g., fail to        tial proof steps.
+terminate) by repeatedly flagging the proof as incomplete
+based on unnecessary reasoning.                                      To preserve this asymmetry, the checker emits only coarse-
+                                                                     grained binary signals (complete or incomplete), without
+To address this issue, VCoT-Lift introduces an abstraction           explanations. Because its perspective is inherently partial,
+filter that regulates proof granularity and guides the checker       providing localized feedback could mislead or constrain the
+to ignore unnecessary reasoning. It distinguishes between            transformer’s global reasoning. By acting as lightweight
+trivial and redundant proof steps, both of which can be              guardrails, the checkers guide transformation without pol-
+safely excluded from completeness evaluation.                        luting the transformer’s context.
+Trivial steps correspond to local reasoning that the solver          This separation improves scalability and strengthens trans-
+can justify using only immediate contextual facts, without           formation robustness. When the checker signals incom-
+invoking additional axioms or unfolding complex defini-              pleteness, the transformer reprocesses the entire Z3 proof
+tions. Typical examples include basic arithmetic facts and           holistically, naturally recovering additional missing steps,
+properties such as reflexivity (e.g., index = index) and             including those beyond the checker’s limited scope. In this
+commutativity (e.g., ((x + 0) = x) ↔ (x = (x + 0))).                 way, VCoT-Lift combines efficient partial checking with
+Redundant steps are reasoning steps that add no new se-              global regeneration to achieve comprehensive and reliable
+mantic information beyond what is already established. We            proof transformation under long-context constraints.
+categorize redundancy into three forms: (1) normalization,                            ⃝, across three transformer–checker loops,
+                                                                     In Figure 3, part 1
+which rewrites expressions into canonical forms; (2) reasser-        the proofs become progressively more complete.
+tion, which restates facts already implied by the current
+context; and (3) definition expansion, which unfolds defini-         2.5. Proof Pruner
+tions without advancing the core proof argument.                     The transformed Verus proofs may include trivial or redun-
+In our running example, the modus ponens checker initially           dant steps. For example, handling a % 2 can introduce a
+flags index < index + 1 as a missing proof step, but                 trivial assertion assert(2 != 0) to prevent division by
+it is correctly classified as trivial and filtered out by the        zero. While such checks are reasonable at the Z3 level, they
+abstraction filter, allowing the proof to be marked complete.        are unnecessary in Verus. To improve conciseness, VCoT-
+                                                                     Lift introduces a Proof Pruner to remove these trivial and
+Checking Mechanism 2: Explicit Mapping. To reduce                    redundant steps.
+hallucinations and strengthen reasoning, VCoT-Lift adopts
+an explicit justification mechanism. Instead of issuing a            Building on the abstraction filter’s definitions of trivial and
+binary completeness verdict, each checker must justify its           redundant steps, the Proof Pruner refines these notions with
+decision by explicitly mapping each Z3 proof step within             fine-grained criteria tailored to the three Verus proof types,
+its rule category to a semantically equivalent step in the           supported by representative examples. For instance, redun-
+transformed Verus proof. Figure 4, part 2⃝, illustrates this         dant assertions restate facts already established in nearby
+mapping mechanism, where the modus ponens checker ex-                proof steps. To preserve rigor, the pruner agent must pro-
+plicitly identifies that the step assert(0 <= index <=               vide an explicit justification for every removal, ensuring the
+second@.len()) has no corresponding transformation.                  resulting proofs are both concise and transparent for human
+This structured, traceable output improves checker relia-            validation. As shown in Figure 3, the assertion assert(0
+                                                                     <= index <= second@.len()) is pruned because it is
+
+                                                                 5
+                                  VCoT-Bench: Evaluating via Verification Chain of Thought
+
+                250
+                                     # Proof Lines (VCoT-Bench-Org)                                50%-60%
+                                     # Proof Lines (Verus-Bench)                                    11.12%      30%-40%
+                                                                                                                 10.81%
+                200
+
+
+
+
+# Proof Lines
+                                                                                         70%-80%
+                                                                                          12.53%
+                150
+                                                                                                       Ratio              10%-20%
+                                                                                                                           11.62%
+                                                                                                      58.30%
+                100
+
+                                                                                     90%-100%
+                                                                                      12.22%                   Location     End
+                50                                                                                    Type                 6.54%
+                                                                                                                19.62%
+                                                                                                     22.08%
+
+                 0                                                                                                      Middle
+                                                                                            Loop                        6.54%
+                       Verified Verus Program                                            Invariants
+                                                                                           7.40%                  Front
+Figure 5. Comparison of Total Proof Lines per Program Between                                    Assertion Lemma 6.54%
+VCoT-Bench-Org and Verus-Bench                                                                     7.34% Function
+                                                                                                           7.34%
+
+
+already established by the preceding while loop invariants                            Figure 6. Composition of VCoT-Bench.
+(line 39); and a proof block (lines 55–61) is removed since
+                                                                          with fully expanded verification reasoning. As shown in
+it duplicates the preceding assertion (lines 52–53).
+                                                                          Figure 5, and Figure 9 in Appendix B.2, VCoT-Bench-Org
+2.6. Proof Repair                                                         exposes substantially richer verification details than Verus-
+Proof Repair is the final stage of the pipeline and ensures the           Bench: on average, it exhibits a 6.5x increase in proof lines
+soundness of the transformed verification steps. Because                  (up to 32x), a 13.4x increase in assertions (up to 54x), and a
+Verus is relatively new and has limited public resources,                 1.94x increase in lemma functions (up to 9x).
+LLMs often produce syntactic or semantic errors during
+transformation. To address this, VCoT-Lift introduces a                   3.2. VCoT Completion Tasks via Semantic Blocks.
+dedicated repair agent that systematically detects and cor-               To assess how LLMs understand the VCoT, we construct
+rects such errors.                                                        VCoT completion tasks by digging “proof holes” in VCoT-
+                                                                          Bench-Org at the granularity of semantic blocks. Each
+To mitigate model unfamiliarity with Verus grammar, we in-                semantic block falls into one of three categories: Lemma
+ject expert verification knowledge to guide the repair agent.             Blocks, where each independent lemma function forms a
+For example, when multiple type conversions cause mis-                    block; Invariant Blocks, where all loop invariants associated
+leading error messages, the agent is instructed to explicitly             with the same loop form a block; and Assertion Blocks,
+parenthesize each conversion. We also provide explicit                    where all assertions between two executable code lines are
+grammar rules and curated repair examples. At this stage,                 grouped into one block. As shown in Figure 3, Part 1      ⃝,
+the Verus verifier compiles and checks the program with the               the lemma function lemma_subrange_all (lines 65–70)
+transformed proofs, and the resulting error messages are fed              forms one semantic block; the loop invariants associated
+back to the repair agent, which iteratively refines the proofs            with the while loop (lines 38–42) form another; and the
+until successful verification. As shown in Figure 3, in our               assertions after the while loop constitute the third block
+running example, Proof Repair corrects a syntactic error for              (lines 47–61).
+a transformed proof step.
+                                                                          3.3. Three Benchmark Variants
+ 3. VCoT-Bench
+                                                                          With the semantic blocks, we construct the full VCoT-Bench
+Leveraging VCoT-Lift to construct VCoTs as ground truth,                  suite with 1,988 VCoT completion tasks. To rigorously eval-
+we create VCoT-Bench, a benchmark that rigorously evalu-                  uate LLMs’ understanding of the entire verification process,
+ates whether LLMs truly understand the verification process.              we organize these tasks along three orthogonal dimensions,
+3.1. Ground-Truth: VCoT-Bench-Org                                         Ratio, Type, and Location. Detailed statistics of VCoT-
+                                                                          Bench are provided in Figure 6.
+We build our benchmark on Verus-Bench (Yang et al., 2024),
+a widely used public benchmark for Verus proof-hint gener-                VCoT-Bench-Ratio. This sub-benchmark evaluates an
+ation. Verus-Bench comprises 150 verified Verus programs                  LLM’s ability to recover missing verification steps under
+drawn from MBPP-DFY-153 (Misu et al., 2024), Clover-                      varying degrees of information loss, quantified by the ratio
+Bench (Stack Overflow, 2024), Diffy (Chakraborty et al.,                  of removed semantic blocks. For each program in VCoT-
+2021), and verified algorithms from the Verus libraries. Fig-             Bench-Org containing N semantic blocks, we generate N
+ure 1a shows an example from Verus-Bench (task_id_240).                   variants by randomly removing between 1 and N blocks
+                                                                          and computing the corresponding removal ratios. This pro-
+For each verified program, we extract its Z3 proof and apply
+                                                                          cedure yields a total of 1,159 VCoT completion tasks.
+VCoT-Lift to lift low-level reasoning into explicit Verus-
+level verification steps, yielding the program’s VCoT. This               VCoT-Bench-Type. This sub-benchmark evaluates an
+process produces VCoT-Bench-Org, a ground-truth dataset                   LLM’s ability to reconstruct specific proof types. For each
+
+                                                                      6
+                                 VCoT-Bench: Evaluating via Verification Chain of Thought
+                                                                                    80
+program, we generate up to three variants by removing all                                                                             GPT-5.2
+blocks of a given type: Invariant-removal (all loop invari-                         70                                                GPT-5 mini
+                                                                                                                                      gpt-oss
+ants), Assertion-removal (all inline assertions), and Lemma-                                                                          Claude Sonnet 4.5
+                                                                                    60
+removal (all lemma functions). This procedure yields 439                                                                              Claude Haiku 4.5
+                                                                                                                                      Gemini 3
+
+
+
+
+                                                                     Accuracy (%)
+VCoT completion tasks.                                                              50
+                                                                                                                                      Gemini 3 Flash
+                                                                                                                                      DeepSeek V3.2
+VCoT-Bench-Loc. The order of the VCoT is critical. This                             40
+                                                                                                                                      DeepSeek R1
+                                                                                                                                      Qwen 3 think
+sub-benchmark evaluates how the position of missing rea-                            30                                                Qwen 3 non-think
+soning steps affects a model’s ability to recover the underly-
+                                                                                    20
+ing logic. We define three removal zones: Front (first 33%
+of the VCoT), Middle (33%–66%), and End (final 33%).                                10
+
+This process yields 390 VCoT completion tasks.
+                                                                                     0
+                                                                                          10%   20%   30%    40%   50%   60%   70%    80%   90%   100%
+4. Study                                                                                                    Ratio of Removed Blocks
+                                                                                         Figure 7. Overall accuracy across proof-removal ratios.
+Using VCoT-Bench, we conduct a thorough study of ten
+state-of-the-art LLMs, evaluating their verification capabili-
+ties by measuring performance on VCoT completion.                    where N (i) denotes the number of cases at Level i, and N
+                                                                     is the total number of cases.
+4.1. Study Setup                                                      Notes: Due to space constraints, we report and analyze
+                                                                      only overall accuracy. Detailed results and discussion of
+Subjects. We study ten state-of-the-art LLMs in a zero-shot
+                                                                      syntactic and semantic accuracy are deferred to Appendix C.
+setting, comprising six proprietary models: GPT-5.2, GPT-
+5-mini, Claude Sonnet 4.5, Claude Haiku 4.5, Gemini 3, and            4.2. Performance across Proof-Removal Ratios.
+Gemini 3 Flash; and four open-source models: DeepSeek
+                                                                      Using VCoT-Bench-Ratio, we evaluate LLM performance
+V3.2 (685B), DeepSeek R1 (685B), Qwen 3 (8B, evaluated
+                                                                      across varying proof-removal ratios and identify five key
+under both thinking and non-thinking inference modes), and
+                                                                      findings from the results shown in Figure 7.
+gpt-oss (20B). All models are run with default settings, with
+output limits set sufficiently high for all programs. Table 3        F1: Context removal exposes fragile reasoning. Accu-
+in Appendix B.3 summarizes their configuration details.              racy drops sharply as proof blocks are removed. With only
+                                                                     10% of blocks missing, the best model, Claude Sonnet 4.5,
+Evaluation Metrics. To evaluate LLM performance on
+                                                                     achieves just 71.58% accuracy, while the weakest, gpt-oss,
+VCoT completion tasks, we employ three metrics: Syntac-
+                                                                     reaches only 32.89%. When all blocks are removed (100%),
+tic Accuracy (SynAcc), Semantic Accuracy (SemAcc), and
+                                                                     turning the task into full VCoT construction, performance
+Overall Accuracy (Acc).
+                                                                     collapses: Claude Sonnet 4.5 falls to 17.22% and Qwen 3
+Syntactic correctness is checked by invoking Verus in                think to near zero (0.66%). This shows that current LLMs
+syntax-only mode (-no-verify). Semantic correctness                  do not reason from first principles but rely heavily on local
+is evaluated by a specialized LLM-based judge, guided by             pattern matching and syntactic scaffolding; once this context
+a detailed protocol with curated examples to align its deci-         is stripped away, they fail to construct complex, multi-step
+sions with human judgment. To validate the reliability of            deductive chains.
+this judge, we conduct a meta-evaluation on 100 stratified
+                                                                     F2: A 40% removal threshold breaks proof inference. Al-
+tasks sampled from VCoT-Bench. The judge achieves a
+                                                                     though accuracy declines overall, the drop is non-uniform.
+94% agreement rate with author consensus, demonstrating
+                                                                     Across all models, performance falls sharply as block re-
+its effectiveness in capturing semantic equivalence.
+                                                                     moval increases from 10% to 40%, then degrades much
+For overall accuracy, inspired by CodeBLEU (Ren et al.,              more slowly from 40% to 100%. This pattern reflects the
+2020), we define a weighted accuracy metric that empha-              loss of critical structural anchors in the verification logic:
+sizes semantic correctness over syntactic correctness. Each          once these anchors fall below a threshold, logical continuity
+prediction is categorized into one of four levels:                   collapses, and models can no longer infer the proof logic,
+• Level 3: Both semantically and syntactically correct.              making it uniformly difficult regardless of further removal.
+• Level 2: Semantically correct but syntactically incorrect.         F3: Model scale helps. Performance is strongly influenced
+• Level 1: Syntactically correct but semantically incorrect.         by model scale: larger models (e.g., proprietary variants and
+• Level 0: Incorrect in both dimensions.                             DeepSeek V3.2/R1) substantially outperform smaller ones
+Overall accuracy is computed as                                      (e.g., gpt-oss and Qwen 3), underscoring that sufficient pa-
+              N (3) + 0.5 N (2) + 0.25 N (1)                         rameter capacity is crucial for capturing the intricate logical
+      Acc =                                  × 100%,      (1)        dependencies of verification.
+                           N
+
+                                                                 7
+                                       VCoT-Bench: Evaluating via Verification Chain of Thought
+
+Table 1. Overall accuracy across proof types and proof locations.           with genuine verification capability from those relying on
+The highest and second-highest accuracy are highlighted.
+                                                                            shallow pattern matching.
+                         Results for overall accuracy
+ Model Name               VCoT-Bench-Type             VCoT-Bench-Loc        F3: Model scale helps, but is not decisive. Model size
+                     Invariant Assertion Lemma Front Middle End             generally correlates with higher accuracy, but the trend is
+ GPT-5.2              54.42    34.25    55.48   58.27   41.15   65.58       not absolute. For example, GPT-5 mini (23.47%) under-
+ GPT-5 mini           23.47    32.88    36.30   49.04   36.92   60.00
+ gpt-oss              17.69    21.58    26.20   19.81    9.81   28.65       performs Qwen 3 non-think (26.87%) on loop invariants.
+ Claude Sonnet 4.5    68.71    39.55    51.54   69.04   46.35   65.96       While proprietary models typically lead, DeepSeek V3.2
+ Claude Haiku 4.5     52.55    27.23    42.64   58.85   35.19   57.69       matches the performance of Claude Haiku 4.5, showing that
+ Gemini 3             62.07    22.95    42.81   62.69   36.15   46.73
+ Gemini 3 Flash       57.65    28.60    41.61   67.12   47.69   62.50
+                                                                            well-trained open-source models can narrow the gap.
+ DeepSeek V3.2        49.49    29.45    44.35   56.73   32.31   58.85
+ DeepSeek R1          46.60    28.94    38.53   53.46   27.88   48.08       4.4. Performance across Proof Locations
+ Qwen 3 think         10.03    11.47    22.43   22.88   14.81   35.58
+ Qwen 3 non-think     26.87    13.70    23.63   33.46   16.54   37.12       We evaluate LLM performance across proof locations using
+                                                                            VCoT-Bench-Loc and report two key findings based on the
+F4:Reasoning variants can hurt performance. We observe                      results in Table 1.
+counterintuitive inversions within model families: Qwen 3
+generally outperforms its “thinking” variant, and Gemini 3                  F1: Connective reasoning in Middle is the hardest. Across
+Flash overall surpasses Gemini 3. This suggests that current                all strong models, performance drops most sharply when
+reasoning-oriented paradigms can inject noise into verifica-                missing blocks occur in the Middle of the proof. For exam-
+tion. In formal proofs, where syntactic precision and solver                ple, Claude Sonnet 4.5 falls from 69.04% (Front) to 46.35%
+fidelity are critical, verbose “thinking” can induce halluci-               (Middle), and Gemini 3 from 62.69% to 36.15%. This con-
+nated predicates or semantic drift, while simpler models may                sistent decline exposes a shared weakness: while models
+benefit from a more direct, lower-entropy pattern-matching                  handle Front blocks that set up constraints and End blocks
+approach.                                                                   that follow recognizable closing patterns, they struggle with
+                                                                            the Middle, where connective reasoning is required. These
+F5: 100% removal accuracy is inflated by small programs.                    intermediate steps demand propagating invariants, tracking
+We observe a slight accuracy increase for most models at                    state evolution, and composing multi-step deductions, tasks
+100% removal. This is due to the discrete nature of the                     for which local pattern matching offers little support.
+removal rate. Single-block programs appear only at 100%,
+causing small, easier programs to be overrepresented and                    F2: Model scale may not benefit Middle. Larger models
+inflating accuracy at this extreme.                                         perform well on Front and End blocks but do not dominate
+                                                                            on Middle blocks. Gemini 3 Flash achieves the highest
+4.3. Performance across Proof Types                                         Middle accuracy (47.69%), outperforming both Gemini 3
+We evaluate LLM performance across proof types using                        (36.15%) and GPT-5.2 (41.15%). This inversion indicates
+VCoT-Bench-Type and report three key findings based on                      that Middle-block performance is not driven by model scale;
+the results in Table 1.                                                     instead, models optimized for low-latency reasoning may
+                                                                            better track intermediate verification states, while larger,
+F1: Assertions are the hardest. Across most models, asser-                  more verbose models are more prone to semantic drift.
+tion completion has the lowest accuracy. Even the strongest
+model, Claude Sonnet 4.5, achieves only 39.55% on asser-
+tions, compared to 68.71% on loop invariants and 51.54%                     5. Conclusion
+on lemma functions. This consistent gap reflects a funda-                   This paper introduces VCoT-Lift and VCoT-Bench, which
+mental weakness: assertions require precise, state-specific                 expose solver-level reasoning as explicit VCoTs to rigor-
+reasoning where missing a single condition causes failure,                  ously assess whether LLMs can reconstruct the step-by-step
+whereas invariants and lemmas allow greater reliance on                     logic of Rust verification, revealing a wide gap between
+higher-level structural patterns.                                           current models and automated theorem provers in genuine
+F2: Loop invariants are easiest yet most discriminative.                    deductive reasoning. Looking forward, VCoT can go be-
+For nearly all models, loop invariant completion achieves                   yond evaluation, providing a concrete supervision signal
+the highest accuracy, but also shows the widest spread                      for training, diagnosing, and guiding learning-based verifi-
+across models, ranging from 68.71% (Claude Sonnet 4.5)                      cation systems toward symbolic alignment, and reframing
+to 10.03% (Qwen 3 think), a 58.68% gap. This variance                       the field from whether models pass verification to whether
+far exceeds that of assertions (28.08%) and lemma func-                     they can truly reconstruct and reason through the underlying
+tions (33.05%), indicating that loop invariants are the most                verification logic.
+discriminative proof type: they require holistic reasoning
+over iterative program behavior, clearly separating models
+
+                                                                        8
+                                 VCoT-Bench: Evaluating via Verification Chain of Thought
+
+References                                                          Guo, D., Yang, D., Zhang, H., Song, J., Zhang, R., Xu, R.,
+                                                                      Zhu, Q., Ma, S., Wang, P., Bi, X., et al. Deepseek-r1: In-
+Aggarwal, P., Parno, B., and Welleck, S. Alphaverus: Boot-
+                                                                      centivizing reasoning capability in llms via reinforcement
+  strapping formally verified code generation through self-
+                                                                      learning. arXiv preprint arXiv:2501.12948, 2025.
+  improving translation and treefinement. arXiv preprint
+  arXiv:2412.06176, 2024.                                           Hosseini, P., Castro, I., Ghinassi, I., and Purver, M. Efficient
+                                                                      solutions for an intriguing failure of llms: Long context
+Anthropic. Introducing claude haiku 4.5. https://www.
+                                                                      window does not mean llms can analyze long sequences
+  anthropic.com/news/claude-haiku-4-5,
+                                                                      flawlessly. In Proceedings of the 31st international confer-
+  October 2025a. [Online; accessed: 11-Jan-2026].
+                                                                      ence on computational linguistics, pp. 1880–1891, 2025.
+Anthropic. Introducing claude sonnet 4.5. https://www.
+                                                                    Ishibashi, Y. and Nishimura, Y. Self-organized agents:
+  anthropic.com/news/claude-sonnet-4-5,
+                                                                      A llm multi-agent framework toward ultra large-scale
+  September 2025b. [Online; accessed: 11-Jan-2026].
+                                                                       code generation and optimization. arXiv preprint
+Blanchette, J. C., Böhme, S., and Paulson, L. C. Extending             arXiv:2404.02183, 2024.
+  sledgehammer with smt solvers. Journal of automated
+  reasoning, 51(1):109–128, 2013.                                   Islam, M. A., Ali, M. E., and Parvez, M. R. Mapcoder:
+                                                                       Multi-agent code generation for competitive problem
+Böhme, S. and Nipkow, T. Sledgehammer: judgement                       solving. arXiv preprint arXiv:2405.11403, 2024.
+  day. In International Joint Conference on Automated
+  Reasoning, pp. 107–121. Springer, 2010.                           Jiang, J., Wang, F., Shen, J., Kim, S., and Kim, S. A survey
+                                                                       on large language models for code generation. arXiv
+Chakraborty, S., Gupta, A., and Unadkat, D. Diffy: Induc-              preprint arXiv:2406.00515, 2024.
+  tive reasoning of array programs using difference invari-
+  ants. In International Conference on Computer Aided               Lattuada, A., Hance, T., Bosamiya, J., Brun, M., Cho, C.,
+  Verification, pp. 911–935. Springer, 2021.                          LeBlanc, H., Srinivasan, P., Achermann, R., Chajed, T.,
+                                                                      Hawblitzel, C., et al. Verus: A practical foundation for
+Chen, T., Lu, S., Lu, S., Gong, Y., Yang, C., Li, X., Misu,           systems verification. In Proceedings of the ACM SIGOPS
+  M. R. H., Yu, H., Duan, N., Cheng, P., et al. Automated             30th Symposium on Operating Systems Principles, pp.
+  proof generation for rust code via self-evolution. arXiv            438–454, 2024.
+  preprint arXiv:2410.15756, 2024.
+                                                                    Li, C., Liang, J., Zeng, A., Chen, X., Hausman, K., Sadigh,
+De Moura, L. and Bjørner, N. Z3: An efficient smt solver.             D., Levine, S., Fei-Fei, L., Xia, F., and Ichter, B. Chain
+  In International conference on Tools and Algorithms for             of code: Reasoning with a language model-augmented
+  the Construction and Analysis of Systems, pp. 337–340.              code emulator. arXiv preprint arXiv:2312.04474, 2023.
+  Springer, 2008.
+                                                                    Li, J., Wang, M., Zheng, Z., and Zhang, M. Loogle: Can
+Dong, Z., Li, J., Men, X., Zhao, X., Wang, B., Tian, Z., Wen,         long-context language models understand long contexts?
+  J.-R., et al. Exploring context window of large language            In Proceedings of the 62nd Annual Meeting of the Asso-
+  models via decomposed positional vectors. Advances                  ciation for Computational Linguistics (Volume 1: Long
+  in Neural Information Processing Systems, 37:10320–                 Papers), pp. 16304–16333, 2024.
+ 10347, 2024.
+                                                                    Li, Y., Choi, D., Chung, J., Kushman, N., Schrittwieser, J.,
+Du, Y., Tian, M., Ronanki, S., Rongali, S., Bodapati, S.,             Leblond, R., Eccles, T., Keeling, J., Gimeno, F., Dal Lago,
+  Galstyan, A., Wells, A., Schwartz, R., Huerta, E. A., and           A., et al. Competition-level code generation with alpha-
+  Peng, H. Context length alone hurts llm performance de-             code. Science, 378(6624):1092–1097, 2022.
+  spite perfect retrieval. arXiv preprint arXiv:2510.05381,
+  2025.                                                             Liu, A., Mei, A., Lin, B., Xue, B., Wang, B., Xu, B., Wu,
+                                                                      B., Zhang, B., Lin, C., Dong, C., et al. Deepseek-v3.
+Google. Gemini 3. https://deepmind.google/                            2: Pushing the frontier of open large language models.
+  models/gemini/, November 2025a. [Online; ac-                        arXiv preprint arXiv:2512.02556, 2025.
+  cessed: 11-Jan-2026].
+                                                                    Liu, C., Dylan Zhang, S., Ibrahimzada, A. R., and Jabbar-
+Google.    Gemini 3 flash.      https://deepmind.                     vand, R. Codemind: A framework to challenge large
+  google/models/gemini/flash/,            December                    language models for code reasoning. arXiv e-prints, pp.
+  2025b. [Online; accessed: 11-Jan-2026].                             arXiv–2402, 2024.
+
+                                                                9
+                                  VCoT-Bench: Evaluating via Verification Chain of Thought
+
+Matsakis, N. D. and Klock, F. S. The rust language. In Pro-            Yang, C., Li, X., Misu, M. R. H., Yao, J., Cui, W., Gong,
+ ceedings of the 2014 ACM SIGAda annual conference on                    Y., Hawblitzel, C., Lahiri, S., Lorch, J. R., Lu, S., et al.
+ High integrity language technology, pp. 103–104, 2014.                  Autoverus: Automated proof generation for rust code.
+                                                                         arXiv preprint arXiv:2409.13082, 2024.
+Misu, M. R. H., Lopes, C. V., Ma, I., and Noble, J. Towards
+ ai-assisted synthesis of verified dafny methods. Proceed-             Yang, C., Neamtu, N., Hawblitzel, C., Lorch, J. R., and Lu,
+ ings of the ACM on Software Engineering, 1(FSE):812–                    S. Verusage: A study of agent-based verification for rust
+ 835, 2024.                                                              systems. arXiv preprint arXiv:2512.18436, 2025a.
+
+Mohamed, A., Mascarenhas, T., Khan, H., Barbosa, H.,                   Yang, C., Zhao, Z., Xie, Z., Li, H., and Zhang, L. Knighter:
+ Reynolds, A., Qian, Y., Tinelli, C., and Barrett, C. Lean-              Transforming static analysis with llm-synthesized check-
+ smt: An smt tactic for discharging proof goals in lean. In              ers. In Proceedings of the ACM SIGOPS 31st Symposium
+ International Conference on Computer Aided Verification,                on Operating Systems Principles, pp. 655–669, 2025b.
+ pp. 197–212. Springer, 2025.                                          Z3Prover. Z3.proof. https://z3prover.github.
+                                                                         io/api/html/ml/Z3.Proof.html, 2026. [On-
+OpenAI. Introducing gpt-5.2. https://openai.
+                                                                         line; accessed: 26-Jan-2026].
+  com/index/introducing-gpt-5-2/, Decem-
+  ber 2025a. [Online; accessed: 11-Jan-2026].                          Zhang, F., Chen, B., Zhang, Y., Keung, J., Liu, J., Zan,
+                                                                         D., Mao, Y., Lou, J.-G., and Chen, W. Repocoder:
+OpenAI. Gpt-5 mini model. https://platform.                              Repository-level code completion through iterative re-
+  openai.com/docs/models/gpt-5-mini, Au-                                 trieval and generation. arXiv preprint arXiv:2303.12570,
+  gust 2025b. [Online; accessed: 11-Jan-2026].                           2023.
+OpenAI. Introducing gpt-oss. https://openai.com/                       Zhang, K., Li, J., Li, G., Shi, X., and Jin, Z. Codeagent:
+  index/introducing-gpt-oss/, August 2025c.                              Enhancing code generation with tool-integrated agent sys-
+  [Online; accessed: 11-Jan-2026].                                       tems for real-world repo-level coding challenges. arXiv
+                                                                         preprint arXiv:2401.07339, 2024.
+Ren, S., Guo, D., Lu, S., Zhou, L., Liu, S., Tang, D., Sun-
+  daresan, N., Zhou, M., Blanco, A., and Ma, S. Code-                  Zhong, S. C. and Si, X. Towards repository-level program
+  bleu: a method for automatic evaluation of code synthesis.             verification with large language models. In Proceedings
+  arXiv preprint arXiv:2009.10297, 2020.                                 of the 1st ACM SIGPLAN International Workshop on
+                                                                         Language Models and Programming Languages, pp. 27–
+Stack Overflow. "rust continues to be the most-admired pro-              39, 2025.
+  gramming language", 2024. URL https://survey.
+  stackoverflow.co/2024/technology. [On-                               Zhuo, T. Y., Vu, M. C., Chim, J., Hu, H., Yu, W., Widyasari,
+  line; accessed: 01-Oct-2025].                                          R., Yusuf, I. N. B., Zhan, H., He, J., Paul, I., et al. Big-
+                                                                         codebench: Benchmarking code generation with diverse
+Sun, C., Sun, Y., Amrollahi, D., Zhang, E., Lahiri, S., Lu, S.,          function calls and complex instructions. arXiv preprint
+  Dill, D., and Barrett, C. Veristruct: Ai-assisted automated            arXiv:2406.15877, 2024.
+  verification of data-structure modules in verus. arXiv
+  preprint arXiv:2510.25015, 2025.
+
+Team, Q. Qwen3 technical report, 2025. URL https:
+  //arxiv.org/abs/2505.09388.
+
+Wei, Y., Duchenne, O., Copet, J., Carbonneaux, Q., Zhang,
+ L., Fried, D., Synnaeve, G., Singh, R., and Wang, S. I.
+ Swe-rl: Advancing llm reasoning via reinforcement
+ learning on open software evolution. arXiv preprint
+ arXiv:2502.18449, 2025.
+
+Wen, J., Guan, J., Wang, H., Wu, W., and Huang, M. Code-
+ plan: Unlocking reasoning potential in large language
+ models by scaling code-form planning. In The Thirteenth
+ International Conference on Learning Representations,
+ 2024.
+
+                                                                  10
+                                 VCoT-Bench: Evaluating via Verification Chain of Thought
+
+A. Complete VCoT Exposed by VCoT-Lift                                B. Additional Details
+Figure 8 shows the complete VCoT exposed by VCoT-Lift                B.1. Z3 Proof Rule Hierarchy
+for the running example program, which replaces the last
+                                                                     Table 2 provides a detailed overview of 36 Z3 proof rules.
+element of the first vector (first) with all elements of the
+                                                                     For each rule, we report its importance level along with a
+second vector (second). The VCoT is composed of five
+                                                                     detailed explanation of its semantics and usage.
+primary reasoning phases.
+Phase 1: Preparing sequence properties Before the first              B.2. VCoT-Bench
+loop, the proof establishes foundational sequence properties
+needed later by invoking auxiliary lemmas on sequence con-           We provide additional details comparing the numbers of
+catenation and subranges. lemma_subrange_add_whole                   assertions and lemma functions between VCoT-Bench-Org
+shows that splitting a sequence into two parts and then              and Verus-Bench, as shown in Figure 9.
+concatenating them reconstructs the original sequence,               As shown in Figure 9a, programs in VCoT-Bench-Org con-
+while lemma_seq_add_append_one shows that, during                    tain substantially more assertions, which are a core compo-
+sequence construction, appending an element commutes                 nent of VCoT because they explicitly expose intermediate
+with concatenation. Together, these lemmas ensure correct            verification reasoning. Each program contains an average of
+splitting and recombination of sequences and provide the             15.47 additional assertions, with a maximum of 56. More-
+algebraic basis for the loop invariants.                             over, among 150 programs, 145 (96.67%) show an increase
+Phase 2: Verifying the first loop. The first loop copies             in the number of assertions.
+all but the last element of first into replaced_list.                Figure 9b compares the numbers of lemma functions, show-
+Its loop invariant maintains that replaced_list equals               ing that programs in VCoT-Bench-Org also include signifi-
+first@.subrange(0, index). Each iteration appends                    cantly more lemmas, whereas only a small fraction of Verus-
+first[index], and the invariant is preserved by showing              Bench programs contain lemma functions. Each program
+that extending the subrange by one element matches the               contains an average of 1.94 additional lemma functions,
+effect of push.                                                      with a maximum of 9. Furthermore, 123 out of 150 pro-
+ Phase 3: Bridging between the two loops. After the first            grams (82%) show an increase in the number of lemma
+ loop terminates, the proof establishes that replaced_list           functions.
+ equals first.subrange(0, first.len() - 1). This                     We omit a detailed comparison of loop invariant counts be-
+ result is then normalized to match the second loop invariant        cause their increase is marginal (increase 1.99%). Unlike
+ by rewriting it as an addition with an empty subrange of            assertions and lemma functions, which depend on one an-
+ second, namely (first@.subrange(0, first.len()                      other to form a chain of thought, Z3 reasons about loop
+- 1).add(second@.subrange(0, 0))).                                   invariants as a fixed point. As a result, loop invariants act
+Phase 4: Verifying the second loop. The second loop                  as a summarized representation of a loop, with limited ad-
+appends all elements of second to replaced_list.                     ditional verification information to be lifted from the Z3
+Its loop invariant states that replaced_list                         proof.
+equals          first@.subrange(0, first.len() -
+1).add(second@.subrange(0, index)).                Each              B.3. Study Setup
+iteration extends the subrange of second by one element,             Machine. All our experiments are run on a machine with
+and the invariant is preserved by reasoning that push                Ubuntu 22.04.5 LTS, 192-core CPUs, and 512GB RAM.
+corresponds to subrange extension.                                   For running open-source models locally, we use NVIDIA
+Step 5: Finalizing the verification. When the second                 RTX PRO 6000 Blackwell GPUs with 96 GB VRAM.
+loop finishes with index == second.len(), and a final                Model Details. Table 3 presents the details of the evaluated
+proof step applies lemma function lemma_subrange_all                 LLMs, including ten models with their respective vendors,
+to prove second@.subrange(0, second.len())                           model checkpoints, and access types (via API or GPU).
+equals second.         This establishes the postcondi-
+tion        replaced_list@ == first@.subrange(0,
+first.len() - 1).add(second@), completing the                        C. Analysis of Syntactic and Semantic
+verification.                                                           Accuracy
+                                                                     In this section, we report and analyze the syntactic accu-
+                                                                     racy (SynAcc) and semantic accuracy (SemAcc) of LLM
+                                                                     performance.
+
+
+                                                                11
+                                  VCoT-Bench: Evaluating via Verification Chain of Thought
+
+
+
+
+Figure 8. The complete VCoT exposed by VCoT-Lift for the running Verus example with specifications, including original proof hints
+and the additional proof steps. The VCoT is composed of five primary reasoning phases.
+
+
+C.1. Performance across Proof Ratios.                               ratios, and report three key findings based on the results
+                                                                    shown in Figure 10.
+Using VCoT-Bench-Ratio, we evaluate LLM performance
+in both syntax and semantics across semantic proof removal          F1: Proof removal reveals both syntactic and semantic
+
+
+                                                               12
+                           VCoT-Bench: Evaluating via Verification Chain of Thought
+
+                                               Table 2. Z3 Proof Rule Hierarchy.
+
+Level    Rule              Description
+         lemma             Discharge a hypothesis; if a contradiction is derived from an assumption P , the rule concludes ¬P .
+         th-lemma          Introduce a theory-specific tautology or conflict clause generated by the solver to justify an inference
+                           that is valid within that theory’s specific axioms.
+High
+         mp                Given a proof of P and a proof that P implies Q (or P = Q), this rule concludes Q.
+         mp∼               Given a proof of P and a proof that P is equivalent to Q (P ⇐⇒ Q), this rule concludes Q.
+         unit-resolution   Performs a resolution step between a multi-literal clause and one or more unit clauses.
+         quant-intro       Given an equivalence between two terms f (x) ⇐⇒ g(x), concludes that ∀x.f (x) ⇐⇒ ∀x.g(x).
+         quant-inst        Justifies the specialized case where a universal quantifier is removed by replacing the bound variable
+                           with a specific term, concluding that (∀x.ϕ) =⇒ ϕ[t/x].
+         skolemize         Eliminates an existential quantifier ∃x.ϕ[x] by replacing the bound variable with a fresh constant or
+                           function c, yielding the equisatisfiable formula ϕ[c].
+         asserted          Introduces an initial formula or axiom provided directly by the user as a premise.
+         hypothesis        Introduces a temporary assumption into a local scope to facilitate conditional reasoning.
+         and-elim          Derives a specific conjunct from a conjunction; given a proof of (l1 ∧ l2 ∧ · · · ∧ ln ), concludes a single
+                           literal li , representing the elimination of the logical "and" operator.
+Medium   not-or-elim       Derives the negation of a specific disjunct from a negated disjunction; given a proof of ¬(l1 ∨l2 ∨· · ·∨ln ),
+                           concludes ¬li , applying De Morgan’s laws to extract individual negative literals.
+         trans             Given proofs of x = y and y = z, concludes x = z.
+         trans*            Chains an arbitrary sequence of equality or equivalence steps (x1 = x2 , x2 = x3 , . . . , xn−1 = xn ) to
+                           conclude the direct relation between the first and last terms (x1 = xn ).
+         monotonicity      Given a1 = b1 , . . . , an = bn , concludes f (a1 , . . . , an ) = f (b1 , . . . , bn ).
+         der               Simplifies a formula by eliminating a universally quantified variable x when the body contains a conjunct
+                           x = t (where x ∈ / t), applying the variable substitution ϕ[t/x].
+         rewrite           Represents a single step of the simplifier where t1 is transformed into t2 such that ⊢ t1 = t2 .
+         rewrite*          Collapses a series of individual simplifications and algebraic reductions into a single proof object,
+                           concluding that the initial term is equivalent to the final fully-reduced form.
+         def-axiom         Introduces a formula that defines a new constant or function symbol.
+         apply-def         Replaces a defined symbol with its corresponding definition.
+         true              Concludes the logical constant ’true’
+         =/∼               Justifies basic term equality or equivalence; it concludes that two terms are identical or logically
+                           equivalent (t ⇐⇒ t or t = t).
+         iff-true          Simplifies a formula by concluding P ⇐⇒ ⊤ given a proof of P
+         iff-false         Simplifies a formula by concluding P ⇐⇒ ⊥ given a proof of ¬P .
+         goal              Represents the final formula to be proven.
+Low
+         refl              Concludes t = t for any term t, serving as the fundamental base case for all equality-based reasoning.
+         symm              Given a proof of t1 = t2 , concludes t2 = t1 .
+         commutativity     Given a term f (x, y), concludes f (x, y) = f (y, x) for operations like addition, multiplication, or
+                           logical disjunction/conjunction.
+         pull-quant        Given a formula where a quantifier is nested, such as (∀x.ϕ) ∨ ψ (where x is not free in ψ), concludes
+                           the equivalence (∀x.ϕ) ∨ ψ ⇐⇒ ∀x.(ϕ ∨ ψ).
+         push-quant        Given a formula like ∀x.(ϕ∧ψ), this rule concludes the equivalence ∀x.(ϕ∧ψ) ⇐⇒ (∀x.ϕ)∧(∀x.ψ).
+         elim-unused       Concludes the equivalence (∀x.ϕ) ⇐⇒ ϕ or (∃x.ϕ) ⇐⇒ ϕ, x is not a free variable in ϕ.
+         distributivity    Justifies the expansion or factoring of terms where one operator distributes over another; most commonly,
+                           it validates identities like a×(b+c) = (a×b)+(a×c) in arithmetic, or p∧(q∨r) ⇐⇒ (p∧q)∨(p∧r)
+                           in boolean logic.
+         nnf-pos           Validates the transformation of a formula into Negation Normal Form (NNF) under a positive context.
+         nnf-neg           Validates the transformation of a formula into Negation Normal Form (NNF) under a negative context.
+         iff-oeq           Justifies the equivalence between a formula P and its boolean reduction based on the current context.
+         def-intro         Justifies the introduction of a new boolean constant p as a proxy for a complex formula ϕ.
+
+
+
+
+                                                                   13
+                                                         VCoT-Bench: Evaluating via Verification Chain of Thought
+
+                                                             Table 3. Detailed Configurations for the Evaluated LLMs
+
+                                                Vendor    Model Name                                      Checkpoint                              Type
+                                                          GPT-5.2 (OpenAI, 2025a)                         gpt-5.2-2025-12-11                      API
+                                                OpenAI    GPT-5 mini (OpenAI, 2025b)                      gpt-5-mini-2025-08-07                   API
+                                                          gpt-oss 20b (OpenAI, 2025c)                     gpt-oss-20b                             GPU
+                                                          Claude Sonnet 4.5 (Anthropic, 2025b)            claude-sonnet-4-5-20250929              API
+                                                Anthropic
+                                                          Claude Haiku 4.5 (Anthropic, 2025a)             claude-haiku-4-5-20251001               API
+                                                          Gemini 3 (Google, 2025a)                        gemini-3-pro-preview                    API
+                                                Google
+                                                          Gemini 3 Flash (Google, 2025b)                  gemini-3-flash-preview                  API
+                                                          DeepSeek V3.2 (Liu et al., 2025)                DeepSeek-V3.2                           API
+                                                DeepSeek
+                                                          DeepSeek R1 (Guo et al., 2025)                  DeepSeek-R1-0528                        API
+                                                Alibaba   Qwen 3 (Team, 2025)                             Qwen3-8B                                GPU
+
+
+                    60
+                         # Assertion (VCoT-Bench-Org)                                                           100                                               GPT-5.2
+                         # Assertion (Verus-Bench)                                                                                                                GPT-5 mini
+                    50
+                                                                                                                                                                  gpt-oss
+                                                                                                                                                                  Claude Sonnet 4.5
+
+
+
+
+ # Assertion
+                    40
+                                                                                                                                                                  Claude Haiku 4.5
+                                                                                                                 80                                               Gemini 3
+                    30                                                                                                                                            Gemini 3 Flash
+                                                                                                                                                                  DeepSeek V3.2
+                    20                                                                                                                                            DeepSeek R1
+
+
+
+
+                                                                                                 Accuracy (%)
+                                                                                                                                                                  Qwen 3 think
+                                                                                                                 60
+                    10
+                                                                                                                                                                  Qwen 3 non-think
+
+
+                     0
+                                          Verified Verus program
+                                                                                                                 40
+
+                                 (a) Comparison of # Assertion.
+                    10   # Lemma Function (VCoT-Bench-Org)
+                         # Lemma Function (Verus-Bench)                                                          20
+
+
+
+
+ # Lemma Function
+                    8
+
+
+
+                    6
+                                                                                                                  0
+                    4                                                                                                 10%   20%   30%     40%   50%   60%   70%   80%   90%   100%
+                                                                                                                                        Ratio of Removed Blocks
+                    2
+                                                                                                                                   (a) Syntactic Accuracy
+                    0                                                                                                                                             GPT-5.2
+                                                                                                                80
+                                                                                                                                                                  GPT-5 mini
+                                          Verified Verus program                                                                                                  gpt-oss
+                                                                                                                70
+                                                                                                                                                                  Claude Sonnet 4.5
+                            (b) Comparison of # Lemma Function.                                                                                                   Claude Haiku 4.5
+                                                                                                                60
+                                                                                                                                                                  Gemini 3
+Figure 9. Comparison of # Assertion and # Lemma Function per                                                                                                      Gemini 3 Flash
+
+
+
+
+                                                                                                 Accuracy (%)
+                                                                                                                50                                                DeepSeek V3.2
+program between VCoT-Bench-Org and Verus-Bench.                                                                                                                   DeepSeek R1
+                                                                                                                40                                                Qwen 3 think
+                                                                                                                                                                  Qwen 3 non-think
+                                                                                                                30
+
+fragility. Both syntactic and semantic accuracies decline as
+                                                                                                                20
+the proof removal ratio increases. For syntactic accuracy,
+with 10% removal, the Gemini family achieves near-perfect                                                       10
+
+performance (91.58%), substantially outperforming other                                                          0
+
+models. However, at 100% removal, syntactic accuracy                                                                  10%   20%   30%    40%    50%   60%   70%   80%   90%    100%
+                                                                                                                                        Ratio of Removed Blocks
+drops sharply to 45.7% for Gemini 3 and 24.5% for Gemini
+3 Flash. This steep decline indicates that current LLMs lack                                                                       (b) Semantic Accuracy
+a robust understanding of Verus syntax and instead rely on                                  Figure 10. Impact of semantic block removal on (a) Syntactic
+local contextual cues, which disappear as more proofs are                                   Accuracy, and (b) Semantic Accuracy.
+removed, exposing structural fragility.
+For semantic accuracy, with 10% removal, GPT-5.2 achieves
+the highest performance (73.68%), but this drops to 27.15%                                  F2: Different decline trend for syntactic and semantic ac-
+at 100% removal. The decline is even more severe for Qwen                                   curacy. Syntactic and semantic accuracies exhibit different
+3, whose semantic accuracy falls to 0% at 80% or 90%                                        decline patterns. Syntactic accuracy decreases smoothly
+removal. These results further indicate that current LLMs                                   as proofs are removed, whereas semantic accuracy drops
+lack a sufficient understanding of VCoT.                                                    sharply when removal increases from 10% to 40%, then
+
+                                                                                       14
+                                     VCoT-Bench: Evaluating via Verification Chain of Thought
+
+Table 4. Syntactic and Semantic Accuracy across Proof Types. The          Table 5. Syntactic and Semantic Accuracy across Proof Locations.
+highest and second-highest scores are highlighted.                        The highest and second-highest scores are highlighted.
+                         Results for VCoT-Bench-Type                                               Results for VCoT-Bench-Loc
+ Model Name             Invariant           Assertion Lemma                Model Name               Front             Middle    End
+                     SynAcc SemAcc SynAcc SemAcc SynAcc SemAcc                                 SynAcc SemAcc SynAcc SemAcc SynAcc SemAcc
+ GPT-5.2             59.18   62.59   13.70   56.16   61.64   59.59         GPT-5.2             63.85   63.85   35.38   54.62   66.15   73.85
+ GPT-5 mini          12.24   39.46    2.74   63.01   23.97   54.79         GPT-5 mini          34.62   67.69   23.08   56.92   41.54   83.08
+ gpt-oss              0.00   35.37    4.79   39.73   34.25   30.82         gpt-oss             10.00   30.77    6.92   15.38   22.31   38.46
+ Claude Sonnet 4.5   97.96   59.18   53.42   39.73   90.41   39.73         Claude Sonnet 4.5   93.08   62.31   63.08   46.92   80.77   64.62
+ Claude Haiku 4.5    89.80   40.82    8.22   47.26   69.18   36.99         Claude Haiku 4.5    80.77   54.62   40.00   41.54   66.15   62.31
+ Gemini 3            98.64   50.34   50.68   16.44   92.47   26.71         Gemini 3            90.77   54.62   64.62   28.46   80.00   36.92
+ Gemini 3 Flash      97.96   44.90   28.08   38.36   88.36   26.71         Gemini 3 Flash      92.31   60.00   66.15   46.15   86.92   56.15
+ DeepSeek V3.2       89.80   37.41    4.11   56.16   55.48   46.58         DeepSeek V3.2       80.00   53.08   23.08   47.69   60.77   65.38
+ DeepSeek R1         79.59   37.41    7.53   52.74   34.93   49.32         DeepSeek R1         65.38   56.15   18.46   42.31   51.54   53.85
+ Qwen 3 think        30.61   4.08    18.49   12.33   39.73   17.81         Qwen 3 think        49.23   15.38   33.08   10.77   63.85   28.46
+ Qwen 3 non-think    73.47   12.24   28.08   11.64   47.26   16.44         Qwen 3 non-think    76.92   20.77   38.46   11.54   61.54   31.54
+
+
+
+declines more gradually from 40% to 100%.                                 sertions, resulting in syntactic accuracy between that of loop
+                                                                          invariants and assertions.
+This difference stems from their distinct roles. Syntactically,
+semantic proof blocks are largely independent, so each con-               F2: Semantic accuracy varies across proof types. Asser-
+tributes similarly to overall correctness, producing a smooth             tions are not uniformly the most challenging proof type in
+decline as blocks are removed. Semantically, however, early               terms of semantic accuracy, as model performance varies
+removal disproportionately eliminates critical structural an-             across proof types. Loop invariants require holistic reason-
+chors in the verification logic; once these anchors fall below            ing across iterations, where GPT-5.2 and Claude Sonnet 4.5
+a threshold, logical continuity collapses, and models can no              perform best, achieving semantic accuracies of 62.59% and
+longer infer the proof structure, making the task uniformly               59.18%, respectively. Assertions demand strong step-by-
+difficult regardless of further removal.                                  step inductive reasoning, on which GPT-5 mini performs
+                                                                          best, outperforming GPT-5.2 (54.62%), Claude Sonnet 4.5
+F3: Syntactic-semantic imbalance. A syntactic-semantic
+                                                                          (46.92%), and Gemini 3 (28.46%). Lemma functions re-
+imbalance is observed here. While Gemini 3 exhibits low
+                                                                          quire contextual reasoning over the main proof body and
+semantic accuracy but achieves relatively high syntactic
+                                                                          auxiliary properties, a setting in which the GPT family
+accuracy, GPT-5.2 shows the opposite trend, with lower
+                                                                          achieves the strongest overall performance.
+syntactic accuracy yet excelling in semantic understanding.
+This contrast highlights the pressing need for models to                  F3: Syntactic-semantic imbalance remains. A clear syn-
+bridge the gap between grammatical fluency and verification               tactic–semantic imbalance persists for Gemini 3 and GPT-
+understanding to ensure more holistic reasoning.                          5.2. Gemini 3 shows a striking disparity on loop invari-
+                                                                          ants, achieving near-perfect syntactic accuracy (98.64%)
+C.2. Performance across Proof Types                                       but much lower semantic accuracy (50.34%). In contrast,
+                                                                          GPT-5.2 exhibits the opposite pattern, with lower syntactic
+Using VCoT-Bench-Type, we evaluate LLM performance                        accuracy (59.18%) but higher semantic accuracy (62.59%).
+in both syntax and semantics across proof types, and report               This imbalance appears consistently across all proof types,
+three key findings based on results in Table 4.                           indicating that the syntactic–semantic bias persists regard-
+F1: Assertions are the hardest for syntactic accuracy. Syn-               less of proof type.
+tactic accuracy for loop invariants and lemma functions is
+consistently much higher than for assertions across most                  C.3. Performance across Proof Locations
+models. For example, DeepSeek V3.2 achieves 89.80% syn-
+                                                                          Using VCoT-Bench-Loc, we evaluate LLM performance in
+tactic accuracy on loop invariants but drops sharply to 4.11%
+                                                                          both syntactic and semantic accuracy across proof locations
+on assertions. This large gap reflects LLMs’ limited famil-
+                                                                          and report three key findings based on the results in Table 5.
+iarity with assertion syntax. Loop invariants impose looser
+grammatical constraints and closely resemble Rust code,                   F1: Middle Blocks are syntactically hardest. Across all
+making them easier to generate. Assertions, by contrast,                  models, syntactic accuracy on Front and End blocks con-
+involve substantially more complex grammar, particularly                  sistently exceeds that on Middle blocks. For example,
+strict type discipline that often requires explicit conversions           DeepSeek V3.2 achieves 90% syntactic accuracy on Front
+to int, which models frequently miss. Lemma functions                     blocks and 60.77% on End blocks, but only 23.08% on
+also involve specialized constructs such as requires and                  Middle blocks. This gap stems from differences in syn-
+ensures, but demand less grammatical precision than as-                   tactic structure: Front and End blocks typically contain
+
+                                                                     15
+                                VCoT-Bench: Evaluating via Verification Chain of Thought
+
+short constraints with simple equalities or bounds, whereas
+Middle blocks usually require longer, more complex ex-
+pressions with nested function calls and chained conditions
+to maintain state consistency, placing greater demands on
+grammatical understanding and leading to lower syntactic
+accuracy.
+F2: Middle blocks are semantically hardest Across all
+models, semantic accuracy on Front and End blocks ex-
+ceeds that on Middle blocks. Even for the best-performing
+model, GPT-5 mini, semantic accuracy reaches 67.69% on
+Front blocks and 83.08% on End blocks, but only 56.62%
+on Middle blocks. This pattern reinforces that current LLMs
+struggle significantly with connective reasoning in the mid-
+dle of proofs.
+F3: Syntactic gaps exceed semantic gaps. For syntac-
+tic accuracy, the performance gap across locations reaches
+57.92%, while for semantic accuracy it narrows to 26.16%.
+This discrepancy suggests that current LLMs lack a ro-
+bust understanding of Verus syntax but exhibit a relatively
+stronger grasp of verification semantics, which may build
+on code reasoning capabilities that most models are already
+trained on.
+
+
+
+
+                                                               16
+

@@ -216,6 +216,10 @@ pub(super) async fn handle_pr_autofix(
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     state.network_recovery_status = None;
     state.network_recovery_attempts = 0;
     state.streaming_assistant_idx = Some(assistant_idx);

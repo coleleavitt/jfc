@@ -1,0 +1,843 @@
+DIGEST aeb05cebd90ad5f45a1e5781e0030f14
+FJFCTheorems.InformationBottleneck
+R2317:2331 Stdlib.Arith.Arith <> <> lib
+R2349:2362 Stdlib.Lists.List <> <> lib
+R2380:2392 Stdlib.Bool.Bool <> <> lib
+R2410:2426 Stdlib.micromega.Lia <> <> lib
+R2436:2448 Stdlib.Lists.List ListNotations <> mod
+def 2659:2665 <> entropy
+R2677:2680 Corelib.Init.Datatypes <> list ind
+R2682:2684 Corelib.Init.Datatypes <> nat ind
+binder 2668:2673 <> states:1
+R2689:2691 Corelib.Init.Datatypes <> nat ind
+R2698:2703 Corelib.Init.Datatypes <> length def
+R2706:2710 Stdlib.Lists.List <> nodup def
+R2723:2728 JFCTheorems.InformationBottleneck <> states:1 var
+R2712:2721 Stdlib.Arith.PeanoNat Nat eq_dec thm
+def 2815:2825 <> mutual_info
+R2834:2837 Corelib.Init.Datatypes <> list ind
+R2839:2841 Corelib.Init.Datatypes <> nat ind
+binder 2828:2828 <> x:2
+binder 2830:2830 <> y:3
+R2846:2848 Corelib.Init.Datatypes <> nat ind
+R2855:2860 Corelib.Init.Datatypes <> length def
+R2863:2868 Stdlib.Lists.List <> filter def
+R2904:2908 Stdlib.Lists.List <> nodup def
+R2921:2921 JFCTheorems.InformationBottleneck <> x:2 var
+R2910:2919 Stdlib.Arith.PeanoNat Nat eq_dec thm
+binder 2875:2875 <> s:4
+R2880:2886 Stdlib.Lists.List <> existsb def
+R2900:2900 JFCTheorems.InformationBottleneck <> y:3 var
+R2889:2895 Stdlib.Arith.PeanoNat Nat eqb def
+R2897:2897 JFCTheorems.InformationBottleneck <> s:4 var
+def 2991:3009 <> conditional_entropy
+R3018:3021 Corelib.Init.Datatypes <> list ind
+R3023:3025 Corelib.Init.Datatypes <> nat ind
+binder 3012:3012 <> x:5
+binder 3014:3014 <> y:6
+R3030:3032 Corelib.Init.Datatypes <> nat ind
+R3048:3050 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3039:3045 JFCTheorems.InformationBottleneck <> entropy def
+R3047:3047 JFCTheorems.InformationBottleneck <> y:6 var
+R3051:3061 JFCTheorems.InformationBottleneck <> mutual_info def
+R3063:3063 JFCTheorems.InformationBottleneck <> x:5 var
+R3065:3065 JFCTheorems.InformationBottleneck <> y:6 var
+rec 3275:3281 <> IBState
+proj 3307:3319 <> input_entropy
+proj 3347:3364 <> compressed_entropy
+proj 3387:3402 <> task_mutual_info
+proj 3457:3460 <> beta
+R3323:3325 Corelib.Init.Datatypes <> nat ind
+R3368:3370 Corelib.Init.Datatypes <> nat ind
+R3406:3408 Corelib.Init.Datatypes <> nat ind
+R3464:3466 Corelib.Init.Datatypes <> nat ind
+def 3573:3584 <> ib_objective
+R3591:3597 JFCTheorems.InformationBottleneck <> IBState rec
+binder 3587:3587 <> s:12
+R3602:3604 Corelib.Init.Datatypes <> nat ind
+R3635:3652 JFCTheorems.InformationBottleneck <> compressed_entropy proj
+R3654:3654 JFCTheorems.InformationBottleneck <> s:12 var
+binder 3615:3630 <> compression_cost:13
+R3686:3686 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R3714:3717 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R3705:3707 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R3687:3702 JFCTheorems.InformationBottleneck <> task_mutual_info proj
+R3704:3704 JFCTheorems.InformationBottleneck <> s:12 var
+R3708:3711 JFCTheorems.InformationBottleneck <> beta proj
+R3713:3713 JFCTheorems.InformationBottleneck <> s:12 var
+binder 3665:3681 <> relevance_benefit:14
+R3851:3857 Stdlib.Arith.PeanoNat Nat leb def
+R3859:3875 JFCTheorems.InformationBottleneck <> relevance_benefit:14 var
+R3877:3892 JFCTheorems.InformationBottleneck <> compression_cost:13 var
+R3919:3921 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3903:3918 JFCTheorems.InformationBottleneck <> compression_cost:13 var
+R3922:3938 JFCTheorems.InformationBottleneck <> relevance_benefit:14 var
+def 4089:4103 <> rate_distortion
+R4144:4146 Corelib.Init.Datatypes <> nat ind
+binder 4106:4119 <> source_entropy:15
+binder 4121:4140 <> distortion_tolerance:16
+R4151:4153 Corelib.Init.Datatypes <> nat ind
+R4237:4243 Stdlib.Arith.PeanoNat Nat eqb def
+R4245:4264 JFCTheorems.InformationBottleneck <> distortion_tolerance:16 var
+R4356:4358 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4317:4320 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4355:4355 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4303:4316 JFCTheorems.InformationBottleneck <> source_entropy:15 var
+R4324:4326 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4327:4329 Corelib.Init.Peano <> min abbrev
+R4331:4350 JFCTheorems.InformationBottleneck <> distortion_tolerance:16 var
+R4277:4290 JFCTheorems.InformationBottleneck <> source_entropy:15 var
+prf 4432:4461 <> lossless_requires_full_entropy
+binder 4474:4487 <> source_entropy:17
+R4526:4528 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4494:4508 JFCTheorems.InformationBottleneck <> rate_distortion def
+R4510:4523 JFCTheorems.InformationBottleneck <> source_entropy:17 var
+R4529:4542 JFCTheorems.InformationBottleneck <> source_entropy:17 var
+R4586:4600 JFCTheorems.InformationBottleneck <> rate_distortion def
+prf 4835:4864 <> distortion_enables_compression
+binder 4877:4890 <> source_entropy:18
+binder 4892:4893 <> d1:19
+binder 4895:4896 <> d2:20
+R4911:4918 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4905:4908 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R4903:4904 JFCTheorems.InformationBottleneck <> d1:19 var
+R4909:4910 JFCTheorems.InformationBottleneck <> d2:20 var
+R4952:4955 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R4919:4933 JFCTheorems.InformationBottleneck <> rate_distortion def
+R4935:4948 JFCTheorems.InformationBottleneck <> source_entropy:18 var
+R4950:4951 JFCTheorems.InformationBottleneck <> d1:19 var
+R4956:4970 JFCTheorems.InformationBottleneck <> rate_distortion def
+R4972:4985 JFCTheorems.InformationBottleneck <> source_entropy:18 var
+R4987:4988 JFCTheorems.InformationBottleneck <> d2:20 var
+R5042:5056 JFCTheorems.InformationBottleneck <> rate_distortion def
+R5071:5077 Stdlib.Arith.PeanoNat Nat eqb def
+R5071:5077 Stdlib.Arith.PeanoNat Nat eqb def
+R5125:5131 Stdlib.Arith.PeanoNat Nat eqb def
+R5125:5131 Stdlib.Arith.PeanoNat Nat eqb def
+R5198:5207 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R5198:5207 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R5229:5239 Stdlib.Arith.PeanoNat Nat eqb_neq thm
+R5229:5239 Stdlib.Arith.PeanoNat Nat eqb_neq thm
+R5363:5366 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5357:5359 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R5336:5339 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R5356:5356 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R5343:5345 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R5346:5348 Corelib.Init.Peano <> min abbrev
+R5363:5366 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5357:5359 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R5336:5339 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R5356:5356 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R5343:5345 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R5346:5348 Corelib.Init.Peano <> min abbrev
+R5398:5424 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R5398:5424 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R5459:5465 Stdlib.Arith.PeanoNat Nat eqb def
+R5459:5465 Stdlib.Arith.PeanoNat Nat eqb def
+R5558:5567 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R5558:5567 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R5583:5593 Stdlib.Arith.PeanoNat Nat eqb_neq thm
+R5583:5593 Stdlib.Arith.PeanoNat Nat eqb_neq thm
+R5676:5695 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R5676:5695 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R5710:5726 Stdlib.Arith.PeanoNat Nat mul_le_mono_l thm
+R5710:5726 Stdlib.Arith.PeanoNat Nat mul_le_mono_l thm
+R5816:5819 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5806:5808 Corelib.Init.Peano <> min abbrev
+R5820:5822 Corelib.Init.Peano <> min abbrev
+R5816:5819 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5806:5808 Corelib.Init.Peano <> min abbrev
+R5820:5822 Corelib.Init.Peano <> min abbrev
+R5855:5873 Stdlib.Arith.PeanoNat Nat min_le_compat_r thm
+R5855:5873 Stdlib.Arith.PeanoNat Nat min_le_compat_r thm
+rec 5957:5975 <> ConversationContext
+proj 6001:6012 <> total_tokens
+proj 6023:6038 <> semantic_content
+proj 6085:6094 <> redundancy
+proj 6150:6154 <> noise
+R6016:6018 Corelib.Init.Datatypes <> nat ind
+R6042:6044 Corelib.Init.Datatypes <> nat ind
+R6098:6100 Corelib.Init.Datatypes <> nat ind
+R6158:6160 Corelib.Init.Datatypes <> nat ind
+def 6291:6305 <> compressibility
+R6314:6332 JFCTheorems.InformationBottleneck <> ConversationContext rec
+binder 6308:6310 <> ctx:26
+R6337:6339 Corelib.Init.Datatypes <> nat ind
+R6346:6346 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R6381:6384 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R6347:6347 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R6374:6377 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R6362:6364 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R6348:6357 JFCTheorems.InformationBottleneck <> redundancy proj
+R6359:6361 JFCTheorems.InformationBottleneck <> ctx:26 var
+R6365:6369 JFCTheorems.InformationBottleneck <> noise proj
+R6371:6373 JFCTheorems.InformationBottleneck <> ctx:26 var
+R6385:6387 Corelib.Init.Peano <> max abbrev
+R6392:6403 JFCTheorems.InformationBottleneck <> total_tokens proj
+R6405:6407 JFCTheorems.InformationBottleneck <> ctx:26 var
+def 6471:6484 <> minimum_tokens
+R6493:6511 JFCTheorems.InformationBottleneck <> ConversationContext rec
+binder 6487:6489 <> ctx:27
+R6516:6518 Corelib.Init.Datatypes <> nat ind
+R6525:6540 JFCTheorems.InformationBottleneck <> semantic_content proj
+R6542:6544 JFCTheorems.InformationBottleneck <> ctx:27 var
+prf 6663:6694 <> compression_bounded_by_semantics
+binder 6707:6709 <> ctx:28
+binder 6711:6727 <> compressed_tokens:29
+R6773:6780 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6751:6754 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R6734:6750 JFCTheorems.InformationBottleneck <> compressed_tokens:29 var
+R6755:6768 JFCTheorems.InformationBottleneck <> minimum_tokens def
+R6770:6772 JFCTheorems.InformationBottleneck <> ctx:28 var
+R6798:6801 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R6781:6797 JFCTheorems.InformationBottleneck <> compressed_tokens:29 var
+R6802:6817 JFCTheorems.InformationBottleneck <> semantic_content proj
+R6819:6821 JFCTheorems.InformationBottleneck <> ctx:28 var
+R6876:6889 JFCTheorems.InformationBottleneck <> minimum_tokens def
+def 7068:7080 <> compress_once
+R7090:7092 Corelib.Init.Datatypes <> nat ind
+binder 7083:7086 <> info:30
+R7104:7106 Corelib.Init.Datatypes <> nat ind
+binder 7096:7100 <> ratio:31
+R7111:7113 Corelib.Init.Datatypes <> nat ind
+R7132:7134 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R7124:7126 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R7120:7123 JFCTheorems.InformationBottleneck <> info:30 var
+R7127:7131 JFCTheorems.InformationBottleneck <> ratio:31 var
+def 7181:7196 <> compress_cascade
+R7206:7208 Corelib.Init.Datatypes <> nat ind
+binder 7199:7202 <> info:32
+R7220:7222 Corelib.Init.Datatypes <> nat ind
+binder 7212:7216 <> ratio:33
+R7230:7232 Corelib.Init.Datatypes <> nat ind
+binder 7226:7226 <> n:34
+R7237:7239 Corelib.Init.Datatypes <> nat ind
+R7252:7252 JFCTheorems.InformationBottleneck <> n:34 var
+R7268:7271 JFCTheorems.InformationBottleneck <> info:32 var
+R7277:7277 Corelib.Init.Datatypes <> S constr
+R7284:7296 JFCTheorems.InformationBottleneck <> compress_once def
+R7299:7314 JFCTheorems.InformationBottleneck <> compress_cascade:35 def
+R7321:7325 JFCTheorems.InformationBottleneck <> ratio:33 var
+R7316:7319 JFCTheorems.InformationBottleneck <> info:32 var
+R7330:7334 JFCTheorems.InformationBottleneck <> ratio:33 var
+prf 7508:7536 <> compress_once_strict_decrease
+binder 7549:7549 <> x:37
+binder 7551:7555 <> ratio:38
+R7573:7580 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7567:7569 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R7562:7566 JFCTheorems.InformationBottleneck <> ratio:38 var
+R7586:7593 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7582:7584 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R7585:7585 JFCTheorems.InformationBottleneck <> x:37 var
+R7615:7617 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R7594:7606 JFCTheorems.InformationBottleneck <> compress_once def
+R7608:7608 JFCTheorems.InformationBottleneck <> x:37 var
+R7610:7614 JFCTheorems.InformationBottleneck <> ratio:38 var
+R7618:7618 JFCTheorems.InformationBottleneck <> x:37 var
+R7659:7671 JFCTheorems.InformationBottleneck <> compress_once def
+R7762:7788 Stdlib.Arith.PeanoNat Nat.Div0 div_lt_upper_bound thm
+R7762:7788 Stdlib.Arith.PeanoNat Nat.Div0 div_lt_upper_bound thm
+prf 7880:7897 <> compress_once_mono
+binder 7910:7910 <> a:39
+binder 7912:7912 <> b:40
+binder 7914:7918 <> ratio:41
+R7927:7930 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7922:7925 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R7921:7921 JFCTheorems.InformationBottleneck <> a:39 var
+R7926:7926 JFCTheorems.InformationBottleneck <> b:40 var
+R7952:7955 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R7931:7943 JFCTheorems.InformationBottleneck <> compress_once def
+R7945:7945 JFCTheorems.InformationBottleneck <> a:39 var
+R7947:7951 JFCTheorems.InformationBottleneck <> ratio:41 var
+R7956:7968 JFCTheorems.InformationBottleneck <> compress_once def
+R7970:7970 JFCTheorems.InformationBottleneck <> b:40 var
+R7972:7976 JFCTheorems.InformationBottleneck <> ratio:41 var
+R8017:8029 JFCTheorems.InformationBottleneck <> compress_once def
+R8040:8059 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R8040:8059 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+prf 8272:8293 <> cascade_drops_by_depth
+binder 8306:8309 <> info:42
+binder 8311:8315 <> ratio:43
+binder 8317:8317 <> n:44
+R8335:8342 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8329:8331 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R8324:8328 JFCTheorems.InformationBottleneck <> ratio:43 var
+R8376:8383 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R8372:8374 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8343:8358 JFCTheorems.InformationBottleneck <> compress_cascade def
+R8360:8363 JFCTheorems.InformationBottleneck <> info:42 var
+R8365:8369 JFCTheorems.InformationBottleneck <> ratio:43 var
+R8371:8371 JFCTheorems.InformationBottleneck <> n:44 var
+R8417:8420 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R8413:8415 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8384:8399 JFCTheorems.InformationBottleneck <> compress_cascade def
+R8401:8404 JFCTheorems.InformationBottleneck <> info:42 var
+R8406:8410 JFCTheorems.InformationBottleneck <> ratio:43 var
+R8412:8412 JFCTheorems.InformationBottleneck <> n:44 var
+R8416:8416 JFCTheorems.InformationBottleneck <> n:44 var
+R8421:8424 JFCTheorems.InformationBottleneck <> info:42 var
+R8691:8703 JFCTheorems.InformationBottleneck <> compress_once def
+R8720:8730 Stdlib.Arith.PeanoNat Nat mul_0_l thm
+R8720:8730 Stdlib.Arith.PeanoNat Nat mul_0_l thm
+R8720:8730 Stdlib.Arith.PeanoNat Nat mul_0_l thm
+R8739:8754 Stdlib.Arith.PeanoNat Nat.Div0 div_0_l thm
+R8739:8754 Stdlib.Arith.PeanoNat Nat.Div0 div_0_l thm
+R8855:8864 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R8867:8882 JFCTheorems.InformationBottleneck <> compress_cascade def
+R8855:8864 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R8867:8882 JFCTheorems.InformationBottleneck <> compress_cascade def
+R8953:8965 JFCTheorems.InformationBottleneck <> compress_once def
+R8984:8994 Stdlib.Arith.PeanoNat Nat mul_0_l thm
+R8984:8994 Stdlib.Arith.PeanoNat Nat mul_0_l thm
+R8984:8994 Stdlib.Arith.PeanoNat Nat mul_0_l thm
+R9003:9018 Stdlib.Arith.PeanoNat Nat.Div0 div_0_l thm
+R9003:9018 Stdlib.Arith.PeanoNat Nat.Div0 div_0_l thm
+R9056:9084 JFCTheorems.InformationBottleneck <> compress_once_strict_decrease thm
+R9087:9102 JFCTheorems.InformationBottleneck <> compress_cascade def
+R9056:9084 JFCTheorems.InformationBottleneck <> compress_once_strict_decrease thm
+R9087:9102 JFCTheorems.InformationBottleneck <> compress_cascade def
+prf 9462:9486 <> cascade_converges_to_zero
+binder 9499:9502 <> info:45
+binder 9504:9508 <> ratio:46
+R9526:9533 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9520:9522 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R9515:9519 JFCTheorems.InformationBottleneck <> ratio:46 var
+R9542:9549 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9538:9540 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R9534:9537 JFCTheorems.InformationBottleneck <> info:45 var
+R9550:9556 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R9558:9559 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 9557:9557 <> n:47
+R9589:9591 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9560:9575 JFCTheorems.InformationBottleneck <> compress_cascade def
+R9577:9580 JFCTheorems.InformationBottleneck <> info:45 var
+R9582:9586 JFCTheorems.InformationBottleneck <> ratio:46 var
+R9588:9588 JFCTheorems.InformationBottleneck <> n:47 var
+R9663:9684 JFCTheorems.InformationBottleneck <> cascade_drops_by_depth thm
+R9663:9684 JFCTheorems.InformationBottleneck <> cascade_drops_by_depth thm
+prf 9973:9996 <> cascade_exponential_loss
+binder 10009:10012 <> info:48
+binder 10014:10018 <> ratio:49
+binder 10020:10020 <> n:50
+R10039:10046 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10032:10035 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R10027:10031 JFCTheorems.InformationBottleneck <> ratio:49 var
+R10080:10083 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R10047:10062 JFCTheorems.InformationBottleneck <> compress_cascade def
+R10064:10067 JFCTheorems.InformationBottleneck <> info:48 var
+R10069:10073 JFCTheorems.InformationBottleneck <> ratio:49 var
+R10076:10076 Corelib.Init.Datatypes <> S constr
+R10078:10078 JFCTheorems.InformationBottleneck <> n:50 var
+R10084:10099 JFCTheorems.InformationBottleneck <> compress_cascade def
+R10101:10104 JFCTheorems.InformationBottleneck <> info:48 var
+R10106:10110 JFCTheorems.InformationBottleneck <> ratio:49 var
+R10112:10112 JFCTheorems.InformationBottleneck <> n:50 var
+R10170:10182 JFCTheorems.InformationBottleneck <> compress_once def
+R10193:10219 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R10193:10219 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R10269:10272 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R10261:10263 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R10232:10247 JFCTheorems.InformationBottleneck <> compress_cascade def
+R10302:10304 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R10273:10288 JFCTheorems.InformationBottleneck <> compress_cascade def
+R10269:10272 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R10261:10263 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R10232:10247 JFCTheorems.InformationBottleneck <> compress_cascade def
+R10302:10304 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R10273:10288 JFCTheorems.InformationBottleneck <> compress_cascade def
+R10321:10337 Stdlib.Arith.PeanoNat Nat mul_le_mono_l thm
+R10321:10337 Stdlib.Arith.PeanoNat Nat mul_le_mono_l thm
+def 10941:10955 <> lagrangian_cost
+R10993:10995 Corelib.Init.Datatypes <> nat ind
+binder 10958:10963 <> lambda:51
+binder 10965:10977 <> fidelity_loss:52
+binder 10979:10989 <> kept_length:53
+R11000:11002 Corelib.Init.Datatypes <> nat ind
+R11022:11024 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11009:11021 JFCTheorems.InformationBottleneck <> fidelity_loss:52 var
+R11031:11033 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R11025:11030 JFCTheorems.InformationBottleneck <> lambda:51 var
+R11034:11044 JFCTheorems.InformationBottleneck <> kept_length:53 var
+prf 11340:11373 <> lagrangian_cost_monotone_in_lambda
+binder 11386:11389 <> lam1:54
+binder 11391:11394 <> lam2:55
+binder 11396:11397 <> fl:56
+binder 11399:11401 <> len:57
+R11420:11427 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11412:11415 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11408:11411 JFCTheorems.InformationBottleneck <> lam1:54 var
+R11416:11419 JFCTheorems.InformationBottleneck <> lam2:55 var
+R11455:11458 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11428:11442 JFCTheorems.InformationBottleneck <> lagrangian_cost def
+R11444:11447 JFCTheorems.InformationBottleneck <> lam1:54 var
+R11449:11450 JFCTheorems.InformationBottleneck <> fl:56 var
+R11452:11454 JFCTheorems.InformationBottleneck <> len:57 var
+R11459:11473 JFCTheorems.InformationBottleneck <> lagrangian_cost def
+R11475:11478 JFCTheorems.InformationBottleneck <> lam2:55 var
+R11480:11481 JFCTheorems.InformationBottleneck <> fl:56 var
+R11483:11485 JFCTheorems.InformationBottleneck <> len:57 var
+R11536:11550 JFCTheorems.InformationBottleneck <> lagrangian_cost def
+R11561:11577 Stdlib.Arith.PeanoNat Nat add_le_mono_l thm
+R11561:11577 Stdlib.Arith.PeanoNat Nat add_le_mono_l thm
+R11588:11604 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R11588:11604 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+prf 11928:11951 <> lagrangian_bounds_length
+binder 11964:11969 <> lambda:58
+binder 11971:11972 <> fl:59
+binder 11974:11976 <> len:60
+binder 11978:11978 <> C:61
+R11995:12002 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11986:11988 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R11989:11994 JFCTheorems.InformationBottleneck <> lambda:58 var
+R12037:12044 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12032:12035 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12003:12017 JFCTheorems.InformationBottleneck <> lagrangian_cost def
+R12019:12024 JFCTheorems.InformationBottleneck <> lambda:58 var
+R12026:12027 JFCTheorems.InformationBottleneck <> fl:59 var
+R12029:12031 JFCTheorems.InformationBottleneck <> len:60 var
+R12036:12036 JFCTheorems.InformationBottleneck <> C:61 var
+R12048:12051 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12045:12047 JFCTheorems.InformationBottleneck <> len:60 var
+R12053:12055 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R12052:12052 JFCTheorems.InformationBottleneck <> C:61 var
+R12056:12061 JFCTheorems.InformationBottleneck <> lambda:58 var
+R12117:12131 JFCTheorems.InformationBottleneck <> lagrangian_cost def
+R12151:12172 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+R12151:12172 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+rec 12777:12785 <> Candidate
+proj 12813:12830 <> cand_fidelity_loss
+proj 12889:12904 <> cand_kept_length
+R12834:12836 Corelib.Init.Datatypes <> nat ind
+R12908:12910 Corelib.Init.Datatypes <> nat ind
+def 12947:12960 <> candidate_cost
+R12972:12974 Corelib.Init.Datatypes <> nat ind
+binder 12963:12968 <> lambda:65
+R12982:12990 JFCTheorems.InformationBottleneck <> Candidate rec
+binder 12978:12978 <> c:66
+R12995:12997 Corelib.Init.Datatypes <> nat ind
+R13004:13018 JFCTheorems.InformationBottleneck <> lagrangian_cost def
+R13020:13025 JFCTheorems.InformationBottleneck <> lambda:65 var
+R13028:13045 JFCTheorems.InformationBottleneck <> cand_fidelity_loss proj
+R13047:13047 JFCTheorems.InformationBottleneck <> c:66 var
+R13051:13066 JFCTheorems.InformationBottleneck <> cand_kept_length proj
+R13068:13068 JFCTheorems.InformationBottleneck <> c:66 var
+def 13295:13316 <> longer_better_fidelity
+R13332:13340 JFCTheorems.InformationBottleneck <> Candidate rec
+binder 13319:13323 <> short:67
+binder 13325:13328 <> long:68
+R13402:13407 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R13377:13380 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13355:13370 JFCTheorems.InformationBottleneck <> cand_kept_length proj
+R13372:13376 JFCTheorems.InformationBottleneck <> short:67 var
+R13381:13396 JFCTheorems.InformationBottleneck <> cand_kept_length proj
+R13398:13401 JFCTheorems.InformationBottleneck <> long:68 var
+R13431:13434 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13408:13425 JFCTheorems.InformationBottleneck <> cand_fidelity_loss proj
+R13427:13430 JFCTheorems.InformationBottleneck <> long:68 var
+R13435:13452 JFCTheorems.InformationBottleneck <> cand_fidelity_loss proj
+R13454:13458 JFCTheorems.InformationBottleneck <> short:67 var
+prf 14109:14146 <> optimal_length_nonincreasing_in_lambda
+binder 14159:14162 <> lam1:69
+binder 14164:14167 <> lam2:70
+binder 14169:14173 <> short:71
+binder 14175:14178 <> long:72
+R14197:14204 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14189:14192 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14185:14188 JFCTheorems.InformationBottleneck <> lam1:69 var
+R14193:14196 JFCTheorems.InformationBottleneck <> lam2:70 var
+R14238:14245 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14205:14226 JFCTheorems.InformationBottleneck <> longer_better_fidelity def
+R14228:14232 JFCTheorems.InformationBottleneck <> short:71 var
+R14234:14237 JFCTheorems.InformationBottleneck <> long:72 var
+R14299:14306 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14270:14273 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14246:14259 JFCTheorems.InformationBottleneck <> candidate_cost def
+R14261:14264 JFCTheorems.InformationBottleneck <> lam2:70 var
+R14266:14269 JFCTheorems.InformationBottleneck <> long:72 var
+R14274:14287 JFCTheorems.InformationBottleneck <> candidate_cost def
+R14289:14292 JFCTheorems.InformationBottleneck <> lam2:70 var
+R14294:14298 JFCTheorems.InformationBottleneck <> short:71 var
+R14331:14334 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14307:14320 JFCTheorems.InformationBottleneck <> candidate_cost def
+R14322:14325 JFCTheorems.InformationBottleneck <> lam1:69 var
+R14327:14330 JFCTheorems.InformationBottleneck <> long:72 var
+R14335:14348 JFCTheorems.InformationBottleneck <> candidate_cost def
+R14350:14353 JFCTheorems.InformationBottleneck <> lam1:69 var
+R14355:14359 JFCTheorems.InformationBottleneck <> short:71 var
+R14433:14446 JFCTheorems.InformationBottleneck <> candidate_cost def
+R14449:14463 JFCTheorems.InformationBottleneck <> lagrangian_cost def
+R14796:14813 JFCTheorems.InformationBottleneck <> cand_fidelity_loss proj
+R14796:14813 JFCTheorems.InformationBottleneck <> cand_fidelity_loss proj
+R14840:14857 JFCTheorems.InformationBottleneck <> cand_fidelity_loss proj
+R14840:14857 JFCTheorems.InformationBottleneck <> cand_fidelity_loss proj
+R14885:14900 JFCTheorems.InformationBottleneck <> cand_kept_length proj
+R14885:14900 JFCTheorems.InformationBottleneck <> cand_kept_length proj
+R14927:14942 JFCTheorems.InformationBottleneck <> cand_kept_length proj
+R14927:14942 JFCTheorems.InformationBottleneck <> cand_kept_length proj
+R15242:15244 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R15242:15244 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R15280:15282 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15285:15287 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15280:15282 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15285:15287 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15444:15447 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15433:15435 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15440:15442 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15444:15447 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15433:15435 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15440:15442 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15486:15489 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15482:15484 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15494:15496 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15510:15526 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R15486:15489 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15482:15484 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15494:15496 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15510:15526 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+rec 16036:16040 <> Token
+proj 16064:16069 <> tok_id
+proj 16080:16088 <> tok_score
+R16073:16075 Corelib.Init.Datatypes <> nat ind
+R16092:16094 Corelib.Init.Datatypes <> nat ind
+def 16276:16281 <> retain
+R16292:16294 Corelib.Init.Datatypes <> nat ind
+binder 16284:16288 <> gamma:76
+R16305:16308 Corelib.Init.Datatypes <> list ind
+R16310:16314 JFCTheorems.InformationBottleneck <> Token rec
+binder 16298:16301 <> toks:77
+R16319:16322 Corelib.Init.Datatypes <> list ind
+R16324:16328 JFCTheorems.InformationBottleneck <> Token rec
+R16335:16340 Stdlib.Lists.List <> filter def
+R16381:16384 JFCTheorems.InformationBottleneck <> toks:77 var
+binder 16347:16347 <> t:78
+R16352:16358 Stdlib.Arith.PeanoNat Nat ltb def
+R16360:16364 JFCTheorems.InformationBottleneck <> gamma:76 var
+R16367:16375 JFCTheorems.InformationBottleneck <> tok_score proj
+R16377:16377 JFCTheorems.InformationBottleneck <> t:78 var
+prf 16556:16578 <> retained_iff_high_score
+binder 16591:16595 <> gamma:79
+binder 16597:16600 <> toks:80
+binder 16602:16602 <> t:81
+R16633:16637 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R16609:16610 Stdlib.Lists.List <> In def
+R16615:16620 JFCTheorems.InformationBottleneck <> retain def
+R16622:16626 JFCTheorems.InformationBottleneck <> gamma:79 var
+R16628:16631 JFCTheorems.InformationBottleneck <> toks:80 var
+R16612:16612 JFCTheorems.InformationBottleneck <> t:81 var
+R16647:16650 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R16638:16639 Stdlib.Lists.List <> In def
+R16643:16646 JFCTheorems.InformationBottleneck <> toks:80 var
+R16641:16641 JFCTheorems.InformationBottleneck <> t:81 var
+R16662:16664 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R16651:16659 JFCTheorems.InformationBottleneck <> tok_score proj
+R16661:16661 JFCTheorems.InformationBottleneck <> t:81 var
+R16665:16669 JFCTheorems.InformationBottleneck <> gamma:79 var
+R16709:16714 JFCTheorems.InformationBottleneck <> retain def
+R16727:16735 Stdlib.Lists.List <> filter_In thm
+R16727:16735 Stdlib.Lists.List <> filter_In thm
+R16727:16735 Stdlib.Lists.List <> filter_In thm
+R16796:16805 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R16796:16805 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R16869:16878 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R16869:16878 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+prf 17163:17184 <> retained_upward_closed
+binder 17197:17201 <> gamma:82
+binder 17203:17206 <> toks:83
+binder 17208:17208 <> t:84
+binder 17210:17210 <> u:85
+R17241:17248 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17217:17218 Stdlib.Lists.List <> In def
+R17223:17228 JFCTheorems.InformationBottleneck <> retain def
+R17230:17234 JFCTheorems.InformationBottleneck <> gamma:82 var
+R17236:17239 JFCTheorems.InformationBottleneck <> toks:83 var
+R17220:17220 JFCTheorems.InformationBottleneck <> t:84 var
+R17258:17265 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17249:17250 Stdlib.Lists.List <> In def
+R17254:17257 JFCTheorems.InformationBottleneck <> toks:83 var
+R17252:17252 JFCTheorems.InformationBottleneck <> u:85 var
+R17292:17299 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17277:17280 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R17266:17274 JFCTheorems.InformationBottleneck <> tok_score proj
+R17276:17276 JFCTheorems.InformationBottleneck <> t:84 var
+R17281:17289 JFCTheorems.InformationBottleneck <> tok_score proj
+R17291:17291 JFCTheorems.InformationBottleneck <> u:85 var
+R17300:17301 Stdlib.Lists.List <> In def
+R17306:17311 JFCTheorems.InformationBottleneck <> retain def
+R17313:17317 JFCTheorems.InformationBottleneck <> gamma:82 var
+R17319:17322 JFCTheorems.InformationBottleneck <> toks:83 var
+R17303:17303 JFCTheorems.InformationBottleneck <> u:85 var
+R17379:17401 JFCTheorems.InformationBottleneck <> retained_iff_high_score thm
+R17379:17401 JFCTheorems.InformationBottleneck <> retained_iff_high_score thm
+R17443:17465 JFCTheorems.InformationBottleneck <> retained_iff_high_score thm
+R17443:17465 JFCTheorems.InformationBottleneck <> retained_iff_high_score thm
+prf 18047:18074 <> retain_monotone_in_threshold
+binder 18087:18088 <> g1:86
+binder 18090:18091 <> g2:87
+binder 18093:18096 <> toks:88
+binder 18098:18098 <> t:89
+R18113:18120 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18107:18110 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R18105:18106 JFCTheorems.InformationBottleneck <> g1:86 var
+R18111:18112 JFCTheorems.InformationBottleneck <> g2:87 var
+R18142:18149 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18121:18122 Stdlib.Lists.List <> In def
+R18127:18132 JFCTheorems.InformationBottleneck <> retain def
+R18134:18135 JFCTheorems.InformationBottleneck <> g2:87 var
+R18137:18140 JFCTheorems.InformationBottleneck <> toks:88 var
+R18124:18124 JFCTheorems.InformationBottleneck <> t:89 var
+R18150:18151 Stdlib.Lists.List <> In def
+R18156:18161 JFCTheorems.InformationBottleneck <> retain def
+R18163:18164 JFCTheorems.InformationBottleneck <> g1:86 var
+R18166:18169 JFCTheorems.InformationBottleneck <> toks:88 var
+R18153:18153 JFCTheorems.InformationBottleneck <> t:89 var
+R18217:18239 JFCTheorems.InformationBottleneck <> retained_iff_high_score thm
+R18217:18239 JFCTheorems.InformationBottleneck <> retained_iff_high_score thm
+R18282:18304 JFCTheorems.InformationBottleneck <> retained_iff_high_score thm
+R18282:18304 JFCTheorems.InformationBottleneck <> retained_iff_high_score thm
+prf 18479:18499 <> retain_count_monotone
+binder 18512:18513 <> g1:90
+binder 18515:18516 <> g2:91
+binder 18518:18521 <> toks:92
+R18536:18543 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18530:18533 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R18528:18529 JFCTheorems.InformationBottleneck <> g1:90 var
+R18534:18535 JFCTheorems.InformationBottleneck <> g2:91 var
+R18567:18570 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R18544:18549 Corelib.Init.Datatypes <> length def
+R18552:18557 JFCTheorems.InformationBottleneck <> retain def
+R18559:18560 JFCTheorems.InformationBottleneck <> g2:91 var
+R18562:18565 JFCTheorems.InformationBottleneck <> toks:92 var
+R18571:18576 Corelib.Init.Datatypes <> length def
+R18579:18584 JFCTheorems.InformationBottleneck <> retain def
+R18586:18587 JFCTheorems.InformationBottleneck <> g1:90 var
+R18589:18592 JFCTheorems.InformationBottleneck <> toks:92 var
+R18634:18639 JFCTheorems.InformationBottleneck <> retain def
+R18717:18723 Stdlib.Arith.PeanoNat Nat ltb def
+R18729:18737 JFCTheorems.InformationBottleneck <> tok_score proj
+R18767:18773 Stdlib.Arith.PeanoNat Nat ltb def
+R18779:18787 JFCTheorems.InformationBottleneck <> tok_score proj
+R18717:18723 Stdlib.Arith.PeanoNat Nat ltb def
+R18729:18737 JFCTheorems.InformationBottleneck <> tok_score proj
+R18767:18773 Stdlib.Arith.PeanoNat Nat ltb def
+R18779:18787 JFCTheorems.InformationBottleneck <> tok_score proj
+R18767:18773 Stdlib.Arith.PeanoNat Nat ltb def
+R18779:18787 JFCTheorems.InformationBottleneck <> tok_score proj
+R18900:18909 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R18900:18909 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R18924:18933 Stdlib.Arith.PeanoNat Nat ltb_ge thm
+R18924:18933 Stdlib.Arith.PeanoNat Nat ltb_ge thm
+rec 19162:19172 <> TaskContext
+proj 19202:19213 <> context_info
+proj 19267:19284 <> task_relevant_info
+proj 19331:19350 <> task_irrelevant_info
+R19217:19219 Corelib.Init.Datatypes <> nat ind
+R19288:19290 Corelib.Init.Datatypes <> nat ind
+R19354:19356 Corelib.Init.Datatypes <> nat ind
+def 19461:19478 <> valid_task_context
+R19486:19496 JFCTheorems.InformationBottleneck <> TaskContext rec
+binder 19481:19482 <> tc:97
+R19558:19560 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19532:19534 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R19511:19528 JFCTheorems.InformationBottleneck <> task_relevant_info proj
+R19530:19531 JFCTheorems.InformationBottleneck <> tc:97 var
+R19535:19554 JFCTheorems.InformationBottleneck <> task_irrelevant_info proj
+R19556:19557 JFCTheorems.InformationBottleneck <> tc:97 var
+R19561:19572 JFCTheorems.InformationBottleneck <> context_info proj
+R19574:19575 JFCTheorems.InformationBottleneck <> tc:97 var
+def 19650:19668 <> optimal_compression
+R19676:19686 JFCTheorems.InformationBottleneck <> TaskContext rec
+binder 19671:19672 <> tc:98
+R19691:19693 Corelib.Init.Datatypes <> nat ind
+R19700:19717 JFCTheorems.InformationBottleneck <> task_relevant_info proj
+R19719:19720 JFCTheorems.InformationBottleneck <> tc:98 var
+prf 19790:19813 <> optimal_achieves_minimum
+binder 19826:19827 <> tc:99
+R19855:19862 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19834:19851 JFCTheorems.InformationBottleneck <> valid_task_context def
+R19853:19854 JFCTheorems.InformationBottleneck <> tc:99 var
+R19885:19888 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R19863:19881 JFCTheorems.InformationBottleneck <> optimal_compression def
+R19883:19884 JFCTheorems.InformationBottleneck <> tc:99 var
+R19889:19900 JFCTheorems.InformationBottleneck <> context_info proj
+R19902:19903 JFCTheorems.InformationBottleneck <> tc:99 var
+R19942:19960 JFCTheorems.InformationBottleneck <> optimal_compression def
+R19963:19980 JFCTheorems.InformationBottleneck <> valid_task_context def
+prf 20516:20539 <> below_optimal_loses_info
+binder 20552:20553 <> tc:100
+binder 20555:20564 <> compressed:101
+R20592:20599 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20571:20588 JFCTheorems.InformationBottleneck <> valid_task_context def
+R20590:20591 JFCTheorems.InformationBottleneck <> tc:100 var
+R20634:20641 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20610:20612 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R20600:20609 JFCTheorems.InformationBottleneck <> compressed:101 var
+R20613:20630 JFCTheorems.InformationBottleneck <> task_relevant_info proj
+R20632:20633 JFCTheorems.InformationBottleneck <> tc:100 var
+R20680:20687 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R20676:20678 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R20663:20665 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R20642:20659 JFCTheorems.InformationBottleneck <> task_relevant_info proj
+R20661:20662 JFCTheorems.InformationBottleneck <> tc:100 var
+R20666:20675 JFCTheorems.InformationBottleneck <> compressed:101 var
+R20722:20724 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20709:20711 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R20688:20705 JFCTheorems.InformationBottleneck <> task_relevant_info proj
+R20707:20708 JFCTheorems.InformationBottleneck <> tc:100 var
+R20712:20721 JFCTheorems.InformationBottleneck <> compressed:101 var
+R20746:20748 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R20725:20742 JFCTheorems.InformationBottleneck <> task_relevant_info proj
+R20744:20745 JFCTheorems.InformationBottleneck <> tc:100 var
+R20749:20758 JFCTheorems.InformationBottleneck <> compressed:101 var
+rec 21063:21075 <> JFCCompaction
+proj 21107:21121 <> original_tokens
+proj 21132:21145 <> summary_tokens
+proj 21156:21182 <> preserved_semantic_fraction
+R21125:21127 Corelib.Init.Datatypes <> nat ind
+R21149:21151 Corelib.Init.Datatypes <> nat ind
+R21186:21188 Corelib.Init.Datatypes <> nat ind
+def 21290:21308 <> semantic_efficiency
+R21315:21327 JFCTheorems.InformationBottleneck <> JFCCompaction rec
+binder 21311:21311 <> c:106
+R21332:21334 Corelib.Init.Datatypes <> nat ind
+R21341:21341 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R21377:21380 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R21371:21373 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R21342:21368 JFCTheorems.InformationBottleneck <> preserved_semantic_fraction proj
+R21370:21370 JFCTheorems.InformationBottleneck <> c:106 var
+R21381:21383 Corelib.Init.Peano <> max abbrev
+R21388:21401 JFCTheorems.InformationBottleneck <> summary_tokens proj
+R21403:21403 JFCTheorems.InformationBottleneck <> c:106 var
+prf 21961:21982 <> optimal_summary_exists
+binder 21995:22009 <> original_tokens:107
+binder 22011:22026 <> semantic_content:108
+R22068:22075 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22049:22052 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R22033:22048 JFCTheorems.InformationBottleneck <> semantic_content:108 var
+R22053:22067 JFCTheorems.InformationBottleneck <> original_tokens:107 var
+R22076:22082 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R22084:22091 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 22083:22083 <> L:109
+R22113:22116 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R22108:22111 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R22092:22107 JFCTheorems.InformationBottleneck <> semantic_content:108 var
+R22112:22112 JFCTheorems.InformationBottleneck <> L:109 var
+R22118:22121 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R22117:22117 JFCTheorems.InformationBottleneck <> L:109 var
+R22122:22136 JFCTheorems.InformationBottleneck <> original_tokens:107 var
+rec 22352:22370 <> CompressionSchedule
+proj 22397:22414 <> compress_threshold
+proj 22468:22482 <> compress_target
+proj 22534:22550 <> min_turns_between
+R22418:22420 Corelib.Init.Datatypes <> nat ind
+R22486:22488 Corelib.Init.Datatypes <> nat ind
+R22554:22556 Corelib.Init.Datatypes <> nat ind
+def 22660:22673 <> valid_schedule
+R22680:22698 JFCTheorems.InformationBottleneck <> CompressionSchedule rec
+binder 22676:22676 <> s:114
+R22730:22732 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R22713:22727 JFCTheorems.InformationBottleneck <> compress_target proj
+R22729:22729 JFCTheorems.InformationBottleneck <> s:114 var
+R22733:22750 JFCTheorems.InformationBottleneck <> compress_threshold proj
+R22752:22752 JFCTheorems.InformationBottleneck <> s:114 var
+def 22827:22847 <> expected_compressions
+R22854:22872 JFCTheorems.InformationBottleneck <> CompressionSchedule rec
+binder 22850:22850 <> s:115
+R22898:22900 Corelib.Init.Datatypes <> nat ind
+binder 22876:22894 <> conversation_length:116
+R22905:22907 Corelib.Init.Datatypes <> nat ind
+R22917:22923 Stdlib.Arith.PeanoNat Nat ltb def
+R22925:22943 JFCTheorems.InformationBottleneck <> conversation_length:116 var
+R22946:22963 JFCTheorems.InformationBottleneck <> compress_threshold proj
+R22965:22965 JFCTheorems.InformationBottleneck <> s:115 var
+R22990:22990 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23030:23037 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23010:23012 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R22991:23009 JFCTheorems.InformationBottleneck <> conversation_length:116 var
+R23013:23027 JFCTheorems.InformationBottleneck <> compress_target proj
+R23029:23029 JFCTheorems.InformationBottleneck <> s:115 var
+R23038:23040 Corelib.Init.Peano <> max abbrev
+R23065:23067 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R23045:23062 JFCTheorems.InformationBottleneck <> compress_threshold proj
+R23064:23064 JFCTheorems.InformationBottleneck <> s:115 var
+R23068:23082 JFCTheorems.InformationBottleneck <> compress_target proj
+R23084:23084 JFCTheorems.InformationBottleneck <> s:115 var
+prf 23471:23503 <> lower_threshold_more_compressions
+binder 23516:23517 <> s1:117
+binder 23519:23520 <> s2:118
+binder 23522:23522 <> L:119
+R23546:23553 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R23529:23542 JFCTheorems.InformationBottleneck <> valid_schedule def
+R23544:23545 JFCTheorems.InformationBottleneck <> s1:117 var
+R23571:23578 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R23554:23567 JFCTheorems.InformationBottleneck <> valid_schedule def
+R23569:23570 JFCTheorems.InformationBottleneck <> s2:118 var
+R23624:23631 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R23600:23602 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R23579:23596 JFCTheorems.InformationBottleneck <> compress_threshold proj
+R23598:23599 JFCTheorems.InformationBottleneck <> s1:117 var
+R23603:23620 JFCTheorems.InformationBottleneck <> compress_threshold proj
+R23622:23623 JFCTheorems.InformationBottleneck <> s2:118 var
+R23671:23678 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R23650:23652 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R23632:23646 JFCTheorems.InformationBottleneck <> compress_target proj
+R23648:23649 JFCTheorems.InformationBottleneck <> s1:117 var
+R23653:23667 JFCTheorems.InformationBottleneck <> compress_target proj
+R23669:23670 JFCTheorems.InformationBottleneck <> s2:118 var
+R23705:23708 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R23679:23699 JFCTheorems.InformationBottleneck <> expected_compressions def
+R23701:23702 JFCTheorems.InformationBottleneck <> s1:117 var
+R23704:23704 JFCTheorems.InformationBottleneck <> L:119 var
+R23709:23729 JFCTheorems.InformationBottleneck <> expected_compressions def
+R23731:23732 JFCTheorems.InformationBottleneck <> s2:118 var
+R23734:23734 JFCTheorems.InformationBottleneck <> L:119 var
+R23787:23807 JFCTheorems.InformationBottleneck <> expected_compressions def
+R23810:23823 JFCTheorems.InformationBottleneck <> valid_schedule def
+R23845:23862 JFCTheorems.InformationBottleneck <> compress_threshold proj
+R23845:23862 JFCTheorems.InformationBottleneck <> compress_threshold proj
+R23888:23905 JFCTheorems.InformationBottleneck <> compress_threshold proj
+R23888:23905 JFCTheorems.InformationBottleneck <> compress_threshold proj
+R23930:23944 JFCTheorems.InformationBottleneck <> compress_target proj
+R23930:23944 JFCTheorems.InformationBottleneck <> compress_target proj
+R24016:24022 Stdlib.Arith.PeanoNat Nat ltb def
+R24016:24022 Stdlib.Arith.PeanoNat Nat ltb def
+R24101:24110 Stdlib.Arith.PeanoNat Nat ltb_ge thm
+R24101:24110 Stdlib.Arith.PeanoNat Nat ltb_ge thm
+R24148:24154 Stdlib.Arith.PeanoNat Nat ltb def
+R24148:24154 Stdlib.Arith.PeanoNat Nat ltb def
+R24239:24248 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R24239:24248 Stdlib.Arith.PeanoNat Nat ltb_lt thm
+R24274:24283 Stdlib.Arith.PeanoNat Nat ltb_ge thm
+R24274:24283 Stdlib.Arith.PeanoNat Nat ltb_ge thm
+R24529:24547 Stdlib.Arith.PeanoNat Nat div_le_compat_l def
+R24529:24547 Stdlib.Arith.PeanoNat Nat div_le_compat_l def
+def 24821:24839 <> expected_collisions
+R24865:24867 Corelib.Init.Datatypes <> nat ind
+binder 24842:24848 <> n_items:120
+binder 24850:24861 <> hash_buckets:121
+R24872:24874 Corelib.Init.Datatypes <> nat ind
+R24941:24941 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R24959:24962 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R24949:24951 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R24942:24948 JFCTheorems.InformationBottleneck <> n_items:120 var
+R24952:24958 JFCTheorems.InformationBottleneck <> n_items:120 var
+R24963:24965 Corelib.Init.Peano <> max abbrev
+R24971:24973 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R24974:24985 JFCTheorems.InformationBottleneck <> hash_buckets:121 var
+prf 25051:25079 <> more_buckets_fewer_collisions
+binder 25092:25098 <> n_items:122
+binder 25100:25101 <> b1:123
+binder 25103:25104 <> b2:124
+R25119:25126 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R25113:25116 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R25111:25112 JFCTheorems.InformationBottleneck <> b1:123 var
+R25117:25118 JFCTheorems.InformationBottleneck <> b2:124 var
+R25157:25160 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R25127:25145 JFCTheorems.InformationBottleneck <> expected_collisions def
+R25147:25153 JFCTheorems.InformationBottleneck <> n_items:122 var
+R25155:25156 JFCTheorems.InformationBottleneck <> b2:124 var
+R25161:25179 JFCTheorems.InformationBottleneck <> expected_collisions def
+R25181:25187 JFCTheorems.InformationBottleneck <> n_items:122 var
+R25189:25190 JFCTheorems.InformationBottleneck <> b1:123 var
+R25237:25255 JFCTheorems.InformationBottleneck <> expected_collisions def
+R25266:25284 Stdlib.Arith.PeanoNat Nat div_le_compat_l def
+R25266:25284 Stdlib.Arith.PeanoNat Nat div_le_compat_l def

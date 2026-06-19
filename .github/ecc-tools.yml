@@ -1,0 +1,32 @@
+skills:
+  enabled: true
+  outputPath: .claude/skills/project-patterns/
+  minCommits: 5
+  minConfidence: 0.75
+
+exclude:
+  - target/**
+  - .git/**
+  - .jfc/**
+  - .omo/**
+  - .opencode/**
+  - .playwright-mcp/**
+  - rcoq-tests/**
+  - "**/*.pdf"
+  - "**/*.png"
+  - "**/*.vo"
+  - "**/*.vos"
+  - "**/*.vok"
+  - "**/*.glob"
+  - "**/*.aux"
+
+autoPR:
+  enabled: false
+  branch: master
+  labels:
+    - ecc-skills
+    - automated
+
+instincts:
+  enabled: true
+  outputPath: .claude/skills/project-patterns/instincts.json

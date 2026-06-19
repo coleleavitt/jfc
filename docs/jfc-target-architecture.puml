@@ -1,0 +1,723 @@
+@startuml JFC Unified Architecture — Target State
+!theme plain
+skinparam backgroundColor #0d1117
+skinparam defaultFontColor #c9d1d9
+skinparam defaultFontSize 11
+skinparam ArrowColor #30363d
+skinparam ArrowFontColor #8b949e
+skinparam ArrowFontSize 9
+
+skinparam package {
+  BackgroundColor #161b22
+  BorderColor #30363d
+  FontColor #58a6ff
+}
+
+skinparam component {
+  BackgroundColor #238636
+  BorderColor #2ea043
+  FontColor #ffffff
+}
+
+skinparam database {
+  BackgroundColor #6e7681
+  BorderColor #8b949e
+  FontColor #ffffff
+}
+
+skinparam rectangle {
+  BackgroundColor #1f6feb
+  BorderColor #388bfd
+  FontColor #ffffff
+}
+
+skinparam collections {
+  BackgroundColor #8957e5
+  BorderColor #a371f7
+  FontColor #ffffff
+}
+
+skinparam interface {
+  BackgroundColor #0d7377
+  BorderColor #14a085
+  FontColor #ffffff
+}
+
+title JFC Target Architecture — Unified AgentRegistry\n
+
+' ============================================================================
+' LAYER 1: INGRESS
+' ============================================================================
+
+package "Ingress Layer" as ingress {
+  [User Input] as user_input #238636
+  [CLI Args] as cli_args #238636
+  [Remote Trigger] as remote #238636
+  [Scheduled Task] as scheduled #238636
+}
+
+' ============================================================================
+' LAYER 2: TUI / APP
+' ============================================================================
+
+package "TUI Layer (jfc crate)" as tui {
+  [App] as app
+  [EngineState] as engine_state
+
+  note right of engine_state
+    Slimmed down:
+    - agent_registry: Arc<dyn AgentRegistry>
+    - message_bus: Arc<MessageBus>
+    - session_id
+    - task_store: Arc<TaskStore>
+    NO more BackgroundTask HashMap
+    NO more TeamContext drift
+  end note
+
+  [Render Loop] as render
+  [roster.rs] as roster #0d7377
+
+  note right of roster
+    Single source of truth for UI.
+    Reads ONLY from AgentRegistry.
+    Groups by AgentRole for display.
+  end note
+}
+
+' ============================================================================
+' LAYER 3: STREAM / EVENT LOOP
+' ============================================================================
+
+package "Stream Layer (jfc-engine)" as stream_layer {
+  rectangle "stream.rs" as stream {
+    [prepare_stream_request] as prepare
+    [Provider::stream()] as provider_stream
+    [chunk accumulator] as accumulator
+    [tool_use handler] as tool_handler
+  }
+}
+
+' ============================================================================
+' LAYER 4: DISPATCH — TRIVIAL ROUTING
+' ============================================================================
+
+package "Tool Dispatch (jfc-engine/tools/)" as dispatch_layer {
+  collections "dispatch.rs\nexecute_tool()\n[trivial match, no mutexes]" as dispatch #8957e5
+
+  note right of dispatch
+    Routing only — no logic.
+    Solo tools: direct call (unchanged).
+    All agent spawns: registry.spawn().
+    No more dispatch_heavy.rs mutex ownership.
+    No more team_name string checks.
+  end note
+
+  rectangle "Solo Tools (unchanged)" as solo {
+    [bash.rs] as bash
+    [filesystem.rs] as filesystem
+    [search.rs] as search
+    [memory.rs] as memory
+  }
+}
+
+' ============================================================================
+' LAYER 5: jfc-agent CRATE — THE NEW CORE
+' ============================================================================
+
+package "jfc-agent crate (NEW)" as jfc_agent_pkg #0d7377 {
+
+  interface "AgentRegistry trait" as registry_trait #0d7377 {
+    + spawn(config: SpawnConfig) -> AgentId
+    + status(id: &AgentId) -> Option<AgentStatus>
+    + state(id: &AgentId) -> Option<AgentState>
+    + abort(id: &AgentId) -> bool
+    + complete(id: &AgentId, result: AgentResult)
+    + list() -> Vec<AgentState>
+  }
+
+  rectangle "AgentState (unified)" as agent_state_type #0d7377 {
+    [id: AgentId(Uuid)] as agent_id
+    [status: AgentStatus] as agent_status
+    [role: AgentRole] as agent_role
+    [token_count / tool_use_count] as agent_progress
+    [started_at / completed_at / error] as agent_lifecycle
+    [team_name / worktree / trust_score (Option)] as agent_optional
+  }
+
+  rectangle "MessageBus (unified)" as message_bus_type #0d7377 {
+    [in-memory: HashMap<AgentId, mpsc::Sender>] as mem_chan
+    [file-backed: inbox_dir for cross-process] as file_chan
+  }
+
+  note bottom of message_bus_type
+    Replaces: TeammateEvent channel,
+    mailbox.rs file writes,
+    BackgroundAgentCompletion events,
+    SwarmProvider::send_message stub
+  end note
+}
+
+' ============================================================================
+' LAYER 6: EXECUTION BACKENDS
+' ============================================================================
+
+package "Execution Backends (jfc-engine/agents/)" as backends {
+
+  rectangle "InProcessBackend" as in_process #1f6feb {
+    [tokio::spawn wrapper] as tokio_spawn
+    [AgentRole::Solo] as role_solo
+  }
+
+  rectangle "TeamBackend" as team_backend #1f6feb {
+    [coordinator.rs run_teammate_loop] as coordinator2
+    [mailbox via MessageBus] as mailbox2
+    [AgentRole::Teammate] as role_teammate
+  }
+
+  rectangle "DaemonBackend" as daemon_backend #1f6feb {
+    [detached child process] as daemon_proc
+    [AgentState serde (persisted)] as daemon_serde
+    [AgentRole::Solo + detached] as role_daemon
+  }
+
+  rectangle "CouncilBackend" as council_backend #1f6feb {
+    [parallel registry.spawn per seat] as council_spawn
+    [join_all -> arbiter synthesis] as council_join
+    [AgentRole::Council] as role_council
+  }
+
+  rectangle "BountyCoordinator" as bounty_coord #f0883e {
+    [registry.spawn for each Solver] as solver_spawn
+    [registry.spawn for each Validator] as validator_spawn
+    [AgentRole::Solver / Validator] as role_solver
+    [settle() reads AgentState.trust_score] as settle2
+  }
+}
+
+' ============================================================================
+' LAYER 7: PERSISTENCE
+' ============================================================================
+
+package "Persistence Layer" as persistence {
+  database "session.jsonl" as session_file
+  database "tasks.json\n(TaskStore)" as tasks_file
+  database "agent_state.json\n(AgentState serde)" as agent_state_file
+  database "inboxes/*.json\n(MessageBus file-backed)" as inbox_files
+  database "teams/{name}/config.json" as team_file
+}
+
+' ============================================================================
+' LAYER 8: jfc-economy (SLIMMED DOWN)
+' ============================================================================
+
+package "jfc-economy (types only)" as econ_slim #f0883e {
+  [charter.rs — rules] as charter2 #f0883e
+  [ledger.rs — token accounting] as ledger2 #f0883e
+  [trust.rs — trust scoring] as trust2 #f0883e
+
+  note bottom of charter2
+    SolverPool and ValidationPool REMOVED.
+    Orchestration now in BountyCoordinator
+    inside jfc-engine, using AgentRegistry.
+  end note
+}
+
+' ============================================================================
+' LAYER 9: PROVIDERS (unchanged)
+' ============================================================================
+
+package "Provider Layer (jfc-providers)" as providers {
+  [Anthropic] as anthropic #bf4b8a
+  [OpenAI] as openai #bf4b8a
+  [Bedrock] as bedrock #bf4b8a
+  [Vertex] as vertex #bf4b8a
+  [Local] as local #bf4b8a
+}
+
+' ============================================================================
+' FLOWS
+' ============================================================================
+
+' Ingress -> TUI
+user_input --> app
+cli_args --> app
+remote --> app
+scheduled --> app
+
+' TUI -> Stream
+app --> engine_state
+engine_state --> stream
+app --> render
+render --> roster
+
+' Roster reads registry
+roster --> registry_trait : "list() -> Vec<AgentState>"
+
+' Stream internal
+stream --> prepare
+prepare --> provider_stream
+provider_stream --> accumulator
+accumulator --> tool_handler
+tool_handler --> dispatch : "tool_use event"
+
+' Dispatch routing
+dispatch --> bash : "Bash/Read/Write/Grep"
+dispatch --> filesystem
+dispatch --> search
+dispatch --> registry_trait : "ALL agent spawns\nregistry.spawn(SpawnConfig)"
+dispatch --> message_bus_type : "SendMessage ->\nmessage_bus.send()"
+
+' Registry -> backends
+registry_trait --> in_process : "role: Solo, lifetime: Foreground"
+registry_trait --> team_backend : "role: Teammate, lifetime: Persistent"
+registry_trait --> daemon_backend : "role: Solo, lifetime: Detached"
+registry_trait --> council_backend : "role: Council"
+registry_trait --> bounty_coord : "PostBounty / RunBounty"
+
+' Backend provider calls
+tokio_spawn --> provider_stream
+coordinator2 --> provider_stream
+daemon_proc --> provider_stream
+council_spawn --> provider_stream
+solver_spawn --> provider_stream
+
+' All backends report back to registry
+in_process ..> registry_trait : "complete(id, result)"
+team_backend ..> registry_trait : "complete / status update"
+daemon_backend ..> registry_trait : "status poll -> AgentState sync"
+council_backend ..> registry_trait : "complete per seat"
+bounty_coord ..> registry_trait : "complete(solver_id)"
+
+' Economy types used by coordinator
+bounty_coord --> ledger2
+bounty_coord --> trust2
+bounty_coord --> charter2
+
+' Persistence
+engine_state --> session_file
+dispatch --> tasks_file
+daemon_backend --> agent_state_file
+team_backend --> inbox_files
+team_backend --> team_file
+
+' MessageBus internals
+message_bus_type --> mem_chan
+message_bus_type --> file_chan
+file_chan --> inbox_files
+
+' Providers
+provider_stream --> anthropic
+provider_stream --> openai
+provider_stream --> bedrock
+
+' ============================================================================
+' LEGEND
+' ============================================================================
+
+legend right
+  |= Color |= Meaning |
+  | <#238636> | Ingress / Entry |
+  | <#0d7377> | jfc-agent (NEW unified primitives) |
+  | <#1f6feb> | Execution Backends |
+  | <#8957e5> | Routing / Dispatch |
+  | <#f0883e> | Economy |
+  | <#bf4b8a> | Providers / External |
+  | <#6e7681> | Storage |
+endlegend
+
+@enduml
+
+
+@startuml JFC Unified — AgentRegistry Message Flow
+!theme plain
+skinparam backgroundColor #0d1117
+skinparam defaultFontColor #c9d1d9
+skinparam sequenceArrowColor #30363d
+skinparam sequenceLifeLineBorderColor #30363d
+skinparam sequenceParticipantBackgroundColor #161b22
+skinparam sequenceParticipantBorderColor #30363d
+skinparam sequenceGroupBackgroundColor #1c2128
+skinparam noteFontColor #8b949e
+skinparam noteBackgroundColor #161b22
+skinparam noteBorderColor #30363d
+
+title JFC Unified Message Flow — All Paths via AgentRegistry\n
+
+participant "User" as user #238636
+participant "App / stream.rs" as stream #1f6feb
+participant "dispatch.rs\n(trivial routing)" as dispatch #8957e5
+participant "AgentRegistry" as registry #0d7377
+participant "MessageBus" as bus #0d7377
+participant "Provider\n(Anthropic etc)" as provider #bf4b8a
+participant "InProcess\nBackend" as inproc #1f6feb
+participant "TeamBackend\n(Teammate)" as team #1f6feb
+participant "CouncilBackend" as council #1f6feb
+participant "BountyCoordinator" as bounty #f0883e
+participant "DaemonBackend" as daemon #1f6feb
+participant "roster.rs\n(UI)" as roster #0d7377
+
+== Flow 1: Basic Message (unchanged) ==
+
+user -> stream : type message
+stream -> provider : stream(messages)
+provider --> stream : text chunks
+stream --> user : rendered response
+
+== Flow 2: Solo Background Task ==
+
+user -> stream : "run verifier"
+provider --> stream : tool_use: Task {run_in_background: true}
+stream -> dispatch : execute_tool(Task, input)
+dispatch -> registry : spawn(SpawnConfig { role: Solo, lifetime: Detached })
+registry --> dispatch : AgentId(uuid)
+registry -> daemon : launch detached worker
+
+note over daemon
+  Runs as separate process.
+  Writes AgentState to disk.
+  No more daemon_state.json polling —
+  state is pushed back to registry.
+end note
+
+daemon -> provider : stream(prompt)
+provider --> daemon : response
+daemon -> registry : complete(id, AgentResult)
+registry --> roster : list() updated
+dispatch --> stream : ExecutionResult::success(agent_id)
+
+== Flow 3: Team / Swarm Spawn ==
+
+user -> stream : Task {name: "researcher", team_name: "my-team"}
+provider --> stream : tool_use: Task
+stream -> dispatch : execute_tool(Task, input)
+dispatch -> registry : spawn(SpawnConfig { role: Teammate, team_name: "my-team" })
+registry --> dispatch : AgentId(uuid)
+registry -> team : start teammate loop
+
+note over team
+  run_teammate_loop() as before,
+  but identity + status owned by registry.
+  No more TeamContext drift.
+end note
+
+team -> provider : stream(prompt)
+
+loop teammate work cycle
+  provider --> team : tool_use
+  team -> dispatch : execute_tool()
+  dispatch --> team : result
+  team -> registry : update status (Idle / Running)
+  registry --> roster : updated AgentState
+end
+
+== Flow 4: SendMessage (Teammate) ==
+
+user -> stream : tool_use: SendMessage {to: "researcher", text: "..."}
+stream -> dispatch : execute_tool(SendMessage)
+dispatch -> bus : send(to_id, Message::new(text))
+bus -> bus : resolve: in-process? -> mpsc channel\ncross-process? -> inbox_dir file
+
+note over bus
+  Single MessageBus replaces:
+  - mailbox.rs file writes
+  - TeammateEvent mpsc channel
+  - SwarmProvider::send_message stub
+  - BackgroundAgentCompletion events
+end note
+
+bus --> team : message delivered
+team -> team : wake from Idle
+team -> registry : status = Running
+registry --> roster : updated
+
+== Flow 5: Council (Multi-Model) ==
+
+user -> stream : tool_use: Council {models: [A, B, C]}
+stream -> dispatch : execute_tool(Council)
+dispatch -> registry : spawn(SpawnConfig { role: Council, model: A })
+dispatch -> registry : spawn(SpawnConfig { role: Council, model: B })
+dispatch -> registry : spawn(SpawnConfig { role: Council, model: C })
+
+note over registry, council
+  All three appear in roster.rs
+  with role: Council. Previously
+  invisible to the entire UI.
+end note
+
+par parallel model calls
+  registry -> council : launch seat A
+  council -> provider : stream(prompt, model=A)
+  provider --> council : response A
+  council -> registry : complete(id_A, result)
+and
+  registry -> council : launch seat B
+  council -> provider : stream(prompt, model=B)
+  provider --> council : response B
+  council -> registry : complete(id_B, result)
+end
+
+registry -> dispatch : join_all([id_A, id_B, id_C])
+dispatch -> dispatch : arbiter synthesis
+dispatch --> stream : synthesized answer
+
+== Flow 6: Economy / Bounty ==
+
+user -> stream : tool_use: PostBounty
+stream -> dispatch : execute_tool(PostBounty)
+dispatch -> bounty : post_bounty()
+bounty --> dispatch : bounty_id
+
+user -> stream : tool_use: RunBounty
+stream -> dispatch : execute_tool(RunBounty)
+dispatch -> bounty : run_bounty_cycle(registry)
+
+note over bounty
+  BountyCoordinator is now a coordinator,
+  not an owner. It uses AgentRegistry
+  to spawn solvers — they appear in UI.
+end note
+
+group Solver Phase
+  bounty -> registry : spawn(SpawnConfig { role: Solver, worktree, bounty_id })
+  bounty -> registry : spawn(SpawnConfig { role: Solver, worktree, bounty_id })
+  registry --> roster : solvers visible in UI
+  registry -> inproc : execute solvers
+  inproc -> provider : stream(solver_prompt)
+  provider --> inproc : solution
+  inproc -> registry : complete(solver_id, Solution)
+end
+
+group Settlement
+  bounty -> registry : state(solver_id) for each solver
+  registry --> bounty : Vec<AgentState> with trust_score
+  bounty -> bounty : settle() — rank, pay, update trust
+end
+
+bounty --> dispatch : CycleOutcome
+dispatch --> stream : result summary
+
+@enduml
+
+
+@startuml JFC Unified — Type Consolidation
+!theme plain
+skinparam backgroundColor #0d1117
+skinparam defaultFontColor #c9d1d9
+skinparam classFontColor #c9d1d9
+skinparam classAttributeFontColor #8b949e
+skinparam classBackgroundColor #161b22
+skinparam classBorderColor #30363d
+skinparam packageBackgroundColor #0d1117
+skinparam packageBorderColor #30363d
+skinparam stereotypeFontColor #8b949e
+skinparam noteFontColor #8b949e
+skinparam noteBackgroundColor #161b22
+skinparam noteBorderColor #30363d
+skinparam ArrowColor #30363d
+
+title JFC Unified Types — jfc-agent crate\n
+
+' ============================================================================
+' ELIMINATED TYPES
+' ============================================================================
+
+package "ELIMINATED — Agent Identity (was 3 types)" #da3633 {
+  class "AgentId(u64)\nbackground.rs" as OldId1 #da3633 {
+    In-memory counter
+  }
+  class "AgentId(String)\njfc-economy/types.rs" as OldId2 #da3633 {
+    Prefixed string
+  }
+  class "agent_id: String\nswarm/TeammateIdentity" as OldId3 #da3633 {
+    Bare field, not a newtype
+  }
+}
+
+package "ELIMINATED — Status Enums (was 4 types)" #da3633 {
+  enum "AgentStatus\nbackground.rs" as OldS1 #da3633 {
+    Running
+    Completed
+    Failed(String)
+  }
+  enum "BackgroundAgentStatus\ndaemon/state.rs" as OldS2 #da3633 {
+    Pending
+    Running
+    Completed
+    Failed
+    Cancelled
+  }
+  enum "TeammateStatus\nswarm/types.rs" as OldS3 #da3633 {
+    Running
+    Idle
+    Completed
+    Failed
+    Killed
+  }
+  enum "TaskLifecycle\ntypes.rs" as OldS4 #da3633 {
+    Pending
+    Running
+    Done
+    Error
+    Cancelled
+    Aborted
+  }
+}
+
+package "ELIMINATED — Agent State (was 4 structs)" #da3633 {
+  class "BackgroundTask\nengine/app.rs" as OldT1 #da3633 {
+    task_id: String
+    status: TaskLifecycle
+    started_at: Instant
+    messages: Vec<MessagePart>
+    ...12 more fields
+  }
+  class "BackgroundAgentInfo\ndaemon/state.rs" as OldT2 #da3633 {
+    id: String
+    status: BackgroundAgentStatus
+    pid: Option<u32>
+    log_path: PathBuf
+    ...10 more fields (~90% overlap)
+  }
+  class "InProcessTeammateState\nswarm/types.rs" as OldT3 #da3633 {
+    identity: TeammateIdentity
+    status: TeammateStatus
+    abort_tx: watch::Sender<bool>
+    ...11 more fields (~70% overlap)
+  }
+  class "TeammateInfo\nswarm/types.rs" as OldT4 #da3633 {
+    name: String
+    abort_tx: Option<watch::Sender>
+    ...summary of TeammateState
+  }
+}
+
+package "ELIMINATED — Spawn Config (was 3 types)" #da3633 {
+  class "AgentConfig\nbackground.rs" as OldC1 #da3633 {
+    task_description: String
+    max_tokens: usize
+  }
+  class "TeammateRunnerConfig\nswarm/runner.rs" as OldC2 #da3633 {
+    identity: TeammateIdentity
+    prompt, model, provider, cwd
+    ...
+  }
+  class "BackgroundAgentLaunch\ndaemon/state.rs" as OldC3 #da3633 {
+    task_id, task_input, model
+    cwd, active_team_name, ...
+  }
+}
+
+' ============================================================================
+' NEW UNIFIED TYPES — jfc-agent crate
+' ============================================================================
+
+package "jfc-agent crate — Unified Types" #238636 {
+
+  class "AgentId\njfc-agent/src/id.rs" as NewId <<unified>> #238636 {
+    inner: Uuid
+    --
+    display_name: Option<String>
+    --
+    new() -> AgentId
+    from_str(s: &str) -> AgentId
+  }
+
+  enum "AgentStatus\njfc-agent/src/state.rs" as NewStatus <<unified>> #238636 {
+    Pending
+    Running
+    Idle
+    Completed
+    Failed
+    Cancelled
+    --
+    is_terminal() -> bool
+  }
+
+  enum "AgentRole\njfc-agent/src/state.rs" as NewRole <<unified>> #238636 {
+    Solo
+    Teammate { team_name: String }
+    Solver { bounty_id: String, worktree: PathBuf }
+    Validator { bounty_id: String }
+    Council { council_id: String }
+  }
+
+  class "AgentState\njfc-agent/src/state.rs" as NewState <<unified>> #238636 {
+    id: AgentId
+    status: AgentStatus
+    role: AgentRole
+    description: String
+    --
+    token_count: u64
+    tool_use_count: u32
+    last_tool: Option<String>
+    --
+    started_at: SystemTime
+    completed_at: Option<SystemTime>
+    error: Option<String>
+    --
+    trust_score: Option<i8>
+    idle_reason: Option<String>
+  }
+
+  class "SpawnConfig\njfc-agent/src/registry.rs" as NewConfig <<unified>> #238636 {
+    role: AgentRole
+    prompt: String
+    model: ModelId
+    provider: Arc<dyn Provider>
+    cwd: PathBuf
+    max_tokens: Option<u64>
+    --
+    from_task_input(input: TaskInput) -> Self
+  }
+
+  interface "AgentRegistry\njfc-agent/src/registry.rs" as NewRegistry <<unified>> #238636 {
+    spawn(config: SpawnConfig) -> AgentId
+    status(id: &AgentId) -> Option<AgentStatus>
+    state(id: &AgentId) -> Option<AgentState>
+    abort(id: &AgentId) -> bool
+    complete(id: &AgentId, result: AgentResult)
+    list() -> Vec<AgentState>
+    resolve_name(name: &str) -> Option<AgentId>
+    wait(id: &AgentId) -> AgentResult
+  }
+
+  class "MessageBus\njfc-agent/src/message.rs" as NewBus <<unified>> #238636 {
+    channels: HashMap<AgentId, mpsc::Sender<Message>>
+    inbox_dir: PathBuf
+    --
+    send(to: &AgentId, msg: Message)
+    recv(agent: &AgentId) -> Option<Message>
+    poll(agent: &AgentId) -> Vec<Message>
+  }
+
+  NewState --> NewId
+  NewState --> NewStatus
+  NewState --> NewRole
+  NewConfig --> NewRole
+  NewRegistry --> NewState : "state() -> AgentState"
+  NewRegistry --> NewConfig : "spawn(SpawnConfig)"
+}
+
+' ============================================================================
+' CONSOLIDATION ARROWS
+' ============================================================================
+
+OldId1 -[#238636,dashed]-> NewId : "→ Uuid"
+OldId2 -[#238636,dashed]-> NewId : "→ Uuid"
+OldId3 -[#238636,dashed]-> NewId : "→ Uuid"
+
+OldS1 -[#238636,dashed]-> NewStatus : "merge"
+OldS2 -[#238636,dashed]-> NewStatus : "merge"
+OldS3 -[#238636,dashed]-> NewStatus : "merge"
+OldS4 -[#238636,dashed]-> NewStatus : "merge"
+
+OldT1 -[#238636,dashed]-> NewState : "consolidate"
+OldT2 -[#238636,dashed]-> NewState : "consolidate"
+OldT3 -[#238636,dashed]-> NewState : "consolidate"
+OldT4 -[#238636,dashed]-> NewState : "consolidate"
+
+OldC1 -[#238636,dashed]-> NewConfig : "consolidate"
+OldC2 -[#238636,dashed]-> NewConfig : "consolidate"
+OldC3 -[#238636,dashed]-> NewConfig : "consolidate"
+
+@enduml

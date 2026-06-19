@@ -102,9 +102,15 @@ pub(super) fn handle_fleet_command(state: &mut EngineState) {
         lines.push("No active teammates.".into());
         lines.push("Spawn one via the Task tool with `name` + `team_name` set.".into());
     } else {
+        let active = state
+            .team_context
+            .teammates
+            .values()
+            .filter(|tm| tm.abort_tx.is_some())
+            .count();
+        let inactive = state.team_context.teammates.len().saturating_sub(active);
         lines.push(format!(
-            "Fleet: {} teammate{} active",
-            state.team_context.teammates.len(),
+            "Fleet: {active} active, {inactive} inactive teammate{}",
             if state.team_context.teammates.len() == 1 {
                 ""
             } else {
@@ -114,8 +120,13 @@ pub(super) fn handle_fleet_command(state: &mut EngineState) {
         lines.push("".into());
         for tm in state.team_context.teammates.values() {
             let elapsed = tm.spawned_at.elapsed();
+            let state = if tm.abort_tx.is_some() {
+                "active"
+            } else {
+                "inactive"
+            };
             lines.push(format!(
-                "  {} · {} · spawned {}m{}s ago{}",
+                "  {} · {state} · {} · spawned {}m{}s ago{}",
                 tm.name,
                 tm.agent_type.as_deref().unwrap_or("(no agent type)"),
                 elapsed.as_secs() / 60,

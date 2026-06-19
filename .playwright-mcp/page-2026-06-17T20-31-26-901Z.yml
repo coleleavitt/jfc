@@ -1,0 +1,86 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - generic [ref=e5]: adk-rs
+    - generic [ref=e6]:
+      - generic [ref=e7]: Rust port workbench
+      - generic [ref=e8]: running on :8087
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - paragraph [ref=e11]: ADK Python browser UI · Rust runtime parity
+      - heading "A real workbench for runs, sessions, artifacts, evals, graphs, traces, routes, and ADK Studio surfaces." [level=1] [ref=e12]
+      - paragraph [ref=e13]: I mapped the upstream ADK CLI/browser/dev-server surfaces around run/SSE/live, sessions, artifacts, eval sets, event graphs, debug traces, tools, models, A2A, auth, replay, builder, metrics, live media, and deploy planning.
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - paragraph [ref=e17]: "8"
+        - paragraph [ref=e18]: UI surfaces
+      - generic [ref=e19]:
+        - paragraph [ref=e20]: "37"
+        - paragraph [ref=e21]: tool specs
+      - generic [ref=e22]:
+        - paragraph [ref=e23]: "5"
+        - paragraph [ref=e24]: Studio surfaces
+  - tablist "Workbench sections" [ref=e25]:
+    - tab "Workbench" [selected] [ref=e26] [cursor=pointer]
+    - tab "Builder" [ref=e27] [cursor=pointer]
+    - tab "Parity" [ref=e28] [cursor=pointer]
+    - tab "Runtime" [ref=e29] [cursor=pointer]
+    - tab "Studio" [ref=e30] [cursor=pointer]
+  - generic [ref=e31]:
+    - article [ref=e32]:
+      - generic [ref=e33]:
+        - paragraph [ref=e34]: Run
+        - heading "Local debug run" [level=2] [ref=e35]
+      - generic [ref=e36]:
+        - paragraph [ref=e37]: cargo run -p adk-cli -- debug-run "hello ADK"
+        - paragraph [ref=e38]: "POST /run { prompt: \"hello ADK\" }"
+        - button "Simulate local preview" [ref=e39] [cursor=pointer]
+    - article [ref=e40]:
+      - generic [ref=e41]:
+        - paragraph [ref=e42]: Trace
+        - heading "Event stream" [level=2] [ref=e43]
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: 00:00
+          - generic [ref=e47]: user
+          - generic [ref=e48]: Run request enters session
+        - generic [ref=e49]:
+          - generic [ref=e50]: 00:01
+          - generic [ref=e51]: runner
+          - generic [ref=e52]: Model request built with tool declarations
+        - generic [ref=e53]:
+          - generic [ref=e54]: 00:02
+          - generic [ref=e55]: tool
+          - generic [ref=e56]: Tool result appended and fed back to model
+        - generic [ref=e57]:
+          - generic [ref=e58]: 00:03
+          - generic [ref=e59]: agent
+          - generic [ref=e60]: Final response and event actions persisted
+    - article [ref=e61]:
+      - generic [ref=e62]:
+        - paragraph [ref=e63]: Data
+        - heading "Sessions, artifacts, evals" [level=2] [ref=e64]
+      - generic [ref=e65]:
+        - button "Sessions" [ref=e66] [cursor=pointer]
+        - button "Artifacts" [ref=e67] [cursor=pointer]
+        - button "Evals" [ref=e68] [cursor=pointer]
+      - generic [ref=e70]:
+        - heading "Sessions" [level=3] [ref=e71]
+        - paragraph [ref=e72]: JSON file-backed store persists event history and state deltas.
+      - paragraph [ref=e73]: "Selected browser pane: Sessions"
+    - article [ref=e74]:
+      - generic [ref=e75]:
+        - paragraph [ref=e76]: API
+        - heading "ADK route surface" [level=2] [ref=e77]
+      - generic [ref=e78]:
+        - generic [ref=e79]: /health
+        - generic [ref=e80]: /routes
+        - generic [ref=e81]: /run
+        - generic [ref=e82]: /run_sse
+        - generic [ref=e83]: /live
+        - generic [ref=e84]: /sessions
+        - generic [ref=e85]: /artifacts
+        - generic [ref=e86]: /eval_sets
+        - generic [ref=e87]: /builder
+        - generic [ref=e88]: /recordings
+        - generic [ref=e89]: /metrics
+        - generic [ref=e90]: /deploy/plan

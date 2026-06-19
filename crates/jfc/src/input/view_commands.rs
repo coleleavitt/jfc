@@ -384,12 +384,7 @@ pub(super) async fn cmd_voice(
             .voice
             .clone()
             .unwrap_or(serde_json::json!({}));
-        if let Some(obj) = val.as_object_mut() {
-            obj.insert("enabled".to_owned(), serde_json::json!(true));
-            if arg == "hold" || arg == "tap" {
-                obj.insert("mode".to_owned(), serde_json::json!(arg));
-            }
-        }
+        apply_voice_mode_override(&mut val, &arg);
         if let Some(tx_inner) = tx {
             crate::voice::init(Some(&val), tx_inner.clone());
         }
@@ -413,5 +408,30 @@ pub(super) async fn cmd_voice(
     // Start the VAD listen loop for hands-free mode
     if mode == jfc_voice::VoiceMode::Vad {
         crate::voice::start_vad().await;
+    }
+}
+
+fn apply_voice_mode_override(val: &mut serde_json::Value, arg: &str) {
+    let Some(obj) = val.as_object_mut() else {
+        return;
+    };
+    obj.insert("enabled".to_owned(), serde_json::json!(true));
+    if let Some(mode) = jfc_voice::VoiceMode::from_str(arg) {
+        obj.insert("mode".to_owned(), serde_json::json!(mode.label()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn voice_mode_override_sets_vad_regression() {
+        let mut value = serde_json::json!({});
+
+        apply_voice_mode_override(&mut value, "vad");
+
+        assert_eq!(value["enabled"], serde_json::json!(true));
+        assert_eq!(value["mode"], serde_json::json!("vad"));
     }
 }

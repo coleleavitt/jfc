@@ -26,8 +26,6 @@ pub mod auto_classifier;
 pub mod auto_mode;
 pub mod auto_review;
 pub mod autonomous_loop;
-#[cfg(feature = "background-agents")]
-pub mod background;
 pub mod bash_processes;
 pub mod bridge_attestation;
 pub mod cache_lineage;
@@ -43,6 +41,8 @@ pub mod config;
 pub mod context;
 pub mod cost;
 pub mod council;
+pub mod council_directives;
+pub mod council_session;
 pub mod daemon;
 pub mod diagnostics;
 pub mod diagnostics_producer;
@@ -162,6 +162,10 @@ pub mod hooks {
     }
 
     pub fn fire_async(_point: HookPoint, _ctx: &HookContext) {}
+
+    pub fn has_hooks(_point: HookPoint) -> bool {
+        false
+    }
 
     /// No-op — returns empty map when hooks feature is disabled.
     pub fn metrics_snapshot() -> std::collections::HashMap<String, HookMetrics> {

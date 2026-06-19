@@ -132,19 +132,24 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
             if lines.len() >= inner.height as usize {
                 break;
             }
-            let is_active = tm.abort_tx.is_some();
-            let status = if is_active { "running" } else { "idle" };
-            let icon = if is_active { "● " } else { "○ " };
-            let style = if is_active {
-                Style::default().fg(t.accent)
+            let task_status = app
+                .engine
+                .background_tasks
+                .values()
+                .find_map(|bt| bt.task_id.as_str().contains(&tm.name).then_some(bt.status));
+            let status = task_status.unwrap_or(if tm.abort_tx.is_some() {
+                jfc_core::TaskLifecycle::Running
             } else {
-                Style::default().fg(t.text_muted)
-            };
+                jfc_core::TaskLifecycle::Idle
+            });
+            let (icon, role) = super::visual::roster_status_glyph(status, status.is_alive());
+            let style = Style::default().fg(super::roster::roster_glyph_color(role, status, &t));
+            let label = status.label();
             lines.push(Line::from(vec![
                 Span::styled(icon, style),
                 Span::styled(
                     tm.name.clone(),
-                    if is_active {
+                    if status.is_alive() && !matches!(status, jfc_core::TaskLifecycle::Idle) {
                         Style::default()
                             .fg(t.text_primary)
                             .add_modifier(Modifier::BOLD)
@@ -152,7 +157,7 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
                         Style::default().fg(t.text_muted)
                     },
                 ),
-                Span::styled(format!("  {status}"), Style::default().fg(t.text_muted)),
+                Span::styled(format!("  {label}"), Style::default().fg(t.text_muted)),
             ]));
         }
     }

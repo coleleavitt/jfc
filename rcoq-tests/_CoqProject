@@ -1,0 +1,26 @@
+-R theories JFC
+-R theorems JFCTheorems
+-arg -w -arg -notation-overridden
+
+# Core state machines and algorithms
+theories/ExecutionStatus.v
+theories/ToolCallFlow.v
+theories/Compaction.v
+theories/StreamEvents.v
+theories/SessionState.v
+
+# Novel theorems and bounds
+theorems/CompressionBounds.v
+theorems/AttentionPruning.v
+theorems/HierarchicalCompression.v
+theorems/RecencyRetention.v
+theorems/ContextBudget.v
+theorems/DiffCompression.v
+theorems/SemanticHashing.v
+theorems/MessageQueue.v
+theorems/ToolDispatch.v
+theorems/KVCacheEviction.v
+theorems/AttentionSink.v
+theorems/InformationBottleneck.v
+theorems/PositionEncoding.v
+theorems/TokenEstimation.v

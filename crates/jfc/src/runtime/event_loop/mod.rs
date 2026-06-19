@@ -1231,6 +1231,14 @@ pub(crate) fn apply_engine_effects(app: &mut App) {
     for effect in effects {
         match effect {
             crate::app::EngineEffect::TranscriptAppended => {
+                if app.engine.is_streaming
+                    && let Some(idx) = app.engine.streaming_assistant_idx
+                    && let Some(msg) = app.engine.messages.get(idx)
+                    && let Some(jfc_core::MessagePart::Text(text)) = msg.parts.last()
+                {
+                    let total = crate::render::codex_stream::stream_pacer::display_line_count(text);
+                    app.stream_pacer.reveal_all(total);
+                }
                 // Follow content as it streams *only when the user is already
                 // pinned to the bottom* — and freeze the viewport while a
                 // mid-drag selection is active (autoscrolling would slide the
@@ -1397,14 +1405,7 @@ fn clear_interim_from_input(app: &mut App) {
 
 /// Inject the STT transcript into the textarea (and optionally submit).
 async fn inject_voice_transcript(app: &mut App, text: &str, tx: &crate::runtime::EventSender) {
-    let cfg = jfc_engine::config::load_arc();
-    let auto_submit = cfg
-        .claude
-        .voice
-        .as_ref()
-        .and_then(|v| v.get("autoSubmit"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let auto_submit = voice_auto_submit();
 
     tracing::info!(
         target: "jfc::voice",
@@ -1433,6 +1434,33 @@ async fn inject_voice_transcript(app: &mut App, text: &str, tx: &crate::runtime:
         }
     }
 }
+
+fn voice_auto_submit() -> bool {
+    #[cfg(test)]
+    if let Some(value) = voice_auto_submit_override() {
+        return value;
+    }
+    let cfg = jfc_engine::config::load_arc();
+    cfg.claude
+        .voice
+        .as_ref()
+        .and_then(|v| v.get("autoSubmit"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+fn voice_auto_submit_override() -> Option<bool> {
+    VOICE_AUTO_SUBMIT_OVERRIDE
+        .get_or_init(|| std::sync::Mutex::new(None))
+        .lock()
+        .ok()
+        .and_then(|guard| *guard)
+}
+
+#[cfg(test)]
+static VOICE_AUTO_SUBMIT_OVERRIDE: std::sync::OnceLock<std::sync::Mutex<Option<bool>>> =
+    std::sync::OnceLock::new();
 
 /// Extract user prompts from a parsed session JSON value (raw serde_json).
 /// Returns text strings oldest-first, capped at `max_prompts`. Skips compact
@@ -1584,6 +1612,136 @@ mod event_priority_tests {
             &events[3],
             AppEvent::Engine(EngineEvent::Stream(StreamEvent::Chunk { .. }))
         ));
+    }
+}
+
+#[cfg(test)]
+mod voice_event_tests {
+    use std::sync::Arc;
+
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+
+    use super::*;
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    fn app() -> App {
+        App::new(Arc::new(TestProvider), "test-model")
+    }
+
+    fn input_text(app: &App) -> String {
+        app.textarea.lines().join("\n")
+    }
+
+    struct AutoSubmitGuard;
+
+    impl AutoSubmitGuard {
+        fn set(value: bool) -> Self {
+            if let Ok(mut guard) = VOICE_AUTO_SUBMIT_OVERRIDE
+                .get_or_init(|| std::sync::Mutex::new(None))
+                .lock()
+            {
+                *guard = Some(value);
+            }
+            Self
+        }
+    }
+
+    impl Drop for AutoSubmitGuard {
+        fn drop(&mut self) {
+            if let Ok(mut guard) = VOICE_AUTO_SUBMIT_OVERRIDE
+                .get_or_init(|| std::sync::Mutex::new(None))
+                .lock()
+            {
+                *guard = None;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn voice_final_writes_transcript_to_input_box_normal() {
+        let mut app = app();
+        let _guard = AutoSubmitGuard::set(false);
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::Final("hello from vad".to_owned()),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(input_text(&app), "hello from vad");
+        assert_eq!(app.voice_interim_chars, 0);
+    }
+
+    #[tokio::test]
+    async fn voice_final_replaces_live_interim_regression() {
+        let mut app = app();
+        let _guard = AutoSubmitGuard::set(false);
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::Interim("hello inter".to_owned()),
+            &tx,
+        )
+        .await;
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::Final("hello final".to_owned()),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(input_text(&app), "hello final");
+        assert_eq!(app.voice_interim, None);
+        assert_eq!(app.voice_interim_chars, 0);
+    }
+
+    #[tokio::test]
+    async fn voice_error_clears_live_interim_regression() {
+        let mut app = app();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::Interim("partial".to_owned()),
+            &tx,
+        )
+        .await;
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::Error("boom".to_owned()),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(input_text(&app), "");
+        assert_eq!(app.voice_interim, None);
+        assert_eq!(app.voice_interim_chars, 0);
+        assert!(rx.recv().await.is_some());
     }
 }
 

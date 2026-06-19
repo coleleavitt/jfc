@@ -115,11 +115,10 @@ tempfile = "3.27.0"
 
 [features]
 default = ["hooks", "permission-automation", "anthropic-oauth-sensitive", "intent-gate", "vad-neural"]
-# Compile the neural (Silero) VAD backend into the binary and make it the
-# default hands-free engine. Pulls in ort + ONNX Runtime. Disable with
-# `--no-default-features` (plus the other defaults) for a lighter build that
-# uses the energy VAD; at runtime `JFC_VAD_ENGINE=energy` opts out without a
-# rebuild.
+# Compile the neural (Silero) VAD backend into the binary, but keep energy VAD
+# as the safe runtime default. Neural construction crosses ONNX Runtime FFI and
+# can segfault before Rust receives an error on some hosts, so it requires the
+# explicit runtime opt-in `JFC_VAD_ENGINE=neural JFC_VAD_ENABLE_NEURAL=1`.
 vad-neural = ["jfc-voice/vad-neural"]
 # Feature-gated Anthropic OAuth sensitive implementation (CCH, billing attestation,
 # OAuth PKCE client id, etc.). Public builds can disable this via

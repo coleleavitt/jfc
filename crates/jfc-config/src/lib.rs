@@ -531,6 +531,8 @@ pub struct CouncilConfig {
     pub archive: bool,
     /// Default intent used when a Council call does not provide one.
     pub intent: Option<String>,
+    /// Persistent-session defaults (RoundTable `/council start`).
+    pub session: CouncilSessionConfig,
 }
 
 impl Default for CouncilConfig {
@@ -543,6 +545,44 @@ impl Default for CouncilConfig {
             mode: CouncilMode::Direct,
             archive: false,
             intent: None,
+            session: CouncilSessionConfig::default(),
+        }
+    }
+}
+
+/// Defaults applied when opening a persistent council session via
+/// `/council start` (RoundTable-style turn-based deliberation). Distinct from
+/// the one-shot fan-out knobs above.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct CouncilSessionConfig {
+    /// Default deliberation style: `debate` | `collaborate` | `blind-reveal` |
+    /// `blind-map-reduce`. Used when `/council start` omits a mode token.
+    pub mode: String,
+    /// Suggested rounds before the session nudges toward a verdict.
+    pub max_rounds: u32,
+    /// Per-seat sealed-aside allowance (model↔model DMs a seat may open).
+    pub aside_allowance: u32,
+    /// Allow seats to open sealed asides (when false, only the operator can).
+    pub side_conversations: bool,
+    /// Per-aside message cap before it auto-closes.
+    pub side_convo_max_len: usize,
+    /// Allow seats to flag claims that soft-block the verdict.
+    pub flagged_claims: bool,
+    /// Allow seat-initiated kick / operator-mute votes.
+    pub governance_votes: bool,
+}
+
+impl Default for CouncilSessionConfig {
+    fn default() -> Self {
+        Self {
+            mode: "debate".to_owned(),
+            max_rounds: 4,
+            aside_allowance: 1,
+            side_conversations: false,
+            side_convo_max_len: 6,
+            flagged_claims: true,
+            governance_votes: true,
         }
     }
 }
@@ -1485,7 +1525,7 @@ pub fn save_theme_to(
                     "save_theme: refusing to overwrite unparseable config"
                 );
                 return Err(format!(
-                    "{} is not valid TOML â fix it first ({e})",
+                    "{} is not valid TOML - fix it first ({e})",
                     path.display()
                 ));
             }

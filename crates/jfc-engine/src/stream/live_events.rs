@@ -10,6 +10,9 @@ use jfc_provider::{EventStream, StopReason, StreamEvent};
 
 const STREAM_INTERRUPT_POLL: Duration = Duration::from_millis(50);
 const TERMINAL_DONE_GRACE: Duration = Duration::from_secs(2);
+const STREAM_VISIBLE_BATCH_LATENCY: Duration = Duration::from_millis(8);
+const STREAM_VISIBLE_BATCH_MAX_BYTES: usize = 512;
+const STREAM_VISIBLE_BATCH_MAX_EVENTS: usize = 16;
 
 pub enum DrainOutcome {
     Done(StopReason),
@@ -34,6 +37,68 @@ fn cancel_reason(by_user: bool) -> String {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PendingVisibleKind {
+    Text,
+    Reasoning,
+}
+
+#[derive(Debug, Default)]
+struct PendingVisibleChunk {
+    kind: Option<PendingVisibleKind>,
+    body: String,
+    events: usize,
+    first_seen: Option<tokio::time::Instant>,
+}
+
+impl PendingVisibleChunk {
+    fn kind(&self) -> Option<PendingVisibleKind> {
+        self.kind
+    }
+
+    fn push(&mut self, kind: PendingVisibleKind, delta: String, now: tokio::time::Instant) {
+        debug_assert!(self.kind.is_none() || self.kind == Some(kind));
+        if self.kind.is_none() {
+            self.kind = Some(kind);
+            self.first_seen = Some(now);
+        }
+        self.body.push_str(&delta);
+        self.events = self.events.saturating_add(1);
+    }
+
+    fn deadline(&self) -> Option<tokio::time::Instant> {
+        self.first_seen.map(|t| t + STREAM_VISIBLE_BATCH_LATENCY)
+    }
+
+    fn should_flush(&self) -> bool {
+        self.body.len() >= STREAM_VISIBLE_BATCH_MAX_BYTES
+            || self.events >= STREAM_VISIBLE_BATCH_MAX_EVENTS
+    }
+
+    async fn flush(&mut self, tx: &mpsc::Sender<EngineEvent>) {
+        let Some(kind) = self.kind.take() else {
+            return;
+        };
+        let body = std::mem::take(&mut self.body);
+        self.events = 0;
+        self.first_seen = None;
+        if body.is_empty() {
+            return;
+        }
+        let event = match kind {
+            PendingVisibleKind::Text => EngineEvent::Stream(RuntimeStreamEvent::Chunk {
+                text: Some(body),
+                reasoning: None,
+            }),
+            PendingVisibleKind::Reasoning => EngineEvent::Stream(RuntimeStreamEvent::Chunk {
+                text: None,
+                reasoning: Some(body),
+            }),
+        };
+        let _ = tx.send(event).await;
+    }
+}
+
 pub async fn drain_stream_events(
     mut stream: EventStream,
     tx: &mpsc::Sender<EngineEvent>,
@@ -45,6 +110,8 @@ pub async fn drain_stream_events(
     let mut terminal_done_deadline: Option<tokio::time::Instant> = None;
     let mut saw_terminal_done = false;
     let mut committed_output = false;
+    let mut sent_first_visible_delta = false;
+    let mut pending_visible = PendingVisibleChunk::default();
     // Resumable-stream snapshot: mint a resume entry for this turn and feed text
     // deltas into it so a dropped connection can replay the partial answer.
     let resume = crate::stream::resume::DrainResumeHandle::begin();
@@ -54,11 +121,13 @@ pub async fn drain_stream_events(
         // flag covers older callers; the CancellationToken gives immediate
         // wakeups for the migrated stream/task paths.
         if interrupt.load(std::sync::atomic::Ordering::SeqCst) || cancel.is_cancelled() {
+            pending_visible.flush(tx).await;
             let by_user = interrupt.load(std::sync::atomic::Ordering::SeqCst);
             tracing::info!(target: "jfc::stream", by_user, "stream cancelled");
             return DrainOutcome::Cancelled(cancel_reason(by_user));
         }
 
+        let visible_flush_deadline = pending_visible.deadline();
         let event = tokio::select! {
             biased;
             // Race SSE reads against cancellation so a stalled provider
@@ -69,6 +138,7 @@ pub async fn drain_stream_events(
                 // set the interrupt flag) from a watchdog timeout, which only
                 // cancels the token. Mislabeling watchdog kills as user
                 // interrupts made hard-idle streams look like random ESCs.
+                pending_visible.flush(tx).await;
                 let by_user = interrupt.load(std::sync::atomic::Ordering::SeqCst);
                 tracing::info!(target: "jfc::stream", by_user, "stream cancelled via token");
                 return DrainOutcome::Cancelled(cancel_reason(by_user));
@@ -86,7 +156,18 @@ pub async fn drain_stream_events(
                     grace_ms = TERMINAL_DONE_GRACE.as_millis() as u64,
                     "stream terminal Done grace elapsed before EOF; finalizing turn"
                 );
+                pending_visible.flush(tx).await;
                 break;
+            }
+            _ = async move {
+                if let Some(deadline) = visible_flush_deadline {
+                    tokio::time::sleep_until(deadline).await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                pending_visible.flush(tx).await;
+                continue;
             }
             _ = tokio::time::sleep(STREAM_INTERRUPT_POLL) => continue,
             event = stream.next() => event,
@@ -94,6 +175,7 @@ pub async fn drain_stream_events(
 
         let Some(event) = event else {
             if !saw_terminal_done {
+                pending_visible.flush(tx).await;
                 tracing::error!(
                     target: "jfc::stream",
                     committed_output,
@@ -104,12 +186,14 @@ pub async fn drain_stream_events(
                     committed_output,
                 };
             }
+            pending_visible.flush(tx).await;
             break;
         };
 
         let event = match event {
             Ok(e) => e,
             Err(e) => {
+                pending_visible.flush(tx).await;
                 tracing::error!(target: "jfc::stream", error = %e, "stream event error");
                 return DrainOutcome::Error {
                     message: e.to_string(),
@@ -139,12 +223,27 @@ pub async fn drain_stream_events(
                 // message. Blocking send applies backpressure to the SSE
                 // reader instead (slows it down until the event loop catches
                 // up). TextDelta is the model's output — we cannot lose it.
-                let _ = tx
-                    .send(EngineEvent::Stream(RuntimeStreamEvent::Chunk {
-                        text: Some(delta),
-                        reasoning: None,
-                    }))
-                    .await;
+                if pending_visible.kind() == Some(PendingVisibleKind::Reasoning) {
+                    pending_visible.flush(tx).await;
+                }
+                if !sent_first_visible_delta {
+                    let _ = tx
+                        .send(EngineEvent::Stream(RuntimeStreamEvent::Chunk {
+                            text: Some(delta),
+                            reasoning: None,
+                        }))
+                        .await;
+                    sent_first_visible_delta = true;
+                } else {
+                    pending_visible.push(
+                        PendingVisibleKind::Text,
+                        delta,
+                        tokio::time::Instant::now(),
+                    );
+                    if pending_visible.should_flush() {
+                        pending_visible.flush(tx).await;
+                    }
+                }
             }
             StreamEvent::ThinkingDelta {
                 delta,
@@ -155,26 +254,45 @@ pub async fn drain_stream_events(
                 // Same rationale as TextDelta — thinking text is displayed
                 // in the UI and losing chunks creates gaps in the reasoning
                 // trace.
-                let _ = tx
-                    .send(EngineEvent::Stream(RuntimeStreamEvent::Chunk {
-                        text: None,
-                        reasoning: Some(delta),
-                    }))
-                    .await;
-                // Emit server-authoritative thinking token estimate if available.
-                // Matches cli.js pattern of separate "thinking_tokens" system events.
-                if let Some(tokens) = estimated_tokens
-                    && tx
-                        .try_send(EngineEvent::Stream(RuntimeStreamEvent::ThinkingTokens(
+                if pending_visible.kind() == Some(PendingVisibleKind::Text) {
+                    pending_visible.flush(tx).await;
+                }
+                if !sent_first_visible_delta {
+                    let _ = tx
+                        .send(EngineEvent::Stream(RuntimeStreamEvent::Chunk {
+                            text: None,
+                            reasoning: Some(delta),
+                        }))
+                        .await;
+                    sent_first_visible_delta = true;
+                } else {
+                    pending_visible.push(
+                        PendingVisibleKind::Reasoning,
+                        delta,
+                        tokio::time::Instant::now(),
+                    );
+                    if pending_visible.should_flush() {
+                        pending_visible.flush(tx).await;
+                    }
+                }
+                if let Some(tokens) = estimated_tokens {
+                    let _ = tx
+                        .send(EngineEvent::Stream(RuntimeStreamEvent::ThinkingTokens(
                             tokens,
                         )))
-                        .is_err()
-                {
-                    tracing::trace!(target: "jfc::stream", "ThinkingTokens dropped (buffer full)");
+                        .await;
                 }
+            }
+            StreamEvent::ThinkingTokens { delta, .. } => {
+                let _ = tx
+                    .send(EngineEvent::Stream(RuntimeStreamEvent::ThinkingTokens(
+                        delta,
+                    )))
+                    .await;
             }
             StreamEvent::ToolDelta { index, delta } => {
                 committed_output = true;
+                pending_visible.flush(tx).await;
                 tool_accum.entry(index).or_default().2.push_str(&delta);
                 // MUST use blocking send — `try_send` drops on backpressure,
                 // and during a large tool-input / file write the
@@ -203,6 +321,7 @@ pub async fn drain_stream_events(
                 thought_signature,
             } => {
                 committed_output = true;
+                pending_visible.flush(tx).await;
                 let assembled = if input_json.is_empty() {
                     tool_accum
                         .get(&index)
@@ -351,6 +470,7 @@ pub async fn drain_stream_events(
                 content,
             } => {
                 committed_output = true;
+                pending_visible.flush(tx).await;
                 // Anthropic emitted the paired result for a previously-
                 // dispatched server_tool_use block. Forward to the
                 // event_loop, which finds the matching ToolCall on the
@@ -372,6 +492,7 @@ pub async fn drain_stream_events(
                     .await;
             }
             StreamEvent::Done { stop_reason: r } => {
+                pending_visible.flush(tx).await;
                 // Never downgrade from ToolUse or PauseTurn to EndTurn.
                 // Some providers emit Done(ToolUse) followed by a final
                 // Done(EndTurn); a server-side-tool resume signals
@@ -395,6 +516,7 @@ pub async fn drain_stream_events(
                 response_id,
                 input_tokens,
             } => {
+                pending_visible.flush(tx).await;
                 let _ = tx
                     .send(EngineEvent::Stream(RuntimeStreamEvent::ResponseId {
                         id: response_id,
@@ -414,8 +536,11 @@ pub async fn drain_stream_events(
                         .await;
                 }
             }
-            StreamEvent::TextDone { .. } | StreamEvent::ThinkingDone { .. } => {}
+            StreamEvent::TextDone { .. } | StreamEvent::ThinkingDone { .. } => {
+                pending_visible.flush(tx).await;
+            }
             StreamEvent::RedactedThinkingDone { data, .. } => {
+                pending_visible.flush(tx).await;
                 let _ = tx
                     .send(EngineEvent::Stream(RuntimeStreamEvent::RedactedThinking(
                         data,
@@ -428,6 +553,7 @@ pub async fn drain_stream_events(
                 cache_read_tokens,
                 cache_write_tokens,
             } => {
+                pending_visible.flush(tx).await;
                 tracing::info!(
                     target: "jfc::stream",
                     input_tokens, output_tokens,
@@ -453,6 +579,7 @@ pub async fn drain_stream_events(
                 // Does NOT set `committed_output` (no model output was produced)
                 // and never blocks: dropping one keepalive under backpressure is
                 // harmless because the next byte/keepalive will tick the clock.
+                pending_visible.flush(tx).await;
                 if tx
                     .try_send(EngineEvent::Stream(RuntimeStreamEvent::Keepalive))
                     .is_err()
@@ -461,6 +588,7 @@ pub async fn drain_stream_events(
                 }
             }
             StreamEvent::Error { message } => {
+                pending_visible.flush(tx).await;
                 tracing::error!(target: "jfc::stream", %message, "stream error event");
                 return DrainOutcome::Error {
                     message,
@@ -475,6 +603,7 @@ pub async fn drain_stream_events(
                     reason = %info.reason,
                     "model fallback triggered"
                 );
+                pending_visible.flush(tx).await;
                 let _ = tx
                     .send(EngineEvent::Stream(RuntimeStreamEvent::FallbackTriggered {
                         original_model: info.original_model.to_string(),
@@ -496,6 +625,15 @@ mod tests {
 
     fn event_stream(events: Vec<anyhow::Result<StreamEvent>>) -> EventStream {
         Box::pin(futures::stream::iter(events))
+    }
+
+    fn text_chunk(ev: EngineEvent) -> Option<String> {
+        match ev {
+            EngineEvent::Stream(RuntimeStreamEvent::Chunk {
+                text: Some(text), ..
+            }) => Some(text),
+            _ => None,
+        }
     }
 
     #[tokio::test]
@@ -530,6 +668,117 @@ mod tests {
             Ok(_) => panic!("expected forwarded text chunk, got different EngineEvent"),
             Err(err) => panic!("expected forwarded text chunk, got receive error: {err}"),
         }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn visible_text_keeps_first_delta_immediate_then_batches_regression() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let outcome = drain_stream_events(
+            event_stream(vec![
+                Ok(StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "a".to_owned(),
+                }),
+                Ok(StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "b".to_owned(),
+                }),
+                Ok(StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "c".to_owned(),
+                }),
+                Ok(StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "d".to_owned(),
+                }),
+                Ok(StreamEvent::Done {
+                    stop_reason: StopReason::EndTurn,
+                }),
+            ]),
+            &tx,
+            Arc::new(AtomicBool::new(false)),
+            CancellationToken::new(),
+        )
+        .await;
+
+        assert!(matches!(outcome, DrainOutcome::Done(StopReason::EndTurn)));
+        drop(tx);
+        assert_eq!(
+            text_chunk(rx.recv().await.expect("first visible delta")),
+            Some("a".to_owned())
+        );
+        assert_eq!(
+            text_chunk(rx.recv().await.expect("batched visible delta")),
+            Some("bcd".to_owned())
+        );
+        let mut extra_text_chunks = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let Some(text) = text_chunk(event) {
+                extra_text_chunks.push(text);
+            }
+        }
+        assert!(
+            extra_text_chunks.is_empty(),
+            "no per-character text chunk tail"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn visible_text_batch_flushes_before_tool_delta_regression() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let outcome = drain_stream_events(
+            event_stream(vec![
+                Ok(StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "intro ".to_owned(),
+                }),
+                Ok(StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "before tool".to_owned(),
+                }),
+                Ok(StreamEvent::ToolDelta {
+                    index: 1,
+                    delta: "{\"cmd\"".to_owned(),
+                }),
+                Ok(StreamEvent::Done {
+                    stop_reason: StopReason::EndTurn,
+                }),
+            ]),
+            &tx,
+            Arc::new(AtomicBool::new(false)),
+            CancellationToken::new(),
+        )
+        .await;
+
+        drop(tx);
+        let mut seen = vec![format!(
+            "outcome:{}",
+            matches!(outcome, DrainOutcome::Done(StopReason::EndTurn))
+        )];
+        while let Some(event) = rx.recv().await {
+            match event {
+                EngineEvent::Stream(RuntimeStreamEvent::Chunk {
+                    text: Some(text), ..
+                }) => seen.push(format!("text:{text}")),
+                EngineEvent::Stream(RuntimeStreamEvent::ToolInputDelta { index, delta }) => {
+                    seen.push(format!("tool:{index}:{delta}"));
+                }
+                EngineEvent::Stream(_) => seen.push("stream:other".to_owned()),
+                _ => seen.push("other".to_owned()),
+            }
+        }
+        assert_eq!(
+            seen,
+            vec![
+                "outcome:true".to_owned(),
+                "text:intro ".to_owned(),
+                "text:before tool".to_owned(),
+                "tool:1:{\"cmd\"".to_owned(),
+            ],
+            "pending visible text must flush before the tool delta"
+        );
     }
 
     #[tokio::test]
@@ -623,5 +872,38 @@ mod tests {
         let outcome = drain.await.expect("drain task");
         assert!(matches!(outcome, DrainOutcome::Done(StopReason::EndTurn)));
         assert_eq!(deltas, N, "all tool-input deltas delivered (none dropped)");
+    }
+
+    #[tokio::test]
+    async fn thinking_token_deltas_are_never_dropped_under_backpressure_regression() {
+        let (tx, mut rx) = mpsc::channel(4);
+        const N: usize = 64;
+        let mut events: Vec<anyhow::Result<StreamEvent>> = (0..N)
+            .map(|_| Ok(StreamEvent::ThinkingTokens { index: 0, delta: 1 }))
+            .collect();
+        events.push(Ok(StreamEvent::Done {
+            stop_reason: StopReason::EndTurn,
+        }));
+
+        let drain = tokio::spawn(async move {
+            drain_stream_events(
+                event_stream(events),
+                &tx,
+                Arc::new(AtomicBool::new(false)),
+                CancellationToken::new(),
+            )
+            .await
+        });
+
+        let mut deltas = 0usize;
+        while let Some(ev) = rx.recv().await {
+            if let EngineEvent::Stream(RuntimeStreamEvent::ThinkingTokens(delta)) = ev {
+                assert_eq!(delta, 1);
+                deltas += 1;
+            }
+        }
+        let outcome = drain.await.expect("drain task");
+        assert!(matches!(outcome, DrainOutcome::Done(StopReason::EndTurn)));
+        assert_eq!(deltas, N);
     }
 }

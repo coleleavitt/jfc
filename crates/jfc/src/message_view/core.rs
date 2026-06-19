@@ -954,12 +954,6 @@ pub(crate) fn build_message_items<'a>(
             Role::User => None,
             Role::Assistant => {
                 let mut spans = Vec::new();
-                // Static accent dot marks *which* message is in flight. No
-                // pulse — the spinner row already carries the live activity
-                // signal; a second pulsing element just competed with it.
-                if is_streaming_placeholder {
-                    spans.push(Span::styled("● ", Style::default().fg(t.accent)));
-                }
                 // Cross-model attribution is reserved for named teammates.
                 // Ordinary assistant turns render as prose, matching Claude's
                 // transcript shape and avoiding redundant `Claude` headers.

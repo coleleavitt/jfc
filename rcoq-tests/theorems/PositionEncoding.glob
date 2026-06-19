@@ -1,0 +1,1009 @@
+DIGEST cea4beab2baf0b0b823f2f46da2ba1a8
+FJFCTheorems.PositionEncoding
+R1669:1683 Stdlib.Arith.Arith <> <> lib
+R1701:1714 Stdlib.Lists.List <> <> lib
+R1732:1744 Stdlib.Bool.Bool <> <> lib
+R1762:1778 Stdlib.micromega.Lia <> <> lib
+R1788:1800 Stdlib.Lists.List ListNotations <> mod
+prf 1985:1996 <> mul_div_le_k
+binder 2009:2009 <> a:1
+binder 2011:2011 <> k:2
+binder 2013:2013 <> d:3
+R2021:2024 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2017:2019 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R2020:2020 JFCTheorems.PositionEncoding <> d:3 var
+R2031:2034 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2026:2029 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R2025:2025 JFCTheorems.PositionEncoding <> a:1 var
+R2030:2030 JFCTheorems.PositionEncoding <> d:3 var
+R2044:2047 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R2040:2042 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R2036:2038 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R2035:2035 JFCTheorems.PositionEncoding <> a:1 var
+R2039:2039 JFCTheorems.PositionEncoding <> k:2 var
+R2043:2043 JFCTheorems.PositionEncoding <> d:3 var
+R2048:2048 JFCTheorems.PositionEncoding <> k:2 var
+R2086:2112 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R2086:2112 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+ind 2173:2186 <> PositionScheme
+constr 2202:2209 <> Absolute
+constr 2251:2254 <> RoPE
+constr 2299:2303 <> ALiBi
+constr 2350:2353 <> NoPE
+scheme 2173:2186 <> PositionScheme_rect
+scheme 2173:2186 <> PositionScheme_ind
+scheme 2173:2186 <> PositionScheme_rec
+scheme 2173:2186 <> PositionScheme_sind
+def 2432:2445 <> trained_length
+R2457:2470 JFCTheorems.PositionEncoding <> PositionScheme ind
+binder 2448:2453 <> scheme:6
+R2475:2477 Corelib.Init.Datatypes <> nat ind
+R2490:2495 JFCTheorems.PositionEncoding <> scheme:6 var
+R2506:2513 JFCTheorems.PositionEncoding <> Absolute constr
+R2564:2567 JFCTheorems.PositionEncoding <> RoPE constr
+R2622:2626 JFCTheorems.PositionEncoding <> ALiBi constr
+R2695:2698 JFCTheorems.PositionEncoding <> NoPE constr
+def 2896:2916 <> extrapolation_quality
+R2928:2941 JFCTheorems.PositionEncoding <> PositionScheme ind
+binder 2919:2924 <> scheme:8
+R2966:2968 Corelib.Init.Datatypes <> nat ind
+binder 2945:2953 <> train_len:9
+binder 2955:2962 <> test_pos:10
+R2973:2975 Corelib.Init.Datatypes <> nat ind
+R2988:2993 JFCTheorems.PositionEncoding <> scheme:8 var
+R3004:3011 JFCTheorems.PositionEncoding <> Absolute constr
+R3086:3092 Stdlib.Arith.PeanoNat Nat leb def
+R3094:3101 JFCTheorems.PositionEncoding <> test_pos:10 var
+R3103:3111 JFCTheorems.PositionEncoding <> train_len:9 var
+R3133:3136 JFCTheorems.PositionEncoding <> RoPE constr
+R3206:3212 Stdlib.Arith.PeanoNat Nat leb def
+R3214:3221 JFCTheorems.PositionEncoding <> test_pos:10 var
+R3223:3231 JFCTheorems.PositionEncoding <> train_len:9 var
+R3256:3258 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3259:3261 Corelib.Init.Peano <> min abbrev
+R3295:3297 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R3268:3268 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R3289:3292 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R3277:3279 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3269:3276 JFCTheorems.PositionEncoding <> test_pos:10 var
+R3280:3288 JFCTheorems.PositionEncoding <> train_len:9 var
+R3298:3300 Corelib.Init.Peano <> max abbrev
+R3304:3312 JFCTheorems.PositionEncoding <> train_len:9 var
+R3319:3323 JFCTheorems.PositionEncoding <> ALiBi constr
+R3393:3399 Stdlib.Arith.PeanoNat Nat leb def
+R3401:3408 JFCTheorems.PositionEncoding <> test_pos:10 var
+R3410:3418 JFCTheorems.PositionEncoding <> train_len:9 var
+R3443:3445 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3446:3448 Corelib.Init.Peano <> min abbrev
+R3482:3484 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R3455:3455 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R3476:3479 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R3464:3466 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3456:3463 JFCTheorems.PositionEncoding <> test_pos:10 var
+R3467:3475 JFCTheorems.PositionEncoding <> train_len:9 var
+R3485:3487 Corelib.Init.Peano <> max abbrev
+R3491:3499 JFCTheorems.PositionEncoding <> train_len:9 var
+R3506:3509 JFCTheorems.PositionEncoding <> NoPE constr
+prf 3629:3658 <> absolute_fails_beyond_training
+binder 3671:3679 <> train_len:12
+binder 3681:3688 <> test_pos:13
+R3715:3722 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3703:3705 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R3695:3702 JFCTheorems.PositionEncoding <> test_pos:13 var
+R3706:3714 JFCTheorems.PositionEncoding <> train_len:12 var
+R3772:3774 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3723:3743 JFCTheorems.PositionEncoding <> extrapolation_quality def
+R3745:3752 JFCTheorems.PositionEncoding <> Absolute constr
+R3754:3762 JFCTheorems.PositionEncoding <> train_len:12 var
+R3764:3771 JFCTheorems.PositionEncoding <> test_pos:13 var
+R3827:3847 JFCTheorems.PositionEncoding <> extrapolation_quality def
+R3862:3868 Stdlib.Arith.PeanoNat Nat leb def
+R3862:3868 Stdlib.Arith.PeanoNat Nat leb def
+R3910:3919 Stdlib.Arith.PeanoNat Nat leb_le thm
+R3910:3919 Stdlib.Arith.PeanoNat Nat leb_le thm
+prf 4018:4043 <> alibi_better_extrapolation
+binder 4056:4064 <> train_len:14
+binder 4066:4073 <> test_pos:15
+R4100:4107 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4088:4090 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R4080:4087 JFCTheorems.PositionEncoding <> test_pos:15 var
+R4091:4099 JFCTheorems.PositionEncoding <> train_len:14 var
+R4154:4161 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R4108:4128 JFCTheorems.PositionEncoding <> extrapolation_quality def
+R4130:4134 JFCTheorems.PositionEncoding <> ALiBi constr
+R4136:4144 JFCTheorems.PositionEncoding <> train_len:14 var
+R4146:4153 JFCTheorems.PositionEncoding <> test_pos:15 var
+R4162:4182 JFCTheorems.PositionEncoding <> extrapolation_quality def
+R4184:4187 JFCTheorems.PositionEncoding <> RoPE constr
+R4189:4197 JFCTheorems.PositionEncoding <> train_len:14 var
+R4199:4206 JFCTheorems.PositionEncoding <> test_pos:15 var
+R4258:4278 JFCTheorems.PositionEncoding <> extrapolation_quality def
+R4293:4299 Stdlib.Arith.PeanoNat Nat leb def
+R4293:4299 Stdlib.Arith.PeanoNat Nat leb def
+R4341:4350 Stdlib.Arith.PeanoNat Nat leb_le thm
+R4341:4350 Stdlib.Arith.PeanoNat Nat leb_le thm
+R4595:4610 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R4577:4579 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4550:4550 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4571:4574 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4559:4561 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4580:4582 Corelib.Init.Peano <> max abbrev
+R4638:4640 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4611:4611 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4632:4635 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4620:4622 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4641:4643 Corelib.Init.Peano <> max abbrev
+R4595:4610 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R4577:4579 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4550:4550 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4571:4574 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4559:4561 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4580:4582 Corelib.Init.Peano <> max abbrev
+R4638:4640 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4611:4611 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4632:4635 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4620:4622 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4641:4643 Corelib.Init.Peano <> max abbrev
+R4679:4698 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R4679:4698 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R4713:4729 Stdlib.Arith.PeanoNat Nat mul_le_mono_l thm
+R4713:4729 Stdlib.Arith.PeanoNat Nat mul_le_mono_l thm
+R4755:4766 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R4800:4802 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4773:4773 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4794:4797 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4782:4784 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4803:4805 Corelib.Init.Peano <> max abbrev
+R4755:4766 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R4800:4802 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4773:4773 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4794:4797 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4782:4784 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4803:4805 Corelib.Init.Peano <> max abbrev
+R4838:4849 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R4883:4885 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4856:4856 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4877:4880 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4865:4867 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4886:4888 Corelib.Init.Peano <> max abbrev
+R4838:4849 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R4883:4885 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4856:4856 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4877:4880 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4865:4867 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4886:4888 Corelib.Init.Peano <> max abbrev
+def 5082:5095 <> base_frequency
+R5099:5101 Corelib.Init.Datatypes <> nat ind
+def 5176:5191 <> scaled_frequency
+R5223:5225 Corelib.Init.Datatypes <> nat ind
+binder 5194:5206 <> original_freq:16
+binder 5208:5219 <> scale_factor:17
+R5230:5232 Corelib.Init.Datatypes <> nat ind
+R5258:5260 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R5252:5254 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R5239:5251 JFCTheorems.PositionEncoding <> original_freq:16 var
+R5261:5263 Corelib.Init.Peano <> max abbrev
+R5267:5278 JFCTheorems.PositionEncoding <> scale_factor:17 var
+def 5329:5349 <> interpolated_position
+R5380:5382 Corelib.Init.Datatypes <> nat ind
+binder 5352:5363 <> original_pos:18
+binder 5365:5376 <> scale_factor:19
+R5387:5389 Corelib.Init.Datatypes <> nat ind
+R5414:5416 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R5408:5410 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R5396:5407 JFCTheorems.PositionEncoding <> original_pos:18 var
+R5417:5419 Corelib.Init.Peano <> max abbrev
+R5423:5434 JFCTheorems.PositionEncoding <> scale_factor:19 var
+prf 6119:6145 <> interpolation_fits_training
+binder 6158:6160 <> pos:20
+binder 6162:6170 <> train_len:21
+binder 6172:6181 <> target_len:22
+R6201:6208 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6197:6199 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R6188:6196 JFCTheorems.PositionEncoding <> train_len:21 var
+R6231:6238 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6219:6221 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R6209:6218 JFCTheorems.PositionEncoding <> target_len:22 var
+R6222:6230 JFCTheorems.PositionEncoding <> train_len:21 var
+R6256:6263 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6242:6245 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6239:6241 JFCTheorems.PositionEncoding <> pos:20 var
+R6246:6255 JFCTheorems.PositionEncoding <> target_len:22 var
+R6277:6277 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R6294:6297 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R6288:6290 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R6278:6287 JFCTheorems.PositionEncoding <> target_len:22 var
+R6298:6300 Corelib.Init.Peano <> max abbrev
+R6304:6312 JFCTheorems.PositionEncoding <> train_len:21 var
+binder 6268:6272 <> scale:23
+R6352:6355 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6321:6341 JFCTheorems.PositionEncoding <> interpolated_position def
+R6343:6345 JFCTheorems.PositionEncoding <> pos:20 var
+R6347:6351 JFCTheorems.PositionEncoding <> scale:23 var
+R6365:6367 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R6356:6364 JFCTheorems.PositionEncoding <> train_len:21 var
+R6457:6477 JFCTheorems.PositionEncoding <> interpolated_position def
+R6515:6517 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6496:6502 Stdlib.Arith.PeanoNat Nat max def
+R6515:6517 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6496:6502 Stdlib.Arith.PeanoNat Nat max def
+R6584:6586 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R6578:6580 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R6584:6586 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R6578:6580 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R6706:6709 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R6706:6709 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R6740:6761 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+R6740:6761 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+R6810:6812 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6795:6801 Stdlib.Arith.PeanoNat Nat max def
+R6810:6812 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6795:6801 Stdlib.Arith.PeanoNat Nat max def
+R6851:6877 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R6851:6877 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R6975:6988 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R7001:7003 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R6975:6988 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R7001:7003 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R7042:7060 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R7073:7075 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R7042:7060 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R7073:7075 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+def 7283:7292 <> alibi_bias
+R7321:7323 Corelib.Init.Datatypes <> nat ind
+binder 7295:7299 <> slope:24
+binder 7301:7309 <> query_pos:25
+binder 7311:7317 <> key_pos:26
+R7328:7330 Corelib.Init.Datatypes <> nat ind
+R7342:7345 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R7391:7391 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R7337:7341 JFCTheorems.PositionEncoding <> slope:24 var
+R7367:7369 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7346:7348 Corelib.Init.Peano <> max abbrev
+R7350:7358 JFCTheorems.PositionEncoding <> query_pos:25 var
+R7360:7366 JFCTheorems.PositionEncoding <> key_pos:26 var
+R7370:7372 Corelib.Init.Peano <> min abbrev
+R7374:7382 JFCTheorems.PositionEncoding <> query_pos:25 var
+R7384:7390 JFCTheorems.PositionEncoding <> key_pos:26 var
+def 7455:7467 <> optimal_slope
+R7493:7495 Corelib.Init.Datatypes <> nat ind
+binder 7470:7477 <> head_idx:27
+binder 7479:7489 <> total_heads:28
+R7500:7502 Corelib.Init.Datatypes <> nat ind
+R7617:7619 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R7620:7622 Corelib.Init.Peano <> max abbrev
+R7627:7633 Stdlib.Arith.PeanoNat Nat pow def
+R7650:7652 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R7646:7648 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R7638:7645 JFCTheorems.PositionEncoding <> head_idx:27 var
+R7653:7655 Corelib.Init.Peano <> max abbrev
+R7659:7669 JFCTheorems.PositionEncoding <> total_heads:28 var
+prf 8387:8407 <> heads_cover_distances
+binder 8420:8421 <> h1:29
+binder 8423:8424 <> h2:30
+binder 8426:8436 <> total_heads:31
+R8450:8457 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8445:8447 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R8443:8444 JFCTheorems.PositionEncoding <> h1:29 var
+R8448:8449 JFCTheorems.PositionEncoding <> h2:30 var
+R8474:8481 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8460:8462 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R8458:8459 JFCTheorems.PositionEncoding <> h2:30 var
+R8463:8473 JFCTheorems.PositionEncoding <> total_heads:31 var
+R8510:8513 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R8482:8494 JFCTheorems.PositionEncoding <> optimal_slope def
+R8496:8497 JFCTheorems.PositionEncoding <> h1:29 var
+R8499:8509 JFCTheorems.PositionEncoding <> total_heads:31 var
+R8514:8526 JFCTheorems.PositionEncoding <> optimal_slope def
+R8528:8529 JFCTheorems.PositionEncoding <> h2:30 var
+R8531:8541 JFCTheorems.PositionEncoding <> total_heads:31 var
+R8597:8609 JFCTheorems.PositionEncoding <> optimal_slope def
+R8736:8739 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R8716:8718 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8712:8714 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8719:8721 Corelib.Init.Peano <> max abbrev
+R8746:8748 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8742:8744 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8749:8751 Corelib.Init.Peano <> max abbrev
+R8736:8739 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R8716:8718 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8712:8714 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8719:8721 Corelib.Init.Peano <> max abbrev
+R8746:8748 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8742:8744 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8749:8751 Corelib.Init.Peano <> max abbrev
+R8779:8798 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R8779:8798 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R8863:8883 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R8825:8831 Stdlib.Arith.PeanoNat Nat pow def
+R8842:8844 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8838:8840 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8845:8847 Corelib.Init.Peano <> max abbrev
+R8884:8890 Stdlib.Arith.PeanoNat Nat pow def
+R8901:8903 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8897:8899 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8904:8906 Corelib.Init.Peano <> max abbrev
+R8863:8883 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R8825:8831 Stdlib.Arith.PeanoNat Nat pow def
+R8842:8844 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8838:8840 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8845:8847 Corelib.Init.Peano <> max abbrev
+R8884:8890 Stdlib.Arith.PeanoNat Nat pow def
+R8901:8903 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8897:8899 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8904:8906 Corelib.Init.Peano <> max abbrev
+R8935:8951 Stdlib.Arith.PeanoNat Nat pow_le_mono_r thm
+R8935:8951 Stdlib.Arith.PeanoNat Nat pow_le_mono_r thm
+R8969:8987 Stdlib.Arith.PeanoNat Nat div_le_compat_l def
+R8969:8987 Stdlib.Arith.PeanoNat Nat div_le_compat_l def
+rec 9119:9136 <> ContextUtilization
+proj 9166:9176 <> window_size
+proj 9187:9210 <> effective_attention_span
+proj 9268:9282 <> position_scheme
+R9180:9182 Corelib.Init.Datatypes <> nat ind
+R9214:9216 Corelib.Init.Datatypes <> nat ind
+R9286:9299 JFCTheorems.PositionEncoding <> PositionScheme ind
+def 9390:9406 <> utilization_ratio
+R9413:9430 JFCTheorems.PositionEncoding <> ContextUtilization rec
+binder 9409:9409 <> u:36
+R9435:9437 Corelib.Init.Datatypes <> nat ind
+R9444:9444 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R9477:9480 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R9471:9473 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R9445:9468 JFCTheorems.PositionEncoding <> effective_attention_span proj
+R9470:9470 JFCTheorems.PositionEncoding <> u:36 var
+R9481:9483 Corelib.Init.Peano <> max abbrev
+R9488:9498 JFCTheorems.PositionEncoding <> window_size proj
+R9500:9500 JFCTheorems.PositionEncoding <> u:36 var
+prf 10082:10115 <> better_encoding_better_utilization
+binder 10128:10129 <> u1:37
+binder 10131:10132 <> u2:38
+R10170:10177 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10153:10155 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10139:10149 JFCTheorems.PositionEncoding <> window_size proj
+R10151:10152 JFCTheorems.PositionEncoding <> u1:37 var
+R10156:10166 JFCTheorems.PositionEncoding <> window_size proj
+R10168:10169 JFCTheorems.PositionEncoding <> u2:38 var
+R10236:10243 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10205:10208 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R10178:10201 JFCTheorems.PositionEncoding <> effective_attention_span proj
+R10203:10204 JFCTheorems.PositionEncoding <> u1:37 var
+R10209:10232 JFCTheorems.PositionEncoding <> effective_attention_span proj
+R10234:10235 JFCTheorems.PositionEncoding <> u2:38 var
+R10264:10267 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R10244:10260 JFCTheorems.PositionEncoding <> utilization_ratio def
+R10262:10263 JFCTheorems.PositionEncoding <> u1:37 var
+R10268:10284 JFCTheorems.PositionEncoding <> utilization_ratio def
+R10286:10287 JFCTheorems.PositionEncoding <> u2:38 var
+R10331:10347 JFCTheorems.PositionEncoding <> utilization_ratio def
+R10374:10393 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R10374:10393 Stdlib.Arith.PeanoNat Nat.Div0 div_le_mono thm
+R10404:10420 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R10404:10420 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+def 10821:10833 <> rope_relative
+R10842:10844 Corelib.Init.Datatypes <> nat ind
+binder 10836:10836 <> i:39
+binder 10838:10838 <> j:40
+R10849:10851 Corelib.Init.Datatypes <> nat ind
+R10869:10871 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R10858:10864 Stdlib.Arith.PeanoNat Nat max def
+R10866:10866 JFCTheorems.PositionEncoding <> i:39 var
+R10868:10868 JFCTheorems.PositionEncoding <> j:40 var
+R10872:10878 Stdlib.Arith.PeanoNat Nat min def
+R10880:10880 JFCTheorems.PositionEncoding <> i:39 var
+R10882:10882 JFCTheorems.PositionEncoding <> j:40 var
+prf 11115:11134 <> rope_shift_invariant
+binder 11147:11147 <> i:41
+binder 11149:11149 <> j:42
+binder 11151:11151 <> s:43
+R11183:11185 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11154:11166 JFCTheorems.PositionEncoding <> rope_relative def
+R11170:11172 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11169:11169 JFCTheorems.PositionEncoding <> i:41 var
+R11173:11173 JFCTheorems.PositionEncoding <> s:43 var
+R11178:11180 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11177:11177 JFCTheorems.PositionEncoding <> j:42 var
+R11181:11181 JFCTheorems.PositionEncoding <> s:43 var
+R11186:11198 JFCTheorems.PositionEncoding <> rope_relative def
+R11200:11200 JFCTheorems.PositionEncoding <> i:41 var
+R11202:11202 JFCTheorems.PositionEncoding <> j:42 var
+R11235:11247 JFCTheorems.PositionEncoding <> rope_relative def
+prf 11345:11361 <> rope_relative_sym
+binder 11374:11374 <> i:44
+binder 11376:11376 <> j:45
+R11396:11398 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11379:11391 JFCTheorems.PositionEncoding <> rope_relative def
+R11393:11393 JFCTheorems.PositionEncoding <> i:44 var
+R11395:11395 JFCTheorems.PositionEncoding <> j:45 var
+R11399:11411 JFCTheorems.PositionEncoding <> rope_relative def
+R11413:11413 JFCTheorems.PositionEncoding <> j:45 var
+R11415:11415 JFCTheorems.PositionEncoding <> i:44 var
+R11446:11458 JFCTheorems.PositionEncoding <> rope_relative def
+prf 11655:11684 <> rope_relative_injective_offset
+binder 11697:11698 <> i1:46
+binder 11700:11701 <> i2:47
+binder 11703:11703 <> j:48
+R11717:11720 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11711:11714 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11710:11710 JFCTheorems.PositionEncoding <> j:48 var
+R11715:11716 JFCTheorems.PositionEncoding <> i1:46 var
+R11728:11735 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11722:11725 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11721:11721 JFCTheorems.PositionEncoding <> j:48 var
+R11726:11727 JFCTheorems.PositionEncoding <> i2:47 var
+R11775:11782 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11754:11756 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11736:11748 JFCTheorems.PositionEncoding <> rope_relative def
+R11750:11751 JFCTheorems.PositionEncoding <> i1:46 var
+R11753:11753 JFCTheorems.PositionEncoding <> j:48 var
+R11757:11769 JFCTheorems.PositionEncoding <> rope_relative def
+R11771:11772 JFCTheorems.PositionEncoding <> i2:47 var
+R11774:11774 JFCTheorems.PositionEncoding <> j:48 var
+R11785:11787 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11783:11784 JFCTheorems.PositionEncoding <> i1:46 var
+R11788:11789 JFCTheorems.PositionEncoding <> i2:47 var
+R11833:11845 JFCTheorems.PositionEncoding <> rope_relative def
+def 12148:12155 <> abs_code
+R12171:12173 Corelib.Init.Datatypes <> nat ind
+binder 12158:12163 <> stride:49
+binder 12165:12167 <> pos:50
+R12178:12180 Corelib.Init.Datatypes <> nat ind
+R12191:12193 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R12185:12190 JFCTheorems.PositionEncoding <> stride:49 var
+R12194:12196 JFCTheorems.PositionEncoding <> pos:50 var
+prf 12277:12294 <> abs_code_injective
+binder 12307:12312 <> stride:51
+binder 12314:12315 <> p1:52
+binder 12317:12318 <> p2:53
+R12335:12342 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12331:12333 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R12325:12330 JFCTheorems.PositionEncoding <> stride:51 var
+R12382:12389 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12361:12363 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12343:12350 JFCTheorems.PositionEncoding <> abs_code def
+R12352:12357 JFCTheorems.PositionEncoding <> stride:51 var
+R12359:12360 JFCTheorems.PositionEncoding <> p1:52 var
+R12364:12371 JFCTheorems.PositionEncoding <> abs_code def
+R12373:12378 JFCTheorems.PositionEncoding <> stride:51 var
+R12380:12381 JFCTheorems.PositionEncoding <> p2:53 var
+R12392:12394 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12390:12391 JFCTheorems.PositionEncoding <> p1:52 var
+R12395:12396 JFCTheorems.PositionEncoding <> p2:53 var
+R12442:12449 JFCTheorems.PositionEncoding <> abs_code def
+prf 12552:12568 <> abs_code_monotone
+binder 12581:12586 <> stride:54
+binder 12588:12589 <> p1:55
+binder 12591:12592 <> p2:56
+R12609:12616 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12605:12607 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R12599:12604 JFCTheorems.PositionEncoding <> stride:54 var
+R12624:12631 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12619:12621 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R12617:12618 JFCTheorems.PositionEncoding <> p1:55 var
+R12622:12623 JFCTheorems.PositionEncoding <> p2:56 var
+R12650:12652 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R12632:12639 JFCTheorems.PositionEncoding <> abs_code def
+R12641:12646 JFCTheorems.PositionEncoding <> stride:54 var
+R12648:12649 JFCTheorems.PositionEncoding <> p1:55 var
+R12653:12660 JFCTheorems.PositionEncoding <> abs_code def
+R12662:12667 JFCTheorems.PositionEncoding <> stride:54 var
+R12669:12670 JFCTheorems.PositionEncoding <> p2:56 var
+R12717:12724 JFCTheorems.PositionEncoding <> abs_code def
+prf 12824:12848 <> abs_code_order_preserving
+binder 12861:12866 <> stride:57
+binder 12868:12869 <> p1:58
+binder 12871:12872 <> p2:59
+R12887:12894 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12881:12884 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12879:12880 JFCTheorems.PositionEncoding <> p1:58 var
+R12885:12886 JFCTheorems.PositionEncoding <> p2:59 var
+R12913:12916 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12895:12902 JFCTheorems.PositionEncoding <> abs_code def
+R12904:12909 JFCTheorems.PositionEncoding <> stride:57 var
+R12911:12912 JFCTheorems.PositionEncoding <> p1:58 var
+R12917:12924 JFCTheorems.PositionEncoding <> abs_code def
+R12926:12931 JFCTheorems.PositionEncoding <> stride:57 var
+R12933:12934 JFCTheorems.PositionEncoding <> p2:59 var
+R12978:12985 JFCTheorems.PositionEncoding <> abs_code def
+prf 13372:13392 <> shift_preserves_order
+binder 13405:13406 <> p1:60
+binder 13408:13409 <> p2:61
+binder 13411:13411 <> s:62
+R13421:13425 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R13416:13418 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R13414:13415 JFCTheorems.PositionEncoding <> p1:60 var
+R13419:13420 JFCTheorems.PositionEncoding <> p2:61 var
+R13432:13434 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R13428:13430 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13426:13427 JFCTheorems.PositionEncoding <> p1:60 var
+R13431:13431 JFCTheorems.PositionEncoding <> s:62 var
+R13437:13439 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13435:13436 JFCTheorems.PositionEncoding <> p2:61 var
+R13440:13440 JFCTheorems.PositionEncoding <> s:62 var
+prf 13691:13716 <> shift_preserves_code_order
+binder 13729:13734 <> stride:63
+binder 13736:13737 <> p1:64
+binder 13739:13740 <> p2:65
+binder 13742:13742 <> s:66
+R13759:13767 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13868:13868 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13755:13757 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R13749:13754 JFCTheorems.PositionEncoding <> stride:63 var
+R13807:13816 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R13786:13788 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R13768:13775 JFCTheorems.PositionEncoding <> abs_code def
+R13777:13782 JFCTheorems.PositionEncoding <> stride:63 var
+R13784:13785 JFCTheorems.PositionEncoding <> p1:64 var
+R13789:13796 JFCTheorems.PositionEncoding <> abs_code def
+R13798:13803 JFCTheorems.PositionEncoding <> stride:63 var
+R13805:13806 JFCTheorems.PositionEncoding <> p2:65 var
+R13841:13843 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R13817:13824 JFCTheorems.PositionEncoding <> abs_code def
+R13826:13831 JFCTheorems.PositionEncoding <> stride:63 var
+R13836:13838 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13834:13835 JFCTheorems.PositionEncoding <> p1:64 var
+R13839:13839 JFCTheorems.PositionEncoding <> s:66 var
+R13844:13851 JFCTheorems.PositionEncoding <> abs_code def
+R13853:13858 JFCTheorems.PositionEncoding <> stride:63 var
+R13863:13865 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13861:13862 JFCTheorems.PositionEncoding <> p2:65 var
+R13866:13866 JFCTheorems.PositionEncoding <> s:66 var
+R13913:13920 JFCTheorems.PositionEncoding <> abs_code def
+def 14486:14498 <> edge_distance
+R14509:14511 Corelib.Init.Datatypes <> nat ind
+binder 14501:14503 <> pos:67
+binder 14505:14505 <> n:68
+R14516:14518 Corelib.Init.Datatypes <> nat ind
+R14523:14529 Stdlib.Arith.PeanoNat Nat min def
+R14531:14533 JFCTheorems.PositionEncoding <> pos:67 var
+R14537:14539 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R14536:14536 JFCTheorems.PositionEncoding <> n:68 var
+R14540:14542 JFCTheorems.PositionEncoding <> pos:67 var
+def 14703:14710 <> salience
+R14721:14723 Corelib.Init.Datatypes <> nat ind
+binder 14713:14715 <> pos:69
+binder 14717:14717 <> n:70
+R14728:14730 Corelib.Init.Datatypes <> nat ind
+R14736:14738 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R14735:14735 JFCTheorems.PositionEncoding <> n:70 var
+R14739:14751 JFCTheorems.PositionEncoding <> edge_distance def
+R14753:14755 JFCTheorems.PositionEncoding <> pos:69 var
+R14757:14757 JFCTheorems.PositionEncoding <> n:70 var
+prf 14812:14833 <> salience_left_edge_max
+binder 14846:14846 <> n:71
+R14861:14863 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14849:14856 JFCTheorems.PositionEncoding <> salience def
+R14860:14860 JFCTheorems.PositionEncoding <> n:71 var
+R14864:14864 JFCTheorems.PositionEncoding <> n:71 var
+R14893:14900 JFCTheorems.PositionEncoding <> salience def
+R14903:14915 JFCTheorems.PositionEncoding <> edge_distance def
+prf 14981:15003 <> salience_right_edge_max
+binder 15016:15016 <> n:72
+R15031:15033 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15019:15026 JFCTheorems.PositionEncoding <> salience def
+R15028:15028 JFCTheorems.PositionEncoding <> n:72 var
+R15030:15030 JFCTheorems.PositionEncoding <> n:72 var
+R15034:15034 JFCTheorems.PositionEncoding <> n:72 var
+R15063:15070 JFCTheorems.PositionEncoding <> salience def
+R15073:15085 JFCTheorems.PositionEncoding <> edge_distance def
+prf 15258:15287 <> salience_edges_dominate_middle
+binder 15300:15302 <> pos:73
+binder 15304:15304 <> n:74
+R15319:15326 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15314:15317 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15311:15313 JFCTheorems.PositionEncoding <> pos:73 var
+R15318:15318 JFCTheorems.PositionEncoding <> n:74 var
+R15357:15360 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R15341:15344 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15327:15334 JFCTheorems.PositionEncoding <> salience def
+R15336:15338 JFCTheorems.PositionEncoding <> pos:73 var
+R15340:15340 JFCTheorems.PositionEncoding <> n:74 var
+R15345:15352 JFCTheorems.PositionEncoding <> salience def
+R15356:15356 JFCTheorems.PositionEncoding <> n:74 var
+R15375:15378 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15361:15368 JFCTheorems.PositionEncoding <> salience def
+R15370:15372 JFCTheorems.PositionEncoding <> pos:73 var
+R15374:15374 JFCTheorems.PositionEncoding <> n:74 var
+R15379:15386 JFCTheorems.PositionEncoding <> salience def
+R15388:15388 JFCTheorems.PositionEncoding <> n:74 var
+R15390:15390 JFCTheorems.PositionEncoding <> n:74 var
+R15428:15435 JFCTheorems.PositionEncoding <> salience def
+R15438:15450 JFCTheorems.PositionEncoding <> edge_distance def
+R15467:15478 Stdlib.Arith.PeanoNat Nat le_min_l thm
+R15486:15488 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R15467:15478 Stdlib.Arith.PeanoNat Nat le_min_l thm
+R15486:15488 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R15510:15521 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R15529:15531 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R15510:15521 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R15529:15531 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+prf 15700:15728 <> salience_monotone_toward_edge
+binder 15741:15742 <> p1:75
+binder 15744:15745 <> p2:76
+binder 15747:15747 <> n:77
+R15794:15801 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15772:15775 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15754:15766 JFCTheorems.PositionEncoding <> edge_distance def
+R15768:15769 JFCTheorems.PositionEncoding <> p1:75 var
+R15771:15771 JFCTheorems.PositionEncoding <> n:77 var
+R15776:15788 JFCTheorems.PositionEncoding <> edge_distance def
+R15790:15791 JFCTheorems.PositionEncoding <> p2:76 var
+R15793:15793 JFCTheorems.PositionEncoding <> n:77 var
+R15815:15818 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R15802:15809 JFCTheorems.PositionEncoding <> salience def
+R15811:15812 JFCTheorems.PositionEncoding <> p1:75 var
+R15814:15814 JFCTheorems.PositionEncoding <> n:77 var
+R15819:15826 JFCTheorems.PositionEncoding <> salience def
+R15828:15829 JFCTheorems.PositionEncoding <> p2:76 var
+R15831:15831 JFCTheorems.PositionEncoding <> n:77 var
+R15868:15875 JFCTheorems.PositionEncoding <> salience def
+R15906:15909 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15888:15900 JFCTheorems.PositionEncoding <> edge_distance def
+R15906:15909 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15888:15900 JFCTheorems.PositionEncoding <> edge_distance def
+R15925:15937 JFCTheorems.PositionEncoding <> edge_distance def
+R15952:15963 Stdlib.Arith.PeanoNat Nat le_min_l thm
+R15970:15972 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R15952:15963 Stdlib.Arith.PeanoNat Nat le_min_l thm
+R15970:15972 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+prf 16216:16241 <> salience_center_strict_dip
+binder 16254:16254 <> k:78
+R16262:16265 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R16258:16260 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R16257:16257 JFCTheorems.PositionEncoding <> k:78 var
+R16284:16286 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R16266:16273 JFCTheorems.PositionEncoding <> salience def
+R16275:16275 JFCTheorems.PositionEncoding <> k:78 var
+R16279:16281 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16282:16282 JFCTheorems.PositionEncoding <> k:78 var
+R16287:16294 JFCTheorems.PositionEncoding <> salience def
+R16300:16302 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16303:16303 JFCTheorems.PositionEncoding <> k:78 var
+R16336:16343 JFCTheorems.PositionEncoding <> salience def
+R16346:16358 JFCTheorems.PositionEncoding <> edge_distance def
+R16377:16379 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R16373:16375 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16377:16379 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R16373:16375 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16408:16417 Stdlib.Arith.PeanoNat Nat min_id thm
+R16408:16417 Stdlib.Arith.PeanoNat Nat min_id thm
+R16408:16417 Stdlib.Arith.PeanoNat Nat min_id thm
+R16436:16438 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R16432:16434 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16449:16451 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16436:16438 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R16432:16434 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16449:16451 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16473:16483 Stdlib.Arith.PeanoNat Nat min_0_l thm
+R16473:16483 Stdlib.Arith.PeanoNat Nat min_0_l thm
+R16473:16483 Stdlib.Arith.PeanoNat Nat min_0_l thm
+rec 16634:16653 <> ConversationPosition
+proj 16679:16695 <> absolute_position
+proj 16742:16752 <> turn_number
+proj 16804:16823 <> within_turn_position
+proj 16861:16869 <> is_system
+R16699:16701 Corelib.Init.Datatypes <> nat ind
+R16756:16758 Corelib.Init.Datatypes <> nat ind
+R16827:16829 Corelib.Init.Datatypes <> nat ind
+R16873:16876 Corelib.Init.Datatypes <> bool ind
+def 17000:17022 <> conversation_importance
+R17029:17048 JFCTheorems.PositionEncoding <> ConversationPosition rec
+binder 17025:17025 <> p:84
+R17053:17055 Corelib.Init.Datatypes <> nat ind
+R17085:17087 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R17088:17090 Corelib.Init.Peano <> min abbrev
+R17110:17112 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17097:17107 JFCTheorems.PositionEncoding <> turn_number proj
+R17109:17109 JFCTheorems.PositionEncoding <> p:84 var
+binder 17066:17077 <> turn_recency:85
+R17145:17153 JFCTheorems.PositionEncoding <> is_system proj
+R17155:17155 JFCTheorems.PositionEncoding <> p:84 var
+binder 17126:17137 <> system_boost:86
+R17189:17191 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17177:17188 JFCTheorems.PositionEncoding <> turn_recency:85 var
+R17192:17203 JFCTheorems.PositionEncoding <> system_boost:86 var
+prf 17274:17295 <> recent_turns_important
+binder 17308:17309 <> p1:87
+binder 17311:17312 <> p2:88
+R17350:17357 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17333:17335 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R17319:17329 JFCTheorems.PositionEncoding <> turn_number proj
+R17331:17332 JFCTheorems.PositionEncoding <> p1:87 var
+R17336:17346 JFCTheorems.PositionEncoding <> turn_number proj
+R17348:17349 JFCTheorems.PositionEncoding <> p2:88 var
+R17385:17392 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17370:17372 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17358:17366 JFCTheorems.PositionEncoding <> is_system proj
+R17368:17369 JFCTheorems.PositionEncoding <> p1:87 var
+R17373:17381 JFCTheorems.PositionEncoding <> is_system proj
+R17383:17384 JFCTheorems.PositionEncoding <> p2:88 var
+R17419:17422 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R17393:17415 JFCTheorems.PositionEncoding <> conversation_importance def
+R17417:17418 JFCTheorems.PositionEncoding <> p1:87 var
+R17423:17445 JFCTheorems.PositionEncoding <> conversation_importance def
+R17447:17448 JFCTheorems.PositionEncoding <> p2:88 var
+R17494:17516 JFCTheorems.PositionEncoding <> conversation_importance def
+R17580:17593 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R17548:17550 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R17551:17553 Corelib.Init.Peano <> min abbrev
+R17574:17576 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17560:17570 JFCTheorems.PositionEncoding <> turn_number proj
+R17597:17599 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R17600:17602 Corelib.Init.Peano <> min abbrev
+R17623:17625 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17609:17619 JFCTheorems.PositionEncoding <> turn_number proj
+R17580:17593 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R17548:17550 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R17551:17553 Corelib.Init.Peano <> min abbrev
+R17574:17576 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17560:17570 JFCTheorems.PositionEncoding <> turn_number proj
+R17597:17599 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R17600:17602 Corelib.Init.Peano <> min abbrev
+R17623:17625 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17609:17619 JFCTheorems.PositionEncoding <> turn_number proj
+R17732:17735 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R17727:17729 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17713:17723 JFCTheorems.PositionEncoding <> turn_number proj
+R17750:17752 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17736:17746 JFCTheorems.PositionEncoding <> turn_number proj
+R17732:17735 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R17727:17729 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17713:17723 JFCTheorems.PositionEncoding <> turn_number proj
+R17750:17752 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17736:17746 JFCTheorems.PositionEncoding <> turn_number proj
+R17778:17794 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R17778:17794 Stdlib.Arith.PeanoNat Nat mul_le_mono_r thm
+R17820:17831 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R17852:17854 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17838:17848 JFCTheorems.PositionEncoding <> turn_number proj
+R17820:17831 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R17852:17854 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17838:17848 JFCTheorems.PositionEncoding <> turn_number proj
+R17877:17888 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R17909:17911 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17895:17905 JFCTheorems.PositionEncoding <> turn_number proj
+R17877:17888 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R17909:17911 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R17895:17905 JFCTheorems.PositionEncoding <> turn_number proj
+rec 18089:18108 <> HierarchicalPosition
+proj 18134:18141 <> block_id
+proj 18152:18165 <> block_position
+proj 18176:18185 <> block_size
+R18145:18147 Corelib.Init.Datatypes <> nat ind
+R18169:18171 Corelib.Init.Datatypes <> nat ind
+R18189:18191 Corelib.Init.Datatypes <> nat ind
+def 18245:18260 <> flatten_position
+R18267:18286 JFCTheorems.PositionEncoding <> HierarchicalPosition rec
+binder 18263:18263 <> h:93
+R18291:18293 Corelib.Init.Datatypes <> nat ind
+R18325:18327 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R18310:18312 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R18300:18307 JFCTheorems.PositionEncoding <> block_id proj
+R18309:18309 JFCTheorems.PositionEncoding <> h:93 var
+R18313:18322 JFCTheorems.PositionEncoding <> block_size proj
+R18324:18324 JFCTheorems.PositionEncoding <> h:93 var
+R18328:18341 JFCTheorems.PositionEncoding <> block_position proj
+R18343:18343 JFCTheorems.PositionEncoding <> h:93 var
+prf 18962:18980 <> hierarchical_unique
+binder 18993:18994 <> h1:94
+binder 18996:18997 <> h2:95
+R19033:19040 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19017:19019 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19004:19013 JFCTheorems.PositionEncoding <> block_size proj
+R19015:19016 JFCTheorems.PositionEncoding <> h1:94 var
+R19020:19029 JFCTheorems.PositionEncoding <> block_size proj
+R19031:19032 JFCTheorems.PositionEncoding <> h2:95 var
+R19058:19065 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19054:19056 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R19041:19050 JFCTheorems.PositionEncoding <> block_size proj
+R19052:19053 JFCTheorems.PositionEncoding <> h1:94 var
+R19099:19106 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19083:19085 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R19066:19079 JFCTheorems.PositionEncoding <> block_position proj
+R19081:19082 JFCTheorems.PositionEncoding <> h1:94 var
+R19086:19095 JFCTheorems.PositionEncoding <> block_size proj
+R19097:19098 JFCTheorems.PositionEncoding <> h1:94 var
+R19140:19147 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19124:19126 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R19107:19120 JFCTheorems.PositionEncoding <> block_position proj
+R19122:19123 JFCTheorems.PositionEncoding <> h2:95 var
+R19127:19136 JFCTheorems.PositionEncoding <> block_size proj
+R19138:19139 JFCTheorems.PositionEncoding <> h2:95 var
+R19189:19196 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19167:19169 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19148:19163 JFCTheorems.PositionEncoding <> flatten_position def
+R19165:19166 JFCTheorems.PositionEncoding <> h1:94 var
+R19170:19185 JFCTheorems.PositionEncoding <> flatten_position def
+R19187:19188 JFCTheorems.PositionEncoding <> h2:95 var
+R19222:19225 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R19208:19210 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19197:19204 JFCTheorems.PositionEncoding <> block_id proj
+R19206:19207 JFCTheorems.PositionEncoding <> h1:94 var
+R19211:19218 JFCTheorems.PositionEncoding <> block_id proj
+R19220:19221 JFCTheorems.PositionEncoding <> h2:95 var
+R19243:19245 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19226:19239 JFCTheorems.PositionEncoding <> block_position proj
+R19241:19242 JFCTheorems.PositionEncoding <> h1:94 var
+R19246:19259 JFCTheorems.PositionEncoding <> block_position proj
+R19261:19262 JFCTheorems.PositionEncoding <> h2:95 var
+R19324:19339 JFCTheorems.PositionEncoding <> flatten_position def
+R19388:19397 JFCTheorems.PositionEncoding <> block_size proj
+R19388:19397 JFCTheorems.PositionEncoding <> block_size proj
+R19422:19429 JFCTheorems.PositionEncoding <> block_id proj
+R19422:19429 JFCTheorems.PositionEncoding <> block_id proj
+R19452:19459 JFCTheorems.PositionEncoding <> block_id proj
+R19452:19459 JFCTheorems.PositionEncoding <> block_id proj
+R19484:19497 JFCTheorems.PositionEncoding <> block_position proj
+R19484:19497 JFCTheorems.PositionEncoding <> block_position proj
+R19520:19533 JFCTheorems.PositionEncoding <> block_position proj
+R19520:19533 JFCTheorems.PositionEncoding <> block_position proj
+R19634:19636 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19634:19636 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+def 19761:19787 <> hierarchical_attention_cost
+R19811:19813 Corelib.Init.Datatypes <> nat ind
+binder 19790:19796 <> seq_len:96
+binder 19798:19807 <> block_size:97
+R19818:19820 Corelib.Init.Datatypes <> nat ind
+R19850:19852 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R19843:19849 JFCTheorems.PositionEncoding <> seq_len:96 var
+R19853:19855 Corelib.Init.Peano <> max abbrev
+R19859:19868 JFCTheorems.PositionEncoding <> block_size:97 var
+binder 19831:19838 <> n_blocks:98
+R19903:19905 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R19893:19902 JFCTheorems.PositionEncoding <> block_size:97 var
+R19906:19915 JFCTheorems.PositionEncoding <> block_size:97 var
+binder 19879:19888 <> local_cost:99
+R19954:19956 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R19946:19953 JFCTheorems.PositionEncoding <> n_blocks:98 var
+R19957:19964 JFCTheorems.PositionEncoding <> n_blocks:98 var
+binder 19926:19941 <> cross_block_cost:100
+R19992:19994 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R19979:19981 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R19971:19978 JFCTheorems.PositionEncoding <> n_blocks:98 var
+R19982:19991 JFCTheorems.PositionEncoding <> local_cost:99 var
+R19995:20010 JFCTheorems.PositionEncoding <> cross_block_cost:100 var
+prf 20434:20460 <> hierarchical_more_efficient
+binder 20473:20479 <> seq_len:101
+binder 20481:20490 <> block_size:102
+R20513:20520 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20507:20510 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R20497:20506 JFCTheorems.PositionEncoding <> block_size:102 var
+R20546:20553 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20528:20531 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R20521:20527 JFCTheorems.PositionEncoding <> seq_len:101 var
+R20542:20544 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R20532:20541 JFCTheorems.PositionEncoding <> block_size:102 var
+R20600:20602 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R20554:20580 JFCTheorems.PositionEncoding <> hierarchical_attention_cost def
+R20582:20588 JFCTheorems.PositionEncoding <> seq_len:101 var
+R20590:20599 JFCTheorems.PositionEncoding <> block_size:102 var
+R20610:20612 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R20603:20609 JFCTheorems.PositionEncoding <> seq_len:101 var
+R20613:20619 JFCTheorems.PositionEncoding <> seq_len:101 var
+R20679:20705 JFCTheorems.PositionEncoding <> hierarchical_attention_cost def
+R20754:20756 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20734:20740 Stdlib.Arith.PeanoNat Nat max def
+R20754:20756 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20734:20740 Stdlib.Arith.PeanoNat Nat max def
+R20811:20813 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R20811:20813 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R20857:20860 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20853:20855 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R20857:20860 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20853:20855 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R20891:20909 Stdlib.Arith.PeanoNat Nat.Div0 mul_div_le thm
+R20891:20909 Stdlib.Arith.PeanoNat Nat.Div0 mul_div_le thm
+R21003:21006 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20998:21000 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R21003:21006 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20998:21000 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+def 21804:21826 <> jfc_safe_context_length
+R21838:21851 JFCTheorems.PositionEncoding <> PositionScheme ind
+binder 21829:21834 <> scheme:103
+R21875:21877 Corelib.Init.Datatypes <> nat ind
+binder 21855:21871 <> quality_threshold:104
+R21882:21884 Corelib.Init.Datatypes <> nat ind
+R21908:21921 JFCTheorems.PositionEncoding <> trained_length def
+R21923:21928 JFCTheorems.PositionEncoding <> scheme:103 var
+binder 21895:21903 <> train_len:105
+R21941:21946 JFCTheorems.PositionEncoding <> scheme:103 var
+R21957:21964 JFCTheorems.PositionEncoding <> Absolute constr
+R21969:21977 JFCTheorems.PositionEncoding <> train_len:105 var
+R21983:21986 JFCTheorems.PositionEncoding <> RoPE constr
+R22000:22002 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R21991:21999 JFCTheorems.PositionEncoding <> train_len:105 var
+R22035:22039 JFCTheorems.PositionEncoding <> ALiBi constr
+R22053:22055 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R22044:22052 JFCTheorems.PositionEncoding <> train_len:105 var
+R22087:22090 JFCTheorems.PositionEncoding <> NoPE constr
+prf 22836:22859 <> jfc_respects_safe_length
+binder 22872:22877 <> scheme:107
+binder 22879:22895 <> quality_threshold:108
+binder 22897:22899 <> pos:109
+R22920:22927 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22912:22915 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R22906:22911 JFCTheorems.PositionEncoding <> scheme:107 var
+R22916:22919 JFCTheorems.PositionEncoding <> NoPE constr
+R22951:22958 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22945:22948 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R22928:22944 JFCTheorems.PositionEncoding <> quality_threshold:108 var
+R23014:23021 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22962:22965 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R22959:22961 JFCTheorems.PositionEncoding <> pos:109 var
+R22966:22988 JFCTheorems.PositionEncoding <> jfc_safe_context_length def
+R22990:22995 JFCTheorems.PositionEncoding <> scheme:107 var
+R22997:23013 JFCTheorems.PositionEncoding <> quality_threshold:108 var
+R23078:23081 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R23022:23042 JFCTheorems.PositionEncoding <> extrapolation_quality def
+R23044:23049 JFCTheorems.PositionEncoding <> scheme:107 var
+R23052:23065 JFCTheorems.PositionEncoding <> trained_length def
+R23067:23072 JFCTheorems.PositionEncoding <> scheme:107 var
+R23075:23077 JFCTheorems.PositionEncoding <> pos:109 var
+R23082:23098 JFCTheorems.PositionEncoding <> quality_threshold:108 var
+R23197:23219 JFCTheorems.PositionEncoding <> jfc_safe_context_length def
+R23222:23242 JFCTheorems.PositionEncoding <> extrapolation_quality def
+R23245:23258 JFCTheorems.PositionEncoding <> trained_length def
+R23326:23332 Stdlib.Arith.PeanoNat Nat leb def
+R23326:23332 Stdlib.Arith.PeanoNat Nat leb def
+R23369:23378 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R23369:23378 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R23476:23482 Stdlib.Arith.PeanoNat Nat leb def
+R23476:23482 Stdlib.Arith.PeanoNat Nat leb def
+R23520:23529 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R23520:23529 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R23583:23586 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R23570:23572 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23553:23553 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23564:23567 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23557:23559 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R23573:23575 Corelib.Init.Peano <> max abbrev
+R23601:23612 JFCTheorems.PositionEncoding <> mul_div_le_k thm
+R23583:23586 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R23570:23572 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23553:23553 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23564:23567 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23557:23559 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R23573:23575 Corelib.Init.Peano <> max abbrev
+R23601:23612 JFCTheorems.PositionEncoding <> mul_div_le_k thm
+R23637:23648 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R23672:23674 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23655:23655 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23666:23669 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23659:23661 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R23675:23677 Corelib.Init.Peano <> max abbrev
+R23637:23648 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R23672:23674 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23655:23655 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23666:23669 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23659:23661 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R23675:23677 Corelib.Init.Peano <> max abbrev
+R23793:23799 Stdlib.Arith.PeanoNat Nat leb def
+R23793:23799 Stdlib.Arith.PeanoNat Nat leb def
+R23837:23846 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R23837:23846 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R23900:23903 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R23887:23889 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23870:23870 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23881:23884 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23874:23876 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R23890:23892 Corelib.Init.Peano <> max abbrev
+R23918:23929 JFCTheorems.PositionEncoding <> mul_div_le_k thm
+R23900:23903 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R23887:23889 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23870:23870 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23881:23884 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23874:23876 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R23890:23892 Corelib.Init.Peano <> max abbrev
+R23918:23929 JFCTheorems.PositionEncoding <> mul_div_le_k thm
+R23954:23965 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R23989:23991 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23972:23972 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23983:23986 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23976:23978 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R23992:23994 Corelib.Init.Peano <> max abbrev
+R23954:23965 Stdlib.Arith.PeanoNat Nat le_min_r thm
+R23989:23991 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23972:23972 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23983:23986 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R23976:23978 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R23992:23994 Corelib.Init.Peano <> max abbrev

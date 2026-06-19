@@ -1,6 +1,8 @@
 //! `TaskEvent::*` handlers — subagent streaming, background task
 //! registration, progress, completion, and failure.
 
+use jfc_agent::AgentRegistry;
+
 use crate::app::{self, EngineState};
 use crate::runtime::{EventSender, factory_mode_enabled, maybe_continue_task_factory};
 use crate::types::*;
@@ -64,6 +66,33 @@ pub fn handle_task_started(
                 "TaskStarted: failed to mark linked task in_progress"
             );
         }
+    }
+    // Mirror this subagent into the unified agent registry so it shares the
+    // roster with teammates, council seats, and economy agents. Fire-and-forget
+    // because this handler is sync and the registry is async; keyed by task_id
+    // so the completion/failure handlers can resolve it back.
+    {
+        let id_label = task_id.as_str().to_owned();
+        let desc = description.clone();
+        let detached = is_detached;
+        tokio::spawn(async move {
+            let registry = crate::tools::agent_registry();
+            let id = jfc_agent::AgentId::from_label(&id_label);
+            let mut config = jfc_agent::SpawnConfig::solo(desc, ".");
+            config.id = Some(id.clone());
+            config.detached = detached;
+            // Register directly (Running) — the work is already underway.
+            registry
+                .register(jfc_agent::AgentState::new(
+                    id.clone(),
+                    jfc_agent::AgentRole::Solo,
+                    config.description,
+                ))
+                .await;
+            registry
+                .update_status(&id, jfc_agent::AgentStatus::Running)
+                .await;
+        });
     }
     state.background_tasks.insert(
         task_id.as_str().to_owned(),
@@ -236,6 +265,20 @@ pub async fn handle_task_completed(
         "TaskCompleted"
     );
     use types::TaskLifecycle;
+    // Mirror terminal completion into the unified registry.
+    {
+        let registry = crate::tools::agent_registry();
+        let id = jfc_agent::AgentId::from_label(task_id.as_str());
+        registry
+            .complete(&id, jfc_agent::AgentResult {
+                id: id.clone(),
+                output: summary.clone(),
+                tokens_used: 0,
+                elapsed_ms,
+                patch: None,
+            })
+            .await;
+    }
     let mut linked_task_id: Option<String> = None;
     if let Some(bt) = state.background_tasks.get_mut(task_id.as_str()) {
         // A real terminal transition observed in this process — unblocks the
@@ -317,6 +360,18 @@ pub async fn handle_task_failed(
         .trim_start()
         .to_ascii_lowercase()
         .starts_with("cancelled:");
+    // Mirror the terminal failure/cancellation into the unified registry.
+    {
+        let registry = crate::tools::agent_registry();
+        let id = jfc_agent::AgentId::from_label(task_id.as_str());
+        if was_cancelled {
+            registry
+                .update_status(&id, jfc_agent::AgentStatus::Cancelled)
+                .await;
+        } else {
+            registry.fail(&id, error.clone()).await;
+        }
+    }
     let mut linked_task_id: Option<String> = None;
     if let Some(bt) = state.background_tasks.get_mut(task_id.as_str()) {
         state.observed_bg_terminal_transition_this_process = true;

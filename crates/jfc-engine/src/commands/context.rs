@@ -452,8 +452,18 @@ pub(super) async fn cmd_council(
         state
             .messages
             .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
-                "Usage: `/council <question>` or `/council model-a,model-b <question>`.".into(),
+                crate::commands::council::usage_text(),
             )]));
+        return;
+    }
+
+    // Persistent-session subcommands (RoundTable-style turn-based deliberation)
+    // take precedence; everything else stays the one-shot fan-out below.
+    let head = args.split_whitespace().next().unwrap_or("");
+    if crate::commands::council::is_session_subcommand(head)
+        || state.council_session.is_some() && head.starts_with('@')
+    {
+        crate::commands::council::dispatch(state, args).await;
         return;
     }
 

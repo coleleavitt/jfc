@@ -93,7 +93,16 @@ pub async fn run(
             .await;
         }
     } else {
-        run_batch(backend, &cfg, &events, &state, stop_rx, &cancel_flag).await;
+        run_batch(
+            backend,
+            &cfg,
+            &events,
+            &state,
+            stop_rx,
+            &cancel_flag,
+            token.as_deref(),
+        )
+        .await;
     }
 
     set_idle(&state, &events).await;
@@ -208,7 +217,7 @@ async fn run_live(
             return;
         }
         set_processing(state, events).await;
-        transcribe_buffer_and_emit(all_audio, cfg, events).await;
+        transcribe_buffer_and_emit(all_audio, cfg, events, Some(token)).await;
         return;
     };
 
@@ -266,7 +275,7 @@ async fn run_live(
     // captured audio through the batch chain rather than emitting nothing.
     if live_error && !got_transcript {
         stream.close();
-        transcribe_buffer_and_emit(all_audio, cfg, events).await;
+        transcribe_buffer_and_emit(all_audio, cfg, events, Some(token)).await;
         return;
     }
 
@@ -320,6 +329,7 @@ async fn run_batch(
     state: &Arc<Mutex<VoiceState>>,
     stop_rx: oneshot::Receiver<()>,
     cancel_flag: &AtomicBool,
+    oauth_token: Option<&str>,
 ) {
     let mut capture = match AudioCapture::start(backend).await {
         Ok(c) => c,
@@ -353,7 +363,7 @@ async fn run_batch(
         return; // discard — no transcription, no Final
     }
     set_processing(state, events).await;
-    transcribe_buffer_and_emit(all_audio, cfg, events).await;
+    transcribe_buffer_and_emit(all_audio, cfg, events, oauth_token).await;
 }
 
 /// Run the batch backend chain over a buffer and emit Final/Error.
@@ -361,8 +371,9 @@ async fn transcribe_buffer_and_emit(
     pcm: Vec<u8>,
     cfg: &VoiceConfig,
     events: &mpsc::UnboundedSender<VoiceTranscriptEvent>,
+    oauth_token: Option<&str>,
 ) {
-    match backends::transcribe(&pcm, cfg).await {
+    match backends::transcribe_with_token(&pcm, cfg, oauth_token).await {
         Ok(Some(text)) => {
             info!(target: "jfc::voice", chars = text.len(), "STT transcript received (batch)");
             send_or_debug(events, VoiceTranscriptEvent::Final(text));

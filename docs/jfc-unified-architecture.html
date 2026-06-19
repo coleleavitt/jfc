@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JFC Unified Agent Architecture</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&f[]=jet-brains-mono@400,700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+:root, [data-theme="dark"] {
+  --color-bg: #0d0f12;
+  --color-surface: #13161b;
+  --color-surface-2: #191d24;
+  --color-surface-3: #1f242e;
+  --color-border: #252b36;
+  --color-text: #e2e8f0;
+  --color-text-muted: #7c8799;
+  --color-text-faint: #3d4554;
+
+  --color-teal: #2dd4bf;
+  --color-teal-dim: oklch(from #2dd4bf l c h / 0.15);
+  --color-teal-border: oklch(from #2dd4bf l c h / 0.3);
+
+  --color-blue: #60a5fa;
+  --color-blue-dim: oklch(from #60a5fa l c h / 0.12);
+  --color-blue-border: oklch(from #60a5fa l c h / 0.28);
+
+  --color-violet: #a78bfa;
+  --color-violet-dim: oklch(from #a78bfa l c h / 0.12);
+  --color-violet-border: oklch(from #a78bfa l c h / 0.28);
+
+  --color-amber: #fbbf24;
+  --color-amber-dim: oklch(from #fbbf24 l c h / 0.12);
+  --color-amber-border: oklch(from #fbbf24 l c h / 0.28);
+
+  --color-green: #4ade80;
+  --color-green-dim: oklch(from #4ade80 l c h / 0.12);
+  --color-green-border: oklch(from #4ade80 l c h / 0.28);
+
+  --color-rose: #fb7185;
+  --color-rose-dim: oklch(from #fb7185 l c h / 0.12);
+  --color-rose-border: oklch(from #fb7185 l c h / 0.28);
+
+  --font-body: 'Satoshi', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
+  --space-4: 1rem; --space-6: 1.5rem; --space-8: 2rem;
+  --space-10: 2.5rem; --space-12: 3rem; --space-16: 4rem;
+
+  --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+  --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+  --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+  --text-2xl: clamp(2rem, 1.2rem + 2.5vw, 3.5rem);
+
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.4);
+  --shadow-md: 0 4px 16px oklch(0 0 0 / 0.5);
+  --shadow-lg: 0 12px 40px oklch(0 0 0 / 0.6);
+  --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  color: var(--color-text);
+  background: var(--color-bg);
+  min-height: 100dvh;
+  line-height: 1.6;
+}
+
+/* ── Layout ── */
+.page { max-width: 1280px; margin-inline: auto; padding: var(--space-8) var(--space-6); }
+
+/* ── Header ── */
+.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-12); }
+.logo { display: flex; align-items: center; gap: var(--space-3); }
+.logo-icon { width: 36px; height: 36px; }
+.logo-text { font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.02em; }
+.logo-text span { color: var(--color-teal); }
+.header-meta { font-size: var(--text-xs); color: var(--color-text-muted); text-align: right; line-height: 1.4; }
+
+/* ── Hero ── */
+.hero { margin-bottom: var(--space-12); }
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  font-size: var(--text-xs); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-teal); background: var(--color-teal-dim);
+  border: 1px solid var(--color-teal-border); border-radius: var(--radius-full, 9999px);
+  padding: var(--space-1) var(--space-3); margin-bottom: var(--space-4);
+}
+.hero-title {
+  font-size: var(--text-2xl); font-weight: 700; letter-spacing: -0.03em; line-height: 1.1;
+  margin-bottom: var(--space-4);
+}
+.hero-title em { font-style: normal; color: var(--color-teal); }
+.hero-desc { font-size: var(--text-base); color: var(--color-text-muted); max-width: 72ch; line-height: 1.7; }
+
+/* ── Section headings ── */
+.section { margin-bottom: var(--space-12); }
+.section-label {
+  font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--color-text-faint); margin-bottom: var(--space-6); display: flex; align-items: center; gap: var(--space-3);
+}
+.section-label::after { content: ''; flex: 1; height: 1px; background: var(--color-border); }
+
+/* ── Pipeline Diagram ── */
+.pipeline {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+  align-items: center;
+  gap: 0;
+  margin-bottom: var(--space-12);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+
+.pipeline-node {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5) var(--space-4);
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--space-2); text-align: center;
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+  cursor: default; min-width: 160px;
+}
+.pipeline-node:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.pipeline-node.ingress { border-color: var(--color-blue-border); background: var(--color-blue-dim); }
+.pipeline-node.dispatch { border-color: var(--color-violet-border); background: var(--color-violet-dim); }
+.pipeline-node.registry { border-color: var(--color-teal-border); background: var(--color-teal-dim); }
+.pipeline-node.ui { border-color: var(--color-green-border); background: var(--color-green-dim); }
+
+.node-icon { width: 36px; height: 36px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; }
+.node-icon.blue { background: var(--color-blue-dim); color: var(--color-blue); }
+.node-icon.violet { background: var(--color-violet-dim); color: var(--color-violet); }
+.node-icon.teal { background: var(--color-teal-dim); color: var(--color-teal); }
+.node-icon.green { background: var(--color-green-dim); color: var(--color-green); }
+
+.node-label { font-size: var(--text-sm); font-weight: 600; }
+.node-sub { font-size: var(--text-xs); color: var(--color-text-muted); font-family: var(--font-mono); }
+
+.pipeline-arrow { display: flex; align-items: center; justify-content: center; padding-inline: var(--space-2); color: var(--color-text-faint); flex-shrink: 0; }
+
+/* ── Backend Grid ── */
+.backends {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+
+.backend-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+.backend-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+
+.backend-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.backend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.backend-name { font-size: var(--text-sm); font-weight: 700; }
+.backend-role { font-size: var(--text-xs); color: var(--color-text-muted); font-family: var(--font-mono); margin-left: auto; }
+
+.backend-card p { font-size: var(--text-sm); color: var(--color-text-muted); line-height: 1.6; margin-bottom: var(--space-3); }
+
+.tag-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.tag {
+  font-size: var(--text-xs); font-family: var(--font-mono); font-weight: 500;
+  padding: 2px var(--space-2); border-radius: var(--radius-sm);
+}
+.tag.green { background: var(--color-green-dim); color: var(--color-green); border: 1px solid var(--color-green-border); }
+.tag.amber { background: var(--color-amber-dim); color: var(--color-amber); border: 1px solid var(--color-amber-border); }
+.tag.teal { background: var(--color-teal-dim); color: var(--color-teal); border: 1px solid var(--color-teal-border); }
+.tag.violet { background: var(--color-violet-dim); color: var(--color-violet); border: 1px solid var(--color-violet-border); }
+.tag.blue { background: var(--color-blue-dim); color: var(--color-blue); border: 1px solid var(--color-blue-border); }
+.tag.rose { background: var(--color-rose-dim); color: var(--color-rose); border: 1px solid var(--color-rose-border); }
+
+/* ── Dispatch table ── */
+.dispatch-grid {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  margin-bottom: var(--space-8);
+}
+.dispatch-row {
+  display: grid; grid-template-columns: 180px 1fr 160px;
+  align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  transition: background var(--transition);
+}
+.dispatch-row:last-child { border-bottom: none; }
+.dispatch-row:hover { background: var(--color-surface-2); }
+.dispatch-row.header { background: var(--color-surface-3); font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-muted); }
+.dispatch-tool { font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 700; }
+.dispatch-desc { font-size: var(--text-sm); color: var(--color-text-muted); }
+
+/* ── Migration phases ── */
+.phases { display: flex; flex-direction: column; gap: var(--space-3); }
+.phase {
+  display: grid; grid-template-columns: 48px 1fr auto;
+  align-items: center; gap: var(--space-4);
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg); padding: var(--space-4) var(--space-5);
+  transition: background var(--transition);
+}
+.phase:hover { background: var(--color-surface-2); }
+.phase-num {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--text-sm); font-weight: 700; flex-shrink: 0;
+}
+.phase-body { min-width: 0; }
+.phase-title { font-size: var(--text-sm); font-weight: 600; margin-bottom: 2px; }
+.phase-detail { font-size: var(--text-xs); color: var(--color-text-muted); font-family: var(--font-mono); }
+.phase-risk { font-size: var(--text-xs); font-weight: 600; white-space: nowrap; padding: 2px var(--space-3); border-radius: var(--radius-full, 9999px); }
+.risk-low { background: var(--color-green-dim); color: var(--color-green); border: 1px solid var(--color-green-border); }
+.risk-med { background: var(--color-amber-dim); color: var(--color-amber); border: 1px solid var(--color-amber-border); }
+.risk-high { background: var(--color-rose-dim); color: var(--color-rose); border: 1px solid var(--color-rose-border); }
+
+/* ── Struct block ── */
+.struct-block {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl); overflow: hidden;
+  margin-bottom: var(--space-8);
+}
+.struct-header {
+  background: var(--color-surface-3); border-bottom: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-6); font-size: var(--text-xs);
+  font-family: var(--font-mono); color: var(--color-text-muted);
+  display: flex; align-items: center; gap: var(--space-2);
+}
+.struct-header .dot { width: 8px; height: 8px; border-radius: 50%; }
+pre {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  line-height: 1.7; padding: var(--space-6); overflow-x: auto;
+  color: var(--color-text);
+  tab-size: 4;
+}
+.kw { color: #f472b6; } /* keyword */
+.ty { color: #60a5fa; } /* type */
+.cm { color: #4a5568; } /* comment */
+.st { color: #34d399; } /* string */
+.en { color: #a78bfa; } /* enum variant */
+.nu { color: #fb923c; } /* number */
+
+/* ── Footer ── */
+.footer { margin-top: var(--space-16); padding-top: var(--space-8); border-top: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; }
+.footer-note { font-size: var(--text-xs); color: var(--color-text-faint); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="logo">
+      <svg class="logo-icon" viewBox="0 0 36 36" fill="none" aria-label="JFC logo">
+        <rect width="36" height="36" rx="8" fill="#13161b" stroke="#252b36"/>
+        <path d="M10 12h6v9a3 3 0 0 1-6 0" stroke="#2dd4bf" stroke-width="2" stroke-linecap="round"/>
+        <path d="M19 12h7M22.5 12v12" stroke="#60a5fa" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="10" cy="23" r="1" fill="#2dd4bf"/>
+      </svg>
+      <span class="logo-text">jfc <span>engine</span></span>
+    </div>
+    <div class="header-meta">Unified Agent Architecture<br>Target refactor state</div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-eyebrow">
+      <i data-lucide="zap" style="width:12px;height:12px;"></i>
+      Target Architecture
+    </div>
+    <h1 class="hero-title">One registry.<br><em>Every agent shape.</em></h1>
+    <p class="hero-desc">The current runtime fragments state across <code style="font-family:var(--font-mono);font-size:0.9em;background:var(--color-surface-2);padding:1px 6px;border-radius:4px;">BackgroundTask</code>, <code style="font-family:var(--font-mono);font-size:0.9em;background:var(--color-surface-2);padding:1px 6px;border-radius:4px;">InProcessTeammateState</code>, and <code style="font-family:var(--font-mono);font-size:0.9em;background:var(--color-surface-2);padding:1px 6px;border-radius:4px;">BackgroundAgentInfo</code> — three overlapping lifecycle authorities. The refactor introduces a single <code style="font-family:var(--font-mono);font-size:0.9em;background:var(--color-surface-2);padding:1px 6px;border-radius:4px;">AgentRegistry</code> trait backed by pluggable execution backends, giving every agent type — solo tasks, swarm teammates, economy solvers, council members — a shared identity, status, and message bus.</p>
+  </section>
+
+  <!-- Pipeline Overview -->
+  <section class="section">
+    <div class="section-label">End-to-End Flow</div>
+    <div class="pipeline">
+      <div class="pipeline-node ingress">
+        <div class="node-icon blue"><i data-lucide="terminal" style="width:18px;height:18px;"></i></div>
+        <div class="node-label">Input Stream</div>
+        <div class="node-sub">stream.rs</div>
+      </div>
+      <div class="pipeline-arrow"><i data-lucide="chevron-right" style="width:20px;height:20px;"></i></div>
+      <div class="pipeline-node dispatch">
+        <div class="node-icon violet"><i data-lucide="git-branch" style="width:18px;height:18px;"></i></div>
+        <div class="node-label">Dispatch Router</div>
+        <div class="node-sub">dispatch.rs</div>
+      </div>
+      <div class="pipeline-arrow"><i data-lucide="chevron-right" style="width:20px;height:20px;"></i></div>
+      <div class="pipeline-node registry">
+        <div class="node-icon teal"><i data-lucide="layers" style="width:18px;height:18px;"></i></div>
+        <div class="node-label">AgentRegistry</div>
+        <div class="node-sub">jfc-agent crate</div>
+      </div>
+      <div class="pipeline-arrow"><i data-lucide="chevron-right" style="width:20px;height:20px;"></i></div>
+      <div class="pipeline-node ui">
+        <div class="node-icon green"><i data-lucide="layout-dashboard" style="width:18px;height:18px;"></i></div>
+        <div class="node-label">Unified UI</div>
+        <div class="node-sub">roster.rs</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Execution Backends -->
+  <section class="section">
+    <div class="section-label">Execution Backends — AgentRole</div>
+    <div class="backends">
+
+      <div class="backend-card">
+        <div class="backend-header">
+          <div class="backend-dot" style="background:var(--color-teal);"></div>
+          <span class="backend-name">InProcessBackend</span>
+          <span class="backend-role">Solo / Foreground</span>
+        </div>
+        <p>Wraps the current <code style="font-family:var(--font-mono);font-size:0.85em;">tokio::spawn</code> pattern. Replaces <code style="font-family:var(--font-mono);font-size:0.85em;">background.rs</code> with a registered agent that reports lifecycle events back into the unified <code style="font-family:var(--font-mono);font-size:0.85em;">AgentRegistry</code>.</p>
+        <div class="tag-row">
+          <span class="tag teal">role: Solo</span>
+          <span class="tag green">lifetime: Foreground</span>
+          <span class="tag blue">replaces: background.rs</span>
+        </div>
+      </div>
+
+      <div class="backend-card">
+        <div class="backend-header">
+          <div class="backend-dot" style="background:var(--color-violet);"></div>
+          <span class="backend-name">TeamBackend</span>
+          <span class="backend-role">Teammate / Persistent</span>
+        </div>
+        <p>Wraps the swarm mailbox and idle loop. Teammate messages still flow through file-based JSON inboxes, but the identity and status now live in <code style="font-family:var(--font-mono);font-size:0.85em;">AgentState</code> — not <code style="font-family:var(--font-mono);font-size:0.85em;">TeammateInfo</code>.</p>
+        <div class="tag-row">
+          <span class="tag violet">role: Teammate</span>
+          <span class="tag amber">lifetime: Persistent</span>
+          <span class="tag blue">mailbox: MessageBus</span>
+        </div>
+      </div>
+
+      <div class="backend-card">
+        <div class="backend-header">
+          <div class="backend-dot" style="background:var(--color-amber);"></div>
+          <span class="backend-name">DaemonBackend</span>
+          <span class="backend-role">Detached / Background</span>
+        </div>
+        <p>Wraps the existing <code style="font-family:var(--font-mono);font-size:0.85em;">BackgroundAgentInfo</code> serialization for cross-process workers. State is persisted to disk and restored by the daemon. <code style="font-family:var(--font-mono);font-size:0.85em;">AgentId</code> is now UUID-based.</p>
+        <div class="tag-row">
+          <span class="tag amber">lifetime: Detached</span>
+          <span class="tag rose">replaces: daemon/state.rs</span>
+        </div>
+      </div>
+
+      <div class="backend-card">
+        <div class="backend-header">
+          <div class="backend-dot" style="background:var(--color-rose);"></div>
+          <span class="backend-name">CouncilBackend</span>
+          <span class="backend-role">Council / Parallel</span>
+        </div>
+        <p>Council is now just a parallel spawn + join. Each model seat is an agent with <code style="font-family:var(--font-mono);font-size:0.85em;">role: Council</code>. The arbiter synthesis happens after <code style="font-family:var(--font-mono);font-size:0.85em;">join_all</code> on agent IDs — no separate <code style="font-family:var(--font-mono);font-size:0.85em;">CouncilSession</code> state.</p>
+        <div class="tag-row">
+          <span class="tag rose">role: Council</span>
+          <span class="tag green">lifetime: Foreground</span>
+          <span class="tag violet">arbiter: synthesis</span>
+        </div>
+      </div>
+
+      <div class="backend-card">
+        <div class="backend-header">
+          <div class="backend-dot" style="background:var(--color-blue);"></div>
+          <span class="backend-name">BountyCoordinator</span>
+          <span class="backend-role">Solver / Economy</span>
+        </div>
+        <p>Economy becomes a coordinator, not an owner. Solvers and validators are spawned through <code style="font-family:var(--font-mono);font-size:0.85em;">AgentRegistry</code>. Trust score is a field on <code style="font-family:var(--font-mono);font-size:0.85em;">AgentState</code>. <code style="font-family:var(--font-mono);font-size:0.85em;">jfc-economy</code> slims to types only.</p>
+        <div class="tag-row">
+          <span class="tag blue">role: Solver</span>
+          <span class="tag teal">trust_score: i8</span>
+          <span class="tag amber">worktree: PathBuf</span>
+        </div>
+      </div>
+
+      <div class="backend-card" style="border-color: var(--color-teal-border); background: linear-gradient(135deg, var(--color-teal-dim), transparent);">
+        <div class="backend-header">
+          <div class="backend-dot" style="background:var(--color-teal);box-shadow:0 0 8px var(--color-teal);"></div>
+          <span class="backend-name">MessageBus</span>
+          <span class="backend-role">Unified Messaging</span>
+        </div>
+        <p>Single abstraction over in-memory channels (in-process agents) and file-backed JSON inboxes (cross-process/daemon). Replaces the four disconnected messaging paths in the current runtime.</p>
+        <div class="tag-row">
+          <span class="tag teal">in-memory: mpsc</span>
+          <span class="tag violet">file-backed: inbox_dir</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Dispatch Table -->
+  <section class="section">
+    <div class="section-label">New dispatch.rs — Trivial Routing</div>
+    <div class="dispatch-grid">
+      <div class="dispatch-row header">
+        <div>Tool</div>
+        <div>Handler</div>
+        <div>Mode</div>
+      </div>
+      <div class="dispatch-row">
+        <div class="dispatch-tool" style="color:var(--color-blue);">Bash / Read / Write</div>
+        <div class="dispatch-desc">Solo handlers — unchanged. Direct synchronous execution.</div>
+        <span class="tag blue">Sync</span>
+      </div>
+      <div class="dispatch-row">
+        <div class="dispatch-tool" style="color:var(--color-teal);">Task { run_in_background }</div>
+        <div class="dispatch-desc"><code style="font-family:var(--font-mono);">registry.spawn(SpawnConfig::from_task_input(input))</code> — returns <code style="font-family:var(--font-mono);">AgentId</code></div>
+        <span class="tag teal">Registry</span>
+      </div>
+      <div class="dispatch-row">
+        <div class="dispatch-tool" style="color:var(--color-violet);">Task { team_name, name }</div>
+        <div class="dispatch-desc"><code style="font-family:var(--font-mono);">SpawnConfig { role: Teammate, .. }</code> → <code style="font-family:var(--font-mono);">TeamBackend</code></div>
+        <span class="tag violet">TeamBackend</span>
+      </div>
+      <div class="dispatch-row">
+        <div class="dispatch-tool" style="color:var(--color-amber);">SendMessage</div>
+        <div class="dispatch-desc"><code style="font-family:var(--font-mono);">message_bus.send(&amp;to_id, Message::new(text))</code> — replaces file-write scatter</div>
+        <span class="tag amber">MessageBus</span>
+      </div>
+      <div class="dispatch-row">
+        <div class="dispatch-tool" style="color:var(--color-blue);">PostBounty / RunBounty</div>
+        <div class="dispatch-desc"><code style="font-family:var(--font-mono);">bounty_coordinator.run(registry, ..)</code> — solvers spawn through same registry</div>
+        <span class="tag blue">Coordinator</span>
+      </div>
+      <div class="dispatch-row">
+        <div class="dispatch-tool" style="color:var(--color-rose);">Council</div>
+        <div class="dispatch-desc">Parallel <code style="font-family:var(--font-mono);">registry.spawn</code> per model seat → <code style="font-family:var(--font-mono);">join_all</code> → arbiter synthesis</div>
+        <span class="tag rose">Parallel</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- AgentState struct -->
+  <section class="section">
+    <div class="section-label">Core Types — jfc-agent crate</div>
+    <div class="struct-block">
+      <div class="struct-header">
+        <div class="dot" style="background:#ff5f56;"></div>
+        <div class="dot" style="background:#ffbd2e;"></div>
+        <div class="dot" style="background:#27c93f;"></div>
+        &nbsp; jfc-agent/src/state.rs
+      </div>
+      <pre><span class="cm">/// Replaces: BackgroundTask, BackgroundAgentInfo, InProcessTeammateState, TeammateInfo</span>
+<span class="kw">pub struct</span> <span class="ty">AgentState</span> {
+    <span class="kw">pub</span> id:           <span class="ty">AgentId</span>,          <span class="cm">// Uuid — replaces u64 + String fragmentation</span>
+    <span class="kw">pub</span> status:       <span class="ty">AgentStatus</span>,       <span class="cm">// Running | Idle | Completed | Failed | Cancelled</span>
+    <span class="kw">pub</span> role:         <span class="ty">AgentRole</span>,         <span class="cm">// Solo | Teammate | Solver | Validator | Council</span>
+
+    <span class="cm">// Progress — all agents share this</span>
+    <span class="kw">pub</span> token_count:  <span class="ty">u64</span>,
+    <span class="kw">pub</span> tool_use_count: <span class="ty">u32</span>,
+    <span class="kw">pub</span> last_tool:    <span class="ty">Option</span>&lt;<span class="ty">String</span>&gt;,
+
+    <span class="cm">// Lifecycle</span>
+    <span class="kw">pub</span> started_at:   <span class="ty">SystemTime</span>,
+    <span class="kw">pub</span> completed_at: <span class="ty">Option</span>&lt;<span class="ty">SystemTime</span>&gt;,
+    <span class="kw">pub</span> error:        <span class="ty">Option</span>&lt;<span class="ty">String</span>&gt;,
+
+    <span class="cm">// Backend-specific (Option, only populated for relevant role)</span>
+    <span class="kw">pub</span> team_name:    <span class="ty">Option</span>&lt;<span class="ty">String</span>&gt;,    <span class="cm">// Teammate</span>
+    <span class="kw">pub</span> worktree_path: <span class="ty">Option</span>&lt;<span class="ty">PathBuf</span>&gt;, <span class="cm">// Solver</span>
+    <span class="kw">pub</span> trust_score:  <span class="ty">Option</span>&lt;<span class="ty">i8</span>&gt;,       <span class="cm">// Economy agents</span>
+    <span class="kw">pub</span> idle_reason:  <span class="ty">Option</span>&lt;<span class="ty">String</span>&gt;,   <span class="cm">// Teammate</span>
+}
+
+<span class="kw">pub trait</span> <span class="ty">AgentRegistry</span>: <span class="ty">Send</span> + <span class="ty">Sync</span> {
+    <span class="kw">fn</span> <span class="ty">spawn</span>(&amp;<span class="kw">self</span>, config: <span class="ty">SpawnConfig</span>) -&gt; <span class="ty">AgentId</span>;
+    <span class="kw">fn</span> <span class="ty">status</span>(&amp;<span class="kw">self</span>, id: &amp;<span class="ty">AgentId</span>) -&gt; <span class="ty">Option</span>&lt;<span class="ty">AgentStatus</span>&gt;;
+    <span class="kw">fn</span> <span class="ty">state</span>(&amp;<span class="kw">self</span>, id: &amp;<span class="ty">AgentId</span>) -&gt; <span class="ty">Option</span>&lt;<span class="ty">AgentState</span>&gt;;
+    <span class="kw">fn</span> <span class="ty">abort</span>(&amp;<span class="kw">self</span>, id: &amp;<span class="ty">AgentId</span>) -&gt; <span class="ty">bool</span>;
+    <span class="kw">fn</span> <span class="ty">complete</span>(&amp;<span class="kw">self</span>, id: &amp;<span class="ty">AgentId</span>, result: <span class="ty">AgentResult</span>);
+    <span class="kw">fn</span> <span class="ty">list</span>(&amp;<span class="kw">self</span>) -&gt; <span class="ty">Vec</span>&lt;<span class="ty">AgentState</span>&gt;;
+}</pre>
+    </div>
+  </section>
+
+  <!-- Migration Phases -->
+  <section class="section">
+    <div class="section-label">Migration Phases</div>
+    <div class="phases">
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-green-dim);color:var(--color-green);">1</div>
+        <div class="phase-body">
+          <div class="phase-title">Create <code style="font-family:var(--font-mono);">jfc-agent</code> crate</div>
+          <div class="phase-detail">AgentId (Uuid), AgentState, AgentStatus, AgentRegistry trait, MessageBus — additive, no existing code touched</div>
+        </div>
+        <span class="phase-risk risk-low">Low</span>
+      </div>
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-green-dim);color:var(--color-green);">2</div>
+        <div class="phase-body">
+          <div class="phase-title">Implement <code style="font-family:var(--font-mono);">InProcessBackend</code></div>
+          <div class="phase-detail">Wraps current tokio::spawn — runs in parallel with background.rs until switchover</div>
+        </div>
+        <span class="phase-risk risk-low">Low</span>
+      </div>
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-amber-dim);color:var(--color-amber);">3</div>
+        <div class="phase-body">
+          <div class="phase-title">Implement <code style="font-family:var(--font-mono);">DaemonBackend</code></div>
+          <div class="phase-detail">Wraps BackgroundAgentInfo serialization — daemon state format change, needs migration</div>
+        </div>
+        <span class="phase-risk risk-med">Medium</span>
+      </div>
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-amber-dim);color:var(--color-amber);">4</div>
+        <div class="phase-body">
+          <div class="phase-title">Implement <code style="font-family:var(--font-mono);">TeamBackend</code></div>
+          <div class="phase-detail">Wraps swarm/mailbox — mailbox format stays, types change to AgentState</div>
+        </div>
+        <span class="phase-risk risk-med">Medium</span>
+      </div>
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-rose-dim);color:var(--color-rose);">5</div>
+        <div class="phase-body">
+          <div class="phase-title">Wire <code style="font-family:var(--font-mono);">dispatch.rs</code> to AgentRegistry</div>
+          <div class="phase-detail">Replaces direct spawns — touches every tool call path, highest blast radius</div>
+        </div>
+        <span class="phase-risk risk-high">High</span>
+      </div>
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-amber-dim);color:var(--color-amber);">6</div>
+        <div class="phase-body">
+          <div class="phase-title">Move economy solvers to registry</div>
+          <div class="phase-detail">BountyCoordinator uses AgentRegistry — economy becomes coordinator, not owner</div>
+        </div>
+        <span class="phase-risk risk-med">Medium</span>
+      </div>
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-green-dim);color:var(--color-green);">7</div>
+        <div class="phase-body">
+          <div class="phase-title">Delete dead code</div>
+          <div class="phase-detail">background.rs, swarm/types.rs duplicates, three AgentId types → one UUID</div>
+        </div>
+        <span class="phase-risk risk-low">Low</span>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span class="footer-note">Based on refactored-architecture.html — jfc engine target state</span>
+    <span class="footer-note">jfc-agent crate · AgentRegistry trait · unified lifecycle</span>
+  </footer>
+
+</div>
+
+<script>
+  lucide.createIcons();
+</script>
+</body>
+</html>

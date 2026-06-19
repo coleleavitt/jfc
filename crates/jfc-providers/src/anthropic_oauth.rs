@@ -252,6 +252,11 @@ struct VersionCache {
     fetched_at: std::time::SystemTime,
 }
 
+enum VersionRefreshResult {
+    Fresh(String),
+    Unavailable,
+}
+
 static VERSION_CACHE: std::sync::OnceLock<Mutex<Option<VersionCache>>> = std::sync::OnceLock::new();
 
 fn version_cache_mutex() -> &'static Mutex<Option<VersionCache>> {
@@ -260,7 +265,7 @@ fn version_cache_mutex() -> &'static Mutex<Option<VersionCache>> {
 
 async fn fetch_cli_version(client: &reqwest::Client) -> String {
     {
-        let guard = version_cache_mutex().lock().await;
+        let mut guard = version_cache_mutex().lock().await;
         if let Some(ref cache) = *guard
             && cache.fetched_at.elapsed().unwrap_or(Duration::MAX) < VERSION_CACHE_TTL
         {
@@ -271,8 +276,31 @@ async fn fetch_cli_version(client: &reqwest::Client) -> String {
             );
             return cache.version.clone();
         }
-    }
 
+        let version = guard
+            .as_ref()
+            .map(|cache| cache.version.clone())
+            .unwrap_or_else(|| VERSION_FALLBACK.to_owned());
+        *guard = Some(VersionCache {
+            version: version.clone(),
+            fetched_at: std::time::SystemTime::now(),
+        });
+        tracing::debug!(
+            target: "jfc::provider::anthropic_oauth",
+            version = %version,
+            "using local CLI version; refreshing registry version in background"
+        );
+
+        let client = client.clone();
+        tokio::spawn(async move {
+            refresh_cli_version_cache(client).await;
+        });
+
+        return version;
+    }
+}
+
+async fn refresh_cli_version_cache(client: reqwest::Client) {
     let version = match client
         .get(VERSION_URL)
         .timeout(VERSION_FETCH_TIMEOUT)
@@ -280,47 +308,67 @@ async fn fetch_cli_version(client: &reqwest::Client) -> String {
         .await
     {
         Ok(resp) if resp.status().is_success() => match resp.json::<Value>().await {
-            Ok(value) => value["version"]
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| VERSION_FALLBACK.to_owned()),
+            Ok(value) => match parse_cli_version_response(&value) {
+                Some(version) => VersionRefreshResult::Fresh(version.to_owned()),
+                None => {
+                    tracing::debug!(
+                        target: "jfc::provider::anthropic_oauth",
+                        "CLI version response did not contain a version"
+                    );
+                    VersionRefreshResult::Unavailable
+                }
+            },
             Err(e) => {
                 tracing::debug!(
                     target: "jfc::provider::anthropic_oauth",
                     error = %e,
-                    "failed to decode CLI version response; using fallback"
+                    "failed to decode CLI version response"
                 );
-                VERSION_FALLBACK.to_owned()
+                VersionRefreshResult::Unavailable
             }
         },
         Ok(resp) => {
             tracing::debug!(
                 target: "jfc::provider::anthropic_oauth",
                 status = %resp.status(),
-                "CLI version fetch returned non-success; using fallback"
+                "CLI version fetch returned non-success"
             );
-            VERSION_FALLBACK.to_owned()
+            VersionRefreshResult::Unavailable
         }
         Err(e) => {
             tracing::debug!(
                 target: "jfc::provider::anthropic_oauth",
                 error = %e,
-                "CLI version fetch failed; using fallback"
+                "CLI version fetch failed"
             );
-            VERSION_FALLBACK.to_owned()
+            VersionRefreshResult::Unavailable
         }
     };
-    tracing::debug!(
-        target: "jfc::provider::anthropic_oauth",
-        version = %version,
-        "fetched CLI version from registry"
-    );
+    apply_version_refresh_result(version).await;
+}
+
+async fn apply_version_refresh_result(result: VersionRefreshResult) {
+    let VersionRefreshResult::Fresh(version) = result else {
+        return;
+    };
+    update_version_cache(version).await;
+}
+
+async fn update_version_cache(version: String) {
     let mut guard = version_cache_mutex().lock().await;
     *guard = Some(VersionCache {
         version: version.clone(),
         fetched_at: std::time::SystemTime::now(),
     });
-    version
+    tracing::debug!(
+        target: "jfc::provider::anthropic_oauth",
+        version = %version,
+        "fetched CLI version from registry"
+    );
+}
+
+fn parse_cli_version_response(value: &Value) -> Option<&str> {
+    value.get("version").and_then(Value::as_str)
 }
 
 fn compute_billing_hash(first_user_message: &str, version: &str) -> String {
@@ -1675,7 +1723,7 @@ fn build_body(
     });
     // Temperature must NOT be sent when thinking is enabled (API rejects it).
     // cli.js v143: only sets temperature when thinking is disabled.
-    if !has_thinking {
+    if !has_thinking && super::anthropic_models::model_supports_temperature(opts.model.as_str()) {
         body["temperature"] = json!(1);
     }
     if !opts.tools.is_empty() || opts.advisor_model.is_some() {
@@ -1960,44 +2008,42 @@ impl Provider for AnthropicOAuthProvider {
                     &custom_betas,
                     &options.model,
                 );
-                let resp =
-                    match jfc_provider::http::send_with_retry("anthropic_oauth.stream", || {
-                        self.client
-                            .post(API_URL)
-                            .header("authorization", format!("Bearer {access_token}"))
-                            .header("anthropic-version", ANTHROPIC_VERSION)
-                            .header("anthropic-beta", beta_header.as_str())
-                            .header("content-type", "application/json")
-                            .header("user-agent", user_agent.clone())
-                            .header("x-app", "cli")
-                            .header("anthropic-client-platform", "cli")
-                            .header("x-client-request-id", request_id.clone())
-                            .header(
-                                "x-claude-code-session-id",
-                                options.session_id.as_deref().unwrap_or(""),
-                            )
-                            .body(effective_body.clone())
-                            .send()
-                    })
+                let resp = match self
+                    .client
+                    .post(API_URL)
+                    .header("authorization", format!("Bearer {access_token}"))
+                    .header("anthropic-version", ANTHROPIC_VERSION)
+                    .header("anthropic-beta", beta_header.as_str())
+                    .header("content-type", "application/json")
+                    .header("user-agent", user_agent.clone())
+                    .header("x-app", "cli")
+                    .header("anthropic-client-platform", "cli")
+                    .header("x-client-request-id", request_id.clone())
+                    .header(
+                        "x-claude-code-session-id",
+                        options.session_id.as_deref().unwrap_or(""),
+                    )
+                    .body(effective_body.clone())
+                    .send()
                     .await
-                    {
-                        Ok(r) => r,
-                        Err(e) => {
-                            let cause = jfc_provider::http::classify_send_error(&e);
-                            tracing::warn!(
-                                target: "jfc::provider::anthropic_oauth::rotation",
-                                account = %account.name,
-                                error = %e,
-                                cause = cause,
-                                "send failed (after retries) — rotating"
-                            );
-                            mgr.mark_failure(&account.name).await;
-                            last_err = Some(anyhow::anyhow!(
-                                "Anthropic OAuth send failed: {cause} ({e})"
-                            ));
-                            continue;
-                        }
-                    };
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let cause = jfc_provider::http::classify_send_error(&e);
+                        tracing::warn!(
+                            target: "jfc::provider::anthropic_oauth::rotation",
+                            account = %account.name,
+                            error = %e,
+                            cause = cause,
+                            "send failed — rotating"
+                        );
+                        mgr.mark_failure(&account.name).await;
+                        last_err = Some(anyhow::anyhow!(
+                            "Anthropic OAuth send failed: {cause} ({e})"
+                        ));
+                        continue;
+                    }
+                };
 
                 jfc_provider::http::report_first_byte_latency(
                     "anthropic_oauth.stream",
@@ -2499,6 +2545,7 @@ impl Provider for AnthropicOAuthProvider {
                 };
 
                 let send_started = std::time::Instant::now();
+                let request_id = uuid::Uuid::new_v4().to_string();
                 let caps = mgr
                     .capabilities_for(&account.name)
                     .await
@@ -2515,40 +2562,43 @@ impl Provider for AnthropicOAuthProvider {
                     &custom_betas,
                     &options.model,
                 );
-                let resp =
-                    match jfc_provider::http::send_with_retry("anthropic_oauth.complete", || {
-                        self.client
-                            .post(API_URL)
-                            .header("authorization", format!("Bearer {access_token}"))
-                            .header("anthropic-version", ANTHROPIC_VERSION)
-                            .header("anthropic-beta", beta_header_complete.as_str())
-                            .header("content-type", "application/json")
-                            .header("user-agent", user_agent.clone())
-                            .header("x-app", "cli")
-                            .header("anthropic-client-platform", "cli")
-                            .header("anthropic-dangerous-direct-browser-access", "true")
-                            .body(attested_body.clone())
-                            .send()
-                    })
+                let resp = match self
+                    .client
+                    .post(API_URL)
+                    .header("authorization", format!("Bearer {access_token}"))
+                    .header("anthropic-version", ANTHROPIC_VERSION)
+                    .header("anthropic-beta", beta_header_complete.as_str())
+                    .header("content-type", "application/json")
+                    .header("user-agent", user_agent.clone())
+                    .header("x-app", "cli")
+                    .header("anthropic-client-platform", "cli")
+                    .header("x-client-request-id", request_id)
+                    .header(
+                        "x-claude-code-session-id",
+                        options.session_id.as_deref().unwrap_or(""),
+                    )
+                    .header("anthropic-dangerous-direct-browser-access", "true")
+                    .body(attested_body.clone())
+                    .send()
                     .await
-                    {
-                        Ok(r) => r,
-                        Err(e) => {
-                            let cause = jfc_provider::http::classify_send_error(&e);
-                            tracing::warn!(
-                                target: "jfc::provider::anthropic_oauth::rotation",
-                                account = %account.name,
-                                error = %e,
-                                cause = cause,
-                                "complete send failed (after retries) — rotating"
-                            );
-                            mgr.mark_failure(&account.name).await;
-                            last_err = Some(anyhow::anyhow!(
-                                "Anthropic OAuth complete failed: {cause} ({e})"
-                            ));
-                            continue;
-                        }
-                    };
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let cause = jfc_provider::http::classify_send_error(&e);
+                        tracing::warn!(
+                            target: "jfc::provider::anthropic_oauth::rotation",
+                            account = %account.name,
+                            error = %e,
+                            cause = cause,
+                            "complete send failed — rotating"
+                        );
+                        mgr.mark_failure(&account.name).await;
+                        last_err = Some(anyhow::anyhow!(
+                            "Anthropic OAuth complete failed: {cause} ({e})"
+                        ));
+                        continue;
+                    }
+                };
 
                 jfc_provider::http::report_first_byte_latency(
                     "anthropic_oauth.complete",
@@ -2916,11 +2966,27 @@ mod tests {
     }
 
     #[test]
+    fn build_body_temperature_uses_model_gate_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-sonnet-4-6"),
+            TEST_BH,
+        );
+        assert_eq!(body["temperature"], 1);
+
+        let body = build_body(vec![make_user_msg("hi")], &opts("claude-opus-4-8"), TEST_BH);
+        assert!(body.get("temperature").is_none());
+    }
+
+    #[test]
     fn build_body_reasoning_effort_uses_output_config_normal() {
-        // Effort-capable model keeps the requested value.
         let o = opts("claude-opus-4-8").reasoning_effort("max");
         let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
         assert_eq!(body["output_config"]["effort"], "max");
+
+        let o = opts("claude-opus-4-8").reasoning_effort("xhigh");
+        let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
+        assert_eq!(body["output_config"]["effort"], "xhigh");
     }
 
     // Normal — REGRESSION (the haiku 400): a subagent inheriting the session's
@@ -3506,6 +3572,34 @@ mod tests {
     fn billing_hash_empty_message_no_panic() {
         let h = compute_billing_hash("", "2.0.0");
         assert_eq!(h.len(), 3);
+    }
+
+    #[test]
+    fn parse_cli_version_response_reads_version_normal() {
+        let value = serde_json::json!({ "version": "2.1.177" });
+
+        assert_eq!(parse_cli_version_response(&value), Some("2.1.177"));
+    }
+
+    #[test]
+    fn parse_cli_version_response_rejects_missing_version_robust() {
+        let value = serde_json::json!({ "name": "@anthropic-ai/claude-code" });
+
+        assert_eq!(parse_cli_version_response(&value), None);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(version_cache)]
+    async fn failed_cli_version_refresh_keeps_cached_version_regression() {
+        update_version_cache("2.1.177".to_owned()).await;
+
+        apply_version_refresh_result(VersionRefreshResult::Unavailable).await;
+
+        let guard = version_cache_mutex().lock().await;
+        assert_eq!(
+            guard.as_ref().map(|cache| cache.version.as_str()),
+            Some("2.1.177")
+        );
     }
 
     #[test]

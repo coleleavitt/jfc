@@ -35,6 +35,17 @@ async fn handle_runner(
     teammate_ev: crate::swarm::runner::TeammateEvent,
 ) {
     use crate::swarm::runner::TeammateEvent;
+
+    // Mirror the teammate lifecycle into the unified agent registry so the
+    // shared roster (and `wait`/`abort`) stay in sync with the legacy
+    // `background_tasks` map below. Cheap, fire-and-forget, and keyed by the
+    // event's `agent_id`, which the teammate was registered under at spawn.
+    {
+        let backend =
+            crate::agents::TeamBackend::new(crate::tools::agent_registry().clone());
+        backend.apply(&teammate_ev).await;
+    }
+
     match teammate_ev {
         TeammateEvent::Idle {
             task_id,
@@ -183,6 +194,7 @@ async fn handle_runner(
                 bt.status = crate::types::TaskLifecycle::Completed;
                 bt.completed_at = Some(std::time::Instant::now());
             }
+            mark_runtime_teammate_inactive(state, &agent_id);
             // Mark the member inactive on the team file so a
             // later `set_member_active(true)` (e.g. an agent
             // that gets re-spawned) can observe the prior
@@ -216,6 +228,7 @@ async fn handle_runner(
                 bt.completed_at = Some(std::time::Instant::now());
                 bt.error = Some(error);
             }
+            mark_runtime_teammate_inactive(state, &agent_id);
             if let Some(team_name) = state.team_context.team_name.clone() {
                 let member_name = agent_id
                     .split_once('@')
@@ -237,6 +250,7 @@ async fn handle_runner(
                 bt.status = crate::types::TaskLifecycle::Cancelled;
                 bt.completed_at = Some(std::time::Instant::now());
             }
+            mark_runtime_teammate_inactive(state, &agent_id);
             if let Some(team_name) = state.team_context.team_name.clone() {
                 let member_name = agent_id
                     .split_once('@')
@@ -288,6 +302,12 @@ async fn handle_runner(
                 });
             }
         }
+    }
+}
+
+fn mark_runtime_teammate_inactive(state: &mut EngineState, agent_id: &str) {
+    if let Some(teammate) = state.team_context.teammates.get_mut(agent_id) {
+        teammate.abort_tx = None;
     }
 }
 

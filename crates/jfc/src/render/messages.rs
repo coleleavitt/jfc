@@ -1077,29 +1077,30 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         } else {
             std::time::Duration::default()
         };
-        // Live output token count = the `responseLengthRef` accumulator / 4.
-        // That accumulator already folds in the wire-truth correction (the
-        // usage handler floors it up to `output_tokens*4` on every
-        // `message_delta`) *and* keeps growing by streamed chars between
-        // those events — so reading it here gives a smooth, monotonic count
-        // with no per-frame `max(wire, estimate)` that would pin flat to wire
-        // and jump ~50 each batched delta. OWUI / OpenAI providers that only
-        // report usage at `message_stop` still get a live chars/4 count from
-        // the same accumulator.
-        // True wire output tokens (cumulative across the turn) — not the
-        // chars/4 estimate. Holds steady between `message_delta` usage events,
-        // then steps by the real increment.
+        // Visible output token count = the Claude `responseLengthRef`
+        // accumulator / 4. The usage handler floors the accumulator up to the
+        // wire-truth `output_tokens*4`, while streamed chars keep growing it
+        // between batched usage deltas. Cost/accounting still use real usage;
+        // this display count is intentionally smoothed so it doesn't jump by
+        // provider batch sizes.
         let live_tokens = if stream_is_live {
-            app.engine.turn_output_tokens
+            (app.engine.streaming_response_bytes / 4) as u64
         } else {
             0
         };
-        // Thinking signal, driven off the *held* phase so the body stays
-        // consistent with the hysteresis-stabilized label: while "Thinking" is
-        // held past the actual reasoning end, the body still reads "thinking …"
-        // instead of racing ahead to "thought Ns · tokens".
+        // Thinking signal, driven off the *held* phase so the tail stays
+        // consistent with the hysteresis-stabilized row: while the internal
+        // Thinking phase is held past the actual reasoning end, the tail still
+        // reads `thinking` instead of racing ahead to `thought for Ns`.
         let thinking = match app.spinner_state.phase {
-            crate::spinner::SpinnerPhase::Thinking => Some(crate::spinner::ThinkingStatus::Live),
+            crate::spinner::SpinnerPhase::Thinking => {
+                let thinking_elapsed = app
+                    .engine
+                    .thinking_started_at
+                    .map(|started| now.duration_since(started))
+                    .unwrap_or(elapsed);
+                Some(crate::spinner::ThinkingStatus::Live(thinking_elapsed))
+            }
             crate::spinner::SpinnerPhase::Responding => {
                 match (app.engine.thinking_started_at, app.engine.thinking_ended_at) {
                     (Some(start), Some(end)) => Some(crate::spinner::ThinkingStatus::Done(
@@ -1132,31 +1133,18 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         );
         head_glyph = segs.glyph;
         dim = segs.dim;
-        // Spinner label. Requesting/thinking stay literal because they map to
-        // specific wire states; working/responding/tool gaps use Claude's
-        // configured verb vocabulary, chosen from a stable session+turn seed.
-        let lifecycle = app.engine.stream_lifecycle.as_ref();
+        let lifecycle = app.engine.stream_lifecycle.as_ref().filter(|_| {
+            app.engine.streaming_response_bytes == 0 && app.engine.streaming_thinking_tokens == 0
+        });
+
         let label: std::borrow::Cow<'_, str> = {
-            let tasks = app
-                .engine
-                .task_store
-                .list(jfc_session::DeletedFilter::Exclude);
-            tasks
-                .iter()
-                .find(|t| t.status == jfc_session::TaskStatus::InProgress)
-                .and_then(|t| t.active_form.as_deref())
-                // Cap the override so a long `activeForm` can't blow out the
-                // status row (the phase label is always short).
-                .map(|s| std::borrow::Cow::Owned(truncate_str(s, 48)))
-                .or_else(|| {
-                    lifecycle.map(|status| std::borrow::Cow::Borrowed(status.phase.label()))
-                })
-                .unwrap_or_else(|| match app.spinner_state.phase {
+            if let Some(status) = lifecycle {
+                std::borrow::Cow::Borrowed(status.phase.label())
+            } else {
+                match app.spinner_state.phase {
                     crate::spinner::SpinnerPhase::Requesting
-                    | crate::spinner::SpinnerPhase::Thinking => {
-                        std::borrow::Cow::Borrowed(app.spinner_state.phase.label())
-                    }
-                    crate::spinner::SpinnerPhase::Responding
+                    | crate::spinner::SpinnerPhase::Thinking
+                    | crate::spinner::SpinnerPhase::Responding
                     | crate::spinner::SpinnerPhase::ToolUse
                     | crate::spinner::SpinnerPhase::Working => {
                         let mut seed = app.engine.tool_ctx.total_user_turns as usize;
@@ -1171,12 +1159,21 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
                     | crate::spinner::SpinnerPhase::NetworkRecovery => {
                         std::borrow::Cow::Borrowed(app.spinner_state.phase.label())
                     }
-                })
+                }
+            }
         };
         let mut label = label.into_owned();
+        tail_body = segs.body;
+        if let Some(detail) = lifecycle.and_then(|status| status.detail.as_deref())
+            && !detail.trim().is_empty()
+        {
+            tail_body.push_str(" · ");
+            tail_body.push_str(detail.trim());
+        }
         if !matches!(
             app.spinner_state.phase,
-            crate::spinner::SpinnerPhase::Requesting | crate::spinner::SpinnerPhase::Thinking
+            crate::spinner::SpinnerPhase::Compacting
+                | crate::spinner::SpinnerPhase::NetworkRecovery
         ) && !label.ends_with('…')
         {
             label.push('…');
@@ -1185,29 +1182,6 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // gone quiet (the honest "stalled" tint — dimmer, not redder).
         let label_color = if dim { t.text_muted } else { t.warning };
         verb_spans.push(Span::styled(label, Style::default().fg(label_color)));
-        tail_body = if let Some(status) = lifecycle {
-            let age = now.duration_since(status.updated_at).as_secs();
-            let mut body = String::new();
-            if let Some(detail) = status.detail.as_deref().filter(|s| !s.is_empty()) {
-                body.push_str(" · ");
-                body.push_str(detail);
-            }
-            body.push_str(&format!(" · {age}s"));
-            if !segs.body.is_empty() {
-                let mut status_body = segs.body.trim_start_matches(" · ");
-                let elapsed_chip = crate::spinner::fmt_elapsed(elapsed);
-                if let Some(rest) = status_body.strip_prefix(&elapsed_chip) {
-                    status_body = rest.trim_start_matches(" · ");
-                }
-                if !status_body.is_empty() {
-                    body.push_str(" · ");
-                    body.push_str(status_body);
-                }
-            }
-            body
-        } else {
-            segs.body
-        };
     };
     // The `· N agents…` fanout badge that used to live here is gone — the
     // agent fan's `agents  ●N ○N ✓N ✗N` summary line (just below the
@@ -1236,7 +1210,10 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )];
         s.extend(verb_spans);
-        s.push(Span::styled(tail_body, t.style_text_muted));
+        let tail = tail_body.trim_start_matches(" · ").trim();
+        if !tail.is_empty() {
+            s.push(Span::styled(format!(" ({tail})"), t.style_text_muted));
+        }
         s
     };
     let line = Line::from(spans);
@@ -1552,17 +1529,13 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn tasks_pinned_header_line(recent_done: usize, active_open: usize, t: &Theme) -> Line<'static> {
-    let shown_total = active_open + recent_done;
-    let summary = match (recent_done, active_open) {
-        (0, open) => format!("({open} open)"),
-        (done, 0) => format!("({done} done)"),
-        (done, open) => format!("({done} done, {open} open)"),
-    };
+fn tasks_pinned_header_line(_recent_done: usize, active_open: usize, t: &Theme) -> Line<'static> {
+    let task_word = if active_open == 1 { "task" } else { "tasks" };
+    let summary = format!("({active_open} open)");
     let spans = vec![
         Span::styled("  ", Style::default()),
         Span::styled(
-            format!("{shown_total} tasks"),
+            format!("{active_open} {task_word}"),
             Style::default()
                 .fg(t.text_secondary)
                 .add_modifier(Modifier::BOLD),

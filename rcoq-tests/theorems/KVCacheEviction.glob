@@ -1,0 +1,1125 @@
+DIGEST 4fd67fbac327a09adf32fb04d2bbd638
+FJFCTheorems.KVCacheEviction
+R1850:1864 Stdlib.Arith.Arith <> <> lib
+R1882:1895 Stdlib.Lists.List <> <> lib
+R1913:1925 Stdlib.Bool.Bool <> <> lib
+R1943:1959 Stdlib.micromega.Lia <> <> lib
+R1977:1994 Stdlib.Sorting.Sorted <> <> lib
+R2004:2016 Stdlib.Lists.List ListNotations <> mod
+rec 2059:2065 <> KVEntry
+proj 2091:2101 <> kv_position
+proj 2143:2150 <> kv_layer
+proj 2198:2215 <> kv_attention_score
+proj 2281:2296 <> kv_recent_access
+proj 2332:2338 <> kv_size
+R2105:2107 Corelib.Init.Datatypes <> nat ind
+R2154:2156 Corelib.Init.Datatypes <> nat ind
+R2219:2221 Corelib.Init.Datatypes <> nat ind
+R2300:2302 Corelib.Init.Datatypes <> nat ind
+R2342:2344 Corelib.Init.Datatypes <> nat ind
+def 2408:2414 <> KVCache
+R2419:2422 Corelib.Init.Datatypes <> list ind
+R2424:2430 JFCTheorems.KVCacheEviction <> KVEntry rec
+def 2539:2550 <> combine_with
+binder 2553:2553 <> A:7
+binder 2555:2555 <> B:8
+binder 2557:2557 <> C:9
+R2573:2576 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2572:2572 JFCTheorems.KVCacheEviction <> A:7 var
+R2578:2581 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2577:2577 JFCTheorems.KVCacheEviction <> B:8 var
+R2582:2582 JFCTheorems.KVCacheEviction <> C:9 var
+binder 2568:2568 <> f:10
+R2591:2594 Corelib.Init.Datatypes <> list ind
+R2596:2596 JFCTheorems.KVCacheEviction <> A:7 var
+binder 2586:2587 <> l1:11
+R2605:2608 Corelib.Init.Datatypes <> list ind
+R2610:2610 JFCTheorems.KVCacheEviction <> B:8 var
+binder 2600:2601 <> l2:12
+R2615:2618 Corelib.Init.Datatypes <> list ind
+R2620:2620 JFCTheorems.KVCacheEviction <> C:9 var
+R2637:2638 JFCTheorems.KVCacheEviction <> l2:12 var
+R2633:2634 JFCTheorems.KVCacheEviction <> l1:11 var
+R2649:2650 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2658:2659 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2668:2669 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2674:2675 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2682:2685 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2691:2694 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2706:2709 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2701:2701 JFCTheorems.KVCacheEviction <> f:10 var
+R2710:2721 JFCTheorems.KVCacheEviction <> combine_with:13 def
+R2723:2723 JFCTheorems.KVCacheEviction <> f:10 var
+def 2823:2838 <> update_attention
+R2849:2855 JFCTheorems.KVCacheEviction <> KVCache def
+binder 2841:2845 <> cache:16
+R2872:2875 Corelib.Init.Datatypes <> list ind
+R2877:2879 Corelib.Init.Datatypes <> nat ind
+binder 2859:2868 <> new_scores:17
+R2884:2890 JFCTheorems.KVCacheEviction <> KVCache def
+R2897:2908 JFCTheorems.KVCacheEviction <> combine_with def
+R3126:3135 JFCTheorems.KVCacheEviction <> new_scores:17 var
+R3120:3124 JFCTheorems.KVCacheEviction <> cache:16 var
+binder 2915:2919 <> entry:18
+binder 2921:2925 <> score:19
+R2934:2942 JFCTheorems.KVCacheEviction <> mkKVEntry constr
+R2945:2955 JFCTheorems.KVCacheEviction <> kv_position proj
+R2957:2961 JFCTheorems.KVCacheEviction <> entry:18 var
+R2965:2972 JFCTheorems.KVCacheEviction <> kv_layer proj
+R2974:2978 JFCTheorems.KVCacheEviction <> entry:18 var
+R2996:2996 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R3029:3032 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R3021:3023 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2997:3014 JFCTheorems.KVCacheEviction <> kv_attention_score proj
+R3016:3020 JFCTheorems.KVCacheEviction <> entry:18 var
+R3024:3028 JFCTheorems.KVCacheEviction <> score:19 var
+R3062:3077 JFCTheorems.KVCacheEviction <> kv_recent_access proj
+R3079:3083 JFCTheorems.KVCacheEviction <> entry:18 var
+R3101:3107 JFCTheorems.KVCacheEviction <> kv_size proj
+R3109:3113 JFCTheorems.KVCacheEviction <> entry:18 var
+def 3514:3518 <> score
+R3525:3531 JFCTheorems.KVCacheEviction <> KVEntry rec
+binder 3521:3521 <> e:20
+R3536:3538 Corelib.Init.Datatypes <> nat ind
+R3543:3560 JFCTheorems.KVCacheEviction <> kv_attention_score proj
+R3562:3562 JFCTheorems.KVCacheEviction <> e:20 var
+def 3577:3585 <> hh_sorted
+R3596:3602 JFCTheorems.KVCacheEviction <> KVCache def
+binder 3588:3592 <> cache:21
+R3617:3622 Stdlib.Sorting.Sorted <> Sorted ind
+R3656:3660 JFCTheorems.KVCacheEviction <> cache:21 var
+binder 3629:3629 <> a:22
+binder 3631:3631 <> b:23
+R3643:3646 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R3636:3640 JFCTheorems.KVCacheEviction <> score def
+R3642:3642 JFCTheorems.KVCacheEviction <> a:22 var
+R3647:3651 JFCTheorems.KVCacheEviction <> score def
+R3653:3653 JFCTheorems.KVCacheEviction <> b:23 var
+def 3855:3872 <> evict_by_attention
+R3883:3889 JFCTheorems.KVCacheEviction <> KVCache def
+binder 3875:3879 <> cache:24
+R3902:3904 Corelib.Init.Datatypes <> nat ind
+binder 3893:3898 <> budget:25
+R3909:3915 JFCTheorems.KVCacheEviction <> KVCache def
+R3922:3927 Corelib.Lists.ListDef <> firstn def
+R3936:3940 JFCTheorems.KVCacheEviction <> cache:24 var
+R3929:3934 JFCTheorems.KVCacheEviction <> budget:25 var
+def 3994:4003 <> evict_fifo
+R4014:4020 JFCTheorems.KVCacheEviction <> KVCache def
+binder 4006:4010 <> cache:26
+R4033:4035 Corelib.Init.Datatypes <> nat ind
+binder 4024:4029 <> budget:27
+R4040:4046 JFCTheorems.KVCacheEviction <> KVCache def
+R4053:4057 Corelib.Lists.ListDef <> skipn def
+R4083:4087 JFCTheorems.KVCacheEviction <> cache:26 var
+R4072:4074 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4060:4065 Corelib.Init.Datatypes <> length def
+R4067:4071 JFCTheorems.KVCacheEviction <> cache:26 var
+R4075:4080 JFCTheorems.KVCacheEviction <> budget:27 var
+def 4183:4191 <> evict_lru
+R4202:4208 JFCTheorems.KVCacheEviction <> KVCache def
+binder 4194:4198 <> cache:28
+R4221:4223 Corelib.Init.Datatypes <> nat ind
+binder 4212:4217 <> budget:29
+R4228:4234 JFCTheorems.KVCacheEviction <> KVCache def
+R4241:4246 Corelib.Lists.ListDef <> firstn def
+R4255:4259 JFCTheorems.KVCacheEviction <> cache:28 var
+R4248:4253 JFCTheorems.KVCacheEviction <> budget:29 var
+def 4330:4343 <> combined_score
+R4354:4360 JFCTheorems.KVCacheEviction <> KVEntry rec
+binder 4346:4350 <> entry:30
+R4365:4367 Corelib.Init.Datatypes <> nat ind
+R4398:4400 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4374:4391 JFCTheorems.KVCacheEviction <> kv_attention_score proj
+R4393:4397 JFCTheorems.KVCacheEviction <> entry:30 var
+R4401:4416 JFCTheorems.KVCacheEviction <> kv_recent_access proj
+R4418:4422 JFCTheorems.KVCacheEviction <> entry:30 var
+def 4437:4450 <> evict_combined
+R4461:4467 JFCTheorems.KVCacheEviction <> KVCache def
+binder 4453:4457 <> cache:31
+R4480:4482 Corelib.Init.Datatypes <> nat ind
+binder 4471:4476 <> budget:32
+R4487:4493 JFCTheorems.KVCacheEviction <> KVCache def
+R4500:4505 Corelib.Lists.ListDef <> firstn def
+R4514:4518 JFCTheorems.KVCacheEviction <> cache:31 var
+R4507:4512 JFCTheorems.KVCacheEviction <> budget:32 var
+def 4691:4710 <> evicted_by_attention
+R4721:4727 JFCTheorems.KVCacheEviction <> KVCache def
+binder 4713:4717 <> cache:33
+R4740:4742 Corelib.Init.Datatypes <> nat ind
+binder 4731:4736 <> budget:34
+R4747:4753 JFCTheorems.KVCacheEviction <> KVCache def
+R4760:4764 Corelib.Lists.ListDef <> skipn def
+R4773:4777 JFCTheorems.KVCacheEviction <> cache:33 var
+R4766:4771 JFCTheorems.KVCacheEviction <> budget:34 var
+prf 4787:4806 <> retained_app_evicted
+binder 4819:4823 <> cache:35
+binder 4825:4830 <> budget:36
+R4905:4907 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4868:4871 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R4837:4854 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R4856:4860 JFCTheorems.KVCacheEviction <> cache:35 var
+R4862:4867 JFCTheorems.KVCacheEviction <> budget:36 var
+R4872:4891 JFCTheorems.KVCacheEviction <> evicted_by_attention def
+R4893:4897 JFCTheorems.KVCacheEviction <> cache:35 var
+R4899:4904 JFCTheorems.KVCacheEviction <> budget:36 var
+R4908:4912 JFCTheorems.KVCacheEviction <> cache:35 var
+R4954:4971 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R4974:4993 JFCTheorems.KVCacheEviction <> evicted_by_attention def
+R5004:5015 Stdlib.Lists.List <> firstn_skipn thm
+R5004:5015 Stdlib.Lists.List <> firstn_skipn thm
+prf 5120:5143 <> eviction_respects_budget
+binder 5156:5160 <> cache:37
+binder 5162:5167 <> budget:38
+R5224:5231 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R5214:5217 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5174:5179 Corelib.Init.Datatypes <> length def
+R5182:5199 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R5201:5205 JFCTheorems.KVCacheEviction <> cache:37 var
+R5207:5212 JFCTheorems.KVCacheEviction <> budget:38 var
+R5218:5223 JFCTheorems.KVCacheEviction <> budget:38 var
+R5274:5281 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R5264:5267 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5232:5237 Corelib.Init.Datatypes <> length def
+R5240:5249 JFCTheorems.KVCacheEviction <> evict_fifo def
+R5251:5255 JFCTheorems.KVCacheEviction <> cache:37 var
+R5257:5262 JFCTheorems.KVCacheEviction <> budget:38 var
+R5268:5273 JFCTheorems.KVCacheEviction <> budget:38 var
+R5313:5316 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5282:5287 Corelib.Init.Datatypes <> length def
+R5290:5298 JFCTheorems.KVCacheEviction <> evict_lru def
+R5300:5304 JFCTheorems.KVCacheEviction <> cache:37 var
+R5306:5311 JFCTheorems.KVCacheEviction <> budget:38 var
+R5317:5322 JFCTheorems.KVCacheEviction <> budget:38 var
+R5385:5402 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R5411:5426 Stdlib.Lists.List <> firstn_le_length thm
+R5411:5426 Stdlib.Lists.List <> firstn_le_length thm
+R5440:5449 JFCTheorems.KVCacheEviction <> evict_fifo def
+R5460:5471 Stdlib.Lists.List <> skipn_length abbrev
+R5460:5471 Stdlib.Lists.List <> skipn_length abbrev
+R5460:5471 Stdlib.Lists.List <> skipn_length abbrev
+R5490:5498 JFCTheorems.KVCacheEviction <> evict_lru def
+R5507:5522 Stdlib.Lists.List <> firstn_le_length thm
+R5507:5522 Stdlib.Lists.List <> firstn_le_length thm
+prf 5657:5677 <> eviction_fills_budget
+binder 5690:5694 <> cache:39
+binder 5696:5701 <> budget:40
+R5730:5737 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5714:5717 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5708:5713 JFCTheorems.KVCacheEviction <> budget:40 var
+R5718:5723 Corelib.Init.Datatypes <> length def
+R5725:5729 JFCTheorems.KVCacheEviction <> cache:39 var
+R5778:5780 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5738:5743 Corelib.Init.Datatypes <> length def
+R5746:5763 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R5765:5769 JFCTheorems.KVCacheEviction <> cache:39 var
+R5771:5776 JFCTheorems.KVCacheEviction <> budget:40 var
+R5781:5786 JFCTheorems.KVCacheEviction <> budget:40 var
+R5832:5849 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R5860:5872 Stdlib.Lists.List <> length_firstn thm
+R5860:5872 Stdlib.Lists.List <> length_firstn thm
+R5860:5872 Stdlib.Lists.List <> length_firstn thm
+prf 6376:6394 <> hh_score_transitive
+R6400:6421 Stdlib.Sets.Relations_1 <> Transitive def
+binder 6428:6428 <> a:41
+binder 6430:6430 <> b:42
+R6442:6445 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R6435:6439 JFCTheorems.KVCacheEviction <> score def
+R6441:6441 JFCTheorems.KVCacheEviction <> a:41 var
+R6446:6450 JFCTheorems.KVCacheEviction <> score def
+R6452:6452 JFCTheorems.KVCacheEviction <> b:42 var
+prf 6502:6519 <> hh_strongly_sorted
+binder 6532:6536 <> cache:43
+R6554:6561 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6539:6547 JFCTheorems.KVCacheEviction <> hh_sorted def
+R6549:6553 JFCTheorems.KVCacheEviction <> cache:43 var
+R6562:6575 Stdlib.Sorting.Sorted <> StronglySorted ind
+R6609:6613 JFCTheorems.KVCacheEviction <> cache:43 var
+binder 6582:6582 <> a:44
+binder 6584:6584 <> b:45
+R6596:6599 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R6589:6593 JFCTheorems.KVCacheEviction <> score def
+R6595:6595 JFCTheorems.KVCacheEviction <> a:44 var
+R6600:6604 JFCTheorems.KVCacheEviction <> score def
+R6606:6606 JFCTheorems.KVCacheEviction <> b:45 var
+R6648:6668 Stdlib.Sorting.Sorted <> Sorted_StronglySorted thm
+R6648:6668 Stdlib.Sorting.Sorted <> Sorted_StronglySorted thm
+R6681:6699 JFCTheorems.KVCacheEviction <> hh_score_transitive thm
+R6681:6699 JFCTheorems.KVCacheEviction <> hh_score_transitive thm
+prf 6807:6817 <> hh_head_max
+binder 6830:6830 <> x:46
+binder 6832:6833 <> xs:47
+R6859:6866 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6840:6848 JFCTheorems.KVCacheEviction <> hh_sorted def
+R6852:6855 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6851:6851 JFCTheorems.KVCacheEviction <> x:46 var
+R6856:6857 JFCTheorems.KVCacheEviction <> xs:47 var
+binder 6874:6874 <> y:48
+R6884:6887 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6877:6878 Stdlib.Lists.List <> In def
+R6882:6883 JFCTheorems.KVCacheEviction <> xs:47 var
+R6880:6880 JFCTheorems.KVCacheEviction <> y:48 var
+R6895:6898 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R6888:6892 JFCTheorems.KVCacheEviction <> score def
+R6894:6894 JFCTheorems.KVCacheEviction <> x:46 var
+R6899:6903 JFCTheorems.KVCacheEviction <> score def
+R6905:6905 JFCTheorems.KVCacheEviction <> y:48 var
+R6947:6964 JFCTheorems.KVCacheEviction <> hh_strongly_sorted thm
+R6947:6964 JFCTheorems.KVCacheEviction <> hh_strongly_sorted thm
+R6981:6998 Stdlib.Sorting.Sorted <> StronglySorted_inv thm
+R6981:6998 Stdlib.Sorting.Sorted <> StronglySorted_inv thm
+R7028:7040 Stdlib.Lists.List <> Forall_forall thm
+R7028:7040 Stdlib.Lists.List <> Forall_forall thm
+R7028:7040 Stdlib.Lists.List <> Forall_forall thm
+prf 7295:7320 <> hh_prefix_dominates_suffix
+binder 7333:7335 <> pre:49
+binder 7337:7339 <> suf:50
+R7368:7375 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7346:7354 JFCTheorems.KVCacheEviction <> hh_sorted def
+R7360:7363 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R7357:7359 JFCTheorems.KVCacheEviction <> pre:49 var
+R7364:7366 JFCTheorems.KVCacheEviction <> suf:50 var
+binder 7383:7383 <> r:51
+binder 7385:7385 <> e:52
+R7396:7399 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7388:7389 Stdlib.Lists.List <> In def
+R7393:7395 JFCTheorems.KVCacheEviction <> pre:49 var
+R7391:7391 JFCTheorems.KVCacheEviction <> r:51 var
+R7408:7411 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7400:7401 Stdlib.Lists.List <> In def
+R7405:7407 JFCTheorems.KVCacheEviction <> suf:50 var
+R7403:7403 JFCTheorems.KVCacheEviction <> e:52 var
+R7419:7422 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R7412:7416 JFCTheorems.KVCacheEviction <> score def
+R7418:7418 JFCTheorems.KVCacheEviction <> r:51 var
+R7423:7427 JFCTheorems.KVCacheEviction <> score def
+R7429:7429 JFCTheorems.KVCacheEviction <> e:52 var
+R7659:7669 JFCTheorems.KVCacheEviction <> hh_head_max thm
+R7676:7679 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R7659:7669 JFCTheorems.KVCacheEviction <> hh_head_max thm
+R7676:7679 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R7704:7712 Stdlib.Lists.List <> in_or_app thm
+R7704:7712 Stdlib.Lists.List <> in_or_app thm
+R7808:7816 JFCTheorems.KVCacheEviction <> hh_sorted def
+R7837:7846 Stdlib.Sorting.Sorted <> Sorted_inv thm
+R7837:7846 Stdlib.Sorting.Sorted <> Sorted_inv thm
+prf 8318:8346 <> attention_preserves_important
+binder 8359:8363 <> cache:53
+binder 8365:8370 <> budget:54
+binder 8372:8372 <> r:55
+binder 8374:8374 <> e:56
+R8396:8403 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8381:8389 JFCTheorems.KVCacheEviction <> hh_sorted def
+R8391:8395 JFCTheorems.KVCacheEviction <> cache:53 var
+R8442:8449 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8404:8405 Stdlib.Lists.List <> In def
+R8410:8427 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R8429:8433 JFCTheorems.KVCacheEviction <> cache:53 var
+R8435:8440 JFCTheorems.KVCacheEviction <> budget:54 var
+R8407:8407 JFCTheorems.KVCacheEviction <> r:55 var
+R8490:8497 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8450:8451 Stdlib.Lists.List <> In def
+R8456:8475 JFCTheorems.KVCacheEviction <> evicted_by_attention def
+R8477:8481 JFCTheorems.KVCacheEviction <> cache:53 var
+R8483:8488 JFCTheorems.KVCacheEviction <> budget:54 var
+R8453:8453 JFCTheorems.KVCacheEviction <> e:56 var
+R8505:8508 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R8498:8502 JFCTheorems.KVCacheEviction <> score def
+R8504:8504 JFCTheorems.KVCacheEviction <> r:55 var
+R8509:8513 JFCTheorems.KVCacheEviction <> score def
+R8515:8515 JFCTheorems.KVCacheEviction <> e:56 var
+R8570:8595 JFCTheorems.KVCacheEviction <> hh_prefix_dominates_suffix thm
+R8609:8626 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R8654:8673 JFCTheorems.KVCacheEviction <> evicted_by_attention def
+R8570:8595 JFCTheorems.KVCacheEviction <> hh_prefix_dominates_suffix thm
+R8609:8626 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R8654:8673 JFCTheorems.KVCacheEviction <> evicted_by_attention def
+R8703:8722 JFCTheorems.KVCacheEviction <> retained_app_evicted thm
+R8703:8722 JFCTheorems.KVCacheEviction <> retained_app_evicted thm
+R8703:8722 JFCTheorems.KVCacheEviction <> retained_app_evicted thm
+prf 9007:9027 <> no_inversion_eviction
+binder 9040:9044 <> cache:57
+binder 9046:9051 <> budget:58
+binder 9053:9054 <> hh:59
+binder 9056:9059 <> kept:60
+R9081:9088 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9066:9074 JFCTheorems.KVCacheEviction <> hh_sorted def
+R9076:9080 JFCTheorems.KVCacheEviction <> cache:57 var
+R9130:9137 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9089:9090 Stdlib.Lists.List <> In def
+R9098:9115 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R9117:9121 JFCTheorems.KVCacheEviction <> cache:57 var
+R9123:9128 JFCTheorems.KVCacheEviction <> budget:58 var
+R9092:9095 JFCTheorems.KVCacheEviction <> kept:60 var
+R9179:9186 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9138:9139 Stdlib.Lists.List <> In def
+R9145:9164 JFCTheorems.KVCacheEviction <> evicted_by_attention def
+R9166:9170 JFCTheorems.KVCacheEviction <> cache:57 var
+R9172:9177 JFCTheorems.KVCacheEviction <> budget:58 var
+R9141:9142 JFCTheorems.KVCacheEviction <> hh:59 var
+R9208:9215 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9195:9197 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R9187:9191 JFCTheorems.KVCacheEviction <> score def
+R9193:9194 JFCTheorems.KVCacheEviction <> hh:59 var
+R9198:9202 JFCTheorems.KVCacheEviction <> score def
+R9204:9207 JFCTheorems.KVCacheEviction <> kept:60 var
+R9216:9220 Corelib.Init.Logic <> False ind
+R9292:9320 JFCTheorems.KVCacheEviction <> attention_preserves_important thm
+R9292:9320 JFCTheorems.KVCacheEviction <> attention_preserves_important thm
+prf 9598:9612 <> retained_subset
+binder 9625:9629 <> cache:61
+binder 9631:9636 <> budget:62
+binder 9638:9638 <> e:63
+R9683:9686 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9645:9646 Stdlib.Lists.List <> In def
+R9651:9668 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R9670:9674 JFCTheorems.KVCacheEviction <> cache:61 var
+R9676:9681 JFCTheorems.KVCacheEviction <> budget:62 var
+R9648:9648 JFCTheorems.KVCacheEviction <> e:63 var
+R9687:9688 Stdlib.Lists.List <> In def
+R9692:9696 JFCTheorems.KVCacheEviction <> cache:61 var
+R9690:9690 JFCTheorems.KVCacheEviction <> e:63 var
+R9744:9761 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R9785:9796 Stdlib.Lists.List <> firstn_skipn thm
+R9785:9796 Stdlib.Lists.List <> firstn_skipn thm
+R9785:9796 Stdlib.Lists.List <> firstn_skipn thm
+R9821:9829 Stdlib.Lists.List <> in_or_app thm
+R9821:9829 Stdlib.Lists.List <> in_or_app thm
+prf 10063:10085 <> retained_are_top_scored
+binder 10098:10102 <> cache:64
+binder 10104:10109 <> budget:65
+binder 10111:10114 <> kept:66
+binder 10116:10122 <> dropped:67
+R10144:10151 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10129:10137 JFCTheorems.KVCacheEviction <> hh_sorted def
+R10139:10143 JFCTheorems.KVCacheEviction <> cache:64 var
+R10193:10200 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10152:10153 Stdlib.Lists.List <> In def
+R10161:10178 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R10180:10184 JFCTheorems.KVCacheEviction <> cache:64 var
+R10186:10191 JFCTheorems.KVCacheEviction <> budget:65 var
+R10155:10158 JFCTheorems.KVCacheEviction <> kept:66 var
+R10247:10254 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10201:10202 Stdlib.Lists.List <> In def
+R10213:10232 JFCTheorems.KVCacheEviction <> evicted_by_attention def
+R10234:10238 JFCTheorems.KVCacheEviction <> cache:64 var
+R10240:10245 JFCTheorems.KVCacheEviction <> budget:65 var
+R10204:10210 JFCTheorems.KVCacheEviction <> dropped:67 var
+R10282:10285 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R10265:10268 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R10255:10259 JFCTheorems.KVCacheEviction <> score def
+R10261:10264 JFCTheorems.KVCacheEviction <> kept:66 var
+R10269:10273 JFCTheorems.KVCacheEviction <> score def
+R10275:10281 JFCTheorems.KVCacheEviction <> dropped:67 var
+R10286:10287 Stdlib.Lists.List <> In def
+R10294:10298 JFCTheorems.KVCacheEviction <> cache:64 var
+R10289:10292 JFCTheorems.KVCacheEviction <> kept:66 var
+R10373:10401 JFCTheorems.KVCacheEviction <> attention_preserves_important thm
+R10373:10401 JFCTheorems.KVCacheEviction <> attention_preserves_important thm
+R10451:10465 JFCTheorems.KVCacheEviction <> retained_subset thm
+R10451:10465 JFCTheorems.KVCacheEviction <> retained_subset thm
+prf 10636:10653 <> firstn_prefix_mono
+binder 10667:10667 <> A:68
+R10686:10688 Corelib.Init.Datatypes <> nat ind
+binder 10678:10679 <> b1:69
+binder 10681:10682 <> b2:70
+R10696:10699 Corelib.Init.Datatypes <> list ind
+R10701:10701 JFCTheorems.KVCacheEviction <> A:68 var
+binder 10692:10692 <> l:71
+R10717:10724 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10711:10714 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R10709:10710 JFCTheorems.KVCacheEviction <> b1:69 var
+R10715:10716 JFCTheorems.KVCacheEviction <> b2:70 var
+R10736:10738 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10725:10730 Corelib.Lists.ListDef <> firstn def
+R10735:10735 JFCTheorems.KVCacheEviction <> l:71 var
+R10732:10733 JFCTheorems.KVCacheEviction <> b1:69 var
+R10739:10744 Corelib.Lists.ListDef <> firstn def
+R10750:10755 Corelib.Lists.ListDef <> firstn def
+R10760:10760 JFCTheorems.KVCacheEviction <> l:71 var
+R10757:10758 JFCTheorems.KVCacheEviction <> b2:70 var
+R10746:10747 JFCTheorems.KVCacheEviction <> b1:69 var
+R10805:10817 Stdlib.Lists.List <> firstn_firstn thm
+R10805:10817 Stdlib.Lists.List <> firstn_firstn thm
+R10805:10817 Stdlib.Lists.List <> firstn_firstn thm
+R10830:10838 Stdlib.Arith.PeanoNat Nat min_l thm
+R10830:10838 Stdlib.Arith.PeanoNat Nat min_l thm
+R10830:10838 Stdlib.Arith.PeanoNat Nat min_l thm
+prf 11243:11259 <> eviction_monotone
+binder 11272:11276 <> cache:72
+binder 11278:11279 <> b1:73
+binder 11281:11282 <> b2:74
+R11297:11304 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11291:11294 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11289:11290 JFCTheorems.KVCacheEviction <> b1:73 var
+R11295:11296 JFCTheorems.KVCacheEviction <> b2:74 var
+R11305:11308 Stdlib.Lists.List <> incl def
+R11341:11358 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R11360:11364 JFCTheorems.KVCacheEviction <> cache:72 var
+R11366:11367 JFCTheorems.KVCacheEviction <> b2:74 var
+R11311:11328 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R11330:11334 JFCTheorems.KVCacheEviction <> cache:72 var
+R11336:11337 JFCTheorems.KVCacheEviction <> b1:73 var
+R11418:11435 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R11454:11471 JFCTheorems.KVCacheEviction <> firstn_prefix_mono thm
+R11454:11471 JFCTheorems.KVCacheEviction <> firstn_prefix_mono thm
+R11454:11471 JFCTheorems.KVCacheEviction <> firstn_prefix_mono thm
+R11579:11590 Stdlib.Lists.List <> firstn_skipn thm
+R11596:11601 Corelib.Lists.ListDef <> firstn def
+R11579:11590 Stdlib.Lists.List <> firstn_skipn thm
+R11596:11601 Corelib.Lists.ListDef <> firstn def
+R11579:11590 Stdlib.Lists.List <> firstn_skipn thm
+R11596:11601 Corelib.Lists.ListDef <> firstn def
+R11623:11631 Stdlib.Lists.List <> in_or_app thm
+R11623:11631 Stdlib.Lists.List <> in_or_app thm
+prf 11740:11763 <> eviction_monotone_length
+binder 11776:11780 <> cache:75
+binder 11782:11783 <> b1:76
+binder 11785:11786 <> b2:77
+R11801:11808 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11795:11798 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11793:11794 JFCTheorems.KVCacheEviction <> b1:76 var
+R11799:11800 JFCTheorems.KVCacheEviction <> b2:77 var
+R11845:11848 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11809:11814 Corelib.Init.Datatypes <> length def
+R11817:11834 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R11836:11840 JFCTheorems.KVCacheEviction <> cache:75 var
+R11842:11843 JFCTheorems.KVCacheEviction <> b1:76 var
+R11849:11854 Corelib.Init.Datatypes <> length def
+R11857:11874 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R11876:11880 JFCTheorems.KVCacheEviction <> cache:75 var
+R11882:11883 JFCTheorems.KVCacheEviction <> b2:77 var
+R11929:11946 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R11958:11970 Stdlib.Lists.List <> length_firstn thm
+R11958:11970 Stdlib.Lists.List <> length_firstn thm
+R11958:11970 Stdlib.Lists.List <> length_firstn thm
+R11958:11970 Stdlib.Lists.List <> length_firstn thm
+R11958:11970 Stdlib.Lists.List <> length_firstn thm
+def 12302:12313 <> insert_entry
+R12324:12330 JFCTheorems.KVCacheEviction <> KVCache def
+binder 12316:12320 <> cache:78
+R12338:12344 JFCTheorems.KVCacheEviction <> KVEntry rec
+binder 12334:12334 <> e:79
+R12349:12355 JFCTheorems.KVCacheEviction <> KVCache def
+R12363:12366 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R12362:12362 JFCTheorems.KVCacheEviction <> e:79 var
+R12367:12371 JFCTheorems.KVCacheEviction <> cache:78 var
+prf 12381:12393 <> insert_length
+binder 12406:12410 <> cache:80
+binder 12412:12412 <> e:81
+R12444:12446 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12415:12420 Corelib.Init.Datatypes <> length def
+R12423:12434 JFCTheorems.KVCacheEviction <> insert_entry def
+R12436:12440 JFCTheorems.KVCacheEviction <> cache:80 var
+R12442:12442 JFCTheorems.KVCacheEviction <> e:81 var
+R12447:12447 Corelib.Init.Datatypes <> S constr
+R12450:12455 Corelib.Init.Datatypes <> length def
+R12457:12461 JFCTheorems.KVCacheEviction <> cache:80 var
+prf 12848:12877 <> full_insert_evict_keeps_budget
+binder 12890:12894 <> cache:82
+binder 12896:12901 <> budget:83
+binder 12903:12903 <> e:84
+R12931:12938 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12922:12924 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12910:12915 Corelib.Init.Datatypes <> length def
+R12917:12921 JFCTheorems.KVCacheEviction <> cache:82 var
+R12925:12930 JFCTheorems.KVCacheEviction <> budget:83 var
+R12996:12998 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12939:12944 Corelib.Init.Datatypes <> length def
+R12947:12964 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R12967:12978 JFCTheorems.KVCacheEviction <> insert_entry def
+R12980:12984 JFCTheorems.KVCacheEviction <> cache:82 var
+R12986:12986 JFCTheorems.KVCacheEviction <> e:84 var
+R12989:12994 JFCTheorems.KVCacheEviction <> budget:83 var
+R12999:13004 JFCTheorems.KVCacheEviction <> budget:83 var
+R13054:13071 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R13084:13096 Stdlib.Lists.List <> length_firstn thm
+R13099:13111 JFCTheorems.KVCacheEviction <> insert_length thm
+R13084:13096 Stdlib.Lists.List <> length_firstn thm
+R13084:13096 Stdlib.Lists.List <> length_firstn thm
+R13099:13111 JFCTheorems.KVCacheEviction <> insert_length thm
+R13099:13111 JFCTheorems.KVCacheEviction <> insert_length thm
+prf 13220:13247 <> insert_evict_respects_budget
+binder 13260:13264 <> cache:85
+binder 13266:13271 <> budget:86
+binder 13273:13273 <> e:87
+R13337:13340 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13280:13285 Corelib.Init.Datatypes <> length def
+R13288:13305 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R13308:13319 JFCTheorems.KVCacheEviction <> insert_entry def
+R13321:13325 JFCTheorems.KVCacheEviction <> cache:85 var
+R13327:13327 JFCTheorems.KVCacheEviction <> e:87 var
+R13330:13335 JFCTheorems.KVCacheEviction <> budget:86 var
+R13341:13346 JFCTheorems.KVCacheEviction <> budget:86 var
+R13390:13407 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R13416:13431 Stdlib.Lists.List <> firstn_le_length thm
+R13416:13431 Stdlib.Lists.List <> firstn_le_length thm
+rec 13490:13499 <> SharedPool
+proj 13528:13539 <> pool_entries
+proj 13554:13575 <> pool_compression_ratio
+proj 13624:13639 <> pool_agent_count
+R13543:13549 JFCTheorems.KVCacheEviction <> KVCache def
+R13579:13581 Corelib.Init.Datatypes <> nat ind
+R13643:13645 Corelib.Init.Datatypes <> nat ind
+def 13663:13672 <> agent_view
+R13682:13691 JFCTheorems.KVCacheEviction <> SharedPool rec
+binder 13675:13678 <> pool:92
+R13706:13708 Corelib.Init.Datatypes <> nat ind
+binder 13695:13702 <> agent_id:93
+R13713:13719 JFCTheorems.KVCacheEviction <> KVCache def
+R13726:13737 JFCTheorems.KVCacheEviction <> pool_entries proj
+R13739:13742 JFCTheorems.KVCacheEviction <> pool:92 var
+prf 13908:13926 <> shared_saves_memory
+binder 13939:13946 <> n_agents:94
+binder 13948:13957 <> cache_size:95
+R13977:13984 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13972:13975 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R13964:13971 JFCTheorems.KVCacheEviction <> n_agents:94 var
+R14000:14007 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13995:13998 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R13985:13994 JFCTheorems.KVCacheEviction <> cache_size:95 var
+R14018:14020 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R14008:14017 JFCTheorems.KVCacheEviction <> cache_size:95 var
+R14029:14031 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R14021:14028 JFCTheorems.KVCacheEviction <> n_agents:94 var
+R14032:14041 JFCTheorems.KVCacheEviction <> cache_size:95 var
+rec 14158:14176 <> LayerReconstruction
+proj 14209:14219 <> recon_layer
+proj 14230:14240 <> recon_error
+proj 14302:14318 <> recon_compression
+R14223:14225 Corelib.Init.Datatypes <> nat ind
+R14244:14246 Corelib.Init.Datatypes <> nat ind
+R14322:14324 Corelib.Init.Datatypes <> nat ind
+def 14448:14466 <> optimal_compression
+R14478:14481 Corelib.Init.Datatypes <> list ind
+R14483:14501 JFCTheorems.KVCacheEviction <> LayerReconstruction rec
+binder 14469:14474 <> layers:100
+R14523:14525 Corelib.Init.Datatypes <> nat ind
+binder 14505:14519 <> error_threshold:101
+R14534:14536 Corelib.Init.Datatypes <> nat ind
+R14543:14551 Stdlib.Lists.List <> fold_left def
+R14674:14679 JFCTheorems.KVCacheEviction <> layers:100 var
+binder 14558:14560 <> acc:102
+binder 14562:14562 <> l:103
+R14574:14580 Stdlib.Arith.PeanoNat Nat leb def
+R14583:14593 JFCTheorems.KVCacheEviction <> recon_error proj
+R14595:14595 JFCTheorems.KVCacheEviction <> l:103 var
+R14598:14612 JFCTheorems.KVCacheEviction <> error_threshold:101 var
+R14666:14668 JFCTheorems.KVCacheEviction <> acc:102 var
+R14628:14630 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14625:14627 JFCTheorems.KVCacheEviction <> acc:102 var
+R14631:14647 JFCTheorems.KVCacheEviction <> recon_compression proj
+R14649:14649 JFCTheorems.KVCacheEviction <> l:103 var
+prf 14834:14858 <> optimal_compression_shift
+binder 14871:14876 <> layers:104
+binder 14878:14878 <> t:105
+binder 14880:14880 <> z:106
+R14995:15001 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14887:14895 Stdlib.Lists.List <> fold_left def
+R14994:14994 JFCTheorems.KVCacheEviction <> z:106 var
+R14987:14992 JFCTheorems.KVCacheEviction <> layers:104 var
+binder 14902:14904 <> acc:107
+binder 14906:14906 <> l:108
+R14920:14926 Stdlib.Arith.PeanoNat Nat leb def
+R14929:14939 JFCTheorems.KVCacheEviction <> recon_error proj
+R14941:14941 JFCTheorems.KVCacheEviction <> l:108 var
+R14944:14944 JFCTheorems.KVCacheEviction <> t:105 var
+R14982:14984 JFCTheorems.KVCacheEviction <> acc:107 var
+R14954:14956 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14951:14953 JFCTheorems.KVCacheEviction <> acc:107 var
+R14957:14973 JFCTheorems.KVCacheEviction <> recon_compression proj
+R14975:14975 JFCTheorems.KVCacheEviction <> l:108 var
+R15003:15005 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15002:15002 JFCTheorems.KVCacheEviction <> z:106 var
+R15006:15014 Stdlib.Lists.List <> fold_left def
+R15106:15111 JFCTheorems.KVCacheEviction <> layers:104 var
+binder 15021:15023 <> acc:109
+binder 15025:15025 <> l:110
+R15039:15045 Stdlib.Arith.PeanoNat Nat leb def
+R15048:15058 JFCTheorems.KVCacheEviction <> recon_error proj
+R15060:15060 JFCTheorems.KVCacheEviction <> l:110 var
+R15063:15063 JFCTheorems.KVCacheEviction <> t:105 var
+R15101:15103 JFCTheorems.KVCacheEviction <> acc:109 var
+R15073:15075 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15070:15072 JFCTheorems.KVCacheEviction <> acc:109 var
+R15076:15092 JFCTheorems.KVCacheEviction <> recon_compression proj
+R15094:15094 JFCTheorems.KVCacheEviction <> l:110 var
+R15221:15227 Stdlib.Arith.PeanoNat Nat leb def
+R15230:15240 JFCTheorems.KVCacheEviction <> recon_error proj
+R15221:15227 Stdlib.Arith.PeanoNat Nat leb def
+R15230:15240 JFCTheorems.KVCacheEviction <> recon_error proj
+R15276:15278 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15279:15295 JFCTheorems.KVCacheEviction <> recon_compression proj
+R15276:15278 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15279:15295 JFCTheorems.KVCacheEviction <> recon_compression proj
+R15276:15278 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15279:15295 JFCTheorems.KVCacheEviction <> recon_compression proj
+R15315:15331 JFCTheorems.KVCacheEviction <> recon_compression proj
+R15315:15331 JFCTheorems.KVCacheEviction <> recon_compression proj
+R15315:15331 JFCTheorems.KVCacheEviction <> recon_compression proj
+prf 15390:15413 <> optimal_compression_cons
+binder 15426:15426 <> l:111
+binder 15428:15429 <> ls:112
+binder 15431:15431 <> t:113
+R15469:15475 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15438:15456 JFCTheorems.KVCacheEviction <> optimal_compression def
+R15460:15463 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R15459:15459 JFCTheorems.KVCacheEviction <> l:111 var
+R15464:15465 JFCTheorems.KVCacheEviction <> ls:112 var
+R15468:15468 JFCTheorems.KVCacheEviction <> t:113 var
+R15476:15476 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15537:15546 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15480:15486 Stdlib.Arith.PeanoNat Nat leb def
+R15489:15499 JFCTheorems.KVCacheEviction <> recon_error proj
+R15501:15501 JFCTheorems.KVCacheEviction <> l:111 var
+R15504:15504 JFCTheorems.KVCacheEviction <> t:113 var
+R15511:15527 JFCTheorems.KVCacheEviction <> recon_compression proj
+R15529:15529 JFCTheorems.KVCacheEviction <> l:111 var
+R15547:15565 JFCTheorems.KVCacheEviction <> optimal_compression def
+R15567:15568 JFCTheorems.KVCacheEviction <> ls:112 var
+R15570:15570 JFCTheorems.KVCacheEviction <> t:113 var
+R15604:15622 JFCTheorems.KVCacheEviction <> optimal_compression def
+R15644:15650 Stdlib.Arith.PeanoNat Nat leb def
+R15653:15663 JFCTheorems.KVCacheEviction <> recon_error proj
+R15644:15650 Stdlib.Arith.PeanoNat Nat leb def
+R15653:15663 JFCTheorems.KVCacheEviction <> recon_error proj
+R15699:15723 JFCTheorems.KVCacheEviction <> optimal_compression_shift thm
+R15731:15747 JFCTheorems.KVCacheEviction <> recon_compression proj
+R15699:15723 JFCTheorems.KVCacheEviction <> optimal_compression_shift thm
+R15731:15747 JFCTheorems.KVCacheEviction <> recon_compression proj
+R15699:15723 JFCTheorems.KVCacheEviction <> optimal_compression_shift thm
+R15731:15747 JFCTheorems.KVCacheEviction <> recon_compression proj
+R15772:15796 JFCTheorems.KVCacheEviction <> optimal_compression_shift thm
+R15772:15796 JFCTheorems.KVCacheEviction <> optimal_compression_shift thm
+R15772:15796 JFCTheorems.KVCacheEviction <> optimal_compression_shift thm
+prf 15962:15987 <> error_compression_tradeoff
+binder 16000:16005 <> layers:114
+binder 16007:16008 <> t1:115
+binder 16010:16011 <> t2:116
+R16026:16033 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R16020:16023 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16018:16019 JFCTheorems.KVCacheEviction <> t1:115 var
+R16024:16025 JFCTheorems.KVCacheEviction <> t2:116 var
+R16063:16066 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16034:16052 JFCTheorems.KVCacheEviction <> optimal_compression def
+R16054:16059 JFCTheorems.KVCacheEviction <> layers:114 var
+R16061:16062 JFCTheorems.KVCacheEviction <> t1:115 var
+R16067:16085 JFCTheorems.KVCacheEviction <> optimal_compression def
+R16087:16092 JFCTheorems.KVCacheEviction <> layers:114 var
+R16094:16095 JFCTheorems.KVCacheEviction <> t2:116 var
+R16177:16195 JFCTheorems.KVCacheEviction <> optimal_compression def
+R16223:16246 JFCTheorems.KVCacheEviction <> optimal_compression_cons thm
+R16223:16246 JFCTheorems.KVCacheEviction <> optimal_compression_cons thm
+R16223:16246 JFCTheorems.KVCacheEviction <> optimal_compression_cons thm
+R16223:16246 JFCTheorems.KVCacheEviction <> optimal_compression_cons thm
+R16223:16246 JFCTheorems.KVCacheEviction <> optimal_compression_cons thm
+R16352:16352 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16414:16425 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16487:16487 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16356:16362 Stdlib.Arith.PeanoNat Nat leb def
+R16365:16375 JFCTheorems.KVCacheEviction <> recon_error proj
+R16388:16404 JFCTheorems.KVCacheEviction <> recon_compression proj
+R16429:16435 Stdlib.Arith.PeanoNat Nat leb def
+R16438:16448 JFCTheorems.KVCacheEviction <> recon_error proj
+R16461:16477 JFCTheorems.KVCacheEviction <> recon_compression proj
+R16352:16352 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16414:16425 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16487:16487 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16356:16362 Stdlib.Arith.PeanoNat Nat leb def
+R16365:16375 JFCTheorems.KVCacheEviction <> recon_error proj
+R16388:16404 JFCTheorems.KVCacheEviction <> recon_compression proj
+R16429:16435 Stdlib.Arith.PeanoNat Nat leb def
+R16438:16448 JFCTheorems.KVCacheEviction <> recon_error proj
+R16461:16477 JFCTheorems.KVCacheEviction <> recon_compression proj
+R16507:16513 Stdlib.Arith.PeanoNat Nat leb def
+R16516:16526 JFCTheorems.KVCacheEviction <> recon_error proj
+R16507:16513 Stdlib.Arith.PeanoNat Nat leb def
+R16516:16526 JFCTheorems.KVCacheEviction <> recon_error proj
+R16557:16566 Stdlib.Arith.PeanoNat Nat leb_le thm
+R16557:16566 Stdlib.Arith.PeanoNat Nat leb_le thm
+R16604:16607 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16591:16601 JFCTheorems.KVCacheEviction <> recon_error proj
+R16604:16607 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16591:16601 JFCTheorems.KVCacheEviction <> recon_error proj
+R16634:16643 Stdlib.Arith.PeanoNat Nat leb_le thm
+R16634:16643 Stdlib.Arith.PeanoNat Nat leb_le thm
+R16685:16691 Stdlib.Arith.PeanoNat Nat leb def
+R16694:16704 JFCTheorems.KVCacheEviction <> recon_error proj
+R16685:16691 Stdlib.Arith.PeanoNat Nat leb def
+R16694:16704 JFCTheorems.KVCacheEviction <> recon_error proj
+def 16785:16798 <> spatial_smooth
+R16810:16813 Corelib.Init.Datatypes <> list ind
+R16815:16817 Corelib.Init.Datatypes <> nat ind
+binder 16801:16806 <> scores:117
+R16830:16832 Corelib.Init.Datatypes <> nat ind
+binder 16821:16826 <> window:118
+R16837:16840 Corelib.Init.Datatypes <> list ind
+R16842:16844 Corelib.Init.Datatypes <> nat ind
+R16851:16853 Corelib.Lists.ListDef <> map def
+R17025:17027 Corelib.Lists.ListDef <> seq def
+R17032:17037 Corelib.Init.Datatypes <> length def
+R17039:17044 JFCTheorems.KVCacheEviction <> scores:117 var
+binder 16860:16860 <> i:119
+R16883:16885 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R16882:16882 JFCTheorems.KVCacheEviction <> i:119 var
+R16892:16894 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R16886:16891 JFCTheorems.KVCacheEviction <> window:118 var
+binder 16873:16877 <> start:120
+R16921:16926 Corelib.Lists.ListDef <> firstn def
+R16936:16940 Corelib.Lists.ListDef <> skipn def
+R16948:16953 JFCTheorems.KVCacheEviction <> scores:117 var
+R16942:16946 JFCTheorems.KVCacheEviction <> start:120 var
+R16928:16933 JFCTheorems.KVCacheEviction <> window:118 var
+binder 16908:16916 <> neighbors:121
+R16992:16994 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R16963:16971 Stdlib.Lists.List <> fold_left def
+R16981:16989 JFCTheorems.KVCacheEviction <> neighbors:121 var
+R16973:16979 Stdlib.Arith.PeanoNat Nat add def
+R16995:16997 Corelib.Init.Peano <> max abbrev
+R17002:17007 Corelib.Init.Datatypes <> length def
+R17009:17017 JFCTheorems.KVCacheEviction <> neighbors:121 var
+prf 17479:17504 <> smoothing_preserves_length
+binder 17517:17522 <> scores:122
+binder 17524:17529 <> window:123
+R17573:17575 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17536:17541 Corelib.Init.Datatypes <> length def
+R17544:17557 JFCTheorems.KVCacheEviction <> spatial_smooth def
+R17559:17564 JFCTheorems.KVCacheEviction <> scores:122 var
+R17566:17571 JFCTheorems.KVCacheEviction <> window:123 var
+R17576:17581 Corelib.Init.Datatypes <> length def
+R17583:17588 JFCTheorems.KVCacheEviction <> scores:122 var
+R17631:17644 JFCTheorems.KVCacheEviction <> spatial_smooth def
+R17657:17666 Stdlib.Lists.List <> length_map thm
+R17669:17678 Stdlib.Lists.List <> length_seq thm
+R17657:17666 Stdlib.Lists.List <> length_map thm
+R17657:17666 Stdlib.Lists.List <> length_map thm
+R17669:17678 Stdlib.Lists.List <> length_seq thm
+R17669:17678 Stdlib.Lists.List <> length_seq thm
+rec 17760:17774 <> CompressedEntry
+proj 17803:17820 <> comp_original_size
+proj 17831:17850 <> comp_compressed_size
+proj 17861:17882 <> comp_quantization_bits
+R17824:17826 Corelib.Init.Datatypes <> nat ind
+R17854:17856 Corelib.Init.Datatypes <> nat ind
+R17886:17888 Corelib.Init.Datatypes <> nat ind
+def 17906:17919 <> compress_entry
+R17930:17936 JFCTheorems.KVCacheEviction <> KVEntry rec
+binder 17922:17926 <> entry:128
+R17947:17949 Corelib.Init.Datatypes <> nat ind
+binder 17940:17943 <> bits:129
+R17954:17968 JFCTheorems.KVCacheEviction <> CompressedEntry rec
+R17975:17986 JFCTheorems.KVCacheEviction <> mkCompressed constr
+R17993:17999 JFCTheorems.KVCacheEviction <> kv_size proj
+R18001:18005 JFCTheorems.KVCacheEviction <> entry:128 var
+R18033:18035 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R18026:18028 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R18013:18019 JFCTheorems.KVCacheEviction <> kv_size proj
+R18021:18025 JFCTheorems.KVCacheEviction <> entry:128 var
+R18029:18032 JFCTheorems.KVCacheEviction <> bits:129 var
+R18072:18075 JFCTheorems.KVCacheEviction <> bits:129 var
+prf 18167:18190 <> compress_entry_no_growth
+binder 18203:18207 <> entry:130
+binder 18209:18212 <> bits:131
+R18229:18236 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18223:18226 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R18219:18222 JFCTheorems.KVCacheEviction <> bits:131 var
+R18285:18288 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R18237:18256 JFCTheorems.KVCacheEviction <> comp_compressed_size proj
+R18259:18272 JFCTheorems.KVCacheEviction <> compress_entry def
+R18274:18278 JFCTheorems.KVCacheEviction <> entry:130 var
+R18280:18283 JFCTheorems.KVCacheEviction <> bits:131 var
+R18289:18306 JFCTheorems.KVCacheEviction <> comp_original_size proj
+R18309:18322 JFCTheorems.KVCacheEviction <> compress_entry def
+R18324:18328 JFCTheorems.KVCacheEviction <> entry:130 var
+R18330:18333 JFCTheorems.KVCacheEviction <> bits:131 var
+R18380:18393 JFCTheorems.KVCacheEviction <> compress_entry def
+R18396:18415 JFCTheorems.KVCacheEviction <> comp_compressed_size proj
+R18418:18435 JFCTheorems.KVCacheEviction <> comp_original_size proj
+R18446:18472 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R18446:18472 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+def 18655:18668 <> joint_eviction
+R18679:18685 JFCTheorems.KVCacheEviction <> KVCache def
+binder 18671:18675 <> cache:132
+R18705:18707 Corelib.Init.Datatypes <> nat ind
+binder 18689:18701 <> memory_budget:133
+R18712:18718 JFCTheorems.KVCacheEviction <> KVCache def
+R18749:18751 Corelib.Lists.ListDef <> map def
+R18778:18782 JFCTheorems.KVCacheEviction <> cache:132 var
+binder 18758:18758 <> e:134
+R18772:18774 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R18763:18769 JFCTheorems.KVCacheEviction <> kv_size proj
+R18771:18771 JFCTheorems.KVCacheEviction <> e:134 var
+binder 18729:18744 <> compressed_sizes:135
+R18813:18821 Stdlib.Lists.List <> fold_left def
+R18831:18846 JFCTheorems.KVCacheEviction <> compressed_sizes:135 var
+R18823:18829 Stdlib.Arith.PeanoNat Nat add def
+binder 18793:18808 <> total_compressed:136
+R18858:18864 Stdlib.Arith.PeanoNat Nat leb def
+R18866:18881 JFCTheorems.KVCacheEviction <> total_compressed:136 var
+R18883:18895 JFCTheorems.KVCacheEviction <> memory_budget:133 var
+R18923:18940 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R18942:18946 JFCTheorems.KVCacheEviction <> cache:132 var
+R18966:18969 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R19010:19010 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R18962:18964 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R18949:18961 JFCTheorems.KVCacheEviction <> memory_budget:133 var
+R18970:18976 JFCTheorems.KVCacheEviction <> kv_size proj
+R18979:18980 Stdlib.Lists.List <> hd def
+R19004:19008 JFCTheorems.KVCacheEviction <> cache:132 var
+R18983:18991 JFCTheorems.KVCacheEviction <> mkKVEntry constr
+R18906:18910 JFCTheorems.KVCacheEviction <> cache:132 var
+prf 19440:19466 <> joint_retains_all_when_fits
+binder 19479:19483 <> cache:137
+binder 19485:19497 <> memory_budget:138
+R19577:19584 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19560:19563 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R19504:19512 Stdlib.Lists.List <> fold_left def
+R19523:19525 Corelib.Lists.ListDef <> map def
+R19552:19556 JFCTheorems.KVCacheEviction <> cache:137 var
+binder 19532:19532 <> e:139
+R19546:19548 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R19537:19543 JFCTheorems.KVCacheEviction <> kv_size proj
+R19545:19545 JFCTheorems.KVCacheEviction <> e:139 var
+R19514:19520 Stdlib.Arith.PeanoNat Nat add def
+R19564:19576 JFCTheorems.KVCacheEviction <> memory_budget:138 var
+R19619:19621 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19585:19598 JFCTheorems.KVCacheEviction <> joint_eviction def
+R19600:19604 JFCTheorems.KVCacheEviction <> cache:137 var
+R19606:19618 JFCTheorems.KVCacheEviction <> memory_budget:138 var
+R19622:19626 JFCTheorems.KVCacheEviction <> cache:137 var
+R19680:19693 JFCTheorems.KVCacheEviction <> joint_eviction def
+R19708:19714 Stdlib.Arith.PeanoNat Nat leb def
+R19717:19725 Stdlib.Lists.List <> fold_left def
+R19736:19738 Corelib.Lists.ListDef <> map def
+binder 19745:19745 <> e:140
+R19759:19761 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R19750:19756 JFCTheorems.KVCacheEviction <> kv_size proj
+R19758:19758 JFCTheorems.KVCacheEviction <> e:140 var
+R19727:19733 Stdlib.Arith.PeanoNat Nat add def
+R19708:19714 Stdlib.Arith.PeanoNat Nat leb def
+R19717:19725 Stdlib.Lists.List <> fold_left def
+R19736:19738 Corelib.Lists.ListDef <> map def
+binder 19745:19745 <> e:141
+R19759:19761 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R19750:19756 JFCTheorems.KVCacheEviction <> kv_size proj
+R19758:19758 JFCTheorems.KVCacheEviction <> e:141 var
+R19727:19733 Stdlib.Arith.PeanoNat Nat add def
+R19825:19834 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R19825:19834 Stdlib.Arith.PeanoNat Nat leb_gt thm
+def 19912:19919 <> mapi_aux
+binder 19922:19922 <> A:142
+binder 19924:19924 <> B:143
+R19942:19945 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19939:19941 Corelib.Init.Datatypes <> nat ind
+R19947:19950 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19946:19946 JFCTheorems.KVCacheEviction <> A:142 var
+R19951:19951 JFCTheorems.KVCacheEviction <> B:143 var
+binder 19935:19935 <> f:144
+R19959:19961 Corelib.Init.Datatypes <> nat ind
+binder 19955:19955 <> n:145
+R19969:19972 Corelib.Init.Datatypes <> list ind
+R19974:19974 JFCTheorems.KVCacheEviction <> A:142 var
+binder 19965:19965 <> l:146
+R19979:19982 Corelib.Init.Datatypes <> list ind
+R19984:19984 JFCTheorems.KVCacheEviction <> B:143 var
+R19997:19997 JFCTheorems.KVCacheEviction <> l:146 var
+R20008:20009 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R20014:20015 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R20022:20025 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R20037:20040 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R20032:20032 JFCTheorems.KVCacheEviction <> f:144 var
+R20034:20034 JFCTheorems.KVCacheEviction <> n:145 var
+R20041:20048 JFCTheorems.KVCacheEviction <> mapi_aux:147 def
+R20053:20053 Corelib.Init.Datatypes <> S constr
+R20055:20055 JFCTheorems.KVCacheEviction <> n:145 var
+R20050:20050 JFCTheorems.KVCacheEviction <> f:144 var
+def 20080:20083 <> mapi
+binder 20086:20086 <> A:149
+binder 20088:20088 <> B:150
+R20106:20109 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20103:20105 Corelib.Init.Datatypes <> nat ind
+R20111:20114 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20110:20110 JFCTheorems.KVCacheEviction <> A:149 var
+R20115:20115 JFCTheorems.KVCacheEviction <> B:150 var
+binder 20099:20099 <> f:151
+R20123:20126 Corelib.Init.Datatypes <> list ind
+R20128:20128 JFCTheorems.KVCacheEviction <> A:149 var
+binder 20119:20119 <> l:152
+R20133:20136 Corelib.Init.Datatypes <> list ind
+R20138:20138 JFCTheorems.KVCacheEviction <> B:150 var
+R20145:20152 JFCTheorems.KVCacheEviction <> mapi_aux def
+R20158:20158 JFCTheorems.KVCacheEviction <> l:152 var
+R20154:20154 JFCTheorems.KVCacheEviction <> f:151 var
+prf 20168:20182 <> mapi_aux_length
+binder 20196:20196 <> A:153
+binder 20198:20198 <> B:154
+R20216:20219 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20213:20215 Corelib.Init.Datatypes <> nat ind
+R20221:20224 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20220:20220 JFCTheorems.KVCacheEviction <> A:153 var
+R20225:20225 JFCTheorems.KVCacheEviction <> B:154 var
+binder 20209:20209 <> f:155
+binder 20228:20228 <> n:156
+binder 20230:20230 <> l:157
+R20260:20262 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20237:20242 Corelib.Init.Datatypes <> length def
+R20245:20252 JFCTheorems.KVCacheEviction <> mapi_aux def
+R20258:20258 JFCTheorems.KVCacheEviction <> l:157 var
+R20256:20256 JFCTheorems.KVCacheEviction <> n:156 var
+R20254:20254 JFCTheorems.KVCacheEviction <> f:155 var
+R20263:20268 Corelib.Init.Datatypes <> length def
+R20270:20270 JFCTheorems.KVCacheEviction <> l:157 var
+prf 20414:20424 <> mapi_length
+binder 20438:20438 <> A:158
+binder 20440:20440 <> B:159
+R20458:20461 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20455:20457 Corelib.Init.Datatypes <> nat ind
+R20463:20466 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20462:20462 JFCTheorems.KVCacheEviction <> A:158 var
+R20467:20467 JFCTheorems.KVCacheEviction <> B:159 var
+binder 20451:20451 <> f:160
+binder 20470:20470 <> l:161
+R20494:20496 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20477:20482 Corelib.Init.Datatypes <> length def
+R20485:20488 JFCTheorems.KVCacheEviction <> mapi def
+R20492:20492 JFCTheorems.KVCacheEviction <> l:161 var
+R20490:20490 JFCTheorems.KVCacheEviction <> f:160 var
+R20497:20502 Corelib.Init.Datatypes <> length def
+R20504:20504 JFCTheorems.KVCacheEviction <> l:161 var
+R20539:20542 JFCTheorems.KVCacheEviction <> mapi def
+R20551:20565 JFCTheorems.KVCacheEviction <> mapi_aux_length thm
+R20551:20565 JFCTheorems.KVCacheEviction <> mapi_aux_length thm
+def 20585:20597 <> context_to_kv
+R20617:20620 Corelib.Init.Datatypes <> list ind
+R20622:20624 Corelib.Init.Datatypes <> nat ind
+binder 20600:20613 <> message_tokens:162
+R20629:20635 JFCTheorems.KVCacheEviction <> KVCache def
+R20642:20645 JFCTheorems.KVCacheEviction <> mapi def
+R20715:20728 JFCTheorems.KVCacheEviction <> message_tokens:162 var
+binder 20652:20652 <> i:163
+binder 20654:20654 <> t:164
+R20663:20671 JFCTheorems.KVCacheEviction <> mkKVEntry constr
+R20673:20673 JFCTheorems.KVCacheEviction <> i:163 var
+R20703:20705 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R20682:20687 Corelib.Init.Datatypes <> length def
+R20689:20702 JFCTheorems.KVCacheEviction <> message_tokens:162 var
+R20706:20706 JFCTheorems.KVCacheEviction <> i:163 var
+prf 20738:20757 <> context_to_kv_length
+binder 20770:20772 <> ctx:165
+R20801:20803 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20775:20780 Corelib.Init.Datatypes <> length def
+R20783:20795 JFCTheorems.KVCacheEviction <> context_to_kv def
+R20797:20799 JFCTheorems.KVCacheEviction <> ctx:165 var
+R20804:20809 Corelib.Init.Datatypes <> length def
+R20811:20813 JFCTheorems.KVCacheEviction <> ctx:165 var
+R20844:20856 JFCTheorems.KVCacheEviction <> context_to_kv def
+R20865:20875 JFCTheorems.KVCacheEviction <> mapi_length thm
+R20865:20875 JFCTheorems.KVCacheEviction <> mapi_length thm
+def 20965:20984 <> jfc_context_eviction
+R20997:21000 Corelib.Init.Datatypes <> list ind
+R21002:21004 Corelib.Init.Datatypes <> nat ind
+binder 20987:20993 <> context:166
+R21017:21019 Corelib.Init.Datatypes <> nat ind
+binder 21008:21013 <> budget:167
+R21024:21027 Corelib.Init.Datatypes <> list ind
+R21029:21031 Corelib.Init.Datatypes <> nat ind
+R21048:21060 JFCTheorems.KVCacheEviction <> context_to_kv def
+R21062:21068 JFCTheorems.KVCacheEviction <> context:166 var
+binder 21042:21043 <> kv:168
+R21091:21108 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R21110:21111 JFCTheorems.KVCacheEviction <> kv:168 var
+R21113:21118 JFCTheorems.KVCacheEviction <> budget:167 var
+binder 21079:21086 <> retained:169
+R21125:21127 Corelib.Lists.ListDef <> map def
+R21141:21148 JFCTheorems.KVCacheEviction <> retained:169 var
+R21129:21139 JFCTheorems.KVCacheEviction <> kv_position proj
+prf 21513:21540 <> jfc_eviction_respects_budget
+binder 21553:21559 <> context:170
+binder 21561:21566 <> budget:171
+R21597:21604 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R21587:21590 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R21573:21578 Corelib.Init.Datatypes <> length def
+R21580:21586 JFCTheorems.KVCacheEviction <> context:170 var
+R21591:21596 JFCTheorems.KVCacheEviction <> budget:171 var
+R21649:21651 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R21605:21610 Corelib.Init.Datatypes <> length def
+R21613:21632 JFCTheorems.KVCacheEviction <> jfc_context_eviction def
+R21634:21640 JFCTheorems.KVCacheEviction <> context:170 var
+R21642:21647 JFCTheorems.KVCacheEviction <> budget:171 var
+R21652:21657 JFCTheorems.KVCacheEviction <> budget:171 var
+R21706:21725 JFCTheorems.KVCacheEviction <> jfc_context_eviction def
+R21738:21747 Stdlib.Lists.List <> length_map thm
+R21738:21747 Stdlib.Lists.List <> length_map thm
+R21738:21747 Stdlib.Lists.List <> length_map thm
+R21759:21776 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R21789:21801 Stdlib.Lists.List <> length_firstn thm
+R21804:21823 JFCTheorems.KVCacheEviction <> context_to_kv_length thm
+R21789:21801 Stdlib.Lists.List <> length_firstn thm
+R21789:21801 Stdlib.Lists.List <> length_firstn thm
+R21804:21823 JFCTheorems.KVCacheEviction <> context_to_kv_length thm
+R21804:21823 JFCTheorems.KVCacheEviction <> context_to_kv_length thm
+prf 21847:21866 <> jfc_eviction_bounded
+binder 21879:21885 <> context:172
+binder 21887:21892 <> budget:173
+R21943:21946 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R21899:21904 Corelib.Init.Datatypes <> length def
+R21907:21926 JFCTheorems.KVCacheEviction <> jfc_context_eviction def
+R21928:21934 JFCTheorems.KVCacheEviction <> context:172 var
+R21936:21941 JFCTheorems.KVCacheEviction <> budget:173 var
+R21947:21952 JFCTheorems.KVCacheEviction <> budget:173 var
+R21996:22015 JFCTheorems.KVCacheEviction <> jfc_context_eviction def
+R22028:22037 Stdlib.Lists.List <> length_map thm
+R22028:22037 Stdlib.Lists.List <> length_map thm
+R22028:22037 Stdlib.Lists.List <> length_map thm
+R22049:22066 JFCTheorems.KVCacheEviction <> evict_by_attention def
+R22079:22091 Stdlib.Lists.List <> length_firstn thm
+R22079:22091 Stdlib.Lists.List <> length_firstn thm
+R22079:22091 Stdlib.Lists.List <> length_firstn thm
+def 22232:22240 <> kv_memory
+R22275:22277 Corelib.Init.Datatypes <> nat ind
+binder 22243:22252 <> num_layers:174
+binder 22254:22260 <> seq_len:175
+binder 22262:22271 <> hidden_dim:176
+R22282:22284 Corelib.Init.Datatypes <> nat ind
+R22328:22330 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R22315:22317 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R22305:22307 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R22292:22294 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R22295:22304 JFCTheorems.KVCacheEviction <> num_layers:174 var
+R22308:22314 JFCTheorems.KVCacheEviction <> seq_len:175 var
+R22318:22327 JFCTheorems.KVCacheEviction <> hidden_dim:176 var
+def 22368:22387 <> compressed_kv_memory
+R22440:22442 Corelib.Init.Datatypes <> nat ind
+binder 22390:22399 <> num_layers:177
+binder 22401:22407 <> seq_len:178
+binder 22409:22418 <> hidden_dim:179
+binder 22420:22436 <> compression_ratio:180
+R22447:22449 Corelib.Init.Datatypes <> nat ind
+R22515:22517 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R22495:22497 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R22456:22464 JFCTheorems.KVCacheEviction <> kv_memory def
+R22466:22475 JFCTheorems.KVCacheEviction <> num_layers:177 var
+R22477:22483 JFCTheorems.KVCacheEviction <> seq_len:178 var
+R22485:22494 JFCTheorems.KVCacheEviction <> hidden_dim:179 var
+R22498:22514 JFCTheorems.KVCacheEviction <> compression_ratio:180 var
+prf 22618:22636 <> compression_savings
+binder 22649:22658 <> num_layers:181
+binder 22660:22666 <> seq_len:182
+binder 22668:22677 <> hidden_dim:183
+binder 22679:22683 <> ratio:184
+R22702:22709 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22695:22698 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R22690:22694 JFCTheorems.KVCacheEviction <> ratio:184 var
+R22766:22773 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R22710:22729 JFCTheorems.KVCacheEviction <> compressed_kv_memory def
+R22731:22740 JFCTheorems.KVCacheEviction <> num_layers:181 var
+R22742:22748 JFCTheorems.KVCacheEviction <> seq_len:182 var
+R22750:22759 JFCTheorems.KVCacheEviction <> hidden_dim:183 var
+R22761:22765 JFCTheorems.KVCacheEviction <> ratio:184 var
+R22774:22782 JFCTheorems.KVCacheEviction <> kv_memory def
+R22784:22793 JFCTheorems.KVCacheEviction <> num_layers:181 var
+R22795:22801 JFCTheorems.KVCacheEviction <> seq_len:182 var
+R22803:22812 JFCTheorems.KVCacheEviction <> hidden_dim:183 var
+R22884:22903 JFCTheorems.KVCacheEviction <> compressed_kv_memory def
+R22914:22935 Stdlib.Arith.PeanoNat Nat div_le_upper_bound abbrev
+R22914:22935 Stdlib.Arith.PeanoNat Nat div_le_upper_bound abbrev

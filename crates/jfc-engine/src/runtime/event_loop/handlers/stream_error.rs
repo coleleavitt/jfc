@@ -283,6 +283,10 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     state.streaming_reasoning = String::new();
     state.push_effect(crate::app::EngineEffect::StreamingFinalized);
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     state.streaming_assistant_idx = None;
     state.active_stream_handle = None;
     state.clear_active_stream_scope();

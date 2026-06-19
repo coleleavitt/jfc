@@ -1,0 +1,949 @@
+DIGEST 9142720d54ba7956d1c60a2879614253
+FJFCTheorems.CompressionBounds
+R1382:1396 Stdlib.Arith.Arith <> <> lib
+R1414:1427 Stdlib.Lists.List <> <> lib
+R1445:1457 Stdlib.Bool.Bool <> <> lib
+R1475:1491 Stdlib.micromega.Lia <> <> lib
+R1501:1513 Stdlib.Lists.List ListNotations <> mod
+prf 1777:1795 <> fold_left_add_shift
+binder 1809:1809 <> A:1
+R1825:1828 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1824:1824 JFCTheorems.CompressionBounds <> A:1 var
+R1829:1831 Corelib.Init.Datatypes <> nat ind
+binder 1820:1820 <> f:2
+R1839:1842 Corelib.Init.Datatypes <> list ind
+R1844:1844 JFCTheorems.CompressionBounds <> A:1 var
+binder 1835:1835 <> l:3
+R1852:1854 Corelib.Init.Datatypes <> nat ind
+binder 1848:1848 <> z:4
+R1900:1908 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R1862:1870 Stdlib.Lists.List <> fold_left def
+R1899:1899 JFCTheorems.CompressionBounds <> z:4 var
+R1897:1897 JFCTheorems.CompressionBounds <> l:3 var
+binder 1877:1879 <> acc:5
+binder 1881:1881 <> x:6
+R1889:1891 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R1886:1888 JFCTheorems.CompressionBounds <> acc:5 var
+R1892:1892 JFCTheorems.CompressionBounds <> f:2 var
+R1894:1894 JFCTheorems.CompressionBounds <> x:6 var
+R1910:1912 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R1909:1909 JFCTheorems.CompressionBounds <> z:4 var
+R1913:1921 Stdlib.Lists.List <> fold_left def
+R1948:1948 JFCTheorems.CompressionBounds <> l:3 var
+binder 1928:1930 <> acc:7
+binder 1932:1932 <> x:8
+R1940:1942 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R1937:1939 JFCTheorems.CompressionBounds <> acc:7 var
+R1943:1943 JFCTheorems.CompressionBounds <> f:2 var
+R1945:1945 JFCTheorems.CompressionBounds <> x:8 var
+R2054:2056 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2054:2056 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2054:2056 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+rec 2185:2191 <> Message
+proj 2217:2226 <> msg_tokens
+proj 2237:2255 <> msg_semantic_weight
+R2230:2232 Corelib.Init.Datatypes <> nat ind
+R2259:2261 Corelib.Init.Datatypes <> nat ind
+def 2391:2407 <> compression_ratio
+R2425:2427 Corelib.Init.Datatypes <> nat ind
+binder 2410:2414 <> input:12
+binder 2416:2421 <> output:13
+R2432:2434 Corelib.Init.Datatypes <> nat ind
+R2444:2450 Stdlib.Arith.PeanoNat Nat eqb def
+R2452:2456 JFCTheorems.CompressionBounds <> input:12 var
+R2472:2472 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R2485:2488 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R2479:2481 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R2473:2478 JFCTheorems.CompressionBounds <> output:13 var
+R2489:2493 JFCTheorems.CompressionBounds <> input:12 var
+prf 2793:2817 <> compression_ratio_bounded
+R2845:2847 Corelib.Init.Datatypes <> nat ind
+binder 2830:2834 <> input:14
+binder 2836:2841 <> output:15
+R2869:2876 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2860:2863 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R2854:2859 JFCTheorems.CompressionBounds <> output:15 var
+R2864:2868 JFCTheorems.CompressionBounds <> input:14 var
+R2907:2910 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R2877:2893 JFCTheorems.CompressionBounds <> compression_ratio def
+R2895:2899 JFCTheorems.CompressionBounds <> input:14 var
+R2901:2906 JFCTheorems.CompressionBounds <> output:15 var
+R2959:2975 JFCTheorems.CompressionBounds <> compression_ratio def
+R2990:2996 Stdlib.Arith.PeanoNat Nat eqb def
+R2990:2996 Stdlib.Arith.PeanoNat Nat eqb def
+R3074:3100 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+R3074:3100 Stdlib.Arith.PeanoNat Nat.Div0 div_le_upper_bound thm
+rec 3381:3388 <> TurnCost
+proj 3415:3421 <> turn_id
+proj 3432:3442 <> turn_tokens
+R3425:3427 Corelib.Init.Datatypes <> nat ind
+R3446:3448 Corelib.Init.Datatypes <> nat ind
+def 3526:3544 <> select_retained_aux
+R3555:3558 Corelib.Init.Datatypes <> list ind
+R3560:3567 JFCTheorems.CompressionBounds <> TurnCost rec
+binder 3547:3551 <> turns:19
+R3590:3592 Corelib.Init.Datatypes <> nat ind
+binder 3571:3576 <> budget:20
+binder 3578:3586 <> remaining:21
+R3606:3609 Corelib.Init.Datatypes <> list ind
+R3611:3618 JFCTheorems.CompressionBounds <> TurnCost rec
+binder 3600:3602 <> acc:22
+R3623:3626 Corelib.Init.Datatypes <> list ind
+R3628:3635 JFCTheorems.CompressionBounds <> TurnCost rec
+R3648:3652 JFCTheorems.CompressionBounds <> turns:19 var
+R3663:3664 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R3669:3671 JFCTheorems.CompressionBounds <> acc:22 var
+R3678:3681 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3699:3705 Stdlib.Arith.PeanoNat Nat leb def
+R3708:3718 JFCTheorems.CompressionBounds <> turn_tokens proj
+R3723:3731 JFCTheorems.CompressionBounds <> remaining:21 var
+R3836:3838 JFCTheorems.CompressionBounds <> acc:22 var
+R3746:3764 JFCTheorems.CompressionBounds <> select_retained_aux:23 def
+R3808:3811 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3812:3814 JFCTheorems.CompressionBounds <> acc:22 var
+R3788:3790 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3779:3787 JFCTheorems.CompressionBounds <> remaining:21 var
+R3791:3801 JFCTheorems.CompressionBounds <> turn_tokens proj
+R3771:3776 JFCTheorems.CompressionBounds <> budget:20 var
+def 3859:3873 <> select_retained
+R3884:3887 Corelib.Init.Datatypes <> list ind
+R3889:3896 JFCTheorems.CompressionBounds <> TurnCost rec
+binder 3876:3880 <> turns:25
+R3909:3911 Corelib.Init.Datatypes <> nat ind
+binder 3900:3905 <> budget:26
+R3916:3919 Corelib.Init.Datatypes <> list ind
+R3921:3928 JFCTheorems.CompressionBounds <> TurnCost rec
+R3935:3953 JFCTheorems.CompressionBounds <> select_retained_aux def
+R3956:3958 Stdlib.Lists.List <> rev def
+R3960:3964 JFCTheorems.CompressionBounds <> turns:25 var
+R3967:3972 JFCTheorems.CompressionBounds <> budget:26 var
+R3974:3979 JFCTheorems.CompressionBounds <> budget:26 var
+R3981:3982 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+def 4032:4043 <> total_tokens
+R4054:4057 Corelib.Init.Datatypes <> list ind
+R4059:4066 JFCTheorems.CompressionBounds <> TurnCost rec
+binder 4046:4050 <> turns:27
+R4071:4073 Corelib.Init.Datatypes <> nat ind
+R4080:4088 Stdlib.Lists.List <> fold_left def
+R4125:4129 JFCTheorems.CompressionBounds <> turns:27 var
+binder 4095:4097 <> acc:28
+binder 4099:4099 <> t:29
+R4107:4109 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4104:4106 JFCTheorems.CompressionBounds <> acc:28 var
+R4110:4120 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4122:4122 JFCTheorems.CompressionBounds <> t:29 var
+prf 4141:4157 <> total_tokens_cons
+binder 4170:4170 <> t:30
+binder 4172:4172 <> l:31
+R4196:4198 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4175:4186 JFCTheorems.CompressionBounds <> total_tokens def
+R4190:4193 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4189:4189 JFCTheorems.CompressionBounds <> t:30 var
+R4194:4194 JFCTheorems.CompressionBounds <> l:31 var
+R4212:4214 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4199:4209 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4211:4211 JFCTheorems.CompressionBounds <> t:30 var
+R4215:4226 JFCTheorems.CompressionBounds <> total_tokens def
+R4228:4228 JFCTheorems.CompressionBounds <> l:31 var
+R4259:4270 JFCTheorems.CompressionBounds <> total_tokens def
+R4291:4309 JFCTheorems.CompressionBounds <> fold_left_add_shift thm
+R4311:4318 JFCTheorems.CompressionBounds <> TurnCost rec
+R4320:4330 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4335:4345 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4291:4309 JFCTheorems.CompressionBounds <> fold_left_add_shift thm
+R4311:4318 JFCTheorems.CompressionBounds <> TurnCost rec
+R4320:4330 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4335:4345 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4291:4309 JFCTheorems.CompressionBounds <> fold_left_add_shift thm
+R4311:4318 JFCTheorems.CompressionBounds <> TurnCost rec
+R4320:4330 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4335:4345 JFCTheorems.CompressionBounds <> turn_tokens proj
+prf 4534:4542 <> aux_bound
+binder 4555:4559 <> turns:32
+binder 4561:4566 <> budget:33
+binder 4568:4576 <> remaining:34
+binder 4578:4580 <> acc:35
+R4648:4657 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R4587:4598 JFCTheorems.CompressionBounds <> total_tokens def
+R4601:4619 JFCTheorems.CompressionBounds <> select_retained_aux def
+R4621:4625 JFCTheorems.CompressionBounds <> turns:32 var
+R4627:4632 JFCTheorems.CompressionBounds <> budget:33 var
+R4634:4642 JFCTheorems.CompressionBounds <> remaining:34 var
+R4644:4646 JFCTheorems.CompressionBounds <> acc:35 var
+R4674:4676 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4658:4669 JFCTheorems.CompressionBounds <> total_tokens def
+R4671:4673 JFCTheorems.CompressionBounds <> acc:35 var
+R4677:4685 JFCTheorems.CompressionBounds <> remaining:34 var
+R4796:4802 Stdlib.Arith.PeanoNat Nat leb def
+R4805:4815 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4796:4802 Stdlib.Arith.PeanoNat Nat leb def
+R4805:4815 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4852:4861 Stdlib.Arith.PeanoNat Nat leb_le thm
+R4852:4861 Stdlib.Arith.PeanoNat Nat leb_le thm
+R4909:4911 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4912:4922 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4929:4932 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4909:4911 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4912:4922 JFCTheorems.CompressionBounds <> turn_tokens proj
+R4929:4932 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4954:4970 JFCTheorems.CompressionBounds <> total_tokens_cons thm
+R4954:4970 JFCTheorems.CompressionBounds <> total_tokens_cons thm
+R4954:4970 JFCTheorems.CompressionBounds <> total_tokens_cons thm
+prf 5079:5094 <> budget_satisfied
+binder 5107:5111 <> turns:36
+binder 5113:5118 <> budget:37
+R5168:5171 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5125:5136 JFCTheorems.CompressionBounds <> total_tokens def
+R5139:5153 JFCTheorems.CompressionBounds <> select_retained def
+R5155:5159 JFCTheorems.CompressionBounds <> turns:36 var
+R5161:5166 JFCTheorems.CompressionBounds <> budget:37 var
+R5172:5177 JFCTheorems.CompressionBounds <> budget:37 var
+R5217:5231 JFCTheorems.CompressionBounds <> select_retained def
+R5248:5256 JFCTheorems.CompressionBounds <> aux_bound thm
+R5259:5261 Stdlib.Lists.List <> rev def
+R5284:5285 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R5248:5256 JFCTheorems.CompressionBounds <> aux_bound thm
+R5259:5261 Stdlib.Lists.List <> rev def
+R5284:5285 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R5332:5334 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5304:5315 JFCTheorems.CompressionBounds <> total_tokens def
+R5319:5321 Corelib.Init.Datatypes <> nil constr
+R5323:5330 JFCTheorems.CompressionBounds <> TurnCost rec
+R5332:5334 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5304:5315 JFCTheorems.CompressionBounds <> total_tokens def
+R5319:5321 Corelib.Init.Datatypes <> nil constr
+R5323:5330 JFCTheorems.CompressionBounds <> TurnCost rec
+prf 5449:5464 <> aux_length_grows
+binder 5477:5481 <> turns:38
+binder 5483:5488 <> budget:39
+binder 5490:5498 <> remaining:40
+binder 5500:5502 <> acc:41
+R5519:5522 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R5509:5514 Corelib.Init.Datatypes <> length def
+R5516:5518 JFCTheorems.CompressionBounds <> acc:41 var
+R5523:5528 Corelib.Init.Datatypes <> length def
+R5531:5549 JFCTheorems.CompressionBounds <> select_retained_aux def
+R5551:5555 JFCTheorems.CompressionBounds <> turns:38 var
+R5557:5562 JFCTheorems.CompressionBounds <> budget:39 var
+R5564:5572 JFCTheorems.CompressionBounds <> remaining:40 var
+R5574:5576 JFCTheorems.CompressionBounds <> acc:41 var
+R5688:5694 Stdlib.Arith.PeanoNat Nat leb def
+R5697:5707 JFCTheorems.CompressionBounds <> turn_tokens proj
+R5688:5694 Stdlib.Arith.PeanoNat Nat leb def
+R5697:5707 JFCTheorems.CompressionBounds <> turn_tokens proj
+R5762:5764 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R5765:5775 JFCTheorems.CompressionBounds <> turn_tokens proj
+R5782:5785 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5762:5764 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R5765:5775 JFCTheorems.CompressionBounds <> turn_tokens proj
+R5782:5785 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+prf 6073:6080 <> aux_mono
+binder 6093:6097 <> turns:42
+binder 6099:6100 <> b1:43
+binder 6102:6103 <> b2:44
+binder 6105:6106 <> r1:45
+binder 6108:6109 <> r2:46
+binder 6111:6114 <> acc1:47
+binder 6116:6119 <> acc2:48
+R6134:6141 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6128:6131 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6126:6127 JFCTheorems.CompressionBounds <> r1:45 var
+R6132:6133 JFCTheorems.CompressionBounds <> r2:46 var
+R6168:6175 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6153:6156 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6142:6147 Corelib.Init.Datatypes <> length def
+R6149:6152 JFCTheorems.CompressionBounds <> acc1:47 var
+R6157:6162 Corelib.Init.Datatypes <> length def
+R6164:6167 JFCTheorems.CompressionBounds <> acc2:48 var
+R6221:6230 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6176:6181 Corelib.Init.Datatypes <> length def
+R6184:6202 JFCTheorems.CompressionBounds <> select_retained_aux def
+R6204:6208 JFCTheorems.CompressionBounds <> turns:42 var
+R6210:6211 JFCTheorems.CompressionBounds <> b1:43 var
+R6213:6214 JFCTheorems.CompressionBounds <> r1:45 var
+R6216:6219 JFCTheorems.CompressionBounds <> acc1:47 var
+R6231:6236 Corelib.Init.Datatypes <> length def
+R6239:6257 JFCTheorems.CompressionBounds <> select_retained_aux def
+R6259:6263 JFCTheorems.CompressionBounds <> turns:42 var
+R6265:6266 JFCTheorems.CompressionBounds <> b2:44 var
+R6268:6269 JFCTheorems.CompressionBounds <> r2:46 var
+R6271:6274 JFCTheorems.CompressionBounds <> acc2:48 var
+R6406:6412 Stdlib.Arith.PeanoNat Nat leb def
+R6415:6425 JFCTheorems.CompressionBounds <> turn_tokens proj
+R6458:6464 Stdlib.Arith.PeanoNat Nat leb def
+R6467:6477 JFCTheorems.CompressionBounds <> turn_tokens proj
+R6406:6412 Stdlib.Arith.PeanoNat Nat leb def
+R6415:6425 JFCTheorems.CompressionBounds <> turn_tokens proj
+R6458:6464 Stdlib.Arith.PeanoNat Nat leb def
+R6467:6477 JFCTheorems.CompressionBounds <> turn_tokens proj
+R6458:6464 Stdlib.Arith.PeanoNat Nat leb def
+R6467:6477 JFCTheorems.CompressionBounds <> turn_tokens proj
+R6506:6515 Stdlib.Arith.PeanoNat Nat leb_le thm
+R6506:6515 Stdlib.Arith.PeanoNat Nat leb_le thm
+R6530:6539 Stdlib.Arith.PeanoNat Nat leb_le thm
+R6530:6539 Stdlib.Arith.PeanoNat Nat leb_le thm
+R6588:6597 Stdlib.Arith.PeanoNat Nat leb_le thm
+R6588:6597 Stdlib.Arith.PeanoNat Nat leb_le thm
+R6612:6621 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R6612:6621 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R6647:6656 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R6647:6656 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R6671:6680 Stdlib.Arith.PeanoNat Nat leb_le thm
+R6671:6680 Stdlib.Arith.PeanoNat Nat leb_le thm
+R6707:6722 JFCTheorems.CompressionBounds <> aux_length_grows thm
+R6735:6737 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6738:6748 JFCTheorems.CompressionBounds <> turn_tokens proj
+R6755:6758 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6707:6722 JFCTheorems.CompressionBounds <> aux_length_grows thm
+R6735:6737 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R6738:6748 JFCTheorems.CompressionBounds <> turn_tokens proj
+R6755:6758 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+prf 6894:6912 <> retention_monotonic
+binder 6925:6929 <> turns:49
+binder 6931:6932 <> b1:50
+binder 6934:6935 <> b2:51
+R6950:6957 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6944:6947 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6942:6943 JFCTheorems.CompressionBounds <> b1:50 var
+R6948:6949 JFCTheorems.CompressionBounds <> b2:51 var
+R6991:6994 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R6958:6963 Corelib.Init.Datatypes <> length def
+R6966:6980 JFCTheorems.CompressionBounds <> select_retained def
+R6982:6986 JFCTheorems.CompressionBounds <> turns:49 var
+R6988:6989 JFCTheorems.CompressionBounds <> b1:50 var
+R6995:7000 Corelib.Init.Datatypes <> length def
+R7003:7017 JFCTheorems.CompressionBounds <> select_retained def
+R7019:7023 JFCTheorems.CompressionBounds <> turns:49 var
+R7025:7026 JFCTheorems.CompressionBounds <> b2:51 var
+R7070:7084 JFCTheorems.CompressionBounds <> select_retained def
+R7095:7102 JFCTheorems.CompressionBounds <> aux_mono thm
+R7095:7102 JFCTheorems.CompressionBounds <> aux_mono thm
+def 7310:7322 <> all_same_cost
+R7333:7336 Corelib.Init.Datatypes <> list ind
+R7338:7345 JFCTheorems.CompressionBounds <> TurnCost rec
+binder 7325:7329 <> turns:52
+R7353:7355 Corelib.Init.Datatypes <> nat ind
+binder 7349:7349 <> c:53
+binder 7377:7377 <> t:54
+R7390:7393 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7380:7381 Stdlib.Lists.List <> In def
+R7385:7389 JFCTheorems.CompressionBounds <> turns:52 var
+R7383:7383 JFCTheorems.CompressionBounds <> t:54 var
+R7407:7409 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7394:7404 JFCTheorems.CompressionBounds <> turn_tokens proj
+R7406:7406 JFCTheorems.CompressionBounds <> t:54 var
+R7410:7410 JFCTheorems.CompressionBounds <> c:53 var
+prf 7555:7565 <> aux_uniform
+binder 7578:7579 <> gs:55
+binder 7581:7586 <> budget:56
+binder 7588:7588 <> c:57
+R7600:7607 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7596:7598 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R7595:7595 JFCTheorems.CompressionBounds <> c:57 var
+R7608:7608 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7647:7655 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 7616:7616 <> t:58
+R7626:7629 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7619:7620 Stdlib.Lists.List <> In def
+R7624:7625 JFCTheorems.CompressionBounds <> gs:55 var
+R7622:7622 JFCTheorems.CompressionBounds <> t:58 var
+R7643:7645 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7630:7640 JFCTheorems.CompressionBounds <> turn_tokens proj
+R7642:7642 JFCTheorems.CompressionBounds <> t:58 var
+R7646:7646 JFCTheorems.CompressionBounds <> c:57 var
+binder 7663:7671 <> remaining:59
+binder 7673:7675 <> acc:60
+R7736:7746 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7684:7689 Corelib.Init.Datatypes <> length def
+R7692:7710 JFCTheorems.CompressionBounds <> select_retained_aux def
+R7712:7713 JFCTheorems.CompressionBounds <> gs:55 var
+R7715:7720 JFCTheorems.CompressionBounds <> budget:56 var
+R7722:7730 JFCTheorems.CompressionBounds <> remaining:59 var
+R7732:7734 JFCTheorems.CompressionBounds <> acc:60 var
+R7757:7759 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R7747:7752 Corelib.Init.Datatypes <> length def
+R7754:7756 JFCTheorems.CompressionBounds <> acc:60 var
+R7760:7766 Stdlib.Arith.PeanoNat Nat min def
+R7769:7774 Corelib.Init.Datatypes <> length def
+R7776:7777 JFCTheorems.CompressionBounds <> gs:55 var
+R7790:7792 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R7781:7789 JFCTheorems.CompressionBounds <> remaining:59 var
+R7793:7793 JFCTheorems.CompressionBounds <> c:57 var
+R7894:7912 JFCTheorems.CompressionBounds <> select_retained_aux def
+R7914:7919 Corelib.Init.Datatypes <> length def
+R7959:7961 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7946:7956 JFCTheorems.CompressionBounds <> turn_tokens proj
+R7959:7961 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7946:7956 JFCTheorems.CompressionBounds <> turn_tokens proj
+binder 8030:8031 <> t0:61
+R8044:8047 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8034:8035 Stdlib.Lists.List <> In def
+R8037:8038 JFCTheorems.CompressionBounds <> t0:61 var
+R8062:8064 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8048:8058 JFCTheorems.CompressionBounds <> turn_tokens proj
+R8060:8061 JFCTheorems.CompressionBounds <> t0:61 var
+binder 8030:8031 <> t0:62
+R8044:8047 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8034:8035 Stdlib.Lists.List <> In def
+R8037:8038 JFCTheorems.CompressionBounds <> t0:62 var
+R8062:8064 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8048:8058 JFCTheorems.CompressionBounds <> turn_tokens proj
+R8060:8061 JFCTheorems.CompressionBounds <> t0:62 var
+R8162:8180 JFCTheorems.CompressionBounds <> select_retained_aux def
+R8182:8187 Corelib.Init.Datatypes <> length def
+R8222:8228 Stdlib.Arith.PeanoNat Nat leb def
+R8222:8228 Stdlib.Arith.PeanoNat Nat leb def
+R8265:8274 Stdlib.Arith.PeanoNat Nat leb_le thm
+R8265:8274 Stdlib.Arith.PeanoNat Nat leb_le thm
+R8314:8319 Corelib.Init.Datatypes <> length def
+R8357:8359 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8353:8355 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8360:8360 Corelib.Init.Datatypes <> S constr
+R8363:8363 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8377:8380 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8373:8375 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R8357:8359 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8353:8355 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8360:8360 Corelib.Init.Datatypes <> S constr
+R8363:8363 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8377:8380 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8373:8375 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R8423:8426 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8440:8440 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8419:8421 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8436:8438 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R8423:8426 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8440:8440 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8419:8421 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R8436:8438 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R8472:8484 Stdlib.Arith.PeanoNat Nat div_add_l def
+R8472:8484 Stdlib.Arith.PeanoNat Nat div_add_l def
+R8472:8484 Stdlib.Arith.PeanoNat Nat div_add_l def
+R8538:8547 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R8538:8547 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R8591:8593 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8587:8589 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8607:8619 Stdlib.Arith.PeanoNat Nat div_small def
+R8591:8593 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8587:8589 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R8607:8619 Stdlib.Arith.PeanoNat Nat div_small def
+prf 9043:9064 <> greedy_optimal_uniform
+binder 9077:9081 <> turns:63
+binder 9083:9088 <> budget:64
+binder 9090:9090 <> c:65
+R9102:9109 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9098:9100 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R9097:9097 JFCTheorems.CompressionBounds <> c:65 var
+R9131:9138 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9110:9122 JFCTheorems.CompressionBounds <> all_same_cost def
+R9124:9128 JFCTheorems.CompressionBounds <> turns:63 var
+R9130:9130 JFCTheorems.CompressionBounds <> c:65 var
+R9176:9178 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9139:9144 Corelib.Init.Datatypes <> length def
+R9147:9161 JFCTheorems.CompressionBounds <> select_retained def
+R9163:9167 JFCTheorems.CompressionBounds <> turns:63 var
+R9169:9174 JFCTheorems.CompressionBounds <> budget:64 var
+R9179:9185 Stdlib.Arith.PeanoNat Nat min def
+R9188:9193 Corelib.Init.Datatypes <> length def
+R9195:9199 JFCTheorems.CompressionBounds <> turns:63 var
+R9209:9211 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R9203:9208 JFCTheorems.CompressionBounds <> budget:64 var
+R9212:9212 JFCTheorems.CompressionBounds <> c:65 var
+R9263:9277 JFCTheorems.CompressionBounds <> select_retained def
+binder 9304:9304 <> t:66
+R9323:9326 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9307:9308 Stdlib.Lists.List <> In def
+R9313:9315 Stdlib.Lists.List <> rev def
+R9310:9310 JFCTheorems.CompressionBounds <> t:66 var
+R9340:9342 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9327:9337 JFCTheorems.CompressionBounds <> turn_tokens proj
+R9339:9339 JFCTheorems.CompressionBounds <> t:66 var
+binder 9304:9304 <> t:67
+R9323:9326 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9307:9308 Stdlib.Lists.List <> In def
+R9313:9315 Stdlib.Lists.List <> rev def
+R9310:9310 JFCTheorems.CompressionBounds <> t:67 var
+R9340:9342 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9327:9337 JFCTheorems.CompressionBounds <> turn_tokens proj
+R9339:9339 JFCTheorems.CompressionBounds <> t:67 var
+R9375:9380 Stdlib.Lists.List <> in_rev thm
+R9375:9380 Stdlib.Lists.List <> in_rev thm
+R9375:9380 Stdlib.Lists.List <> in_rev thm
+R9421:9431 JFCTheorems.CompressionBounds <> aux_uniform thm
+R9434:9436 Stdlib.Lists.List <> rev def
+R9469:9470 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9421:9431 JFCTheorems.CompressionBounds <> aux_uniform thm
+R9434:9436 Stdlib.Lists.List <> rev def
+R9469:9470 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9421:9431 JFCTheorems.CompressionBounds <> aux_uniform thm
+R9434:9436 Stdlib.Lists.List <> rev def
+R9469:9470 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9481:9486 Corelib.Init.Datatypes <> length def
+R9498:9507 Stdlib.Lists.List <> length_rev thm
+R9498:9507 Stdlib.Lists.List <> length_rev thm
+R9498:9507 Stdlib.Lists.List <> length_rev thm
+def 9827:9842 <> semantic_content
+R9852:9855 Corelib.Init.Datatypes <> list ind
+R9857:9863 JFCTheorems.CompressionBounds <> Message rec
+binder 9845:9848 <> msgs:68
+R9868:9870 Corelib.Init.Datatypes <> nat ind
+R9877:9885 Stdlib.Lists.List <> fold_left def
+R9930:9933 JFCTheorems.CompressionBounds <> msgs:68 var
+binder 9892:9894 <> acc:69
+binder 9896:9896 <> m:70
+R9904:9906 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9901:9903 JFCTheorems.CompressionBounds <> acc:69 var
+R9907:9925 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+R9927:9927 JFCTheorems.CompressionBounds <> m:70 var
+def 9982:9995 <> message_tokens
+R10005:10008 Corelib.Init.Datatypes <> list ind
+R10010:10016 JFCTheorems.CompressionBounds <> Message rec
+binder 9998:10001 <> msgs:71
+R10021:10023 Corelib.Init.Datatypes <> nat ind
+R10030:10038 Stdlib.Lists.List <> fold_left def
+R10074:10077 JFCTheorems.CompressionBounds <> msgs:71 var
+binder 10045:10047 <> acc:72
+binder 10049:10049 <> m:73
+R10057:10059 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R10054:10056 JFCTheorems.CompressionBounds <> acc:72 var
+R10060:10069 JFCTheorems.CompressionBounds <> msg_tokens proj
+R10071:10071 JFCTheorems.CompressionBounds <> m:73 var
+prf 10089:10109 <> semantic_content_cons
+binder 10122:10122 <> m:74
+binder 10124:10124 <> l:75
+R10152:10154 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10127:10142 JFCTheorems.CompressionBounds <> semantic_content def
+R10146:10149 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R10145:10145 JFCTheorems.CompressionBounds <> m:74 var
+R10150:10150 JFCTheorems.CompressionBounds <> l:75 var
+R10176:10178 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R10155:10173 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+R10175:10175 JFCTheorems.CompressionBounds <> m:74 var
+R10179:10194 JFCTheorems.CompressionBounds <> semantic_content def
+R10196:10196 JFCTheorems.CompressionBounds <> l:75 var
+R10227:10242 JFCTheorems.CompressionBounds <> semantic_content def
+R10263:10281 JFCTheorems.CompressionBounds <> fold_left_add_shift thm
+R10283:10289 JFCTheorems.CompressionBounds <> Message rec
+R10291:10309 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+R10314:10332 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+R10263:10281 JFCTheorems.CompressionBounds <> fold_left_add_shift thm
+R10283:10289 JFCTheorems.CompressionBounds <> Message rec
+R10291:10309 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+R10314:10332 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+R10263:10281 JFCTheorems.CompressionBounds <> fold_left_add_shift thm
+R10283:10289 JFCTheorems.CompressionBounds <> Message rec
+R10291:10309 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+R10314:10332 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+prf 10358:10376 <> message_tokens_cons
+binder 10389:10389 <> m:76
+binder 10391:10391 <> l:77
+R10417:10419 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10394:10407 JFCTheorems.CompressionBounds <> message_tokens def
+R10411:10414 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R10410:10410 JFCTheorems.CompressionBounds <> m:76 var
+R10415:10415 JFCTheorems.CompressionBounds <> l:77 var
+R10432:10434 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R10420:10429 JFCTheorems.CompressionBounds <> msg_tokens proj
+R10431:10431 JFCTheorems.CompressionBounds <> m:76 var
+R10435:10448 JFCTheorems.CompressionBounds <> message_tokens def
+R10450:10450 JFCTheorems.CompressionBounds <> l:77 var
+R10481:10494 JFCTheorems.CompressionBounds <> message_tokens def
+R10515:10533 JFCTheorems.CompressionBounds <> fold_left_add_shift thm
+R10535:10541 JFCTheorems.CompressionBounds <> Message rec
+R10543:10552 JFCTheorems.CompressionBounds <> msg_tokens proj
+R10557:10566 JFCTheorems.CompressionBounds <> msg_tokens proj
+R10515:10533 JFCTheorems.CompressionBounds <> fold_left_add_shift thm
+R10535:10541 JFCTheorems.CompressionBounds <> Message rec
+R10543:10552 JFCTheorems.CompressionBounds <> msg_tokens proj
+R10557:10566 JFCTheorems.CompressionBounds <> msg_tokens proj
+R10515:10533 JFCTheorems.CompressionBounds <> fold_left_add_shift thm
+R10535:10541 JFCTheorems.CompressionBounds <> Message rec
+R10543:10552 JFCTheorems.CompressionBounds <> msg_tokens proj
+R10557:10566 JFCTheorems.CompressionBounds <> msg_tokens proj
+def 10805:10817 <> valid_summary
+R10839:10842 Corelib.Init.Datatypes <> list ind
+R10844:10850 JFCTheorems.CompressionBounds <> Message rec
+binder 10820:10827 <> original:78
+binder 10829:10835 <> summary:79
+R10889:10892 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R10865:10880 JFCTheorems.CompressionBounds <> semantic_content def
+R10882:10888 JFCTheorems.CompressionBounds <> summary:79 var
+R10893:10908 JFCTheorems.CompressionBounds <> semantic_content def
+R10910:10917 JFCTheorems.CompressionBounds <> original:78 var
+def 11083:11102 <> max_semantic_density
+R11106:11108 Corelib.Init.Datatypes <> nat ind
+def 11354:11366 <> density_bound
+R11376:11379 Corelib.Init.Datatypes <> list ind
+R11381:11387 JFCTheorems.CompressionBounds <> Message rec
+binder 11369:11372 <> msgs:80
+R11395:11397 Corelib.Init.Datatypes <> nat ind
+binder 11391:11391 <> D:81
+binder 11419:11419 <> m:82
+R11431:11434 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11422:11423 Stdlib.Lists.List <> In def
+R11427:11430 JFCTheorems.CompressionBounds <> msgs:80 var
+R11425:11425 JFCTheorems.CompressionBounds <> m:82 var
+R11456:11459 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11435:11453 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+R11455:11455 JFCTheorems.CompressionBounds <> m:82 var
+R11472:11474 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R11460:11469 JFCTheorems.CompressionBounds <> msg_tokens proj
+R11471:11471 JFCTheorems.CompressionBounds <> m:82 var
+R11475:11475 JFCTheorems.CompressionBounds <> D:81 var
+prf 11551:11576 <> semantic_content_le_tokens
+binder 11589:11592 <> msgs:83
+binder 11594:11594 <> D:84
+R11621:11628 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11601:11613 JFCTheorems.CompressionBounds <> density_bound def
+R11615:11618 JFCTheorems.CompressionBounds <> msgs:83 var
+R11620:11620 JFCTheorems.CompressionBounds <> D:84 var
+R11650:11653 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11629:11644 JFCTheorems.CompressionBounds <> semantic_content def
+R11646:11649 JFCTheorems.CompressionBounds <> msgs:83 var
+R11673:11675 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R11654:11667 JFCTheorems.CompressionBounds <> message_tokens def
+R11669:11672 JFCTheorems.CompressionBounds <> msgs:83 var
+R11676:11676 JFCTheorems.CompressionBounds <> D:84 var
+R11742:11757 JFCTheorems.CompressionBounds <> semantic_content def
+R11759:11772 JFCTheorems.CompressionBounds <> message_tokens def
+R11774:11782 Stdlib.Lists.List <> fold_left def
+R11803:11823 JFCTheorems.CompressionBounds <> semantic_content_cons thm
+R11826:11844 JFCTheorems.CompressionBounds <> message_tokens_cons thm
+R11803:11823 JFCTheorems.CompressionBounds <> semantic_content_cons thm
+R11803:11823 JFCTheorems.CompressionBounds <> semantic_content_cons thm
+R11826:11844 JFCTheorems.CompressionBounds <> message_tokens_cons thm
+R11826:11844 JFCTheorems.CompressionBounds <> message_tokens_cons thm
+R11885:11888 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11864:11882 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+R11901:11903 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R11889:11898 JFCTheorems.CompressionBounds <> msg_tokens proj
+R11885:11888 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11864:11882 JFCTheorems.CompressionBounds <> msg_semantic_weight proj
+R11901:11903 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R11889:11898 JFCTheorems.CompressionBounds <> msg_tokens proj
+R11988:11991 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11967:11982 JFCTheorems.CompressionBounds <> semantic_content def
+R12011:12013 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R11992:12005 JFCTheorems.CompressionBounds <> message_tokens def
+R11988:11991 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11967:11982 JFCTheorems.CompressionBounds <> semantic_content def
+R12011:12013 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R11992:12005 JFCTheorems.CompressionBounds <> message_tokens def
+R12093:12111 Stdlib.Arith.PeanoNat Nat mul_add_distr_r thm
+R12093:12111 Stdlib.Arith.PeanoNat Nat mul_add_distr_r thm
+R12093:12111 Stdlib.Arith.PeanoNat Nat mul_add_distr_r thm
+prf 12566:12585 <> semantic_lower_bound
+binder 12598:12605 <> original:85
+binder 12607:12613 <> summary:86
+R12662:12669 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12620:12632 JFCTheorems.CompressionBounds <> density_bound def
+R12634:12640 JFCTheorems.CompressionBounds <> summary:86 var
+R12642:12661 JFCTheorems.CompressionBounds <> max_semantic_density def
+R12700:12707 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12670:12682 JFCTheorems.CompressionBounds <> valid_summary def
+R12684:12691 JFCTheorems.CompressionBounds <> original:85 var
+R12693:12699 JFCTheorems.CompressionBounds <> summary:86 var
+R12753:12756 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R12730:12732 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R12708:12721 JFCTheorems.CompressionBounds <> message_tokens def
+R12723:12729 JFCTheorems.CompressionBounds <> summary:86 var
+R12733:12752 JFCTheorems.CompressionBounds <> max_semantic_density def
+R12757:12772 JFCTheorems.CompressionBounds <> semantic_content def
+R12774:12781 JFCTheorems.CompressionBounds <> original:85 var
+R12831:12843 JFCTheorems.CompressionBounds <> valid_summary def
+R12866:12891 JFCTheorems.CompressionBounds <> semantic_content_le_tokens thm
+R12901:12920 JFCTheorems.CompressionBounds <> max_semantic_density def
+R12866:12891 JFCTheorems.CompressionBounds <> semantic_content_le_tokens thm
+R12901:12920 JFCTheorems.CompressionBounds <> max_semantic_density def
+def 13067:13080 <> approx_entropy
+R13090:13093 Corelib.Init.Datatypes <> list ind
+R13095:13101 JFCTheorems.CompressionBounds <> Message rec
+binder 13083:13086 <> msgs:87
+R13106:13108 Corelib.Init.Datatypes <> nat ind
+R13115:13120 Corelib.Init.Datatypes <> length def
+R13122:13125 JFCTheorems.CompressionBounds <> msgs:87 var
+def 13218:13227 <> vocab_bits
+R13231:13233 Corelib.Init.Datatypes <> nat ind
+def 13329:13350 <> min_tokens_for_entropy
+R13368:13370 Corelib.Init.Datatypes <> nat ind
+binder 13353:13364 <> entropy_bits:88
+R13375:13377 Corelib.Init.Datatypes <> nat ind
+R13384:13384 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R13414:13417 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R13410:13412 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R13397:13399 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13385:13396 JFCTheorems.CompressionBounds <> entropy_bits:88 var
+R13400:13409 JFCTheorems.CompressionBounds <> vocab_bits def
+R13418:13427 JFCTheorems.CompressionBounds <> vocab_bits def
+def 13632:13646 <> encodes_entropy
+R13659:13662 Corelib.Init.Datatypes <> list ind
+R13664:13670 JFCTheorems.CompressionBounds <> Message rec
+binder 13649:13655 <> summary:89
+R13689:13691 Corelib.Init.Datatypes <> nat ind
+binder 13674:13685 <> entropy_bits:90
+R13718:13721 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13706:13717 JFCTheorems.CompressionBounds <> entropy_bits:90 var
+R13744:13746 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R13722:13735 JFCTheorems.CompressionBounds <> message_tokens def
+R13737:13743 JFCTheorems.CompressionBounds <> summary:89 var
+R13747:13756 JFCTheorems.CompressionBounds <> vocab_bits def
+prf 14270:14294 <> compression_entropy_bound
+binder 14307:14314 <> original:91
+binder 14316:14322 <> summary:92
+R14378:14385 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14329:14343 JFCTheorems.CompressionBounds <> encodes_entropy def
+R14345:14351 JFCTheorems.CompressionBounds <> summary:92 var
+R14354:14367 JFCTheorems.CompressionBounds <> approx_entropy def
+R14369:14376 JFCTheorems.CompressionBounds <> original:91 var
+R14408:14411 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R14386:14399 JFCTheorems.CompressionBounds <> message_tokens def
+R14401:14407 JFCTheorems.CompressionBounds <> summary:92 var
+R14412:14433 JFCTheorems.CompressionBounds <> min_tokens_for_entropy def
+R14436:14449 JFCTheorems.CompressionBounds <> approx_entropy def
+R14451:14458 JFCTheorems.CompressionBounds <> original:91 var
+R14510:14524 JFCTheorems.CompressionBounds <> encodes_entropy def
+R14542:14563 JFCTheorems.CompressionBounds <> min_tokens_for_entropy def
+R14578:14591 JFCTheorems.CompressionBounds <> approx_entropy def
+R14578:14591 JFCTheorems.CompressionBounds <> approx_entropy def
+R14621:14634 JFCTheorems.CompressionBounds <> message_tokens def
+R14621:14634 JFCTheorems.CompressionBounds <> message_tokens def
+R14665:14678 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R14695:14697 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R14682:14684 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14685:14694 JFCTheorems.CompressionBounds <> vocab_bits def
+R14701:14710 JFCTheorems.CompressionBounds <> vocab_bits def
+R14665:14678 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R14695:14697 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R14682:14684 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14685:14694 JFCTheorems.CompressionBounds <> vocab_bits def
+R14701:14710 JFCTheorems.CompressionBounds <> vocab_bits def
+R14735:14753 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R14770:14772 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R14757:14759 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14760:14769 JFCTheorems.CompressionBounds <> vocab_bits def
+R14776:14785 JFCTheorems.CompressionBounds <> vocab_bits def
+R14816:14825 JFCTheorems.CompressionBounds <> vocab_bits def
+R14735:14753 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R14770:14772 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R14757:14759 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14760:14769 JFCTheorems.CompressionBounds <> vocab_bits def
+R14776:14785 JFCTheorems.CompressionBounds <> vocab_bits def
+R14816:14825 JFCTheorems.CompressionBounds <> vocab_bits def
+R14852:14861 JFCTheorems.CompressionBounds <> vocab_bits def
+def 15059:15083 <> practical_compression_min
+R15087:15089 Corelib.Init.Datatypes <> nat ind
+def 15137:15161 <> practical_compression_max
+R15165:15167 Corelib.Init.Datatypes <> nat ind
+prf 15741:15772 <> practical_compression_achievable
+binder 15785:15789 <> input:93
+binder 15791:15796 <> output:94
+R15813:15820 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15809:15811 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R15803:15808 JFCTheorems.CompressionBounds <> output:94 var
+R15840:15847 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15831:15834 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15827:15829 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15821:15826 JFCTheorems.CompressionBounds <> output:94 var
+R15835:15839 JFCTheorems.CompressionBounds <> input:93 var
+R15867:15874 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15853:15856 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15848:15852 JFCTheorems.CompressionBounds <> input:93 var
+R15863:15865 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R15857:15862 JFCTheorems.CompressionBounds <> output:94 var
+R15934:15941 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R15900:15903 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15875:15899 JFCTheorems.CompressionBounds <> practical_compression_min def
+R15904:15920 JFCTheorems.CompressionBounds <> compression_ratio def
+R15922:15926 JFCTheorems.CompressionBounds <> input:93 var
+R15928:15933 JFCTheorems.CompressionBounds <> output:94 var
+R15972:15975 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15942:15958 JFCTheorems.CompressionBounds <> compression_ratio def
+R15960:15964 JFCTheorems.CompressionBounds <> input:93 var
+R15966:15971 JFCTheorems.CompressionBounds <> output:94 var
+R15976:16000 JFCTheorems.CompressionBounds <> practical_compression_max def
+R16053:16069 JFCTheorems.CompressionBounds <> compression_ratio def
+R16072:16096 JFCTheorems.CompressionBounds <> practical_compression_min def
+R16099:16123 JFCTheorems.CompressionBounds <> practical_compression_max def
+R16147:16149 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R16147:16149 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R16173:16179 Stdlib.Arith.PeanoNat Nat eqb def
+R16173:16179 Stdlib.Arith.PeanoNat Nat eqb def
+R16209:16218 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R16209:16218 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R16295:16316 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+R16295:16316 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+R16389:16389 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R16402:16405 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R16396:16398 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16389:16389 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R16402:16405 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R16396:16398 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16432:16445 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R16454:16456 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16432:16445 Stdlib.Arith.PeanoNat Nat div_mod_eq thm
+R16454:16456 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16495:16513 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R16522:16524 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16495:16513 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R16522:16524 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16580:16583 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16576:16578 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16590:16592 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16580:16583 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16576:16578 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R16590:16592 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+def 16923:16926 <> sumn
+R16933:16936 Corelib.Init.Datatypes <> list ind
+R16938:16940 Corelib.Init.Datatypes <> nat ind
+binder 16929:16929 <> l:95
+R16945:16947 Corelib.Init.Datatypes <> nat ind
+R16960:16960 JFCTheorems.CompressionBounds <> l:95 var
+R16971:16972 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R16984:16987 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R16994:16996 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16997:17000 JFCTheorems.CompressionBounds <> sumn:96 def
+def 17157:17171 <> groups_to_cover
+R17179:17182 Corelib.Init.Datatypes <> list ind
+R17184:17186 Corelib.Init.Datatypes <> nat ind
+binder 17174:17175 <> gs:98
+R17202:17204 Corelib.Init.Datatypes <> nat ind
+binder 17190:17198 <> remaining:99
+R17209:17211 Corelib.Init.Datatypes <> nat ind
+R17224:17225 JFCTheorems.CompressionBounds <> gs:98 var
+R17236:17237 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R17249:17252 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R17270:17276 Stdlib.Arith.PeanoNat Nat leb def
+R17278:17286 JFCTheorems.CompressionBounds <> remaining:99 var
+R17308:17308 Corelib.Init.Datatypes <> S constr
+R17311:17325 JFCTheorems.CompressionBounds <> groups_to_cover:100 def
+R17342:17344 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R17333:17341 JFCTheorems.CompressionBounds <> remaining:99 var
+def 17508:17521 <> token_gap_step
+R17530:17535 Corelib.Init.Datatypes <> option ind
+R17537:17539 Corelib.Init.Datatypes <> nat ind
+binder 17524:17526 <> gap:102
+R17558:17561 Corelib.Init.Datatypes <> list ind
+R17563:17565 Corelib.Init.Datatypes <> nat ind
+binder 17543:17554 <> group_tokens:103
+R17577:17579 Corelib.Init.Datatypes <> nat ind
+binder 17569:17573 <> split:104
+R17584:17586 Corelib.Init.Datatypes <> nat ind
+R17599:17601 JFCTheorems.CompressionBounds <> gap:102 var
+R17612:17615 Corelib.Init.Datatypes <> None constr
+R17620:17626 Stdlib.Arith.PeanoNat Nat max def
+R17636:17638 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R17631:17635 JFCTheorems.CompressionBounds <> split:104 var
+R17646:17649 Corelib.Init.Datatypes <> Some constr
+R17656:17662 Stdlib.Arith.PeanoNat Nat max def
+R17667:17681 JFCTheorems.CompressionBounds <> groups_to_cover def
+R17684:17686 Stdlib.Lists.List <> rev def
+R17689:17694 Corelib.Lists.ListDef <> firstn def
+R17702:17713 JFCTheorems.CompressionBounds <> group_tokens:103 var
+R17696:17700 JFCTheorems.CompressionBounds <> split:104 var
+prf 17796:17812 <> step_at_least_one
+binder 17825:17827 <> gap:106
+binder 17829:17840 <> group_tokens:107
+binder 17842:17846 <> split:108
+R17890:17893 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R17853:17866 JFCTheorems.CompressionBounds <> token_gap_step def
+R17868:17870 JFCTheorems.CompressionBounds <> gap:106 var
+R17872:17883 JFCTheorems.CompressionBounds <> group_tokens:107 var
+R17885:17889 JFCTheorems.CompressionBounds <> split:108 var
+R17946:17959 JFCTheorems.CompressionBounds <> token_gap_step def
+R17984:17995 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R17984:17995 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R17984:17995 Stdlib.Arith.PeanoNat Nat le_max_l thm
+prf 18157:18178 <> groups_to_cover_covers
+binder 18191:18192 <> gs:109
+binder 18194:18194 <> g:110
+R18206:18213 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18202:18204 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R18205:18205 JFCTheorems.CompressionBounds <> g:110 var
+R18226:18233 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18215:18218 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R18214:18214 JFCTheorems.CompressionBounds <> g:110 var
+R18219:18222 JFCTheorems.CompressionBounds <> sumn def
+R18224:18225 JFCTheorems.CompressionBounds <> gs:109 var
+R18235:18238 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R18234:18234 JFCTheorems.CompressionBounds <> g:110 var
+R18239:18242 JFCTheorems.CompressionBounds <> sumn def
+R18245:18250 Corelib.Lists.ListDef <> firstn def
+R18275:18276 JFCTheorems.CompressionBounds <> gs:109 var
+R18253:18267 JFCTheorems.CompressionBounds <> groups_to_cover def
+R18269:18270 JFCTheorems.CompressionBounds <> gs:109 var
+R18272:18272 JFCTheorems.CompressionBounds <> g:110 var
+R18346:18349 JFCTheorems.CompressionBounds <> sumn def
+R18375:18389 JFCTheorems.CompressionBounds <> groups_to_cover def
+R18407:18413 Stdlib.Arith.PeanoNat Nat leb def
+R18407:18413 Stdlib.Arith.PeanoNat Nat leb def
+R18442:18451 Stdlib.Arith.PeanoNat Nat leb_le thm
+R18442:18451 Stdlib.Arith.PeanoNat Nat leb_le thm
+R18479:18488 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R18479:18488 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R18510:18515 Corelib.Lists.ListDef <> firstn def
+R18517:18520 JFCTheorems.CompressionBounds <> sumn def
+R18545:18551 Stdlib.Arith.PeanoNat Nat leb def
+R18545:18551 Stdlib.Arith.PeanoNat Nat leb def
+R18581:18590 Stdlib.Arith.PeanoNat Nat leb_le thm
+R18581:18590 Stdlib.Arith.PeanoNat Nat leb_le thm
+R18619:18628 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R18619:18628 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R18663:18665 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R18663:18665 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+prf 19083:19103 <> token_gap_step_covers
+binder 19116:19116 <> g:111
+binder 19118:19120 <> gts:112
+binder 19122:19126 <> split:113
+R19138:19145 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19134:19136 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R19137:19137 JFCTheorems.CompressionBounds <> g:111 var
+R19180:19187 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19147:19150 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R19146:19146 JFCTheorems.CompressionBounds <> g:111 var
+R19151:19154 JFCTheorems.CompressionBounds <> sumn def
+R19157:19159 Stdlib.Lists.List <> rev def
+R19162:19167 Corelib.Lists.ListDef <> firstn def
+R19175:19177 JFCTheorems.CompressionBounds <> gts:112 var
+R19169:19173 JFCTheorems.CompressionBounds <> split:113 var
+R19189:19192 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R19188:19188 JFCTheorems.CompressionBounds <> g:111 var
+R19193:19196 JFCTheorems.CompressionBounds <> sumn def
+R19199:19204 Corelib.Lists.ListDef <> firstn def
+R19265:19267 Stdlib.Lists.List <> rev def
+R19270:19275 Corelib.Lists.ListDef <> firstn def
+R19283:19285 JFCTheorems.CompressionBounds <> gts:112 var
+R19277:19281 JFCTheorems.CompressionBounds <> split:113 var
+R19207:19220 JFCTheorems.CompressionBounds <> token_gap_step def
+R19223:19226 Corelib.Init.Datatypes <> Some constr
+R19228:19228 JFCTheorems.CompressionBounds <> g:111 var
+R19231:19233 JFCTheorems.CompressionBounds <> gts:112 var
+R19235:19239 JFCTheorems.CompressionBounds <> split:113 var
+R19337:19350 JFCTheorems.CompressionBounds <> token_gap_step def
+R19365:19367 Stdlib.Lists.List <> rev def
+R19370:19375 Corelib.Lists.ListDef <> firstn def
+R19365:19367 Stdlib.Lists.List <> rev def
+R19370:19375 Corelib.Lists.ListDef <> firstn def
+R19431:19434 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R19412:19426 JFCTheorems.CompressionBounds <> groups_to_cover def
+R19431:19434 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R19412:19426 JFCTheorems.CompressionBounds <> groups_to_cover def
+R19477:19480 JFCTheorems.CompressionBounds <> sumn def
+R19508:19522 JFCTheorems.CompressionBounds <> groups_to_cover def
+R19551:19553 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19540:19546 Stdlib.Arith.PeanoNat Nat leb def
+R19554:19558 Corelib.Init.Datatypes <> false constr
+R19577:19586 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R19551:19553 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19540:19546 Stdlib.Arith.PeanoNat Nat leb def
+R19554:19558 Corelib.Init.Datatypes <> false constr
+R19577:19586 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R19668:19670 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19637:19643 Stdlib.Arith.PeanoNat Nat max def
+R19648:19662 JFCTheorems.CompressionBounds <> groups_to_cover def
+R19671:19685 JFCTheorems.CompressionBounds <> groups_to_cover def
+R19668:19670 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19637:19643 Stdlib.Arith.PeanoNat Nat max def
+R19648:19662 JFCTheorems.CompressionBounds <> groups_to_cover def
+R19671:19685 JFCTheorems.CompressionBounds <> groups_to_cover def
+R19724:19745 JFCTheorems.CompressionBounds <> groups_to_cover_covers thm
+R19724:19745 JFCTheorems.CompressionBounds <> groups_to_cover_covers thm

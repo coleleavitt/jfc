@@ -292,10 +292,30 @@ pub fn model_supports_xhigh_effort(model_id: &str) -> bool {
     AnthropicModelKind::from_model_id(model_id).supports_xhigh_effort()
 }
 
+pub fn model_supports_temperature(model_id: &str) -> bool {
+    match AnthropicModelKind::from_model_id(model_id) {
+        AnthropicModelKind::Fable5
+        | AnthropicModelKind::Mythos5
+        | AnthropicModelKind::Opus48
+        | AnthropicModelKind::Opus47
+        | AnthropicModelKind::Unknown => false,
+        AnthropicModelKind::Opus46
+        | AnthropicModelKind::Opus45
+        | AnthropicModelKind::Opus41
+        | AnthropicModelKind::Opus4
+        | AnthropicModelKind::Sonnet46
+        | AnthropicModelKind::Sonnet45
+        | AnthropicModelKind::Sonnet4
+        | AnthropicModelKind::Sonnet37
+        | AnthropicModelKind::Haiku45
+        | AnthropicModelKind::Haiku35 => true,
+    }
+}
+
 /// Resolve the effort value actually safe to send for `model_id`, given the
 /// caller's `requested` effort. Returns `None` when effort must be omitted
 /// entirely (model doesn't support the parameter — CC's `delete $.effort`),
-/// or `Some(clamped)` where `max`/`xhigh` are clamped to `high` on
+/// or `Some(clamped)` where unsupported `max`/`xhigh` values clamp to `high` on
 /// effort-capable-but-not-Opus models (e.g. Sonnet 4.6).
 pub fn effort_for_model<'a>(model_id: &str, requested: &'a str) -> Option<&'a str> {
     AnthropicModelKind::from_model_id(model_id).normalized_effort(requested)
@@ -345,18 +365,14 @@ mod tests {
         assert_eq!(effort_for_model("claude-haiku-4-5", "high"), None);
     }
 
-    // Normal: Opus 4.6+ supports max effort; xhigh maps to max on 4.7+.
     #[test]
     fn effort_on_opus_normal() {
-        // Opus 4.8/4.7 support xhigh (maps to max) and max
         assert_eq!(effort_for_model("claude-opus-4-8", "max"), Some("max"));
-        assert_eq!(effort_for_model("claude-opus-4-8", "xhigh"), Some("max"));
+        assert_eq!(effort_for_model("claude-opus-4-8", "xhigh"), Some("xhigh"));
         assert_eq!(effort_for_model("claude-opus-4-7", "max"), Some("max"));
-        assert_eq!(effort_for_model("claude-opus-4-7", "xhigh"), Some("max"));
-        // Opus 4.6 supports max but not xhigh
+        assert_eq!(effort_for_model("claude-opus-4-7", "xhigh"), Some("xhigh"));
         assert_eq!(effort_for_model("claude-opus-4-6", "max"), Some("max"));
         assert_eq!(effort_for_model("claude-opus-4-6", "xhigh"), Some("high"));
-        // low/medium/high pass through
         assert_eq!(effort_for_model("claude-opus-4-8", "low"), Some("low"));
         assert_eq!(
             effort_for_model("claude-opus-4-7", "medium"),
@@ -375,6 +391,30 @@ mod tests {
             effort_for_model("claude-sonnet-4-6", "medium"),
             Some("medium")
         );
+    }
+
+    #[test]
+    fn temperature_support_matches_claude_code_177_gate_normal() {
+        for allowed in [
+            "claude-opus-4-6",
+            "claude-opus-4-5-20251101",
+            "claude-opus-4-1-20250805",
+            "claude-sonnet-4-6",
+            "claude-sonnet-4-5",
+            "claude-3-7-sonnet-20250219",
+            "claude-haiku-4-5",
+        ] {
+            assert!(model_supports_temperature(allowed), "{allowed}");
+        }
+        for denied in [
+            "claude-fable-5",
+            "claude-mythos-5",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "unknown-model",
+        ] {
+            assert!(!model_supports_temperature(denied), "{denied}");
+        }
     }
 
     // Normal: every entry has a non-empty id, display, and the requested provider tag.
@@ -587,7 +627,6 @@ mod tests {
     }
 
     // Robust: Fable 5 / Mythos 5 are effort + adaptive-thinking capable.
-    // They support max and xhigh (xhigh maps to max).
     #[test]
     fn fable_and_mythos_5_capabilities_robust() {
         for id in ["claude-fable-5", "claude-mythos-5"] {
@@ -595,9 +634,12 @@ mod tests {
             assert!(supports_adaptive_thinking(id), "{id} adaptive thinking");
             assert!(model_supports_max_effort(id), "{id} supports max");
             assert!(model_supports_xhigh_effort(id), "{id} supports xhigh");
-            // xhigh maps to max, max stays max
             assert_eq!(effort_for_model(id, "max"), Some("max"), "{id} keeps max");
-            assert_eq!(effort_for_model(id, "xhigh"), Some("max"), "{id} xhigh→max");
+            assert_eq!(
+                effort_for_model(id, "xhigh"),
+                Some("xhigh"),
+                "{id} keeps xhigh"
+            );
             assert_eq!(
                 effort_for_model(id, "high"),
                 Some("high"),

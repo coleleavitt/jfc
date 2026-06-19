@@ -106,6 +106,33 @@ pub fn try_spawn_teammate(
 
     let (_runner_task_id, abort_tx) = start_teammate(config, teammate_event_tx);
 
+    // Mirror the teammate into the unified agent registry so it appears in the
+    // same roster as solo subagents, council seats, and economy solvers. The id
+    // is derived from the swarm `agent_id` via `from_label`, so the lifecycle
+    // bridge in `handlers/team.rs` can resolve it by name from `TeammateEvent`s.
+    {
+        let agent_id_label = agent_id.clone();
+        let name_label = name.clone();
+        let team = team_name.clone();
+        tokio::spawn(async move {
+            let registry = crate::tools::agent_registry();
+            // display_name == swarm agent_id so the team lifecycle bridge can
+            // resolve `TeammateEvent { agent_id }` back to this entry; the human
+            // name lives in the description for the roster.
+            let id = jfc_agent::AgentId::from_label(&agent_id_label);
+            registry
+                .register(jfc_agent::AgentState::new(
+                    id.clone(),
+                    jfc_agent::AgentRole::Teammate { team_name: team },
+                    name_label,
+                ))
+                .await;
+            registry
+                .update_status(&id, jfc_agent::AgentStatus::Running)
+                .await;
+        });
+    }
+
     // Persist the new member into the team file so the team roster on disk
     // matches the runtime spawn list.
     let member = TeamMember {

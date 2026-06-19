@@ -68,14 +68,13 @@ pub(crate) async fn handle_tick(
         }
     }
 
-    // Stream pacing: advance the reveal animation over the live streaming
-    // message's last (actively-accruing) text part. We pace by display segments
-    // (a cheap newline count) so the renderer reveals lines at the adaptive
-    // smooth/catch-up cadence; the engine's text is untouched (single source of
-    // truth). The pacer resets when a new message — or a new part within it
-    // (e.g. the second text block after a tool call) — begins.
+    // Streaming text should render as soon as it lands in EngineState. Claude
+    // Code smooths the spinner token counter, not the transcript itself; holding
+    // back display lines here makes fast streams feel artificially slow and
+    // causes scroll height to "swim" as hidden lines are released later. Keep
+    // the pacer keyed/reset for the render cap, but set it to the full live
+    // text length each tick.
     if app.engine.is_streaming {
-        let now = std::time::Instant::now();
         let idx = app.engine.streaming_assistant_idx;
         let msg = idx.and_then(|i| app.engine.messages.get(i));
         let part_count = msg.map(|m| m.parts.len()).unwrap_or(0);
@@ -95,10 +94,9 @@ pub(crate) async fn handle_tick(
                 _ => None,
             })
             .unwrap_or(0);
-        app.stream_pacer.advance(total, now);
-        if app.stream_pacer.is_catching_up(total) {
-            // Still revealing held-back lines — keep animating even if no new
-            // chunk arrives this tick.
+        let before = app.stream_pacer.revealed();
+        app.stream_pacer.reveal_all(total);
+        if before != total {
             needs_draw = true;
         }
     } else if app.paced_stream_key.is_some() {
@@ -128,11 +126,20 @@ pub(crate) async fn handle_tick(
         let count = if thinking_live {
             app.engine.streaming_thinking_tokens
         } else {
-            // True cumulative wire output tokens — so tok/s is measured on the
-            // real count, not the chars/4 estimate. It only advances on usage
-            // events, which the windowed rate handles fine.
-            app.engine.turn_output_tokens
+            // Claude-style visible output token count: response-length
+            // accumulator / 4. Real usage stays in `turn_output_tokens`; the
+            // status row samples the same smoothed display count that it
+            // renders so the rate chip does not jump by provider batch sizes.
+            (app.engine.streaming_response_bytes / 4) as u64
         };
+        if app
+            .engine
+            .token_rate_sample_thinking
+            .is_some_and(|sample_thinking| sample_thinking != thinking_live)
+        {
+            app.engine.token_rate_samples.clear();
+        }
+        app.engine.token_rate_sample_thinking = Some(thinking_live);
         if app
             .engine
             .token_rate_samples
@@ -251,29 +258,29 @@ pub(crate) async fn handle_tick(
         needs_draw = true;
     }
 
-    // Speculative compaction: when the context reaches ~80% of the
-    // compact threshold and we're idle (not streaming, not already
-    // compacting), pre-set `force_compact_pending` so the next submit
-    // fires compaction immediately instead of discovering it needs to
-    // compact on the hot path. This matches CC 2.1.144's "precomputed
-    // compact" concept — the actual LLM call still happens at submit
-    // time, but the user sees it fire instantly instead of after a
-    // "context estimation → discover over-limit → then compact" dance.
+    // Speculative compaction advisory: when the context reaches ~80% of the
+    // compact threshold and we're idle, record that we've crossed the
+    // precompute band so logs/UI can surface it once. Do NOT set
+    // `force_compact_pending` here: that turns "precompute" into an early full
+    // compaction and skips the normal Compact/Blocked threshold.
     if !app.engine.is_streaming
         && app.engine.compacting_started_at.is_none()
         && !app.engine.speculative_compact_fired
         && !app.engine.force_compact_pending
     {
         let est = app.engine.tool_ctx.approx_tokens;
-        let level = jfc_engine::compact::compact_level(est, app.engine.max_context_tokens);
+        let level = jfc_engine::compact::compact_level_with_output(
+            est,
+            app.engine.max_context_tokens,
+            app.engine.max_output_tokens,
+        );
         if matches!(level, jfc_engine::compact::CompactLevel::Precompute) {
             tracing::info!(
                 target: "jfc::compact",
                 est,
                 max = app.engine.max_context_tokens,
-                "speculative compact: context at ~80% threshold — pre-arming compaction"
+                "speculative compact: context at ~80% threshold"
             );
-            app.engine.force_compact_pending = true;
             app.engine.speculative_compact_fired = true;
         }
     }
@@ -786,4 +793,78 @@ async fn reload_mcp_servers(
         target: "jfc::mcp",
         "MCP config reload complete"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+
+    use super::*;
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    #[tokio::test]
+    async fn token_rate_window_resets_when_stream_phase_changes_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+        let started = std::time::Instant::now() - std::time::Duration::from_secs(2);
+        app.engine.is_streaming = true;
+        app.engine.streaming_started_at = Some(started);
+        app.engine.thinking_started_at = Some(started);
+        app.engine.streaming_thinking_tokens = 100;
+
+        handle_tick(&mut app, &tx, None).await;
+        assert_eq!(app.engine.token_rate_sample_thinking, Some(true));
+        assert_eq!(app.engine.token_rate_samples.len(), 1);
+
+        app.engine.thinking_ended_at = Some(std::time::Instant::now());
+        app.engine.streaming_response_bytes = 800;
+
+        handle_tick(&mut app, &tx, None).await;
+        assert_eq!(app.engine.token_rate_sample_thinking, Some(false));
+        assert_eq!(app.engine.token_rate_samples.len(), 1);
+        assert_eq!(
+            app.engine.token_rate_samples.back().map(|&(_, n)| n),
+            Some(200)
+        );
+    }
+
+    #[tokio::test]
+    async fn precompute_tick_does_not_force_compaction_robust() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+        app.engine.max_context_tokens = 200_000;
+        app.engine.max_output_tokens = None;
+        app.engine.tool_ctx.approx_tokens = 140_000;
+
+        handle_tick(&mut app, &tx, None).await;
+
+        assert!(
+            !app.engine.force_compact_pending,
+            "Precompute should be advisory; full compaction waits for Compact/Blocked or manual /compact"
+        );
+    }
 }

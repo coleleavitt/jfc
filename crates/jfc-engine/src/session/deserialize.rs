@@ -14,13 +14,14 @@ pub fn deserialize_message(msg: SerializedMessage) -> ChatMessage {
         Role::Assistant
     };
     let parts: Vec<MessagePart> = msg.parts.into_iter().map(deserialize_part).collect();
+    let elapsed = normalize_elapsed(role, &parts, msg.elapsed);
     ChatMessage {
         role,
         parts,
         agent_name: msg.agent_name,
         model_name: msg.model_name,
         cost_tier: msg.cost_tier,
-        elapsed: msg.elapsed,
+        elapsed,
         usage: msg.usage,
         // Queued is a runtime-only marker — resumed sessions never have
         // unsent queued prompts because drain_queued_prompts runs as
@@ -32,6 +33,27 @@ pub fn deserialize_message(msg: SerializedMessage) -> ChatMessage {
         // 0 means "unknown" for old sessions that predate this field.
         created_at: msg.created_at,
     }
+}
+
+fn normalize_elapsed(role: Role, parts: &[MessagePart], elapsed: Option<String>) -> Option<String> {
+    let elapsed = elapsed?;
+    if role == Role::Assistant && assistant_is_error(parts) {
+        return None;
+    }
+    if elapsed.starts_with("took ") {
+        return Some(elapsed);
+    }
+    elapsed
+        .rsplit_once(" for ")
+        .map_or(Some(elapsed.clone()), |(_, duration)| {
+            Some(format!("took {}", duration.trim()))
+        })
+}
+
+fn assistant_is_error(parts: &[MessagePart]) -> bool {
+    parts.iter().any(|part| {
+        matches!(part, MessagePart::Text(text) if text.trim_start().starts_with("**Error:**"))
+    })
 }
 
 pub fn deserialize_part(part: SerializedPart) -> MessagePart {
@@ -711,5 +733,49 @@ pub fn deserialize_diff_line(line: SerializedDiffLine) -> DiffLine {
         old_line: line.old_line,
         new_line: line.new_line,
         content: line.content,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn serialized_assistant(content: &str, elapsed: &str) -> SerializedMessage {
+        SerializedMessage {
+            role: "assistant".to_owned(),
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: Some(elapsed.to_owned()),
+            usage: None,
+            created_at: 0,
+            parts: vec![SerializedPart::Text {
+                content: content.to_owned(),
+            }],
+        }
+    }
+
+    #[test]
+    fn legacy_decorative_elapsed_normalizes_to_took_regression() {
+        let msg = deserialize_message(serialized_assistant("answer", "Sautéed for 0s"));
+
+        assert_eq!(msg.elapsed.as_deref(), Some("took 0s"));
+    }
+
+    #[test]
+    fn error_assistant_drops_legacy_elapsed_regression() {
+        let msg = deserialize_message(serialized_assistant(
+            "**Error:** Rate limited",
+            "Sautéed for 0s",
+        ));
+
+        assert_eq!(msg.elapsed, None);
+    }
+
+    #[test]
+    fn current_elapsed_format_survives_normal() {
+        let msg = deserialize_message(serialized_assistant("answer", "took 4s"));
+
+        assert_eq!(msg.elapsed.as_deref(), Some("took 4s"));
     }
 }

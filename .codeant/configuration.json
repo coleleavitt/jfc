@@ -1,0 +1,32 @@
+{
+  "code_analysis": {
+    "enabled": true,
+    "features": {
+      "sast_analysis": "enabled",
+      "secrets_analysis": "enabled",
+      "sca_analysis": "enabled",
+      "iac_analysis": "enabled",
+      "deadcode_analysis": "enabled",
+      "duplicatecode_analysis": "enabled",
+      "antipatterns_analysis": "enabled",
+      "docstring_analysis": "enabled",
+      "complex_function_analysis": "enabled"
+    },
+    "config": {
+      "complexity": {
+        "maintainability_index": 15
+      }
+    }
+  },
+  "file_filters": {
+    "config": {
+      "include_files": "",
+      "exclude_files": "target/**,.git/**,.jfc/**,.omo/**,.opencode/**,.playwright-mcp/**,rcoq-tests/**,**/*.pdf,**/*.png,**/*.vo,**/*.vos,**/*.vok,**/*.glob,**/*.aux"
+    }
+  },
+  "sbom_policy": {
+    "exclude_packages": [],
+    "approved_licenses": [],
+    "package_overrides": {}
+  }
+}

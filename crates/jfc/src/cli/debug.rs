@@ -304,6 +304,7 @@ impl Stats {
             StreamEvent::TextDelta { .. }
             | StreamEvent::TextDone { .. }
             | StreamEvent::ThinkingDelta { .. }
+            | StreamEvent::ThinkingTokens { .. }
             | StreamEvent::ThinkingDone { .. }
             | StreamEvent::RedactedThinkingDone { .. }
             | StreamEvent::ToolDelta { .. }
@@ -419,6 +420,7 @@ impl Printer {
             // them, so pretty mode deliberately emits nothing extra.
             StreamEvent::TextDone { .. }
             | StreamEvent::ThinkingDone { .. }
+            | StreamEvent::ThinkingTokens { .. }
             | StreamEvent::ToolDelta { .. }
             | StreamEvent::Usage { .. }
             | StreamEvent::ResponseMetadata { .. }
@@ -478,6 +480,9 @@ fn event_to_json(event: &StreamEvent) -> String {
         }),
         StreamEvent::ThinkingDone { index, text } => {
             json!({"kind": "thinking_done", "index": index, "text": text})
+        }
+        StreamEvent::ThinkingTokens { index, delta } => {
+            json!({"kind": "thinking_tokens", "index": index, "delta": delta})
         }
         StreamEvent::RedactedThinkingDone { index, data } => {
             json!({"kind": "redacted_thinking_done", "index": index, "data_len": data.len()})

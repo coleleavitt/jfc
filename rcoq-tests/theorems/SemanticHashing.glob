@@ -1,0 +1,1169 @@
+DIGEST 1ea7178bfc3cdf1e90c76fef23e880e7
+FJFCTheorems.SemanticHashing
+R1456:1470 Stdlib.Arith.Arith <> <> lib
+R1488:1501 Stdlib.Lists.List <> <> lib
+R1519:1531 Stdlib.Bool.Bool <> <> lib
+R1549:1565 Stdlib.micromega.Lia <> <> lib
+R1575:1587 Stdlib.Lists.List ListNotations <> mod
+prf 1884:1902 <> fold_left_add_shift
+binder 1916:1916 <> A:1
+R1932:1935 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1931:1931 JFCTheorems.SemanticHashing <> A:1 var
+R1936:1938 Corelib.Init.Datatypes <> nat ind
+binder 1927:1927 <> f:2
+R1946:1949 Corelib.Init.Datatypes <> list ind
+R1951:1951 JFCTheorems.SemanticHashing <> A:1 var
+binder 1942:1942 <> l:3
+R1959:1961 Corelib.Init.Datatypes <> nat ind
+binder 1955:1955 <> z:4
+R2007:2015 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R1969:1977 Stdlib.Lists.List <> fold_left def
+R2006:2006 JFCTheorems.SemanticHashing <> z:4 var
+R2004:2004 JFCTheorems.SemanticHashing <> l:3 var
+binder 1984:1986 <> acc:5
+binder 1988:1988 <> x:6
+R1996:1998 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R1993:1995 JFCTheorems.SemanticHashing <> acc:5 var
+R1999:1999 JFCTheorems.SemanticHashing <> f:2 var
+R2001:2001 JFCTheorems.SemanticHashing <> x:6 var
+R2017:2019 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2016:2016 JFCTheorems.SemanticHashing <> z:4 var
+R2020:2028 Stdlib.Lists.List <> fold_left def
+R2055:2055 JFCTheorems.SemanticHashing <> l:3 var
+binder 2035:2037 <> acc:7
+binder 2039:2039 <> x:8
+R2047:2049 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2044:2046 JFCTheorems.SemanticHashing <> acc:7 var
+R2050:2050 JFCTheorems.SemanticHashing <> f:2 var
+R2052:2052 JFCTheorems.SemanticHashing <> x:8 var
+R2161:2163 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2161:2163 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R2161:2163 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+def 2307:2318 <> SemanticHash
+R2323:2325 Corelib.Init.Datatypes <> nat ind
+def 2421:2429 <> hash_bits
+R2433:2435 Corelib.Init.Datatypes <> nat ind
+def 2660:2671 <> hash_modulus
+R2675:2677 Corelib.Init.Datatypes <> nat ind
+R2682:2688 Stdlib.Arith.PeanoNat Nat pow def
+R2692:2700 JFCTheorems.SemanticHashing <> hash_bits def
+prf 2767:2782 <> hash_modulus_pos
+R2798:2800 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R2786:2797 JFCTheorems.SemanticHashing <> hash_modulus def
+R2820:2831 JFCTheorems.SemanticHashing <> hash_modulus def
+R2842:2855 Stdlib.Arith.PeanoNat Nat neq_0_lt_0 thm
+R2858:2872 Stdlib.Arith.PeanoNat Nat pow_nonzero thm
+R2842:2855 Stdlib.Arith.PeanoNat Nat neq_0_lt_0 thm
+R2858:2872 Stdlib.Arith.PeanoNat Nat pow_nonzero thm
+prf 2905:2924 <> hash_modulus_nonzero
+R2940:2943 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R2928:2939 JFCTheorems.SemanticHashing <> hash_modulus def
+R2965:2980 JFCTheorems.SemanticHashing <> hash_modulus_pos thm
+R2965:2980 JFCTheorems.SemanticHashing <> hash_modulus_pos thm
+def 3638:3649 <> content_hash
+R3656:3658 Corelib.Init.Datatypes <> nat ind
+binder 3652:3652 <> x:9
+R3663:3674 JFCTheorems.SemanticHashing <> SemanticHash def
+R3680:3684 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'mod'_x not
+R3679:3679 JFCTheorems.SemanticHashing <> x:9 var
+R3685:3696 JFCTheorems.SemanticHashing <> hash_modulus def
+prf 4189:4214 <> content_hash_deterministic
+R4233:4235 Corelib.Init.Datatypes <> nat ind
+binder 4227:4227 <> a:10
+binder 4229:4229 <> b:11
+R4247:4254 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4243:4245 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4242:4242 JFCTheorems.SemanticHashing <> a:10 var
+R4246:4246 JFCTheorems.SemanticHashing <> b:11 var
+R4269:4271 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4255:4266 JFCTheorems.SemanticHashing <> content_hash def
+R4268:4268 JFCTheorems.SemanticHashing <> a:10 var
+R4272:4283 JFCTheorems.SemanticHashing <> content_hash def
+R4285:4285 JFCTheorems.SemanticHashing <> b:11 var
+prf 4531:4550 <> content_hash_bounded
+R4567:4569 Corelib.Init.Datatypes <> nat ind
+binder 4563:4563 <> x:12
+R4590:4592 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R4576:4587 JFCTheorems.SemanticHashing <> content_hash def
+R4589:4589 JFCTheorems.SemanticHashing <> x:12 var
+R4593:4604 JFCTheorems.SemanticHashing <> hash_modulus def
+R4633:4644 JFCTheorems.SemanticHashing <> content_hash def
+R4655:4673 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R4676:4695 JFCTheorems.SemanticHashing <> hash_modulus_nonzero thm
+R4655:4673 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R4676:4695 JFCTheorems.SemanticHashing <> hash_modulus_nonzero thm
+prf 5000:5020 <> content_hash_in_range
+R5037:5039 Corelib.Init.Datatypes <> nat ind
+binder 5033:5033 <> x:13
+R5075:5078 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R5060:5062 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R5046:5057 JFCTheorems.SemanticHashing <> content_hash def
+R5059:5059 JFCTheorems.SemanticHashing <> x:13 var
+R5063:5074 JFCTheorems.SemanticHashing <> hash_modulus def
+R5091:5093 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R5079:5090 JFCTheorems.SemanticHashing <> hash_modulus def
+R5133:5152 JFCTheorems.SemanticHashing <> content_hash_bounded thm
+R5133:5152 JFCTheorems.SemanticHashing <> content_hash_bounded thm
+R5165:5180 JFCTheorems.SemanticHashing <> hash_modulus_pos thm
+R5165:5180 JFCTheorems.SemanticHashing <> hash_modulus_pos thm
+prf 5534:5566 <> content_hash_mismatch_implies_neq
+R5585:5587 Corelib.Init.Datatypes <> nat ind
+binder 5579:5579 <> a:14
+binder 5581:5581 <> b:15
+R5626:5633 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5608:5611 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R5594:5605 JFCTheorems.SemanticHashing <> content_hash def
+R5607:5607 JFCTheorems.SemanticHashing <> a:14 var
+R5612:5623 JFCTheorems.SemanticHashing <> content_hash def
+R5625:5625 JFCTheorems.SemanticHashing <> b:15 var
+R5635:5638 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R5634:5634 JFCTheorems.SemanticHashing <> a:14 var
+R5639:5639 JFCTheorems.SemanticHashing <> b:15 var
+R5692:5717 JFCTheorems.SemanticHashing <> content_hash_deterministic thm
+R5692:5717 JFCTheorems.SemanticHashing <> content_hash_deterministic thm
+prf 5994:6018 <> content_hash_eq_necessary
+R6037:6039 Corelib.Init.Datatypes <> nat ind
+binder 6031:6031 <> a:16
+binder 6033:6033 <> b:17
+R6051:6058 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6047:6049 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6046:6046 JFCTheorems.SemanticHashing <> a:16 var
+R6050:6050 JFCTheorems.SemanticHashing <> b:17 var
+R6073:6075 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6059:6070 JFCTheorems.SemanticHashing <> content_hash def
+R6072:6072 JFCTheorems.SemanticHashing <> a:16 var
+R6076:6087 JFCTheorems.SemanticHashing <> content_hash def
+R6089:6089 JFCTheorems.SemanticHashing <> b:17 var
+R6107:6132 JFCTheorems.SemanticHashing <> content_hash_deterministic thm
+R6107:6132 JFCTheorems.SemanticHashing <> content_hash_deterministic thm
+prf 6796:6821 <> content_hash_not_injective
+R6827:6833 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R6843:6848 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R6840:6842 Corelib.Init.Datatypes <> nat ind
+binder 6834:6834 <> a:18
+R6840:6842 Corelib.Init.Datatypes <> nat ind
+binder 6836:6836 <> b:19
+R6880:6883 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R6863:6865 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6849:6860 JFCTheorems.SemanticHashing <> content_hash def
+R6862:6862 JFCTheorems.SemanticHashing <> a:18 var
+R6866:6877 JFCTheorems.SemanticHashing <> content_hash def
+R6879:6879 JFCTheorems.SemanticHashing <> b:19 var
+R6885:6888 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R6884:6884 JFCTheorems.SemanticHashing <> a:18 var
+R6889:6889 JFCTheorems.SemanticHashing <> b:19 var
+R7036:7047 JFCTheorems.SemanticHashing <> hash_modulus def
+R7036:7047 JFCTheorems.SemanticHashing <> hash_modulus def
+R7068:7079 JFCTheorems.SemanticHashing <> content_hash def
+R7115:7134 JFCTheorems.SemanticHashing <> hash_modulus_nonzero thm
+R7094:7104 Stdlib.Arith.PeanoNat Nat mod_0_l abbrev
+R7094:7104 Stdlib.Arith.PeanoNat Nat mod_0_l abbrev
+R7115:7134 JFCTheorems.SemanticHashing <> hash_modulus_nonzero thm
+R7094:7104 Stdlib.Arith.PeanoNat Nat mod_0_l abbrev
+R7171:7190 JFCTheorems.SemanticHashing <> hash_modulus_nonzero thm
+R7149:7160 Stdlib.Arith.PeanoNat Nat mod_same abbrev
+R7149:7160 Stdlib.Arith.PeanoNat Nat mod_same abbrev
+R7171:7190 JFCTheorems.SemanticHashing <> hash_modulus_nonzero thm
+R7149:7160 Stdlib.Arith.PeanoNat Nat mod_same abbrev
+R7225:7240 JFCTheorems.SemanticHashing <> hash_modulus_pos thm
+R7225:7240 JFCTheorems.SemanticHashing <> hash_modulus_pos thm
+def 7424:7439 <> hamming_distance
+R7450:7461 JFCTheorems.SemanticHashing <> SemanticHash def
+binder 7442:7443 <> h1:20
+binder 7445:7446 <> h2:21
+R7466:7468 Corelib.Init.Datatypes <> nat ind
+R7544:7550 Stdlib.Arith.PeanoNat Nat leb def
+R7552:7553 JFCTheorems.SemanticHashing <> h1:20 var
+R7555:7556 JFCTheorems.SemanticHashing <> h2:21 var
+R7578:7580 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7576:7577 JFCTheorems.SemanticHashing <> h1:20 var
+R7581:7582 JFCTheorems.SemanticHashing <> h2:21 var
+R7565:7567 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R7563:7564 JFCTheorems.SemanticHashing <> h2:21 var
+R7568:7569 JFCTheorems.SemanticHashing <> h1:20 var
+def 7671:7683 <> lsh_threshold
+R7687:7689 Corelib.Init.Datatypes <> nat ind
+def 7709:7728 <> semantically_similar
+R7739:7750 JFCTheorems.SemanticHashing <> SemanticHash def
+binder 7731:7732 <> h1:22
+binder 7734:7735 <> h2:23
+R7755:7758 Corelib.Init.Datatypes <> bool ind
+R7765:7771 Stdlib.Arith.PeanoNat Nat leb def
+R7774:7789 JFCTheorems.SemanticHashing <> hamming_distance def
+R7791:7792 JFCTheorems.SemanticHashing <> h1:22 var
+R7794:7795 JFCTheorems.SemanticHashing <> h2:23 var
+R7798:7810 JFCTheorems.SemanticHashing <> lsh_threshold def
+prf 8024:8048 <> semantically_similar_refl
+binder 8061:8061 <> h:24
+R8088:8090 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8064:8083 JFCTheorems.SemanticHashing <> semantically_similar def
+R8085:8085 JFCTheorems.SemanticHashing <> h:24 var
+R8087:8087 JFCTheorems.SemanticHashing <> h:24 var
+R8091:8094 Corelib.Init.Datatypes <> true constr
+R8123:8142 JFCTheorems.SemanticHashing <> semantically_similar def
+R8145:8160 JFCTheorems.SemanticHashing <> hamming_distance def
+R8173:8184 Stdlib.Arith.PeanoNat Nat leb_refl thm
+R8173:8184 Stdlib.Arith.PeanoNat Nat leb_refl thm
+R8173:8184 Stdlib.Arith.PeanoNat Nat leb_refl thm
+R8195:8206 Stdlib.Arith.PeanoNat Nat sub_diag thm
+R8195:8206 Stdlib.Arith.PeanoNat Nat sub_diag thm
+R8195:8206 Stdlib.Arith.PeanoNat Nat sub_diag thm
+prf 8275:8298 <> semantically_similar_sym
+binder 8311:8312 <> h1:25
+binder 8314:8315 <> h2:26
+R8344:8346 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8318:8337 JFCTheorems.SemanticHashing <> semantically_similar def
+R8339:8340 JFCTheorems.SemanticHashing <> h1:25 var
+R8342:8343 JFCTheorems.SemanticHashing <> h2:26 var
+R8347:8366 JFCTheorems.SemanticHashing <> semantically_similar def
+R8368:8369 JFCTheorems.SemanticHashing <> h2:26 var
+R8371:8372 JFCTheorems.SemanticHashing <> h1:25 var
+R8405:8424 JFCTheorems.SemanticHashing <> semantically_similar def
+R8427:8442 JFCTheorems.SemanticHashing <> hamming_distance def
+R8457:8463 Stdlib.Arith.PeanoNat Nat leb def
+R8491:8497 Stdlib.Arith.PeanoNat Nat leb def
+R8457:8463 Stdlib.Arith.PeanoNat Nat leb def
+R8491:8497 Stdlib.Arith.PeanoNat Nat leb def
+R8491:8497 Stdlib.Arith.PeanoNat Nat leb def
+R8546:8555 Stdlib.Arith.PeanoNat Nat leb_le thm
+R8546:8555 Stdlib.Arith.PeanoNat Nat leb_le thm
+R8571:8580 Stdlib.Arith.PeanoNat Nat leb_le thm
+R8571:8580 Stdlib.Arith.PeanoNat Nat leb_le thm
+R8604:8606 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8604:8606 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8649:8658 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R8649:8658 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R8674:8683 Stdlib.Arith.PeanoNat Nat leb_gt thm
+R8674:8683 Stdlib.Arith.PeanoNat Nat leb_gt thm
+rec 8742:8753 <> ContentChunk
+proj 8777:8784 <> chunk_id
+proj 8795:8811 <> chunk_token_count
+proj 8856:8865 <> chunk_hash
+proj 8885:8899 <> chunk_embedding
+R8788:8790 Corelib.Init.Datatypes <> nat ind
+R8815:8817 Corelib.Init.Datatypes <> nat ind
+R8869:8880 JFCTheorems.SemanticHashing <> SemanticHash def
+R8903:8905 Corelib.Init.Datatypes <> nat ind
+def 8985:8995 <> DedupeIndex
+R9000:9003 Corelib.Init.Datatypes <> list ind
+R9018:9020 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R9006:9017 JFCTheorems.SemanticHashing <> SemanticHash def
+R9021:9023 Corelib.Init.Datatypes <> nat ind
+def 9105:9116 <> find_similar
+R9123:9134 JFCTheorems.SemanticHashing <> SemanticHash def
+binder 9119:9119 <> h:32
+R9144:9154 JFCTheorems.SemanticHashing <> DedupeIndex def
+binder 9138:9140 <> idx:33
+R9159:9164 Corelib.Init.Datatypes <> option ind
+R9166:9168 Corelib.Init.Datatypes <> nat ind
+R9181:9183 JFCTheorems.SemanticHashing <> idx:33 var
+R9194:9195 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9200:9203 Corelib.Init.Datatypes <> None constr
+R9227:9230 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9209:9209 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9221:9222 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9226:9226 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9248:9267 JFCTheorems.SemanticHashing <> semantically_similar def
+R9269:9269 JFCTheorems.SemanticHashing <> h:32 var
+R9308:9319 JFCTheorems.SemanticHashing <> find_similar:34 def
+R9321:9321 JFCTheorems.SemanticHashing <> h:32 var
+R9288:9291 Corelib.Init.Datatypes <> Some constr
+prf 9436:9456 <> find_similar_in_index
+binder 9469:9469 <> h:36
+binder 9471:9473 <> idx:37
+binder 9475:9477 <> cid:38
+R9513:9520 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9502:9504 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9484:9495 JFCTheorems.SemanticHashing <> find_similar def
+R9497:9497 JFCTheorems.SemanticHashing <> h:36 var
+R9499:9501 JFCTheorems.SemanticHashing <> idx:37 var
+R9505:9508 Corelib.Init.Datatypes <> Some constr
+R9510:9512 JFCTheorems.SemanticHashing <> cid:38 var
+R9521:9527 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R9530:9531 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 9528:9529 <> sh:39
+R9532:9533 Stdlib.Lists.List <> In def
+R9545:9547 JFCTheorems.SemanticHashing <> idx:37 var
+R9535:9535 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9538:9539 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9543:9543 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9536:9537 JFCTheorems.SemanticHashing <> sh:39 var
+R9540:9542 JFCTheorems.SemanticHashing <> cid:38 var
+R9637:9648 JFCTheorems.SemanticHashing <> find_similar def
+R9672:9691 JFCTheorems.SemanticHashing <> semantically_similar def
+R9672:9691 JFCTheorems.SemanticHashing <> semantically_similar def
+def 9884:9895 <> insert_index
+R9902:9913 JFCTheorems.SemanticHashing <> SemanticHash def
+binder 9898:9898 <> h:40
+R9922:9924 Corelib.Init.Datatypes <> nat ind
+binder 9917:9918 <> id:41
+R9934:9944 JFCTheorems.SemanticHashing <> DedupeIndex def
+binder 9928:9930 <> idx:42
+R9949:9959 JFCTheorems.SemanticHashing <> DedupeIndex def
+R9973:9976 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9966:9966 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9968:9969 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9972:9972 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9967:9967 JFCTheorems.SemanticHashing <> h:40 var
+R9970:9971 JFCTheorems.SemanticHashing <> id:41 var
+R9977:9979 JFCTheorems.SemanticHashing <> idx:42 var
+rec 10023:10034 <> DedupeResult
+proj 10065:10077 <> unique_chunks
+proj 10102:10111 <> references
+proj 10170:10181 <> tokens_saved
+R10081:10084 Corelib.Init.Datatypes <> list ind
+R10086:10097 JFCTheorems.SemanticHashing <> ContentChunk rec
+R10115:10118 Corelib.Init.Datatypes <> list ind
+R10124:10126 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R10121:10123 Corelib.Init.Datatypes <> nat ind
+R10127:10129 Corelib.Init.Datatypes <> nat ind
+R10185:10187 Corelib.Init.Datatypes <> nat ind
+def 10344:10358 <> deduplicate_aux
+R10370:10373 Corelib.Init.Datatypes <> list ind
+R10375:10386 JFCTheorems.SemanticHashing <> ContentChunk rec
+binder 10361:10366 <> chunks:47
+R10396:10406 JFCTheorems.SemanticHashing <> DedupeIndex def
+binder 10390:10392 <> idx:48
+R10420:10423 Corelib.Init.Datatypes <> list ind
+R10425:10436 JFCTheorems.SemanticHashing <> ContentChunk rec
+binder 10414:10416 <> acc:49
+R10447:10450 Corelib.Init.Datatypes <> list ind
+R10456:10458 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R10453:10455 Corelib.Init.Datatypes <> nat ind
+R10459:10461 Corelib.Init.Datatypes <> nat ind
+binder 10440:10443 <> refs:50
+R10472:10474 Corelib.Init.Datatypes <> nat ind
+binder 10466:10468 <> pos:51
+R10483:10494 JFCTheorems.SemanticHashing <> DedupeResult rec
+R10507:10512 JFCTheorems.SemanticHashing <> chunks:47 var
+R10523:10524 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10529:10542 JFCTheorems.SemanticHashing <> mkDedupeResult constr
+R10544:10546 JFCTheorems.SemanticHashing <> acc:49 var
+R10548:10551 JFCTheorems.SemanticHashing <> refs:50 var
+R10560:10563 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R10584:10595 JFCTheorems.SemanticHashing <> find_similar def
+R10598:10607 JFCTheorems.SemanticHashing <> chunk_hash proj
+R10612:10614 JFCTheorems.SemanticHashing <> idx:48 var
+R10629:10632 Corelib.Init.Datatypes <> Some constr
+R10740:10754 JFCTheorems.SemanticHashing <> deduplicate_aux:52 def
+R10794:10794 Corelib.Init.Datatypes <> S constr
+R10796:10798 JFCTheorems.SemanticHashing <> pos:51 var
+R10783:10786 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R10770:10770 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R10774:10775 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R10782:10782 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R10771:10773 JFCTheorems.SemanticHashing <> pos:51 var
+R10787:10790 JFCTheorems.SemanticHashing <> refs:50 var
+R10765:10767 JFCTheorems.SemanticHashing <> acc:49 var
+R10761:10763 JFCTheorems.SemanticHashing <> idx:48 var
+binder 10730:10735 <> result:54
+R10814:10827 JFCTheorems.SemanticHashing <> mkDedupeResult constr
+R10842:10854 JFCTheorems.SemanticHashing <> unique_chunks proj
+R10856:10861 JFCTheorems.SemanticHashing <> result:54 var
+R10877:10886 JFCTheorems.SemanticHashing <> references proj
+R10888:10893 JFCTheorems.SemanticHashing <> result:54 var
+R10928:10930 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R10909:10920 JFCTheorems.SemanticHashing <> tokens_saved proj
+R10922:10927 JFCTheorems.SemanticHashing <> result:54 var
+R10931:10947 JFCTheorems.SemanticHashing <> chunk_token_count proj
+R10987:10990 Corelib.Init.Datatypes <> None constr
+R11054:11065 JFCTheorems.SemanticHashing <> insert_index def
+R11068:11077 JFCTheorems.SemanticHashing <> chunk_hash proj
+R11083:11090 JFCTheorems.SemanticHashing <> chunk_id proj
+R11095:11097 JFCTheorems.SemanticHashing <> idx:48 var
+binder 11043:11049 <> new_idx:55
+R11112:11126 JFCTheorems.SemanticHashing <> deduplicate_aux:52 def
+R11158:11158 Corelib.Init.Datatypes <> S constr
+R11160:11162 JFCTheorems.SemanticHashing <> pos:51 var
+R11152:11155 JFCTheorems.SemanticHashing <> refs:50 var
+R11143:11146 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11147:11149 JFCTheorems.SemanticHashing <> acc:49 var
+R11133:11139 JFCTheorems.SemanticHashing <> new_idx:55 var
+def 11194:11204 <> deduplicate
+R11216:11219 Corelib.Init.Datatypes <> list ind
+R11221:11232 JFCTheorems.SemanticHashing <> ContentChunk rec
+binder 11207:11212 <> chunks:56
+R11237:11248 JFCTheorems.SemanticHashing <> DedupeResult rec
+R11255:11269 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R11271:11276 JFCTheorems.SemanticHashing <> chunks:56 var
+R11278:11279 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R11281:11282 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R11284:11285 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+def 11350:11362 <> chunks_tokens
+R11370:11373 Corelib.Init.Datatypes <> list ind
+R11375:11386 JFCTheorems.SemanticHashing <> ContentChunk rec
+binder 11365:11366 <> cs:57
+R11391:11393 Corelib.Init.Datatypes <> nat ind
+R11400:11408 Stdlib.Lists.List <> fold_left def
+R11451:11452 JFCTheorems.SemanticHashing <> cs:57 var
+binder 11415:11417 <> acc:58
+binder 11419:11419 <> c:59
+R11427:11429 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11424:11426 JFCTheorems.SemanticHashing <> acc:58 var
+R11430:11446 JFCTheorems.SemanticHashing <> chunk_token_count proj
+R11448:11448 JFCTheorems.SemanticHashing <> c:59 var
+prf 11464:11481 <> chunks_tokens_cons
+binder 11494:11494 <> c:60
+binder 11496:11496 <> l:61
+R11521:11523 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11499:11511 JFCTheorems.SemanticHashing <> chunks_tokens def
+R11515:11518 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11514:11514 JFCTheorems.SemanticHashing <> c:60 var
+R11519:11519 JFCTheorems.SemanticHashing <> l:61 var
+R11543:11545 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11524:11540 JFCTheorems.SemanticHashing <> chunk_token_count proj
+R11542:11542 JFCTheorems.SemanticHashing <> c:60 var
+R11546:11558 JFCTheorems.SemanticHashing <> chunks_tokens def
+R11560:11560 JFCTheorems.SemanticHashing <> l:61 var
+R11591:11603 JFCTheorems.SemanticHashing <> chunks_tokens def
+R11624:11642 JFCTheorems.SemanticHashing <> fold_left_add_shift thm
+R11644:11655 JFCTheorems.SemanticHashing <> ContentChunk rec
+R11657:11673 JFCTheorems.SemanticHashing <> chunk_token_count proj
+R11678:11694 JFCTheorems.SemanticHashing <> chunk_token_count proj
+R11624:11642 JFCTheorems.SemanticHashing <> fold_left_add_shift thm
+R11644:11655 JFCTheorems.SemanticHashing <> ContentChunk rec
+R11657:11673 JFCTheorems.SemanticHashing <> chunk_token_count proj
+R11678:11694 JFCTheorems.SemanticHashing <> chunk_token_count proj
+R11624:11642 JFCTheorems.SemanticHashing <> fold_left_add_shift thm
+R11644:11655 JFCTheorems.SemanticHashing <> ContentChunk rec
+R11657:11673 JFCTheorems.SemanticHashing <> chunk_token_count proj
+R11678:11694 JFCTheorems.SemanticHashing <> chunk_token_count proj
+prf 11979:12006 <> deduplicate_aux_tokens_bound
+binder 12019:12024 <> chunks:62
+binder 12026:12028 <> idx:63
+binder 12030:12032 <> acc:64
+binder 12034:12037 <> refs:65
+binder 12039:12041 <> pos:66
+R12119:12128 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12048:12060 JFCTheorems.SemanticHashing <> chunks_tokens def
+R12063:12075 JFCTheorems.SemanticHashing <> unique_chunks proj
+R12078:12092 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R12094:12099 JFCTheorems.SemanticHashing <> chunks:62 var
+R12101:12103 JFCTheorems.SemanticHashing <> idx:63 var
+R12105:12107 JFCTheorems.SemanticHashing <> acc:64 var
+R12109:12112 JFCTheorems.SemanticHashing <> refs:65 var
+R12114:12116 JFCTheorems.SemanticHashing <> pos:66 var
+R12146:12148 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R12129:12141 JFCTheorems.SemanticHashing <> chunks_tokens def
+R12143:12145 JFCTheorems.SemanticHashing <> acc:64 var
+R12149:12161 JFCTheorems.SemanticHashing <> chunks_tokens def
+R12163:12168 JFCTheorems.SemanticHashing <> chunks:62 var
+R12248:12262 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R12264:12276 JFCTheorems.SemanticHashing <> unique_chunks proj
+R12285:12297 JFCTheorems.SemanticHashing <> chunks_tokens def
+R12299:12307 Stdlib.Lists.List <> fold_left def
+R12325:12339 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R12355:12372 JFCTheorems.SemanticHashing <> chunks_tokens_cons thm
+R12355:12372 JFCTheorems.SemanticHashing <> chunks_tokens_cons thm
+R12355:12372 JFCTheorems.SemanticHashing <> chunks_tokens_cons thm
+R12389:12400 JFCTheorems.SemanticHashing <> find_similar def
+R12403:12412 JFCTheorems.SemanticHashing <> chunk_hash proj
+R12389:12400 JFCTheorems.SemanticHashing <> find_similar def
+R12403:12412 JFCTheorems.SemanticHashing <> chunk_hash proj
+R12512:12524 JFCTheorems.SemanticHashing <> unique_chunks proj
+R12566:12569 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R12558:12558 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12562:12563 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12565:12565 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12577:12577 Corelib.Init.Datatypes <> S constr
+R12566:12569 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R12558:12558 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12562:12563 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12565:12565 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12577:12577 Corelib.Init.Datatypes <> S constr
+R12649:12660 JFCTheorems.SemanticHashing <> insert_index def
+R12663:12672 JFCTheorems.SemanticHashing <> chunk_hash proj
+R12678:12685 JFCTheorems.SemanticHashing <> chunk_id proj
+R12718:12721 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R12733:12733 Corelib.Init.Datatypes <> S constr
+R12649:12660 JFCTheorems.SemanticHashing <> insert_index def
+R12663:12672 JFCTheorems.SemanticHashing <> chunk_hash proj
+R12678:12685 JFCTheorems.SemanticHashing <> chunk_id proj
+R12718:12721 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R12733:12733 Corelib.Init.Datatypes <> S constr
+R12756:12773 JFCTheorems.SemanticHashing <> chunks_tokens_cons thm
+R12756:12773 JFCTheorems.SemanticHashing <> chunks_tokens_cons thm
+R12756:12773 JFCTheorems.SemanticHashing <> chunks_tokens_cons thm
+prf 13081:13101 <> dedupe_reduces_tokens
+binder 13114:13119 <> chunks:67
+R13140:13150 JFCTheorems.SemanticHashing <> deduplicate def
+R13152:13157 JFCTheorems.SemanticHashing <> chunks:67 var
+binder 13130:13135 <> result:68
+R13202:13205 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13166:13178 JFCTheorems.SemanticHashing <> chunks_tokens def
+R13181:13193 JFCTheorems.SemanticHashing <> unique_chunks proj
+R13195:13200 JFCTheorems.SemanticHashing <> result:68 var
+R13206:13218 JFCTheorems.SemanticHashing <> chunks_tokens def
+R13220:13225 JFCTheorems.SemanticHashing <> chunks:67 var
+R13259:13269 JFCTheorems.SemanticHashing <> deduplicate def
+R13286:13313 JFCTheorems.SemanticHashing <> deduplicate_aux_tokens_bound thm
+R13322:13323 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13325:13326 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13328:13329 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13286:13313 JFCTheorems.SemanticHashing <> deduplicate_aux_tokens_bound thm
+R13322:13323 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13325:13326 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13328:13329 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13347:13359 JFCTheorems.SemanticHashing <> chunks_tokens def
+R13361:13369 Stdlib.Lists.List <> fold_left def
+def 13603:13618 <> index_ids_in_acc
+R13627:13637 JFCTheorems.SemanticHashing <> DedupeIndex def
+binder 13621:13623 <> idx:69
+R13647:13650 Corelib.Init.Datatypes <> list ind
+R13652:13663 JFCTheorems.SemanticHashing <> ContentChunk rec
+binder 13641:13643 <> acc:70
+binder 13685:13686 <> sh:71
+binder 13688:13690 <> cid:72
+R13709:13716 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13693:13694 Stdlib.Lists.List <> In def
+R13706:13708 JFCTheorems.SemanticHashing <> idx:69 var
+R13696:13696 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R13699:13700 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R13704:13704 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R13697:13698 JFCTheorems.SemanticHashing <> sh:71 var
+R13701:13703 JFCTheorems.SemanticHashing <> cid:72 var
+R13717:13723 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R13725:13726 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 13724:13724 <> c:73
+R13735:13738 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R13727:13728 Stdlib.Lists.List <> In def
+R13732:13734 JFCTheorems.SemanticHashing <> acc:70 var
+R13730:13730 JFCTheorems.SemanticHashing <> c:73 var
+R13749:13751 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13739:13746 JFCTheorems.SemanticHashing <> chunk_id proj
+R13748:13748 JFCTheorems.SemanticHashing <> c:73 var
+R13752:13754 JFCTheorems.SemanticHashing <> cid:72 var
+prf 14153:14178 <> deduplicate_aux_refs_valid
+binder 14191:14196 <> chunks:74
+binder 14198:14200 <> idx:75
+binder 14202:14204 <> acc:76
+binder 14206:14209 <> refs:77
+binder 14211:14213 <> pos:78
+R14244:14251 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14220:14235 JFCTheorems.SemanticHashing <> index_ids_in_acc def
+R14237:14239 JFCTheorems.SemanticHashing <> idx:75 var
+R14241:14243 JFCTheorems.SemanticHashing <> acc:76 var
+R14252:14252 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14345:14353 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 14260:14263 <> pos0:79
+binder 14265:14267 <> rid:80
+R14296:14306 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14277:14278 Stdlib.Lists.List <> In def
+R14292:14295 JFCTheorems.SemanticHashing <> refs:77 var
+R14280:14280 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14285:14286 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14290:14290 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14281:14284 JFCTheorems.SemanticHashing <> pos0:79 var
+R14287:14289 JFCTheorems.SemanticHashing <> rid:80 var
+R14307:14313 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R14315:14316 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 14314:14314 <> c:81
+R14325:14328 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R14317:14318 Stdlib.Lists.List <> In def
+R14322:14324 JFCTheorems.SemanticHashing <> acc:76 var
+R14320:14320 JFCTheorems.SemanticHashing <> c:81 var
+R14339:14341 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14329:14336 JFCTheorems.SemanticHashing <> chunk_id proj
+R14338:14338 JFCTheorems.SemanticHashing <> c:81 var
+R14342:14344 JFCTheorems.SemanticHashing <> rid:80 var
+R14368:14382 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R14384:14389 JFCTheorems.SemanticHashing <> chunks:74 var
+R14391:14393 JFCTheorems.SemanticHashing <> idx:75 var
+R14395:14397 JFCTheorems.SemanticHashing <> acc:76 var
+R14399:14402 JFCTheorems.SemanticHashing <> refs:77 var
+R14404:14406 JFCTheorems.SemanticHashing <> pos:78 var
+binder 14358:14363 <> result:82
+binder 14422:14422 <> p:83
+binder 14424:14426 <> rid:84
+R14466:14475 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14435:14436 Stdlib.Lists.List <> In def
+R14448:14457 JFCTheorems.SemanticHashing <> references proj
+R14459:14464 JFCTheorems.SemanticHashing <> result:82 var
+R14438:14438 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14440:14441 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14445:14445 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14439:14439 JFCTheorems.SemanticHashing <> p:83 var
+R14442:14444 JFCTheorems.SemanticHashing <> rid:84 var
+R14476:14482 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R14484:14485 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 14483:14483 <> c:85
+R14513:14516 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R14486:14487 Stdlib.Lists.List <> In def
+R14492:14504 JFCTheorems.SemanticHashing <> unique_chunks proj
+R14506:14511 JFCTheorems.SemanticHashing <> result:82 var
+R14489:14489 JFCTheorems.SemanticHashing <> c:85 var
+R14527:14529 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14517:14524 JFCTheorems.SemanticHashing <> chunk_id proj
+R14526:14526 JFCTheorems.SemanticHashing <> c:85 var
+R14530:14532 JFCTheorems.SemanticHashing <> rid:84 var
+R14623:14637 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R14639:14648 JFCTheorems.SemanticHashing <> references proj
+R14650:14662 JFCTheorems.SemanticHashing <> unique_chunks proj
+R14688:14702 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R14720:14731 JFCTheorems.SemanticHashing <> find_similar def
+R14734:14743 JFCTheorems.SemanticHashing <> chunk_hash proj
+R14720:14731 JFCTheorems.SemanticHashing <> find_similar def
+R14734:14743 JFCTheorems.SemanticHashing <> chunk_hash proj
+R14848:14860 JFCTheorems.SemanticHashing <> unique_chunks proj
+R14862:14871 JFCTheorems.SemanticHashing <> references proj
+R15249:15269 JFCTheorems.SemanticHashing <> find_similar_in_index thm
+R15249:15269 JFCTheorems.SemanticHashing <> find_similar_in_index thm
+R15635:15636 Stdlib.Lists.List <> In def
+prf 16605:16620 <> references_valid
+binder 16633:16638 <> chunks:86
+R16659:16669 JFCTheorems.SemanticHashing <> deduplicate def
+R16671:16676 JFCTheorems.SemanticHashing <> chunks:86 var
+binder 16649:16654 <> result:87
+binder 16692:16694 <> pos:88
+binder 16696:16701 <> ref_id:89
+R16746:16755 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R16710:16711 Stdlib.Lists.List <> In def
+R16728:16737 JFCTheorems.SemanticHashing <> references proj
+R16739:16744 JFCTheorems.SemanticHashing <> result:87 var
+R16713:16713 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16717:16718 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16725:16725 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16714:16716 JFCTheorems.SemanticHashing <> pos:88 var
+R16719:16724 JFCTheorems.SemanticHashing <> ref_id:89 var
+R16756:16762 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R16764:16765 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 16763:16763 <> c:90
+R16793:16796 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R16766:16767 Stdlib.Lists.List <> In def
+R16772:16784 JFCTheorems.SemanticHashing <> unique_chunks proj
+R16786:16791 JFCTheorems.SemanticHashing <> result:87 var
+R16769:16769 JFCTheorems.SemanticHashing <> c:90 var
+R16807:16809 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16797:16804 JFCTheorems.SemanticHashing <> chunk_id proj
+R16806:16806 JFCTheorems.SemanticHashing <> c:90 var
+R16810:16815 JFCTheorems.SemanticHashing <> ref_id:89 var
+R16849:16859 JFCTheorems.SemanticHashing <> deduplicate def
+R16870:16895 JFCTheorems.SemanticHashing <> deduplicate_aux_refs_valid thm
+R16870:16895 JFCTheorems.SemanticHashing <> deduplicate_aux_refs_valid thm
+R16983:16984 Stdlib.Lists.List <> In def
+R17096:17097 Stdlib.Lists.List <> In def
+prf 17511:17541 <> find_similar_none_of_dissimilar
+binder 17554:17554 <> h:91
+binder 17556:17558 <> idx:92
+R17565:17565 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17634:17642 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 17573:17574 <> sh:93
+binder 17576:17578 <> cid:94
+R17597:17600 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17581:17582 Stdlib.Lists.List <> In def
+R17594:17596 JFCTheorems.SemanticHashing <> idx:92 var
+R17584:17584 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17587:17588 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17592:17592 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17585:17586 JFCTheorems.SemanticHashing <> sh:93 var
+R17589:17591 JFCTheorems.SemanticHashing <> cid:94 var
+R17626:17628 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17601:17620 JFCTheorems.SemanticHashing <> semantically_similar def
+R17622:17622 JFCTheorems.SemanticHashing <> h:91 var
+R17624:17625 JFCTheorems.SemanticHashing <> sh:93 var
+R17629:17633 Corelib.Init.Datatypes <> false constr
+R17661:17663 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17643:17654 JFCTheorems.SemanticHashing <> find_similar def
+R17656:17656 JFCTheorems.SemanticHashing <> h:91 var
+R17658:17660 JFCTheorems.SemanticHashing <> idx:92 var
+R17664:17667 Corelib.Init.Datatypes <> None constr
+R17754:17765 JFCTheorems.SemanticHashing <> find_similar def
+R17793:17801 Corelib.Init.Logic <> or_introl constr
+R17803:17809 Corelib.Init.Logic <> eq_refl constr
+R17793:17801 Corelib.Init.Logic <> or_introl constr
+R17803:17809 Corelib.Init.Logic <> eq_refl constr
+R17793:17801 Corelib.Init.Logic <> or_introl constr
+R17803:17809 Corelib.Init.Logic <> eq_refl constr
+prf 18258:18280 <> dedupe_keeps_dissimilar
+binder 18293:18293 <> c:95
+binder 18295:18298 <> rest:96
+binder 18300:18302 <> idx:97
+binder 18304:18306 <> acc:98
+binder 18308:18311 <> refs:99
+binder 18313:18315 <> pos:100
+R18322:18322 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18411:18419 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 18330:18331 <> sh:101
+binder 18333:18335 <> cid:102
+R18354:18364 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18338:18339 Stdlib.Lists.List <> In def
+R18351:18353 JFCTheorems.SemanticHashing <> idx:97 var
+R18341:18341 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18344:18345 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18349:18349 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18342:18343 JFCTheorems.SemanticHashing <> sh:101 var
+R18346:18348 JFCTheorems.SemanticHashing <> cid:102 var
+R18403:18405 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18365:18384 JFCTheorems.SemanticHashing <> semantically_similar def
+R18387:18396 JFCTheorems.SemanticHashing <> chunk_hash proj
+R18398:18398 JFCTheorems.SemanticHashing <> c:95 var
+R18401:18402 JFCTheorems.SemanticHashing <> sh:101 var
+R18406:18410 Corelib.Init.Datatypes <> false constr
+R18420:18421 Stdlib.Lists.List <> In def
+R18426:18438 JFCTheorems.SemanticHashing <> unique_chunks proj
+R18441:18455 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R18459:18462 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R18458:18458 JFCTheorems.SemanticHashing <> c:95 var
+R18463:18466 JFCTheorems.SemanticHashing <> rest:96 var
+R18469:18471 JFCTheorems.SemanticHashing <> idx:97 var
+R18473:18475 JFCTheorems.SemanticHashing <> acc:98 var
+R18477:18480 JFCTheorems.SemanticHashing <> refs:99 var
+R18482:18484 JFCTheorems.SemanticHashing <> pos:100 var
+R18423:18423 JFCTheorems.SemanticHashing <> c:95 var
+R18542:18556 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R18571:18601 JFCTheorems.SemanticHashing <> find_similar_none_of_dissimilar thm
+R18604:18613 JFCTheorems.SemanticHashing <> chunk_hash proj
+R18571:18601 JFCTheorems.SemanticHashing <> find_similar_none_of_dissimilar thm
+R18604:18613 JFCTheorems.SemanticHashing <> chunk_hash proj
+R18571:18601 JFCTheorems.SemanticHashing <> find_similar_none_of_dissimilar thm
+R18604:18613 JFCTheorems.SemanticHashing <> chunk_hash proj
+R18724:18735 JFCTheorems.SemanticHashing <> insert_index def
+R18738:18747 JFCTheorems.SemanticHashing <> chunk_hash proj
+R18753:18760 JFCTheorems.SemanticHashing <> chunk_id proj
+R18724:18735 JFCTheorems.SemanticHashing <> insert_index def
+R18738:18747 JFCTheorems.SemanticHashing <> chunk_hash proj
+R18753:18760 JFCTheorems.SemanticHashing <> chunk_id proj
+binder 18880:18881 <> ch:103
+binder 18883:18886 <> idx0:104
+binder 18888:18891 <> acc0:105
+binder 18893:18897 <> refs0:106
+binder 18899:18902 <> pos0:107
+binder 18904:18904 <> x:108
+R18922:18931 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18913:18914 Stdlib.Lists.List <> In def
+R18918:18921 JFCTheorems.SemanticHashing <> acc0:105 var
+R18916:18916 JFCTheorems.SemanticHashing <> x:108 var
+R18932:18933 Stdlib.Lists.List <> In def
+R18938:18950 JFCTheorems.SemanticHashing <> unique_chunks proj
+R18953:18967 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R18969:18970 JFCTheorems.SemanticHashing <> ch:103 var
+R18972:18975 JFCTheorems.SemanticHashing <> idx0:104 var
+R18977:18980 JFCTheorems.SemanticHashing <> acc0:105 var
+R18982:18986 JFCTheorems.SemanticHashing <> refs0:106 var
+R18988:18991 JFCTheorems.SemanticHashing <> pos0:107 var
+R18935:18935 JFCTheorems.SemanticHashing <> x:108 var
+binder 18880:18881 <> ch:109
+binder 18883:18886 <> idx0:110
+binder 18888:18891 <> acc0:111
+binder 18893:18897 <> refs0:112
+binder 18899:18902 <> pos0:113
+binder 18904:18904 <> x:114
+R18922:18931 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18913:18914 Stdlib.Lists.List <> In def
+R18918:18921 JFCTheorems.SemanticHashing <> acc0:111 var
+R18916:18916 JFCTheorems.SemanticHashing <> x:114 var
+R18932:18933 Stdlib.Lists.List <> In def
+R18938:18950 JFCTheorems.SemanticHashing <> unique_chunks proj
+R18953:18967 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R18969:18970 JFCTheorems.SemanticHashing <> ch:109 var
+R18972:18975 JFCTheorems.SemanticHashing <> idx0:110 var
+R18977:18980 JFCTheorems.SemanticHashing <> acc0:111 var
+R18982:18986 JFCTheorems.SemanticHashing <> refs0:112 var
+R18988:18991 JFCTheorems.SemanticHashing <> pos0:113 var
+R18935:18935 JFCTheorems.SemanticHashing <> x:114 var
+R19075:19089 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R19091:19103 JFCTheorems.SemanticHashing <> unique_chunks proj
+R19128:19142 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R19162:19173 JFCTheorems.SemanticHashing <> find_similar def
+R19176:19185 JFCTheorems.SemanticHashing <> chunk_hash proj
+R19162:19173 JFCTheorems.SemanticHashing <> find_similar def
+R19176:19185 JFCTheorems.SemanticHashing <> chunk_hash proj
+R19218:19230 JFCTheorems.SemanticHashing <> unique_chunks proj
+prf 20242:20274 <> content_hash_dedup_keeps_distinct
+binder 20287:20287 <> c:115
+binder 20289:20292 <> rest:116
+binder 20294:20296 <> idx:117
+binder 20298:20300 <> acc:118
+binder 20302:20305 <> refs:119
+binder 20307:20309 <> pos:120
+R20397:20397 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20506:20574 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 20405:20406 <> sh:121
+binder 20408:20410 <> cid:122
+R20429:20439 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20413:20414 Stdlib.Lists.List <> In def
+R20426:20428 JFCTheorems.SemanticHashing <> idx:117 var
+R20416:20416 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20419:20420 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20424:20424 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20417:20418 JFCTheorems.SemanticHashing <> sh:121 var
+R20421:20423 JFCTheorems.SemanticHashing <> cid:122 var
+R20478:20480 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20440:20459 JFCTheorems.SemanticHashing <> semantically_similar def
+R20462:20471 JFCTheorems.SemanticHashing <> chunk_hash proj
+R20473:20473 JFCTheorems.SemanticHashing <> c:115 var
+R20476:20477 JFCTheorems.SemanticHashing <> sh:121 var
+R20481:20487 Stdlib.Arith.PeanoNat Nat eqb def
+R20490:20499 JFCTheorems.SemanticHashing <> chunk_hash proj
+R20501:20501 JFCTheorems.SemanticHashing <> c:115 var
+R20504:20505 JFCTheorems.SemanticHashing <> sh:121 var
+R20575:20575 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20629:20637 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 20583:20584 <> sh:123
+binder 20586:20588 <> cid:124
+R20607:20610 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20591:20592 Stdlib.Lists.List <> In def
+R20604:20606 JFCTheorems.SemanticHashing <> idx:117 var
+R20594:20594 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20597:20598 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20602:20602 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R20595:20596 JFCTheorems.SemanticHashing <> sh:123 var
+R20599:20601 JFCTheorems.SemanticHashing <> cid:124 var
+R20623:20626 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R20611:20620 JFCTheorems.SemanticHashing <> chunk_hash proj
+R20622:20622 JFCTheorems.SemanticHashing <> c:115 var
+R20627:20628 JFCTheorems.SemanticHashing <> sh:123 var
+R20638:20639 Stdlib.Lists.List <> In def
+R20644:20656 JFCTheorems.SemanticHashing <> unique_chunks proj
+R20659:20673 JFCTheorems.SemanticHashing <> deduplicate_aux def
+R20677:20680 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R20676:20676 JFCTheorems.SemanticHashing <> c:115 var
+R20681:20684 JFCTheorems.SemanticHashing <> rest:116 var
+R20687:20689 JFCTheorems.SemanticHashing <> idx:117 var
+R20691:20693 JFCTheorems.SemanticHashing <> acc:118 var
+R20695:20698 JFCTheorems.SemanticHashing <> refs:119 var
+R20700:20702 JFCTheorems.SemanticHashing <> pos:120 var
+R20641:20641 JFCTheorems.SemanticHashing <> c:115 var
+R20774:20796 JFCTheorems.SemanticHashing <> dedupe_keeps_dissimilar thm
+R20774:20796 JFCTheorems.SemanticHashing <> dedupe_keeps_dissimilar thm
+R20860:20870 Stdlib.Arith.PeanoNat Nat eqb_neq thm
+R20860:20870 Stdlib.Arith.PeanoNat Nat eqb_neq thm
+prf 21922:21946 <> similar_chunk_not_readded
+binder 21959:21959 <> c:125
+binder 21961:21963 <> idx:126
+binder 21965:21966 <> sh:127
+binder 21968:21970 <> cid:128
+R21993:22000 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R21977:21978 Stdlib.Lists.List <> In def
+R21990:21992 JFCTheorems.SemanticHashing <> idx:126 var
+R21980:21980 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R21983:21984 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R21988:21988 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R21981:21982 JFCTheorems.SemanticHashing <> sh:127 var
+R21985:21987 JFCTheorems.SemanticHashing <> cid:128 var
+R22046:22181 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22039:22041 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R22001:22020 JFCTheorems.SemanticHashing <> semantically_similar def
+R22023:22032 JFCTheorems.SemanticHashing <> chunk_hash proj
+R22034:22034 JFCTheorems.SemanticHashing <> c:125 var
+R22037:22038 JFCTheorems.SemanticHashing <> sh:127 var
+R22042:22045 Corelib.Init.Datatypes <> true constr
+R22213:22216 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R22182:22193 JFCTheorems.SemanticHashing <> find_similar def
+R22196:22205 JFCTheorems.SemanticHashing <> chunk_hash proj
+R22207:22207 JFCTheorems.SemanticHashing <> c:125 var
+R22210:22212 JFCTheorems.SemanticHashing <> idx:126 var
+R22217:22220 Corelib.Init.Datatypes <> None constr
+R22374:22375 Stdlib.Lists.List <> In def
+R22410:22421 JFCTheorems.SemanticHashing <> find_similar def
+R22439:22458 JFCTheorems.SemanticHashing <> semantically_similar def
+R22461:22470 JFCTheorems.SemanticHashing <> chunk_hash proj
+R22439:22458 JFCTheorems.SemanticHashing <> semantically_similar def
+R22461:22470 JFCTheorems.SemanticHashing <> chunk_hash proj
+def 22805:22813 <> num_bands
+R22817:22819 Corelib.Init.Datatypes <> nat ind
+def 22838:22850 <> rows_per_band
+R22854:22856 Corelib.Init.Datatypes <> nat ind
+def 22966:22974 <> band_hash
+R22981:22992 JFCTheorems.SemanticHashing <> SemanticHash def
+binder 22977:22977 <> h:129
+R23003:23005 Corelib.Init.Datatypes <> nat ind
+binder 22996:22999 <> band:130
+R23010:23012 Corelib.Init.Datatypes <> nat ind
+R23019:23019 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'mod'_x not
+R23040:23045 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'mod'_x not
+R23021:23023 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R23020:23020 JFCTheorems.SemanticHashing <> h:129 var
+R23024:23030 Stdlib.Arith.PeanoNat Nat pow def
+R23036:23039 JFCTheorems.SemanticHashing <> band:130 var
+prf 23137:23153 <> band_hash_bounded
+binder 23166:23166 <> h:131
+binder 23168:23171 <> band:132
+R23190:23192 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R23174:23182 JFCTheorems.SemanticHashing <> band_hash def
+R23184:23184 JFCTheorems.SemanticHashing <> h:131 var
+R23186:23189 JFCTheorems.SemanticHashing <> band:132 var
+R23229:23237 JFCTheorems.SemanticHashing <> band_hash def
+R23248:23266 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R23248:23266 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+def 23364:23377 <> band_collision
+R23388:23399 JFCTheorems.SemanticHashing <> SemanticHash def
+binder 23380:23381 <> h1:133
+binder 23383:23384 <> h2:134
+R23410:23412 Corelib.Init.Datatypes <> nat ind
+binder 23403:23406 <> band:135
+R23417:23420 Corelib.Init.Datatypes <> bool ind
+R23427:23433 Stdlib.Arith.PeanoNat Nat eqb def
+R23436:23444 JFCTheorems.SemanticHashing <> band_hash def
+R23446:23447 JFCTheorems.SemanticHashing <> h1:133 var
+R23449:23452 JFCTheorems.SemanticHashing <> band:135 var
+R23456:23464 JFCTheorems.SemanticHashing <> band_hash def
+R23466:23467 JFCTheorems.SemanticHashing <> h2:134 var
+R23469:23472 JFCTheorems.SemanticHashing <> band:135 var
+prf 23558:23576 <> band_collision_refl
+binder 23589:23589 <> h:136
+binder 23591:23594 <> band:137
+R23620:23622 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R23597:23610 JFCTheorems.SemanticHashing <> band_collision def
+R23612:23612 JFCTheorems.SemanticHashing <> h:136 var
+R23614:23614 JFCTheorems.SemanticHashing <> h:136 var
+R23616:23619 JFCTheorems.SemanticHashing <> band:137 var
+R23623:23626 Corelib.Init.Datatypes <> true constr
+R23660:23673 JFCTheorems.SemanticHashing <> band_collision def
+R23682:23693 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R23682:23693 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+def 23772:23789 <> any_band_collision
+R23800:23811 JFCTheorems.SemanticHashing <> SemanticHash def
+binder 23792:23793 <> h1:138
+binder 23795:23796 <> h2:139
+R23816:23819 Corelib.Init.Datatypes <> bool ind
+R23826:23832 Stdlib.Lists.List <> existsb def
+R23858:23860 Corelib.Lists.ListDef <> seq def
+R23864:23872 JFCTheorems.SemanticHashing <> num_bands def
+R23835:23848 JFCTheorems.SemanticHashing <> band_collision def
+R23850:23851 JFCTheorems.SemanticHashing <> h1:138 var
+R23853:23854 JFCTheorems.SemanticHashing <> h2:139 var
+prf 24420:24445 <> identical_collides_in_band
+binder 24458:24458 <> h:140
+R24487:24489 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R24465:24482 JFCTheorems.SemanticHashing <> any_band_collision def
+R24484:24484 JFCTheorems.SemanticHashing <> h:140 var
+R24486:24486 JFCTheorems.SemanticHashing <> h:140 var
+R24490:24493 Corelib.Init.Datatypes <> true constr
+R24522:24539 JFCTheorems.SemanticHashing <> any_band_collision def
+R24550:24563 Stdlib.Lists.List <> existsb_exists thm
+R24550:24563 Stdlib.Lists.List <> existsb_exists thm
+R24595:24600 Stdlib.Lists.List <> in_seq thm
+R24595:24600 Stdlib.Lists.List <> in_seq thm
+R24610:24618 JFCTheorems.SemanticHashing <> num_bands def
+R24636:24654 JFCTheorems.SemanticHashing <> band_collision_refl thm
+R24636:24654 JFCTheorems.SemanticHashing <> band_collision_refl thm
+def 24836:24848 <> embedding_dim
+R24852:24854 Corelib.Init.Datatypes <> nat ind
+def 24976:24988 <> EmbeddingSign
+R24993:24996 Corelib.Init.Datatypes <> list ind
+R24998:25001 Corelib.Init.Datatypes <> bool ind
+def 25175:25181 <> simhash
+R25196:25208 JFCTheorems.SemanticHashing <> EmbeddingSign def
+binder 25184:25192 <> embedding:141
+R25213:25224 JFCTheorems.SemanticHashing <> SemanticHash def
+R25231:25239 Stdlib.Lists.List <> fold_left def
+R25296:25304 JFCTheorems.SemanticHashing <> embedding:141 var
+binder 25246:25248 <> acc:142
+R25255:25258 Corelib.Init.Datatypes <> bool ind
+binder 25251:25251 <> b:143
+R25271:25274 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R25293:25293 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R25265:25267 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R25268:25270 JFCTheorems.SemanticHashing <> acc:142 var
+R25278:25278 JFCTheorems.SemanticHashing <> b:143 var
+prf 25789:25809 <> simhash_deterministic
+R25830:25842 JFCTheorems.SemanticHashing <> EmbeddingSign def
+binder 25822:25823 <> e1:144
+binder 25825:25826 <> e2:145
+R25856:25863 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R25851:25853 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R25849:25850 JFCTheorems.SemanticHashing <> e1:144 var
+R25854:25855 JFCTheorems.SemanticHashing <> e2:145 var
+R25874:25876 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R25864:25870 JFCTheorems.SemanticHashing <> simhash def
+R25872:25873 JFCTheorems.SemanticHashing <> e1:144 var
+R25877:25883 JFCTheorems.SemanticHashing <> simhash def
+R25885:25886 JFCTheorems.SemanticHashing <> e2:145 var
+prf 26171:26187 <> simhash_singleton
+R26204:26207 Corelib.Init.Datatypes <> bool ind
+binder 26200:26200 <> b:146
+R26225:26228 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R26247:26247 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R26214:26220 JFCTheorems.SemanticHashing <> simhash def
+R26222:26222 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R26224:26224 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R26223:26223 JFCTheorems.SemanticHashing <> b:146 var
+R26232:26232 JFCTheorems.SemanticHashing <> b:146 var
+R26276:26282 JFCTheorems.SemanticHashing <> simhash def
+R26290:26298 Stdlib.Lists.List <> fold_left def
+def 26392:26401 <> chunk_size
+R26405:26407 Corelib.Init.Datatypes <> nat ind
+def 26857:26873 <> chunk_stream_fuel
+R26883:26885 Corelib.Init.Datatypes <> nat ind
+binder 26876:26879 <> fuel:147
+R26898:26901 Corelib.Init.Datatypes <> list ind
+R26903:26905 Corelib.Init.Datatypes <> nat ind
+binder 26889:26894 <> tokens:148
+R26916:26918 Corelib.Init.Datatypes <> nat ind
+binder 26909:26912 <> size:149
+R26927:26930 Corelib.Init.Datatypes <> list ind
+R26933:26936 Corelib.Init.Datatypes <> list ind
+R26938:26940 Corelib.Init.Datatypes <> nat ind
+R26954:26957 JFCTheorems.SemanticHashing <> fuel:147 var
+R26973:26974 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R26980:26980 Corelib.Init.Datatypes <> S constr
+R27003:27008 JFCTheorems.SemanticHashing <> tokens:148 var
+R27023:27024 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R27029:27030 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R27063:27066 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R27045:27050 Corelib.Lists.ListDef <> firstn def
+R27057:27062 JFCTheorems.SemanticHashing <> tokens:148 var
+R27052:27055 JFCTheorems.SemanticHashing <> size:149 var
+R27067:27083 JFCTheorems.SemanticHashing <> chunk_stream_fuel:150 def
+R27111:27114 JFCTheorems.SemanticHashing <> size:149 var
+R27092:27096 Corelib.Lists.ListDef <> skipn def
+R27103:27108 JFCTheorems.SemanticHashing <> tokens:148 var
+R27098:27101 JFCTheorems.SemanticHashing <> size:149 var
+def 27145:27156 <> chunk_stream
+R27168:27171 Corelib.Init.Datatypes <> list ind
+R27173:27175 Corelib.Init.Datatypes <> nat ind
+binder 27159:27164 <> tokens:153
+R27186:27188 Corelib.Init.Datatypes <> nat ind
+binder 27179:27182 <> size:154
+R27193:27196 Corelib.Init.Datatypes <> list ind
+R27199:27202 Corelib.Init.Datatypes <> list ind
+R27204:27206 Corelib.Init.Datatypes <> nat ind
+R27214:27230 JFCTheorems.SemanticHashing <> chunk_stream_fuel def
+R27233:27238 Corelib.Init.Datatypes <> length def
+R27240:27245 JFCTheorems.SemanticHashing <> tokens:153 var
+R27248:27253 JFCTheorems.SemanticHashing <> tokens:153 var
+R27255:27258 JFCTheorems.SemanticHashing <> size:154 var
+prf 27477:27503 <> chunk_stream_fuel_preserves
+binder 27516:27519 <> fuel:155
+binder 27521:27526 <> tokens:156
+binder 27528:27531 <> size:157
+R27546:27553 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R27542:27544 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R27538:27541 JFCTheorems.SemanticHashing <> size:157 var
+R27575:27582 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R27567:27570 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R27554:27559 Corelib.Init.Datatypes <> length def
+R27561:27566 JFCTheorems.SemanticHashing <> tokens:156 var
+R27571:27574 JFCTheorems.SemanticHashing <> fuel:155 var
+R27641:27643 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R27583:27590 Stdlib.Lists.List <> flat_map def
+R27606:27622 JFCTheorems.SemanticHashing <> chunk_stream_fuel def
+R27624:27627 JFCTheorems.SemanticHashing <> fuel:155 var
+R27629:27634 JFCTheorems.SemanticHashing <> tokens:156 var
+R27636:27639 JFCTheorems.SemanticHashing <> size:157 var
+binder 27597:27597 <> x:158
+R27602:27602 JFCTheorems.SemanticHashing <> x:158 var
+R27644:27649 JFCTheorems.SemanticHashing <> tokens:156 var
+R27847:27852 Corelib.Init.Datatypes <> length def
+R27932:27948 JFCTheorems.SemanticHashing <> chunk_stream_fuel def
+R27950:27957 Stdlib.Lists.List <> flat_map def
+R27993:28004 Stdlib.Lists.List <> firstn_skipn thm
+R27993:28004 Stdlib.Lists.List <> firstn_skipn thm
+R28121:28132 Stdlib.Lists.List <> skipn_length abbrev
+R28121:28132 Stdlib.Lists.List <> skipn_length abbrev
+R28121:28132 Stdlib.Lists.List <> skipn_length abbrev
+R28140:28145 Corelib.Init.Datatypes <> length def
+prf 28447:28468 <> chunk_preserves_tokens
+binder 28481:28486 <> tokens:159
+binder 28488:28491 <> size:160
+R28506:28513 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R28502:28504 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R28498:28501 JFCTheorems.SemanticHashing <> size:160 var
+R28562:28564 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R28514:28521 Stdlib.Lists.List <> flat_map def
+R28537:28548 JFCTheorems.SemanticHashing <> chunk_stream def
+R28550:28555 JFCTheorems.SemanticHashing <> tokens:159 var
+R28557:28560 JFCTheorems.SemanticHashing <> size:160 var
+binder 28528:28528 <> x:161
+R28533:28533 JFCTheorems.SemanticHashing <> x:161 var
+R28565:28570 JFCTheorems.SemanticHashing <> tokens:159 var
+R28615:28626 JFCTheorems.SemanticHashing <> chunk_stream def
+R28637:28663 JFCTheorems.SemanticHashing <> chunk_stream_fuel_preserves thm
+R28637:28663 JFCTheorems.SemanticHashing <> chunk_stream_fuel_preserves thm
+def 28865:28880 <> expected_savings
+R28913:28915 Corelib.Init.Datatypes <> nat ind
+binder 28883:28894 <> total_chunks:162
+binder 28896:28909 <> duplicate_rate:163
+R28920:28922 Corelib.Init.Datatypes <> nat ind
+R28929:28929 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R28959:28962 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R28942:28944 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R28930:28941 JFCTheorems.SemanticHashing <> total_chunks:162 var
+R28945:28958 JFCTheorems.SemanticHashing <> duplicate_rate:163 var
+def 29059:29080 <> typical_duplicate_rate
+R29084:29086 Corelib.Init.Datatypes <> nat ind
+prf 29465:29491 <> typical_savings_significant
+binder 29504:29515 <> total_chunks:164
+R29541:29548 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R29534:29537 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R29522:29533 JFCTheorems.SemanticHashing <> total_chunks:164 var
+R29601:29604 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R29549:29564 JFCTheorems.SemanticHashing <> expected_savings def
+R29566:29577 JFCTheorems.SemanticHashing <> total_chunks:164 var
+R29579:29600 JFCTheorems.SemanticHashing <> typical_duplicate_rate def
+R29652:29667 JFCTheorems.SemanticHashing <> expected_savings def
+R29670:29691 JFCTheorems.SemanticHashing <> typical_duplicate_rate def
+R29702:29723 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+R29702:29723 Stdlib.Arith.PeanoNat Nat div_le_lower_bound def
+def 29862:29879 <> incremental_dedupe
+R29894:29905 JFCTheorems.SemanticHashing <> ContentChunk rec
+binder 29882:29890 <> new_chunk:165
+R29915:29925 JFCTheorems.SemanticHashing <> DedupeIndex def
+binder 29909:29911 <> idx:166
+R29945:29947 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R29935:29940 Corelib.Init.Datatypes <> option ind
+R29942:29944 Corelib.Init.Datatypes <> nat ind
+R29948:29958 JFCTheorems.SemanticHashing <> DedupeIndex def
+R29972:29983 JFCTheorems.SemanticHashing <> find_similar def
+R29986:29995 JFCTheorems.SemanticHashing <> chunk_hash proj
+R29997:30005 JFCTheorems.SemanticHashing <> new_chunk:165 var
+R30008:30010 JFCTheorems.SemanticHashing <> idx:166 var
+R30021:30024 Corelib.Init.Datatypes <> Some constr
+R30033:30033 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30042:30043 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30047:30047 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30034:30037 Corelib.Init.Datatypes <> Some constr
+R30044:30046 JFCTheorems.SemanticHashing <> idx:166 var
+R30074:30077 Corelib.Init.Datatypes <> None constr
+R30082:30082 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30087:30088 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30149:30149 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R30083:30086 Corelib.Init.Datatypes <> None constr
+R30089:30100 JFCTheorems.SemanticHashing <> insert_index def
+R30103:30112 JFCTheorems.SemanticHashing <> chunk_hash proj
+R30114:30122 JFCTheorems.SemanticHashing <> new_chunk:165 var
+R30126:30133 JFCTheorems.SemanticHashing <> chunk_id proj
+R30135:30143 JFCTheorems.SemanticHashing <> new_chunk:165 var
+R30146:30148 JFCTheorems.SemanticHashing <> idx:166 var
+prf 30690:30714 <> incremental_matches_batch
+binder 30727:30727 <> c:167
+binder 30729:30731 <> idx:168
+R30799:30799 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R30864:30951 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R31087:31087 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R30830:30832 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R30800:30802 Corelib.Init.Datatypes <> fst def
+R30805:30822 JFCTheorems.SemanticHashing <> incremental_dedupe def
+R30824:30824 JFCTheorems.SemanticHashing <> c:167 var
+R30826:30828 JFCTheorems.SemanticHashing <> idx:168 var
+R30833:30844 JFCTheorems.SemanticHashing <> find_similar def
+R30847:30856 JFCTheorems.SemanticHashing <> chunk_hash proj
+R30858:30858 JFCTheorems.SemanticHashing <> c:167 var
+R30861:30863 JFCTheorems.SemanticHashing <> idx:168 var
+R30990:31000 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R30983:30985 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R30952:30963 JFCTheorems.SemanticHashing <> find_similar def
+R30966:30975 JFCTheorems.SemanticHashing <> chunk_hash proj
+R30977:30977 JFCTheorems.SemanticHashing <> c:167 var
+R30980:30982 JFCTheorems.SemanticHashing <> idx:168 var
+R30986:30989 Corelib.Init.Datatypes <> None constr
+R31031:31042 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R31001:31003 Corelib.Init.Datatypes <> snd def
+R31006:31023 JFCTheorems.SemanticHashing <> incremental_dedupe def
+R31025:31025 JFCTheorems.SemanticHashing <> c:167 var
+R31027:31029 JFCTheorems.SemanticHashing <> idx:168 var
+R31043:31054 JFCTheorems.SemanticHashing <> insert_index def
+R31057:31066 JFCTheorems.SemanticHashing <> chunk_hash proj
+R31068:31068 JFCTheorems.SemanticHashing <> c:167 var
+R31072:31079 JFCTheorems.SemanticHashing <> chunk_id proj
+R31081:31081 JFCTheorems.SemanticHashing <> c:167 var
+R31084:31086 JFCTheorems.SemanticHashing <> idx:168 var
+R31120:31137 JFCTheorems.SemanticHashing <> incremental_dedupe def
+R31152:31163 JFCTheorems.SemanticHashing <> find_similar def
+R31166:31175 JFCTheorems.SemanticHashing <> chunk_hash proj
+R31152:31163 JFCTheorems.SemanticHashing <> find_similar def
+R31166:31175 JFCTheorems.SemanticHashing <> chunk_hash proj
+R31215:31217 Corelib.Init.Datatypes <> fst def
+R31292:31294 Corelib.Init.Datatypes <> fst def
+R31332:31334 Corelib.Init.Datatypes <> snd def

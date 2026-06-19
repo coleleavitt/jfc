@@ -7,8 +7,11 @@ mod arxiv;
 mod brave;
 mod dblp;
 mod duckduckgo;
+mod fourget;
 mod google;
+mod millionshort;
 mod openalex;
+mod primo;
 mod searxng;
 mod semantic_scholar;
 mod wikipedia;
@@ -17,8 +20,11 @@ pub use arxiv::ArXivBackend;
 pub use brave::BraveBackend;
 pub use dblp::DBLPBackend;
 pub use duckduckgo::DuckDuckGoBackend;
+pub use fourget::{FourGetBackend, search_fourget_structured};
 pub use google::GoogleBackend;
+pub use millionshort::{MillionShortBackend, search_millionshort_structured};
 pub use openalex::OpenAlexBackend;
+pub use primo::PrimoBackend;
 pub use searxng::SearXNGBackend;
 pub use semantic_scholar::SemanticScholarBackend;
 pub use wikipedia::WikipediaBackend;
@@ -30,11 +36,14 @@ pub fn available_backends() -> Vec<Box<dyn SearchBackend>> {
     let all: Vec<Box<dyn SearchBackend>> = vec![
         Box::new(GoogleBackend),
         Box::new(BraveBackend),
+        Box::new(MillionShortBackend),
         Box::new(SearXNGBackend),
         Box::new(DuckDuckGoBackend),
+        Box::new(FourGetBackend),
         Box::new(ArXivBackend),
         Box::new(SemanticScholarBackend),
         Box::new(OpenAlexBackend),
+        Box::new(PrimoBackend),
         Box::new(DBLPBackend),
         Box::new(WikipediaBackend),
     ];
@@ -50,11 +59,14 @@ pub fn backends_for_ids(ids: &[BackendId]) -> Vec<Box<dyn SearchBackend>> {
         let backend: Option<Box<dyn SearchBackend>> = match id {
             BackendId::Google => Some(Box::new(GoogleBackend)),
             BackendId::Brave => Some(Box::new(BraveBackend)),
+            BackendId::MillionShort => Some(Box::new(MillionShortBackend)),
             BackendId::SearXNG => Some(Box::new(SearXNGBackend)),
             BackendId::DuckDuckGo => Some(Box::new(DuckDuckGoBackend)),
+            BackendId::FourGet => Some(Box::new(FourGetBackend)),
             BackendId::ArXiv => Some(Box::new(ArXivBackend)),
             BackendId::SemanticScholar => Some(Box::new(SemanticScholarBackend)),
             BackendId::OpenAlex => Some(Box::new(OpenAlexBackend)),
+            BackendId::Primo => Some(Box::new(PrimoBackend)),
             BackendId::DBLP => Some(Box::new(DBLPBackend)),
             BackendId::Wikipedia => Some(Box::new(WikipediaBackend)),
             // Not yet implemented
@@ -64,7 +76,6 @@ pub fn backends_for_ids(ids: &[BackendId]) -> Vec<Box<dyn SearchBackend>> {
             | BackendId::PubMed
             | BackendId::DOAJ
             | BackendId::CORE
-            | BackendId::Primo
             | BackendId::Unpaywall => None,
         };
 

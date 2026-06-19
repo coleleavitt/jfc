@@ -1,0 +1,1116 @@
+DIGEST f9176524caf0206c5c2126609c55d60f
+FJFCTheorems.ToolDispatch
+R424:438 Stdlib.Arith.Arith <> <> lib
+R456:469 Stdlib.Lists.List <> <> lib
+R487:499 Stdlib.Bool.Bool <> <> lib
+R517:533 Stdlib.micromega.Lia <> <> lib
+R543:555 Stdlib.Lists.List ListNotations <> mod
+ind 596:605 <> ToolStatus
+constr 621:631 <> ToolPending
+constr 667:679 <> ToolExecuting
+constr 712:724 <> ToolCompleted
+constr 761:770 <> ToolFailed
+constr 805:817 <> ToolCancelled
+scheme 596:605 <> ToolStatus_rect
+scheme 596:605 <> ToolStatus_ind
+scheme 596:605 <> ToolStatus_rec
+scheme 596:605 <> ToolStatus_sind
+def 855:870 <> is_terminal_tool
+R877:886 JFCTheorems.ToolDispatch <> ToolStatus ind
+binder 873:873 <> s:3
+R891:894 Corelib.Init.Datatypes <> bool ind
+R907:907 JFCTheorems.ToolDispatch <> s:3 var
+R918:930 JFCTheorems.ToolDispatch <> ToolCompleted constr
+R934:943 JFCTheorems.ToolDispatch <> ToolFailed constr
+R947:959 JFCTheorems.ToolDispatch <> ToolCancelled constr
+R964:967 Corelib.Init.Datatypes <> true constr
+R964:967 Corelib.Init.Datatypes <> true constr
+R964:967 Corelib.Init.Datatypes <> true constr
+R978:982 Corelib.Init.Datatypes <> false constr
+rec 1026:1032 <> ToolUse
+proj 1058:1064 <> tool_id
+proj 1075:1083 <> tool_name
+proj 1094:1103 <> tool_input
+proj 1152:1162 <> tool_status
+proj 1180:1201 <> tool_requires_approval
+proj 1213:1225 <> tool_approved
+R1068:1070 Corelib.Init.Datatypes <> nat ind
+R1087:1089 Corelib.Init.Datatypes <> nat ind
+R1107:1109 Corelib.Init.Datatypes <> nat ind
+R1166:1175 JFCTheorems.ToolDispatch <> ToolStatus ind
+R1205:1208 Corelib.Init.Datatypes <> bool ind
+R1229:1234 Corelib.Init.Datatypes <> option ind
+R1236:1239 Corelib.Init.Datatypes <> bool ind
+def 1309:1317 <> ToolBatch
+R1322:1325 Corelib.Init.Datatypes <> list ind
+R1327:1333 JFCTheorems.ToolDispatch <> ToolUse rec
+def 1422:1432 <> batch_ready
+R1443:1451 JFCTheorems.ToolDispatch <> ToolBatch def
+binder 1435:1439 <> batch:12
+R1456:1459 Corelib.Init.Datatypes <> bool ind
+R1466:1472 Stdlib.Lists.List <> forallb def
+R1593:1597 JFCTheorems.ToolDispatch <> batch:12 var
+binder 1479:1479 <> t:13
+R1519:1526 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R1488:1491 Corelib.Init.Datatypes <> negb def
+R1494:1515 JFCTheorems.ToolDispatch <> tool_requires_approval proj
+R1517:1517 JFCTheorems.ToolDispatch <> t:13 var
+R1533:1545 JFCTheorems.ToolDispatch <> tool_approved proj
+R1547:1547 JFCTheorems.ToolDispatch <> t:13 var
+R1554:1557 Corelib.Init.Datatypes <> Some constr
+R1559:1562 Corelib.Init.Datatypes <> true constr
+R1567:1570 Corelib.Init.Datatypes <> true constr
+R1579:1583 Corelib.Init.Datatypes <> false constr
+def 1665:1678 <> batch_complete
+R1689:1697 JFCTheorems.ToolDispatch <> ToolBatch def
+binder 1681:1685 <> batch:14
+R1702:1705 Corelib.Init.Datatypes <> bool ind
+R1712:1718 Stdlib.Lists.List <> forallb def
+R1764:1768 JFCTheorems.ToolDispatch <> batch:14 var
+binder 1725:1725 <> t:15
+R1730:1745 JFCTheorems.ToolDispatch <> is_terminal_tool def
+R1748:1758 JFCTheorems.ToolDispatch <> tool_status proj
+R1760:1760 JFCTheorems.ToolDispatch <> t:15 var
+rec 1805:1817 <> ApprovalEntry
+proj 1844:1859 <> approval_tool_id
+proj 1870:1886 <> approval_decision
+R1863:1865 Corelib.Init.Datatypes <> nat ind
+R1890:1895 Corelib.Init.Datatypes <> option ind
+R1897:1900 Corelib.Init.Datatypes <> bool ind
+def 1940:1952 <> ApprovalQueue
+R1957:1960 Corelib.Init.Datatypes <> list ind
+R1962:1974 JFCTheorems.ToolDispatch <> ApprovalEntry rec
+def 2027:2038 <> resolve_head
+R2049:2061 JFCTheorems.ToolDispatch <> ApprovalQueue def
+binder 2041:2045 <> queue:19
+R2076:2079 Corelib.Init.Datatypes <> bool ind
+binder 2065:2072 <> decision:20
+R2084:2096 JFCTheorems.ToolDispatch <> ApprovalQueue def
+R2109:2113 JFCTheorems.ToolDispatch <> queue:19 var
+R2124:2125 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2130:2131 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2142:2145 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2211:2214 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2160:2169 JFCTheorems.ToolDispatch <> mkApproval constr
+R2172:2187 JFCTheorems.ToolDispatch <> approval_tool_id proj
+R2197:2200 Corelib.Init.Datatypes <> Some constr
+R2202:2209 JFCTheorems.ToolDispatch <> decision:20 var
+def 2283:2295 <> advance_queue
+R2306:2318 JFCTheorems.ToolDispatch <> ApprovalQueue def
+binder 2298:2302 <> queue:22
+R2323:2335 JFCTheorems.ToolDispatch <> ApprovalQueue def
+R2348:2352 JFCTheorems.ToolDispatch <> queue:22 var
+R2363:2364 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2369:2370 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2381:2384 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2405:2421 JFCTheorems.ToolDispatch <> approval_decision proj
+R2442:2445 Corelib.Init.Datatypes <> Some constr
+R2465:2468 Corelib.Init.Datatypes <> None constr
+R2473:2477 JFCTheorems.ToolDispatch <> queue:22 var
+prf 2615:2635 <> resolve_sets_decision
+binder 2648:2652 <> queue:24
+binder 2654:2661 <> decision:25
+binder 2663:2667 <> entry:26
+binder 2669:2672 <> rest:27
+R2700:2707 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2684:2686 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2679:2683 JFCTheorems.ToolDispatch <> queue:24 var
+R2692:2695 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2687:2691 JFCTheorems.ToolDispatch <> entry:26 var
+R2696:2699 JFCTheorems.ToolDispatch <> rest:27 var
+R2738:2745 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2731:2733 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2708:2724 JFCTheorems.ToolDispatch <> approval_decision proj
+R2726:2730 JFCTheorems.ToolDispatch <> entry:26 var
+R2734:2737 Corelib.Init.Datatypes <> None constr
+R2760:2771 JFCTheorems.ToolDispatch <> resolve_head def
+R2773:2777 JFCTheorems.ToolDispatch <> queue:24 var
+R2779:2786 JFCTheorems.ToolDispatch <> decision:25 var
+binder 2750:2755 <> queue':28
+R2801:2806 JFCTheorems.ToolDispatch <> queue':28 var
+R2819:2820 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R2825:2829 Corelib.Init.Logic <> False ind
+R2838:2841 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2866:2868 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2847:2863 JFCTheorems.ToolDispatch <> approval_decision proj
+R2869:2872 Corelib.Init.Datatypes <> Some constr
+R2874:2881 JFCTheorems.ToolDispatch <> decision:25 var
+R2969:2980 JFCTheorems.ToolDispatch <> resolve_head def
+prf 3063:3089 <> advance_requires_resolution
+binder 3102:3106 <> queue:30
+binder 3108:3112 <> entry:31
+binder 3114:3117 <> rest:32
+R3145:3152 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3129:3131 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3124:3128 JFCTheorems.ToolDispatch <> queue:30 var
+R3137:3140 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3132:3136 JFCTheorems.ToolDispatch <> entry:31 var
+R3141:3144 JFCTheorems.ToolDispatch <> rest:32 var
+R3183:3190 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3176:3178 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3153:3169 JFCTheorems.ToolDispatch <> approval_decision proj
+R3171:3175 JFCTheorems.ToolDispatch <> entry:31 var
+R3179:3182 Corelib.Init.Datatypes <> None constr
+R3210:3212 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3191:3203 JFCTheorems.ToolDispatch <> advance_queue def
+R3205:3209 JFCTheorems.ToolDispatch <> queue:30 var
+R3213:3217 JFCTheorems.ToolDispatch <> queue:30 var
+R3288:3300 JFCTheorems.ToolDispatch <> advance_queue def
+prf 3403:3426 <> advance_after_resolution
+binder 3439:3443 <> queue:33
+binder 3445:3449 <> entry:34
+binder 3451:3454 <> rest:35
+binder 3456:3456 <> d:36
+R3484:3491 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3468:3470 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3463:3467 JFCTheorems.ToolDispatch <> queue:33 var
+R3476:3479 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3471:3475 JFCTheorems.ToolDispatch <> entry:34 var
+R3480:3483 JFCTheorems.ToolDispatch <> rest:35 var
+R3524:3531 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3515:3517 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3492:3508 JFCTheorems.ToolDispatch <> approval_decision proj
+R3510:3514 JFCTheorems.ToolDispatch <> entry:34 var
+R3518:3521 Corelib.Init.Datatypes <> Some constr
+R3523:3523 JFCTheorems.ToolDispatch <> d:36 var
+R3551:3553 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3532:3544 JFCTheorems.ToolDispatch <> advance_queue def
+R3546:3550 JFCTheorems.ToolDispatch <> queue:33 var
+R3554:3557 JFCTheorems.ToolDispatch <> rest:35 var
+R3630:3642 JFCTheorems.ToolDispatch <> advance_queue def
+ind 3733:3742 <> BatchState
+constr 3758:3769 <> BatchPending
+constr 3803:3816 <> BatchApproving
+constr 3854:3867 <> BatchExecuting
+constr 3897:3909 <> BatchComplete
+constr 3945:3958 <> BatchCancelled
+scheme 3733:3742 <> BatchState_rect
+scheme 3733:3742 <> BatchState_ind
+scheme 3733:3742 <> BatchState_rec
+scheme 3733:3742 <> BatchState_sind
+def 4003:4018 <> batch_transition
+R4025:4034 JFCTheorems.ToolDispatch <> BatchState ind
+binder 4021:4021 <> s:39
+R4046:4048 Corelib.Init.Datatypes <> nat ind
+binder 4038:4042 <> event:40
+R4053:4058 Corelib.Init.Datatypes <> option ind
+R4060:4069 JFCTheorems.ToolDispatch <> BatchState ind
+R4085:4089 JFCTheorems.ToolDispatch <> event:40 var
+R4082:4082 JFCTheorems.ToolDispatch <> s:39 var
+R4100:4111 JFCTheorems.ToolDispatch <> BatchPending constr
+R4131:4134 Corelib.Init.Datatypes <> Some constr
+R4136:4149 JFCTheorems.ToolDispatch <> BatchApproving constr
+R4155:4168 JFCTheorems.ToolDispatch <> BatchApproving constr
+R4195:4198 Corelib.Init.Datatypes <> Some constr
+R4200:4213 JFCTheorems.ToolDispatch <> BatchExecuting constr
+R4219:4232 JFCTheorems.ToolDispatch <> BatchApproving constr
+R4256:4259 Corelib.Init.Datatypes <> Some constr
+R4261:4274 JFCTheorems.ToolDispatch <> BatchCancelled constr
+R4280:4293 JFCTheorems.ToolDispatch <> BatchExecuting constr
+R4316:4319 Corelib.Init.Datatypes <> Some constr
+R4321:4333 JFCTheorems.ToolDispatch <> BatchComplete constr
+R4339:4352 JFCTheorems.ToolDispatch <> BatchExecuting constr
+R4376:4379 Corelib.Init.Datatypes <> Some constr
+R4381:4394 JFCTheorems.ToolDispatch <> BatchCancelled constr
+R4408:4411 Corelib.Init.Datatypes <> None constr
+prf 4481:4504 <> batch_terminal_absorbing
+binder 4517:4521 <> event:43
+R4571:4578 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R4564:4566 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4528:4543 JFCTheorems.ToolDispatch <> batch_transition def
+R4545:4557 JFCTheorems.ToolDispatch <> BatchComplete constr
+R4559:4563 JFCTheorems.ToolDispatch <> event:43 var
+R4567:4570 Corelib.Init.Datatypes <> None constr
+R4616:4618 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4579:4594 JFCTheorems.ToolDispatch <> batch_transition def
+R4596:4609 JFCTheorems.ToolDispatch <> BatchCancelled constr
+R4611:4615 JFCTheorems.ToolDispatch <> event:43 var
+R4619:4622 Corelib.Init.Datatypes <> None constr
+R4664:4679 JFCTheorems.ToolDispatch <> batch_transition def
+def 4844:4858 <> execution_order
+R4869:4877 JFCTheorems.ToolDispatch <> ToolBatch def
+binder 4861:4865 <> batch:44
+R4882:4885 Corelib.Init.Datatypes <> list ind
+R4887:4889 Corelib.Init.Datatypes <> nat ind
+R4896:4898 Corelib.Lists.ListDef <> map def
+R4908:4912 JFCTheorems.ToolDispatch <> batch:44 var
+R4900:4906 JFCTheorems.ToolDispatch <> tool_id proj
+rec 4964:4974 <> BatchResult
+proj 5004:5017 <> result_tool_id
+proj 5028:5041 <> result_success
+proj 5053:5065 <> result_output
+R5021:5023 Corelib.Init.Datatypes <> nat ind
+R5045:5048 Corelib.Init.Datatypes <> bool ind
+R5069:5071 Corelib.Init.Datatypes <> nat ind
+def 5089:5103 <> collect_results
+R5114:5122 JFCTheorems.ToolDispatch <> ToolBatch def
+binder 5106:5110 <> batch:49
+R5136:5139 Corelib.Init.Datatypes <> list ind
+R5141:5151 JFCTheorems.ToolDispatch <> BatchResult rec
+binder 5126:5132 <> results:50
+R5156:5159 Corelib.Init.Datatypes <> bool ind
+R5227:5241 JFCTheorems.ToolDispatch <> execution_order def
+R5243:5247 JFCTheorems.ToolDispatch <> batch:49 var
+binder 5215:5222 <> expected:51
+R5268:5270 Corelib.Lists.ListDef <> map def
+R5287:5293 JFCTheorems.ToolDispatch <> results:50 var
+R5272:5285 JFCTheorems.ToolDispatch <> result_tool_id proj
+binder 5258:5263 <> actual:52
+R5303:5313 Stdlib.Lists.List <> list_eq_dec thm
+R5335:5340 JFCTheorems.ToolDispatch <> actual:52 var
+R5326:5333 JFCTheorems.ToolDispatch <> expected:51 var
+R5315:5324 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R5357:5361 Corelib.Init.Datatypes <> false constr
+R5347:5350 Corelib.Init.Datatypes <> true constr
+prf 5420:5438 <> results_match_order
+binder 5451:5455 <> batch:53
+binder 5457:5463 <> results:54
+R5506:5513 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5499:5501 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5470:5484 JFCTheorems.ToolDispatch <> collect_results def
+R5486:5490 JFCTheorems.ToolDispatch <> batch:53 var
+R5492:5498 JFCTheorems.ToolDispatch <> results:54 var
+R5502:5505 Corelib.Init.Datatypes <> true constr
+R5540:5542 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5514:5516 Corelib.Lists.ListDef <> map def
+R5533:5539 JFCTheorems.ToolDispatch <> results:54 var
+R5518:5531 JFCTheorems.ToolDispatch <> result_tool_id proj
+R5543:5557 JFCTheorems.ToolDispatch <> execution_order def
+R5559:5563 JFCTheorems.ToolDispatch <> batch:53 var
+R5615:5629 JFCTheorems.ToolDispatch <> collect_results def
+R5656:5666 Stdlib.Lists.List <> list_eq_dec thm
+R5704:5706 Corelib.Lists.ListDef <> map def
+R5708:5721 JFCTheorems.ToolDispatch <> result_tool_id proj
+R5680:5694 JFCTheorems.ToolDispatch <> execution_order def
+R5668:5677 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R5656:5666 Stdlib.Lists.List <> list_eq_dec thm
+R5704:5706 Corelib.Lists.ListDef <> map def
+R5708:5721 JFCTheorems.ToolDispatch <> result_tool_id proj
+R5680:5694 JFCTheorems.ToolDispatch <> execution_order def
+R5668:5677 Stdlib.Arith.PeanoNat Nat eq_dec thm
+rec 5882:5895 <> AdvisorContext
+proj 5928:5940 <> advisor_model
+proj 5951:5979 <> advisor_conversation_snapshot
+proj 5990:6010 <> advisor_pending_tools
+R5944:5946 Corelib.Init.Datatypes <> nat ind
+R5983:5985 Corelib.Init.Datatypes <> nat ind
+R6014:6017 Corelib.Init.Datatypes <> list ind
+R6019:6021 Corelib.Init.Datatypes <> nat ind
+ind 6068:6082 <> AdvisorDecision
+constr 6098:6104 <> Proceed
+constr 6151:6156 <> Modify
+constr 6204:6207 <> Skip
+constr 6253:6262 <> AbortBatch
+R6171:6173 Corelib.Init.Datatypes <> nat ind
+binder 6159:6167 <> new_input:61
+scheme 6068:6082 <> AdvisorDecision_rect
+scheme 6068:6082 <> AdvisorDecision_ind
+scheme 6068:6082 <> AdvisorDecision_rec
+scheme 6068:6082 <> AdvisorDecision_sind
+def 6361:6372 <> combine_with
+binder 6375:6375 <> A:62
+binder 6377:6377 <> B:63
+binder 6379:6379 <> C:64
+R6395:6398 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6394:6394 JFCTheorems.ToolDispatch <> A:62 var
+R6400:6403 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6399:6399 JFCTheorems.ToolDispatch <> B:63 var
+R6404:6404 JFCTheorems.ToolDispatch <> C:64 var
+binder 6390:6390 <> f:65
+R6413:6416 Corelib.Init.Datatypes <> list ind
+R6418:6418 JFCTheorems.ToolDispatch <> A:62 var
+binder 6408:6409 <> l1:66
+R6427:6430 Corelib.Init.Datatypes <> list ind
+R6432:6432 JFCTheorems.ToolDispatch <> B:63 var
+binder 6422:6423 <> l2:67
+R6437:6440 Corelib.Init.Datatypes <> list ind
+R6442:6442 JFCTheorems.ToolDispatch <> C:64 var
+R6459:6460 JFCTheorems.ToolDispatch <> l2:67 var
+R6455:6456 JFCTheorems.ToolDispatch <> l1:66 var
+R6471:6472 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R6480:6481 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R6490:6491 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R6496:6497 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R6504:6507 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6513:6516 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6528:6531 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6523:6523 JFCTheorems.ToolDispatch <> f:65 var
+R6532:6543 JFCTheorems.ToolDispatch <> combine_with:68 def
+R6545:6545 JFCTheorems.ToolDispatch <> f:65 var
+def 6611:6623 <> apply_advisor
+R6634:6642 JFCTheorems.ToolDispatch <> ToolBatch def
+binder 6626:6630 <> batch:71
+R6658:6661 Corelib.Init.Datatypes <> list ind
+R6663:6677 JFCTheorems.ToolDispatch <> AdvisorDecision ind
+binder 6646:6654 <> decisions:72
+R6682:6690 JFCTheorems.ToolDispatch <> ToolBatch def
+R6697:6708 JFCTheorems.ToolDispatch <> combine_with def
+R7248:7256 JFCTheorems.ToolDispatch <> decisions:72 var
+R7242:7246 JFCTheorems.ToolDispatch <> batch:71 var
+binder 6715:6715 <> t:73
+binder 6717:6717 <> d:74
+R6732:6732 JFCTheorems.ToolDispatch <> d:74 var
+R6745:6751 JFCTheorems.ToolDispatch <> Proceed constr
+R6756:6756 JFCTheorems.ToolDispatch <> t:73 var
+R6764:6767 JFCTheorems.ToolDispatch <> Skip constr
+R6772:6780 JFCTheorems.ToolDispatch <> mkToolUse constr
+R6783:6789 JFCTheorems.ToolDispatch <> tool_id proj
+R6791:6791 JFCTheorems.ToolDispatch <> t:73 var
+R6795:6803 JFCTheorems.ToolDispatch <> tool_name proj
+R6805:6805 JFCTheorems.ToolDispatch <> t:73 var
+R6809:6818 JFCTheorems.ToolDispatch <> tool_input proj
+R6820:6820 JFCTheorems.ToolDispatch <> t:73 var
+R6823:6835 JFCTheorems.ToolDispatch <> ToolCancelled constr
+R6862:6883 JFCTheorems.ToolDispatch <> tool_requires_approval proj
+R6885:6885 JFCTheorems.ToolDispatch <> t:73 var
+R6889:6901 JFCTheorems.ToolDispatch <> tool_approved proj
+R6903:6903 JFCTheorems.ToolDispatch <> t:73 var
+R6912:6917 JFCTheorems.ToolDispatch <> Modify constr
+R6932:6940 JFCTheorems.ToolDispatch <> mkToolUse constr
+R6943:6949 JFCTheorems.ToolDispatch <> tool_id proj
+R6951:6951 JFCTheorems.ToolDispatch <> t:73 var
+R6955:6963 JFCTheorems.ToolDispatch <> tool_name proj
+R6965:6965 JFCTheorems.ToolDispatch <> t:73 var
+R6979:6989 JFCTheorems.ToolDispatch <> tool_status proj
+R6991:6991 JFCTheorems.ToolDispatch <> t:73 var
+R7031:7052 JFCTheorems.ToolDispatch <> tool_requires_approval proj
+R7054:7054 JFCTheorems.ToolDispatch <> t:73 var
+R7058:7070 JFCTheorems.ToolDispatch <> tool_approved proj
+R7072:7072 JFCTheorems.ToolDispatch <> t:73 var
+R7081:7090 JFCTheorems.ToolDispatch <> AbortBatch constr
+R7095:7103 JFCTheorems.ToolDispatch <> mkToolUse constr
+R7106:7112 JFCTheorems.ToolDispatch <> tool_id proj
+R7114:7114 JFCTheorems.ToolDispatch <> t:73 var
+R7118:7126 JFCTheorems.ToolDispatch <> tool_name proj
+R7128:7128 JFCTheorems.ToolDispatch <> t:73 var
+R7132:7141 JFCTheorems.ToolDispatch <> tool_input proj
+R7143:7143 JFCTheorems.ToolDispatch <> t:73 var
+R7146:7158 JFCTheorems.ToolDispatch <> ToolCancelled constr
+R7186:7207 JFCTheorems.ToolDispatch <> tool_requires_approval proj
+R7209:7209 JFCTheorems.ToolDispatch <> t:73 var
+R7213:7225 JFCTheorems.ToolDispatch <> tool_approved proj
+R7227:7227 JFCTheorems.ToolDispatch <> t:73 var
+prf 7597:7613 <> abort_cancels_all
+binder 7626:7630 <> batch:76
+R7654:7659 Corelib.Lists.ListDef <> repeat def
+R7673:7678 Corelib.Init.Datatypes <> length def
+R7680:7684 JFCTheorems.ToolDispatch <> batch:76 var
+R7661:7670 JFCTheorems.ToolDispatch <> AbortBatch constr
+binder 7641:7649 <> decisions:77
+R7708:7720 JFCTheorems.ToolDispatch <> apply_advisor def
+R7722:7726 JFCTheorems.ToolDispatch <> batch:76 var
+R7728:7736 JFCTheorems.ToolDispatch <> decisions:77 var
+binder 7698:7703 <> result:78
+R7834:7836 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7745:7751 Stdlib.Lists.List <> forallb def
+R7828:7833 JFCTheorems.ToolDispatch <> result:78 var
+binder 7758:7758 <> t:79
+R7769:7779 JFCTheorems.ToolDispatch <> tool_status proj
+R7781:7781 JFCTheorems.ToolDispatch <> t:79 var
+R7788:7800 JFCTheorems.ToolDispatch <> ToolCancelled constr
+R7805:7808 Corelib.Init.Datatypes <> true constr
+R7817:7821 Corelib.Init.Datatypes <> false constr
+R7837:7840 Corelib.Init.Datatypes <> true constr
+R7882:7894 JFCTheorems.ToolDispatch <> apply_advisor def
+rec 8153:8164 <> ToolResultId
+proj 8195:8203 <> result_id
+R8207:8209 Corelib.Init.Datatypes <> nat ind
+def 8227:8239 <> has_duplicate
+R8248:8251 Corelib.Init.Datatypes <> list ind
+R8253:8255 Corelib.Init.Datatypes <> nat ind
+binder 8242:8244 <> ids:82
+R8260:8263 Corelib.Init.Datatypes <> bool ind
+R8270:8273 Corelib.Init.Datatypes <> negb def
+R8295:8299 Stdlib.Lists.List <> nodup def
+R8312:8314 JFCTheorems.ToolDispatch <> ids:82 var
+R8301:8310 Stdlib.Arith.PeanoNat Nat eq_dec thm
+binder 8285:8290 <> unique:83
+R8323:8329 Stdlib.Arith.PeanoNat Nat eqb def
+R8332:8337 Corelib.Init.Datatypes <> length def
+R8339:8341 JFCTheorems.ToolDispatch <> ids:82 var
+R8345:8350 Corelib.Init.Datatypes <> length def
+R8352:8357 JFCTheorems.ToolDispatch <> unique:83 var
+prf 8432:8446 <> nodup_length_le
+binder 8460:8460 <> A:84
+R8491:8491 JFCTheorems.ToolDispatch <> A:84 var
+binder 8485:8485 <> x:85
+binder 8487:8487 <> y:86
+R8494:8494 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R8500:8504 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R8511:8511 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R8496:8498 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8495:8495 JFCTheorems.ToolDispatch <> x:85 var
+R8499:8499 JFCTheorems.ToolDispatch <> y:86 var
+R8506:8509 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R8505:8505 JFCTheorems.ToolDispatch <> x:85 var
+R8510:8510 JFCTheorems.ToolDispatch <> y:86 var
+binder 8471:8474 <> decA:87
+R8519:8522 Corelib.Init.Datatypes <> list ind
+R8524:8524 JFCTheorems.ToolDispatch <> A:84 var
+binder 8515:8515 <> l:88
+R8553:8556 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R8532:8537 Corelib.Init.Datatypes <> length def
+R8540:8544 Stdlib.Lists.List <> nodup def
+R8551:8551 JFCTheorems.ToolDispatch <> l:88 var
+R8546:8549 JFCTheorems.ToolDispatch <> decA:87 var
+R8557:8562 Corelib.Init.Datatypes <> length def
+R8564:8564 JFCTheorems.ToolDispatch <> l:88 var
+R8650:8655 Stdlib.Lists.List <> in_dec thm
+R8650:8655 Stdlib.Lists.List <> in_dec thm
+prf 8831:8840 <> nodup_full
+binder 8854:8854 <> A:89
+R8885:8885 JFCTheorems.ToolDispatch <> A:89 var
+binder 8879:8879 <> x:90
+binder 8881:8881 <> y:91
+R8888:8888 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R8894:8898 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R8905:8905 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R8890:8892 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8889:8889 JFCTheorems.ToolDispatch <> x:90 var
+R8893:8893 JFCTheorems.ToolDispatch <> y:91 var
+R8900:8903 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R8899:8899 JFCTheorems.ToolDispatch <> x:90 var
+R8904:8904 JFCTheorems.ToolDispatch <> y:91 var
+binder 8865:8868 <> decA:92
+R8913:8916 Corelib.Init.Datatypes <> list ind
+R8918:8918 JFCTheorems.ToolDispatch <> A:89 var
+binder 8909:8909 <> l:93
+R8958:8961 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8947:8949 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8926:8931 Corelib.Init.Datatypes <> length def
+R8934:8938 Stdlib.Lists.List <> nodup def
+R8945:8945 JFCTheorems.ToolDispatch <> l:93 var
+R8940:8943 JFCTheorems.ToolDispatch <> decA:92 var
+R8950:8955 Corelib.Init.Datatypes <> length def
+R8957:8957 JFCTheorems.ToolDispatch <> l:93 var
+R8962:8966 Stdlib.Lists.List <> NoDup ind
+R8968:8968 JFCTheorems.ToolDispatch <> l:93 var
+R9071:9076 Stdlib.Lists.List <> in_dec thm
+R9071:9076 Stdlib.Lists.List <> in_dec thm
+R9194:9208 JFCTheorems.ToolDispatch <> nodup_length_le thm
+R9194:9208 JFCTheorems.ToolDispatch <> nodup_length_le thm
+prf 9575:9599 <> no_duplicate_means_unique
+binder 9612:9614 <> ids:94
+R9646:9653 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9638:9640 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9621:9633 JFCTheorems.ToolDispatch <> has_duplicate def
+R9635:9637 JFCTheorems.ToolDispatch <> ids:94 var
+R9641:9645 Corelib.Init.Datatypes <> false constr
+R9654:9658 Stdlib.Lists.List <> NoDup ind
+R9660:9662 JFCTheorems.ToolDispatch <> ids:94 var
+R9699:9711 JFCTheorems.ToolDispatch <> has_duplicate def
+R9729:9742 Stdlib.Bool.Bool <> negb_false_iff thm
+R9729:9742 Stdlib.Bool.Bool <> negb_false_iff thm
+R9760:9769 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R9760:9769 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R9788:9797 JFCTheorems.ToolDispatch <> nodup_full thm
+R9799:9801 Corelib.Init.Datatypes <> nat ind
+R9803:9812 Stdlib.Arith.PeanoNat Nat eq_dec thm
+R9788:9797 JFCTheorems.ToolDispatch <> nodup_full thm
+R9799:9801 Corelib.Init.Datatypes <> nat ind
+R9803:9812 Stdlib.Arith.PeanoNat Nat eq_dec thm
+rec 9956:9962 <> ToolDef
+proj 9988:9995 <> def_name
+proj 10006:10020 <> def_description
+proj 10031:10040 <> def_schema
+R9999:10001 Corelib.Init.Datatypes <> nat ind
+R10024:10026 Corelib.Init.Datatypes <> nat ind
+R10044:10046 Corelib.Init.Datatypes <> nat ind
+def 10064:10074 <> ToolCatalog
+R10079:10082 Corelib.Init.Datatypes <> list ind
+R10084:10090 JFCTheorems.ToolDispatch <> ToolDef rec
+def 10134:10149 <> historical_tools
+R10162:10165 Corelib.Init.Datatypes <> list ind
+R10167:10169 Corelib.Init.Datatypes <> nat ind
+binder 10152:10158 <> history:99
+R10174:10177 Corelib.Init.Datatypes <> list ind
+R10179:10181 Corelib.Init.Datatypes <> nat ind
+R10188:10192 Stdlib.Lists.List <> nodup def
+R10205:10211 JFCTheorems.ToolDispatch <> history:99 var
+R10194:10203 Stdlib.Arith.PeanoNat Nat eq_dec thm
+def 10274:10287 <> matches_intent
+R10299:10304 Corelib.Init.Datatypes <> option ind
+R10306:10308 Corelib.Init.Datatypes <> nat ind
+binder 10290:10295 <> intent:100
+R10316:10322 JFCTheorems.ToolDispatch <> ToolDef rec
+binder 10312:10312 <> d:101
+R10327:10330 Corelib.Init.Datatypes <> bool ind
+R10343:10348 JFCTheorems.ToolDispatch <> intent:100 var
+R10359:10362 Corelib.Init.Datatypes <> None constr
+R10367:10371 Corelib.Init.Datatypes <> false constr
+R10377:10380 Corelib.Init.Datatypes <> Some constr
+R10387:10393 Stdlib.Arith.PeanoNat Nat eqb def
+R10396:10403 JFCTheorems.ToolDispatch <> def_name proj
+R10405:10405 JFCTheorems.ToolDispatch <> d:101 var
+def 11104:11121 <> progressive_select
+R11134:11144 JFCTheorems.ToolDispatch <> ToolCatalog def
+binder 11124:11130 <> catalog:103
+R11158:11161 Corelib.Init.Datatypes <> list ind
+R11163:11165 Corelib.Init.Datatypes <> nat ind
+binder 11148:11154 <> history:104
+R11182:11187 Corelib.Init.Datatypes <> option ind
+R11189:11191 Corelib.Init.Datatypes <> nat ind
+binder 11173:11178 <> intent:105
+R11207:11209 Corelib.Init.Datatypes <> nat ind
+binder 11195:11203 <> max_tools:106
+R11214:11217 Corelib.Init.Datatypes <> list ind
+R11219:11225 JFCTheorems.ToolDispatch <> ToolDef rec
+R11247:11252 Stdlib.Lists.List <> filter def
+R11278:11284 JFCTheorems.ToolDispatch <> catalog:103 var
+R11255:11268 JFCTheorems.ToolDispatch <> matches_intent def
+R11270:11275 JFCTheorems.ToolDispatch <> intent:105 var
+binder 11236:11242 <> matched:107
+R11305:11310 Stdlib.Lists.List <> filter def
+R11354:11360 JFCTheorems.ToolDispatch <> catalog:103 var
+binder 11317:11317 <> d:108
+R11322:11325 Corelib.Init.Datatypes <> negb def
+R11328:11341 JFCTheorems.ToolDispatch <> matches_intent def
+R11343:11348 JFCTheorems.ToolDispatch <> intent:105 var
+R11350:11350 JFCTheorems.ToolDispatch <> d:108 var
+binder 11295:11300 <> others:109
+R11367:11372 Corelib.Lists.ListDef <> firstn def
+R11392:11395 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R11385:11391 JFCTheorems.ToolDispatch <> matched:107 var
+R11396:11401 JFCTheorems.ToolDispatch <> others:109 var
+R11374:11382 JFCTheorems.ToolDispatch <> max_tools:106 var
+def 11471:11488 <> intent_match_count
+R11501:11511 JFCTheorems.ToolDispatch <> ToolCatalog def
+binder 11491:11497 <> catalog:110
+R11524:11529 Corelib.Init.Datatypes <> option ind
+R11531:11533 Corelib.Init.Datatypes <> nat ind
+binder 11515:11520 <> intent:111
+R11538:11540 Corelib.Init.Datatypes <> nat ind
+R11547:11552 Corelib.Init.Datatypes <> length def
+R11555:11560 Stdlib.Lists.List <> filter def
+R11586:11592 JFCTheorems.ToolDispatch <> catalog:110 var
+R11563:11576 JFCTheorems.ToolDispatch <> matches_intent def
+R11578:11583 JFCTheorems.ToolDispatch <> intent:111 var
+prf 11669:11685 <> matched_in_firstn
+binder 11698:11704 <> catalog:112
+binder 11706:11711 <> intent:113
+binder 11713:11713 <> k:114
+binder 11715:11724 <> discovered:115
+R11752:11759 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11731:11732 Stdlib.Lists.List <> In def
+R11745:11751 JFCTheorems.ToolDispatch <> catalog:112 var
+R11734:11743 JFCTheorems.ToolDispatch <> discovered:115 var
+R11799:11806 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11792:11794 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11760:11773 JFCTheorems.ToolDispatch <> matches_intent def
+R11775:11780 JFCTheorems.ToolDispatch <> intent:113 var
+R11782:11791 JFCTheorems.ToolDispatch <> discovered:115 var
+R11795:11798 Corelib.Init.Datatypes <> true constr
+R11859:11866 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11854:11857 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11807:11812 Corelib.Init.Datatypes <> length def
+R11815:11820 Stdlib.Lists.List <> filter def
+R11846:11852 JFCTheorems.ToolDispatch <> catalog:112 var
+R11823:11836 JFCTheorems.ToolDispatch <> matches_intent def
+R11838:11843 JFCTheorems.ToolDispatch <> intent:113 var
+R11858:11858 JFCTheorems.ToolDispatch <> k:114 var
+R11867:11868 Stdlib.Lists.List <> In def
+R11882:11887 Corelib.Lists.ListDef <> firstn def
+R11937:11948 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R11899:11904 Stdlib.Lists.List <> filter def
+R11930:11936 JFCTheorems.ToolDispatch <> catalog:112 var
+R11907:11920 JFCTheorems.ToolDispatch <> matches_intent def
+R11922:11927 JFCTheorems.ToolDispatch <> intent:113 var
+R11949:11954 Stdlib.Lists.List <> filter def
+R11998:12004 JFCTheorems.ToolDispatch <> catalog:112 var
+binder 11961:11961 <> d:116
+R11966:11969 Corelib.Init.Datatypes <> negb def
+R11972:11985 JFCTheorems.ToolDispatch <> matches_intent def
+R11987:11992 JFCTheorems.ToolDispatch <> intent:113 var
+R11994:11994 JFCTheorems.ToolDispatch <> d:116 var
+R11889:11889 JFCTheorems.ToolDispatch <> k:114 var
+R11870:11879 JFCTheorems.ToolDispatch <> discovered:115 var
+R12088:12093 Stdlib.Lists.List <> filter def
+R12096:12109 JFCTheorems.ToolDispatch <> matches_intent def
+R12088:12093 Stdlib.Lists.List <> filter def
+R12096:12109 JFCTheorems.ToolDispatch <> matches_intent def
+R12151:12156 Stdlib.Lists.List <> filter def
+binder 12163:12163 <> d:117
+R12168:12171 Corelib.Init.Datatypes <> negb def
+R12174:12187 JFCTheorems.ToolDispatch <> matches_intent def
+R12196:12196 JFCTheorems.ToolDispatch <> d:117 var
+R12151:12156 Stdlib.Lists.List <> filter def
+binder 12163:12163 <> d:118
+R12168:12171 Corelib.Init.Datatypes <> negb def
+R12174:12187 JFCTheorems.ToolDispatch <> matches_intent def
+R12196:12196 JFCTheorems.ToolDispatch <> d:118 var
+R12306:12307 Stdlib.Lists.List <> In def
+R12306:12307 Stdlib.Lists.List <> In def
+R12355:12363 Stdlib.Lists.List <> filter_In thm
+R12355:12363 Stdlib.Lists.List <> filter_In thm
+R12464:12473 Stdlib.Lists.List <> firstn_app thm
+R12464:12473 Stdlib.Lists.List <> firstn_app thm
+R12464:12473 Stdlib.Lists.List <> firstn_app thm
+R12484:12492 Stdlib.Lists.List <> in_or_app thm
+R12484:12492 Stdlib.Lists.List <> in_or_app thm
+R12581:12591 Stdlib.Lists.List <> firstn_all2 thm
+R12581:12591 Stdlib.Lists.List <> firstn_all2 thm
+prf 13257:13277 <> history_doesnt_starve
+binder 13290:13296 <> catalog:119
+binder 13298:13304 <> history:120
+binder 13306:13311 <> intent:121
+binder 13313:13321 <> max_tools:122
+binder 13323:13332 <> discovered:123
+R13360:13408 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13339:13340 Stdlib.Lists.List <> In def
+R13353:13359 JFCTheorems.ToolDispatch <> catalog:119 var
+R13342:13351 JFCTheorems.ToolDispatch <> discovered:123 var
+R13444:13451 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13415:13417 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13409:13414 JFCTheorems.ToolDispatch <> intent:121 var
+R13418:13421 Corelib.Init.Datatypes <> Some constr
+R13424:13431 JFCTheorems.ToolDispatch <> def_name proj
+R13433:13442 JFCTheorems.ToolDispatch <> discovered:123 var
+R13498:13505 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13461:13464 Corelib.Init.Peano <> ::nat_scope:x_'>='_x not
+R13452:13460 JFCTheorems.ToolDispatch <> max_tools:122 var
+R13465:13482 JFCTheorems.ToolDispatch <> intent_match_count def
+R13484:13490 JFCTheorems.ToolDispatch <> catalog:119 var
+R13492:13497 JFCTheorems.ToolDispatch <> intent:121 var
+R13506:13507 Stdlib.Lists.List <> In def
+R13521:13538 JFCTheorems.ToolDispatch <> progressive_select def
+R13540:13546 JFCTheorems.ToolDispatch <> catalog:119 var
+R13548:13554 JFCTheorems.ToolDispatch <> history:120 var
+R13556:13561 JFCTheorems.ToolDispatch <> intent:121 var
+R13563:13571 JFCTheorems.ToolDispatch <> max_tools:122 var
+R13509:13518 JFCTheorems.ToolDispatch <> discovered:123 var
+R13664:13681 JFCTheorems.ToolDispatch <> progressive_select def
+R13684:13701 JFCTheorems.ToolDispatch <> intent_match_count def
+R13756:13758 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13724:13737 JFCTheorems.ToolDispatch <> matches_intent def
+R13759:13762 Corelib.Init.Datatypes <> true constr
+R13756:13758 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13724:13737 JFCTheorems.ToolDispatch <> matches_intent def
+R13759:13762 Corelib.Init.Datatypes <> true constr
+R13797:13808 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R13797:13808 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R13821:13837 JFCTheorems.ToolDispatch <> matched_in_firstn thm
+R13821:13837 JFCTheorems.ToolDispatch <> matched_in_firstn thm
+rec 13890:13901 <> BatchMetrics
+proj 13927:13945 <> metrics_total_tools
+proj 13956:13971 <> metrics_approved
+proj 13982:13997 <> metrics_rejected
+proj 14008:14024 <> metrics_completed
+proj 14035:14048 <> metrics_failed
+R13949:13951 Corelib.Init.Datatypes <> nat ind
+R13975:13977 Corelib.Init.Datatypes <> nat ind
+R14001:14003 Corelib.Init.Datatypes <> nat ind
+R14028:14030 Corelib.Init.Datatypes <> nat ind
+R14052:14054 Corelib.Init.Datatypes <> nat ind
+def 14072:14086 <> compute_metrics
+R14097:14105 JFCTheorems.ToolDispatch <> ToolBatch def
+binder 14089:14093 <> batch:130
+R14110:14121 JFCTheorems.ToolDispatch <> BatchMetrics rec
+R14144:14149 Corelib.Init.Datatypes <> length def
+R14152:14157 Stdlib.Lists.List <> filter def
+R14236:14240 JFCTheorems.ToolDispatch <> batch:130 var
+binder 14164:14164 <> t:131
+R14179:14191 JFCTheorems.ToolDispatch <> tool_approved proj
+R14193:14193 JFCTheorems.ToolDispatch <> t:131 var
+R14200:14203 Corelib.Init.Datatypes <> Some constr
+R14205:14208 Corelib.Init.Datatypes <> true constr
+R14213:14216 Corelib.Init.Datatypes <> true constr
+R14225:14229 Corelib.Init.Datatypes <> false constr
+binder 14132:14139 <> approved:132
+R14264:14269 Corelib.Init.Datatypes <> length def
+R14272:14277 Stdlib.Lists.List <> filter def
+R14357:14361 JFCTheorems.ToolDispatch <> batch:130 var
+binder 14284:14284 <> t:133
+R14299:14311 JFCTheorems.ToolDispatch <> tool_approved proj
+R14313:14313 JFCTheorems.ToolDispatch <> t:133 var
+R14320:14323 Corelib.Init.Datatypes <> Some constr
+R14325:14329 Corelib.Init.Datatypes <> false constr
+R14334:14337 Corelib.Init.Datatypes <> true constr
+R14346:14350 Corelib.Init.Datatypes <> false constr
+binder 14252:14259 <> rejected:134
+R14386:14391 Corelib.Init.Datatypes <> length def
+R14394:14399 Stdlib.Lists.List <> filter def
+R14480:14484 JFCTheorems.ToolDispatch <> batch:130 var
+binder 14406:14406 <> t:135
+R14421:14431 JFCTheorems.ToolDispatch <> tool_status proj
+R14433:14433 JFCTheorems.ToolDispatch <> t:135 var
+R14440:14452 JFCTheorems.ToolDispatch <> ToolCompleted constr
+R14457:14460 Corelib.Init.Datatypes <> true constr
+R14469:14473 Corelib.Init.Datatypes <> false constr
+binder 14373:14381 <> completed:136
+R14506:14511 Corelib.Init.Datatypes <> length def
+R14514:14519 Stdlib.Lists.List <> filter def
+R14597:14601 JFCTheorems.ToolDispatch <> batch:130 var
+binder 14526:14526 <> t:137
+R14541:14551 JFCTheorems.ToolDispatch <> tool_status proj
+R14553:14553 JFCTheorems.ToolDispatch <> t:137 var
+R14560:14569 JFCTheorems.ToolDispatch <> ToolFailed constr
+R14574:14577 Corelib.Init.Datatypes <> true constr
+R14586:14590 Corelib.Init.Datatypes <> false constr
+binder 14496:14501 <> failed:138
+R14609:14617 JFCTheorems.ToolDispatch <> mkMetrics constr
+R14620:14625 Corelib.Init.Datatypes <> length def
+R14627:14631 JFCTheorems.ToolDispatch <> batch:130 var
+R14634:14641 JFCTheorems.ToolDispatch <> approved:132 var
+R14643:14650 JFCTheorems.ToolDispatch <> rejected:134 var
+R14652:14660 JFCTheorems.ToolDispatch <> completed:136 var
+R14662:14667 JFCTheorems.ToolDispatch <> failed:138 var
+prf 14985:15002 <> metrics_consistent
+binder 15015:15019 <> batch:139
+R15053:15060 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15046:15048 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15026:15039 JFCTheorems.ToolDispatch <> batch_complete def
+R15041:15045 JFCTheorems.ToolDispatch <> batch:139 var
+R15049:15052 Corelib.Init.Datatypes <> true constr
+R15070:15084 JFCTheorems.ToolDispatch <> compute_metrics def
+R15086:15090 JFCTheorems.ToolDispatch <> batch:139 var
+binder 15065:15065 <> m:140
+R15240:15246 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15137:15143 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15118:15120 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15099:15115 JFCTheorems.ToolDispatch <> metrics_completed proj
+R15117:15117 JFCTheorems.ToolDispatch <> m:140 var
+R15121:15134 JFCTheorems.ToolDispatch <> metrics_failed proj
+R15136:15136 JFCTheorems.ToolDispatch <> m:140 var
+R15144:15149 Corelib.Init.Datatypes <> length def
+R15152:15157 Stdlib.Lists.List <> filter def
+R15234:15238 JFCTheorems.ToolDispatch <> batch:139 var
+binder 15164:15164 <> t:141
+R15175:15185 JFCTheorems.ToolDispatch <> tool_status proj
+R15187:15187 JFCTheorems.ToolDispatch <> t:141 var
+R15194:15206 JFCTheorems.ToolDispatch <> ToolCancelled constr
+R15211:15214 Corelib.Init.Datatypes <> true constr
+R15223:15227 Corelib.Init.Datatypes <> false constr
+R15247:15265 JFCTheorems.ToolDispatch <> metrics_total_tools proj
+R15267:15267 JFCTheorems.ToolDispatch <> m:140 var
+R15312:15326 JFCTheorems.ToolDispatch <> compute_metrics def
+R15334:15350 JFCTheorems.ToolDispatch <> metrics_completed proj
+R15352:15365 JFCTheorems.ToolDispatch <> metrics_failed proj
+R15367:15385 JFCTheorems.ToolDispatch <> metrics_total_tools proj
+R15398:15411 JFCTheorems.ToolDispatch <> batch_complete def
+R15601:15606 Stdlib.Lists.List <> filter def
+R15608:15613 Corelib.Init.Datatypes <> length def
+R15615:15621 Stdlib.Lists.List <> forallb def
+R15657:15669 Stdlib.Bool.Bool <> andb_true_iff thm
+R15657:15669 Stdlib.Bool.Bool <> andb_true_iff thm
+R15805:15820 JFCTheorems.ToolDispatch <> is_terminal_tool def
+R15845:15855 JFCTheorems.ToolDispatch <> tool_status proj
+R15874:15879 Corelib.Init.Datatypes <> length def
+R15845:15855 JFCTheorems.ToolDispatch <> tool_status proj
+ind 16690:16697 <> ToolKind
+constr 16713:16720 <> KindRead
+constr 16726:16734 <> KindWrite
+constr 16740:16747 <> KindBash
+constr 16753:16760 <> KindGlob
+constr 16766:16773 <> KindTask
+scheme 16690:16697 <> ToolKind_rect
+scheme 16690:16697 <> ToolKind_ind
+scheme 16690:16697 <> ToolKind_rec
+scheme 16690:16697 <> ToolKind_sind
+def 16868:16883 <> tool_kind_eq_dec
+R16892:16899 JFCTheorems.ToolDispatch <> ToolKind ind
+binder 16886:16886 <> a:144
+binder 16888:16888 <> b:145
+R16904:16904 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R16910:16914 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R16921:16921 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R16906:16908 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16905:16905 JFCTheorems.ToolDispatch <> a:144 var
+R16909:16909 JFCTheorems.ToolDispatch <> b:145 var
+R16916:16919 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R16915:16915 JFCTheorems.ToolDispatch <> a:144 var
+R16920:16920 JFCTheorems.ToolDispatch <> b:145 var
+def 16969:16981 <> tool_kind_eqb
+R16990:16997 JFCTheorems.ToolDispatch <> ToolKind ind
+binder 16984:16984 <> a:146
+binder 16986:16986 <> b:147
+R17002:17005 Corelib.Init.Datatypes <> bool ind
+R17015:17030 JFCTheorems.ToolDispatch <> tool_kind_eq_dec def
+R17032:17032 JFCTheorems.ToolDispatch <> a:146 var
+R17034:17034 JFCTheorems.ToolDispatch <> b:147 var
+R17051:17055 Corelib.Init.Datatypes <> false constr
+R17041:17044 Corelib.Init.Datatypes <> true constr
+prf 17065:17082 <> tool_kind_eqb_refl
+binder 17093:17093 <> k:148
+R17113:17115 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17096:17108 JFCTheorems.ToolDispatch <> tool_kind_eqb def
+R17110:17110 JFCTheorems.ToolDispatch <> k:148 var
+R17112:17112 JFCTheorems.ToolDispatch <> k:148 var
+R17116:17119 Corelib.Init.Datatypes <> true constr
+R17146:17158 JFCTheorems.ToolDispatch <> tool_kind_eqb def
+R17171:17186 JFCTheorems.ToolDispatch <> tool_kind_eq_dec def
+R17171:17186 JFCTheorems.ToolDispatch <> tool_kind_eq_dec def
+prf 17218:17239 <> tool_kind_eqb_true_iff
+binder 17252:17252 <> a:149
+binder 17254:17254 <> b:150
+R17281:17285 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R17274:17276 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17257:17269 JFCTheorems.ToolDispatch <> tool_kind_eqb def
+R17271:17271 JFCTheorems.ToolDispatch <> a:149 var
+R17273:17273 JFCTheorems.ToolDispatch <> b:150 var
+R17277:17280 Corelib.Init.Datatypes <> true constr
+R17287:17289 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17286:17286 JFCTheorems.ToolDispatch <> a:149 var
+R17290:17290 JFCTheorems.ToolDispatch <> b:150 var
+R17321:17333 JFCTheorems.ToolDispatch <> tool_kind_eqb def
+R17348:17363 JFCTheorems.ToolDispatch <> tool_kind_eq_dec def
+R17348:17363 JFCTheorems.ToolDispatch <> tool_kind_eq_dec def
+def 17588:17594 <> Handler
+R17599:17601 Corelib.Init.Datatypes <> nat ind
+def 17811:17818 <> Registry
+R17823:17826 Corelib.Init.Datatypes <> list ind
+R17837:17839 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R17829:17836 JFCTheorems.ToolDispatch <> ToolKind ind
+R17840:17846 JFCTheorems.ToolDispatch <> Handler def
+def 17942:17949 <> dispatch
+R17958:17965 JFCTheorems.ToolDispatch <> Registry def
+binder 17952:17954 <> reg:151
+R17973:17980 JFCTheorems.ToolDispatch <> ToolKind ind
+binder 17969:17969 <> k:152
+R17985:17990 Corelib.Init.Datatypes <> option ind
+R17992:17998 JFCTheorems.ToolDispatch <> Handler def
+R18011:18013 JFCTheorems.ToolDispatch <> reg:151 var
+R18024:18025 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R18030:18033 Corelib.Init.Datatypes <> None constr
+R18046:18049 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R18039:18039 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18042:18043 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18045:18045 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18067:18079 JFCTheorems.ToolDispatch <> tool_kind_eqb def
+R18084:18084 JFCTheorems.ToolDispatch <> k:152 var
+R18103:18110 JFCTheorems.ToolDispatch <> dispatch:153 def
+R18117:18117 JFCTheorems.ToolDispatch <> k:152 var
+R18091:18094 Corelib.Init.Datatypes <> Some constr
+def 18205:18214 <> registered
+R18223:18230 JFCTheorems.ToolDispatch <> Registry def
+binder 18217:18219 <> reg:155
+R18238:18245 JFCTheorems.ToolDispatch <> ToolKind ind
+binder 18234:18234 <> k:156
+R18260:18266 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R18268:18269 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 18267:18267 <> h:157
+R18284:18286 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18270:18277 JFCTheorems.ToolDispatch <> dispatch def
+R18279:18281 JFCTheorems.ToolDispatch <> reg:155 var
+R18283:18283 JFCTheorems.ToolDispatch <> k:156 var
+R18287:18290 Corelib.Init.Datatypes <> Some constr
+R18292:18292 JFCTheorems.ToolDispatch <> h:157 var
+def 18444:18451 <> register
+R18460:18467 JFCTheorems.ToolDispatch <> Registry def
+binder 18454:18456 <> reg:158
+R18475:18482 JFCTheorems.ToolDispatch <> ToolKind ind
+binder 18471:18471 <> k:159
+R18490:18496 JFCTheorems.ToolDispatch <> Handler def
+binder 18486:18486 <> h:160
+R18501:18508 JFCTheorems.ToolDispatch <> Registry def
+R18521:18524 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R18515:18515 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18517:18518 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18520:18520 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18516:18516 JFCTheorems.ToolDispatch <> k:159 var
+R18519:18519 JFCTheorems.ToolDispatch <> h:160 var
+R18525:18527 JFCTheorems.ToolDispatch <> reg:158 var
+prf 18851:18872 <> dispatch_deterministic
+binder 18885:18887 <> reg:161
+binder 18889:18889 <> k:162
+binder 18891:18892 <> h1:163
+binder 18894:18895 <> h2:164
+R18926:18933 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18916:18918 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18902:18909 JFCTheorems.ToolDispatch <> dispatch def
+R18911:18913 JFCTheorems.ToolDispatch <> reg:161 var
+R18915:18915 JFCTheorems.ToolDispatch <> k:162 var
+R18919:18922 Corelib.Init.Datatypes <> Some constr
+R18924:18925 JFCTheorems.ToolDispatch <> h1:163 var
+R18958:18965 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18948:18950 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18934:18941 JFCTheorems.ToolDispatch <> dispatch def
+R18943:18945 JFCTheorems.ToolDispatch <> reg:161 var
+R18947:18947 JFCTheorems.ToolDispatch <> k:162 var
+R18951:18954 Corelib.Init.Datatypes <> Some constr
+R18956:18957 JFCTheorems.ToolDispatch <> h2:164 var
+R18968:18970 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18966:18967 JFCTheorems.ToolDispatch <> h1:163 var
+R18971:18972 JFCTheorems.ToolDispatch <> h2:164 var
+prf 19317:19340 <> only_registered_dispatch
+binder 19353:19355 <> reg:165
+binder 19357:19357 <> k:166
+R19382:19389 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19364:19365 Corelib.Init.Logic <> ::type_scope:'~'_x not
+R19366:19375 JFCTheorems.ToolDispatch <> registered def
+R19377:19379 JFCTheorems.ToolDispatch <> reg:165 var
+R19381:19381 JFCTheorems.ToolDispatch <> k:166 var
+R19404:19406 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19390:19397 JFCTheorems.ToolDispatch <> dispatch def
+R19399:19401 JFCTheorems.ToolDispatch <> reg:165 var
+R19403:19403 JFCTheorems.ToolDispatch <> k:166 var
+R19407:19410 Corelib.Init.Datatypes <> None constr
+R19452:19459 JFCTheorems.ToolDispatch <> dispatch def
+R19452:19459 JFCTheorems.ToolDispatch <> dispatch def
+prf 19841:19867 <> dispatch_implies_registered
+binder 19880:19882 <> reg:167
+binder 19884:19884 <> k:168
+binder 19886:19886 <> h:169
+R19916:19923 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R19907:19909 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19893:19900 JFCTheorems.ToolDispatch <> dispatch def
+R19902:19904 JFCTheorems.ToolDispatch <> reg:167 var
+R19906:19906 JFCTheorems.ToolDispatch <> k:168 var
+R19910:19913 Corelib.Init.Datatypes <> Some constr
+R19915:19915 JFCTheorems.ToolDispatch <> h:169 var
+R19924:19933 JFCTheorems.ToolDispatch <> registered def
+R19935:19937 JFCTheorems.ToolDispatch <> reg:167 var
+R19939:19939 JFCTheorems.ToolDispatch <> k:168 var
+prf 20269:20289 <> lookup_after_register
+binder 20302:20304 <> reg:170
+binder 20306:20306 <> k:171
+binder 20308:20308 <> h:172
+R20344:20346 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20315:20322 JFCTheorems.ToolDispatch <> dispatch def
+R20325:20332 JFCTheorems.ToolDispatch <> register def
+R20334:20336 JFCTheorems.ToolDispatch <> reg:170 var
+R20338:20338 JFCTheorems.ToolDispatch <> k:171 var
+R20340:20340 JFCTheorems.ToolDispatch <> h:172 var
+R20343:20343 JFCTheorems.ToolDispatch <> k:171 var
+R20347:20350 Corelib.Init.Datatypes <> Some constr
+R20352:20352 JFCTheorems.ToolDispatch <> h:172 var
+R20387:20394 JFCTheorems.ToolDispatch <> register def
+R20402:20409 JFCTheorems.ToolDispatch <> dispatch def
+R20423:20440 JFCTheorems.ToolDispatch <> tool_kind_eqb_refl thm
+R20423:20440 JFCTheorems.ToolDispatch <> tool_kind_eqb_refl thm
+R20423:20440 JFCTheorems.ToolDispatch <> tool_kind_eqb_refl thm
+prf 20587:20610 <> register_preserves_other
+binder 20623:20625 <> reg:173
+binder 20627:20627 <> k:174
+binder 20629:20630 <> k':175
+binder 20632:20632 <> h:176
+binder 20634:20635 <> h':177
+R20649:20656 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20643:20646 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R20642:20642 JFCTheorems.ToolDispatch <> k:174 var
+R20647:20648 JFCTheorems.ToolDispatch <> k':175 var
+R20680:20687 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20671:20673 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20657:20664 JFCTheorems.ToolDispatch <> dispatch def
+R20666:20668 JFCTheorems.ToolDispatch <> reg:173 var
+R20670:20670 JFCTheorems.ToolDispatch <> k:174 var
+R20674:20677 Corelib.Init.Datatypes <> Some constr
+R20679:20679 JFCTheorems.ToolDispatch <> h:176 var
+R20719:20721 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20688:20695 JFCTheorems.ToolDispatch <> dispatch def
+R20698:20705 JFCTheorems.ToolDispatch <> register def
+R20707:20709 JFCTheorems.ToolDispatch <> reg:173 var
+R20711:20712 JFCTheorems.ToolDispatch <> k':175 var
+R20714:20715 JFCTheorems.ToolDispatch <> h':177 var
+R20718:20718 JFCTheorems.ToolDispatch <> k:174 var
+R20722:20725 Corelib.Init.Datatypes <> Some constr
+R20727:20727 JFCTheorems.ToolDispatch <> h:176 var
+R20776:20783 JFCTheorems.ToolDispatch <> register def
+R20791:20798 JFCTheorems.ToolDispatch <> dispatch def
+R20814:20826 JFCTheorems.ToolDispatch <> tool_kind_eqb def
+R20814:20826 JFCTheorems.ToolDispatch <> tool_kind_eqb def
+R20852:20873 JFCTheorems.ToolDispatch <> tool_kind_eqb_true_iff thm
+R20852:20873 JFCTheorems.ToolDispatch <> tool_kind_eqb_true_iff thm
+prf 21235:21262 <> dispatch_total_on_registered
+binder 21275:21277 <> reg:178
+binder 21279:21279 <> k:179
+R21302:21309 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R21286:21295 JFCTheorems.ToolDispatch <> registered def
+R21297:21299 JFCTheorems.ToolDispatch <> reg:178 var
+R21301:21301 JFCTheorems.ToolDispatch <> k:179 var
+R21310:21316 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R21318:21319 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 21317:21317 <> h:180
+R21334:21336 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R21320:21327 JFCTheorems.ToolDispatch <> dispatch def
+R21329:21331 JFCTheorems.ToolDispatch <> reg:178 var
+R21333:21333 JFCTheorems.ToolDispatch <> k:179 var
+R21337:21340 Corelib.Init.Datatypes <> Some constr
+R21342:21342 JFCTheorems.ToolDispatch <> h:180 var
+def 21767:21778 <> dispatchable
+R21785:21791 JFCTheorems.ToolDispatch <> ToolUse rec
+binder 21781:21781 <> t:181
+R21796:21799 Corelib.Init.Datatypes <> bool ind
+R21806:21809 Corelib.Init.Datatypes <> negb def
+R21812:21827 JFCTheorems.ToolDispatch <> is_terminal_tool def
+R21830:21840 JFCTheorems.ToolDispatch <> tool_status proj
+R21842:21842 JFCTheorems.ToolDispatch <> t:181 var
+def 21940:21955 <> guarded_dispatch
+R21964:21971 JFCTheorems.ToolDispatch <> Registry def
+binder 21958:21960 <> reg:182
+R21979:21986 JFCTheorems.ToolDispatch <> ToolKind ind
+binder 21975:21975 <> k:183
+R21994:22000 JFCTheorems.ToolDispatch <> ToolUse rec
+binder 21990:21990 <> t:184
+R22009:22014 Corelib.Init.Datatypes <> option ind
+R22016:22022 JFCTheorems.ToolDispatch <> Handler def
+R22032:22043 JFCTheorems.ToolDispatch <> dispatchable def
+R22045:22045 JFCTheorems.ToolDispatch <> t:184 var
+R22072:22075 Corelib.Init.Datatypes <> None constr
+R22052:22059 JFCTheorems.ToolDispatch <> dispatch def
+R22061:22063 JFCTheorems.ToolDispatch <> reg:182 var
+R22065:22065 JFCTheorems.ToolDispatch <> k:183 var
+prf 22385:22407 <> no_dispatch_in_terminal
+binder 22420:22422 <> reg:185
+binder 22424:22424 <> k:186
+binder 22426:22426 <> t:187
+R22472:22479 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22465:22467 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R22433:22448 JFCTheorems.ToolDispatch <> is_terminal_tool def
+R22451:22461 JFCTheorems.ToolDispatch <> tool_status proj
+R22463:22463 JFCTheorems.ToolDispatch <> t:187 var
+R22468:22471 Corelib.Init.Datatypes <> true constr
+R22504:22506 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R22480:22495 JFCTheorems.ToolDispatch <> guarded_dispatch def
+R22497:22499 JFCTheorems.ToolDispatch <> reg:185 var
+R22501:22501 JFCTheorems.ToolDispatch <> k:186 var
+R22503:22503 JFCTheorems.ToolDispatch <> t:187 var
+R22507:22510 Corelib.Init.Datatypes <> None constr
+R22553:22568 JFCTheorems.ToolDispatch <> guarded_dispatch def
+R22571:22582 JFCTheorems.ToolDispatch <> dispatchable def
+R22607:22610 Corelib.Init.Datatypes <> negb def
+prf 22833:22868 <> guarded_dispatch_implies_nonterminal
+binder 22881:22883 <> reg:188
+binder 22885:22885 <> k:189
+binder 22887:22887 <> t:190
+binder 22889:22889 <> h:191
+R22929:22936 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R22920:22922 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R22896:22911 JFCTheorems.ToolDispatch <> guarded_dispatch def
+R22913:22915 JFCTheorems.ToolDispatch <> reg:188 var
+R22917:22917 JFCTheorems.ToolDispatch <> k:189 var
+R22919:22919 JFCTheorems.ToolDispatch <> t:190 var
+R22923:22926 Corelib.Init.Datatypes <> Some constr
+R22928:22928 JFCTheorems.ToolDispatch <> h:191 var
+R22969:22971 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R22937:22952 JFCTheorems.ToolDispatch <> is_terminal_tool def
+R22955:22965 JFCTheorems.ToolDispatch <> tool_status proj
+R22967:22967 JFCTheorems.ToolDispatch <> t:190 var
+R22972:22976 Corelib.Init.Datatypes <> false constr
+R23018:23033 JFCTheorems.ToolDispatch <> guarded_dispatch def
+R23036:23047 JFCTheorems.ToolDispatch <> dispatchable def
+R23068:23083 JFCTheorems.ToolDispatch <> is_terminal_tool def
+R23086:23096 JFCTheorems.ToolDispatch <> tool_status proj
+R23068:23083 JFCTheorems.ToolDispatch <> is_terminal_tool def
+R23086:23096 JFCTheorems.ToolDispatch <> tool_status proj
+R23122:23125 Corelib.Init.Datatypes <> negb def
+prf 23495:23527 <> guarded_dispatch_routes_correctly
+binder 23540:23542 <> reg:192
+binder 23544:23544 <> k:193
+binder 23546:23546 <> t:194
+R23593:23600 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R23585:23587 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R23553:23568 JFCTheorems.ToolDispatch <> is_terminal_tool def
+R23571:23581 JFCTheorems.ToolDispatch <> tool_status proj
+R23583:23583 JFCTheorems.ToolDispatch <> t:194 var
+R23588:23592 Corelib.Init.Datatypes <> false constr
+R23625:23627 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R23601:23616 JFCTheorems.ToolDispatch <> guarded_dispatch def
+R23618:23620 JFCTheorems.ToolDispatch <> reg:192 var
+R23622:23622 JFCTheorems.ToolDispatch <> k:193 var
+R23624:23624 JFCTheorems.ToolDispatch <> t:194 var
+R23628:23635 JFCTheorems.ToolDispatch <> dispatch def
+R23637:23639 JFCTheorems.ToolDispatch <> reg:192 var
+R23641:23641 JFCTheorems.ToolDispatch <> k:193 var
+R23682:23697 JFCTheorems.ToolDispatch <> guarded_dispatch def
+R23700:23711 JFCTheorems.ToolDispatch <> dispatchable def
+R23734:23737 Corelib.Init.Datatypes <> negb def

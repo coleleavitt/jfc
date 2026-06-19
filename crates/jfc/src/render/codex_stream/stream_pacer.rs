@@ -1,12 +1,11 @@
-//! View-layer reveal pacer for live streaming assistant text.
+//! View-layer reveal cap for live streaming assistant text.
 //!
 //! JFC's engine appends every received `StreamEvent::Chunk` immediately into
-//! `EngineState` (the single source of truth — unchanged). This pacer animates
-//! the *display* of that already-received text: each frame it reveals lines at
-//! the adaptive smooth/catch-up cadence from [`chunking`], so output "feels
-//! alive" and never lags under burst load — without touching the engine's
-//! streaming hot path (no second source of truth, no risk to the session-pinned
-//! stream regression tests).
+//! `EngineState` (the single source of truth — unchanged). The default TUI path
+//! now calls [`StreamPacer::reveal_all`] on every tick so the transcript renders
+//! received text immediately, matching Claude/Codex behavior. The adaptive
+//! [`advance`] path remains available for narrow experiments/tests, but visible
+//! smoothing belongs in the spinner token counter, not in transcript text.
 //!
 //! ## Model
 //!
@@ -19,9 +18,9 @@
 //!   `Single` (reveal one line) or `Batch(n)` (drain the backlog), and `revealed`
 //!   moves toward `total_lines`.
 //!
-//! The owning view ([`crate::app::App`]) holds one pacer, calls [`advance`] each
-//! animation tick, [`reset`] when a new stream starts, and [`reveal_all`] when the
-//! stream finishes (so nothing is ever held back at end-of-turn).
+//! The owning view ([`crate::app::App`]) holds one pacer, [`reset`]s it when a
+//! new stream starts, and normally calls [`reveal_all`] while streaming and when
+//! the stream finishes (so nothing is held back).
 //!
 //! [`advance`]: StreamPacer::advance
 //! [`reset`]: StreamPacer::reset
@@ -36,7 +35,7 @@ use super::chunking::AdaptiveChunkingPolicy;
 use super::chunking::DrainPlan;
 use super::chunking::QueueSnapshot;
 
-/// Reveal-animation state for one live stream, layered over the engine's
+/// Reveal-cap state for one live stream, layered over the engine's
 /// (already-immediate) streaming text.
 #[derive(Debug, Default)]
 pub(crate) struct StreamPacer {

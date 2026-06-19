@@ -101,8 +101,8 @@ fn web_search_def() -> ToolDef {
         name: "WebSearch".into(),
         description: "Search the web for `query`. Returns a ranked list of \
             results with title, URL, and snippet. Combine with `WebFetch` \
-            to read promising hits. No prefix uses Google Custom Search \
-            Engine (falling back to Brave if no Google key is set). \
+            to read promising hits. No prefix fuses native Google Custom Search, \
+            Million Short, 4get, OpenAlex, DBLP, and Primo. \
             Prefix the query to select a backend:\n\
             • `edu: <query>` — Google scoped to academic TLDs worldwide \
             (.edu, .ac.uk, .ac.jp, .edu.cn, .ac.cn, .edu.au, .ac.in, .ac.kr, \
@@ -137,21 +137,19 @@ fn web_search_def() -> ToolDef {
             PDF locations across repositories (free, no key).\n\
             • `papers: <query>` — arXiv + Semantic Scholar + OpenAlex in \
             parallel, deduplicated by arXiv ID / DOI / title.\n\
-            • `brave: <query>` — Brave independent index (key: BRAVE_API_KEY).\n\
             • `tavily: <query>` — Tavily LLM-oriented search (key: TAVILY_API_KEY).\n\
             • `exa: <query>` — Exa neural/semantic search (key: EXA_API_KEY).\n\
-            • `ddg: <query>` — DuckDuckGo Instant Answer; facts/definitions \
-            only, not a full SERP (free, no key).\n\
-            • `searxng: <query>` — SearXNG meta-search; a key-free full SERP that \
-            aggregates Google/Bing/DDG (set `SEARXNG_URL` for a self-hosted \
-            instance). Also the automatic fallback when Google CSE is rate-limited.\n\
+            • `millionshort: <query>` — Million Short exploratory search using \
+            JFC's `[millionshort]` credentials when the site requires login.\n\
+            • `4get: <query>` or `4get:<scraper>: <query>` — 4get instance \
+            failover with scraper switching.\n\
             • `wiki: <query>` — Wikipedia/MediaWiki article search (free, no key)."
             .into(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
                 "query": { "type": "string" },
-                "max_results": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5 }
+                "max_results": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
             },
             "required": ["query"]
         }),

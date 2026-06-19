@@ -322,11 +322,9 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
             .map(str::to_owned);
     let hit = message_view::find_tool_at(&app.tool_hit_regions.borrow(), mouse.column, mouse.row)
         .map(str::to_owned);
-    // Toast click → dismiss. Toasts render newest-
-    // first; row 0 corresponds to the last entry
-    // in `app.engine.toasts`, row 1 to the second-to-last,
-    // etc. (See `iter().rev().take(h)` in
-    // `toast_overlay`.) Pop the matched toast.
+    // Toast click → dismiss. The overlay only renders error toasts, newest
+    // first, so translate the clicked visible row back to the matching entry
+    // in the full toast queue.
     let toast_hit = app
         .toasts_rect
         .borrow()
@@ -339,8 +337,17 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
         })
         .map(|r| mouse.row.saturating_sub(r.y) as usize);
     if let Some(local_row) = toast_hit {
-        if local_row < app.engine.toasts.len() {
-            let drop_idx = app.engine.toasts.len() - 1 - local_row;
+        let visible_error_indices = app
+            .engine
+            .toasts
+            .iter()
+            .enumerate()
+            .rev()
+            .filter_map(|(idx, toast)| {
+                matches!(toast.kind, jfc_engine::toast::ToastKind::Error).then_some(idx)
+            })
+            .collect::<Vec<_>>();
+        if let Some(drop_idx) = visible_error_indices.get(local_row).copied() {
             app.engine.toasts.remove(drop_idx);
         }
         return;
@@ -418,6 +425,10 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
                     app.engine.streaming_text = String::new();
                     app.engine.streaming_reasoning = String::new();
                     app.engine.streaming_response_bytes = 0;
+                    app.engine.streaming_response_baseline = 0;
+                    app.engine.streaming_thinking_tokens = 0;
+                    app.engine.token_rate_samples.clear();
+                    app.engine.token_rate_sample_thinking = None;
                     app.engine.streaming_assistant_idx = None;
                     app.session_selected = idx;
                     app.session_list_state.select(Some(idx));

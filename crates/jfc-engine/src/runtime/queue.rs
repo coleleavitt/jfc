@@ -109,6 +109,10 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     state.streaming_text = String::new();
     state.streaming_reasoning = String::new();
     state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
     state.turn_output_tokens = 0;
     state.refusal_fallback_attempted = false;
     state.refusal_resend_count = 0;
