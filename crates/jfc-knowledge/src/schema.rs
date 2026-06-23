@@ -55,6 +55,33 @@ const MIGRATIONS: &[&str] = &[
         VALUES (new.rowid, new.title, new.body, new.tags);
     END;
     "#,
+    // v2 — verification outcome + salience (TODOs 7,8), the Obsidian-style typed
+    // link-graph (TODO 14), and unresolved-reference knowledge gaps (TODO 15).
+    r#"
+    ALTER TABLE knowledge ADD COLUMN outcome TEXT NOT NULL DEFAULT 'unverified';
+    ALTER TABLE knowledge ADD COLUMN importance REAL NOT NULL DEFAULT 0.5;
+    CREATE INDEX idx_knowledge_outcome ON knowledge(outcome);
+
+    CREATE TABLE knowledge_links (
+        from_id    TEXT NOT NULL,
+        to_id      TEXT NOT NULL,
+        rel        TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (from_id, to_id, rel)
+    );
+    CREATE INDEX idx_links_from ON knowledge_links(from_id);
+    CREATE INDEX idx_links_to ON knowledge_links(to_id);
+
+    CREATE TABLE knowledge_gaps (
+        id            TEXT PRIMARY KEY,
+        label         TEXT NOT NULL,
+        reason        TEXT NOT NULL DEFAULT '',
+        ref_count     INTEGER NOT NULL DEFAULT 1,
+        first_seen_ms INTEGER NOT NULL,
+        last_seen_ms  INTEGER NOT NULL,
+        resolved_by   TEXT
+    );
+    "#,
 ];
 
 /// The schema version this build expects (== number of migrations).

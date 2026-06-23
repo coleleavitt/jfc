@@ -45,6 +45,52 @@ impl Kind {
             _ => None,
         }
     }
+
+    /// Default salience by kind: durable, reusable knowledge (findings,
+    /// conventions, skills, preferences) outranks one-off facts.
+    pub fn default_importance(self) -> f64 {
+        match self {
+            Self::Finding | Self::Convention => 0.8,
+            Self::Skill | Self::Preference => 0.7,
+            Self::Fact => 0.5,
+        }
+    }
+}
+
+/// Typed edge between two knowledge records (Obsidian-style link-graph). Lets
+/// recall traverse (a surfaced error pulls in its `FixedBy` lesson) and answers
+/// backlink queries ("what depends on this lesson").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RelKind {
+    RelatesTo,
+    Supersedes,
+    CausedBy,
+    FixedBy,
+    Refines,
+}
+
+impl RelKind {
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::RelatesTo => "relates-to",
+            Self::Supersedes => "supersedes",
+            Self::CausedBy => "caused-by",
+            Self::FixedBy => "fixed-by",
+            Self::Refines => "refines",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "relates-to" => Some(Self::RelatesTo),
+            "supersedes" => Some(Self::Supersedes),
+            "caused-by" => Some(Self::CausedBy),
+            "fixed-by" => Some(Self::FixedBy),
+            "refines" => Some(Self::Refines),
+            _ => None,
+        }
+    }
 }
 
 /// The visibility scope of a record. This is the core safety axis: only
@@ -81,6 +127,49 @@ impl Scope {
     }
 }
 
+/// Whether a lesson's claim has been *verified*. The literature's #1 lever for a
+/// compounding (vs. plateauing) self-improvement loop: an error-lesson is only
+/// `Verified` when the evidence confirms the fix actually worked (e.g. a
+/// failed→succeeded recovery in the same transcript). `Unverified` self-reports
+/// rank far lower; `Refuted` lessons are contradicted by later evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Outcome {
+    #[default]
+    Unverified,
+    Verified,
+    Refuted,
+}
+
+impl Outcome {
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::Unverified => "unverified",
+            Self::Verified => "verified",
+            Self::Refuted => "refuted",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "unverified" => Some(Self::Unverified),
+            "verified" => Some(Self::Verified),
+            "refuted" => Some(Self::Refuted),
+            _ => None,
+        }
+    }
+
+    /// Ranking multiplier: verified lessons rank well above unverified ones on
+    /// equal relevance; refuted lessons are suppressed.
+    pub fn rank_boost(self) -> f64 {
+        match self {
+            Self::Verified => 2.0,
+            Self::Unverified => 1.0,
+            Self::Refuted => 0.1,
+        }
+    }
+}
+
 /// One knowledge record. Field semantics match the `knowledge` table in
 /// [`crate::schema`].
 #[derive(Debug, Clone, PartialEq)]
@@ -104,6 +193,11 @@ pub struct KnowledgeRecord {
     pub superseded_by: Option<String>,
     /// True only after explicit human promotion to global scope.
     pub promoted: bool,
+    /// Verification status (schema v2). Drives the verified rank boost.
+    pub outcome: Outcome,
+    /// Salience/importance in [0.0, 1.0] (schema v2). Generative-Agents-style:
+    /// findings/conventions matter more than ephemeral facts. Multiplies rank.
+    pub importance: f64,
 }
 
 impl KnowledgeRecord {
@@ -131,6 +225,8 @@ impl KnowledgeRecord {
             use_count: 0,
             superseded_by: None,
             promoted: false,
+            outcome: Outcome::Unverified,
+            importance: kind.default_importance(),
         }
     }
 
@@ -146,6 +242,16 @@ impl KnowledgeRecord {
 
     pub fn with_confidence(mut self, confidence: f64) -> Self {
         self.confidence = confidence.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn with_outcome(mut self, outcome: Outcome) -> Self {
+        self.outcome = outcome;
+        self
+    }
+
+    pub fn with_importance(mut self, importance: f64) -> Self {
+        self.importance = importance.clamp(0.0, 1.0);
         self
     }
 

@@ -33,8 +33,8 @@ use rusqlite::{Connection, OptionalExtension};
 pub use error::{KnowledgeError, Result};
 pub use import::{ImportReport, ImportableMemory};
 pub use project::project_key;
-pub use query::RecallFilter;
-pub use record::{Kind, KnowledgeRecord, Scope};
+pub use query::{Gap, LinkedRecord, RecallFilter};
+pub use record::{Kind, KnowledgeRecord, Outcome, RelKind, Scope};
 
 /// Default per-scope row cap used by [`KnowledgeStore::decay`].
 pub const DEFAULT_MAX_ROWS_PER_SCOPE: i64 = 2_000;
@@ -159,6 +159,36 @@ impl KnowledgeStore {
     /// Bounded-growth maintenance. Returns the number of rows removed.
     pub fn decay(&mut self, max_age_ms: i64, max_rows_per_scope: i64) -> Result<usize> {
         query::decay(&mut self.conn, max_age_ms, max_rows_per_scope)
+    }
+
+    /// Consolidate near-duplicate live records (offline). Returns rows superseded.
+    pub fn consolidate(&mut self) -> Result<usize> {
+        query::consolidate(&mut self.conn)
+    }
+
+    /// Create a typed link `from -rel-> to` (Obsidian-style graph edge).
+    pub fn link(&self, from_id: &str, to_id: &str, rel: RelKind) -> Result<()> {
+        query::link(&self.conn, from_id, to_id, rel)
+    }
+
+    /// Records one hop out from `id` along outgoing edges (live targets).
+    pub fn linked(&self, id: &str) -> Result<Vec<LinkedRecord>> {
+        query::linked(&self.conn, id)
+    }
+
+    /// Ids that link *at* `id` (backlinks — "what depends on this").
+    pub fn backlinks(&self, id: &str) -> Result<Vec<String>> {
+        query::backlinks(&self.conn, id)
+    }
+
+    /// Record/bump a knowledge gap (referenced-but-absent lesson).
+    pub fn note_gap(&self, label: &str, reason: &str) -> Result<()> {
+        query::note_gap(&self.conn, label, reason)
+    }
+
+    /// Open knowledge gaps, most-referenced first ("what to learn next").
+    pub fn gaps(&self, limit: usize) -> Result<Vec<Gap>> {
+        query::gaps(&self.conn, limit)
     }
 
     /// Count of live (non-superseded) records — for tests/metrics.
@@ -356,6 +386,89 @@ mod tests {
         assert_eq!(r2.imported, 0);
         assert_eq!(r2.skipped, 2);
         assert_eq!(store.live_count().unwrap(), 2, "re-import must not duplicate");
+    }
+
+    // TODO 7+8: a verified, salient lesson outranks an unverified one on equal
+    // lexical relevance.
+    #[test]
+    fn verified_lesson_outranks_unverified_normal() {
+        let store = KnowledgeStore::open_in_memory().unwrap();
+        let weak = rec(Scope::Global, None, "edit term apple", "alpha")
+            .with_confidence(0.5)
+            .with_importance(0.5);
+        let strong = rec(Scope::Global, None, "edit term apple", "beta")
+            .with_confidence(0.5)
+            .with_importance(0.5)
+            .with_outcome(Outcome::Verified);
+        store.insert(&weak).unwrap();
+        store.insert(&strong).unwrap();
+        let hits = store.recall("apple", &RecallFilter::default()).unwrap();
+        assert_eq!(
+            hits.first().map(|h| h.id.as_str()),
+            Some(strong.id.as_str()),
+            "verified lesson must rank first"
+        );
+    }
+
+    // TODO 14: typed links + recall expansion + backlinks.
+    #[test]
+    fn typed_links_and_backlinks_normal() {
+        let store = KnowledgeStore::open_in_memory().unwrap();
+        let err = rec(Scope::Global, None, "error", "old_string not found");
+        let fix = rec(Scope::Global, None, "fix", "strip the line-number gutter first");
+        store.insert(&err).unwrap();
+        store.insert(&fix).unwrap();
+        store.link(&err.id, &fix.id, RelKind::FixedBy).unwrap();
+
+        let linked = store.linked(&err.id).unwrap();
+        assert_eq!(linked.len(), 1);
+        assert_eq!(linked[0].rel, RelKind::FixedBy);
+        assert_eq!(linked[0].record.id, fix.id);
+
+        assert_eq!(store.backlinks(&fix.id).unwrap(), vec![err.id.clone()]);
+        // Idempotent: re-linking the same edge doesn't duplicate.
+        store.link(&err.id, &fix.id, RelKind::FixedBy).unwrap();
+        assert_eq!(store.linked(&err.id).unwrap().len(), 1);
+    }
+
+    // TODO 15: knowledge gaps rank by reference count.
+    #[test]
+    fn knowledge_gaps_rank_by_ref_count_normal() {
+        let store = KnowledgeStore::open_in_memory().unwrap();
+        store.note_gap("how to mock the network layer", "referenced, no lesson").unwrap();
+        store.note_gap("how to mock the network layer", "again").unwrap();
+        store.note_gap("CI cache config", "once").unwrap();
+        let gaps = store.gaps(10).unwrap();
+        assert_eq!(gaps.len(), 2);
+        assert_eq!(gaps[0].label, "how to mock the network layer");
+        assert_eq!(gaps[0].ref_count, 2);
+    }
+
+    // TODO 10: consolidation collapses duplicates to the strongest, supersedes
+    // the rest, and is idempotent.
+    #[test]
+    fn consolidate_collapses_duplicates_regression() {
+        let mut store = KnowledgeStore::open_in_memory().unwrap();
+        let weak = rec(Scope::Project, Some("P"), "dup", "use ripgrep here")
+            .with_confidence(0.3);
+        let strong = rec(Scope::Project, Some("P"), "dup", "use   ripgrep here")
+            .with_confidence(0.9)
+            .with_outcome(Outcome::Verified);
+        store.insert(&weak).unwrap();
+        store.insert(&strong).unwrap();
+        assert_eq!(store.live_count().unwrap(), 2);
+
+        let n = store.consolidate().unwrap();
+        assert_eq!(n, 1, "one duplicate should be superseded");
+        assert_eq!(store.live_count().unwrap(), 1);
+        // The verified/stronger one survives.
+        let hits = store
+            .recall("ripgrep", &crate::query::RecallFilter { project_key: Some("P"), limit: 8 })
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, strong.id);
+        // Idempotent.
+        assert_eq!(store.consolidate().unwrap(), 0);
     }
 
     #[test]

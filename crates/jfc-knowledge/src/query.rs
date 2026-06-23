@@ -29,6 +29,7 @@ impl Default for RecallFilter<'_> {
 fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeRecord> {
     let kind_s: String = row.get("kind")?;
     let scope_s: String = row.get("scope")?;
+    let outcome_s: String = row.get("outcome")?;
     Ok(KnowledgeRecord {
         id: row.get("id")?,
         // Unknown enum slugs fall back to a safe default rather than erroring a
@@ -46,6 +47,8 @@ fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeRecord> {
         use_count: row.get("use_count")?,
         superseded_by: row.get("superseded_by")?,
         promoted: row.get::<_, i64>("promoted")? != 0,
+        outcome: crate::record::Outcome::parse(&outcome_s).unwrap_or_default(),
+        importance: row.get("importance")?,
     })
 }
 
@@ -80,8 +83,9 @@ pub fn insert(conn: &Connection, rec: &KnowledgeRecord) -> Result<()> {
     }
     conn.execute(
         "INSERT INTO knowledge (id, kind, scope, project_key, title, body, tags, source, \
-         confidence, created_at_ms, last_used_ms, use_count, superseded_by, promoted) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+         confidence, created_at_ms, last_used_ms, use_count, superseded_by, promoted, \
+         outcome, importance) \
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
         params![
             rec.id,
             rec.kind.slug(),
@@ -97,6 +101,8 @@ pub fn insert(conn: &Connection, rec: &KnowledgeRecord) -> Result<()> {
             rec.use_count,
             rec.superseded_by,
             rec.promoted as i64,
+            rec.outcome.slug(),
+            rec.importance,
         ],
     )?;
     Ok(())
@@ -144,7 +150,12 @@ pub fn recall(
     const HALFLIFE_MS: f64 = 30.0 * 24.0 * 3600.0 * 1000.0;
     let scope_clause =
         "(scope IN ('user','global') OR (scope = 'project' AND project_key = :proj))";
-    let score_expr = "k.confidence \
+    // Score = importance * confidence * verified-boost * recency-falloff *
+    // usage-boost. The verified boost (2.0 verified / 1.0 unverified / 0.1
+    // refuted) and importance term are schema v2 — they make a verified, salient
+    // lesson outrank an unverified ephemeral one on equal lexical relevance.
+    let score_expr = "k.importance * k.confidence \
+        * (CASE k.outcome WHEN 'verified' THEN 2.0 WHEN 'refuted' THEN 0.1 ELSE 1.0 END) \
         * (:hl / (:hl + CAST(:now - k.created_at_ms AS REAL))) \
         * (1.0 + CAST(k.use_count AS REAL) / (k.use_count + 4))";
 
@@ -243,6 +254,169 @@ pub fn decay(conn: &mut Connection, max_age_ms: i64, max_rows_per_scope: i64) ->
     }
     tx.commit()?;
     Ok(removed)
+}
+
+// ── Obsidian-style typed links (TODO 14) ─────────────────────────────────────
+
+use crate::record::RelKind;
+
+/// Create a typed edge `from -rel-> to`. Idempotent (PK on the triple).
+pub fn link(conn: &Connection, from_id: &str, to_id: &str, rel: RelKind) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO knowledge_links (from_id, to_id, rel, created_at_ms) \
+         VALUES (?1, ?2, ?3, ?4)",
+        params![from_id, to_id, rel.slug(), now_ms()],
+    )?;
+    Ok(())
+}
+
+/// One outgoing edge + the record it points to.
+pub struct LinkedRecord {
+    pub rel: RelKind,
+    pub record: KnowledgeRecord,
+}
+
+/// Records reachable one hop from `id` along outgoing edges (live targets only).
+/// This is the recall-expansion primitive: a surfaced error pulls in its
+/// `FixedBy` lesson.
+pub fn linked(conn: &Connection, id: &str) -> Result<Vec<LinkedRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.rel AS rel, k.* FROM knowledge_links l \
+         JOIN knowledge k ON k.id = l.to_id \
+         WHERE l.from_id = ?1 AND k.superseded_by IS NULL",
+    )?;
+    let rows = stmt.query_map([id], |row| {
+        let rel_s: String = row.get("rel")?;
+        Ok(LinkedRecord {
+            rel: RelKind::parse(&rel_s).unwrap_or(RelKind::RelatesTo),
+            record: row_to_record(row)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// Backlinks: ids that point *at* `id` (the "what depends on this" view).
+pub fn backlinks(conn: &Connection, id: &str) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT from_id FROM knowledge_links WHERE to_id = ?1")?;
+    let rows = stmt.query_map([id], |row| row.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+// ── Knowledge gaps (TODO 15) ─────────────────────────────────────────────────
+
+/// Record (or bump) a knowledge gap: a referenced-but-absent lesson/skill — the
+/// analog of an Obsidian unresolved `[[link]]`. Keyed by a normalized label so
+/// repeated references increment `ref_count` (a "learn this next" ranking).
+pub fn note_gap(conn: &Connection, label: &str, reason: &str) -> Result<()> {
+    let norm = label.trim().to_lowercase();
+    if norm.is_empty() {
+        return Ok(());
+    }
+    let id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, norm.as_bytes())
+        .simple()
+        .to_string();
+    let now = now_ms();
+    conn.execute(
+        "INSERT INTO knowledge_gaps (id, label, reason, ref_count, first_seen_ms, last_seen_ms) \
+         VALUES (?1, ?2, ?3, 1, ?4, ?4) \
+         ON CONFLICT(id) DO UPDATE SET ref_count = ref_count + 1, last_seen_ms = ?4",
+        params![id, label.trim(), reason, now],
+    )?;
+    Ok(())
+}
+
+/// An open knowledge gap.
+pub struct Gap {
+    pub id: String,
+    pub label: String,
+    pub reason: String,
+    pub ref_count: i64,
+}
+
+/// Open gaps (unresolved), most-referenced first — a ranked "what to learn next".
+pub fn gaps(conn: &Connection, limit: usize) -> Result<Vec<Gap>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, label, reason, ref_count FROM knowledge_gaps \
+         WHERE resolved_by IS NULL ORDER BY ref_count DESC, last_seen_ms DESC LIMIT ?1",
+    )?;
+    let rows = stmt.query_map([limit as i64], |row| {
+        Ok(Gap {
+            id: row.get(0)?,
+            label: row.get(1)?,
+            reason: row.get(2)?,
+            ref_count: row.get(3)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+// ── Offline consolidation / dedup (TODO 10) ──────────────────────────────────
+
+/// Consolidate near-duplicate live records: rows sharing the same scope +
+/// project + normalized body are collapsed to the strongest (highest
+/// importance*confidence, verified beats unverified), the rest superseded by it.
+/// Returns the number of rows superseded. Offline/idempotent — running twice is a
+/// no-op once duplicates are gone.
+pub fn consolidate(conn: &mut Connection) -> Result<usize> {
+    // Pull live rows; group in Rust (normalized-body equality is awkward in SQL).
+    let mut groups: std::collections::HashMap<String, Vec<(String, f64, i64)>> =
+        std::collections::HashMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT id, scope, COALESCE(project_key,''), body, importance, confidence, \
+             CASE outcome WHEN 'verified' THEN 1 ELSE 0 END AS verified \
+             FROM knowledge WHERE superseded_by IS NULL",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let id: String = row.get(0)?;
+            let scope: String = row.get(1)?;
+            let proj: String = row.get(2)?;
+            let body: String = row.get(3)?;
+            let importance: f64 = row.get(4)?;
+            let confidence: f64 = row.get(5)?;
+            let verified: i64 = row.get(6)?;
+            let norm = body.split_whitespace().collect::<Vec<_>>().join(" ");
+            let key = format!("{scope}\u{1}{proj}\u{1}{norm}");
+            let strength = importance * confidence + verified as f64; // verified tiebreak
+            Ok((key, id, strength, verified))
+        })?;
+        for r in rows {
+            let (key, id, strength, verified) = r?;
+            groups.entry(key).or_default().push((id, strength, verified));
+        }
+    }
+
+    let mut superseded = 0usize;
+    let tx = conn.transaction()?;
+    for (_key, mut members) in groups {
+        if members.len() < 2 {
+            continue;
+        }
+        // Strongest first; the rest are superseded by it.
+        members.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let keeper = members[0].0.clone();
+        for (loser, _, _) in &members[1..] {
+            tx.execute(
+                "UPDATE knowledge SET superseded_by = ?2 WHERE id = ?1",
+                params![loser, keeper],
+            )?;
+            superseded += 1;
+        }
+    }
+    tx.commit()?;
+    Ok(superseded)
 }
 
 /// Build an FTS5 MATCH expression that treats the query as a bag of OR'd terms,
