@@ -313,13 +313,15 @@ any removal — never a blind `rm`.
 
 #### Sessions JSON → DB
 
-- [ ] 22. **Session-index table (ADDITIVE — safe half, no read change).** Add a
-  `sessions` table (id, cwd, model, created_at, updated_at, first_prompt,
-  message_count, title) to `jfc-knowledge`. Have `save_session` (the one
-  chokepoint, `session/core.rs:21`) **dual-write**: keep the JSON exactly as-is
-  AND upsert the index row. The catalog/picker can then read the index instead of
-  byte-scanning 364 JSON headers — a pure speedup with the JSON still canonical.
-  Test: saving a session upserts an index row matching the JSON header.
+- [x] 22. **Session-index table (ADDITIVE — safe half, no read change).** Added a
+  `sessions` table (migration v4: id, cwd, model, created_at, updated_at,
+  first_prompt, title, message_count) + `upsert_session`/`get_session`/
+  `list_sessions`/`session_count`. `save_session` (the one chokepoint,
+  `session/core.rs`) now **dual-writes** via `jfc_engine::index_session` after the
+  atomic JSON write — JSON stays canonical, the index is best-effort
+  (spawn_blocking, debug-on-error). No reader switched yet. Test
+  `session_index_upsert_and_list_normal` (idempotent upsert, cwd filter,
+  recency order). DONE.
 - [ ] 23. **Full transcript in the DB (shadow-write).** Extend the table (or a
   `session_messages` table) to hold the serialized messages; `save_session`
   shadow-writes the full transcript alongside the JSON. Reads still come from

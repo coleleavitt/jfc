@@ -159,6 +159,33 @@ pub async fn save_session(
             );
         } else {
             info!(target: "jfc::session", session_id = session_id_str, message_count = messages.len(), path = %path.display(), "session saved");
+            // PLAN TODO 22 — additive dual-write: mirror the header into the
+            // jfc-knowledge session index. The JSON just written stays canonical;
+            // this only powers a faster catalog/picker. Best-effort: a failure is
+            // logged at debug and never affects the save. Off the hot path
+            // (blocking SQLite) via spawn_blocking.
+            let idx = (
+                serialized.id.clone(),
+                serialized.cwd.clone(),
+                serialized.model.clone(),
+                serialized.created_at.clone(), // String (always present)
+                serialized.updated_at.clone(),
+                serialized.first_prompt.clone(),
+                serialized.title.clone(),
+                coalesced.len() as i64,
+            );
+            tokio::task::spawn_blocking(move || {
+                crate::index_session(
+                    &idx.0,
+                    idx.1.as_deref(),
+                    idx.2.as_deref(),
+                    Some(idx.3.as_str()),
+                    idx.4.as_deref(),
+                    idx.5.as_deref(),
+                    idx.6.as_deref(),
+                    idx.7,
+                );
+            });
         }
     } else {
         warn!(target: "jfc::session", session_id = session_id_str, "failed to serialize session");

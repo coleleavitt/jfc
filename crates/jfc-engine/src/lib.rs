@@ -249,6 +249,43 @@ pub mod worktrees;
 pub use app::{EngineEffect, EngineState, PendingApproval, PendingQuestion, PermissionMode};
 pub use engine::{Engine, channel};
 
+/// Mirror a session header into the `jfc-knowledge` session index (PLAN TODO 22).
+/// ADDITIVE dual-write: the JSON file stays the canonical transcript; this only
+/// updates a queryable index. Best-effort and silent on error — a failed index
+/// write must never affect session saving. Runs the blocking SQLite work inline
+/// (callers already invoke it off the hot path / after the atomic JSON write).
+#[allow(clippy::too_many_arguments)]
+pub fn index_session(
+    id: &str,
+    cwd: Option<&str>,
+    model: Option<&str>,
+    created_at: Option<&str>,
+    updated_at: Option<&str>,
+    first_prompt: Option<&str>,
+    title: Option<&str>,
+    message_count: i64,
+) {
+    let row = jfc_knowledge::SessionRow {
+        id: id.to_owned(),
+        cwd: cwd.map(str::to_owned),
+        model: model.map(str::to_owned),
+        created_at: created_at.map(str::to_owned),
+        updated_at: updated_at.map(str::to_owned),
+        first_prompt: first_prompt.map(str::to_owned),
+        title: title.map(str::to_owned),
+        message_count,
+    };
+    match jfc_knowledge::KnowledgeStore::open_default().and_then(|s| s.upsert_session(&row)) {
+        Ok(()) => {}
+        Err(e) => tracing::debug!(
+            target: "jfc::knowledge",
+            session_id = id,
+            error = %e,
+            "session index upsert skipped (JSON remains canonical)"
+        ),
+    }
+}
+
 /// Run one autonomous cross-project knowledge maintenance pass (import + mine +
 /// consolidate + auto-promote). Thin re-export so UI/binary crates don't depend
 /// on `jfc-knowledge` directly. Returns the maintenance summary.

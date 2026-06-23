@@ -90,6 +90,24 @@ const MIGRATIONS: &[&str] = &[
         last_run_ms  INTEGER NOT NULL
     );
     "#,
+    // v4 — session index (PLAN TODO 22). ADDITIVE: the canonical session store is
+    // still the JSON files; this is a queryable index `save_session` dual-writes
+    // so the catalog/picker can avoid byte-scanning every JSON header. No reader
+    // depends on it yet.
+    r#"
+    CREATE TABLE sessions (
+        id            TEXT PRIMARY KEY,
+        cwd           TEXT,
+        model         TEXT,
+        created_at    TEXT,
+        updated_at    TEXT,
+        first_prompt  TEXT,
+        title         TEXT,
+        message_count INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX idx_sessions_cwd ON sessions(cwd);
+    CREATE INDEX idx_sessions_updated ON sessions(updated_at);
+    "#,
 ];
 
 /// The schema version this build expects (== number of migrations).

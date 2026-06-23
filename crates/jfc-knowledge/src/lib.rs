@@ -37,6 +37,8 @@ pub use import::{ImportReport, ImportableMemory};
 pub use project::project_key;
 pub use query::{Gap, LinkedRecord, RecallFilter};
 pub use record::{Kind, KnowledgeRecord, Outcome, RelKind, Scope};
+// `SessionRow` is defined in this module; re-stated in the public surface for
+// discoverability alongside the other exported types.
 
 /// Optional per-scope row cap for [`KnowledgeStore::decay`]. The store grows
 /// **unbounded by default** — `decay` is opt-in maintenance, not an automatic
@@ -285,6 +287,78 @@ impl KnowledgeStore {
             .execute("DELETE FROM knowledge WHERE id = ?1", [id])?)
     }
 
+    /// Upsert a session-index row (PLAN TODO 22). Additive: the JSON file stays
+    /// canonical; this mirrors its header into a queryable index so the picker
+    /// doesn't byte-scan every file. Idempotent on `id`.
+    pub fn upsert_session(&self, row: &SessionRow) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO sessions \
+             (id, cwd, model, created_at, updated_at, first_prompt, title, message_count) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8) \
+             ON CONFLICT(id) DO UPDATE SET \
+                cwd=excluded.cwd, model=excluded.model, created_at=excluded.created_at, \
+                updated_at=excluded.updated_at, first_prompt=excluded.first_prompt, \
+                title=excluded.title, message_count=excluded.message_count",
+            rusqlite::params![
+                row.id,
+                row.cwd,
+                row.model,
+                row.created_at,
+                row.updated_at,
+                row.first_prompt,
+                row.title,
+                row.message_count,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// One session-index row by id (or `None`).
+    pub fn get_session(&self, id: &str) -> Result<Option<SessionRow>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT id, cwd, model, created_at, updated_at, first_prompt, title, message_count \
+                 FROM sessions WHERE id = ?1",
+                [id],
+                session_row_from,
+            )
+            .optional()?)
+    }
+
+    /// Session-index rows, most-recently-updated first. `cwd` filters to one
+    /// project when `Some`.
+    pub fn list_sessions(&self, cwd: Option<&str>, limit: usize) -> Result<Vec<SessionRow>> {
+        let mut out = Vec::new();
+        if let Some(cwd) = cwd {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, cwd, model, created_at, updated_at, first_prompt, title, message_count \
+                 FROM sessions WHERE cwd = ?1 ORDER BY updated_at DESC LIMIT ?2",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![cwd, limit as i64], session_row_from)?;
+            for r in rows {
+                out.push(r?);
+            }
+        } else {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, cwd, model, created_at, updated_at, first_prompt, title, message_count \
+                 FROM sessions ORDER BY updated_at DESC LIMIT ?1",
+            )?;
+            let rows = stmt.query_map([limit as i64], session_row_from)?;
+            for r in rows {
+                out.push(r?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Count of indexed sessions — for tests/metrics.
+    pub fn session_count(&self) -> Result<i64> {
+        Ok(self
+            .conn
+            .query_row("SELECT count(*) FROM sessions", [], |r| r.get(0))?)
+    }
+
     /// Whether an autonomous maintenance pass is due for `project_key` (no pass
     /// within `throttle_ms`). True on the first ever run.
     pub fn maintain_due(&self, project_key: &str, throttle_ms: i64) -> Result<bool> {
@@ -334,6 +408,33 @@ pub fn default_db_path() -> PathBuf {
             .unwrap_or_else(|| PathBuf::from("."))
     });
     base.join("jfc").join("knowledge.db")
+}
+
+/// One row of the session index (PLAN TODO 22) — mirrors a session JSON header.
+/// The JSON file remains the canonical transcript; this is a queryable index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionRow {
+    pub id: String,
+    pub cwd: Option<String>,
+    pub model: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub first_prompt: Option<String>,
+    pub title: Option<String>,
+    pub message_count: i64,
+}
+
+fn session_row_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRow> {
+    Ok(SessionRow {
+        id: row.get(0)?,
+        cwd: row.get(1)?,
+        model: row.get(2)?,
+        created_at: row.get(3)?,
+        updated_at: row.get(4)?,
+        first_prompt: row.get(5)?,
+        title: row.get(6)?,
+        message_count: row.get(7)?,
+    })
 }
 
 /// Summary of one autonomous maintenance pass.
@@ -840,6 +941,40 @@ mod tests {
                 }
             }
         }
+    }
+
+    // TODO 22: the session index upserts (idempotent), lists most-recent-first,
+    // and filters by cwd — additive, no JSON involved.
+    #[test]
+    fn session_index_upsert_and_list_normal() {
+        let store = KnowledgeStore::open_in_memory().unwrap();
+        let row = |id: &str, cwd: &str, updated: &str, n: i64| SessionRow {
+            id: id.into(),
+            cwd: Some(cwd.into()),
+            model: Some("m".into()),
+            created_at: Some("2026-01-01T00:00:00Z".into()),
+            updated_at: Some(updated.into()),
+            first_prompt: Some("hi".into()),
+            title: None,
+            message_count: n,
+        };
+        store.upsert_session(&row("s1", "/a", "2026-01-01T01:00:00Z", 2)).unwrap();
+        store.upsert_session(&row("s2", "/a", "2026-01-01T03:00:00Z", 4)).unwrap();
+        store.upsert_session(&row("s3", "/b", "2026-01-01T02:00:00Z", 6)).unwrap();
+        assert_eq!(store.session_count().unwrap(), 3);
+
+        // Re-upsert s1 with a new message_count → updates, not duplicates.
+        store.upsert_session(&row("s1", "/a", "2026-01-01T05:00:00Z", 9)).unwrap();
+        assert_eq!(store.session_count().unwrap(), 3);
+        assert_eq!(store.get_session("s1").unwrap().unwrap().message_count, 9);
+
+        // List for /a, most-recently-updated first (s1 now newest after re-upsert).
+        let a = store.list_sessions(Some("/a"), 10).unwrap();
+        assert_eq!(a.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["s1", "s2"]);
+        // Global list includes all three.
+        assert_eq!(store.list_sessions(None, 10).unwrap().len(), 3);
+        // Unknown cwd → empty.
+        assert!(store.list_sessions(Some("/nope"), 10).unwrap().is_empty());
     }
 
     #[test]
