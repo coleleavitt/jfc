@@ -458,6 +458,7 @@ async fn start_teammate_executes_tool_then_endturn_normal() {
             StreamEvent::Usage {
                 input_tokens: 5,
                 output_tokens: 3,
+                thinking_tokens: None,
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
             },

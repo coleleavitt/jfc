@@ -530,6 +530,7 @@ pub async fn drain_stream_events(
                         .send(EngineEvent::Stream(RuntimeStreamEvent::Usage {
                             input_tokens: tokens as u32,
                             output_tokens: 0,
+                            thinking_tokens: None,
                             cache_read_tokens: 0,
                             cache_write_tokens: 0,
                         }))
@@ -550,6 +551,7 @@ pub async fn drain_stream_events(
             StreamEvent::Usage {
                 input_tokens,
                 output_tokens,
+                thinking_tokens,
                 cache_read_tokens,
                 cache_write_tokens,
             } => {
@@ -557,6 +559,7 @@ pub async fn drain_stream_events(
                 tracing::info!(
                     target: "jfc::stream",
                     input_tokens, output_tokens,
+                    thinking_tokens,
                     cache_read_tokens, cache_write_tokens,
                     "stream usage report"
                 );
@@ -564,6 +567,7 @@ pub async fn drain_stream_events(
                     .send(EngineEvent::Stream(RuntimeStreamEvent::Usage {
                         input_tokens,
                         output_tokens,
+                        thinking_tokens,
                         cache_read_tokens,
                         cache_write_tokens,
                     }))

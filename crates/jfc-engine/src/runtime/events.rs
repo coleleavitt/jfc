@@ -325,6 +325,7 @@ pub enum StreamEvent {
     Usage {
         input_tokens: u32,
         output_tokens: u32,
+        thinking_tokens: Option<u32>,
         cache_read_tokens: u32,
         cache_write_tokens: u32,
     },

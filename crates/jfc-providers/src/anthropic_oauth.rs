@@ -1412,7 +1412,7 @@ fn wrap_with_usage_recording(
     model: String,
 ) -> EventStream {
     use futures::stream::{self};
-    let state = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64, 0u64, 0u64)));
+    let state = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64, 0u64, 0u64, 0u64)));
     let stream = stream::unfold(
         (inner, state, mgr, guard, account_name, model),
         |(mut inner, state, mgr, guard, account_name, model)| async move {
@@ -1447,6 +1447,7 @@ fn wrap_with_usage_recording(
             if let Ok(StreamEvent::Usage {
                 input_tokens,
                 output_tokens,
+                thinking_tokens,
                 cache_read_tokens,
                 cache_write_tokens,
             }) = &next
@@ -1454,30 +1455,34 @@ fn wrap_with_usage_recording(
                 let cum = (
                     *input_tokens as u64,
                     *output_tokens as u64,
+                    thinking_tokens.map(u64::from).unwrap_or_default(),
                     *cache_read_tokens as u64,
                     *cache_write_tokens as u64,
                 );
                 let mut baseline = state.lock().await;
-                let (din, dout, dcr, dcw) = (
+                let (din, dout, dthink, dcr, dcw) = (
                     cum.0.saturating_sub(baseline.0),
                     cum.1.saturating_sub(baseline.1),
                     cum.2.saturating_sub(baseline.2),
                     cum.3.saturating_sub(baseline.3),
+                    cum.4.saturating_sub(baseline.4),
                 );
-                // Defensive: any of the four going *backwards* (server reset
+                // Defensive: any counter going *backwards* (server reset
                 // mid-stream) means baseline drifted — re-anchor on the new
                 // cumulative reading instead of rolling deltas forward.
                 let any_regression = cum.0 < baseline.0
                     || cum.1 < baseline.1
                     || cum.2 < baseline.2
-                    || cum.3 < baseline.3;
+                    || cum.3 < baseline.3
+                    || cum.4 < baseline.4;
                 *baseline = cum;
                 drop(baseline);
 
-                if !any_regression && (din | dout | dcr | dcw) != 0 {
+                if !any_regression && (din | dout | dthink | dcr | dcw) != 0 {
                     let um = jfc_core::ModelUsage {
                         input_tokens: din,
                         output_tokens: dout,
+                        thinking_tokens: dthink,
                         cache_read_tokens: dcr,
                         cache_write_tokens: dcw,
                         ..Default::default()
@@ -1486,6 +1491,7 @@ fn wrap_with_usage_recording(
                     let delta = super::anthropic_accounts::UsageDelta {
                         input_tokens: din,
                         output_tokens: dout,
+                        thinking_tokens: dthink,
                         cache_read_tokens: dcr,
                         cache_write_tokens: dcw,
                         model: model.clone(),
@@ -1541,6 +1547,7 @@ fn completion_response_from_json(json: &Value) -> CompletionResponse {
         usage: TokenUsage {
             input_tokens,
             output_tokens,
+            thinking_tokens: None,
             cache_read_tokens: 0,
             cache_creation_tokens: 0,
         },
@@ -1737,15 +1744,11 @@ fn build_body(
     }
     if opts.adaptive_thinking {
         let mut thinking = json!({ "type": "adaptive" });
-        if let Some(display) = opts.thinking_display.as_deref() {
-            thinking["display"] = json!(display);
-        }
+        thinking["display"] = json!(opts.thinking_display.as_deref().unwrap_or("summarized"));
         body["thinking"] = thinking;
     } else if let Some(budget) = opts.thinking_budget {
         let mut thinking = json!({ "type": "enabled", "budget_tokens": budget });
-        if let Some(display) = opts.thinking_display.as_deref() {
-            thinking["display"] = json!(display);
-        }
+        thinking["display"] = json!(opts.thinking_display.as_deref().unwrap_or("summarized"));
         body["thinking"] = thinking;
     }
     // context_management: clear old thinking blocks from context to save space.
@@ -2637,9 +2640,13 @@ impl Provider for AnthropicOAuthProvider {
                             let mut usage = jfc_core::ModelUsage::default();
                             usage.input_tokens = response.usage.input_tokens as u64;
                             usage.output_tokens = response.usage.output_tokens as u64;
+                            usage.thinking_tokens =
+                                response.usage.thinking_tokens.unwrap_or_default() as u64;
                             let delta = super::anthropic_accounts::UsageDelta {
                                 input_tokens: response.usage.input_tokens as u64,
                                 output_tokens: response.usage.output_tokens as u64,
+                                thinking_tokens: response.usage.thinking_tokens.unwrap_or_default()
+                                    as u64,
                                 cache_read_tokens: 0,
                                 cache_write_tokens: 0,
                                 model: options.model.to_string(),

@@ -383,6 +383,7 @@ mod coalesce_tests {
         first.usage = Some(ModelUsage {
             input_tokens: 100,
             output_tokens: 10,
+            thinking_tokens: 0,
             cache_read_tokens: 0,
             cache_write_tokens: 0,
             cost_usd: None,
@@ -391,6 +392,7 @@ mod coalesce_tests {
         last.usage = Some(ModelUsage {
             input_tokens: 100,
             output_tokens: 200,
+            thinking_tokens: 0,
             cache_read_tokens: 0,
             cache_write_tokens: 0,
             cost_usd: None,
@@ -511,6 +513,7 @@ mod placeholder_tests {
         msg.usage = Some(ModelUsage {
             input_tokens: 6,
             output_tokens: 2,
+            thinking_tokens: 0,
             cache_read_tokens: 22107,
             cache_write_tokens: 90833,
             cost_usd: None,
@@ -537,6 +540,7 @@ mod placeholder_tests {
         msg.usage = Some(ModelUsage {
             input_tokens: 1,
             output_tokens: 1,
+            thinking_tokens: 0,
             cache_read_tokens: 0,
             cache_write_tokens: 0,
             cost_usd: None,

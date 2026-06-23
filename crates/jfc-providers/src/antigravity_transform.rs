@@ -629,6 +629,7 @@ fn parse_frame(json: &str, state: &mut ParserState) -> Vec<StreamEvent> {
         out.push(StreamEvent::Usage {
             input_tokens: usage.prompt_tokens.unwrap_or(0),
             output_tokens: usage.candidates_tokens.unwrap_or(0),
+            thinking_tokens: None,
             cache_read_tokens: usage.cached_tokens.unwrap_or(0),
             cache_write_tokens: 0,
         });

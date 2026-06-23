@@ -203,6 +203,7 @@ mod tests {
         let usage = ModelUsage {
             input_tokens: 1_000_000,
             output_tokens: 100_000,
+            thinking_tokens: 0,
             cache_read_tokens: 0,
             cache_write_tokens: 0,
             cost_usd: None,
@@ -219,6 +220,7 @@ mod tests {
         let usage = ModelUsage {
             input_tokens: 1_000_000,
             output_tokens: 1_000_000,
+            thinking_tokens: 0,
             cache_read_tokens: 1_000_000,
             cache_write_tokens: 1_000_000,
             cost_usd: None,
@@ -268,6 +270,7 @@ mod tests {
             ModelUsage {
                 input_tokens: 1_000_000,
                 output_tokens: 100_000,
+                thinking_tokens: 0,
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
                 cost_usd: None,
@@ -278,6 +281,7 @@ mod tests {
             ModelUsage {
                 input_tokens: 1_000_000,
                 output_tokens: 100_000,
+                thinking_tokens: 0,
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
                 cost_usd: None,

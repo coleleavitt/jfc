@@ -171,6 +171,7 @@ pub async fn handle_engine_event(
         EngineEvent::Stream(StreamEvent::Usage {
             input_tokens,
             output_tokens,
+            thinking_tokens,
             cache_read_tokens,
             cache_write_tokens,
         }) => {
@@ -178,6 +179,7 @@ pub async fn handle_engine_event(
                 state,
                 input_tokens,
                 output_tokens,
+                thinking_tokens,
                 cache_read_tokens,
                 cache_write_tokens,
             );

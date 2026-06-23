@@ -1176,6 +1176,7 @@ mod tests {
                 usage: TokenUsage {
                     input_tokens: 50,
                     output_tokens: 25,
+                    thinking_tokens: None,
                     cache_read_tokens: 0,
                     cache_creation_tokens: 0,
                 },

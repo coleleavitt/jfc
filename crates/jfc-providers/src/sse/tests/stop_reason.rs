@@ -140,6 +140,7 @@ fn message_delta_without_stop_reason_does_not_overwrite_pause_turn_regression() 
             usage: Some(MessageUsage {
                 input_tokens: None,
                 output_tokens: Some(42),
+                output_tokens_details: None,
                 cache_read_input_tokens: None,
                 cache_creation_input_tokens: None,
             }),
@@ -170,6 +171,25 @@ fn message_delta_usage_emits_usage_event() {
         Some(StreamEvent::Usage {
             input_tokens: 0,
             output_tokens: 42,
+            thinking_tokens: None,
+            ..
+        })
+    ));
+    assert_eq!(sr, Some(StopReason::EndTurn));
+}
+
+#[test]
+fn message_delta_usage_emits_final_thinking_tokens() {
+    let json = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42,"output_tokens_details":{"thinking_tokens":17}}}"#;
+    let event: SseEvent =
+        serde_json::from_str(json).expect("message_delta thinking usage must parse");
+    let (mut blocks, mut sr) = empty_state();
+
+    assert!(matches!(
+        translate(event, &mut blocks, &mut sr),
+        Some(StreamEvent::Usage {
+            output_tokens: 42,
+            thinking_tokens: Some(17),
             ..
         })
     ));

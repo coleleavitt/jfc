@@ -251,6 +251,8 @@ pub struct DailyUsage {
     #[serde(default)]
     pub output_tokens: u64,
     #[serde(default)]
+    pub thinking_tokens: u64,
+    #[serde(default)]
     pub cache_read_tokens: u64,
     #[serde(default)]
     pub cache_write_tokens: u64,
@@ -269,6 +271,8 @@ pub struct TotalUsage {
     pub input_tokens: u64,
     #[serde(default)]
     pub output_tokens: u64,
+    #[serde(default)]
+    pub thinking_tokens: u64,
     #[serde(default)]
     pub cache_read_tokens: u64,
     #[serde(default)]
@@ -293,6 +297,8 @@ pub struct PerModelUsage {
     pub input_tokens: u64,
     #[serde(default)]
     pub output_tokens: u64,
+    #[serde(default)]
+    pub thinking_tokens: u64,
     #[serde(default)]
     pub cache_read_tokens: u64,
     #[serde(default)]
@@ -341,6 +347,7 @@ pub struct AccountSnapshot {
 pub struct UsageDelta {
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub thinking_tokens: u64,
     pub cache_read_tokens: u64,
     pub cache_write_tokens: u64,
     pub model: String,
@@ -1310,6 +1317,7 @@ impl AccountManager {
             }
             daily.input_tokens = daily.input_tokens.saturating_add(delta.input_tokens);
             daily.output_tokens = daily.output_tokens.saturating_add(delta.output_tokens);
+            daily.thinking_tokens = daily.thinking_tokens.saturating_add(delta.thinking_tokens);
             daily.cache_read_tokens = daily
                 .cache_read_tokens
                 .saturating_add(delta.cache_read_tokens);
@@ -1328,6 +1336,7 @@ impl AccountManager {
             }
             total.input_tokens = total.input_tokens.saturating_add(delta.input_tokens);
             total.output_tokens = total.output_tokens.saturating_add(delta.output_tokens);
+            total.thinking_tokens = total.thinking_tokens.saturating_add(delta.thinking_tokens);
             total.cache_read_tokens = total
                 .cache_read_tokens
                 .saturating_add(delta.cache_read_tokens);
@@ -1350,6 +1359,7 @@ impl AccountManager {
             pm.last_seen = today.clone();
             pm.input_tokens = pm.input_tokens.saturating_add(delta.input_tokens);
             pm.output_tokens = pm.output_tokens.saturating_add(delta.output_tokens);
+            pm.thinking_tokens = pm.thinking_tokens.saturating_add(delta.thinking_tokens);
             pm.cache_read_tokens = pm.cache_read_tokens.saturating_add(delta.cache_read_tokens);
             pm.cache_write_tokens = pm
                 .cache_write_tokens
@@ -2859,6 +2869,7 @@ mod tests {
         let delta = UsageDelta {
             input_tokens: 100,
             output_tokens: 200,
+            thinking_tokens: 75,
             cache_read_tokens: 50,
             cache_write_tokens: 25,
             model: "claude-opus-4-7".to_owned(),
@@ -2872,12 +2883,15 @@ mod tests {
         let acct = &v["accounts"][0];
 
         assert_eq!(acct["dailyUsage"]["inputTokens"].as_u64(), Some(200));
+        assert_eq!(acct["dailyUsage"]["thinkingTokens"].as_u64(), Some(150));
         assert_eq!(acct["dailyUsage"]["requestCount"].as_u64(), Some(2));
         assert_eq!(acct["totalUsage"]["outputTokens"].as_u64(), Some(400));
+        assert_eq!(acct["totalUsage"]["thinkingTokens"].as_u64(), Some(150));
         assert_eq!(acct["totalUsage"]["requestCount"].as_u64(), Some(2));
         assert!((acct["totalUsage"]["costUsd"].as_f64().unwrap() - 2.50).abs() < 1e-9);
         let by_model = &acct["totalUsage"]["byModel"]["claude-opus-4-7"];
         assert_eq!(by_model["inputTokens"].as_u64(), Some(200));
+        assert_eq!(by_model["thinkingTokens"].as_u64(), Some(150));
         assert_eq!(by_model["requestCount"].as_u64(), Some(2));
         assert!(by_model["firstSeen"].as_str().unwrap().len() == 10);
     }

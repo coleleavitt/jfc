@@ -346,6 +346,7 @@ mod tests {
         let u = ModelUsage {
             input_tokens: 100,
             output_tokens: 200,
+            thinking_tokens: 75,
             cache_read_tokens: 10,
             cache_write_tokens: 20,
             cost_usd: None,

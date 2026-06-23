@@ -286,12 +286,14 @@ pub(super) async fn run_print_mode(
             EngineEvent::Stream(EngineStreamEvent::Usage {
                 input_tokens,
                 output_tokens,
+                thinking_tokens,
                 cache_read_tokens,
                 cache_write_tokens,
             }) => {
                 usage_totals.add(
                     *input_tokens,
                     *output_tokens,
+                    *thinking_tokens,
                     *cache_read_tokens,
                     *cache_write_tokens,
                 );
@@ -668,6 +670,7 @@ async fn headless_permission_decision(
 struct UsageTotals {
     input_tokens: u64,
     output_tokens: u64,
+    thinking_tokens: u64,
     cache_read_tokens: u64,
     cache_write_tokens: u64,
 }
@@ -677,11 +680,13 @@ impl UsageTotals {
         &mut self,
         input_tokens: u32,
         output_tokens: u32,
+        thinking_tokens: Option<u32>,
         cache_read_tokens: u32,
         cache_write_tokens: u32,
     ) {
         self.input_tokens += u64::from(input_tokens);
         self.output_tokens += u64::from(output_tokens);
+        self.thinking_tokens += u64::from(thinking_tokens.unwrap_or_default());
         self.cache_read_tokens += u64::from(cache_read_tokens);
         self.cache_write_tokens += u64::from(cache_write_tokens);
     }
@@ -690,6 +695,7 @@ impl UsageTotals {
         serde_json::json!({
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
+            "thinking_tokens": self.thinking_tokens,
             "cache_read_tokens": self.cache_read_tokens,
             "cache_write_tokens": self.cache_write_tokens,
         })

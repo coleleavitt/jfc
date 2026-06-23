@@ -82,11 +82,13 @@ pub async fn stream_to_completion(
             StreamEvent::Usage {
                 input_tokens,
                 output_tokens,
+                thinking_tokens,
                 cache_read_tokens,
                 cache_write_tokens,
             } => {
                 usage.input_tokens = input_tokens as usize;
                 usage.output_tokens = output_tokens as usize;
+                usage.thinking_tokens = thinking_tokens.map(|tokens| tokens as usize);
                 usage.cache_read_tokens = cache_read_tokens as usize;
                 usage.cache_creation_tokens = cache_write_tokens as usize;
             }
@@ -207,6 +209,7 @@ mod tests {
             StreamEvent::Usage {
                 input_tokens: 11,
                 output_tokens: 7,
+                thinking_tokens: Some(3),
                 cache_read_tokens: 3,
                 cache_write_tokens: 5,
             },
@@ -273,6 +276,7 @@ mod tests {
             usage: TokenUsage {
                 input_tokens: 4,
                 output_tokens: 2,
+                thinking_tokens: None,
                 cache_read_tokens: 0,
                 cache_creation_tokens: 0,
             },

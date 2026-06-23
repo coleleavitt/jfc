@@ -2,7 +2,9 @@ use crate::context::ToolContext;
 use crate::types::{ChatMessage, MessagePart, Role};
 use futures::StreamExt;
 use jfc_core::context_management::{ContextItem, ContextItemKind, ContextSignals};
-use jfc_provider::{Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions};
+use jfc_provider::{
+    ModelRequestProfile, Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions,
+};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use tracing::{debug, info, instrument, trace, warn};
@@ -311,6 +313,39 @@ fn is_unsupported_error(msg: &str) -> bool {
     m.contains("not support") || m.contains("unsupported") || m.contains("not implemented")
 }
 
+fn compact_stream_options(
+    provider: &dyn Provider,
+    base_options: &StreamOptions,
+    system_prompt: String,
+) -> StreamOptions {
+    let selected_model_info = provider
+        .available_models()
+        .into_iter()
+        .find(|info| info.id == base_options.model);
+    let model_profile = ModelRequestProfile::from_provider_model(
+        provider.name(),
+        base_options.model.as_str(),
+        selected_model_info
+            .as_ref()
+            .and_then(|info| info.context_window_tokens),
+        selected_model_info
+            .as_ref()
+            .and_then(|info| info.max_output_tokens),
+    );
+    model_profile.clamp_options(
+        StreamOptions::new(base_options.model.clone())
+            .system(system_prompt)
+            .max_tokens(20_000),
+    )
+}
+
+fn is_output_token_limit_error(err_msg: &str) -> bool {
+    (err_msg.contains("max_tokens:") || err_msg.contains("max_output_tokens"))
+        && (err_msg.contains("maximum allowed number of output tokens")
+            || err_msg.contains("maximum output tokens")
+            || err_msg.contains("output token"))
+}
+
 pub async fn complete_or_stream(
     provider: &dyn Provider,
     messages: Vec<ProviderMessage>,
@@ -571,14 +606,12 @@ pub async fn compact(
             prompt
         };
 
-        let compact_options = StreamOptions::new(options.model.clone())
-            .system(system_prompt)
-            .max_tokens(20_000);
+        let compact_options = compact_stream_options(provider, options, system_prompt);
 
         debug!(
             target: "jfc::compact",
             model = %compact_options.model,
-            max_tokens = 20_000,
+            max_tokens = compact_options.max_tokens,
             "sending compaction request to provider"
         );
 
@@ -772,6 +805,16 @@ pub async fn compact(
                         target: "jfc::compact",
                         attempts = attempt,
                         "media too large even after strip — returning Unsupported"
+                    );
+                    return CompactResult::Unsupported;
+                }
+
+                if is_output_token_limit_error(&err_msg) {
+                    warn!(
+                        target: "jfc::compact",
+                        attempt, error = %e,
+                        max_tokens = compact_options.max_tokens,
+                        "compaction rejected for output-token limit — not a context-window retry"
                     );
                     return CompactResult::Unsupported;
                 }
@@ -1417,6 +1460,8 @@ mod level_tests {
     use crate::compact::{
         blocked_threshold_with_output, compact_level_with_output, compact_threshold_with_output,
     };
+    use futures::stream;
+    use jfc_provider::{EventStream, ModelInfo};
 
     const W: usize = 200_000;
 
@@ -1431,6 +1476,32 @@ mod level_tests {
         // into "all subsequent tests fail because the mutex is poisoned."
         ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
+
+    struct CatalogCapProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for CatalogCapProvider {
+        fn name(&self) -> &str {
+            "anthropic"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            vec![
+                ModelInfo::new("small-summary-model", "Small Summary Model", "anthropic")
+                    .with_max_output_tokens(4096usize),
+            ]
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for CatalogCapProvider {}
 
     fn clear_env() {
         for k in [
@@ -1481,6 +1552,25 @@ mod level_tests {
         // blocked at effective_window - 3K = 177K
         assert_eq!(compact_level(177_000, W), CompactLevel::Blocked);
         assert_eq!(compact_level(W + 999, W), CompactLevel::Blocked);
+    }
+
+    #[test]
+    fn compact_summary_options_respect_model_output_cap_regression() {
+        let provider = CatalogCapProvider;
+        let base = StreamOptions::new("small-summary-model").max_tokens(20_000);
+        let opts = compact_stream_options(&provider, &base, "summarize".to_owned());
+
+        assert_eq!(opts.max_tokens, 4096);
+    }
+
+    #[test]
+    fn output_token_limit_is_not_context_retry_signal_regression() {
+        assert!(is_output_token_limit_error(
+            "max_tokens: 20000 exceeds maximum allowed number of output tokens 4096"
+        ));
+        assert!(!is_output_token_limit_error(
+            "prompt is too long: 120000 tokens > 100000 maximum"
+        ));
     }
 
     #[serial_test::serial]
@@ -1930,6 +2020,7 @@ mod level_tests {
         preserved.usage = Some(ModelUsage {
             input_tokens: 180_000,
             output_tokens: 1_000,
+            thinking_tokens: 0,
             cache_read_tokens: 0,
             cache_write_tokens: 0,
             cost_usd: None,

@@ -14,9 +14,17 @@ pub struct MessageUsage {
     #[serde(default)]
     pub output_tokens: Option<u32>,
     #[serde(default)]
+    pub output_tokens_details: Option<OutputTokensDetails>,
+    #[serde(default)]
     pub cache_creation_input_tokens: Option<u32>,
     #[serde(default)]
     pub cache_read_input_tokens: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OutputTokensDetails {
+    #[serde(default)]
+    pub thinking_tokens: Option<u32>,
 }
 
 impl MessageUsage {
@@ -26,6 +34,12 @@ impl MessageUsage {
 
     pub(crate) fn output_total(&self) -> u32 {
         self.output_tokens.unwrap_or_default()
+    }
+
+    pub(crate) fn thinking_tokens(&self) -> Option<u32> {
+        self.output_tokens_details
+            .as_ref()
+            .and_then(|details| details.thinking_tokens)
     }
 }
 

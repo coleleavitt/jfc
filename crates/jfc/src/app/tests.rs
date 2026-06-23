@@ -573,6 +573,7 @@ fn sync_preserves_usage_based_estimate_robust() {
     msg.usage = Some(ModelUsage {
         input_tokens: 100,
         output_tokens: 50,
+        thinking_tokens: 0,
         cache_read_tokens: 10,
         cache_write_tokens: 5,
         cost_usd: None,
@@ -616,6 +617,7 @@ fn recompute_with_usage_plus_tail_normal() {
     anchor.usage = Some(ModelUsage {
         input_tokens: 1_000,
         output_tokens: 500,
+        thinking_tokens: 0,
         cache_read_tokens: 0,
         cache_write_tokens: 0,
         cost_usd: None,

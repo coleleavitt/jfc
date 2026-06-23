@@ -886,6 +886,7 @@ mod tests {
                     usage: jfc_provider::TokenUsage {
                         input_tokens: 100,
                         output_tokens: 50,
+                        thinking_tokens: None,
                         cache_read_tokens: 0,
                         cache_creation_tokens: 0,
                     },
@@ -1235,6 +1236,7 @@ mod tests {
                 usage: jfc_provider::TokenUsage {
                     input_tokens: 20,
                     output_tokens: 5,
+                    thinking_tokens: None,
                     cache_read_tokens: 0,
                     cache_creation_tokens: 0,
                 },

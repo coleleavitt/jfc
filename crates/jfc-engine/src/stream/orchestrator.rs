@@ -571,6 +571,7 @@ async fn try_nonstreaming_fallback(
         .send(EngineEvent::Stream(StreamEvent::Usage {
             input_tokens: response.usage.input_tokens as u32,
             output_tokens: response.usage.output_tokens as u32,
+            thinking_tokens: response.usage.thinking_tokens.map(|tokens| tokens as u32),
             cache_read_tokens: response.usage.cache_read_tokens as u32,
             cache_write_tokens: response.usage.cache_creation_tokens as u32,
         }))

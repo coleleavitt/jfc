@@ -3542,6 +3542,7 @@ pub(crate) fn openai_compatible_event_stream(resp: reqwest::Response) -> EventSt
                                     emitted.push(Ok(StreamEvent::Usage {
                                         input_tokens: u.raw_input_tokens(),
                                         output_tokens: u.completion_tokens,
+                                        thinking_tokens: None,
                                         cache_read_tokens: u.cache_read_tokens(),
                                         cache_write_tokens: u.cache_write_tokens(),
                                     }));

@@ -131,9 +131,23 @@ pub enum ToolChoice {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ThinkingConfig {
-    Adaptive,
-    Enabled { budget_tokens: u32 },
+    Adaptive {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display: Option<ThinkingDisplay>,
+    },
+    Enabled {
+        budget_tokens: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display: Option<ThinkingDisplay>,
+    },
     Disabled,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ThinkingDisplay {
+    Summarized,
+    Omitted,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -173,9 +187,16 @@ pub struct Usage {
 pub struct CountTokensResponse {
     pub input_tokens: u32,
     #[serde(default)]
+    pub context_management: Option<CountTokensContextManagementResponse>,
+    #[serde(default)]
     pub cache_creation_input_tokens: u32,
     #[serde(default)]
     pub cache_read_input_tokens: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CountTokensContextManagementResponse {
+    pub original_input_tokens: u32,
 }
 
 pub struct MessageService {
@@ -270,5 +291,38 @@ fn join_betas(betas: &[&str]) -> Option<String> {
         None
     } else {
         Some(tokens.join(","))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thinking_config_serializes_display_normal() {
+        let value = serde_json::to_value(ThinkingConfig::Adaptive {
+            display: Some(ThinkingDisplay::Summarized),
+        })
+        .expect("thinking config should serialize");
+
+        assert_eq!(value["type"], "adaptive");
+        assert_eq!(value["display"], "summarized");
+    }
+
+    #[test]
+    fn count_tokens_response_parses_context_management_normal() {
+        let response: CountTokensResponse = serde_json::from_str(
+            r#"{"input_tokens":75000,"context_management":{"original_input_tokens":92000}}"#,
+        )
+        .expect("count tokens response should parse");
+
+        assert_eq!(response.input_tokens, 75_000);
+        assert_eq!(
+            response
+                .context_management
+                .expect("context management should be present")
+                .original_input_tokens,
+            92_000
+        );
     }
 }

@@ -630,6 +630,13 @@ pub enum StreamEvent {
     Usage {
         input_tokens: u32,
         output_tokens: u32,
+        /// Provider-reported final thinking/reasoning token count when the
+        /// provider breaks it out separately from output tokens.
+        ///
+        /// This is a decomposition of output_tokens, not an additional billable
+        /// bucket. Live ThinkingTokens frames may be estimated display hints;
+        /// this field carries authoritative final usage when available.
+        thinking_tokens: Option<u32>,
         cache_read_tokens: u32,
         cache_write_tokens: u32,
     },
@@ -881,8 +888,9 @@ pub struct StreamOptions {
     /// Required for Opus 4.6+ and Sonnet 4.6+ which reject budget_tokens.
     pub adaptive_thinking: bool,
     /// Optional display mode for thinking: `"summarized"` or `"omitted"`.
-    /// When `None`, the field is omitted from the request (Anthropic defaults to `"omitted"`).
-    /// Set to `"summarized"` to receive thinking text in the response.
+    /// When `None`, Anthropic request builders default active thinking to
+    /// `"summarized"` so visible thinking is preserved for direct provider
+    /// calls as well as the normal engine path.
     pub thinking_display: Option<String>,
     /// Sampling temperature (0.0 - 2.0).
     pub temperature: Option<f64>,
@@ -1007,7 +1015,7 @@ impl StreamOptions {
     }
 
     /// Set the display mode for thinking responses.
-    /// Use `"summarized"` to receive thinking text; `"omitted"` (the default) suppresses it.
+    /// Use `"summarized"` to receive thinking text; `"omitted"` suppresses it.
     pub fn thinking_display(mut self, display: impl Into<String>) -> Self {
         self.thinking_display = Some(display.into());
         self
@@ -1109,6 +1117,7 @@ pub struct CompletionResponse {
 pub struct TokenUsage {
     pub input_tokens: usize,
     pub output_tokens: usize,
+    pub thinking_tokens: Option<usize>,
     pub cache_read_tokens: usize,
     pub cache_creation_tokens: usize,
 }
@@ -2099,6 +2108,7 @@ mod tests {
         let u = TokenUsage {
             input_tokens: 100,
             output_tokens: 50,
+            thinking_tokens: None,
             cache_read_tokens: 200,
             cache_creation_tokens: 30,
         };
@@ -2124,6 +2134,7 @@ mod tests {
         let u = TokenUsage {
             input_tokens: 100,
             output_tokens: 50,
+            thinking_tokens: None,
             cache_read_tokens: 0,
             cache_creation_tokens: 0,
         };
@@ -2224,6 +2235,7 @@ mod tests {
                 StreamEvent::Usage {
                     input_tokens: 1,
                     output_tokens: 1,
+                    thinking_tokens: None,
                     cache_read_tokens: 0,
                     cache_write_tokens: 0,
                 },
@@ -2294,6 +2306,7 @@ mod tests {
             !StreamEvent::Usage {
                 input_tokens: 1,
                 output_tokens: 1,
+                thinking_tokens: None,
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
             }
@@ -2322,6 +2335,7 @@ mod tests {
         let usage = TokenUsage {
             input_tokens: 10,
             output_tokens: 5,
+            thinking_tokens: None,
             cache_read_tokens: 0,
             cache_creation_tokens: 0,
         };

@@ -95,6 +95,7 @@ pub fn translate(
             usage.map(|usage| StreamEvent::Usage {
                 input_tokens: usage.input_tokens(),
                 output_tokens: usage.output_total(),
+                thinking_tokens: usage.thinking_tokens(),
                 cache_read_tokens: usage.cache_read_input_tokens.unwrap_or_default(),
                 cache_write_tokens: usage.cache_creation_input_tokens.unwrap_or_default(),
             })

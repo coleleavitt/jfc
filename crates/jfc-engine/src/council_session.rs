@@ -461,6 +461,7 @@ pub(crate) mod test_support {
                 usage: TokenUsage {
                     input_tokens: 40,
                     output_tokens: 20,
+                    thinking_tokens: None,
                     cache_read_tokens: 0,
                     cache_creation_tokens: 0,
                 },

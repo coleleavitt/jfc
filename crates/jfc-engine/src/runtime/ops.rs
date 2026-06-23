@@ -29,6 +29,253 @@ pub enum SubmitOutcome {
     CompactingFirst,
 }
 
+async fn spawn_compaction_worker(
+    state: &mut EngineState,
+    tx: &EventSender,
+    level: crate::compact::CompactLevel,
+    pending_prompt: Option<String>,
+    session_id: String,
+) {
+    let messages = state.messages.clone();
+    let provider = Arc::clone(&state.provider);
+    let model = state.model.clone();
+    let mut tool_ctx = state.tool_ctx.clone();
+    let window = state.max_context_tokens;
+    let max_output_tokens = state.max_output_tokens;
+    let tx_pre = tx.clone();
+    let is_blocked = matches!(level, crate::compact::CompactLevel::Blocked);
+    state.compacting_started_at = Some(std::time::Instant::now());
+    state.compacting_output_chars = 0;
+    state.compacting_attempt_baseline = 0;
+    state.compacting_last_progress = 0;
+    let _ = tx_pre
+        .send(crate::runtime::EngineEvent::Compaction(
+            crate::runtime::CompactionEvent::Started,
+        ))
+        .await;
+    let progress_tx = tx_pre.clone();
+    let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
+        let _ = progress_tx.try_send(crate::runtime::EngineEvent::Compaction(
+            crate::runtime::CompactionEvent::Progress {
+                output_chars: chars,
+            },
+        ));
+    });
+    let cancel_compact = state.cancel_token.clone();
+    tokio::spawn(async move {
+        let options = jfc_provider::StreamOptions::new(model.clone());
+        tracing::debug!(
+            target: "jfc::compact",
+            model = %model,
+            window,
+            manual = pending_prompt.is_none(),
+            "spawned compaction task"
+        );
+        crate::hooks::fire(
+            crate::hooks::HookPoint::BeforeCompact,
+            &crate::hooks::HookContext::for_session(&session_id),
+        );
+        let result = tokio::select! {
+            biased;
+            _ = cancel_compact.cancelled() => {
+                tracing::info!(
+                    target: "jfc::compact",
+                    "compaction cancelled via token"
+                );
+                let _ = tx_pre
+                    .send(crate::runtime::EngineEvent::Compaction(
+                        crate::runtime::CompactionEvent::Failed {
+                            reason: "Compaction cancelled by user".into(),
+                            calibrated_tokens: None,
+                            transient: true,
+                        },
+                    ))
+                    .await;
+                return;
+            }
+            r = crate::compact::compact(
+                &messages,
+                provider.as_ref(),
+                &options,
+                &mut tool_ctx,
+                window,
+                max_output_tokens,
+                Some(on_progress),
+            ) => r,
+        };
+        match result {
+            crate::compact::CompactResult::Success {
+                messages,
+                pre_tokens,
+                post_tokens,
+            } => {
+                tracing::info!(
+                    target: "jfc::compact",
+                    pre_tokens, post_tokens,
+                    saved = pre_tokens.saturating_sub(post_tokens),
+                    resume_prompt = pending_prompt.is_some(),
+                    "compaction succeeded"
+                );
+                let _ = tx_pre
+                    .send(crate::runtime::EngineEvent::Compaction(
+                        crate::runtime::CompactionEvent::Done {
+                            messages,
+                            tool_ctx,
+                            pre_tokens,
+                            post_tokens,
+                        },
+                    ))
+                    .await;
+                if let Some(user_text) = pending_prompt {
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Control(
+                            crate::runtime::ControlEvent::SubmitPrompt(user_text),
+                        ))
+                        .await;
+                }
+            }
+            crate::compact::CompactResult::CircuitBreakerTripped => {
+                tracing::warn!(target: "jfc::compact", "compaction: circuit breaker tripped");
+                let _ = tx_pre
+                    .send(crate::runtime::EngineEvent::Compaction(
+                        crate::runtime::CompactionEvent::Failed {
+                            reason: "Circuit breaker tripped — submit again with `/compact` if needed"
+                                .into(),
+                            calibrated_tokens: None,
+                            transient: false,
+                        },
+                    ))
+                    .await;
+            }
+            crate::compact::CompactResult::Exhausted { attempts } => {
+                tracing::warn!(
+                    target: "jfc::compact",
+                    attempts,
+                    "compaction exhausted all attempts"
+                );
+                let _ = tx_pre
+                    .send(crate::runtime::EngineEvent::Compaction(
+                        crate::runtime::CompactionEvent::Failed {
+                            reason: format!(
+                                "Exhausted {attempts} compaction attempts — request is too large"
+                            ),
+                            calibrated_tokens: Some(tool_ctx.approx_tokens),
+                            transient: false,
+                        },
+                    ))
+                    .await;
+            }
+            crate::compact::CompactResult::TooFewGroups => {
+                tracing::debug!(target: "jfc::compact", "compaction skipped: too few groups");
+                if let Some(user_text) = pending_prompt {
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Control(
+                            crate::runtime::ControlEvent::SubmitPrompt(user_text),
+                        ))
+                        .await;
+                } else {
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: "Too little conversation to compact yet".into(),
+                                calibrated_tokens: Some(tool_ctx.approx_tokens),
+                                transient: true,
+                            },
+                        ))
+                        .await;
+                }
+            }
+            crate::compact::CompactResult::Unsupported => {
+                if is_blocked {
+                    tracing::warn!(
+                        target: "jfc::compact",
+                        "compaction unsupported and context is Blocked — cannot proceed"
+                    );
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: "Context exceeds limit and provider cannot compact — \
+                         try switching to a model/provider that supports compaction, \
+                         or start a new session."
+                                    .into(),
+                                calibrated_tokens: Some(tool_ctx.approx_tokens),
+                                transient: false,
+                            },
+                        ))
+                        .await;
+                } else if let Some(user_text) = pending_prompt {
+                    tracing::debug!(
+                        target: "jfc::compact",
+                        "pre-submit compaction unsupported — submitting anyway"
+                    );
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Control(
+                            crate::runtime::ControlEvent::SubmitPrompt(user_text),
+                        ))
+                        .await;
+                } else {
+                    tracing::warn!(target: "jfc::compact", "manual compaction unsupported");
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: "Provider does not support compaction for this model".into(),
+                                calibrated_tokens: Some(tool_ctx.approx_tokens),
+                                transient: false,
+                            },
+                        ))
+                        .await;
+                }
+            }
+        }
+        crate::hooks::fire(
+            crate::hooks::HookPoint::AfterCompact,
+            &crate::hooks::HookContext::for_session(&session_id),
+        );
+    });
+}
+
+pub async fn start_manual_compaction(state: &mut EngineState, tx: &EventSender) -> bool {
+    if state.is_streaming || state.pipeline_busy_for_submit() {
+        state.force_compact_pending = true;
+        crate::toast::push_with_cap(
+            &mut state.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
+                "Compaction will start after the current turn finishes".into(),
+            ),
+        );
+        return false;
+    }
+
+    let est = state.tool_ctx.approx_tokens;
+    let level =
+        crate::compact::compact_level_with_output(est, state.max_context_tokens, state.max_output_tokens);
+    tracing::info!(
+        target: "jfc::compact",
+        est,
+        max_context_tokens = state.max_context_tokens,
+        level = ?level,
+        model = %state.model,
+        "manual compaction starting immediately"
+    );
+    state.force_compact_pending = false;
+    state.compact_suppressed = false;
+    crate::toast::push_with_cap(
+        &mut state.toasts,
+        crate::toast::Toast::new(
+            crate::toast::ToastKind::Info,
+            format!("Compacting now — current estimate {est} tokens"),
+        ),
+    );
+    let session_id = state
+        .current_session_id
+        .as_ref()
+        .map(|s| s.as_str().to_owned())
+        .unwrap_or_else(|| "<no-session>".to_owned());
+    spawn_compaction_worker(state, tx, level, None, session_id).await;
+    true
+}
+
 fn current_budget_cap_excess(state: &EngineState) -> Option<(f64, f64)> {
     let cap = state
         .max_budget_usd
@@ -1202,6 +1449,7 @@ mod submit_prompt_tests {
             crate::types::ModelUsage {
                 input_tokens: 1_000_000,
                 output_tokens: 0,
+                thinking_tokens: 0,
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
                 cost_usd: None,

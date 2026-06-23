@@ -300,15 +300,13 @@ impl Provider for VertexProvider {
         }
         if options.adaptive_thinking {
             let mut thinking = json!({ "type": "adaptive" });
-            if let Some(display) = options.thinking_display.as_deref() {
-                thinking["display"] = json!(display);
-            }
+            thinking["display"] =
+                json!(options.thinking_display.as_deref().unwrap_or("summarized"));
             body["thinking"] = thinking;
         } else if let Some(budget) = options.thinking_budget {
             let mut thinking = json!({ "type": "enabled", "budget_tokens": budget });
-            if let Some(display) = options.thinking_display.as_deref() {
-                thinking["display"] = json!(display);
-            }
+            thinking["display"] =
+                json!(options.thinking_display.as_deref().unwrap_or("summarized"));
             body["thinking"] = thinking;
         }
         for (key, value) in &options.provider_options {

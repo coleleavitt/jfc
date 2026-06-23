@@ -5,6 +5,8 @@ pub struct ModelUsage {
     #[serde(default)]
     pub output_tokens: u64,
     #[serde(default)]
+    pub thinking_tokens: u64,
+    #[serde(default)]
     pub cache_read_tokens: u64,
     #[serde(default)]
     pub cache_write_tokens: u64,
@@ -83,5 +85,19 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(usage.cache_hit_pct(), 100.0);
+    }
+
+    #[test]
+    fn thinking_tokens_do_not_double_count_context_normal() {
+        let usage = ModelUsage {
+            input_tokens: 100,
+            output_tokens: 50,
+            thinking_tokens: 30,
+            cache_read_tokens: 20,
+            cache_write_tokens: 10,
+            cost_usd: None,
+        };
+
+        assert_eq!(usage.total_context_tokens(), 180);
     }
 }

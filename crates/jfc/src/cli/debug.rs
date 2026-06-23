@@ -277,6 +277,7 @@ fn list_providers() -> anyhow::Result<()> {
 struct Stats {
     input_tokens: u32,
     output_tokens: u32,
+    thinking_tokens: Option<u32>,
     cache_read: u32,
     cache_write: u32,
     stop_reason: Option<String>,
@@ -288,11 +289,13 @@ impl Stats {
             StreamEvent::Usage {
                 input_tokens,
                 output_tokens,
+                thinking_tokens,
                 cache_read_tokens,
                 cache_write_tokens,
             } => {
                 self.input_tokens = *input_tokens;
                 self.output_tokens = *output_tokens;
+                self.thinking_tokens = *thinking_tokens;
                 self.cache_read = *cache_read_tokens;
                 self.cache_write = *cache_write_tokens;
             }
@@ -518,12 +521,14 @@ fn event_to_json(event: &StreamEvent) -> String {
         StreamEvent::Usage {
             input_tokens,
             output_tokens,
+            thinking_tokens,
             cache_read_tokens,
             cache_write_tokens,
         } => json!({
             "kind": "usage",
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "thinking_tokens": thinking_tokens,
             "cache_read_tokens": cache_read_tokens,
             "cache_write_tokens": cache_write_tokens,
         }),
@@ -611,6 +616,7 @@ mod tests {
         stats.observe(&StreamEvent::Usage {
             input_tokens: 10,
             output_tokens: 20,
+            thinking_tokens: Some(7),
             cache_read_tokens: 3,
             cache_write_tokens: 4,
         });

@@ -402,6 +402,7 @@ mod cwd_filter_tests {
         msg.usage = Some(ModelUsage {
             input_tokens: 12_345,
             output_tokens: 678,
+            thinking_tokens: 321,
             cache_read_tokens: 9_000,
             cache_write_tokens: 100,
             cost_usd: None,

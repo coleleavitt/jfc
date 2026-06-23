@@ -208,6 +208,7 @@ async fn apply_event(
         StreamEvent::Usage {
             input_tokens,
             output_tokens,
+            thinking_tokens: _,
             cache_read_tokens,
             cache_write_tokens,
         } => {
@@ -293,12 +294,14 @@ mod tests {
             StreamEvent::Usage {
                 input_tokens: 100,
                 output_tokens: 10,
+                thinking_tokens: None,
                 cache_read_tokens: 7,
                 cache_write_tokens: 3,
             },
             StreamEvent::Usage {
                 input_tokens: 100,
                 output_tokens: 15,
+                thinking_tokens: None,
                 cache_read_tokens: 7,
                 cache_write_tokens: 3,
             },

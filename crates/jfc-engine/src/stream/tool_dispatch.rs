@@ -1786,6 +1786,7 @@ mod council_member_tests {
                     usage: jfc_provider::TokenUsage {
                         input_tokens: 10,
                         output_tokens: 5,
+                        thinking_tokens: None,
                         cache_read_tokens: 0,
                         cache_creation_tokens: 0,
                     },

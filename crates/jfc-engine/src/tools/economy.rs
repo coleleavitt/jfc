@@ -32,13 +32,16 @@ async fn complete_economy_agent(
     elapsed_ms: u64,
 ) {
     agent_registry()
-        .complete(id, AgentResult {
-            id: id.clone(),
-            output: summary.to_string(),
-            tokens_used: tokens,
-            elapsed_ms,
-            patch: None,
-        })
+        .complete(
+            id,
+            AgentResult {
+                id: id.clone(),
+                output: summary.to_string(),
+                tokens_used: tokens,
+                elapsed_ms,
+                patch: None,
+            },
+        )
         .await;
 }
 
@@ -257,6 +260,7 @@ impl EconomyAgentInvoker {
         let usage = jfc_provider::TokenUsage {
             input_tokens: input_tokens as usize,
             output_tokens: output_tokens as usize,
+            thinking_tokens: None,
             cache_read_tokens: 0,
             cache_creation_tokens: 0,
         };
@@ -557,9 +561,7 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
             }
             Err(e) => {
                 self.emit_failed(&task_id, &e);
-                agent_registry()
-                    .fail(&prompt.validator_id, e.clone())
-                    .await;
+                agent_registry().fail(&prompt.validator_id, e.clone()).await;
                 Err(e)
             }
         }

@@ -686,6 +686,7 @@ fn responses_events_from_sse(data: &str) -> Vec<anyhow::Result<StreamEvent>> {
                     vec![Ok(StreamEvent::Usage {
                         input_tokens: usage.input_tokens as u32,
                         output_tokens: usage.output_tokens as u32,
+                        thinking_tokens: usage.thinking_tokens.map(|tokens| tokens as u32),
                         cache_read_tokens: usage.cache_read_tokens as u32,
                         cache_write_tokens: usage.cache_creation_tokens as u32,
                     })]
@@ -763,6 +764,11 @@ pub(crate) fn response_usage(value: &Value) -> Option<TokenUsage> {
                 .get("input_tokens_details")
                 .cloned()
                 .and_then(|value| serde_json::from_value(value).ok()),
+            completion_tokens_details: usage
+                .get("output_tokens_details")
+                .or_else(|| usage.get("completion_tokens_details"))
+                .cloned()
+                .and_then(|value| serde_json::from_value(value).ok()),
             cache_creation_input_tokens: usage
                 .get("cache_creation_input_tokens")
                 .and_then(Value::as_u64)
@@ -815,6 +821,8 @@ struct ChatUsage {
     #[serde(default)]
     prompt_tokens_details: Option<PromptTokensDetails>,
     #[serde(default)]
+    completion_tokens_details: Option<CompletionTokensDetails>,
+    #[serde(default)]
     cache_creation_input_tokens: usize,
     #[serde(default)]
     cache_read_input_tokens: usize,
@@ -846,6 +854,12 @@ impl ChatUsage {
                     .map_or(0, |d| d.cache_creation_input_tokens),
             )
     }
+
+    fn thinking_tokens(&self) -> Option<usize> {
+        self.completion_tokens_details
+            .as_ref()
+            .and_then(|details| details.reasoning_tokens)
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -856,11 +870,18 @@ struct PromptTokensDetails {
     cache_creation_input_tokens: usize,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct CompletionTokensDetails {
+    #[serde(default)]
+    reasoning_tokens: Option<usize>,
+}
+
 impl From<ChatUsage> for TokenUsage {
     fn from(value: ChatUsage) -> Self {
         Self {
             input_tokens: value.raw_input_tokens(),
             output_tokens: value.completion_tokens,
+            thinking_tokens: value.thinking_tokens(),
             cache_read_tokens: value.cache_read_tokens(),
             cache_creation_tokens: value.cache_creation_tokens(),
         }

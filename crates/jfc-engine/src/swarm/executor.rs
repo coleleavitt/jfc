@@ -96,7 +96,7 @@ pub async fn run_single_turn(
         // Build stream options
         let opts = StreamOptions::new(model.clone())
             .system(system.clone())
-            .tools(tools::all_tool_defs());
+            .tools(tools::model_tool_defs());
 
         // Two-stage context safety mirroring v131 Claude Code: (1) try
         // LLM-based auto-compaction at 100k tokens, (2) fall through

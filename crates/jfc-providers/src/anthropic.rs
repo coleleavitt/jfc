@@ -168,18 +168,14 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
 
     if opts.adaptive_thinking {
         let mut thinking = json!({ "type": "adaptive" });
-        if let Some(display) = opts.thinking_display.as_deref() {
-            thinking["display"] = json!(display);
-        }
+        thinking["display"] = json!(opts.thinking_display.as_deref().unwrap_or("summarized"));
         body["thinking"] = thinking;
     } else if let Some(budget) = opts.thinking_budget {
         let mut thinking = json!({
             "type": "enabled",
             "budget_tokens": budget,
         });
-        if let Some(display) = opts.thinking_display.as_deref() {
-            thinking["display"] = json!(display);
-        }
+        thinking["display"] = json!(opts.thinking_display.as_deref().unwrap_or("summarized"));
         body["thinking"] = thinking;
     }
     // Claude Code 2.1.177 sends a context-management edit while thinking is
@@ -768,7 +764,10 @@ mod tests {
     fn build_body_thinking_legacy_budget_normal() {
         // max_tokens headroom so the legacy budget is emitted verbatim and not
         // clamped by the `budget_tokens < max_tokens` rule.
-        let body = build_body(vec![make_user_msg("hi")], &opts("m").max_tokens(16_000).thinking(8192));
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").max_tokens(16_000).thinking(8192),
+        );
         assert_eq!(body["thinking"]["type"], "enabled");
         assert_eq!(body["thinking"]["budget_tokens"], 8192);
     }
@@ -904,25 +903,23 @@ mod tests {
     fn build_body_legacy_thinking_display_summarized_normal() {
         let body = build_body(
             vec![make_user_msg("hi")],
-            &opts("m").max_tokens(16_000).thinking(8192).thinking_display("summarized"),
+            &opts("m")
+                .max_tokens(16_000)
+                .thinking(8192)
+                .thinking_display("summarized"),
         );
         assert_eq!(body["thinking"]["type"], "enabled");
         assert_eq!(body["thinking"]["budget_tokens"], 8192);
         assert_eq!(body["thinking"]["display"], "summarized");
     }
 
-    // Robust: without `.thinking_display()` the `display` key must be absent —
-    // Anthropic defaults to `"omitted"` server-side and sending an explicit
-    // `display: null` could be rejected by strict validators.
+    // Robust: without `.thinking_display()` direct provider calls still request
+    // visible summarized thinking, matching the current Anthropic SDK default.
     #[test]
-    fn build_body_thinking_display_absent_when_unset_robust() {
+    fn build_body_thinking_display_defaults_summarized_robust() {
         let body = build_body(vec![make_user_msg("hi")], &opts("m").adaptive());
         assert_eq!(body["thinking"]["type"], "adaptive");
-        assert!(
-            body["thinking"].get("display").is_none(),
-            "display key must be absent when thinking_display is not set, got: {}",
-            body["thinking"]
-        );
+        assert_eq!(body["thinking"]["display"], "summarized");
     }
 
     #[test]
