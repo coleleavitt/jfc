@@ -2,7 +2,8 @@
 use super::assistant_parts::{find_tool_at, sanitize_terminal_text, truncate_str};
 use super::bash::{BashCmdKind, classify_bash_cmd};
 use super::core::{
-    RenderCtx, build_render_items_ctx, is_groupable, message_view_total_lines, severity_rank,
+    RenderCtx, build_render_items_ctx, is_groupable, is_invisible_in_transcript,
+    message_view_total_lines, severity_rank,
 };
 use super::detection::{looks_like_difftastic_output, looks_like_git_diff_output};
 use super::formatters::{
@@ -1591,12 +1592,47 @@ mod helper_tests {
 
     #[test]
     fn is_groupable_parallel_callable_kinds_normal() {
-        // Bash/BashOutput/WebFetch/WebSearch group when 3+ parallel calls
+        // Bash/WebFetch/WebSearch group when 3+ parallel calls
         // to reduce visual noise (CC 177's grouped_tool_use pattern).
         assert!(is_groupable(&ToolKind::Bash));
-        assert!(is_groupable(&ToolKind::BashOutput));
         assert!(is_groupable(&ToolKind::WebFetch));
         assert!(is_groupable(&ToolKind::WebSearch));
+    }
+
+    #[test]
+    fn bash_output_is_hidden_from_normal_transcript_regression() {
+        assert!(is_invisible_in_transcript(&ToolKind::BashOutput));
+        assert!(!is_groupable(&ToolKind::BashOutput));
+    }
+
+    #[test]
+    fn render_items_drop_bash_output_compatibility_tool_regression() {
+        let mut app = stub_app();
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.parts.clear();
+        msg.parts.push(MessagePart::Tool(Box::new(dummy_tool(
+            ToolInput::BashOutput {
+                task_id: "bash_fake".into(),
+                offset: None,
+                limit: None,
+                block: None,
+                timeout: None,
+                wait_up_to: None,
+            },
+            ToolOutput::Text("Unknown Bash task id 'bash_fake'".into()),
+            ToolKind::BashOutput,
+        ))));
+        app.engine.messages.push(msg);
+
+        let ctx = RenderCtx::from_app(&app);
+        let items = build_render_items_ctx(&ctx, 80);
+
+        assert!(
+            !items
+                .iter()
+                .any(|item| matches!(item, super::core::RenderItem::ToolBlock(_))),
+            "BashOutput compatibility calls should not produce transcript tool widgets"
+        );
     }
 
     // --- tool_status_icon_animated -----------------------------------
@@ -1957,7 +1993,7 @@ mod helper_tests {
         );
         let spans = build_header_inner_spans(&tool, &t, 80);
         let combined: String = spans.iter().map(|s| s.content.as_ref()).collect();
-        assert_eq!(combined, "TaskOutput bash_fe28c4f9154a");
+        assert_eq!(combined, "Shell output bash_fe28c4f9154a");
     }
 
     #[test]
@@ -2936,6 +2972,45 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
             message_view_total_lines(&app, w),
             renderer_total_height(&app, w),
             "reasoning-expanded: predictor must match renderer at width {w}",
+        );
+    }
+
+    #[test]
+    fn height_index_tracks_always_show_thinking_layout_regression() {
+        let mut app = stub_app();
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.parts.clear();
+        msg.parts.push(MessagePart::Reasoning(
+            "**Inspect files**\n\nThis reasoning body should stay expanded by config.".into(),
+        ));
+        app.engine.messages.push(msg);
+
+        let expanded = std::collections::HashMap::new();
+        let groups = std::collections::HashSet::new();
+        let ctx = RenderCtx {
+            messages: &app.engine.messages,
+            streaming_idx: None,
+            is_streaming: false,
+            reasoning_expanded: &expanded,
+            always_show_thinking: true,
+            active_reasoning_idx: None,
+            tool_group_expanded: &groups,
+            render_cache: &app.render_cache,
+            theme: app.theme,
+            brief_mode: false,
+            revealed_streaming_lines: None,
+        };
+        let w = 60usize;
+        let expected: usize = build_render_items_ctx(&ctx, w)
+            .iter()
+            .map(|item| item.height(w))
+            .sum();
+        let mut index = super::height_index::HeightIndex::new();
+
+        assert_eq!(
+            index.sync(&ctx, w),
+            expected,
+            "height cache must measure expanded reasoning when always_show_thinking is active",
         );
     }
 

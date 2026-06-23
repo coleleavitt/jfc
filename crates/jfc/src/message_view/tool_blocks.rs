@@ -752,9 +752,7 @@ pub(super) fn tool_progress_verb(kind: &ToolKind) -> &str {
         ToolKind::Read | ToolKind::NotebookRead => "Reading",
         // Claude 2.1.177 aliases: GlobTool/GrepTool -> Searching.
         ToolKind::Glob | ToolKind::Grep | ToolKind::Search => "Searching",
-        // Claude 2.1.177 aliases: AgentOutputTool/BashOutputTool/AgentOutput/
-        // BashOutput -> TaskOutput.
-        ToolKind::BashOutput => "TaskOutput",
+        ToolKind::BashOutput => "Shell output",
         ToolKind::TaskStop => "TaskStop",
         _ => kind.label(),
     }
@@ -937,7 +935,7 @@ pub(super) fn build_header_inner_spans<'a>(
         ToolInput::BashOutput { task_id, .. } => {
             let id = truncate_str(task_id, max_w.saturating_sub(11));
             vec![
-                Span::styled("TaskOutput", kind_style),
+                Span::styled("Shell output", kind_style),
                 Span::styled(" ", Style::default().fg(t.text_muted)),
                 Span::styled(id, Style::default().fg(t.text_primary)),
             ]

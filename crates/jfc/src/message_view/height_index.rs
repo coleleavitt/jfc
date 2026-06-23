@@ -75,7 +75,7 @@ fn layout_word(ctx: &RenderCtx<'_>, idx: usize, msg: &ChatMessage) -> u64 {
         .reasoning_expanded
         .get(&idx)
         .copied()
-        .unwrap_or(ctx.active_reasoning_idx == Some(idx));
+        .unwrap_or(ctx.always_show_thinking || ctx.active_reasoning_idx == Some(idx));
     mix(reasoning_expanded as u64);
     for part in &msg.parts {
         match part {

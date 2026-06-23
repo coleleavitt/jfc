@@ -23,6 +23,8 @@ mod syntax;
 pub(crate) mod task_body;
 mod terminal_output;
 mod tests;
+#[cfg(test)]
+mod tests_screen_reader;
 mod tool_blocks;
 mod tool_height;
 mod tool_xml_guard;

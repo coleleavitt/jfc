@@ -5,28 +5,42 @@ pub(super) fn push_reasoning_lines<'a>(
     items: &mut Vec<RenderItem<'a>>,
     text: &'a str,
     expanded: bool,
+    active: bool,
     t: &Theme,
 ) {
+    let summary = reasoning_summary(text);
+    let label = if active { "Thinking" } else { "Thought" };
     if expanded {
-        // Header: just `∴ Thinking` with a quiet collapse hint. The old
+        // Header: just `∴ Thought` with a quiet collapse hint. The old
         // `[Ctrl+O to collapse | key=N]` leaked an internal render index
         // (`key=N`) into the chat — debug noise the user never needed.
-        items.push(RenderItem::TextLine(Line::from(vec![
-            Span::styled(
-                format!("{} Thinking", crate::glyphs::REASONING_HEADER),
+        let mut spans = vec![Span::styled(
+            reasoning_header_label(label),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        )];
+        if let Some(title) = summary.title {
+            spans.push(Span::styled(": ", Style::default().fg(t.text_muted)));
+            spans.push(Span::styled(
+                title.to_owned(),
                 Style::default()
                     .fg(t.text_muted)
                     .add_modifier(Modifier::ITALIC),
-            ),
-            Span::styled("  ctrl+o to collapse", Style::default().fg(t.text_muted)),
-        ])));
+            ));
+        }
+        spans.push(Span::styled(
+            "  ctrl+o to collapse",
+            Style::default().fg(t.text_muted),
+        ));
+        items.push(RenderItem::TextLine(Line::from(spans)));
         // Reasoning ribbon: each thinking line gets a `┃` prefix in
         // `t.reasoning_fg` so the block visually nests inside the
         // assistant message. The ribbon's own color is the same as
         // the reasoning text, so the indent reads as a soft "this is
         // a thought" guide rather than a competing structural
         // element. Mirrors how Discord / Slack indent quoted blocks.
-        for l in text.lines() {
+        for l in summary.body.lines() {
             items.push(RenderItem::TextLine(Line::from(vec![
                 Span::styled(
                     format!("{} ", crate::glyphs::REASONING_RIBBON),
@@ -49,7 +63,7 @@ pub(super) fn push_reasoning_lines<'a>(
         let mut char_count: usize = 0;
         let mut last_was_space = true; // suppress leading whitespace
         let mut truncated = false;
-        for ch in text.chars() {
+        for ch in summary.body.chars() {
             if char_count >= PREVIEW_MAX_CHARS {
                 truncated = true;
                 break;
@@ -76,19 +90,88 @@ pub(super) fn push_reasoning_lines<'a>(
         // the chat (see screenshot — it appears 5+ times in a single scroll).
         // The summary itself signals collapsibility; the keybind is
         // discoverable through the palette.
-        items.push(RenderItem::TextLine(Line::from(vec![
-            Span::styled(
-                format!("{} Thinking", crate::glyphs::REASONING_HEADER),
+        let mut spans = vec![Span::styled(
+            reasoning_header_label(label),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        )];
+        if let Some(title) = summary.title {
+            spans.push(Span::styled(": ", Style::default().fg(t.text_muted)));
+            spans.push(Span::styled(
+                title.to_owned(),
                 Style::default()
                     .fg(t.text_muted)
                     .add_modifier(Modifier::ITALIC),
-            ),
-            Span::styled(
+            ));
+        }
+        if !flattened.is_empty() {
+            spans.push(Span::styled(
                 format!(" — {flattened}{ellipsis}"),
                 Style::default().fg(t.text_muted),
-            ),
-        ])));
+            ));
+        }
+        items.push(RenderItem::TextLine(Line::from(spans)));
     }
+}
+
+#[derive(Clone, Copy)]
+struct ReasoningSummary<'a> {
+    title: Option<&'a str>,
+    body: &'a str,
+}
+
+fn reasoning_summary(text: &str) -> ReasoningSummary<'_> {
+    let content = text.trim();
+    let Some(after_open) = content.strip_prefix("**") else {
+        return ReasoningSummary {
+            title: None,
+            body: content,
+        };
+    };
+    let Some(close) = after_open.find("**") else {
+        return ReasoningSummary {
+            title: None,
+            body: content,
+        };
+    };
+    let title = after_open[..close].trim();
+    if title.is_empty() || title.contains('\n') {
+        return ReasoningSummary {
+            title: None,
+            body: content,
+        };
+    }
+    let tail = &after_open[close + 2..];
+    let rest = if tail.is_empty() {
+        ""
+    } else if let Some(rest) = tail.strip_prefix("\r\n\r\n") {
+        rest
+    } else if let Some(rest) = tail.strip_prefix("\n\n") {
+        rest
+    } else {
+        return ReasoningSummary {
+            title: None,
+            body: content,
+        };
+    };
+    ReasoningSummary {
+        title: Some(title),
+        body: rest.trim_start_matches(['\r', '\n']).trim_end(),
+    }
+}
+
+fn reasoning_header_label(label: &str) -> String {
+    if reasoning_screen_reader_mode() {
+        label.to_owned()
+    } else {
+        format!("{} {label}", crate::glyphs::REASONING_HEADER)
+    }
+}
+
+fn reasoning_screen_reader_mode() -> bool {
+    std::env::var_os("JFC_SCREEN_READER").is_some()
+        || jfc_engine::config::load_arc().screen_reader_mode
 }
 
 /// Render a `MessagePart::Advisor` payload. Visually distinct from the main
@@ -333,7 +416,7 @@ mod reasoning_preview_tests {
     fn collapsed_preview(text: &str) -> String {
         let mut items: Vec<RenderItem<'_>> = Vec::new();
         let theme = crate::theme::Theme::dark();
-        push_reasoning_lines(&mut items, text, false, &theme);
+        push_reasoning_lines(&mut items, text, false, false, &theme);
         // The single line we pushed has two spans; the second contains the
         // preview. Concatenate the visible text so tests can assert on it.
         match items.into_iter().next() {
@@ -393,7 +476,7 @@ mod reasoning_preview_tests {
     fn empty_reasoning_does_not_panic_robust() {
         // No content -> empty preview, no ellipsis. Just shouldn't panic.
         let s = collapsed_preview("");
-        assert!(s.contains("∴ Thinking"));
+        assert!(s.contains("∴ Thought"));
     }
 
     #[test]
@@ -412,5 +495,36 @@ mod reasoning_preview_tests {
         // input's char count, but that's not truncation — no ellipsis.
         let s = collapsed_preview("a   b   c");
         assert!(!s.contains('…'), "false truncation marker; got: {s:?}");
+    }
+
+    #[test]
+    fn extracts_bold_title_like_opencode_normal() {
+        let s = collapsed_preview("**Inspect files**\n\nRead the changed files first.");
+        assert!(s.contains("Thought: Inspect files"), "got: {s:?}");
+        assert!(s.contains("Read the changed files first"), "got: {s:?}");
+        assert!(!s.contains("**Inspect files**"), "got: {s:?}");
+    }
+
+    #[test]
+    fn keeps_inline_bold_prefix_as_body_robust() {
+        let s = collapsed_preview("**Important** details should stay visible.");
+        assert!(s.contains("**Important** details"), "got: {s:?}");
+        assert!(!s.contains("Thought: Important"), "got: {s:?}");
+    }
+
+    #[test]
+    fn active_reasoning_uses_thinking_label_normal() {
+        let mut items: Vec<RenderItem<'_>> = Vec::new();
+        let theme = crate::theme::Theme::dark();
+        push_reasoning_lines(&mut items, "live thought", true, true, &theme);
+        let rendered = match items.into_iter().next() {
+            Some(RenderItem::TextLine(line)) => line
+                .spans
+                .into_iter()
+                .map(|s| s.content.into_owned())
+                .collect::<String>(),
+            _ => String::new(),
+        };
+        assert!(rendered.contains("∴ Thinking"), "got: {rendered:?}");
     }
 }

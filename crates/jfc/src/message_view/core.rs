@@ -83,6 +83,7 @@ pub struct RenderCtx<'a> {
     pub streaming_idx: Option<usize>,
     pub is_streaming: bool,
     pub reasoning_expanded: &'a HashMap<usize, bool>,
+    pub always_show_thinking: bool,
     /// Index of the message whose reasoning is *actively streaming* this turn.
     /// Its thinking block defaults to expanded (live preview); every other,
     /// completed reasoning block defaults to collapsed so finished turns don't
@@ -113,6 +114,7 @@ impl<'a> RenderCtx<'a> {
             streaming_idx: app.engine.streaming_assistant_idx,
             is_streaming: app.engine.is_streaming,
             reasoning_expanded: &app.reasoning_expanded,
+            always_show_thinking: jfc_engine::config::load_arc().always_show_thinking,
             active_reasoning_idx: {
                 // Only the live, still-thinking block defaults expanded.
                 let thinking_live = app.engine.thinking_started_at.is_some()
@@ -154,6 +156,7 @@ impl<'a> RenderCtx<'a> {
             streaming_idx: None,
             is_streaming: false,
             reasoning_expanded: EMPTY_REASONING.get_or_init(HashMap::new),
+            always_show_thinking: false,
             active_reasoning_idx: None,
             tool_group_expanded: EMPTY_GROUPS.get_or_init(std::collections::HashSet::new),
             render_cache: &app.render_cache,
@@ -700,7 +703,6 @@ pub(super) fn is_groupable(kind: &ToolKind) -> bool {
             | ToolKind::Grep
             | ToolKind::Search
             | ToolKind::Bash
-            | ToolKind::BashOutput
             | ToolKind::WebFetch
             | ToolKind::WebSearch
     )
@@ -734,6 +736,7 @@ pub(super) fn is_invisible_in_transcript(kind: &ToolKind) -> bool {
             | ToolKind::TaskDone
             | ToolKind::TaskStop
             | ToolKind::TaskValidate
+            | ToolKind::BashOutput
             // Scheduling / cron
             | ToolKind::ScheduleWakeup
             | ToolKind::CronCreate
@@ -1028,12 +1031,12 @@ pub(crate) fn build_message_items<'a>(
         // render expanded, equivalent to the user having pressed ctrl+o on
         // every message.  A per-message entry in `reasoning_expanded` can
         // still collapse a block if the user explicitly toggles it to false.
-        let always_show = jfc_engine::config::load_arc().always_show_thinking;
+        let reasoning_active = ctx.active_reasoning_idx == Some(idx);
         let reasoning_expanded = ctx
             .reasoning_expanded
             .get(&idx)
             .copied()
-            .unwrap_or(always_show || ctx.active_reasoning_idx == Some(idx));
+            .unwrap_or(ctx.always_show_thinking || reasoning_active);
 
         // Walk parts with peek-ahead so consecutive groupable tools
         // (Read/Glob/Grep) collapse into a single ToolGroup row when
@@ -1170,7 +1173,7 @@ pub(crate) fn build_message_items<'a>(
                     }
                 }
                 MessagePart::Reasoning(text) => {
-                    push_reasoning_lines(items, text, reasoning_expanded, &t);
+                    push_reasoning_lines(items, text, reasoning_expanded, reasoning_active, &t);
                 }
                 MessagePart::Tool(tool) => {
                     if !is_invisible_in_transcript(&tool.kind) {

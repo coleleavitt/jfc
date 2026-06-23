@@ -1635,7 +1635,10 @@ mod render_snapshot_tests {
                 || fan_row.contains("unified row agent"),
             "fan row diverged from canonical:\nfan: {fan_row}\ncanon: {canonical}"
         );
-        assert!(fan_row.contains("3 tools"), "fan missing tools: {fan_row}");
+        assert!(
+            fan_row.contains("3 shells"),
+            "fan missing shell count: {fan_row}"
+        );
         assert!(fan_row.contains("↓1.5k"), "fan missing tokens: {fan_row}");
         assert!(fan_row.contains("Bash"), "fan missing tool: {fan_row}");
 
@@ -1652,8 +1655,8 @@ mod render_snapshot_tests {
             .trim()
             .to_owned();
         assert!(
-            panel_row.contains("3 tools"),
-            "panel missing tools: {panel_row}"
+            panel_row.contains("3 shells"),
+            "panel missing shell count: {panel_row}"
         );
         assert!(
             panel_row.contains("↓1.5k"),

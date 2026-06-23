@@ -74,7 +74,7 @@ const STALL_SECS: u64 = 30;
 /// Build the canonical roster row for one background agent:
 ///
 /// ```text
-/// ▶ ● description ⚠ stalled 31s        tool · model · 3 tools · 42s · ↓1.2k
+/// ▶ ● description ⚠ stalled 31s        tool · model · 3 shells · 42s · ↓1.2k
 /// ```
 ///
 /// * col 0 (accent): selection pointer `▶ ` / blank — the ONE accent use
@@ -227,7 +227,7 @@ fn roster_fields(bt: &crate::app::BackgroundTask, now: std::time::Instant) -> Ve
         }
     }
     if bt.tool_use_count > 0 {
-        fields.push(format!("{} tools", bt.tool_use_count));
+        fields.push(tool_activity_count_label(bt));
     }
     fields.push(time_label);
     let total_tokens = bt.total_tokens();
@@ -283,11 +283,7 @@ pub(crate) fn agent_detail_lines(
         ));
     }
     if bt.tool_use_count > 0 {
-        stats.push(format!(
-            "{} tool{}",
-            bt.tool_use_count,
-            if bt.tool_use_count == 1 { "" } else { "s" }
-        ));
+        stats.push(tool_activity_count_label(bt));
     }
     lines.push(Line::from(Span::styled(
         stats.join(" · "),
@@ -316,6 +312,18 @@ pub(crate) fn agent_detail_lines(
     lines.extend(transcript_lines(bt, t, width));
 
     lines
+}
+
+fn tool_activity_count_label(bt: &crate::app::BackgroundTask) -> String {
+    let kind = match bt.last_tool.as_deref() {
+        Some("Bash") => "shell",
+        _ => "tool",
+    };
+    format!(
+        "{} {kind}{}",
+        bt.tool_use_count,
+        if bt.tool_use_count == 1 { "" } else { "s" }
+    )
 }
 
 /// The "Recent activity" transcript tail. The detached-agent sync

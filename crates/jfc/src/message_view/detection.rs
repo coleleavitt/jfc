@@ -35,10 +35,10 @@ pub(super) fn looks_like_git_diff_output(text: &str) -> bool {
 /// to see in full — they clutter the transcript. Returns the task_id if this
 /// is a background notification, for compact rendering.
 pub(super) fn detect_background_task_notification(text: &str) -> Option<&str> {
-    // Pattern: starts with "Command exceeded..." or ends with
-    // "Use BashOutput with..." and contains "task_id:" line.
-    let is_bg_notice =
-        text.contains("was moved to the background") || text.contains("Use BashOutput with");
+    // Pattern: starts with "Command exceeded..." / "Command running..." and
+    // contains the background-shell tracking line plus a "task_id:" line.
+    let is_bg_notice = text.contains("was moved to the background")
+        || text.contains("JFC is tracking this as a background shell task");
     if !is_bg_notice {
         return None;
     }
