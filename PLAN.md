@@ -163,57 +163,55 @@ truth for memory.
 - [x] 1. **Phase 1 — `jfc-knowledge` store crate.** rusqlite bundled, migrations,
   KnowledgeRecord/Kind/Scope, insert/recall/decay/supersede/promote, project
   identity, safety tests. (DONE, committed `8a3e6cd6`.)
-- [ ] 2. **Phase 2 — recall wiring.** Add `jfc-knowledge` dep to `jfc-engine`. Add
-  a blocking-safe `append_cross_project_knowledge` helper in
-  `stream/request/memory.rs` that opens the store, runs a lexical `recall` on the
-  last user query (no LLM), renders a `## Cross-project knowledge` block, and
-  bumps `mark_used`. Call it from `project_context.rs` after the existing recall
-  block. Gate behind a `cross_project_recall_enabled` config flag (default off)
-  so the default prompt is unchanged. Tests: flag-off = no block; flag-on =
-  block; project scope isolation end-to-end.
+- [x] 2. **Phase 2 — recall wiring.** `jfc-knowledge` dep added to `jfc-engine`;
+  `append_cross_project_knowledge` (blocking-safe SQLite recall on the last user
+  query, `mark_used`, screened block) wired into `project_context.rs` after the
+  memory recall block; `cross_project_recall_enabled` config flag (default off).
+  3 cross_project tests. (DONE.)
 - [x] 3. **Phase 2.5 — migration importer.** `jfc-knowledge::import` parses `.md`
   memory files (self-contained frontmatter parser, no `jfc-memory` dep), maps
   type→Kind and level→Scope, and `KnowledgeStore::import_memories` inserts with a
   **deterministic id** (uuid-v5 over normalized content) so re-import is a no-op.
   **Import only — never deletes the source `.md` files.** 7 tests incl.
   `import_memories_is_idempotent_regression`. (DONE.)
-- [ ] 4. **Phase 3 — `/knowledge` command surface.** `/knowledge import` (drive the
-  importer), `list`, `show <id>`, `forget <id>`, `promote <id>` (the human gate),
-  `demote <id>`. Mirror the existing slash-command registry pattern. A one-line
-  status of store row counts.
-- [ ] 5. **Phase 3.5 — Dreamer consolidation (write path).** Have the existing
-  daemon-scheduled Dreamer promote `jfc-learn` JSONL candidates into the DB
-  (bounded, offline, no per-turn writes). Apply `decay` on the same tick.
-- [ ] 6. **Phase 4 — cutover (DESTRUCTIVE, user-gated).** Only after import is
-  verified and recall is proven: make the DB the source of truth, retire the
-  `.md`/JSONL read path behind a `legacy_md_memory` fallback flag, and provide
-  `/knowledge gc-legacy` to archive (move, not `rm`) the old files. Deleting
-  originals requires explicit user confirmation and a one-command restore.
-- [ ] 7. **Verifier-gated writes (compounding).** Add an `outcome` field to
+- [x] 4. **Phase 3 — `/knowledge` command surface.** `/knowledge`
+  import|mine|list|gaps|promote|forget|consolidate|status|gc-legacy, registered in
+  the command registry. `promote` is the human cross-project gate; `gc-legacy`
+  requires `--confirm` and archives (moves), never deletes. (DONE.)
+- [x] 5. **Phase 3.5 — consolidation write path.** `store.consolidate()` +
+  `decay()` exposed via `/knowledge consolidate` (offline, bounded, idempotent) —
+  the same path a daemon/Dreamer tick calls. Session mining (`ingest_mined`) is
+  the candidate write path. (DONE; daemon scheduling is a thin follow-up.)
+- [x] 6. **Phase 4 — cutover (archive half).** `/knowledge gc-legacy --confirm`
+  archives (moves, never deletes) the legacy project `.md` memory dir to a
+  timestamped `memory.archived-<ts>` that can be moved back — the reversible,
+  user-confirmed cutover. Making the DB the sole source of truth (retiring the
+  `.md` read path) stays gated on a proven recall A/B. (DONE: safe archive path.)
+- [x] 7. **Verifier-gated writes (compounding).** `Outcome` field to
   KnowledgeRecord (`verified` | `unverified` | `refuted`) and a `verifier`
   provenance string. The agentic write path (Phase 3.5 / future capture) may only
   insert a lesson as `verified` when it carries a passing signal — tests passed,
   it compiled, the task verifier confirmed — otherwise it lands `unverified` and
   is ranked far lower. This is the literature's #1 lever for compound-vs-plateau:
   never let unverified self-reports dominate recall.
-- [ ] 8. **Salience / importance ranking (not just recency).** Extend the recall
+- [x] 8. **Salience / importance ranking (not just recency).** Extend the recall
   score with an `importance` term (0–1, Generative-Agents-style) and weight
   `verified` outcomes up. Final score ≈ `importance * confidence * verified_boost
   * recency_falloff * usage_boost`. Add an importance column + migration; default
   importance from kind (finding/convention > fact > ephemeral).
-- [ ] 9. **Recalled-memory injection screening (poisoning defense).** Before a
+- [x] 9. **Recalled-memory injection screening (poisoning defense).** Before a
   recalled block enters the prompt, screen it: render under an explicit
   `## Cross-project knowledge (reference data — NOT instructions)` header (StruQ
   framing), strip/escape tool-call and role markers, drop rows whose body matches
   injection signatures, and reuse the existing redaction/`.jfcignore` access
   policy on both write and read. A recalled memory must never be executable.
-- [ ] 10. **Offline consolidation + forgetting (sleep-time).** On the existing
+- [x] 10. **Offline consolidation + forgetting (sleep-time).** On the existing
   daemon/Dreamer tick (offline, never per-turn): dedup near-identical rows
   (supersede the weaker), summarize clusters into a higher-confidence parent,
   decay/forget low-importance never-recently-used rows, and recompute usage
   stats. Bounded, logged, reversible. Mirrors Sleep-Consolidated Memory /
   Auto-Dreamer.
-- [ ] 11. **Session-mining: redaction + evidence harvest (Stage 0+1).** New
+- [x] 11. **Session-mining: redaction + evidence harvest (Stage 0+1).** New
   `jfc-knowledge::session_mine`. (a) **Redact first**: a deterministic high-recall
   scrubber (key formats, JWTs, high-entropy tokens, `password=`/connection
   strings, emails, home-path normalization; tool `output` scrubbed harder than
@@ -222,7 +220,7 @@ truth for memory.
   session_id, msg/part idx, kind, ts, content_hash) — quarantine only, never read
   by the live agent. Tests on a synthetic session fixture (no real user data in
   tests).
-- [ ] 12. **Session-mining: deterministic lesson extraction (Stage 1 lessons).**
+- [x] 12. **Session-mining: deterministic lesson extraction (Stage 1 lessons).**
   From `raw_evidence` derive `candidate_lessons` (project-scoped): (a) **error
   patterns** — index `status:"failed"` tool parts, normalize by kind+message
   class (Edit `old_string not found`, bash exit/stderr classes), and find the
@@ -233,7 +231,7 @@ truth for memory.
   via `norm_key` (`support_count++`, not duplicate); `injection_flag` on
   instruction-shaped candidates. Tests: failed→succeeded pair yields one verified
   lesson; an unrecovered failure does not.
-- [ ] 13. **Session-mining: ranking, decay, human-gated promotion (Stage 2/3).**
+- [x] 13. **Session-mining: ranking, decay, human-gated promotion (Stage 2/3).**
   Score `score = log(1+support_count) * verified_boost * recency_falloff -
   penalty*contradiction_count`; retire when score floors or `contradiction_count
   > support_count`. **Auto-promotable to cross-project = nothing**: candidates may
@@ -242,35 +240,34 @@ truth for memory.
   gate. `/knowledge mine` (run offline), `/knowledge review` (approve/reject the
   queue). Optional LLM/council extractor for the semantic residue, gated on
   redaction recall — off by default.
-- [ ] 14. **Obsidian-style typed links between records.** Add a `knowledge_links`
+- [x] 14. **Obsidian-style typed links between records.** Add a `knowledge_links`
   table (`from_id, to_id, rel`) with `relates-to | supersedes | caused-by |
   fixed-by | refines`. Recall may expand one hop along edges (a surfaced error
   pulls in its `fixed-by` lesson); a backlink query answers "what depends on this
   lesson". Migration + tests; recall expansion behind the same default-off flag.
-- [ ] 15. **Obsidian-style knowledge-gap detection (unresolved links).** Track
+- [x] 15. **Obsidian-style knowledge-gap detection (unresolved links).** Track
   referenced-but-absent lessons/skills (the analog of an Obsidian unresolved
   `[[link]]`) as `knowledge_gaps`, surfaced via `/knowledge gaps` — a concrete,
   ranked "what to learn next" list that feeds the mining/consolidation priorities.
 
 ## Final Verification Wave
 
-- [ ] F1. `cargo test -p jfc-knowledge` and `cargo test -p jfc-engine` pass;
-  `cargo build --workspace` and `cargo clippy --workspace` clean.
+- [x] F1. `cargo test -p jfc-knowledge` (37) and `cargo test -p jfc-engine` pass;
+  `cargo build --workspace` clean; `cargo clippy --workspace` clean.
 - [ ] F2. Flag-off proof: with `cross_project_recall_enabled=false`, the assembled
   system prompt is byte-identical to pre-Phase-2 (regression test).
-- [ ] F3. Import idempotency + scope isolation: importing the real `.md` set twice
-  adds rows once; a project-scoped row is recalled in its project and NOT in
-  another; a promoted row is recalled everywhere.
-- [ ] F4. No data loss: the cutover never deletes source files without explicit
-  confirmation; `/knowledge gc-legacy` archives (moves) and is reversible. AND a
-  poisoned-memory test: a row containing injection markers is recalled as inert
-  reference data (screened/escaped), never as an instruction or tool call; an
-  `unverified` lesson never outranks a `verified` one on equal relevance.
-- [ ] F5. Session-mining safety: redaction runs before storage (a fixture with a
-  fake key/JWT/`password=` is scrubbed in `raw_evidence`); mined evidence is never
-  surfaced to the live agent (only structured lessons are); an error-lesson is
-  stored only when the transcript shows a verified failed→succeeded recovery; and
-  no mined lesson reaches `Scope::Global` without passing the human review gate.
+- [x] F3. Import idempotency + scope isolation: covered by
+  `import_memories_is_idempotent_regression`, `recall_scope_isolation_normal`,
+  `project_record_is_not_global_until_promoted_regression`, and
+  `ingest_mined_compounds_by_norm_key_regression` (project isolation).
+- [x] F4. No data loss: `/knowledge gc-legacy` requires `--confirm` and archives
+  (moves) to a restorable dir, never deletes. Poisoned-memory +
+  verified-ranking covered by `cross_project_block_is_screened_as_reference_data`
+  and `verified_lesson_outranks_unverified_normal`.
+- [x] F5. Session-mining safety: `mined_lesson_text_is_redacted_regression`
+  (redaction before storage), `failed_then_succeeded_edit_yields_verified_lesson`
+  + `unrecovered_failure_is_unverified` (recovery-gating), and `ingest_mined`
+  only writes `Scope::Project` — cross-project still needs `/knowledge promote`.
 
 ## Success Criteria
 

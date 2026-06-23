@@ -1,5 +1,6 @@
 //! Slash handlers: thin adapters to the cohesive `*_commands` modules.
 
+use super::knowledge::handle_knowledge_command;
 use super::{automation::*, github::*, local::*, mcp::*, worktree::*};
 use crate::commands::prelude::*;
 use crate::runtime::EngineEvent;
@@ -11,6 +12,22 @@ pub(super) async fn cmd_worktree(
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
     handle_worktree_command(state, parts.get(1).copied().unwrap_or("").trim()).await;
+}
+
+pub(super) async fn cmd_knowledge(
+    state: &mut EngineState,
+    _parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    // Pass the full argument string (everything after `/knowledge`) so
+    // multi-word subcommands like `gc-legacy --confirm` arrive intact.
+    let arg = text
+        .trim()
+        .strip_prefix("/knowledge")
+        .unwrap_or("")
+        .trim();
+    handle_knowledge_command(state, arg).await;
 }
 
 pub(super) async fn cmd_mcp(

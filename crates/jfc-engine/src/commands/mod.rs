@@ -14,6 +14,7 @@ pub mod github;
 pub mod inbox;
 pub mod inbox_helper;
 pub mod info;
+pub mod knowledge;
 pub mod local;
 pub mod markdown;
 pub mod mcp;
@@ -159,6 +160,7 @@ engine_commands! {
         "/mode" [] "switch permission mode (default/plan/accept/auto/bypass)" => cmd_mode,
         "/auto-mode" [] "toggle the autonomous tool classifier" => cmd_auto_mode,
         "/worktree" [] "create / list / remove a git worktree" => cmd_worktree,
+        "/knowledge" [] "cross-project memory: import|mine|list|gaps|promote|consolidate|status" => cmd_knowledge,
         "/mcp" [] "list / inspect configured MCP servers" => cmd_mcp,
         "/teleport" [] "jump into a teammate's context" => cmd_teleport,
         "/fleet" ["/fleetview"] "show the teammate fleet view" => cmd_fleet,

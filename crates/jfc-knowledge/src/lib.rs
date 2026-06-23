@@ -245,6 +245,13 @@ impl KnowledgeStore {
         query::gaps(&self.conn, limit)
     }
 
+    /// Permanently delete one record by id. Returns rows removed (0 or 1).
+    pub fn forget(&self, id: &str) -> Result<usize> {
+        Ok(self
+            .conn
+            .execute("DELETE FROM knowledge WHERE id = ?1", [id])?)
+    }
+
     /// Count of live (non-superseded) records — for tests/metrics.
     pub fn live_count(&self) -> Result<i64> {
         Ok(self.conn.query_row(
