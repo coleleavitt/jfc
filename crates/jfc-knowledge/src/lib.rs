@@ -213,14 +213,19 @@ impl KnowledgeStore {
     /// manual gate — the store grows its own cross-project knowledge from
     /// evidence, not from a human clicking promote. Returns the number promoted.
     ///
-    /// The bar is deliberately evidence-based (verified + repeated), so a noisy
-    /// one-off never leaks across projects; a genuinely recurring, confirmed
-    /// lesson does, automatically.
+    /// **Only *generalizable* kinds auto-promote.** A `Fact` is by definition
+    /// project-specific ("this repo uses vite", a path, a quirk) — promoting it
+    /// would poison every other project's recall with wrong-context truth, which
+    /// redaction can't catch (it guards secrets, not context). So auto-promotion
+    /// is restricted to `Finding`/`Skill`/`Convention`/`Preference` — lessons
+    /// whose value transfers. A project-specific fact can still be promoted
+    /// deliberately via `/knowledge promote <id>` (the human override stays).
     pub fn auto_promote(&self, min_support: i64) -> Result<usize> {
         let n = self.conn.execute(
             "UPDATE knowledge SET scope = 'global', project_key = NULL, promoted = 1 \
              WHERE scope = 'project' AND superseded_by IS NULL \
-               AND outcome = 'verified' AND use_count >= ?1",
+               AND outcome = 'verified' AND use_count >= ?1 \
+               AND kind IN ('finding','skill','convention','preference')",
             [min_support],
         )?;
         Ok(n)
@@ -280,6 +285,33 @@ impl KnowledgeStore {
             .execute("DELETE FROM knowledge WHERE id = ?1", [id])?)
     }
 
+    /// Whether an autonomous maintenance pass is due for `project_key` (no pass
+    /// within `throttle_ms`). True on the first ever run.
+    pub fn maintain_due(&self, project_key: &str, throttle_ms: i64) -> Result<bool> {
+        let last: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT last_run_ms FROM maintain_state WHERE project_key = ?1",
+                [project_key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(match last {
+            Some(ts) => record::now_ms() - ts >= throttle_ms,
+            None => true,
+        })
+    }
+
+    /// Record that a maintenance pass ran now for `project_key`.
+    pub fn stamp_maintain(&self, project_key: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO maintain_state (project_key, last_run_ms) VALUES (?1, ?2) \
+             ON CONFLICT(project_key) DO UPDATE SET last_run_ms = ?2",
+            rusqlite::params![project_key, record::now_ms()],
+        )?;
+        Ok(())
+    }
+
     /// Count of live (non-superseded) records — for tests/metrics.
     pub fn live_count(&self) -> Result<i64> {
         Ok(self.conn.query_row(
@@ -315,15 +347,23 @@ pub struct MaintainReport {
     pub auto_promoted: usize,
 }
 
+/// Minimum interval between autonomous maintenance passes (6 hours). A throttle
+/// stamp in the DB prevents re-mining 364 sessions on every startup.
+pub const MAINTAIN_THROTTLE_MS: i64 = 6 * 3600 * 1000;
+
 /// One self-driving maintenance pass over the default store — the function the
 /// engine fires in the background so the user never has to run `/knowledge`.
 ///
 /// It (1) imports legacy `.md` memories for `project_root`, (2) mines the user's
 /// session history into project lessons, (3) consolidates duplicates, and
-/// (4) auto-promotes verified, repeatedly-seen lessons to cross-project scope.
-/// Growth is **unbounded** — no decay/forget here. Redaction (in mining) and the
-/// recall-time injection screen still apply; those protect the user's secrets
-/// and can't be "expansion", so they stay.
+/// (4) auto-promotes verified, repeatedly-seen *generalizable* lessons to
+/// cross-project scope. Growth is **unbounded** — no decay/forget here.
+/// Redaction (in mining) and the recall-time injection screen still apply; those
+/// protect the user's secrets and can't be "expansion", so they stay.
+///
+/// **Throttled**: if a pass ran within [`MAINTAIN_THROTTLE_MS`], this is a no-op
+/// (returns a zero report) so startup never re-processes the whole corpus. Pass
+/// `force = true` (the `/knowledge mine` command) to bypass.
 ///
 /// `sessions_dir` and `user_memory_dir`/`project_memory_dir` are passed in so
 /// the caller owns path policy (and tests stay hermetic).
@@ -333,9 +373,36 @@ pub fn auto_maintain(
     user_memory_dir: Option<&Path>,
     project_memory_dir: Option<&Path>,
 ) -> Result<MaintainReport> {
+    auto_maintain_inner(project_root, sessions_dir, user_memory_dir, project_memory_dir, false)
+}
+
+/// Like [`auto_maintain`] but `force` bypasses the throttle (manual `/knowledge
+/// mine`).
+pub fn auto_maintain_forced(
+    project_root: &Path,
+    sessions_dir: Option<&Path>,
+    user_memory_dir: Option<&Path>,
+    project_memory_dir: Option<&Path>,
+) -> Result<MaintainReport> {
+    auto_maintain_inner(project_root, sessions_dir, user_memory_dir, project_memory_dir, true)
+}
+
+fn auto_maintain_inner(
+    project_root: &Path,
+    sessions_dir: Option<&Path>,
+    user_memory_dir: Option<&Path>,
+    project_memory_dir: Option<&Path>,
+    force: bool,
+) -> Result<MaintainReport> {
     let mut store = KnowledgeStore::open_default()?;
     let project = project::project_key(project_root);
     let mut report = MaintainReport::default();
+
+    // Throttle: skip if a pass ran recently (per-project stamp), unless forced.
+    if !force && !store.maintain_due(&project, MAINTAIN_THROTTLE_MS)? {
+        return Ok(report);
+    }
+    store.stamp_maintain(&project)?;
 
     // 1. Import legacy .md memories (idempotent; never deletes sources).
     let mut items = Vec::new();
@@ -667,33 +734,54 @@ mod tests {
     // global; an unverified or rarely-seen one does NOT.
     #[test]
     fn auto_promote_lifts_verified_repeated_lessons_normal() {
+        use crate::record::Kind;
         let store = KnowledgeStore::open_in_memory().unwrap();
-        // Verified + enough support → promoted.
-        let mut hot = rec(Scope::Project, Some("P"), "hot", "use ripgrep")
-            .with_outcome(Outcome::Verified);
+        let mk = |kind: Kind, title: &str, body: &str| {
+            KnowledgeRecord::new(kind, Scope::Project, Some("P".into()), title, body)
+        };
+        // Generalizable (Finding), verified + enough support → promoted.
+        let mut hot = mk(Kind::Finding, "hot", "use ripgrep").with_outcome(Outcome::Verified);
         hot.use_count = 3;
         store.insert(&hot).unwrap();
         // Verified but under the support bar → stays project.
-        let mut rare = rec(Scope::Project, Some("P"), "rare", "niche tip")
-            .with_outcome(Outcome::Verified);
+        let mut rare = mk(Kind::Finding, "rare", "niche tip").with_outcome(Outcome::Verified);
         rare.use_count = 1;
         store.insert(&rare).unwrap();
         // High support but unverified → stays project.
-        let mut noisy = rec(Scope::Project, Some("P"), "noisy", "unconfirmed");
+        let mut noisy = mk(Kind::Finding, "noisy", "unconfirmed");
         noisy.use_count = 9;
         store.insert(&noisy).unwrap();
+        // A project-specific FACT, verified + well-supported, must NOT auto-promote
+        // (it would poison other projects with wrong-context truth).
+        let mut fact = mk(Kind::Fact, "stack", "this repo uses vite").with_outcome(Outcome::Verified);
+        fact.use_count = 9;
+        store.insert(&fact).unwrap();
 
         let promoted = store.auto_promote(3).unwrap();
-        assert_eq!(promoted, 1, "only the verified, well-supported lesson promotes");
+        assert_eq!(promoted, 1, "only the verified, well-supported, generalizable lesson promotes");
 
         // The promoted one is now recalled from a DIFFERENT project.
         let other = crate::query::RecallFilter { project_key: Some("Q"), limit: 8 };
         let hits = store.recall("ripgrep", &other).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, hot.id);
-        // The unverified/rare ones did not leak.
+        // The unverified/rare/fact ones did not leak across projects.
         assert!(store.recall("niche", &other).unwrap().is_empty());
         assert!(store.recall("unconfirmed", &other).unwrap().is_empty());
+        assert!(store.recall("vite", &other).unwrap().is_empty(), "project-specific fact must not leak");
+    }
+
+    // The throttle prevents re-processing on a second startup within the window.
+    #[test]
+    fn maintain_throttle_blocks_rapid_repeat_normal() {
+        let store = KnowledgeStore::open_in_memory().unwrap();
+        assert!(store.maintain_due("P", MAINTAIN_THROTTLE_MS).unwrap(), "first run is due");
+        store.stamp_maintain("P").unwrap();
+        assert!(!store.maintain_due("P", MAINTAIN_THROTTLE_MS).unwrap(), "just-stamped is not due");
+        // A different project is independently due.
+        assert!(store.maintain_due("Q", MAINTAIN_THROTTLE_MS).unwrap());
+        // With a zero window, it's due again immediately.
+        assert!(store.maintain_due("P", 0).unwrap());
     }
 
     #[test]

@@ -82,6 +82,14 @@ const MIGRATIONS: &[&str] = &[
         resolved_by   TEXT
     );
     "#,
+    // v3 — per-project maintenance throttle stamp, so autonomous startup
+    // maintenance doesn't re-process the whole session corpus every launch.
+    r#"
+    CREATE TABLE maintain_state (
+        project_key  TEXT PRIMARY KEY,
+        last_run_ms  INTEGER NOT NULL
+    );
+    "#,
 ];
 
 /// The schema version this build expects (== number of migrations).

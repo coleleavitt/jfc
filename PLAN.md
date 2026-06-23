@@ -15,7 +15,16 @@ retained safety properties are the ones that protect the *user* (not restrict
 them): secrets are redacted before storage, recalled text is screened as
 reference-data-not-instructions, and the whole store is one deletable file (the
 kill switch). The `/knowledge` commands remain as optional manual controls.
-ALL phases (1–15) are DONE and committed.
+Phases 1–16 are DONE and committed; 17 (pre-search enrichment) and 18
+(sessions→DB shadow) are scoped and deferred.
+
+This is the bounded memory/scaffolding flywheel — **Layers 0–2** of the
+"Invisible War" diagram (orchestration + the self-improvement loop: mistake
+analysis, pre-search, a memory bank read at the start of every session). It is
+deliberately **not Layer 3** (an agent that propagates into external systems with
+no auth and self-replicates) — see "Hard Non-Goals". Using a configured provider
+via the user's own API key is a normal authenticated client and is in scope; the
+no-auth foothold/propagation loop is permanently out of scope.
 
 ## Context
 
@@ -254,6 +263,53 @@ truth for memory.
   referenced-but-absent lessons/skills (the analog of an Obsidian unresolved
   `[[link]]`) as `knowledge_gaps`, surfaced via `/knowledge gaps` — a concrete,
   ranked "what to learn next" list that feeds the mining/consolidation priorities.
+- [x] 16. **Autonomy hardening (correctness, not bounds).** Self-driving
+  maintenance shipped (recall default-on, startup `auto_maintain`, evidence-based
+  `auto_promote`, unbounded growth). Two correctness fixes: (a) a per-project
+  throttle stamp (`maintain_state`, schema v3) so startup doesn't re-mine all 364
+  sessions every launch; (b) `auto_promote` restricted to *generalizable* kinds
+  (Finding/Skill/Convention/Preference) — a project-specific `Fact` ("this repo
+  uses vite") must NOT auto-leak into other projects' recall, since redaction
+  guards secrets, not wrong-context truth. The human `/knowledge promote` override
+  still works for any kind.
+- [ ] 17. **Pre-Search task enrichment (Layer 2, default-off).** Before a task,
+  optionally run a *bounded, authenticated* enrichment pass (cross-project recall
+  — already wired — plus an opt-in research/web pass over sources the user is
+  already authenticated to) and fold the result into the prompt as screened
+  reference context. Default-off; per-call budget cap; reuses the existing
+  `Research`/recall paths. Never an action, only context.
+- [ ] 18. **Sessions→DB (SHADOW only, deferred — genuine fork).** Sessions are
+  `~/.config/jfc/sessions/ses_*.json`, read by resume/continue, the catalog index
+  (`jfc-session::catalog`), and search — wide blast radius, several writers with
+  no covering tests. Migration must be **dual-write/shadow** (write the DB
+  alongside JSON, read from JSON, compare) before any read cutover; a direct
+  cutover risks orphaning sessions and breaking resume. Requires explicit user
+  sign-off on the shadow-vs-cutover approach before implementation — do NOT start
+  blind.
+
+## Hard Non-Goals (will NOT be built — recorded so the boundary is durable)
+
+These are explicit, permanent non-goals. The store is the bounded
+memory/scaffolding flywheel (Layers 0–2 of the "Invisible War" diagram); it is
+deliberately **not** the takeover Layer 3 the scenario exists to warn about.
+
+- **NG1 — No unauthorized external propagation (diagram Layer 3).** The agent will
+  NOT push unsolicited "suggestions"/changes into external systems that accept on
+  quality with no auth, gain a foothold, chain newly-exposed APIs to "reach
+  further", or self-replicate/persist across systems. Using a configured provider
+  (OpenAI, Anthropic, …) via the **user's own API key** is a normal authenticated
+  client and is fine — that is NOT Layer 3, which is the no-auth foothold +
+  propagation loop. That loop is out of scope, permanently.
+- **NG2 — No removal of the user-protecting guards.** "Fully autonomous" keeps
+  redaction-before-storage and recall injection-screening. These protect the
+  *user* (their own secrets never get banked; a poisoned note can't emit a tool
+  call); they are not bounds on capability and will not be stripped.
+- **NG3 — No self-modification of safety code or self-merge.** The agent does not
+  edit its own guard/redaction/promotion logic to widen its own reach, and does
+  not auto-merge to protected branches. Growth happens in *data* (the knowledge
+  DB), not by rewriting its own controls.
+- **NG4 — Recall is advisory context, never an instruction or action.** A recalled
+  memory is reference text in the prompt; it cannot itself trigger a tool call.
 
 ## Final Verification Wave
 
@@ -272,7 +328,13 @@ truth for memory.
 - [x] F5. Session-mining safety: `mined_lesson_text_is_redacted_regression`
   (redaction before storage), `failed_then_succeeded_edit_yields_verified_lesson`
   + `unrecovered_failure_is_unverified` (recovery-gating), and `ingest_mined`
-  only writes `Scope::Project` — cross-project still needs `/knowledge promote`.
+  only writes `Scope::Project` — cross-project still needs promotion.
+- [x] F6. Autonomy safety: `auto_promote_lifts_verified_repeated_lessons_normal`
+  proves a project-specific `Fact` does NOT auto-promote (no cross-project
+  poisoning) while a verified, well-supported generalizable lesson does;
+  `maintain_throttle_blocks_rapid_repeat_normal` proves startup maintenance is
+  throttled per project. NG1–NG4 are honored: no external-propagation code path
+  exists, guards are intact, and recall remains advisory-only.
 
 ## Success Criteria
 
