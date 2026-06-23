@@ -1110,7 +1110,7 @@ pub(crate) async fn run(
                             handlers::ui_actions::handle_submit(&mut app, text, &tx).await?;
                         }
                         Some(crate::runtime::FrontendDirective::RunCommand(text)) => {
-                            crate::input::run_slash_command(&mut app, &text).await;
+                            crate::input::run_slash_command_with_tx(&mut app, &text, &tx).await;
                         }
                         None => {}
                     }

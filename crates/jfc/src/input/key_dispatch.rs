@@ -155,7 +155,7 @@ pub async fn handle_key(
     // Check before built-in bindings so users can override defaults.
     // Uses run_slash_command so actions stay in sync with their slash
     // counterparts automatically.
-    if let Some(result) = handle_configured_keybinding(app, key).await {
+    if let Some(result) = handle_configured_keybinding(app, key, tx).await {
         return result;
     }
 
@@ -284,17 +284,18 @@ fn toggle_syntax_highlighting(app: &mut App) {
 async fn handle_configured_keybinding(
     app: &mut App,
     key: event::KeyEvent,
+    tx: &mpsc::Sender<crate::runtime::EngineEvent>,
 ) -> Option<anyhow::Result<bool>> {
     use crate::keybindings::KeyAction;
     let action = crate::keybindings::lookup(&key)?;
     match action {
-        KeyAction::ToggleFastMode => run_slash_command(app, "/fast").await,
-        KeyAction::ClearHistory => run_slash_command(app, "/clear").await,
-        KeyAction::Compact => run_slash_command(app, "/compact").await,
+        KeyAction::ToggleFastMode => run_slash_command_with_tx(app, "/fast", tx).await,
+        KeyAction::ClearHistory => run_slash_command_with_tx(app, "/clear", tx).await,
+        KeyAction::Compact => run_slash_command_with_tx(app, "/compact", tx).await,
         KeyAction::OpenModelPicker => open_model_picker(app),
         KeyAction::CyclePermissionMode => cycle_permission_mode(app),
         KeyAction::ToggleSyntaxHighlighting => toggle_syntax_highlighting(app),
-        KeyAction::ToggleVerbose => run_slash_command(app, "/verbose").await,
+        KeyAction::ToggleVerbose => run_slash_command_with_tx(app, "/verbose", tx).await,
         KeyAction::Exit => return Some(Ok(true)),
         KeyAction::ToggleHelp => app.show_help = !app.show_help,
     }

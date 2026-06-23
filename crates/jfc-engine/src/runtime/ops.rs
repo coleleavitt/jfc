@@ -139,8 +139,9 @@ async fn spawn_compaction_worker(
                 let _ = tx_pre
                     .send(crate::runtime::EngineEvent::Compaction(
                         crate::runtime::CompactionEvent::Failed {
-                            reason: "Circuit breaker tripped — submit again with `/compact` if needed"
-                                .into(),
+                            reason:
+                                "Circuit breaker tripped — submit again with `/compact` if needed"
+                                    .into(),
                             calibrated_tokens: None,
                             transient: false,
                         },
@@ -218,7 +219,8 @@ async fn spawn_compaction_worker(
                     let _ = tx_pre
                         .send(crate::runtime::EngineEvent::Compaction(
                             crate::runtime::CompactionEvent::Failed {
-                                reason: "Provider does not support compaction for this model".into(),
+                                reason: "Provider does not support compaction for this model"
+                                    .into(),
                                 calibrated_tokens: Some(tool_ctx.approx_tokens),
                                 transient: false,
                             },
@@ -241,15 +243,18 @@ pub async fn start_manual_compaction(state: &mut EngineState, tx: &EventSender) 
             &mut state.toasts,
             crate::toast::Toast::new(
                 crate::toast::ToastKind::Warning,
-                "Compaction will start after the current turn finishes".into(),
+                "Compaction will start after the current turn finishes",
             ),
         );
         return false;
     }
 
     let est = state.tool_ctx.approx_tokens;
-    let level =
-        crate::compact::compact_level_with_output(est, state.max_context_tokens, state.max_output_tokens);
+    let level = crate::compact::compact_level_with_output(
+        est,
+        state.max_context_tokens,
+        state.max_output_tokens,
+    );
     tracing::info!(
         target: "jfc::compact",
         est,

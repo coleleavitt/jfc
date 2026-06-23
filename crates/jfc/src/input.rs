@@ -45,7 +45,7 @@ use jfc_core::*;
 
 // Re-export the public functions from sub-modules
 pub use key_dispatch::handle_key;
-pub use slash_commands::run_slash_command;
 pub(crate) use slash_commands::slash_commands_table;
 pub use slash_commands::url_encode;
+pub use slash_commands::{run_slash_command, run_slash_command_with_tx};
 pub use submit::handle_submit_text;

@@ -203,14 +203,6 @@ pub fn handle_redacted_thinking(state: &mut EngineState, data: String) {
     }
 }
 
-/// Accumulate a server-authoritative thinking-token estimate
-/// (`thinking_delta.estimated_tokens`). During *summarized* or *redacted*
-/// thinking the API streams these estimates without any visible reasoning
-/// text, so `handle_chunk` never fires and the spinner would otherwise show
-/// no thinking activity at all. Marking `thinking_started_at` here lets the
-/// `thinking …` verb surface during that phase, and the running total feeds
-/// the `⟳ N thinking` chip. Mirrors cli.js's `thinkingTokenEstimate +=`
-/// accumulation (cli.beautified.js:574722).
 pub fn handle_thinking_tokens(state: &mut EngineState, token_delta: u32) {
     state.record_stream_activity();
     state.stream_lifecycle = None;
@@ -228,11 +220,6 @@ pub fn handle_thinking_tokens(state: &mut EngineState, token_delta: u32) {
     state.streaming_thinking_tokens = state
         .streaming_thinking_tokens
         .saturating_add(token_delta as u64);
-    let progress_bytes =
-        usize::try_from(token_delta).map_or(usize::MAX, |tokens| tokens.saturating_mul(4));
-    state.streaming_response_bytes = state
-        .streaming_response_bytes
-        .saturating_add(progress_bytes);
 }
 
 pub fn handle_response_id(state: &mut EngineState, id: String) {
@@ -370,18 +357,21 @@ mod tests {
 
         assert_eq!(
             state.streaming_response_bytes, 0,
-            "Claude 2.1.177 drives responseLengthRef for thinking from token estimates, not raw reasoning bytes"
+            "reasoning text should not be counted as visible output"
         );
         assert_eq!(state.streaming_reasoning, "thinking text");
     }
 
     #[test]
-    fn thinking_tokens_floor_response_length_normal() {
+    fn thinking_tokens_do_not_count_as_output_regression() {
         let mut state = test_app();
 
         handle_thinking_tokens(&mut state, 12);
 
         assert_eq!(state.streaming_thinking_tokens, 12);
-        assert_eq!(state.streaming_response_bytes, 48);
+        assert_eq!(
+            state.streaming_response_bytes, 0,
+            "thinking tokens are shown in the thinking chip, not as output tokens"
+        );
     }
 }

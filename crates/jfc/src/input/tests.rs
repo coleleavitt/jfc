@@ -2355,6 +2355,31 @@ async fn slash_compact_sets_pending_robust() {
 }
 
 #[tokio::test]
+async fn slash_compact_with_runtime_channel_starts_immediately_regression() {
+    let mut app = test_app();
+    let (tx, mut rx) = channel();
+
+    run_slash_command_with_tx(&mut app, "/compact", &tx).await;
+
+    assert!(!app.engine.force_compact_pending);
+    assert!(app.engine.compacting_started_at.is_some());
+    assert!(
+        !app.engine.messages.iter().any(|message| message
+            .parts
+            .iter()
+            .any(|part| part.text_only().contains("/compact"))),
+        "local /compact must not leak into the transcript"
+    );
+    assert!(matches!(
+        rx.recv().await,
+        Some(EngineEvent::Compaction(
+            jfc_engine::runtime::CompactionEvent::Started
+        ))
+    ));
+    app.engine.cancel_token.cancel();
+}
+
+#[tokio::test]
 async fn slash_unknown_emits_assistant_message_robust() {
     let mut app = test_app();
     run_slash_command(&mut app, "/no-such-thing").await;
