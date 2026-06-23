@@ -1783,6 +1783,73 @@ pub(super) async fn cmd_brief(
     state.messages.push(ChatMessage::assistant(msg.to_string()));
 }
 
+/// `/imode [code|fast|chat|brainstorm]` — set the sticky interaction mode (the
+/// Junie-style behavioral mode applied to subsequent turns). Named `/imode` to
+/// avoid colliding with `/mode` (permission mode). With no argument, reports the
+/// current mode and the valid options. `/imode code` (or `default`) clears any
+/// explicit override back to the silent default.
+pub(super) async fn cmd_interaction_mode(
+    state: &mut EngineState,
+    parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    use crate::interaction_mode::InteractionMode;
+
+    let arg = parts.get(1).copied().unwrap_or("").trim();
+    if arg.is_empty() {
+        let current = state
+            .interaction_mode
+            .map(|m| m.label())
+            .unwrap_or("Default (Code)");
+        state.messages.push(ChatMessage::assistant(format!(
+            "Interaction mode: {current}.\n\n\
+             Set one with `/mode <code|fast|chat|brainstorm>`:\n\
+             - code — implement, full edits (default)\n\
+             - fast — smallest correct change, no refactors\n\
+             - chat — answer/explain, no edits this turn\n\
+             - brainstorm — ask clarifying questions before large new work"
+        )));
+        return;
+    }
+
+    match InteractionMode::parse(arg) {
+        Some(InteractionMode::Code) => {
+            // Code is the silent default; clear the explicit override entirely.
+            state.interaction_mode = None;
+            state.active_interaction_mode = InteractionMode::Code;
+            state.messages.push(ChatMessage::assistant(
+                "Interaction mode set to Code (default). No extra guidance is \
+                 added to turns."
+                    .to_string(),
+            ));
+        }
+        Some(mode) => {
+            state.interaction_mode = Some(mode);
+            // Apply immediately so the next turn (and the status row) reflect it
+            // without waiting for the submit-time resolve.
+            state.active_interaction_mode = mode;
+            let desc = match mode {
+                InteractionMode::Fast => "smallest correct change; no refactors or scope creep",
+                InteractionMode::Chat => "answer/explain only; no file edits this turn",
+                InteractionMode::Brainstorm => {
+                    "ask clarifying questions before starting large new work"
+                }
+                InteractionMode::Code => unreachable!(),
+            };
+            state.messages.push(ChatMessage::assistant(format!(
+                "Interaction mode set to {} — {desc}.",
+                mode.label()
+            )));
+        }
+        None => {
+            state.messages.push(ChatMessage::assistant(format!(
+                "Unknown mode `{arg}`. Valid modes: code, fast, chat, brainstorm."
+            )));
+        }
+    }
+}
+
 pub(super) async fn cmd_autoloop(
     state: &mut EngineState,
     parts: &[&str],

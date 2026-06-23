@@ -810,23 +810,54 @@ impl AutoReviewMode {
 }
 
 fn auto_review_mode() -> AutoReviewMode {
-    match std::env::var("JFC_AUTO_REVIEW") {
-        Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
-            "0" | "false" | "off" | "no" => AutoReviewMode::Off,
-            "manual" => AutoReviewMode::Manual,
-            "always" | "1" | "true" | "on" | "yes" => AutoReviewMode::Always,
-            "smart" | "" => AutoReviewMode::Smart,
-            other => {
-                tracing::warn!(
-                    target: "jfc::auto_review",
-                    value = other,
-                    "unknown JFC_AUTO_REVIEW mode; using smart"
-                );
-                AutoReviewMode::Smart
-            }
-        },
-        Err(_) => AutoReviewMode::Smart,
+    // Precedence: the `JFC_AUTO_REVIEW` env var always wins (per-invocation
+    // override, back-compat). Otherwise fall back to the `[argus_auto_review]`
+    // section of config.toml so users can turn auto-review off durably (some
+    // people find it slow/noisy). With neither set, the default is Smart —
+    // byte-identical to prior behavior.
+    if let Ok(value) = std::env::var("JFC_AUTO_REVIEW") {
+        return parse_auto_review_mode(value.trim());
     }
+    auto_review_mode_from_config(&crate::config::load_arc())
+}
+
+/// Parse one mode token (shared by the env var and the config `mode` field).
+fn parse_auto_review_mode(value: &str) -> AutoReviewMode {
+    match value.to_ascii_lowercase().as_str() {
+        "0" | "false" | "off" | "no" | "disabled" => AutoReviewMode::Off,
+        "manual" => AutoReviewMode::Manual,
+        "always" | "1" | "true" | "on" | "yes" => AutoReviewMode::Always,
+        "smart" | "" => AutoReviewMode::Smart,
+        other => {
+            tracing::warn!(
+                target: "jfc::auto_review",
+                value = other,
+                "unknown auto-review mode; using smart"
+            );
+            AutoReviewMode::Smart
+        }
+    }
+}
+
+/// Resolve the mode from config when no env override is present.
+///
+/// `[argus_auto_review]` semantics:
+///   - absent section            → Smart (default; unchanged behavior)
+///   - `enabled = false`         → Off  (the user opt-out this adds)
+///   - `enabled = true`/omitted  → Smart
+///   - `mode = "off|manual|always|smart"` → that mode (takes precedence over
+///                                          `enabled` so `mode` is the precise knob)
+fn auto_review_mode_from_config(cfg: &jfc_config::Config) -> AutoReviewMode {
+    let Some(argus) = cfg.argus_auto_review.as_ref() else {
+        return AutoReviewMode::Smart;
+    };
+    if let Some(mode) = argus.mode.as_deref().filter(|m| !m.trim().is_empty()) {
+        return parse_auto_review_mode(mode.trim());
+    }
+    if argus.enabled == Some(false) {
+        return AutoReviewMode::Off;
+    }
+    AutoReviewMode::Smart
 }
 
 /// Whether to run deterministic proof oracles (cargo test/clippy) before the
@@ -1323,6 +1354,93 @@ mod tests {
             );
         }
         unsafe { std::env::remove_var("JFC_AUTO_REVIEW") };
+    }
+
+    // Config-driven mode resolution (the new opt-out). Pure function over a
+    // `Config` value — no env, no global state, so it's race-free.
+    #[test]
+    fn auto_review_mode_from_config_resolves_opt_out_normal() {
+        use jfc_config::{ArgusAutoReviewConfig, Config};
+
+        // Absent section → Smart (unchanged default).
+        let mut cfg = Config::default();
+        cfg.argus_auto_review = None;
+        assert!(matches!(
+            auto_review_mode_from_config(&cfg),
+            AutoReviewMode::Smart
+        ));
+
+        // enabled = false → Off (the user opt-out).
+        cfg.argus_auto_review = Some(ArgusAutoReviewConfig {
+            enabled: Some(false),
+            ..Default::default()
+        });
+        assert!(matches!(
+            auto_review_mode_from_config(&cfg),
+            AutoReviewMode::Off
+        ));
+
+        // enabled = true → Smart.
+        cfg.argus_auto_review = Some(ArgusAutoReviewConfig {
+            enabled: Some(true),
+            ..Default::default()
+        });
+        assert!(matches!(
+            auto_review_mode_from_config(&cfg),
+            AutoReviewMode::Smart
+        ));
+
+        // Setting only an unrelated field (model) must NOT disable the feature
+        // (this is why `enabled` is Option<bool>, not bool).
+        cfg.argus_auto_review = Some(ArgusAutoReviewConfig {
+            model: Some("haiku".into()),
+            ..Default::default()
+        });
+        assert!(matches!(
+            auto_review_mode_from_config(&cfg),
+            AutoReviewMode::Smart
+        ));
+    }
+
+    #[test]
+    fn auto_review_mode_from_config_mode_field_takes_precedence_robust() {
+        use jfc_config::{ArgusAutoReviewConfig, Config};
+
+        // `mode` wins over `enabled`: enabled=true but mode="off" → Off.
+        let mut cfg = Config::default();
+        cfg.argus_auto_review = Some(ArgusAutoReviewConfig {
+            enabled: Some(true),
+            mode: Some("off".into()),
+            ..Default::default()
+        });
+        assert!(matches!(
+            auto_review_mode_from_config(&cfg),
+            AutoReviewMode::Off
+        ));
+
+        // Every recognized mode token parses.
+        for (m, is_always, is_manual) in
+            [("always", true, false), ("manual", false, true)]
+        {
+            cfg.argus_auto_review = Some(ArgusAutoReviewConfig {
+                mode: Some(m.into()),
+                ..Default::default()
+            });
+            let mode = auto_review_mode_from_config(&cfg);
+            assert_eq!(matches!(mode, AutoReviewMode::Always), is_always, "{m}");
+            assert_eq!(matches!(mode, AutoReviewMode::Manual), is_manual, "{m}");
+        }
+
+        // An empty/whitespace mode string falls through to the `enabled` check.
+        cfg.argus_auto_review = Some(ArgusAutoReviewConfig {
+            enabled: Some(false),
+            mode: Some("   ".into()),
+            ..Default::default()
+        });
+        assert!(matches!(
+            auto_review_mode_from_config(&cfg),
+            AutoReviewMode::Off
+        ));
     }
 
     #[test]

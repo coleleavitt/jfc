@@ -188,6 +188,7 @@ pub mod hooks {
 pub mod idle_prefetch;
 pub mod ids;
 pub mod inline_tools;
+pub mod interaction_mode;
 #[cfg(feature = "intent-gate")]
 pub mod intent;
 pub mod keywords;

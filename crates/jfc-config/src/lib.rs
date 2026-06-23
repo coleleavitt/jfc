@@ -977,11 +977,22 @@ impl Default for BackgroundTaskConfig {
     }
 }
 
-/// Argus auto-review configuration.
+/// Argus auto-review configuration (`[argus_auto_review]` in config.toml).
+///
+/// All fields are optional so a user can set just one knob. The engine resolves
+/// the effective on/off state with this precedence (see
+/// `jfc_engine::auto_review::auto_review_mode`): the `JFC_AUTO_REVIEW` env var
+/// wins, then `mode`, then `enabled`, then the built-in default (Smart).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ArgusAutoReviewConfig {
+    /// Master on/off switch. `Some(false)` turns auto-review off durably (the
+    /// opt-out for users who find it slow/noisy); `Some(true)` or omitted keeps
+    /// the default. Distinct from `None` (omitted) so setting only `model` does
+    /// not silently disable the feature.
     #[serde(default)]
-    pub enabled: bool,
+    pub enabled: Option<bool>,
+    /// Explicit mode override: `off` | `manual` | `smart` | `always`. Takes
+    /// precedence over `enabled` when set, so it is the precise knob.
     #[serde(default)]
     pub mode: Option<String>,
     #[serde(default)]

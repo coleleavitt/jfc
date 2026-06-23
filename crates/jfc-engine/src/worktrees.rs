@@ -688,7 +688,21 @@ mod tests {
     /// something to operate on. Returns true on success, false otherwise so
     /// callers can skip without failing.
     fn init_git_repo(dir: &Path) -> bool {
+        // Keep temp repos hermetic: a developer's *global* git config (a
+        // `core.hooksPath` commit-msg linter, `commit.gpgsign`, etc.) must not
+        // leak in and fail the seed commit (which would silently skip dependent
+        // tests). Per-invocation `-c` overrides take precedence over
+        // global/system config and are cross-platform.
+        let hermetic = [
+            "-c",
+            "core.hooksPath=",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "tag.gpgsign=false",
+        ];
         let ok = Command::new("git")
+            .args(hermetic)
             .args(["init", "-q", "--initial-branch=main"])
             .current_dir(dir)
             .status()
@@ -711,10 +725,12 @@ mod tests {
         // valid base ref.
         std::fs::write(dir.join("seed.txt"), "x").ok();
         let _ = Command::new("git")
+            .args(hermetic)
             .args(["add", "."])
             .current_dir(dir)
             .status();
         Command::new("git")
+            .args(hermetic)
             .args(["commit", "-q", "-m", "seed"])
             .current_dir(dir)
             .status()

@@ -121,6 +121,71 @@ impl Guard for WiringGuard {
     }
 }
 
+/// Post-edit diagnostics guard (Junie `ErrorCheckingService` parity, phase 1).
+///
+/// Surfaces *already-known* compiler/LSP diagnostics for the file the agent just
+/// edited, inline in the edit's tool result, so the model self-corrects on the
+/// SAME turn instead of only seeing them in the next turn's prompt seed.
+///
+/// Phase 1 is deliberately **snapshot-only**: it reads
+/// [`crate::diagnostics::global_snapshot`] (populated by the existing cargo-check
+/// producer / LSP push) and never compiles anything itself. A real type-check
+/// (`cargo check`, seconds) can NOT run on this synchronous 2s-budgeted path —
+/// see `docs/jfc-post-edit-diagnostics.md` §3.1 — so type-checking stays on the
+/// existing async producer. This guard adds ~zero latency: it's a vector filter.
+///
+/// Off by default. Opt in with `JFC_POST_EDIT_DIAGNOSTICS=1` so the default
+/// post-edit pipeline stays byte-identical until the §7 baseline A/B justifies it.
+pub struct DiagnosticsGuard;
+
+impl DiagnosticsGuard {
+    /// Runtime opt-in. Mirrors the `JFC_DISABLE_CARGO_CHECK` / voice-neural gate
+    /// style: a single env flag, default off.
+    pub fn enabled() -> bool {
+        matches!(
+            std::env::var("JFC_POST_EDIT_DIAGNOSTICS").as_deref(),
+            Ok("1") | Ok("true")
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl Guard for DiagnosticsGuard {
+    fn name(&self) -> &'static str {
+        "diagnostics"
+    }
+
+    async fn check(&self, ctx: &GuardContext<'_>) -> Vec<SlopFinding> {
+        if !Self::enabled() {
+            return Vec::new();
+        }
+        let entries = crate::diagnostics::global_snapshot();
+        if entries.is_empty() {
+            return Vec::new();
+        }
+        // Match the edited file the same way the LSP `diagnostics` tool does:
+        // exact absolute-path match first, then a basename fallback (snapshots
+        // can carry differently-rooted absolute paths across producers/OSes).
+        let file_str = ctx.file_path.display().to_string();
+        let mut matched: Vec<&crate::diagnostics::DiagnosticEntry> =
+            entries.iter().filter(|e| e.file == file_str).collect();
+        if matched.is_empty()
+            && let Some(name) = ctx.file_path.file_name().and_then(|s| s.to_str())
+        {
+            matched = entries.iter().filter(|e| e.file.ends_with(name)).collect();
+        }
+        matched
+            .into_iter()
+            .map(|e| SlopFinding {
+                rule: "diagnostics".into(),
+                message: crate::diagnostics::format_entry(e).trim().to_owned(),
+                file: Some(e.file.clone()),
+                line: Some(e.line as usize),
+            })
+            .collect()
+    }
+}
+
 /// Runs a set of guards over one edit and merges their findings.
 pub struct GuardPipeline {
     guards: Vec<Box<dyn Guard>>,
@@ -138,11 +203,15 @@ impl GuardPipeline {
         Self { guards: Vec::new() }
     }
 
-    /// The default post-edit pipeline: slop checks plus the wiring guard.
+    /// The default post-edit pipeline: slop checks, the wiring guard, and the
+    /// (opt-in) diagnostics guard. `DiagnosticsGuard` self-skips unless
+    /// `JFC_POST_EDIT_DIAGNOSTICS=1`, so registering it here is free until
+    /// enabled.
     pub fn with_default_guards() -> Self {
         Self::new()
             .with_guard(Box::new(SlopGuard))
             .with_guard(Box::new(WiringGuard))
+            .with_guard(Box::new(DiagnosticsGuard))
     }
 
     pub fn with_guard(mut self, guard: Box<dyn Guard>) -> Self {
@@ -233,5 +302,141 @@ mod tests {
         let report = GuardPipeline::new().run(&ctx).await;
         assert!(!report.has_findings);
         assert!(report.findings.is_empty());
+    }
+
+    // ── DiagnosticsGuard (post-edit diagnostics, phase 1) ──────────────────
+    //
+    // These mutate two process-global resources — the diagnostics snapshot and
+    // the `JFC_POST_EDIT_DIAGNOSTICS` env flag — so they run under one mutex and
+    // restore both on exit. Distinct per-test basenames keep the snapshot filter
+    // from cross-matching.
+    use std::sync::Mutex as StdMutex;
+    static DIAG_GUARD_LOCK: StdMutex<()> = StdMutex::new(());
+
+    fn diag_entry(file: &str, line: u32, msg: &str) -> crate::diagnostics::DiagnosticEntry {
+        crate::diagnostics::DiagnosticEntry {
+            file: file.to_owned(),
+            line,
+            col: 1,
+            message: msg.to_owned(),
+            code: None,
+            source: Some("rustc".into()),
+            severity: crate::diagnostics::Severity::Error,
+        }
+    }
+
+    /// Run `body` with the opt-in flag forced on and the snapshot set, restoring
+    /// both afterward. Guards against a poisoned lock so one failing test can't
+    /// cascade.
+    async fn with_diag_env<F, Fut>(snapshot: Vec<crate::diagnostics::DiagnosticEntry>, body: F)
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = ()>,
+    {
+        let _g = DIAG_GUARD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_flag = std::env::var("JFC_POST_EDIT_DIAGNOSTICS").ok();
+        let prev_snapshot = crate::diagnostics::global_snapshot();
+        // SAFETY: env mutation is serialized by DIAG_GUARD_LOCK and restored below.
+        unsafe { std::env::set_var("JFC_POST_EDIT_DIAGNOSTICS", "1") };
+        crate::diagnostics::set_global_snapshot(snapshot);
+
+        body().await;
+
+        crate::diagnostics::set_global_snapshot(prev_snapshot);
+        unsafe {
+            match prev_flag {
+                Some(v) => std::env::set_var("JFC_POST_EDIT_DIAGNOSTICS", v),
+                None => std::env::remove_var("JFC_POST_EDIT_DIAGNOSTICS"),
+            }
+        }
+    }
+
+    // Normal: a known snapshot error for the edited file is surfaced inline.
+    #[tokio::test]
+    async fn diagnostics_guard_surfaces_known_snapshot_entry_for_edited_file_normal() {
+        let cwd = std::env::temp_dir();
+        let path = cwd.join("dg_surfaced_unit.rs");
+        let file_str = path.display().to_string();
+        with_diag_env(vec![diag_entry(&file_str, 12, "unresolved import `foo`")], || async {
+            let ctx = GuardContext::new(&path, "use foo;", None, &cwd);
+            let findings = DiagnosticsGuard.check(&ctx).await;
+            assert_eq!(findings.len(), 1, "{findings:?}");
+            assert_eq!(findings[0].rule, "diagnostics");
+            assert!(findings[0].message.contains("unresolved import"), "{:?}", findings[0]);
+            assert_eq!(findings[0].line, Some(12));
+        })
+        .await;
+    }
+
+    // Robust: snapshot entries for OTHER files must not leak onto this edit.
+    #[tokio::test]
+    async fn diagnostics_guard_ignores_entries_for_other_files_robust() {
+        let cwd = std::env::temp_dir();
+        let edited = cwd.join("dg_edited_unit.rs");
+        let other = cwd.join("dg_other_unit.rs");
+        let other_str = other.display().to_string();
+        with_diag_env(vec![diag_entry(&other_str, 3, "mismatched types")], || async {
+            let ctx = GuardContext::new(&edited, "fn x() {}", None, &cwd);
+            let findings = DiagnosticsGuard.check(&ctx).await;
+            assert!(findings.is_empty(), "other-file diagnostics leaked: {findings:?}");
+        })
+        .await;
+    }
+
+    // Robust: an empty snapshot produces no findings (no noise on clean trees).
+    #[tokio::test]
+    async fn diagnostics_guard_empty_snapshot_is_silent_robust() {
+        let cwd = std::env::temp_dir();
+        let path = cwd.join("dg_empty_unit.rs");
+        with_diag_env(Vec::new(), || async {
+            let ctx = GuardContext::new(&path, "fn x() {}", None, &cwd);
+            assert!(DiagnosticsGuard.check(&ctx).await.is_empty());
+        })
+        .await;
+    }
+
+    // Regression: with the opt-in flag OFF, the guard is inert even when the
+    // snapshot has a matching entry — guarantees the default pipeline is
+    // byte-identical to pre-feature behavior.
+    #[tokio::test]
+    async fn diagnostics_guard_disabled_by_default_regression() {
+        let _g = DIAG_GUARD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_flag = std::env::var("JFC_POST_EDIT_DIAGNOSTICS").ok();
+        let prev_snapshot = crate::diagnostics::global_snapshot();
+        let cwd = std::env::temp_dir();
+        let path = cwd.join("dg_disabled_unit.rs");
+        let file_str = path.display().to_string();
+        // SAFETY: serialized by DIAG_GUARD_LOCK; restored below.
+        unsafe { std::env::remove_var("JFC_POST_EDIT_DIAGNOSTICS") };
+        crate::diagnostics::set_global_snapshot(vec![diag_entry(&file_str, 1, "boom")]);
+
+        let ctx = GuardContext::new(&path, "fn x() {}", None, &cwd);
+        let findings = DiagnosticsGuard.check(&ctx).await;
+        assert!(findings.is_empty(), "guard ran while disabled: {findings:?}");
+
+        crate::diagnostics::set_global_snapshot(prev_snapshot);
+        unsafe {
+            if let Some(v) = prev_flag {
+                std::env::set_var("JFC_POST_EDIT_DIAGNOSTICS", v);
+            }
+        }
+    }
+
+    // Matches the basename fallback the LSP tool uses: a snapshot entry whose
+    // path differs in root but shares the basename still matches.
+    #[tokio::test]
+    async fn diagnostics_guard_basename_fallback_matches_normal() {
+        let cwd = std::env::temp_dir();
+        let path = cwd.join("dg_basename_unit.rs");
+        // Snapshot path has a different absolute root but the same basename.
+        with_diag_env(
+            vec![diag_entry("/elsewhere/proj/dg_basename_unit.rs", 7, "type error")],
+            || async {
+                let ctx = GuardContext::new(&path, "fn x() {}", None, &cwd);
+                let findings = DiagnosticsGuard.check(&ctx).await;
+                assert_eq!(findings.len(), 1, "basename fallback failed: {findings:?}");
+            },
+        )
+        .await;
     }
 }

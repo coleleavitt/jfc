@@ -873,7 +873,21 @@ mod tests {
     }
 
     async fn git(args: &[&str], dir: &Path) {
+        // Keep temp repos hermetic: a developer's *global* git config (a
+        // `core.hooksPath` commit-msg linter, `commit.gpgsign`, etc.) must not
+        // leak in and fail an otherwise-clean temp commit. Per-invocation `-c`
+        // overrides take precedence over global/system config and are
+        // cross-platform — empty `core.hooksPath` disables inherited hooks and
+        // `*.gpgsign=false` disables inherited commit/tag signing.
         let ok = tokio::process::Command::new("git")
+            .args([
+                "-c",
+                "core.hooksPath=",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "tag.gpgsign=false",
+            ])
             .arg("-C")
             .arg(dir)
             .args(args)

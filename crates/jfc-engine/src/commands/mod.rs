@@ -103,6 +103,7 @@ engine_commands! {
         "/council" [] "council: one-shot fan-out (`/council <q>`) or a turn-based session (`/council start <topic>`, then continue/consensus/verdict)" => cmd_council,
         "/research" [] "deep research: plan sub-queries, search the web in steps, synthesise (`/research <question>`)" => cmd_research,
         "/brief" [] "toggle brief-only mode (hide plain text, only show SendUserMessage output)" => cmd_brief,
+        "/imode" ["/interaction-mode"] "set the interaction mode (`/imode code|fast|chat|brainstorm`)" => cmd_interaction_mode,
         "/autoloop" [] "start an autonomous loop tick (reads loop.md)" => cmd_autoloop,
         "/sandbox" [] "toggle bash sandbox (bwrap network isolation)" => cmd_sandbox,
         "/team-onboarding" [] "generate a team onboarding guide from project state" => cmd_team_onboarding,

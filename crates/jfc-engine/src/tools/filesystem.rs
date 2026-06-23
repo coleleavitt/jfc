@@ -493,6 +493,71 @@ fn unescape_literal(s: &str) -> Option<String> {
     changed.then_some(out)
 }
 
+/// Strip a uniform leading line-number gutter that a model echoed back from
+/// Read output into `old_string`. JFC's `execute_read` numbers lines as
+/// `"{n}: {line}"` (`42: code`), and `cat -n` / many editors use `{n}\t` or
+/// `{n} | `. When a model copies a numbered block verbatim, every tier above
+/// fails because that `42: ` prefix is not in the file.
+///
+/// Returns the de-numbered needle only when **every** non-blank line carries a
+/// leading-integer gutter in one of the recognized shapes — so we never strip a
+/// real line that merely happens to start with a digit (e.g. `3.14 = pi`). The
+/// gutter forms recognized, after optional leading spaces, are:
+///   - `N: `  (JFC Read)            - `N:\t` / `N\t` (cat -n style)
+///   - `N | ` / `N |` (editor gutters)
+/// Mirrors Junie's `SearchReplaceLineNumbersRemovingMatcher`.
+fn strip_line_number_prefixes(needle: &str) -> Option<String> {
+    fn strip_one(line: &str) -> Option<&str> {
+        let trimmed = line.trim_start_matches(' ');
+        let digits_end = trimmed.find(|c: char| !c.is_ascii_digit())?;
+        if digits_end == 0 {
+            return None; // no leading integer
+        }
+        let rest = &trimmed[digits_end..];
+        // Accept the separators a numbered gutter uses, and require it to be
+        // followed by a space/tab (or end of line) so we don't eat `42:foo`
+        // style real content like a Rust label or `3:30pm`.
+        if let Some(after) = rest.strip_prefix(':') {
+            return after
+                .strip_prefix(' ')
+                .or_else(|| after.strip_prefix('\t'))
+                .or(after.is_empty().then_some(after));
+        }
+        if let Some(after) = rest.strip_prefix('\t') {
+            return Some(after);
+        }
+        if let Some(after) = rest.strip_prefix(" | ").or_else(|| rest.strip_prefix(" |")) {
+            return Some(after);
+        }
+        None
+    }
+
+    let mut changed = false;
+    let mut out = String::with_capacity(needle.len());
+    let mut saw_numbered_line = false;
+    for (i, line) in needle.lines().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        if line.trim().is_empty() {
+            // Blank lines carry no gutter; keep them as-is without vetoing.
+            out.push_str(line);
+            continue;
+        }
+        match strip_one(line) {
+            Some(rest) => {
+                saw_numbered_line = true;
+                changed |= rest.len() != line.len();
+                out.push_str(rest);
+            }
+            // A single non-blank line without a gutter means this is not a
+            // uniformly-numbered block — abort so we don't corrupt content.
+            None => return None,
+        }
+    }
+    (changed && saw_numbered_line).then_some(out)
+}
+
 /// Locate `needle` in `haystack`, tolerant of whitespace/unicode drift and — as
 /// a final tier — of over-escaped model output (literal `\n` etc.). Returns a
 /// byte range only when the match is unique.
@@ -501,10 +566,32 @@ fn locate_whitespace_insensitive(haystack: &str, needle: &str) -> WsMatch {
         WsMatch::None => {
             // Tier 3: the model emitted literal escape sequences (e.g. "\n" as
             // two characters) instead of real newlines. Retry once unescaped.
-            match unescape_literal(needle) {
-                Some(unescaped) => locate_ws_core(haystack, &unescaped),
-                None => WsMatch::None,
+            if let Some(unescaped) = unescape_literal(needle)
+                && let hit @ (WsMatch::Unique(_) | WsMatch::Ambiguous(_)) =
+                    locate_ws_core(haystack, &unescaped)
+            {
+                return hit;
             }
+            // Tier 4: the model copied Read's `"{n}: "` line-number gutter (or a
+            // `cat -n`/editor gutter) into old_string. Strip a uniform numeric
+            // prefix and retry. A pasted numbered block can carry BOTH defects
+            // at once (literal `\n` *and* gutters), and the gutter stripper is
+            // per-line, so it needs real line breaks to see each `N:` — meaning
+            // unescaping must happen BEFORE stripping. Try the gutter strip on
+            // the raw needle first, then on the unescaped form.
+            let candidates = [
+                Some(std::borrow::Cow::Borrowed(needle)),
+                unescape_literal(needle).map(std::borrow::Cow::Owned),
+            ];
+            for cand in candidates.into_iter().flatten() {
+                if let Some(stripped) = strip_line_number_prefixes(&cand)
+                    && let hit @ (WsMatch::Unique(_) | WsMatch::Ambiguous(_)) =
+                        locate_ws_core(haystack, &stripped)
+                {
+                    return hit;
+                }
+            }
+            WsMatch::None
         }
         other => other,
     }

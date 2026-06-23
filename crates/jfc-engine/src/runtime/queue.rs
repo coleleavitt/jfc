@@ -174,6 +174,7 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
         max_thinking_tokens: state.cli_max_thinking_tokens,
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
+        interaction_mode: state.active_interaction_mode,
         context_hint_tokens_saved: state.take_context_hint_tokens_saved(),
         last_usage_input_tokens: Some(state.last_usage_input as u64),
         context_window_tokens: Some(state.max_context_tokens as u64),

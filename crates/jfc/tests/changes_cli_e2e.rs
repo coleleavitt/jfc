@@ -15,7 +15,21 @@ fn jfc() -> Command {
 }
 
 fn git(args: &[&str], dir: &Path) {
+    // Keep the repo truly hermetic: a developer's *global* git config (a
+    // `core.hooksPath` commit-msg linter, `commit.gpgsign`, etc.) must not leak
+    // in and fail an otherwise-clean temp commit. Per-invocation `-c` overrides
+    // take precedence over global/system config and are cross-platform (no
+    // `/dev/null` env tricks): empty `core.hooksPath` disables inherited hooks,
+    // and `*.gpgsign=false` disables inherited commit/tag signing.
     let ok = Command::new("git")
+        .args([
+            "-c",
+            "core.hooksPath=",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "tag.gpgsign=false",
+        ])
         .args(args)
         .current_dir(dir)
         .status()

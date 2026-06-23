@@ -1703,6 +1703,135 @@ fn apply_one_edit_ambiguous_and_missing_fail_robust() {
     assert!(err.contains("matched"), "{err}");
 }
 
+#[test]
+fn apply_one_edit_strips_jfc_read_line_number_gutter_normal() {
+    use super::filesystem::apply_one_edit;
+    // The model copied old_string straight out of JFC's Read output, which
+    // numbers lines as "{n}: {line}". Tier 4 strips the `42: ` gutter so the
+    // block matches the un-numbered file content.
+    let file = "fn f() {\n    let a = 1;\n    let b = 2;\n}\n";
+    let out = apply_one_edit(
+        file,
+        "2:     let a = 1;\n3:     let b = 2;",
+        "    let a = 100;\n    let b = 200;",
+        false,
+        "ln1",
+    )
+    .unwrap();
+    assert!(out.contains("let a = 100;"), "{out}");
+    assert!(out.contains("let b = 200;"), "{out}");
+    assert!(!out.contains("let a = 1;"), "{out}");
+}
+
+#[test]
+fn apply_one_edit_strips_cat_n_and_pipe_gutters_normal() {
+    use super::filesystem::apply_one_edit;
+    let file = "alpha\nbeta\ngamma\n";
+    // `cat -n` style: right-aligned number then a tab.
+    let out = apply_one_edit(file, "     2\tbeta", "BETA", false, "ln2").unwrap();
+    assert!(out.contains("BETA") && !out.contains("\nbeta\n"), "{out}");
+    // Editor `N | ` gutter.
+    let out = apply_one_edit(file, "3 | gamma", "GAMMA", false, "ln3").unwrap();
+    assert!(out.contains("GAMMA"), "{out}");
+}
+
+#[test]
+fn apply_one_edit_line_number_strip_requires_uniform_gutter_robust() {
+    use super::filesystem::apply_one_edit;
+    // Only the first line has a gutter; the second is real content. Tier 4 must
+    // NOT fire (it would corrupt the block), so this falls through to "not
+    // found" rather than silently matching the wrong range.
+    let file = "fn f() {\n    let a = 1;\n    let b = 2;\n}\n";
+    let err = apply_one_edit(
+        file,
+        "2:     let a = 1;\n    let b = 2;",
+        "x",
+        false,
+        "ln4",
+    )
+    .unwrap_err();
+    assert!(err.to_lowercase().contains("not found"), "{err}");
+}
+
+#[test]
+fn apply_one_edit_does_not_strip_real_numeric_content_robust() {
+    use super::filesystem::apply_one_edit;
+    // Real code that legitimately starts with digits + colon-like text must not
+    // be mistaken for a line-number gutter. `3:30pm` has no space/tab after the
+    // colon, so the gutter heuristic rejects it and the exact match still wins.
+    let file = "let t = \"3:30pm\";\n";
+    let out = apply_one_edit(file, "\"3:30pm\"", "\"4:00pm\"", false, "ln5").unwrap();
+    assert_eq!(out, "let t = \"4:00pm\";\n");
+}
+
+#[test]
+fn apply_one_edit_line_number_strip_ambiguous_fails_robust() {
+    use super::filesystem::apply_one_edit;
+    // After stripping a uniform gutter, the de-numbered needle matches two
+    // distinct sites. Tier 4 must surface the ambiguity (fail) rather than
+    // silently editing the first — "unique or fail" safety must survive the
+    // extra tier.
+    let file = "    dup();\nmid();\n    dup();\n";
+    let err = apply_one_edit(file, "7:     dup();", "X", false, "ln6").unwrap_err();
+    assert!(
+        err.to_lowercase().contains("ambiguous") || err.to_lowercase().contains("not found"),
+        "{err}"
+    );
+}
+
+#[test]
+fn apply_one_edit_strips_gutter_and_unescapes_combined_normal() {
+    use super::filesystem::apply_one_edit;
+    // Worst case: a pasted numbered block that ALSO arrived with literal `\n`
+    // instead of real newlines (single-line old_string carrying both defects).
+    // Tier 4 strips the per-line gutter, then re-unescapes, recovering the
+    // two-line block.
+    let file = "fn f() {\n    a();\n    b();\n}\n";
+    let out = apply_one_edit(file, "2:     a();\\n3:     b();", "    c();", false, "ln7").unwrap();
+    assert!(out.contains("c();"), "{out}");
+    assert!(!out.contains("a();"), "{out}");
+}
+
+#[test]
+fn apply_one_edit_does_not_strip_real_numbered_list_content_robust() {
+    use super::filesystem::apply_one_edit;
+    // A genuine block where every line really starts with "N: " (e.g. a sample
+    // of log/Read output stored as data). Because the FILE itself contains the
+    // numbered lines, the exact match wins on tier 1 and the stripper never
+    // runs — the numbers must be preserved in the output.
+    let file = "log = \"\"\"\n1: alpha\n2: beta\n\"\"\"\n";
+    let out = apply_one_edit(file, "1: alpha\n2: beta", "1: ALPHA\n2: BETA", false, "ln8").unwrap();
+    assert!(out.contains("1: ALPHA"), "{out}");
+    assert!(out.contains("2: BETA"), "{out}");
+}
+
+#[tokio::test]
+async fn execute_edit_recovers_from_pasted_read_line_numbers_normal() {
+    // End-to-end through the on-disk Edit path: model pastes old_string with
+    // JFC Read's "{n}: " gutter; Tier 4 recovers the real byte range.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("gutter.rs");
+    tokio::fs::write(&path, "fn f() {\n    let a = 1;\n    let b = 2;\n}\n")
+        .await
+        .unwrap();
+
+    let result = execute_edit(
+        path.to_str().unwrap(),
+        "2:     let a = 1;\n3:     let b = 2;",
+        "    let a = 100;\n    let b = 200;",
+        ReplacementMode::FirstOnly,
+    )
+    .await;
+    assert!(
+        !result.is_error(),
+        "line-number-tolerant edit should succeed: {}",
+        result.output
+    );
+    let content = tokio::fs::read_to_string(&path).await.unwrap();
+    assert!(content.contains("let a = 100;"), "{content}");
+    assert!(content.contains("let b = 200;"), "{content}");
+}
+
 #[tokio::test]
 async fn execute_edit_missing_old_string_includes_stale_recovery_regression() {
     let dir = tempfile::tempdir().expect("temp dir");

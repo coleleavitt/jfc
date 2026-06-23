@@ -52,6 +52,13 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         );
     }
 
+    // Interaction-mode chip — only when the user set one explicitly via `/imode`
+    // (the silent `Code` default shows nothing, so the bar is unchanged by
+    // default). Uses the calm activity color, like other mode flags.
+    if let Some(mode) = app.engine.interaction_mode {
+        push1!(format!("[{}]", mode.label().to_lowercase()), activity, 60);
+    }
+
     let safe_mode = jfc_engine::config::safe_mode_enabled();
     if safe_mode {
         push1!(

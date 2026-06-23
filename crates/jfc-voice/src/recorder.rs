@@ -1091,12 +1091,21 @@ mod tests {
     #[cfg(feature = "vad-neural")]
     #[test]
     fn vad_detector_neural_engine_selects_neural_normal() {
-        // With the feature on, the neural engine loads the bundled Silero model.
+        // With the feature on, the neural engine loads the bundled Silero model —
+        // but only when the `JFC_VAD_ENABLE_NEURAL=1` runtime opt-in is set, since
+        // ONNX native init is gated off by default. Honor that gate (rather than
+        // mutating shared process env, which would race the fallback test) so the
+        // assertion is correct in both CI (flag off ⇒ energy) and opt-in builds.
         let cfg = VoiceConfig {
             vad_engine: VadEngine::Neural,
             ..Default::default()
         };
-        assert!(matches!(VadDetector::select(&cfg), VadDetector::Neural(_)));
+        let detector = VadDetector::select(&cfg);
+        if VadEngine::neural_runtime_enabled() {
+            assert!(matches!(detector, VadDetector::Neural(_)));
+        } else {
+            assert!(matches!(detector, VadDetector::Energy(_)));
+        }
     }
 
     // ── Target-speaker gate ────────────────────────────────────────────────

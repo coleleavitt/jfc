@@ -96,7 +96,14 @@ pub async fn prepare_stream_request(
              snippets, specific values, and direct replies to mid-task user \
              messages. Routine narration and final answers may remain normal \
              assistant text.",
-        );
+         );
+    }
+    // Interaction-mode guidance (Junie-style behavioral mode). Pure additive
+    // prompt text, exactly like the brief-mode block above. `Code` (the default)
+    // returns None, so the default request is byte-identical to before.
+    if let Some(section) = overrides.interaction_mode.prompt_section() {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(section);
     }
     let tool_catalog = prepare_advertised_tools(
         &mut system_prompt,

@@ -721,6 +721,16 @@ pub struct EngineState {
     pub auto_mode: AutoModeConfig,
     /// v126 permission mode — controls how tool execution is gated.
     pub permission_mode: PermissionMode,
+    /// Sticky interaction-mode toggle set by `/mode` (Junie-style behavioral
+    /// mode). `None` = no explicit choice → fall back to inference/default. This
+    /// is the *user intent*; the per-turn resolved value is
+    /// `active_interaction_mode`.
+    pub interaction_mode: Option<crate::interaction_mode::InteractionMode>,
+    /// The interaction mode resolved for the CURRENT user turn (from the sticky
+    /// toggle + optional inference). Held across the turn's continuations so a
+    /// tool loop can't re-mode itself; recomputed on the next user prompt.
+    /// Defaults to `Code` → byte-identical to pre-feature behavior.
+    pub active_interaction_mode: crate::interaction_mode::InteractionMode,
     /// v126 task/todo store. Persists to `~/.config/jfc/tasks/<session>.json`
     /// so todos survive session resume and compaction. Reused across the
     /// agent's turns; the slash commands `/task-*` poke it directly.
@@ -1164,6 +1174,8 @@ impl EngineState {
             current_session_id: Some(jfc_session::generate_session_id()),
             auto_mode: crate::auto_mode::load_config(),
             permission_mode: PermissionMode::Default,
+            interaction_mode: None,
+            active_interaction_mode: crate::interaction_mode::InteractionMode::default(),
             // Tasks are scoped per-session (mirrors v126 cli.js:271505 keying
             // todos by `agentId ?? sessionId`). Opening with a freshly-minted
             // session id means a new run sees an empty task list, even if

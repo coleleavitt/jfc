@@ -215,6 +215,17 @@ pub async fn load_session(state: &mut EngineState, session_id: crate::ids::Sessi
 /// paste-chip expansion, pasted-image extraction, slash routing) happens
 /// before this is called; `attachments` carries whatever the frontend
 /// staged for this turn.
+/// Whether to *infer* an interaction mode from the prompt when the user hasn't
+/// set one explicitly via `/mode`. Off by default so the lexical projection only
+/// engages for users who opt in (`JFC_INTERACTION_MODE_INFER=1`); an explicit
+/// `/mode` toggle works regardless of this flag.
+fn interaction_mode_inference_enabled() -> bool {
+    matches!(
+        std::env::var("JFC_INTERACTION_MODE_INFER").as_deref(),
+        Ok("1") | Ok("true") | Ok("on") | Ok("yes")
+    )
+}
+
 pub async fn submit_prompt(
     state: &mut EngineState,
     tx: &EventSender,
@@ -225,6 +236,18 @@ pub async fn submit_prompt(
     if refuse_budget_cap_if_reached(state) {
         return Ok(SubmitOutcome::BudgetExceeded);
     }
+
+    // Resolve the interaction mode for THIS user turn (Junie-style behavioral
+    // mode). Done once here — not per continuation — so a multi-step tool loop
+    // inherits the user turn's mode and can't re-mode itself. An explicit
+    // `/mode` toggle always wins; otherwise inference is gated off by default
+    // (`JFC_INTERACTION_MODE_INFER=1` opt-in), so with neither the result is
+    // `Code` and request assembly is byte-identical to before.
+    state.active_interaction_mode = crate::interaction_mode::InteractionMode::resolve(
+        state.interaction_mode,
+        crate::slate::QueryClass::from_query(&text),
+        interaction_mode_inference_enabled(),
+    );
 
     // v132 OnUserPromptSubmit hook — fires before any compaction or
     // stream setup so a registered handler can inject system reminders,
@@ -1040,6 +1063,7 @@ pub async fn start_turn_from_transcript(
         max_thinking_tokens: state.cli_max_thinking_tokens,
         thinking_display: state.cli_thinking_display.clone(),
         brief_mode: state.brief_mode,
+        interaction_mode: state.active_interaction_mode,
         context_hint_tokens_saved: state.take_context_hint_tokens_saved(),
         last_usage_input_tokens: Some(state.last_usage_input as u64),
         context_window_tokens: Some(state.max_context_tokens as u64),

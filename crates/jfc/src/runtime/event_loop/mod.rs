@@ -896,6 +896,7 @@ pub(crate) async fn run(
             max_thinking_tokens: app.engine.cli_max_thinking_tokens,
             thinking_display: app.engine.cli_thinking_display.clone(),
             brief_mode: app.engine.brief_mode,
+            interaction_mode: app.engine.active_interaction_mode,
             ..Default::default()
         };
         jfc_engine::runtime::spawn_stream_response_scoped(
@@ -1451,16 +1452,20 @@ fn voice_auto_submit() -> bool {
 
 #[cfg(test)]
 fn voice_auto_submit_override() -> Option<bool> {
-    VOICE_AUTO_SUBMIT_OVERRIDE
-        .get_or_init(|| std::sync::Mutex::new(None))
-        .lock()
-        .ok()
-        .and_then(|guard| *guard)
+    VOICE_AUTO_SUBMIT_OVERRIDE.with(|cell| cell.get())
 }
 
+// Per-thread (not process-global) so concurrently-scheduled `#[tokio::test]`s —
+// each of which runs its current-thread runtime on its own worker thread — can
+// independently set/reset this override without racing each other. A global
+// `Mutex<Option<bool>>` here flaked `voice_final_replaces_live_interim` under
+// full parallel load: one test's `AutoSubmitGuard::drop` reset the override to
+// `None` while a sibling still needed `Some(false)`, so its Final event
+// auto-submitted and blanked the input box.
 #[cfg(test)]
-static VOICE_AUTO_SUBMIT_OVERRIDE: std::sync::OnceLock<std::sync::Mutex<Option<bool>>> =
-    std::sync::OnceLock::new();
+thread_local! {
+    static VOICE_AUTO_SUBMIT_OVERRIDE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
 
 /// Extract user prompts from a parsed session JSON value (raw serde_json).
 /// Returns text strings oldest-first, capped at `max_prompts`. Skips compact
@@ -1658,24 +1663,14 @@ mod voice_event_tests {
 
     impl AutoSubmitGuard {
         fn set(value: bool) -> Self {
-            if let Ok(mut guard) = VOICE_AUTO_SUBMIT_OVERRIDE
-                .get_or_init(|| std::sync::Mutex::new(None))
-                .lock()
-            {
-                *guard = Some(value);
-            }
+            VOICE_AUTO_SUBMIT_OVERRIDE.with(|cell| cell.set(Some(value)));
             Self
         }
     }
 
     impl Drop for AutoSubmitGuard {
         fn drop(&mut self) {
-            if let Ok(mut guard) = VOICE_AUTO_SUBMIT_OVERRIDE
-                .get_or_init(|| std::sync::Mutex::new(None))
-                .lock()
-            {
-                *guard = None;
-            }
+            VOICE_AUTO_SUBMIT_OVERRIDE.with(|cell| cell.set(None));
         }
     }
 

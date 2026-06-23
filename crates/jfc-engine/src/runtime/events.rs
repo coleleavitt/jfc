@@ -217,6 +217,11 @@ pub struct StreamRequestOverrides {
     /// Test/explicit override for the optional total-token reminder mode.
     /// Production callers leave this as `None`, so env/config controls apply.
     pub total_tokens_reminder_mode: Option<crate::total_tokens_reminder::TotalTokensReminderMode>,
+    /// Behavioral interaction mode for this turn (Code/Fast/Chat/Brainstorm).
+    /// Resolved once per user turn from the sticky `/mode` toggle + optional
+    /// inference, then copied here. `Code` (the default) appends nothing, so the
+    /// default request is byte-identical to pre-feature behavior.
+    pub interaction_mode: crate::interaction_mode::InteractionMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

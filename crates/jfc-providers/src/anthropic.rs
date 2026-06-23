@@ -766,7 +766,9 @@ mod tests {
     // `{"type":"enabled","budget_tokens":N}` form. Tests the lower budget path.
     #[test]
     fn build_body_thinking_legacy_budget_normal() {
-        let body = build_body(vec![make_user_msg("hi")], &opts("m").thinking(8192));
+        // max_tokens headroom so the legacy budget is emitted verbatim and not
+        // clamped by the `budget_tokens < max_tokens` rule.
+        let body = build_body(vec![make_user_msg("hi")], &opts("m").max_tokens(16_000).thinking(8192));
         assert_eq!(body["thinking"]["type"], "enabled");
         assert_eq!(body["thinking"]["budget_tokens"], 8192);
     }
@@ -902,7 +904,7 @@ mod tests {
     fn build_body_legacy_thinking_display_summarized_normal() {
         let body = build_body(
             vec![make_user_msg("hi")],
-            &opts("m").thinking(8192).thinking_display("summarized"),
+            &opts("m").max_tokens(16_000).thinking(8192).thinking_display("summarized"),
         );
         assert_eq!(body["thinking"]["type"], "enabled");
         assert_eq!(body["thinking"]["budget_tokens"], 8192);
