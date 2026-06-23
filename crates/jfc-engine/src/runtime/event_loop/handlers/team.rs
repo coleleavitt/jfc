@@ -41,8 +41,7 @@ async fn handle_runner(
     // `background_tasks` map below. Cheap, fire-and-forget, and keyed by the
     // event's `agent_id`, which the teammate was registered under at spawn.
     {
-        let backend =
-            crate::agents::TeamBackend::new(crate::tools::agent_registry().clone());
+        let backend = crate::agents::TeamBackend::new(crate::tools::agent_registry().clone());
         backend.apply(&teammate_ev).await;
     }
 

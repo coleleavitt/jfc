@@ -27,8 +27,8 @@ fn redact_line(line: &str, aggressive: bool) -> String {
     // Whole-line redaction for obvious key/secret assignments.
     let lower = line.to_ascii_lowercase();
     for needle in [
-        "-----begin",          // PEM private keys
-        "authorization:",      // headers
+        "-----begin",     // PEM private keys
+        "authorization:", // headers
         "authorization\":",
     ] {
         if lower.contains(needle) {
@@ -115,17 +115,42 @@ fn split_kv(tok: &str) -> Option<(&str, &str)> {
 fn is_secret_key(k: &str) -> bool {
     let k = k.to_ascii_lowercase();
     const HINTS: &[&str] = &[
-        "password", "passwd", "secret", "token", "api_key", "apikey", "api-key",
-        "access_key", "secret_key", "private_key", "auth", "credential", "session",
-        "bearer", "client_secret",
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "api-key",
+        "access_key",
+        "secret_key",
+        "private_key",
+        "auth",
+        "credential",
+        "session",
+        "bearer",
+        "client_secret",
     ];
     HINTS.iter().any(|h| k.contains(h))
 }
 
 fn has_secret_prefix(tok: &str) -> bool {
     const PREFIXES: &[&str] = &[
-        "sk-", "sk-ant-", "sk-proj-", "ghp_", "gho_", "ghu_", "ghs_", "github_pat_",
-        "AKIA", "ASIA", "AIza", "ya29.", "xoxb-", "xoxp-", "glpat-",
+        "sk-",
+        "sk-ant-",
+        "sk-proj-",
+        "ghp_",
+        "gho_",
+        "ghu_",
+        "ghs_",
+        "github_pat_",
+        "AKIA",
+        "ASIA",
+        "AIza",
+        "ya29.",
+        "xoxb-",
+        "xoxp-",
+        "glpat-",
     ];
     PREFIXES.iter().any(|p| tok.starts_with(p)) && tok.len() >= 12
 }
@@ -134,7 +159,9 @@ fn is_jwt(tok: &str) -> bool {
     let parts: Vec<&str> = tok.split('.').collect();
     parts.len() == 3
         && parts.iter().all(|p| {
-            p.len() >= 8 && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            p.len() >= 8
+                && p.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         })
 }
 
@@ -146,7 +173,9 @@ fn is_email(tok: &str) -> bool {
         && domain.contains('.')
         && !domain.starts_with('.')
         && !domain.ends_with('.')
-        && domain.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        && domain
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 }
 
 fn normalize_home(tok: &str) -> Option<String> {
@@ -205,7 +234,10 @@ mod tests {
 
     #[test]
     fn redacts_known_key_prefixes_normal() {
-        assert_eq!(redact("key sk-ant-abc123def456ghi here", false), "key [REDACTED] here");
+        assert_eq!(
+            redact("key sk-ant-abc123def456ghi here", false),
+            "key [REDACTED] here"
+        );
         assert!(redact("token=ghp_0123456789abcdefghij", false).contains("[REDACTED]"));
     }
 
@@ -219,17 +251,26 @@ mod tests {
     fn redacts_jwt_and_email_normal() {
         let jwt = "eyJhbGciOiJI.eyJzdWIiOiIx.SflKxwRJSMeKKF2";
         assert_eq!(redact(jwt, false), "[REDACTED]");
-        assert_eq!(redact("ping alice@example.com now", false), "ping [REDACTED] now");
+        assert_eq!(
+            redact("ping alice@example.com now", false),
+            "ping [REDACTED] now"
+        );
     }
 
     #[test]
     fn redacts_pem_line_normal() {
-        assert_eq!(redact("-----BEGIN RSA PRIVATE KEY-----", false), "[REDACTED]");
+        assert_eq!(
+            redact("-----BEGIN RSA PRIVATE KEY-----", false),
+            "[REDACTED]"
+        );
     }
 
     #[test]
     fn normalizes_home_path_normal() {
-        assert_eq!(redact("/home/cole/secret/file.rs", false), "<HOME>/secret/file.rs");
+        assert_eq!(
+            redact("/home/cole/secret/file.rs", false),
+            "<HOME>/secret/file.rs"
+        );
         assert_eq!(redact("/Users/alice/x", false), "<HOME>/x");
     }
 

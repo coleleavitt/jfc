@@ -270,13 +270,16 @@ pub async fn handle_task_completed(
         let registry = crate::tools::agent_registry();
         let id = jfc_agent::AgentId::from_label(task_id.as_str());
         registry
-            .complete(&id, jfc_agent::AgentResult {
-                id: id.clone(),
-                output: summary.clone(),
-                tokens_used: 0,
-                elapsed_ms,
-                patch: None,
-            })
+            .complete(
+                &id,
+                jfc_agent::AgentResult {
+                    id: id.clone(),
+                    output: summary.clone(),
+                    tokens_used: 0,
+                    elapsed_ms,
+                    patch: None,
+                },
+            )
             .await;
     }
     let mut linked_task_id: Option<String> = None;

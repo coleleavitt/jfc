@@ -11,7 +11,7 @@ fn stream_context_budget_uses_actual_components_normal() {
         input_schema: serde_json::json!({"properties":{"file_path":{"type":"string"}}}),
     }];
     let messages = vec![user_text("hello world")];
-    let budget = stream_context_budget("system prompt plus memory", &tools, 6, &messages);
+    let budget = stream_context_budget("system prompt plus memory", &tools, 6, 0, &messages);
     assert_eq!(budget.memory_tokens, 1);
     assert!(budget.system_prompt_tokens > 0);
     assert!(budget.tool_definition_tokens > 0);
@@ -20,4 +20,21 @@ fn stream_context_budget_uses_actual_components_normal() {
         jfc_core::context_budget::effective_tokens(budget)
             >= jfc_core::context_budget::raw_tokens(budget)
     );
+}
+
+#[test]
+fn stream_context_budget_separates_memory_and_project_context_regression() {
+    let tools = Vec::new();
+    let messages = vec![user_text("hello world")];
+    let budget = stream_context_budget(
+        "base prompt remembered project rules",
+        &tools,
+        "remembered".len(),
+        "project rules".len(),
+        &messages,
+    );
+
+    assert_eq!(budget.memory_tokens, 2);
+    assert_eq!(budget.project_instructions_tokens, 3);
+    assert!(budget.system_prompt_tokens > 0);
 }

@@ -4,7 +4,7 @@ pub fn filesystem_tool_defs() -> Vec<ToolDef> {
     vec![
         ToolDef {
             name: "Bash".into(),
-            description: "Executes a bash command in a fresh non-interactive shell. Shell state does not persist between calls; use `workdir` to run in a specific directory. Prefer Glob/Grep/Read/Edit/Write for file discovery and edits. Use Bash for real shell commands, scripts, builds, tests, and package managers. Set `suppressOutput=true` when raw stdout/stderr would be noisy or sensitive but success/failure status is enough. For long-running commands, set `run_in_background=true`; JFC also auto-backgrounds commands that exceed the foreground budget and returns a task id plus output file. Use BashOutput with block=true to wait for completion; do not spawn sleep/poll Bash commands for background Bash tasks.".into(),
+            description: "Executes a bash command in a fresh non-interactive shell. Shell state does not persist between calls; use `workdir` to run in a specific directory. Prefer Glob/Grep/Read/Edit/Write for file discovery and edits. Use Bash for real shell commands, scripts, builds, tests, and package managers. Set `suppressOutput=true` when raw stdout/stderr would be noisy or sensitive but success/failure status is enough. For long-running commands, set `run_in_background=true`; JFC also auto-backgrounds commands that exceed the foreground budget and tracks them as background shell tasks with a task id and output file.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {

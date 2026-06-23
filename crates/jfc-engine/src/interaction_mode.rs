@@ -181,7 +181,11 @@ mod tests {
     fn resolve_explicit_wins_over_inferred_normal() {
         // Explicit toggle beats inference regardless of class or infer flag.
         assert_eq!(
-            InteractionMode::resolve(Some(InteractionMode::Brainstorm), QueryClass::CodeEdit, true),
+            InteractionMode::resolve(
+                Some(InteractionMode::Brainstorm),
+                QueryClass::CodeEdit,
+                true
+            ),
             InteractionMode::Brainstorm
         );
         assert_eq!(

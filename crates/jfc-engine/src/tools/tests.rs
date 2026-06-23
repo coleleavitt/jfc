@@ -1,6 +1,6 @@
 use super::bash::{execute_bash, execute_bash_inner, execute_bash_output};
 use super::daemon::execute_monitor;
-use super::defs::all_tool_defs;
+use super::defs::{all_tool_defs, model_tool_defs};
 use super::dispatch::resolve_bash_workdir;
 use super::economy::{
     apply_winning_solution, looks_like_unified_diff, market_report_string, parse_file_blocks,
@@ -374,8 +374,14 @@ fn bash_tool_schema_advertises_workdir_and_fresh_shell_regression() {
         bash.input_schema
     );
     assert!(
-        defs.iter().any(|def| def.name == "BashOutput"),
-        "BashOutput retrieval tool must be advertised"
+        !bash.description.contains("BashOutput"),
+        "Bash prompt must not teach the model to poll background shell output: {}",
+        bash.description
+    );
+    let model_defs = model_tool_defs();
+    assert!(
+        !model_defs.iter().any(|def| def.name == "BashOutput"),
+        "BashOutput stays executable for legacy transcripts but must not be model-visible by default"
     );
 }
 
@@ -1080,8 +1086,8 @@ fn all_tool_defs_have_object_schemas_robust() {
 async fn all_tool_defs_with_mcp_no_registry_matches_native_normal() {
     // When no MCP registry has been registered (process-global slot
     // is None — true in fresh tests), the function should degrade
-    // to the native `all_tool_defs()` set.
-    let native = all_tool_defs();
+    // to the native model-visible tool set.
+    let native = model_tool_defs();
     let combined = all_tool_defs_with_mcp().await;
     // Some other test in this module may have registered a registry
     // earlier — what we care about is that combined is at least as
@@ -1742,14 +1748,8 @@ fn apply_one_edit_line_number_strip_requires_uniform_gutter_robust() {
     // NOT fire (it would corrupt the block), so this falls through to "not
     // found" rather than silently matching the wrong range.
     let file = "fn f() {\n    let a = 1;\n    let b = 2;\n}\n";
-    let err = apply_one_edit(
-        file,
-        "2:     let a = 1;\n    let b = 2;",
-        "x",
-        false,
-        "ln4",
-    )
-    .unwrap_err();
+    let err =
+        apply_one_edit(file, "2:     let a = 1;\n    let b = 2;", "x", false, "ln4").unwrap_err();
     assert!(err.to_lowercase().contains("not found"), "{err}");
 }
 

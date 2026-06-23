@@ -98,11 +98,7 @@ pub fn parse_markdown_memory(
         .map(str::trim)
         .find(|l| !l.is_empty())
         .map(|l| l.chars().take(80).collect::<String>())
-        .or_else(|| {
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .map(str::to_owned)
-        })
+        .or_else(|| path.file_stem().and_then(|s| s.to_str()).map(str::to_owned))
         .unwrap_or_else(|| "imported memory".to_owned());
 
     Some(ImportableMemory {
@@ -209,14 +205,10 @@ mod tests {
 
     #[test]
     fn parse_markdown_memory_extracts_kind_and_title_normal() {
-        let content = "---\ntype: feedback\nscope: user\n---\nUse ripgrep, not grep.\n\nWhy: faster.";
-        let mem = parse_markdown_memory(
-            Path::new("/m/x.md"),
-            content,
-            Scope::User,
-            None,
-        )
-        .expect("parses");
+        let content =
+            "---\ntype: feedback\nscope: user\n---\nUse ripgrep, not grep.\n\nWhy: faster.";
+        let mem = parse_markdown_memory(Path::new("/m/x.md"), content, Scope::User, None)
+            .expect("parses");
         assert_eq!(mem.kind, Kind::Finding); // feedback → finding
         assert_eq!(mem.scope, Scope::User);
         assert_eq!(mem.title, "Use ripgrep, not grep.");
@@ -239,7 +231,15 @@ mod tests {
 
     #[test]
     fn parse_markdown_memory_empty_body_is_skipped_robust() {
-        assert!(parse_markdown_memory(Path::new("/m/e.md"), "---\ntype: project\n---\n   \n", Scope::User, None).is_none());
+        assert!(
+            parse_markdown_memory(
+                Path::new("/m/e.md"),
+                "---\ntype: project\n---\n   \n",
+                Scope::User,
+                None
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -279,14 +279,22 @@ mod tests {
     #[test]
     fn scan_markdown_dir_walks_recursively_normal() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("a.md"), "---\ntype: project\n---\nalpha fact").unwrap();
+        std::fs::write(
+            dir.path().join("a.md"),
+            "---\ntype: project\n---\nalpha fact",
+        )
+        .unwrap();
         let sub = dir.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
         std::fs::write(sub.join("b.md"), "beta fact").unwrap();
         std::fs::write(dir.path().join("ignore.txt"), "not markdown").unwrap();
 
         let mems = scan_markdown_dir(dir.path(), Scope::Project, Some("P".into()));
-        assert_eq!(mems.len(), 2, "should find both .md files, skip .txt: {mems:?}");
+        assert_eq!(
+            mems.len(),
+            2,
+            "should find both .md files, skip .txt: {mems:?}"
+        );
         assert!(mems.iter().all(|m| m.project_key.as_deref() == Some("P")));
     }
 }

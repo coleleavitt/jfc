@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::warn;
 
-use super::{ExecutionResult, all_tool_defs, execute_tool};
+use super::{ExecutionResult, execute_tool, model_tool_defs};
 use crate::types::{ToolInput, ToolKind};
 use jfc_provider::ToolDef;
 
@@ -519,7 +519,7 @@ async fn execute_task_inner(
         );
     }
     let allow_nested_task = depth < 2;
-    let all_tools = all_tool_defs();
+    let all_tools = model_tool_defs();
     let structured_output_def = all_tools
         .iter()
         .find(|tool| tool.name.eq_ignore_ascii_case("StructuredOutput"))

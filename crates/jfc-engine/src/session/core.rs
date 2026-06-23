@@ -224,7 +224,10 @@ fn scrub_loaded_thinking_poison(messages: &mut [ChatMessage]) -> usize {
 /// `ChatMessage`s. Returns `None` (caller falls back to JSON) if the source flag
 /// isn't "db", the store is unavailable, or the session has no transcript rows.
 async fn load_session_from_db(session_id_str: &str) -> Option<Vec<SerializedMessage>> {
-    if !crate::config::load_arc().session_source.eq_ignore_ascii_case("db") {
+    if !crate::config::load_arc()
+        .session_source
+        .eq_ignore_ascii_case("db")
+    {
         return None;
     }
     let id = session_id_str.to_owned();
@@ -363,8 +366,11 @@ pub async fn load_session_with_model(
             title: None,
             messages: db_messages,
         };
-        let messages: Vec<ChatMessage> =
-            session.messages.into_iter().map(deserialize_message).collect();
+        let messages: Vec<ChatMessage> = session
+            .messages
+            .into_iter()
+            .map(deserialize_message)
+            .collect();
         let mut messages = repair_loaded_messages(messages);
         let _ = scrub_loaded_thinking_poison(&mut messages);
         return Some((messages, model));

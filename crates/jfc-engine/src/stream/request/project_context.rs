@@ -9,6 +9,13 @@ use super::memory::{
 };
 use super::messages::last_user_text;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct ProjectContextStats {
+    pub(super) memory_context_chars: usize,
+    pub(super) fresh_recall_chars: usize,
+    pub(super) project_instructions_chars: usize,
+}
+
 /// First agent turn ⇔ at most one user message in the transcript so far. Used to
 /// emit the session-start knowledge brief exactly once, at the opening.
 fn is_first_turn(messages: &[ProviderMessage]) -> bool {
@@ -25,13 +32,14 @@ pub(super) async fn append_project_context(
     provider: &Arc<dyn Provider>,
     messages: &[ProviderMessage],
     model: &ModelId,
-) -> usize {
-    let mut recalled_memory_chars = 0usize;
+) -> ProjectContextStats {
+    let mut stats = ProjectContextStats::default();
     if let Ok(cwd_path) = std::env::current_dir() {
         let hierarchy =
             crate::prompt_context_cache::context_hierarchy(&cwd_path, &overrides.extra_dirs);
         if let Some(layered) = hierarchy.rendered {
             system_prompt.push_str("\n\n");
+            stats.project_instructions_chars += layered.len();
             system_prompt.push_str(&layered);
         }
         // Extract disallowed-tools from frontmatter and merge with CLI ones.
@@ -127,13 +135,15 @@ pub(super) async fn append_project_context(
             }
         };
 
-        recalled_memory_chars = append_memory_recall_context(
+        let memory_stats = append_memory_recall_context(
             system_prompt,
             recall_block.as_ref(),
             &memories,
             recall_enabled,
             recall_was_fresh,
         );
+        stats.memory_context_chars += memory_stats.prompt_chars;
+        stats.fresh_recall_chars += memory_stats.fresh_recall_chars;
 
         // Cross-project knowledge recall (jfc-knowledge). Gated off by default;
         // screened as reference data. Appended after the per-project memory block.
@@ -141,11 +151,11 @@ pub(super) async fn append_project_context(
         // agent opens with its accumulated cross-project memory (the diagram's
         // MEMORY BANK read at session start — "never starts blind again").
         if is_first_turn(messages) {
-            recalled_memory_chars +=
+            stats.memory_context_chars +=
                 append_session_start_knowledge_brief(system_prompt, &cwd_path).await;
         }
         if let Some(query) = last_user_text(messages) {
-            recalled_memory_chars +=
+            stats.memory_context_chars +=
                 append_cross_project_knowledge(system_prompt, &cwd_path, &query).await;
         }
         if let Ok(Some(memory_store_section)) = tokio::time::timeout(
@@ -154,6 +164,7 @@ pub(super) async fn append_project_context(
         )
         .await
         {
+            stats.memory_context_chars += memory_store_section.len();
             system_prompt.push_str(&memory_store_section);
         }
         if let Some(block) = plan_block {
@@ -162,6 +173,7 @@ pub(super) async fn append_project_context(
                 plan_recall_block_len = block.len(),
                 "appending plan recall block"
             );
+            stats.memory_context_chars += block.len();
             system_prompt.push_str(&block);
         }
 
@@ -182,6 +194,7 @@ pub(super) async fn append_project_context(
                     "injecting auto-hint recall block"
                 );
                 system_prompt.push_str("\n\n");
+                stats.memory_context_chars += hint_block.len();
                 system_prompt.push_str(&hint_block);
             }
         }
@@ -196,5 +209,5 @@ pub(super) async fn append_project_context(
             system_prompt.push_str(&env_block);
         }
     }
-    recalled_memory_chars
+    stats
 }

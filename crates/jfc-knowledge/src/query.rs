@@ -394,7 +394,10 @@ pub fn consolidate(conn: &mut Connection) -> Result<usize> {
         })?;
         for r in rows {
             let (key, id, strength, verified) = r?;
-            groups.entry(key).or_default().push((id, strength, verified));
+            groups
+                .entry(key)
+                .or_default()
+                .push((id, strength, verified));
         }
     }
 

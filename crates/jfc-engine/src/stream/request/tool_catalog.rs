@@ -1,6 +1,6 @@
 use crate::runtime::StreamRequestOverrides;
 use crate::tools;
-use jfc_provider::{ProviderMessage, ToolDef};
+use jfc_provider::{ProviderContent, ProviderMessage, ToolDef};
 
 use super::intent::{conversation_is_mid_tool_loop, user_text_requests_action};
 use super::messages::last_user_text;
@@ -21,7 +21,8 @@ pub(super) async fn prepare_advertised_tools(
     effective_brief_mode: bool,
     pewter_owl_tool: bool,
 ) -> AdvertisedToolCatalog {
-    let full_tool_catalog = tools::all_tool_defs_with_mcp().await;
+    let mut full_tool_catalog = tools::all_tool_defs_with_mcp().await;
+    append_historical_hidden_builtin_tool_defs(&mut full_tool_catalog, messages);
     let full_tool_count = full_tool_catalog.len();
     let mut advertised_tools = if overrides.allowed_tools.is_empty() {
         let tool_intent = last_user_text(messages);
@@ -188,5 +189,36 @@ pub(super) async fn prepare_advertised_tools(
         tools: advertised_tools,
         advertised_tool_count,
         action_expected,
+    }
+}
+
+fn append_historical_hidden_builtin_tool_defs(
+    catalog: &mut Vec<ToolDef>,
+    messages: &[ProviderMessage],
+) {
+    let historical_names: std::collections::HashSet<String> = messages
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .filter_map(|content| match content {
+            ProviderContent::ToolUse { name, .. } => Some(name.trim().to_ascii_lowercase()),
+            _ => None,
+        })
+        .collect();
+    if historical_names.is_empty() {
+        return;
+    }
+
+    let mut existing_names: std::collections::HashSet<String> = catalog
+        .iter()
+        .map(|tool| tool.name.trim().to_ascii_lowercase())
+        .collect();
+    for tool in tools::all_tool_defs() {
+        let normalized = tool.name.trim().to_ascii_lowercase();
+        if tools::is_model_hidden_builtin_tool_name(&tool.name)
+            && historical_names.contains(&normalized)
+            && existing_names.insert(normalized)
+        {
+            catalog.push(tool);
+        }
     }
 }

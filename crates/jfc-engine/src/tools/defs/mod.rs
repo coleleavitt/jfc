@@ -25,3 +25,14 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
     defs.extend(daemon::daemon_tool_defs());
     defs
 }
+
+pub fn model_tool_defs() -> Vec<ToolDef> {
+    all_tool_defs()
+        .into_iter()
+        .filter(|tool| !is_model_hidden_builtin_tool_name(&tool.name))
+        .collect()
+}
+
+pub fn is_model_hidden_builtin_tool_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("BashOutput")
+}

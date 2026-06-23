@@ -22,11 +22,7 @@ pub(super) async fn cmd_knowledge(
 ) {
     // Pass the full argument string (everything after `/knowledge`) so
     // multi-word subcommands like `gc-legacy --confirm` arrive intact.
-    let arg = text
-        .trim()
-        .strip_prefix("/knowledge")
-        .unwrap_or("")
-        .trim();
+    let arg = text.trim().strip_prefix("/knowledge").unwrap_or("").trim();
     handle_knowledge_command(state, arg).await;
 }
 

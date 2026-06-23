@@ -63,6 +63,9 @@ pub fn progressive_tool_defs(
         if discovered_added >= MAX_DISCOVERED_MATCHES {
             break;
         }
+        if super::defs::is_model_hidden_builtin_tool_name(&name) {
+            continue;
+        }
         if selected.insert(normalize_tool_name(&name)) {
             discovered_added += 1;
         }
@@ -161,6 +164,7 @@ fn intent_tool_matches(intent: &str, all: &[ToolDef], limit: usize) -> Vec<Strin
     // Build the TF-IDF index over the full catalog, keyed by tool name.
     let docs: Vec<(String, String)> = all
         .iter()
+        .filter(|tool| !super::defs::is_model_hidden_builtin_tool_name(&tool.name))
         .map(|tool| {
             let schema = tool
                 .input_schema
@@ -186,6 +190,7 @@ fn intent_tool_matches(intent: &str, all: &[ToolDef], limit: usize) -> Vec<Strin
     // matches than before when TF-IDF and the query share no vocabulary.
     let mut scored: Vec<(usize, String)> = all
         .iter()
+        .filter(|tool| !super::defs::is_model_hidden_builtin_tool_name(&tool.name))
         .filter_map(|tool| {
             let score = intent_score(tool, &terms);
             (score >= 4).then(|| (score, tool.name.clone()))
@@ -443,6 +448,40 @@ mod tests {
         let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
 
         assert!(names.contains(&"run_coverage"));
+    }
+
+    #[test]
+    fn progressive_catalog_hides_runtime_output_tools_from_intent_regression() {
+        let all = vec![
+            tool("Bash", "run shell commands"),
+            tool("BashOutput", "read output from a backgrounded Bash command"),
+        ];
+
+        let selected = progressive_tool_defs(all, &[], Some("wait for background bash output"));
+        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
+
+        assert!(names.contains(&"Bash"));
+        assert!(
+            !names.contains(&"BashOutput"),
+            "BashOutput is a hidden runtime compatibility tool, not a default model action"
+        );
+    }
+
+    #[test]
+    fn progressive_catalog_keeps_hidden_runtime_tools_for_history_regression() {
+        let all = vec![
+            tool("Bash", "run shell commands"),
+            tool("BashOutput", "legacy background output retrieval"),
+        ];
+        let messages = vec![assistant_tool_use("toolu_old", "BashOutput")];
+
+        let selected = progressive_tool_defs(all, &messages, Some("continue"));
+        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
+
+        assert!(
+            names.contains(&"BashOutput"),
+            "historical BashOutput tool_use blocks still need their ToolDef on replay"
+        );
     }
 
     #[test]

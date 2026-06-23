@@ -788,7 +788,7 @@ fn background_started_message(task: &RunningBashTask, reason: &str) -> String {
          status: running\n\
          command: {command}\n\
          cwd: {cwd}\n\n\
-         Use BashOutput with {{\"task_id\":\"{task_id}\"}} to wait for completion or {{\"task_id\":\"{task_id}\",\"block\":false}} to read a non-blocking snapshot. Do not spawn sleep/poll Bash commands for this task.",
+         JFC is tracking this as a background shell task; use the task roster/status UI and output_file for progress instead of spawning sleep/poll Bash commands.",
         task_id = task.id,
         output_file = task.output_path.display(),
         command = task.command,
@@ -843,7 +843,7 @@ fn format_completed_task(
             "\n\n[Output truncated: showing last ~{} bytes of {} bytes / {} lines]\n\
              output_file: {}\n\
              task_id: {}\n\
-             Use BashOutput to read ranges.",
+             Full output remains available in output_file.",
             inline_output_bytes(),
             completion.snapshot.total_bytes,
             completion.snapshot.total_lines,
@@ -1292,7 +1292,8 @@ mod timeout_tests {
 
         // Stage 2 — start_bash_task now clamps ONLY to the absolute ceiling
         // (the fix), instead of re-applying DEFAULT_TIMEOUT_MS for foreground.
-        let final_timeout = clamp_timeout(Some(effective_timeout_for_watcher), BACKGROUNDED_TIMEOUT_MS);
+        let final_timeout =
+            clamp_timeout(Some(effective_timeout_for_watcher), BACKGROUNDED_TIMEOUT_MS);
 
         // The model's 300s must survive end-to-end (it's under the 600s ceiling).
         assert_eq!(

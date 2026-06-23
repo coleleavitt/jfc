@@ -1419,9 +1419,7 @@ mod tests {
         ));
 
         // Every recognized mode token parses.
-        for (m, is_always, is_manual) in
-            [("always", true, false), ("manual", false, true)]
-        {
+        for (m, is_always, is_manual) in [("always", true, false), ("manual", false, true)] {
             cfg.argus_auto_review = Some(ArgusAutoReviewConfig {
                 mode: Some(m.into()),
                 ..Default::default()

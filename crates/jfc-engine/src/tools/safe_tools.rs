@@ -8,7 +8,7 @@ use tokio::process::Command;
 
 use crate::runtime::ExecutionResult;
 
-use super::defs::all_tool_defs;
+use super::defs::model_tool_defs;
 use super::registry::snapshot_mcp_registry;
 
 #[cfg(unix)]
@@ -21,7 +21,7 @@ unsafe extern "C" {
 // ---------------------------------------------------------------------------
 
 pub async fn all_tool_defs_with_mcp() -> Vec<jfc_provider::ToolDef> {
-    let mut tools = all_tool_defs();
+    let mut tools = model_tool_defs();
     let builtin_names: std::collections::HashSet<String> =
         tools.iter().map(|t| t.name.clone()).collect();
     if let Some(registry) = snapshot_mcp_registry() {

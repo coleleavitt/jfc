@@ -37,9 +37,7 @@ mod roster_integration_tests {
     //! in one `list()` and resolve back by their spawn-time label.
     use std::sync::Arc;
 
-    use jfc_agent::{
-        AgentId, AgentRegistry, AgentResult, AgentRole, AgentState, AgentStatus,
-    };
+    use jfc_agent::{AgentId, AgentRegistry, AgentResult, AgentRole, AgentState, AgentStatus};
 
     use super::AgentRegistryImpl;
 
@@ -135,13 +133,16 @@ mod roster_integration_tests {
 
         // Economy completion (via `complete`) and team cancellation (via
         // `update_status`) both land in the same roster as terminal states.
-        reg.complete(&solver, AgentResult {
-            id: solver.clone(),
-            output: "patch".into(),
-            tokens_used: 1234,
-            elapsed_ms: 10,
-            patch: None,
-        })
+        reg.complete(
+            &solver,
+            AgentResult {
+                id: solver.clone(),
+                output: "patch".into(),
+                tokens_used: 1234,
+                elapsed_ms: 10,
+                patch: None,
+            },
+        )
         .await;
         reg.update_status(&mate, AgentStatus::Cancelled).await;
 

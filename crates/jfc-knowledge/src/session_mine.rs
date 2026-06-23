@@ -134,12 +134,17 @@ fn mine_errors(session: &Session, out: &mut Vec<MinedLesson>) {
             continue;
         }
         // Recovery window: a later part of the same kind that completed.
-        let recovered = parts[i + 1..]
-            .iter()
-            .take(12)
-            .any(|q| q.ptype == "tool" && q.kind.as_deref() == Some(kind) && q.status.as_deref() == Some("complete"));
+        let recovered = parts[i + 1..].iter().take(12).any(|q| {
+            q.ptype == "tool"
+                && q.kind.as_deref() == Some(kind)
+                && q.status.as_deref() == Some("complete")
+        });
 
-        let outcome = if recovered { Outcome::Verified } else { Outcome::Unverified };
+        let outcome = if recovered {
+            Outcome::Verified
+        } else {
+            Outcome::Unverified
+        };
         let trigger = format!("{kind} failed: {msg_class}");
         let claim = recovery_claim(kind, &msg_class, recovered);
         let norm_key = format!("err:{}:{}", kind.to_lowercase(), msg_class.to_lowercase());
@@ -161,7 +166,11 @@ fn mine_preferences(session: &Session, out: &mut Vec<MinedLesson>) {
         if prev.role != "assistant" || cur.role != "user" {
             continue;
         }
-        let Some(user_text) = cur.parts.iter().filter(|p| p.ptype == "text").find_map(|p| p.text())
+        let Some(user_text) = cur
+            .parts
+            .iter()
+            .filter(|p| p.ptype == "text")
+            .find_map(|p| p.text())
         else {
             continue;
         };
@@ -229,9 +238,23 @@ fn recovery_claim(kind: &str, class: &str, recovered: bool) -> String {
 fn is_correction(text: &str) -> bool {
     let t = text.trim_start().to_lowercase();
     const CUES: &[&str] = &[
-        "no,", "no.", "no ", "don't", "dont", "do not", "actually", "stop", "instead",
-        "that's wrong", "thats wrong", "incorrect", "not what i", "you should have",
-        "why did you", "revert", "undo",
+        "no,",
+        "no.",
+        "no ",
+        "don't",
+        "dont",
+        "do not",
+        "actually",
+        "stop",
+        "instead",
+        "that's wrong",
+        "thats wrong",
+        "incorrect",
+        "not what i",
+        "you should have",
+        "why did you",
+        "revert",
+        "undo",
     ];
     // Keep it tight: short-ish messages that lead with a negation cue.
     text.len() < 400 && CUES.iter().any(|c| t.starts_with(c) || t.contains(c))
@@ -327,7 +350,10 @@ mod tests {
           ]
         }"#;
         let lessons = mine_session_json(raw);
-        let prefs: Vec<_> = lessons.iter().filter(|l| l.kind == Kind::Preference).collect();
+        let prefs: Vec<_> = lessons
+            .iter()
+            .filter(|l| l.kind == Kind::Preference)
+            .collect();
         assert_eq!(prefs.len(), 1, "{lessons:?}");
         assert!(prefs[0].claim.to_lowercase().contains("spaces"));
     }
@@ -342,7 +368,10 @@ mod tests {
             {"role":"user","parts":[{"type":"text","content":"Great, thanks! Now add a test."}]}
           ]
         }"#;
-        let prefs: Vec<_> = mine_session_json(raw).into_iter().filter(|l| l.kind == Kind::Preference).collect();
+        let prefs: Vec<_> = mine_session_json(raw)
+            .into_iter()
+            .filter(|l| l.kind == Kind::Preference)
+            .collect();
         assert!(prefs.is_empty(), "{prefs:?}");
     }
 

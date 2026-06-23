@@ -30,7 +30,7 @@ pub async fn prepare_stream_request(
         diagnostics_chars,
     } = build_prompt_seed().await;
     let mut overrides = overrides;
-    let recalled_memory_chars = append_project_context(
+    let project_context = append_project_context(
         &mut system_prompt,
         &mut overrides,
         &provider,
@@ -72,7 +72,7 @@ pub async fn prepare_stream_request(
         has_thinking_support = thinking_mode.has_thinking_support(),
         supports_adaptive = thinking_mode.supports_adaptive(),
         system_prompt_len = system_prompt.len(),
-        tool_count = tools::all_tool_defs().len(),
+        tool_count = tools::model_tool_defs().len(),
         "preparing stream request"
     );
     let max_out = model_profile
@@ -96,7 +96,7 @@ pub async fn prepare_stream_request(
              snippets, specific values, and direct replies to mid-task user \
              messages. Routine narration and final answers may remain normal \
              assistant text.",
-         );
+        );
     }
     // Interaction-mode guidance (Junie-style behavioral mode). Pure additive
     // prompt text, exactly like the brief-mode block above. `Code` (the default)
@@ -121,7 +121,8 @@ pub async fn prepare_stream_request(
     let request_budget = stream_context_budget(
         &system_prompt,
         &advertised_tools,
-        recalled_memory_chars,
+        project_context.memory_context_chars,
+        project_context.project_instructions_chars,
         messages,
     );
     let request_raw_tokens = jfc_core::context_budget::raw_tokens(request_budget);
@@ -137,6 +138,7 @@ pub async fn prepare_stream_request(
         system_prompt_tokens = request_budget.system_prompt_tokens,
         tool_definition_tokens = request_budget.tool_definition_tokens,
         memory_tokens = request_budget.memory_tokens,
+        project_instructions_tokens = request_budget.project_instructions_tokens,
         replay_message_tokens = request_budget.user_message_tokens,
         raw_tokens = request_raw_tokens,
         effective_tokens = request_effective_tokens,
@@ -244,6 +246,6 @@ pub async fn prepare_stream_request(
                 selected_model_info.as_ref(),
             )),
         },
-        recalled_memory_chars,
+        recalled_memory_chars: project_context.fresh_recall_chars,
     }
 }

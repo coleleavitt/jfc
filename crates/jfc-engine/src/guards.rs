@@ -357,14 +357,21 @@ mod tests {
         let cwd = std::env::temp_dir();
         let path = cwd.join("dg_surfaced_unit.rs");
         let file_str = path.display().to_string();
-        with_diag_env(vec![diag_entry(&file_str, 12, "unresolved import `foo`")], || async {
-            let ctx = GuardContext::new(&path, "use foo;", None, &cwd);
-            let findings = DiagnosticsGuard.check(&ctx).await;
-            assert_eq!(findings.len(), 1, "{findings:?}");
-            assert_eq!(findings[0].rule, "diagnostics");
-            assert!(findings[0].message.contains("unresolved import"), "{:?}", findings[0]);
-            assert_eq!(findings[0].line, Some(12));
-        })
+        with_diag_env(
+            vec![diag_entry(&file_str, 12, "unresolved import `foo`")],
+            || async {
+                let ctx = GuardContext::new(&path, "use foo;", None, &cwd);
+                let findings = DiagnosticsGuard.check(&ctx).await;
+                assert_eq!(findings.len(), 1, "{findings:?}");
+                assert_eq!(findings[0].rule, "diagnostics");
+                assert!(
+                    findings[0].message.contains("unresolved import"),
+                    "{:?}",
+                    findings[0]
+                );
+                assert_eq!(findings[0].line, Some(12));
+            },
+        )
         .await;
     }
 
@@ -375,11 +382,17 @@ mod tests {
         let edited = cwd.join("dg_edited_unit.rs");
         let other = cwd.join("dg_other_unit.rs");
         let other_str = other.display().to_string();
-        with_diag_env(vec![diag_entry(&other_str, 3, "mismatched types")], || async {
-            let ctx = GuardContext::new(&edited, "fn x() {}", None, &cwd);
-            let findings = DiagnosticsGuard.check(&ctx).await;
-            assert!(findings.is_empty(), "other-file diagnostics leaked: {findings:?}");
-        })
+        with_diag_env(
+            vec![diag_entry(&other_str, 3, "mismatched types")],
+            || async {
+                let ctx = GuardContext::new(&edited, "fn x() {}", None, &cwd);
+                let findings = DiagnosticsGuard.check(&ctx).await;
+                assert!(
+                    findings.is_empty(),
+                    "other-file diagnostics leaked: {findings:?}"
+                );
+            },
+        )
         .await;
     }
 
@@ -412,7 +425,10 @@ mod tests {
 
         let ctx = GuardContext::new(&path, "fn x() {}", None, &cwd);
         let findings = DiagnosticsGuard.check(&ctx).await;
-        assert!(findings.is_empty(), "guard ran while disabled: {findings:?}");
+        assert!(
+            findings.is_empty(),
+            "guard ran while disabled: {findings:?}"
+        );
 
         crate::diagnostics::set_global_snapshot(prev_snapshot);
         unsafe {
@@ -430,7 +446,11 @@ mod tests {
         let path = cwd.join("dg_basename_unit.rs");
         // Snapshot path has a different absolute root but the same basename.
         with_diag_env(
-            vec![diag_entry("/elsewhere/proj/dg_basename_unit.rs", 7, "type error")],
+            vec![diag_entry(
+                "/elsewhere/proj/dg_basename_unit.rs",
+                7,
+                "type error",
+            )],
             || async {
                 let ctx = GuardContext::new(&path, "fn x() {}", None, &cwd);
                 let findings = DiagnosticsGuard.check(&ctx).await;
