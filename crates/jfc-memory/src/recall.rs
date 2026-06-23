@@ -3,12 +3,11 @@
 //!
 //! Background — why two passes instead of one:
 //!
-//! Older builds of Claude Code (and our previous behavior, see
-//! `memory::render_memories_section`) injected *every* memory file into the
-//! system prompt on every turn. That wastes input tokens and dilutes the
-//! attention signal: a "favor concise replies" preference and a "this repo
-//! uses sqlx" project fact are both equally weighted, even though the second
-//! is irrelevant to a question about formatting.
+//! Older builds of Claude Code (and our previous behavior) injected *every*
+//! memory into the system prompt on every turn. That wastes input tokens and
+//! dilutes the attention signal: a "favor concise replies" preference and a
+//! "this repo uses sqlx" project fact are both equally weighted, even though
+//! the second is irrelevant to a question about formatting.
 //!
 //! v2.1.132 ships a two-pass recall:
 //!
