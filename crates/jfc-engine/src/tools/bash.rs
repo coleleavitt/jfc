@@ -634,19 +634,16 @@ async fn start_bash_task(
     cwd: &Path,
     progress: ProgressSink,
     track_for_abort: bool,
-    is_backgrounded: bool,
 ) -> Result<RunningBashTask, String> {
     use std::process::Stdio;
 
-    // Backgrounded tasks (explicitly `run_in_background=true` or auto-backgrounded after
-    // foreground budget) should get a generous timeout (up to the max 600s from the schema)
-    // to allow long-running operations. Foreground-only tasks are limited by the user's
-    // timeout or the default 120s.
-    let timeout = if is_backgrounded {
-        clamp_timeout(timeout_ms, BACKGROUNDED_TIMEOUT_MS)
-    } else {
-        clamp_timeout(timeout_ms, DEFAULT_TIMEOUT_MS)
-    };
+    // The caller (`execute_bash_with_options`) has ALREADY resolved the
+    // foreground/background timeout policy and passes the intended watcher
+    // timeout here. We must only enforce the absolute ceiling — re-applying the
+    // foreground default as a max would silently shrink a foreground command
+    // that was auto-moved to the background (e.g. a 300s build) back to 120s and
+    // kill it early. So clamp to the hard upper bound and trust the caller.
+    let timeout = clamp_timeout(timeout_ms, BACKGROUNDED_TIMEOUT_MS);
     let (mut cmd, command) = build_bash_command(command, cwd);
     let task_id = new_task_id();
     let output_path = prepare_bash_output_dir()?.join(format!("{task_id}.log"));
@@ -895,7 +892,6 @@ pub async fn execute_bash_with_options(
         cwd,
         progress,
         !run_in_background,
-        run_in_background,
     )
     .await
     {
@@ -1268,6 +1264,45 @@ mod timeout_tests {
         assert!(
             effective < foreground_budget,
             "timeout should be < foreground budget"
+        );
+    }
+
+    // Regression: the two-stage timeout path must not double-clamp. Previously
+    // `execute_bash_with_options` resolved a generous watcher timeout for a
+    // foreground command that exceeds the budget (so it can be auto-backgrounded),
+    // but `start_bash_task` then re-applied DEFAULT_TIMEOUT_MS as the max for
+    // foreground tasks — shrinking e.g. a 300s build back to 120s and killing it
+    // early. `start_bash_task` now clamps only to the absolute ceiling, so the
+    // caller's resolved timeout survives. This reproduces the full composition.
+    #[tokio::test]
+    async fn long_foreground_command_keeps_resolved_timeout_regression() {
+        let foreground_budget = foreground_budget_ms();
+        // Model asks for 300s on a foreground (run_in_background=false) command.
+        let requested = Some(300_000_u64);
+        let run_in_background = false;
+
+        // Stage 1 — execute_bash_with_options resolves the watcher timeout.
+        let user_timeout = clamp_timeout(requested, DEFAULT_TIMEOUT_MS);
+        let effective_timeout_for_watcher = if run_in_background || user_timeout > foreground_budget
+        {
+            clamp_timeout(requested, BACKGROUNDED_TIMEOUT_MS)
+        } else {
+            user_timeout
+        };
+
+        // Stage 2 — start_bash_task now clamps ONLY to the absolute ceiling
+        // (the fix), instead of re-applying DEFAULT_TIMEOUT_MS for foreground.
+        let final_timeout = clamp_timeout(Some(effective_timeout_for_watcher), BACKGROUNDED_TIMEOUT_MS);
+
+        // The model's 300s must survive end-to-end (it's under the 600s ceiling).
+        assert_eq!(
+            final_timeout, 300_000,
+            "resolved long-foreground timeout must not be re-clamped to the 120s default"
+        );
+        // And it must clearly exceed the old buggy value.
+        assert!(
+            final_timeout > DEFAULT_TIMEOUT_MS,
+            "fix regressed: timeout fell back to the foreground default"
         );
     }
 }
