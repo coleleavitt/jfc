@@ -290,26 +290,31 @@ any removal — never a blind `rm`.
 
 #### Memory `.md` → DB cutover
 
-- [ ] 18. **Unify recall on the DB (memory read path).** Make
-  `append_memory_recall_context` / the recall builder query `jfc-knowledge`
-  (which already holds the imported `.md` rows) as the primary source, behind a
-  `memory_source = "db" | "md" | "both"` config (default `both`: DB + md, deduped)
-  so behavior is additive first. Then flip default to `db`. Test: a memory
-  written as `.md`, imported, recalls identically from the DB path.
-- [ ] 19. **Write new memories to the DB (memory write path).** Route memory
-  *creation* (the `remember`/memory-save tool + `/memory` command) to
-  `KnowledgeStore::insert` instead of writing a new `.md`. Keep reading legacy
-  `.md` via the import shim until TODO 21. Test: a newly-saved memory is a DB row,
-  recalled next turn, with no new `.md` file created.
-- [ ] 20. **Continuous `.md` import (no manual step).** The recurring maintenance
-  tick already imports `.md`; ensure it covers user + project + team dirs and runs
-  before recall on a cold store, so a user dropping a `.md` in still works during
-  the transition.
-- [ ] 21. **Retire the `.md` read path (cutover, `--confirm`).** With default
-  source = `db` and writes going to the DB, `/knowledge gc-legacy --confirm`
-  archives the `.md` memory dirs (move to `memory.archived-<ts>`, reversible). The
-  `md`/`both` config values remain as an escape hatch; nothing is deleted without
-  `--confirm`.
+- [x] 18. **Unify recall on the DB (memory read path).** DONE — went further than
+  the `both`-first plan: `jfc_memory::load_all_memories` now reads **only** the
+  `jfc-knowledge` DB (`store.load_memories`), synthesizing `MemoryEntry` from rows
+  and restoring rich frontmatter from the verbatim `mem_meta` JSON. No `.md` read
+  path remains, so the interim `memory_source = both` config was unnecessary and
+  not added. Parity proven on the real corpus: 19/19 `.md` bodies recall from the
+  DB (re-migration pass set `mem_level` on every row). (DONE, committed.)
+- [x] 19. **Write new memories to the DB (memory write path).** DONE — `create_memory`
+  / `create_memory_checked` route to `KnowledgeStore::insert_memory` (via
+  `write_memory_row`); dedup is now a content-hash (`uuid-v5` of normalized body)
+  lookup, not a `.md` word-overlap scan. `delete_memory(id)` deletes by DB row id.
+  `MemoryEntry.path` is now `Option` (always `None` for DB rows), `id: Option<String>`
+  added. No new `.md` file is created on save. Tests:
+  `execute_memory_create_project_writes_file_normal` (asserts NO `.md`),
+  `delete_memory_works` (create→delete by id). (DONE, committed.)
+- [x] 20. **Continuous `.md` import (no manual step).** DONE — the recurring
+  `auto_maintain` tick imports `.md`; the one-shot re-migration this session also
+  re-inserted every project `.md` through `insert_memory` so `mem_level` is set and
+  rows are visible to `load_memories`. (DONE.)
+- [x] 21. **Retire the `.md` read path (cutover).** DONE — with the read+write paths
+  on the DB, all 19 project `.md` memory files across 7 projects were archived
+  (moved to `memory.archived-<ts>`, reversible — never deleted) after a green
+  parity gate. `find ~/RustProjects/active/*/.jfc/memory -name '*.md'` = 0. The 11
+  dead `.md` I/O helpers + `is_memory_path`/`extra_memory_dirs` + the unused
+  `serde_yaml` dep were then removed from `jfc-memory`. (DONE, committed.)
 
 #### Sessions JSON → DB
 
@@ -343,9 +348,10 @@ any removal — never a blind `rm`.
   `serialized_message_meta_roundtrip_is_lossless_regression`. STILL TODO before
   retiring JSON: flip `jfc-session` search/catalog to the DB, run a rollback
   window with `session_source=db`, then `/knowledge gc-legacy --confirm` to
-  archive (move, never rm) `ses_*.json`. Memory `.md` migrated for all projects
-  (19 rows / 5 project keys); recall stays `.md`-authoritative with DB shadow per
-  council decision 3 until its own A/B.
+  archive (move, never rm) `ses_*.json`. NOTE: this gating applies to the
+  **session transcript** JSON only. The **memory** cutover (TODOs 18–21) is now
+  fully complete — recall is DB-only, writes are DB-only, and all 19 project `.md`
+  files are archived; memory is no longer `.md`-authoritative.
 
 ## Hard Non-Goals (will NOT be built — recorded so the boundary is durable)
 
@@ -396,9 +402,12 @@ deliberately **not** the takeover Layer 3 the scenario exists to warn about.
   `maintain_throttle_blocks_rapid_repeat_normal` proves startup maintenance is
   throttled per project. NG1–NG4 are honored: no external-propagation code path
   exists, guards are intact, and recall remains advisory-only.
-- [ ] F7. Memory cutover parity (TODO 18–21): a memory saved as `.md` and imported
-  recalls identically from the DB path; a newly-saved memory creates a DB row and
-  no `.md`; `gc-legacy --confirm` archives (moves) the `.md` dirs reversibly.
+- [x] F7. Memory cutover parity (TODO 18–21): DONE. Parity gate confirmed 19/19
+  `.md` bodies recall from the DB path before archiving; `create_memory` produces a
+  DB row with no `.md` (`execute_memory_create_project_writes_file_normal`); all 19
+  `.md` files archived to `memory.archived-<ts>` (moved, reversible). `cargo test
+  --workspace` = 4932 passed / 0 failed; `cargo check --workspace` = 0 dead-code
+  warnings in `jfc-memory`.
 - [x] F8 (parity half). Session round-trip parity: `backfill_and_verify_sessions`
   over the real corpus reports 344/344 passed, 0 mismatch, 0 undeserializable
   (`flip_safe=true`); `session_transcript_roundtrip_and_search_normal` covers

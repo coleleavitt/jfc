@@ -476,34 +476,3 @@ pub mod types {
         validate_turn_invariants, validate_turn_invariants_inner,
     };
 }
-
-#[cfg(test)]
-pub mod test_helpers {
-    //! Test utilities for jfc-engine tests — isolated temp knowledge DB.
-
-    use std::path::Path;
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    static TEMP_KNOWLEDGE_DB_OVERRIDE: std::sync::OnceLock<std::path::PathBuf> =
-        std::sync::OnceLock::new();
-    static USING_TEMP_DB: AtomicBool = AtomicBool::new(false);
-
-    /// RAII guard that redirects knowledge DB to a temp path for one test.
-    pub struct TempKnowledgeDbGuard;
-
-    impl Drop for TempKnowledgeDbGuard {
-        fn drop(&mut self) {
-            USING_TEMP_DB.store(false, Ordering::SeqCst);
-        }
-    }
-
-    /// Set up a temp knowledge DB for this test; returns a guard that resets on drop.
-    pub fn use_temp_knowledge_db(tmp: &tempfile::TempDir) -> TempKnowledgeDbGuard {
-        let path = tmp.path().join("test-knowledge.db");
-        let _ = TEMP_KNOWLEDGE_DB_OVERRIDE.set(path.clone());
-        // SAFETY: tests are run single-threaded via #[serial_test::serial]
-        unsafe { std::env::set_var("JFC_KNOWLEDGE_DB", path.to_string_lossy().as_ref()); }
-        USING_TEMP_DB.store(true, Ordering::SeqCst);
-        TempKnowledgeDbGuard
-    }
-}

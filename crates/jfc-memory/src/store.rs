@@ -1,22 +1,14 @@
 //! Memory system for jfc — persistent storage of learned preferences, facts,
 //! and project context across sessions.
 //!
-//! Storage layout (mirroring Claude Code v126):
-//! - User-level: `~/.config/jfc/memory/` — personal preferences that follow
-//!   the user across all projects.
-//! - Project-level: `<project>/.jfc/memory/` — shared project knowledge.
+//! Memories are stored in the `jfc-knowledge` SQLite DB (a single
+//! `knowledge.db`), not as `.md` files. Each memory carries a `MemoryLevel`
+//! (User / Project / Team / External) and a `MemoryFrontmatter` (type, scope,
+//! TTL, dedup hash) serialized into the DB `mem_meta` column. CRUD goes through
+//! [`create_memory`], [`create_memory_checked`], [`load_all_memories`], and
+//! [`delete_memory`] (delete-by-id).
 //!
-//! Each memory is a single `.md` file with YAML frontmatter:
-//! ```markdown
-//! ---
-//! type: feedback | preference | project | context
-//! scope: user | team
-//! created: 2026-05-01T12:00:00Z
-//! ---
-//! The actual memory content goes here.
-//! ```
-//!
-//! Memories are immutable — to update, delete the old file and create a new one.
+//! Memories are immutable — to update, delete the old row and create a new one.
 
 use std::borrow::Cow;
 use std::fmt;
@@ -32,16 +24,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MemoryLevel {
-    /// `~/.config/jfc/memory/`
+    /// Personal preferences that follow the user across all projects.
     User,
-    /// `<project>/.jfc/memory/`
+    /// Knowledge scoped to a single project.
     Project,
-    /// `<project>/.jfc/memory/team/` — shared across everyone working
-    /// in this repo. v132 prompt: "Other teammates' Claude sessions
-    /// write here too. Merge near-duplicates within `team/`. DO NOT
-    /// delete a team memory just because you don't recognize it."
+    /// Shared across everyone working in this repo. v132 prompt: "Other
+    /// teammates' Claude sessions write here too. Merge near-duplicates.
+    /// DO NOT delete a team memory just because you don't recognize it."
     Team,
-    /// Extra memory directories supplied by `JFC_MEMORY_DIRS`.
+    /// Memories imported from an external source.
     External,
 }
 
@@ -323,35 +314,6 @@ pub fn team_memory_dir(project_root: &Path) -> PathBuf {
     project_memory_dir(project_root).join("team")
 }
 
-/// Returns `true` if the given path resides inside a known memory directory.
-pub fn is_memory_path(path: &Path) -> bool {
-    let normalized = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let user_dir = user_memory_dir();
-    let user_canon = user_dir.canonicalize().unwrap_or_else(|_| user_dir.clone());
-
-    if normalized.starts_with(&user_canon) {
-        return true;
-    }
-
-    for dir in extra_memory_dirs() {
-        let canon = dir.canonicalize().unwrap_or(dir);
-        if normalized.starts_with(&canon) {
-            return true;
-        }
-    }
-
-    // Check against current working directory's project memory
-    if let Ok(cwd) = std::env::current_dir() {
-        let proj_dir = project_memory_dir(&cwd);
-        let proj_canon = proj_dir.canonicalize().unwrap_or_else(|_| proj_dir.clone());
-        if normalized.starts_with(&proj_canon) {
-            return true;
-        }
-    }
-
-    false
-}
-
 // ─── Read / Write / Delete ───────────────────────────────────────────────────
 
 /// Load all memory entries from both user and project directories.
@@ -417,100 +379,11 @@ fn memory_level_to_mem_level(l: MemoryLevel) -> jfc_knowledge::MemLevel {
     }
 }
 
-fn extra_memory_dirs() -> Vec<PathBuf> {
-    std::env::var_os("JFC_MEMORY_DIRS")
-        .map(|raw| std::env::split_paths(&raw).collect())
-        .unwrap_or_default()
-}
-
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
-}
-
-/// Load memory entries from a single directory.
-fn load_from_dir(dir: &Path, level: MemoryLevel, out: &mut Vec<MemoryEntry>) {
-    let read_dir = match std::fs::read_dir(dir) {
-        Ok(rd) => rd,
-        Err(_) => return, // directory doesn't exist yet — normal
-    };
-
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-        match parse_memory_file(&path, level) {
-            Ok(mem) => {
-                // Enforce the TTL the frontmatter declares: expired memories
-                // are skipped (not deleted — the dreamer owns cleanup) so
-                // recall never surfaces stale facts.
-                if let Some(expires) = mem.frontmatter.expires_at
-                    && expires <= now_ms()
-                {
-                    tracing::debug!(
-                        target: "jfc::memory",
-                        path = %path.display(),
-                        "skipping expired memory"
-                    );
-                    continue;
-                }
-                out.push(mem);
-            }
-            Err(e) => {
-                tracing::warn!(
-                    target: "jfc::memory",
-                    path = %path.display(),
-                    error = %e,
-                    "failed to parse memory file"
-                );
-            }
-        }
-    }
-}
-
-/// Parse a single memory `.md` file with YAML frontmatter.
-fn parse_memory_file(path: &Path, level: MemoryLevel) -> Result<MemoryEntry, String> {
-    let content = std::fs::read_to_string(path).map_err(|e| format!("read error: {e}"))?;
-
-    let (frontmatter, body) = parse_frontmatter_and_body(&content)?;
-
-    Ok(MemoryEntry {
-        id: Some(format!("legacy:{}", path.display())),
-        path: Some(path.to_path_buf()),
-        level,
-        frontmatter,
-        body,
-    })
-}
-
-/// Split content into YAML frontmatter and body.
-fn parse_frontmatter_and_body(content: &str) -> Result<(MemoryFrontmatter, String), String> {
-    let trimmed = content.trim_start();
-    if !trimmed.starts_with("---") {
-        // No frontmatter — treat as plain context memory
-        return Ok((
-            MemoryFrontmatter::new(MemoryType::Context, MemoryScope::Private),
-            content.to_string(),
-        ));
-    }
-
-    // Find closing ---
-    let after_open = &trimmed[3..];
-    let close_idx = after_open
-        .find("\n---")
-        .ok_or_else(|| "unclosed frontmatter block".to_string())?;
-
-    let yaml_str = &after_open[..close_idx].trim();
-    let body_start = 3 + close_idx + 4; // skip opening --- + yaml + \n---
-    let body = trimmed[body_start..].trim_start_matches('\n').to_string();
-
-    let frontmatter: MemoryFrontmatter =
-        serde_yaml::from_str(yaml_str).map_err(|e| format!("YAML parse error: {e}"))?;
-
-    Ok((frontmatter, body))
 }
 
 /// Result of attempting to create a memory, including optional conflict info.
@@ -646,176 +519,6 @@ fn write_memory_row(
         })
         .map_err(|e| format!("failed to insert memory: {e}"))?;
     Ok(id)
-}
-
-/// Append a one-line pointer for a freshly-created memory to `<root>/MEMORY.md`,
-/// matching the documented format `- [Title](path) — hook`. Creates the index
-/// (with a heading) if absent, and is idempotent: a pointer to the same file is
-/// never duplicated.
-fn append_memory_index_pointer(
-    project_root: &Path,
-    memory_path: &Path,
-    body: &str,
-) -> std::io::Result<()> {
-    let index = project_root.join("MEMORY.md");
-
-    // Relative path from the project root for a portable link.
-    let rel = memory_path
-        .strip_prefix(project_root)
-        .unwrap_or(memory_path)
-        .to_string_lossy()
-        .replace('\\', "/");
-
-    // Title + hook from the memory body's first non-empty line.
-    let first_line = body
-        .lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())
-        .unwrap_or("memory");
-    let title = truncate_chars(first_line, 60);
-    let hook = truncate_chars(first_line, 100);
-    let pointer = format!("- [{title}]({rel}) — {hook}");
-
-    let existing = std::fs::read_to_string(&index).unwrap_or_default();
-    // Idempotent: don't append if this file is already linked.
-    if existing.contains(&format!("({rel})")) {
-        return Ok(());
-    }
-
-    let mut out = if existing.trim().is_empty() {
-        String::from("# Project Memory Index\n\n")
-    } else {
-        let mut s = existing;
-        if !s.ends_with('\n') {
-            s.push('\n');
-        }
-        s
-    };
-    out.push_str(&pointer);
-    out.push('\n');
-    write_atomic_sync(&index, out.as_bytes())
-}
-
-/// Truncate `s` to at most `max` chars on a char boundary, adding an ellipsis
-/// when cut.
-fn truncate_chars(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_owned()
-    } else {
-        let cut: String = s.chars().take(max.saturating_sub(1)).collect();
-        format!("{cut}…")
-    }
-}
-
-/// Resolve the memory directory for a given level.
-fn memory_dir_for(level: MemoryLevel, project_root: &Path) -> PathBuf {
-    match level {
-        MemoryLevel::User => user_memory_dir(),
-        MemoryLevel::Project => project_memory_dir(project_root),
-        MemoryLevel::Team => team_memory_dir(project_root),
-        MemoryLevel::External => project_memory_dir(project_root),
-    }
-}
-
-/// Write a single memory `.md` file into `dir`. Returns the path.
-fn write_memory_file(
-    dir: &Path,
-    memory_type: MemoryType,
-    scope: MemoryScope,
-    body: &str,
-) -> Result<PathBuf, String> {
-    // Ensure directory exists
-    std::fs::create_dir_all(dir).map_err(|e| format!("failed to create memory directory: {e}"))?;
-
-    let now: DateTime<Utc> = SystemTime::now().into();
-    let slug = slugify(body, 40);
-    let timestamp = now.format("%Y%m%d-%H%M%S");
-    let filename = format!("{timestamp}-{slug}.md");
-    let path = dir.join(&filename);
-
-    // Render frontmatter + body
-    let content = format!(
-        "---\ntype: {memory_type}\nscope: {scope}\ncreated: {}\n---\n{body}\n",
-        now.format("%Y-%m-%d")
-    );
-
-    // Atomic write — a power loss while saving the memory file would
-    // otherwise leave a truncated frontmatter + body and `load_memories`
-    // would silently skip the file (because the YAML header wouldn't
-    // parse), losing the user's note.
-    write_atomic_sync(&path, content.as_bytes())
-        .map_err(|e| format!("failed to write memory file: {e}"))?;
-
-    Ok(path)
-}
-
-/// Find an existing memory in `dir` whose content significantly overlaps
-/// with `new_body`. Returns the path of the conflicting file if found.
-///
-/// Uses simple word-overlap: if >50% of the words in `new_body` appear in
-/// the existing memory's body, it's considered a near-duplicate.
-/// This is the same heuristic CC uses via `conflicting_memory_id`.
-fn find_conflicting_memory(dir: &Path, new_body: &str) -> Option<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return None;
-    };
-    let new_words = word_set(new_body);
-    if new_words.is_empty() {
-        return None;
-    }
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let body = strip_frontmatter(&content);
-        let existing_words = word_set(body);
-        // Count how many of the new body's words appear in the existing memory
-        let overlap = new_words
-            .iter()
-            .filter(|w| existing_words.contains(*w))
-            .count();
-        let overlap_ratio = overlap as f64 / new_words.len() as f64;
-        if overlap_ratio > 0.5 {
-            tracing::debug!(
-                target: "jfc::memory",
-                path = %path.display(),
-                overlap_ratio,
-                "found near-duplicate memory"
-            );
-            return Some(path);
-        }
-    }
-    None
-}
-
-/// Extract the body portion of a memory file (after the `---` front-matter block).
-fn strip_frontmatter(content: &str) -> &str {
-    // Skip the opening `---`
-    let after_first = content
-        .strip_prefix("---")
-        .map(|s| s.trim_start_matches('\n'));
-    let Some(rest) = after_first else {
-        return content;
-    };
-    // Find the closing `---`
-    if let Some(pos) = rest.find("\n---") {
-        rest[pos + 4..].trim_start_matches('\n')
-    } else {
-        content
-    }
-}
-
-/// Build a set of normalized words for overlap comparison.
-fn word_set(text: &str) -> std::collections::HashSet<String> {
-    text.split(|c: char| !c.is_alphanumeric())
-        .filter(|w| w.len() >= 4) // skip short stop words
-        .map(|w| w.to_lowercase())
-        .collect()
 }
 
 /// Delete a memory file by path.
@@ -1118,42 +821,6 @@ pub fn format_existing_memories(memories: &[MemoryEntry]) -> String {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Create a URL-safe slug from text, truncated to `max_len` characters.
-fn slugify(text: &str, max_len: usize) -> String {
-    let cleaned: String = text
-        .chars()
-        .take(max_len * 2) // take extra to account for removals
-        .map(|c| {
-            if c.is_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect();
-
-    // Collapse consecutive dashes
-    let mut result = String::with_capacity(max_len);
-    let mut prev_dash = false;
-    for c in cleaned.chars() {
-        if c == '-' {
-            if !prev_dash && !result.is_empty() {
-                result.push('-');
-            }
-            prev_dash = true;
-        } else {
-            result.push(c);
-            prev_dash = false;
-        }
-        if result.len() >= max_len {
-            break;
-        }
-    }
-
-    // Trim trailing dash
-    result.trim_end_matches('-').to_string()
-}
-
 fn collect_md_file_names(
     dir: &Path,
     out: &mut std::collections::BTreeSet<String>,
@@ -1226,7 +893,6 @@ fn write_atomic_sync(path: &Path, content: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::TempDir;
 
     struct EnvGuard {
@@ -1288,20 +954,6 @@ mod tests {
     }
 
     #[test]
-    fn create_memory_index_append_is_idempotent_robust() {
-        let tmp = TempDir::new().unwrap();
-        let root = tmp.path();
-        let p = root.join(".jfc").join("memory").join("same-note.md");
-        // Manually append the SAME file's pointer again — must not duplicate.
-        append_memory_index_pointer(root, &p, "Same note body.").unwrap();
-        append_memory_index_pointer(root, &p, "Same note body.").unwrap();
-        let index = fs::read_to_string(root.join("MEMORY.md")).unwrap();
-        let rel = p.strip_prefix(root).unwrap().to_string_lossy();
-        let occurrences = index.matches(&format!("({rel})")).count();
-        assert_eq!(occurrences, 1, "pointer must appear exactly once: {index}");
-    }
-
-    #[test]
     #[serial_test::serial]
     fn create_user_memory_does_not_write_project_index_robust() {
         let tmp = TempDir::new().unwrap();
@@ -1320,31 +972,6 @@ mod tests {
             !root.join("MEMORY.md").exists(),
             "user memory must not create a project MEMORY.md"
         );
-    }
-
-    #[test]
-    fn parse_frontmatter_valid() {
-        let content = "---\ntype: feedback\nscope: team\ncreated: 2026-05-01T12:00:00Z\n---\nDon't use mocks in integration tests.";
-        let (fm, body) = parse_frontmatter_and_body(content).unwrap();
-        assert_eq!(fm.memory_type, MemoryType::Feedback);
-        assert_eq!(fm.scope, MemoryScope::Team);
-        assert_eq!(body, "Don't use mocks in integration tests.");
-    }
-
-    #[test]
-    fn parse_frontmatter_missing_defaults_to_context() {
-        let content = "Just a plain note without frontmatter.";
-        let (fm, body) = parse_frontmatter_and_body(content).unwrap();
-        assert_eq!(fm.memory_type, MemoryType::Context);
-        assert_eq!(fm.scope, MemoryScope::Private);
-        assert_eq!(body, content);
-    }
-
-    #[test]
-    fn slugify_works() {
-        assert_eq!(slugify("Hello World!", 20), "hello-world");
-        assert_eq!(slugify("don't mock DB", 10), "don-t-mock");
-        assert_eq!(slugify("  leading spaces  ", 15), "leading-spaces");
     }
 
     #[test]
@@ -1377,25 +1004,39 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn delete_memory_works() {
         let tmp = TempDir::new().unwrap();
+        let _guard = use_temp_knowledge_db(&tmp);
         let project = tmp.path().to_path_buf();
-        let mem_dir = project_memory_dir(&project);
-        fs::create_dir_all(&mem_dir).unwrap();
 
-        let file = mem_dir.join("test-memory.md");
-        fs::write(
-            &file,
-            "---\ntype: context\nscope: private\n---\nSome fact.\n",
+        // Create a memory, then delete it by its DB id (the delete-by-id
+        // contract after the MD→DB cutover).
+        let id = create_memory(
+            MemoryLevel::Project,
+            MemoryType::Context,
+            MemoryScope::Private,
+            "Some fact to be deleted.",
+            &project,
         )
         .unwrap();
+        assert!(
+            load_all_memories(&project)
+                .iter()
+                .any(|m| m.id.as_deref() == Some(id.as_str())),
+            "memory should exist before delete"
+        );
 
-        // delete_memory checks is_memory_path, which uses canonicalize.
-        // For the test we call remove_file directly since canonicalize
-        // depends on process cwd.
-        assert!(file.exists());
-        fs::remove_file(&file).unwrap();
-        assert!(!file.exists());
+        delete_memory(&id).unwrap();
+
+        assert!(
+            !load_all_memories(&project)
+                .iter()
+                .any(|m| m.id.as_deref() == Some(id.as_str())),
+            "memory should be gone after delete"
+        );
+        // Deleting a nonexistent id surfaces an error.
+        assert!(delete_memory("no-such-id").is_err());
     }
 
     #[test]
@@ -1482,35 +1123,6 @@ mod tests {
     fn body_structure_guidance_present_normal() {
         assert!(MEMORY_USAGE_SECTIONS.contains("Why:"));
         assert!(MEMORY_USAGE_SECTIONS.contains("How to apply:"));
-    }
-
-    #[test]
-    fn find_conflicting_memory_detects_duplicate_normal() {
-        let dir = tempfile::tempdir().unwrap();
-        // Write an existing memory
-        let existing = dir.path().join("existing.md");
-        std::fs::write(
-            &existing,
-            "---\ntype: feedback\nscope: private\ncreated: 2026-01-01\n---\nintegration tests must use a real database not mocks\n",
-        ).unwrap();
-        // A body with >50% word overlap
-        let similar = "integration tests must hit a real database and not use mocks";
-        let conflict = find_conflicting_memory(dir.path(), similar);
-        assert!(conflict.is_some(), "should detect near-duplicate");
-    }
-
-    #[test]
-    fn find_conflicting_memory_no_false_positive_robust() {
-        let dir = tempfile::tempdir().unwrap();
-        let existing = dir.path().join("existing.md");
-        std::fs::write(
-            &existing,
-            "---\ntype: project\nscope: team\ncreated: 2026-01-01\n---\nauth middleware rewrite is driven by compliance\n",
-        ).unwrap();
-        // Unrelated body
-        let unrelated = "prefer bun over npm for javascript package management";
-        let conflict = find_conflicting_memory(dir.path(), unrelated);
-        assert!(conflict.is_none(), "should not flag unrelated memory");
     }
 
     #[test]
