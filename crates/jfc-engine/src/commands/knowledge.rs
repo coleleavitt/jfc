@@ -13,6 +13,9 @@ use jfc_knowledge::{KnowledgeStore, RecallFilter, RelKind, Scope};
 /// Render a help/usage message.
 fn usage() -> String {
     "Usage: /knowledge <subcommand>\n\
+     (The store is self-driving — it imports, mines your sessions, consolidates, \
+     and auto-promotes proven lessons in the background. These commands are \
+     optional manual controls.)\n\
      - import            import legacy .md memories into the store (idempotent)\n\
      - mine              mine your session history into project lessons (offline)\n\
      - list              show recent stored knowledge\n\

@@ -6,11 +6,16 @@ Replace the scattered per-project `.jfc/memory/*.md` + `jfc-learn/*.jsonl` files
 with a single, durable, queryable **user-level SQLite database** at
 `~/.local/share/jfc/knowledge.db` (Obsidian-style: one vault, every project) so
 facts, preferences, skills, and findings accumulate **across projects**. This is
-bounded, scaffolding-level self-improvement — recall is advisory context only,
-cross-project promotion is human-gated, growth is capped, and the whole store is
-one deletable file (kill switch). It is explicitly **not** an unbounded
-weight-level RSI loop. Phase 1 (the store) is DONE and committed; the remaining
-phases wire recall, import the existing `.md` files, then cut over.
+scaffolding-level self-improvement that is **self-driving and grows unbounded**:
+on startup the store autonomously imports legacy `.md` memories, mines the user's
+session history into verified lessons, consolidates duplicates, and
+**auto-promotes** proven (verified + repeatedly-seen) lessons across projects —
+no `/knowledge` command required. The store grows without a row cap; the only
+retained safety properties are the ones that protect the *user* (not restrict
+them): secrets are redacted before storage, recalled text is screened as
+reference-data-not-instructions, and the whole store is one deletable file (the
+kill switch). The `/knowledge` commands remain as optional manual controls.
+ALL phases (1–15) are DONE and committed.
 
 ## Context
 

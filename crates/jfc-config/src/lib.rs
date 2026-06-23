@@ -95,9 +95,10 @@ pub struct Config {
     pub memory_recall_enabled: bool,
     #[serde(default = "default_plan_recall_enabled")]
     pub plan_recall_enabled: bool,
-    /// Cross-project knowledge recall (jfc-knowledge). Default OFF: until a
-    /// baseline A/B shows it helps, the default prompt is unchanged.
-    #[serde(default)]
+    /// Cross-project knowledge recall (jfc-knowledge). Default ON: the store is
+    /// self-driving — it imports, mines your session history, and recalls
+    /// lessons across projects automatically. Set to `false` to disable.
+    #[serde(default = "default_cross_project_recall_enabled")]
     pub cross_project_recall_enabled: bool,
     #[serde(default)]
     pub session_cost_budget_usd: Option<f64>,
@@ -477,6 +478,10 @@ impl Default for RemoteControlConfig {
 fn default_memory_recall_enabled() -> bool {
     true
 }
+
+fn default_cross_project_recall_enabled() -> bool {
+    true
+}
 fn default_plan_recall_enabled() -> bool {
     true
 }
@@ -639,7 +644,7 @@ impl Default for Config {
             slate_rules: None,
             memory_recall_enabled: default_memory_recall_enabled(),
             plan_recall_enabled: default_plan_recall_enabled(),
-            cross_project_recall_enabled: false,
+            cross_project_recall_enabled: default_cross_project_recall_enabled(),
             session_cost_budget_usd: None,
             auto_compact_enabled: default_auto_compact_enabled(),
             auto_compact_window: None,

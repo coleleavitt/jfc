@@ -38,10 +38,17 @@ pub use project::project_key;
 pub use query::{Gap, LinkedRecord, RecallFilter};
 pub use record::{Kind, KnowledgeRecord, Outcome, RelKind, Scope};
 
-/// Default per-scope row cap used by [`KnowledgeStore::decay`].
+/// Optional per-scope row cap for [`KnowledgeStore::decay`]. The store grows
+/// **unbounded by default** — `decay` is opt-in maintenance, not an automatic
+/// ceiling. This constant is only used when a caller explicitly chooses to cap.
 pub const DEFAULT_MAX_ROWS_PER_SCOPE: i64 = 2_000;
-/// Default tombstone age before a superseded row is hard-deleted (90 days).
+/// Tombstone age for an *explicit* `decay` call (90 days). Not applied unless a
+/// caller opts into decay; consolidation (dedup) is the default maintenance.
 pub const DEFAULT_MAX_AGE_MS: i64 = 90 * 24 * 3600 * 1000;
+/// Default evidence bar for [`KnowledgeStore::auto_promote`]: a project lesson
+/// auto-promotes to cross-project scope once it is verified and seen this many
+/// times. Low enough to actually compound, high enough that a one-off can't leak.
+pub const DEFAULT_AUTO_PROMOTE_SUPPORT: i64 = 3;
 
 /// A handle to the knowledge database.
 ///
@@ -191,11 +198,32 @@ impl KnowledgeStore {
         query::supersede(&self.conn, old_id, new_id)
     }
 
-    /// **Human-gated** promotion of a record to global (cross-project) scope.
-    /// Returns `true` if a live record was promoted. Call ONLY from an explicit
-    /// user command / approved proposal — never from the runtime turn loop.
+    /// Promote a record to global (cross-project) scope. Returns `true` if a
+    /// live record was promoted. Used by both the `/knowledge promote` command
+    /// and the autonomous [`Self::auto_promote`] pass.
     pub fn promote(&self, id: &str) -> Result<bool> {
         query::promote_to_global(&self.conn, id)
+    }
+
+    /// Autonomously promote project lessons that have *proven themselves* to
+    /// global (cross-project) scope: a row is promoted when it is `Verified`
+    /// AND has accumulated at least `min_support` independent observations
+    /// (`use_count`, bumped each time mining re-sees the same `norm_key`, or each
+    /// time recall surfaces it). This is the self-driving replacement for the
+    /// manual gate — the store grows its own cross-project knowledge from
+    /// evidence, not from a human clicking promote. Returns the number promoted.
+    ///
+    /// The bar is deliberately evidence-based (verified + repeated), so a noisy
+    /// one-off never leaks across projects; a genuinely recurring, confirmed
+    /// lesson does, automatically.
+    pub fn auto_promote(&self, min_support: i64) -> Result<usize> {
+        let n = self.conn.execute(
+            "UPDATE knowledge SET scope = 'global', project_key = NULL, promoted = 1 \
+             WHERE scope = 'project' AND superseded_by IS NULL \
+               AND outcome = 'verified' AND use_count >= ?1",
+            [min_support],
+        )?;
+        Ok(n)
     }
 
     /// Recall advisory context for `query` (lexical FTS). Eligible rows are
@@ -274,6 +302,69 @@ pub fn default_db_path() -> PathBuf {
             .unwrap_or_else(|| PathBuf::from("."))
     });
     base.join("jfc").join("knowledge.db")
+}
+
+/// Summary of one autonomous maintenance pass.
+#[derive(Debug, Default, Clone)]
+pub struct MaintainReport {
+    pub imported: usize,
+    pub mined_inserted: usize,
+    pub mined_compounded: usize,
+    pub sessions_scanned: usize,
+    pub consolidated: usize,
+    pub auto_promoted: usize,
+}
+
+/// One self-driving maintenance pass over the default store — the function the
+/// engine fires in the background so the user never has to run `/knowledge`.
+///
+/// It (1) imports legacy `.md` memories for `project_root`, (2) mines the user's
+/// session history into project lessons, (3) consolidates duplicates, and
+/// (4) auto-promotes verified, repeatedly-seen lessons to cross-project scope.
+/// Growth is **unbounded** — no decay/forget here. Redaction (in mining) and the
+/// recall-time injection screen still apply; those protect the user's secrets
+/// and can't be "expansion", so they stay.
+///
+/// `sessions_dir` and `user_memory_dir`/`project_memory_dir` are passed in so
+/// the caller owns path policy (and tests stay hermetic).
+pub fn auto_maintain(
+    project_root: &Path,
+    sessions_dir: Option<&Path>,
+    user_memory_dir: Option<&Path>,
+    project_memory_dir: Option<&Path>,
+) -> Result<MaintainReport> {
+    let mut store = KnowledgeStore::open_default()?;
+    let project = project::project_key(project_root);
+    let mut report = MaintainReport::default();
+
+    // 1. Import legacy .md memories (idempotent; never deletes sources).
+    let mut items = Vec::new();
+    if let Some(dir) = user_memory_dir {
+        items.extend(import::scan_markdown_dir(dir, Scope::User, None));
+    }
+    if let Some(dir) = project_memory_dir {
+        items.extend(import::scan_markdown_dir(dir, Scope::Project, Some(project.clone())));
+    }
+    if !items.is_empty() {
+        report.imported = store.import_memories(&items)?.imported;
+    }
+
+    // 2. Mine session history into project-scoped lessons (redacted).
+    if let Some(dir) = sessions_dir {
+        let (lessons, mine_report) = session_mine::mine_dir(dir);
+        report.sessions_scanned = mine_report.sessions_scanned;
+        let (ins, comp) = store.ingest_mined(&project, &lessons)?;
+        report.mined_inserted = ins;
+        report.mined_compounded = comp;
+    }
+
+    // 3. Consolidate duplicates (dedup only — no decay; the store grows).
+    report.consolidated = store.consolidate()?;
+
+    // 4. Auto-promote verified, repeatedly-seen lessons across projects.
+    report.auto_promoted = store.auto_promote(DEFAULT_AUTO_PROMOTE_SUPPORT)?;
+
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -570,6 +661,97 @@ mod tests {
             .recall("retry", &crate::query::RecallFilter { project_key: Some("Q"), limit: 8 })
             .unwrap();
         assert!(other.is_empty());
+    }
+
+    // Autonomy: a verified, repeatedly-seen project lesson auto-promotes to
+    // global; an unverified or rarely-seen one does NOT.
+    #[test]
+    fn auto_promote_lifts_verified_repeated_lessons_normal() {
+        let store = KnowledgeStore::open_in_memory().unwrap();
+        // Verified + enough support → promoted.
+        let mut hot = rec(Scope::Project, Some("P"), "hot", "use ripgrep")
+            .with_outcome(Outcome::Verified);
+        hot.use_count = 3;
+        store.insert(&hot).unwrap();
+        // Verified but under the support bar → stays project.
+        let mut rare = rec(Scope::Project, Some("P"), "rare", "niche tip")
+            .with_outcome(Outcome::Verified);
+        rare.use_count = 1;
+        store.insert(&rare).unwrap();
+        // High support but unverified → stays project.
+        let mut noisy = rec(Scope::Project, Some("P"), "noisy", "unconfirmed");
+        noisy.use_count = 9;
+        store.insert(&noisy).unwrap();
+
+        let promoted = store.auto_promote(3).unwrap();
+        assert_eq!(promoted, 1, "only the verified, well-supported lesson promotes");
+
+        // The promoted one is now recalled from a DIFFERENT project.
+        let other = crate::query::RecallFilter { project_key: Some("Q"), limit: 8 };
+        let hits = store.recall("ripgrep", &other).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, hot.id);
+        // The unverified/rare ones did not leak.
+        assert!(store.recall("niche", &other).unwrap().is_empty());
+        assert!(store.recall("unconfirmed", &other).unwrap().is_empty());
+    }
+
+    #[test]
+    fn auto_maintain_imports_and_grows_normal() {
+        // Hermetic: point the store + dirs at temp paths via JFC_KNOWLEDGE_DB.
+        let dir = tempfile::tempdir().unwrap();
+        let dbpath = dir.path().join("k.db");
+        let user_mem = dir.path().join("umem");
+        std::fs::create_dir_all(&user_mem).unwrap();
+        std::fs::write(user_mem.join("p.md"), "---\ntype: preference\n---\nuse spaces not tabs").unwrap();
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+        std::fs::write(
+            sessions.join("ses_1.json"),
+            r#"{"id":"ses_1","messages":[
+                {"role":"assistant","parts":[{"type":"tool","kind":"Edit","status":"failed","output":{"type":"text","content":"old_string not found"}}]},
+                {"role":"assistant","parts":[{"type":"tool","kind":"Edit","status":"complete","output":{"type":"text","content":"ok"}}]}
+            ]}"#,
+        )
+        .unwrap();
+
+        // Isolate the global store path for this test.
+        let _guard = EnvGuard::set("JFC_KNOWLEDGE_DB", dbpath.to_str().unwrap());
+        let report = auto_maintain(
+            dir.path(),
+            Some(&sessions),
+            Some(&user_mem),
+            None,
+        )
+        .unwrap();
+        assert_eq!(report.imported, 1, "imported the .md preference");
+        assert_eq!(report.sessions_scanned, 1);
+        assert!(report.mined_inserted >= 1, "mined the recovered Edit error");
+
+        // The store actually grew and persists.
+        let store = KnowledgeStore::open(&dbpath).unwrap();
+        assert!(store.live_count().unwrap() >= 2);
+    }
+
+    /// Minimal scoped env setter for the hermetic maintain test.
+    struct EnvGuard(&'static str, Option<std::ffi::OsString>);
+    impl EnvGuard {
+        fn set(key: &'static str, val: &str) -> Self {
+            let prev = std::env::var_os(key);
+            // SAFETY: test-only, restored on drop; these tests don't run env-mutating peers concurrently on this key.
+            unsafe { std::env::set_var(key, val) };
+            Self(key, prev)
+        }
+    }
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.1 {
+                    Some(v) => std::env::set_var(self.0, v),
+                    None => std::env::remove_var(self.0),
+                }
+            }
+        }
     }
 
     #[test]

@@ -248,6 +248,18 @@ pub mod worktrees;
 // may re-privatize as the API settles.
 pub use app::{EngineEffect, EngineState, PendingApproval, PendingQuestion, PermissionMode};
 pub use engine::{Engine, channel};
+
+/// Run one autonomous cross-project knowledge maintenance pass (import + mine +
+/// consolidate + auto-promote). Thin re-export so UI/binary crates don't depend
+/// on `jfc-knowledge` directly. Returns the maintenance summary.
+pub fn knowledge_maintain(
+    project_root: &std::path::Path,
+    sessions_dir: Option<&std::path::Path>,
+    user_memory_dir: Option<&std::path::Path>,
+    project_memory_dir: Option<&std::path::Path>,
+) -> jfc_knowledge::Result<jfc_knowledge::MaintainReport> {
+    jfc_knowledge::auto_maintain(project_root, sessions_dir, user_memory_dir, project_memory_dir)
+}
 pub use runtime::{
     ControlEvent, EngineEvent, EventReceiver, EventSender, FrontendDirective, FrontendEvent,
     handle_engine_event, ops,
