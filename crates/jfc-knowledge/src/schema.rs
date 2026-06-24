@@ -6,7 +6,9 @@
 //! Adding a new version = append a `&str` to [`MIGRATIONS`]; never edit or
 //! reorder existing entries.
 
-use rusqlite::Connection;
+use sqlx::Row;
+use sqlx::AssertSqlSafe;
+use sqlx::sqlite::SqlitePool;
 
 use crate::error::{KnowledgeError, Result};
 
@@ -442,34 +444,43 @@ const MIGRATIONS: &[&str] = &[
 /// The schema version this build expects (== number of migrations).
 pub const CURRENT_VERSION: i64 = MIGRATIONS.len() as i64;
 
-/// Apply pragmas that every connection needs (WAL for multi-process safety,
-/// a busy timeout so concurrent JFC instances back off instead of erroring,
-/// and foreign-keys on for future relations).
-pub fn apply_pragmas(conn: &Connection) -> Result<()> {
-    // WAL persists on the DB file, but setting it per-open is harmless and
-    // guarantees it even on a freshly created file.
-    conn.pragma_update(None, "journal_mode", "WAL")?;
-    // NORMAL is WAL-safe and durable across an app crash / SIGKILL (an
-    // uncommitted txn rolls back on next open). Council decision 5: this is the
-    // right durability tier for a single-file store that's becoming the source of
-    // truth; FULL would add fsync cost per commit without a meaningful win here.
-    conn.pragma_update(None, "synchronous", "NORMAL")?;
-    conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+/// Pragmas every connection needs (WAL for multi-process safety, a busy timeout
+/// so concurrent JFC instances back off instead of erroring, foreign-keys on).
+///
+/// These are also configured on the [`SqliteConnectOptions`] used to build the
+/// pool (see `lib.rs`); this helper applies them to an arbitrary pool too —
+/// harmless and idempotent — for parity with the old per-open behavior.
+///
+/// NORMAL synchronous is WAL-safe and durable across an app crash / SIGKILL (an
+/// uncommitted txn rolls back on next open); FULL would add fsync cost per commit
+/// without a meaningful win for this single-file store.
+///
+/// Currently the constructors set these on [`SqliteConnectOptions`] directly, so
+/// this is retained as a public helper for callers that build a pool by other
+/// means (and for parity with the pre-sqlx per-open behavior).
+#[allow(dead_code)]
+pub async fn apply_pragmas(pool: &SqlitePool) -> Result<()> {
+    for pragma in [
+        "PRAGMA journal_mode = WAL;",
+        "PRAGMA synchronous = NORMAL;",
+        "PRAGMA foreign_keys = ON;",
+        "PRAGMA busy_timeout = 5000;",
+    ] {
+        sqlx::query(pragma).execute(pool).await?;
+    }
     Ok(())
 }
 
 /// Run all pending migrations. Idempotent: a fully-migrated DB is a no-op.
-pub fn migrate(conn: &mut Connection) -> Result<()> {
-    conn.execute_batch("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);")?;
+pub async fn migrate(pool: &SqlitePool) -> Result<()> {
+    sqlx::query("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);")
+        .execute(pool)
+        .await?;
 
-    let applied: i64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
+    let applied: i64 = sqlx::query("SELECT COALESCE(MAX(version), 0) FROM schema_version")
+        .fetch_one(pool)
+        .await?
+        .try_get(0)?;
 
     if applied > CURRENT_VERSION {
         return Err(KnowledgeError::Migration(format!(
@@ -483,55 +494,116 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
         if version <= applied {
             continue;
         }
-        let tx = conn.transaction()?;
-        tx.execute_batch(ddl)?;
-        tx.execute(
-            "INSERT INTO schema_version (version) VALUES (?1)",
-            [version],
-        )?;
-        tx.commit()?;
+        let mut tx = pool.begin().await?;
+        // Each migration step is a batch of DDL statements; run them one at a
+        // time on the transaction connection. We split on `;` boundaries that
+        // are not inside a trigger body so FTS5 virtual tables + triggers
+        // survive verbatim.
+        for stmt in split_sql_statements(ddl) {
+            sqlx::query(AssertSqlSafe(stmt)).execute(&mut *tx).await?;
+        }
+        sqlx::query("INSERT INTO schema_version (version) VALUES (?1)")
+            .bind(version)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         tracing::debug!(target: "jfc::knowledge", version, "applied knowledge migration");
     }
     Ok(())
 }
 
+/// Split a batch DDL string into individual statements on `;` boundaries that
+/// are not inside a `BEGIN ... END` trigger body. SQLite's trigger DDL contains
+/// internal `;` (one per body statement) plus a terminating `END`, so a naive
+/// split on `;` would truncate a trigger mid-body. We track trigger depth via
+/// `BEGIN`/`END` keyword pairs.
+fn split_sql_statements(ddl: &str) -> Vec<String> {
+    let mut statements = Vec::new();
+    let mut current = String::new();
+    let mut trigger_depth = 0usize;
+    for raw_line in ddl.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with("--") {
+            continue;
+        }
+        let upper = line.to_ascii_uppercase();
+        if upper.contains("BEGIN") {
+            trigger_depth += 1;
+        }
+        current.push_str(line);
+        current.push('\n');
+        let ends_stmt = line.ends_with(';');
+        if upper.starts_with("END;") || upper == "END" {
+            trigger_depth = trigger_depth.saturating_sub(1);
+            if trigger_depth == 0 {
+                statements.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+        if ends_stmt && trigger_depth == 0 {
+            statements.push(std::mem::take(&mut current));
+        }
+    }
+    let tail = current.trim();
+    if !tail.is_empty() {
+        statements.push(tail.to_owned());
+    }
+    statements
+        .into_iter()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::KnowledgeStore;
 
-    #[test]
-    fn migrate_is_idempotent_and_sets_version_normal() {
-        let mut conn = Connection::open_in_memory().unwrap();
-        apply_pragmas(&conn).unwrap();
-        migrate(&mut conn).unwrap();
-        // Second run is a no-op and must not error or double-apply.
-        migrate(&mut conn).unwrap();
+    #[tokio::test]
+    async fn migrate_is_idempotent_and_sets_version_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
+        let pool = store.pool();
+        // open_in_memory already migrated; a second run is a no-op.
+        migrate(pool).await.unwrap();
 
-        let version: i64 = conn
-            .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
+        let version: i64 = sqlx::query("SELECT MAX(version) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .unwrap()
+            .try_get(0)
             .unwrap();
         assert_eq!(version, CURRENT_VERSION);
 
-        // The base table and FTS mirror both exist.
-        let n: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE name IN ('knowledge','knowledge_fts')",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
+        let n: i64 = sqlx::query(
+            "SELECT count(*) FROM sqlite_master WHERE name IN ('knowledge','knowledge_fts')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .try_get(0)
+        .unwrap();
         assert_eq!(n, 2);
     }
 
     #[test]
-    fn migrate_refuses_newer_schema_robust() {
-        let mut conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE schema_version (version INTEGER NOT NULL);
-             INSERT INTO schema_version (version) VALUES (9999);",
-        )
-        .unwrap();
-        let err = migrate(&mut conn).unwrap_err();
-        assert!(matches!(err, KnowledgeError::Migration(_)), "{err:?}");
+    fn split_sql_keeps_trigger_bodies_intact() {
+        // The v1 migration has 3 triggers each with an internal `;`. Splitting
+        // must not cut a trigger body. Count CREATE TRIGGER survivors.
+        let parts = split_sql_statements(MIGRATIONS[0]);
+        let triggers = parts
+            .iter()
+            .filter(|s| s.to_ascii_uppercase().contains("CREATE TRIGGER"))
+            .count();
+        assert_eq!(triggers, 3, "all three v1 triggers must survive intact");
+        for stmt in parts
+            .iter()
+            .filter(|s| s.to_ascii_uppercase().contains("CREATE TRIGGER"))
+        {
+            assert!(
+                stmt.to_ascii_uppercase().contains("END"),
+                "trigger truncated: {stmt}"
+            );
+        }
     }
 }

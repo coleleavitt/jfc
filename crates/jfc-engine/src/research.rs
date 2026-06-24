@@ -278,16 +278,19 @@ impl ResearchReport {
         });
         let session_id = format!("project:{}", jfc_knowledge::project_key(dir));
         let value_json = serde_json::to_string(&payload).map_err(std::io::Error::other)?;
-        jfc_knowledge::KnowledgeStore::open_default()
-            .and_then(|store| {
-                store.upsert_session_artifact(
-                    &session_id,
-                    RESEARCH_ARTIFACT_KIND,
-                    &slug,
-                    &value_json,
-                )
-            })
-            .map_err(std::io::Error::other)?;
+        jfc_knowledge::block_on_knowledge(async {
+            let store = jfc_knowledge::KnowledgeStore::open_default()
+                .await
+                .map_err(std::io::Error::other)?;
+            store.upsert_session_artifact(
+                &session_id,
+                RESEARCH_ARTIFACT_KIND,
+                &slug,
+                &value_json,
+            )
+            .await
+            .map_err(std::io::Error::other)
+        })?;
         Ok(ResearchArtifact {
             markdown_path: std::path::PathBuf::from(format!("db:research:{slug}:markdown")),
             json_path: std::path::PathBuf::from(format!("db:research:{slug}:json")),
@@ -1504,13 +1507,13 @@ mod tests {
                 .starts_with("db:research:")
         );
 
-        let row = jfc_knowledge::KnowledgeStore::open_default()
-            .unwrap()
+        let row = jfc_knowledge::KnowledgeStore::open_default().await.unwrap()
             .get_session_artifact(
                 &format!("project:{}", jfc_knowledge::project_key(&dir)),
                 RESEARCH_ARTIFACT_KIND,
                 "rust-async-runtimes",
             )
+            .await
             .unwrap()
             .expect("research artifact row");
         assert!(row.value_json.contains("Research"));

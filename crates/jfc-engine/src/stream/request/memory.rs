@@ -54,25 +54,26 @@ async fn append_cross_project_knowledge_inner(
     if !enabled {
         return 0;
     }
-    // SQLite is synchronous; never block the async runtime on it.
-    let rendered = tokio::task::spawn_blocking(move || {
-        let store = jfc_knowledge::KnowledgeStore::open_default().ok()?;
+    // The knowledge store is async (sqlx); recall directly on the runtime.
+    let rendered = async {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await.ok()?;
         let project = jfc_knowledge::project_key(&cwd);
         let filter = jfc_knowledge::RecallFilter {
             project_key: Some(&project),
             limit: if is_brief { 5 } else { 6 },
         };
-        let hits = store.recall(query.as_deref().unwrap_or(""), &filter).ok()?;
+        let hits = store
+            .recall(query.as_deref().unwrap_or(""), &filter)
+            .await
+            .ok()?;
         if hits.is_empty() {
             return None;
         }
         let ids: Vec<String> = hits.iter().map(|h| h.id.clone()).collect();
-        let _ = store.mark_used(&ids);
+        let _ = store.mark_used(&ids).await;
         Some(render_knowledge_block_titled(&hits, is_brief))
-    })
-    .await
-    .ok()
-    .flatten();
+    }
+    .await;
 
     match rendered {
         Some(block) => {

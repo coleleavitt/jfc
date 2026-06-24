@@ -429,16 +429,19 @@ async fn append_review_artifact<T: Serialize>(
     let artifact_key = format!("{project_key}:{stream}:{key}");
     let value_json = serde_json::to_string(value).map_err(std::io::Error::other)?;
     tokio::task::spawn_blocking(move || {
-        let store = jfc_knowledge::KnowledgeStore::open_default().map_err(std::io::Error::other)?;
-        store
-            .append_session_artifact_event(
-                REVIEW_ARTIFACT_SESSION_ID,
-                REVIEW_ARTIFACT_KIND,
-                &artifact_key,
-                &value_json,
-            )
-            .map_err(std::io::Error::other)?;
-        Ok(())
+        jfc_knowledge::block_on_knowledge(async {
+            let store = jfc_knowledge::KnowledgeStore::open_default().await.map_err(std::io::Error::other)?;
+            store
+                .append_session_artifact_event(
+                    REVIEW_ARTIFACT_SESSION_ID,
+                    REVIEW_ARTIFACT_KIND,
+                    &artifact_key,
+                    &value_json,
+                )
+                .await
+                .map_err(std::io::Error::other)?;
+            Ok(())
+        })
     })
     .await
     .map_err(std::io::Error::other)?
@@ -583,14 +586,14 @@ mod tests {
         persist_review_comment(&cwd, &comment).await.unwrap();
 
         let project_key = jfc_knowledge::project_key(&cwd);
-        let rows = jfc_knowledge::KnowledgeStore::open_default()
-            .unwrap()
+        let rows = jfc_knowledge::KnowledgeStore::open_default().await.unwrap()
             .list_recent_session_artifact_events(
                 REVIEW_ARTIFACT_SESSION_ID,
                 REVIEW_ARTIFACT_KIND,
                 None,
                 10,
             )
+            .await
             .unwrap();
         assert!(
             rows.iter()

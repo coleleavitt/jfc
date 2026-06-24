@@ -452,7 +452,9 @@ const GOAL_ARTIFACT_KEY: &str = "active";
 /// Persist the active goal in the session DB so resume can rebuild it.
 /// `None` deletes any prior record.
 pub fn save_sidecar(session_id: &str, goal: Option<&ActiveGoal>) {
-    let store = match jfc_knowledge::KnowledgeStore::open_default() {
+    let store = match jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default().await
+    }) {
         Ok(store) => store,
         Err(e) => {
             tracing::warn!(target: "jfc::goal", session_id, error = %e, "failed to open goal store");
@@ -462,12 +464,15 @@ pub fn save_sidecar(session_id: &str, goal: Option<&ActiveGoal>) {
     match goal {
         Some(g) => match serde_json::to_string(g) {
             Ok(json) => {
-                if let Err(e) = store.upsert_session_artifact(
-                    session_id,
-                    GOAL_ARTIFACT_KIND,
-                    GOAL_ARTIFACT_KEY,
-                    &json,
-                ) {
+                if let Err(e) = jfc_knowledge::block_on_knowledge(async {
+                    store.upsert_session_artifact(
+                        session_id,
+                        GOAL_ARTIFACT_KIND,
+                        GOAL_ARTIFACT_KEY,
+                        &json,
+                    )
+                    .await
+                }) {
                     tracing::warn!(target: "jfc::goal", session_id, error = %e, "failed to persist goal");
                     return;
                 }
@@ -488,8 +493,10 @@ pub fn save_sidecar(session_id: &str, goal: Option<&ActiveGoal>) {
             }
         },
         None => {
-            let _ =
-                store.delete_session_artifact(session_id, GOAL_ARTIFACT_KIND, GOAL_ARTIFACT_KEY);
+            let _ = jfc_knowledge::block_on_knowledge(async {
+                store.delete_session_artifact(session_id, GOAL_ARTIFACT_KIND, GOAL_ARTIFACT_KEY)
+                    .await
+            });
             tracing::debug!(
                 target: "jfc::goal",
                 session_id,
@@ -501,11 +508,16 @@ pub fn save_sidecar(session_id: &str, goal: Option<&ActiveGoal>) {
 
 /// Load any persisted goal for `session_id`.
 pub fn load_sidecar(session_id: &str) -> Option<ActiveGoal> {
-    let store = jfc_knowledge::KnowledgeStore::open_default().ok()?;
-    let row = store
-        .get_session_artifact(session_id, GOAL_ARTIFACT_KIND, GOAL_ARTIFACT_KEY)
-        .ok()
-        .flatten()?;
+    let store = jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default().await.ok()
+    })?;
+    let row = jfc_knowledge::block_on_knowledge(async {
+        store
+            .get_session_artifact(session_id, GOAL_ARTIFACT_KIND, GOAL_ARTIFACT_KEY)
+            .await
+            .ok()
+            .flatten()
+    })?;
     serde_json::from_str::<ActiveGoal>(&row.value_json).ok()
 }
 
@@ -713,12 +725,12 @@ mod tests {
     // Robust: load_sidecar treats missing / corrupt files as "no goal"
     // rather than panicking — a busted sidecar shouldn't block resume.
     #[serial_test::serial]
-    #[test]
-    fn sidecar_corrupt_db_record_loads_as_none_robust() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn sidecar_corrupt_db_record_loads_as_none_robust() {
         let session_id = format!("ses_goal_corrupt_test_{}", std::process::id());
         let _guard = KnowledgeDbGuard::new();
 
-        let store = jfc_knowledge::KnowledgeStore::open_default().unwrap();
+        let store = jfc_knowledge::KnowledgeStore::open_default().await.unwrap();
         store
             .upsert_session_artifact(
                 &session_id,
@@ -726,6 +738,7 @@ mod tests {
                 GOAL_ARTIFACT_KEY,
                 "{ not valid json at all",
             )
+            .await
             .unwrap();
         assert!(
             load_sidecar(&session_id).is_none(),

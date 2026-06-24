@@ -324,6 +324,11 @@ pub fn resolve_provider_model(
         return providers
             .iter()
             .find(|p| p.name() == prefix.as_str())
+            .or_else(|| {
+                providers
+                    .iter()
+                    .find(|p| provider_name_matches_request(p.name(), prefix.as_str()))
+            })
             .cloned()
             .map(|provider| {
                 provider_resolution(
@@ -465,6 +470,14 @@ pub fn resolve_provider_model(
     None
 }
 
+pub fn provider_name_matches_request(provider_name: &str, requested_provider: &str) -> bool {
+    provider_name == requested_provider
+        || matches!(
+            (provider_name, requested_provider),
+            ("anthropic", "anthropic-oauth") | ("anthropic-oauth", "anthropic")
+        )
+}
+
 fn provider_resolution(
     provider: Arc<dyn Provider>,
     requested: ModelSpec,
@@ -527,4 +540,60 @@ fn looks_openrouter_model(model_id: &str) -> bool {
                 | "deepseek"
                 | "x-ai"
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use jfc_provider::{EventStream, ModelInfo, ProviderMessage, StreamOptions};
+
+    struct NamedProvider(&'static str);
+
+    #[async_trait::async_trait]
+    impl Provider for NamedProvider {
+        fn name(&self) -> &str {
+            self.0
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            anyhow::bail!("unused")
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for NamedProvider {}
+
+    #[test]
+    fn resolve_provider_model_routes_anthropic_prefix_to_oauth_regression() {
+        let providers: Vec<Arc<dyn Provider>> = vec![Arc::new(NamedProvider("anthropic-oauth"))];
+
+        let resolved = resolve_provider_model(&providers, "anthropic/claude-opus-4-6")
+            .expect("anthropic prefix should route to OAuth Anthropic provider");
+
+        assert_eq!(resolved.provider.name(), "anthropic-oauth");
+        assert_eq!(resolved.model.as_str(), "claude-opus-4-6");
+    }
+
+    #[test]
+    fn resolve_provider_model_prefers_exact_anthropic_provider_normal() {
+        let providers: Vec<Arc<dyn Provider>> = vec![
+            Arc::new(NamedProvider("anthropic-oauth")),
+            Arc::new(NamedProvider("anthropic")),
+        ];
+
+        let resolved = resolve_provider_model(&providers, "anthropic/claude-opus-4-6")
+            .expect("exact Anthropic provider should resolve");
+
+        assert_eq!(resolved.provider.name(), "anthropic");
+        assert_eq!(resolved.model.as_str(), "claude-opus-4-6");
+    }
 }

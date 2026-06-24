@@ -300,6 +300,10 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         session_picker(f, app);
     }
 
+    if app.show_bash_picker {
+        super::bash_picker::bash_picker(f, app);
+    }
+
     if app.show_task_panel {
         task_panel(f, app);
     }

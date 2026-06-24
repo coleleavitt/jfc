@@ -41,6 +41,26 @@ impl ExecutionResult {
         }
     }
 
+    pub fn structured_failure(
+        output: impl Into<String>,
+        error_category: ToolErrorCategory,
+        retryable: bool,
+    ) -> Self {
+        let output = output.into();
+        Self {
+            diagnostics: vec![ToolDiagnostic::structured_error(
+                output.clone(),
+                error_category,
+                retryable,
+            )],
+            output,
+            outcome: ToolOutcome::Failed,
+            provenance: None,
+            diff: None,
+            attachments: Vec::new(),
+        }
+    }
+
     pub fn with_provenance(mut self, provenance: ToolProvenance) -> Self {
         self.provenance = Some(provenance);
         self
@@ -72,6 +92,8 @@ pub struct ToolDiagnostic {
     pub level: DiagnosticLevel,
     pub message: String,
     pub help: Option<String>,
+    pub error_category: Option<ToolErrorCategory>,
+    pub retryable: Option<bool>,
 }
 
 impl ToolDiagnostic {
@@ -80,7 +102,28 @@ impl ToolDiagnostic {
             level: DiagnosticLevel::Error,
             message: message.into(),
             help: None,
+            error_category: None,
+            retryable: None,
         }
+    }
+
+    pub fn structured_error(
+        message: impl Into<String>,
+        error_category: ToolErrorCategory,
+        retryable: bool,
+    ) -> Self {
+        Self {
+            level: DiagnosticLevel::Error,
+            message: message.into(),
+            help: None,
+            error_category: Some(error_category),
+            retryable: Some(retryable),
+        }
+    }
+
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
     }
 }
 
@@ -89,6 +132,16 @@ pub enum DiagnosticLevel {
     Error,
     Warning,
     Help,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolErrorCategory {
+    Validation,
+    Permission,
+    Transient,
+    Business,
+    Configuration,
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

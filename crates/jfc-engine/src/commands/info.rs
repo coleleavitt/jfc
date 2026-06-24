@@ -967,6 +967,105 @@ pub(super) async fn cmd_hooks(
     state.messages.push(ChatMessage::assistant(body));
 }
 
+/// `/bashes` — list background shell tasks; `/bashes kill <id|all>` cancels them.
+/// Surfaces the real engine roster (running + recently-settled) so the user can
+/// see what's running and actually stop it, instead of the symbolic `N shells`
+/// footer badge.
+pub(super) async fn cmd_bashes(
+    state: &mut EngineState,
+    parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<EngineEvent>>,
+) {
+    state.messages.push(ChatMessage::user("/bashes".into()));
+
+    // Sub-command: `/bashes kill <id>` or `/bashes kill all`.
+    let sub = parts.get(1).map(|s| s.trim()).unwrap_or("");
+    if let Some(rest) = sub
+        .strip_prefix("kill")
+        .or_else(|| sub.strip_prefix("cancel"))
+    {
+        let target = rest.trim();
+        let body = if target.is_empty() {
+            "Usage: `/bashes kill <task_id>` or `/bashes kill all`.".to_owned()
+        } else if target == "all" {
+            let running: Vec<String> = crate::tools::list_bash_tasks()
+                .await
+                .into_iter()
+                .filter(|t| t.running)
+                .map(|t| t.id)
+                .collect();
+            if running.is_empty() {
+                "No running background shells to cancel.".to_owned()
+            } else {
+                let mut cancelled = 0usize;
+                for id in &running {
+                    if crate::tools::cancel_bash_task(id).await
+                        == crate::tools::CancelOutcome::Cancelled
+                    {
+                        cancelled += 1;
+                    }
+                }
+                format!("Cancelled {cancelled} running background shell(s).")
+            }
+        } else {
+            match crate::tools::cancel_bash_task(target).await {
+                crate::tools::CancelOutcome::Cancelled => {
+                    format!("Cancelled background shell `{target}` (SIGKILL sent to its process tree).")
+                }
+                crate::tools::CancelOutcome::AlreadyFinished => {
+                    format!("Background shell `{target}` had already finished.")
+                }
+                crate::tools::CancelOutcome::Unknown => {
+                    format!("No background shell with id `{target}` is tracked in this session.")
+                }
+            }
+        };
+        state.messages.push(ChatMessage::assistant(body));
+        return;
+    }
+
+    let tasks = crate::tools::list_bash_tasks().await;
+    if tasks.is_empty() {
+        state.messages.push(ChatMessage::assistant(
+            "No background shells. A command runs in the background when invoked with \
+             `run_in_background=true` or after it exceeds the foreground budget."
+                .into(),
+        ));
+        return;
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    let running = tasks.iter().filter(|t| t.running).count();
+    let mut body = format!(
+        "**{} background shell(s)** ({running} running):\n\n",
+        tasks.len()
+    );
+    for t in &tasks {
+        let marker = if t.running { "▶" } else { "■" };
+        let elapsed_ms = t
+            .completed_at_ms
+            .unwrap_or(now)
+            .saturating_sub(t.started_at_ms);
+        let cmd_preview: String = t.command.chars().take(80).collect();
+        body.push_str(&format!(
+            "- {marker} `{}` — {} · {}s · {} lines\n  {}\n",
+            t.id,
+            t.status,
+            elapsed_ms / 1000,
+            t.total_lines,
+            cmd_preview,
+        ));
+    }
+    if running > 0 {
+        body.push_str("\n*Cancel with `/bashes kill <id>` or `/bashes kill all`.*\n");
+    }
+    state.messages.push(ChatMessage::assistant(body));
+}
+
 fn is_leap_year(y: u32) -> bool {
     y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400))
 }
@@ -1079,5 +1178,76 @@ mod recall_command_tests {
             recall_query_text("  /search-sessions   claude cache  "),
             "claude cache"
         );
+    }
+}
+
+#[cfg(test)]
+mod bashes_tests {
+    use super::*;
+    use futures::stream::empty;
+    use jfc_provider::{CompletionResponse, ModelInfo, Provider, ProviderMessage, StreamOptions};
+    use jfc_provider::TokenUsage;
+    use std::sync::Arc;
+
+    struct NoopProvider;
+    impl jfc_provider::seal::Sealed for NoopProvider {}
+    #[async_trait::async_trait]
+    impl Provider for NoopProvider {
+        fn name(&self) -> &str {
+            "noop"
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        async fn stream(
+            &self,
+            _m: Vec<ProviderMessage>,
+            _o: &StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
+            Ok(Box::pin(empty()))
+        }
+        async fn complete(
+            &self,
+            _m: Vec<ProviderMessage>,
+            _o: &StreamOptions,
+        ) -> anyhow::Result<CompletionResponse> {
+            Ok(CompletionResponse {
+                content: String::new(),
+                usage: TokenUsage::default(),
+                context_signals: None,
+            })
+        }
+    }
+
+    fn test_state() -> EngineState {
+        EngineState::new(Arc::new(NoopProvider), "test-model")
+    }
+
+    fn last_text(state: &EngineState) -> String {
+        state.messages.last().unwrap().parts[0].text_only()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn bashes_kill_unknown_id_reports_unknown_normal() {
+        let mut state = test_state();
+        cmd_bashes(
+            &mut state,
+            &["/bashes", "kill bash_not_a_real_task"],
+            "/bashes kill bash_not_a_real_task",
+            None,
+        )
+        .await;
+        assert!(
+            last_text(&state).contains("No background shell with id"),
+            "got: {}",
+            last_text(&state)
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn bashes_kill_without_target_shows_usage_normal() {
+        let mut state = test_state();
+        cmd_bashes(&mut state, &["/bashes", "kill"], "/bashes kill", None).await;
+        assert!(last_text(&state).contains("Usage: `/bashes kill"));
     }
 }

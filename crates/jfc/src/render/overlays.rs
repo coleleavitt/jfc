@@ -480,6 +480,15 @@ pub(super) fn help_overlay(f: &mut Frame, app: &App) {
             ],
         ),
         (
+            "Background shells",
+            &[
+                ("Ctrl+X then b", "open background-shell picker"),
+                ("x / d", "cancel selected running shell (in picker)"),
+                ("Ctrl+X then z", "detach running command to background"),
+                ("/bashes", "list shells · /bashes kill <id|all>"),
+            ],
+        ),
+        (
             "Picker / Palette",
             &[
                 ("↑/↓ or k/j", "navigate"),

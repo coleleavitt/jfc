@@ -426,6 +426,9 @@ pub fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             mode,
             isolation,
             parent_task_id,
+            schema,
+            allowed_tools,
+            disallowed_tools,
             cwd,
         } => ToolInput::Task(TaskInput {
             description,
@@ -440,7 +443,9 @@ pub fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             mode,
             isolation,
             parent_task_id,
-            schema: None,
+            schema,
+            allowed_tools,
+            disallowed_tools,
             cwd,
         }),
         SerializedToolInput::TaskCreate {

@@ -81,44 +81,58 @@ pub fn append_records(history_key: Option<&str>, records: &[TaskHistoryRecord]) 
         return;
     }
 
-    let store = match jfc_knowledge::KnowledgeStore::open_default() {
-        Ok(store) => store,
-        Err(error) => {
-            tracing::warn!(
-                target: "jfc::tasks",
-                %error,
-                "failed to open DB task history store"
-            );
-            return;
-        }
-    };
-
-    for rec in records {
-        let json = match serde_json::to_string(rec) {
-            Ok(json) => json,
+    let result = jfc_knowledge::block_on_knowledge(async {
+        let store = match jfc_knowledge::KnowledgeStore::open_default().await {
+            Ok(store) => store,
             Err(error) => {
                 tracing::warn!(
                     target: "jfc::tasks",
                     %error,
-                    id = %rec.id,
-                    "failed to serialize task history record"
+                    "failed to open DB task history store"
                 );
-                continue;
+                return Ok::<_, jfc_knowledge::KnowledgeError>(());
             }
         };
-        if let Err(error) = store.append_session_artifact_event(
-            TASK_HISTORY_SESSION_ID,
-            TASK_HISTORY_KIND,
-            history_key,
-            &json,
-        ) {
-            tracing::warn!(
-                target: "jfc::tasks",
-                %error,
-                key = history_key,
-                "failed to append DB task history record"
-            );
+
+        for rec in records {
+            let json = match serde_json::to_string(rec) {
+                Ok(json) => json,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "jfc::tasks",
+                        %error,
+                        id = %rec.id,
+                        "failed to serialize task history record"
+                    );
+                    continue;
+                }
+            };
+            if let Err(error) = store
+                .append_session_artifact_event(
+                    TASK_HISTORY_SESSION_ID,
+                    TASK_HISTORY_KIND,
+                    history_key,
+                    &json,
+                )
+                .await
+            {
+                tracing::warn!(
+                    target: "jfc::tasks",
+                    %error,
+                    key = history_key,
+                    "failed to append DB task history record"
+                );
+            }
         }
+        Ok(())
+    });
+
+    if let Err(error) = result {
+        tracing::debug!(
+            target: "jfc::tasks",
+            %error,
+            "task history append bridge error"
+        );
     }
 }
 
@@ -136,17 +150,23 @@ pub fn read_records(
         return Vec::new();
     }
 
-    let rows = match jfc_knowledge::KnowledgeStore::open_default().and_then(|store| {
-        store.list_recent_session_artifact_events(
-            TASK_HISTORY_SESSION_ID,
-            TASK_HISTORY_KIND,
-            Some(history_key),
-            limit.saturating_mul(10).clamp(100, 10_000),
-        )
-    }) {
-        Ok(rows) => rows,
-        Err(_) => return Vec::new(),
-    };
+    let rows = jfc_knowledge::block_on_knowledge(async {
+        let store = match jfc_knowledge::KnowledgeStore::open_default().await {
+            Ok(store) => store,
+            Err(_) => return Vec::new(),
+        };
+
+        store
+            .list_recent_session_artifact_events(
+                TASK_HISTORY_SESSION_ID,
+                TASK_HISTORY_KIND,
+                Some(history_key),
+                limit.saturating_mul(10).clamp(100, 10_000),
+            )
+            .await
+            .unwrap_or_default()
+    });
+
     let needle = query.map(|q| q.to_lowercase());
     let matches = |rec: &TaskHistoryRecord| -> bool {
         let Some(ref n) = needle else {
@@ -234,12 +254,12 @@ mod tests {
         assert_eq!(one[0].id, "t3");
     }
 
-    #[test]
-    fn malformed_rows_are_skipped_robust() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn malformed_rows_are_skipped_robust() {
         let tmp = TempDir::new().unwrap();
         let _guard = test_db(tmp.path());
         let key = Some("test-history:malformed");
-        let store = jfc_knowledge::KnowledgeStore::open_default().unwrap();
+        let store = jfc_knowledge::KnowledgeStore::open_default().await.unwrap();
         store
             .append_session_artifact_event(
                 TASK_HISTORY_SESSION_ID,
@@ -247,6 +267,7 @@ mod tests {
                 key.unwrap(),
                 "not json",
             )
+            .await
             .unwrap();
         append_records(key, &[rec("t9", "ok", 9)]);
         let got = read_records(key, 10, None);

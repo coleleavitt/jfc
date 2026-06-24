@@ -615,7 +615,7 @@ mod tests {
     // Integration: the REAL daemon service roster runs against a live Daemon
     // in tick order. (Named `service_controller_*` so the acceptance command
     // `cargo test -p jfc-daemon service_controller` hits it.)
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn service_controller_runs_daemon_services_in_order_normal() {
         let dir = tempfile::tempdir().unwrap();
         let mut daemon = Daemon::new(dir.path()).expect("daemon");
@@ -645,7 +645,7 @@ mod tests {
 
     // The scheduled-task service is a no-op (and never panics) when no registry
     // file exists yet — the common case until a user adds a task.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn scheduled_task_service_noop_without_registry_normal() {
         let dir = tempfile::tempdir().unwrap();
         let mut daemon = Daemon::new(dir.path()).expect("daemon");
@@ -684,7 +684,7 @@ mod tests {
 
     // Normal: a due wakeup fires through the WakeupService and is drained from
     // daemon state — proving the real service does the real work.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn wakeup_service_fires_due_wakeup_normal() {
         use crate::state::ScheduledWakeup;
         let dir = tempfile::tempdir().unwrap();
@@ -712,7 +712,7 @@ mod tests {
 
     // Robust: the roster short-circuits on the first non-Continue outcome. A
     // service returning Restart stops the tick before later services run.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn run_tick_short_circuits_on_restart_robust() {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicBool, Ordering};

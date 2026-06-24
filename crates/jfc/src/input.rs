@@ -4,6 +4,7 @@ use ratatui_textarea::{CursorMove, TextArea};
 use tokio::sync::mpsc;
 
 mod approval;
+mod bash_picker;
 mod editing;
 mod elicitation;
 mod key_dispatch;
@@ -24,6 +25,7 @@ pub(crate) mod vim;
 #[cfg(test)]
 mod tests;
 
+use bash_picker::{handle_bash_picker_key, open_bash_picker};
 use editing::{
     input_has_text, move_input_cursor_visual_down, move_input_cursor_visual_up, reset_input,
     step_reasoning_effort, textarea_char_len,

@@ -51,6 +51,7 @@ serde_json = { workspace = true }
 unicode-segmentation = { workspace = true }
 serde = { workspace = true }
 reqwest = { workspace = true }
+rustls = { version = "0.23.40", default-features = false, features = ["ring"] }
 parking_lot = { workspace = true }
 pulldown-cmark = "0.12"
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }

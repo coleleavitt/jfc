@@ -18,6 +18,8 @@ use crate::time::now_ms;
 pub enum StoreError {
     #[error("session not found: {0}")]
     SessionNotFound(String),
+    #[error("active session already exists for environment: {0}")]
+    SessionConflict(String),
     #[error("worker epoch mismatch: current={current} request={request}")]
     WorkerEpochMismatch { current: u64, request: u64 },
     #[error("worker identity mismatch: current={current} request={request}")]
@@ -139,18 +141,33 @@ impl MemoryBridgeStore {
 impl BridgeStore for MemoryBridgeStore {
     fn create_session(&self, req: CreateSessionRequest) -> StoreResult<SessionRecord> {
         let now = now_ms();
+        let environment_id = req.environment_id;
+        let title = req.title;
+        let tags = req.tags;
+        let metadata = req.metadata;
+        let mut inner = self.write()?;
+        if let Some(environment_id) = environment_id.as_deref() {
+            if inner.sessions.values().any(|session| {
+                session.environment_id.as_deref() == Some(environment_id)
+                    && !matches!(
+                        session.status,
+                        SessionStatus::Archived | SessionStatus::Terminated
+                    )
+            }) {
+                return Err(StoreError::SessionConflict(environment_id.to_owned()));
+            }
+        }
         let record = SessionRecord {
             id: format!("ses_{}", Uuid::new_v4().simple()),
-            environment_id: req.environment_id,
-            title: req.title,
+            environment_id,
+            title,
             status: SessionStatus::Idle,
-            tags: req.tags,
-            metadata: req.metadata,
+            tags,
+            metadata,
             created_at_ms: now,
             updated_at_ms: now,
             archived_at_ms: None,
         };
-        let mut inner = self.write()?;
         inner.sessions.insert(record.id.clone(), record.clone());
         self.persist(&inner)?;
         Ok(record)
@@ -458,6 +475,30 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(error, StoreError::WorkerIdentityMismatch { .. }));
+    }
+
+    #[test]
+    fn create_session_rejects_duplicate_active_environment_regression() {
+        let store = MemoryBridgeStore::new();
+        store
+            .create_session(CreateSessionRequest {
+                environment_id: Some("env-1".to_owned()),
+                title: None,
+                tags: vec![],
+                metadata: Default::default(),
+            })
+            .unwrap();
+
+        let error = store
+            .create_session(CreateSessionRequest {
+                environment_id: Some("env-1".to_owned()),
+                title: Some("duplicate".to_owned()),
+                tags: vec![],
+                metadata: Default::default(),
+            })
+            .unwrap_err();
+
+        assert!(matches!(error, StoreError::SessionConflict(env) if env == "env-1"));
     }
 
     #[test]

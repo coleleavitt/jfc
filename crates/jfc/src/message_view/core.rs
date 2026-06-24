@@ -16,7 +16,7 @@ use jfc_core::*;
 
 use super::assistant_parts::{push_advisor_lines, push_reasoning_lines, push_task_status_lines};
 use super::tool_blocks::{ProviderFamily, ProviderStyle, render_tool_block, tool_kind_color};
-use super::tool_height::tool_block_height_with_app;
+use super::tool_height::tool_block_height_with_diagnostics;
 
 /// Test-only accessor for [`attribution_for_message`] (private fn, exercised by
 /// the tool_blocks provider-attribution tests).
@@ -94,6 +94,7 @@ pub struct RenderCtx<'a> {
     pub live_thinking_tokens: u64,
     pub tool_group_expanded: &'a std::collections::HashSet<String>,
     pub render_cache: &'a RefCell<crate::render_cache::RenderCache>,
+    pub diagnostics: &'a [jfc_engine::diagnostics::DiagnosticEntry],
     pub theme: crate::theme::Theme,
     /// Brief mode: when true, plain `MessagePart::Text` parts on assistant
     /// messages are suppressed from rendering so only `SendUserMessage` tool
@@ -129,6 +130,7 @@ impl<'a> RenderCtx<'a> {
             live_thinking_tokens: app.engine.streaming_thinking_tokens,
             tool_group_expanded: &app.tool_group_expanded,
             render_cache: &app.render_cache,
+            diagnostics: &app.engine.diagnostics,
             theme: app.theme,
             brief_mode: app.engine.brief_mode
                 || jfc_engine::feature_gates::pewter_owl_brief_enabled(
@@ -163,6 +165,7 @@ impl<'a> RenderCtx<'a> {
             live_thinking_tokens: 0,
             tool_group_expanded: EMPTY_GROUPS.get_or_init(std::collections::HashSet::new),
             render_cache: &app.render_cache,
+            diagnostics: &[],
             theme: app.theme,
             brief_mode: false,
             revealed_streaming_lines: None,
@@ -518,6 +521,17 @@ impl<'a> RenderItem<'a> {
     }
 
     pub fn height_with_app(&self, width: usize, app: Option<&App>) -> usize {
+        let diagnostics = app
+            .map(|app| app.engine.diagnostics.as_slice())
+            .unwrap_or(&[]);
+        self.height_with_diagnostics(width, diagnostics)
+    }
+
+    pub fn height_with_diagnostics(
+        &self,
+        width: usize,
+        diagnostics: &[jfc_engine::diagnostics::DiagnosticEntry],
+    ) -> usize {
         match self {
             RenderItem::Blank => 1,
             RenderItem::TextLine(line) => {
@@ -538,7 +552,9 @@ impl<'a> RenderItem<'a> {
                     p.line_count(width as u16).max(1)
                 }
             }
-            RenderItem::ToolBlock(tool) => tool_block_height_with_app(tool, width, app),
+            RenderItem::ToolBlock(tool) => {
+                tool_block_height_with_diagnostics(tool, width, diagnostics)
+            }
             RenderItem::ToolGroup { .. } => 1,
             RenderItem::AttachmentBlock { .. } => 1,
             // Scope markers occupy no rows — they only affect the
@@ -654,6 +670,13 @@ pub(super) fn diagnostics_for_path(
     app: &App,
     input: &ToolInput,
 ) -> std::collections::HashMap<usize, jfc_engine::diagnostics::Severity> {
+    diagnostics_for_input(&app.engine.diagnostics, input)
+}
+
+pub(super) fn diagnostics_for_input(
+    diagnostics: &[jfc_engine::diagnostics::DiagnosticEntry],
+    input: &ToolInput,
+) -> std::collections::HashMap<usize, jfc_engine::diagnostics::Severity> {
     use std::collections::HashMap;
     let mut out: HashMap<usize, jfc_engine::diagnostics::Severity> = HashMap::new();
     let path = match input {
@@ -666,7 +689,7 @@ pub(super) fn diagnostics_for_path(
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(path);
-    for d in &app.engine.diagnostics {
+    for d in diagnostics {
         let d_basename = std::path::Path::new(&d.file)
             .file_name()
             .and_then(|s| s.to_str())

@@ -2,6 +2,13 @@ use std::collections::HashSet;
 
 use jfc_provider::{ProviderContent, ProviderMessage, ToolDef};
 
+mod intent;
+#[cfg(test)]
+mod tests;
+
+use super::code_navigation::{is_code_navigation_tool_name, prioritize_code_navigation_tools};
+use intent::intent_tool_matches;
+
 const STARTER_TOOL_NAMES: &[&str] = &[
     "Bash",
     "Read",
@@ -21,6 +28,13 @@ const STARTER_TOOL_NAMES: &[&str] = &[
     "ToolSearch",
     "ToolSuggest",
     "Task",
+    "TeamCreate",
+    "SendMessage",
+    "TeamMemberMode",
+    "Advisor",
+    "Research",
+    "Council",
+    "AskModel",
     "AskUserQuestion",
     "EnterPlanMode",
     "ExitPlanMode",
@@ -81,9 +95,12 @@ pub fn progressive_tool_defs(
         }
     }
 
-    all.into_iter()
+    let mut tools = all
+        .into_iter()
         .filter(|tool| selected.contains(&normalize_tool_name(&tool.name)))
-        .collect()
+        .collect::<Vec<_>>();
+    prioritize_code_navigation_tools(&mut tools);
+    tools
 }
 
 fn intent_match_limit() -> usize {
@@ -165,117 +182,6 @@ fn extract_tool_names_from_search_result(content: &str, names: &mut Vec<String>)
     }
 }
 
-/// Match tools to a user's intent for progressive disclosure.
-///
-/// Primary path: jfc-core's [`jfc_core::ToolIndex`] — a TF-IDF/cosine retriever
-/// over each tool's `name + description + schema`. This is the
-/// *Improving Tool Retrieval* / ToolRet recipe (the triple-convergence gap
-/// finding) made load-bearing: it ranks by term-weighted relevance rather than
-/// raw substring presence, so a query like "search the web for docs" surfaces
-/// `WebSearch` even when no token is a literal name substring.
-///
-/// The earlier hand-rolled [`intent_score`] substring scorer is retained as a
-/// deterministic fallback: if TF-IDF finds nothing (e.g. the intent shares no
-/// vocabulary with any tool), we fall back so progressive disclosure never
-/// silently advertises *fewer* tools than the substring heuristic would have.
-fn intent_tool_matches(intent: &str, all: &[ToolDef], limit: usize) -> Vec<String> {
-    let terms = intent_terms(intent);
-    if terms.is_empty() {
-        return Vec::new();
-    }
-
-    // Build the TF-IDF index over the full catalog, keyed by tool name.
-    let docs: Vec<(String, String)> = all
-        .iter()
-        .filter(|tool| !super::defs::is_model_hidden_builtin_tool_name(&tool.name))
-        .map(|tool| {
-            let schema = tool
-                .input_schema
-                .get("properties")
-                .map(|value| value.to_string())
-                .unwrap_or_default();
-            (
-                tool.name.clone(),
-                format!("{} {} {}", tool.name, tool.description, schema),
-            )
-        })
-        .collect();
-    let index = jfc_core::ToolIndex::build(docs);
-
-    // Query with the cleaned intent terms (stopwords already stripped).
-    let query = terms.join(" ");
-    let hits = index.search(&query, limit);
-    if !hits.is_empty() {
-        return hits.into_iter().map(|(name, _score)| name).collect();
-    }
-
-    // Fallback: the original substring scorer, so we never regress to fewer
-    // matches than before when TF-IDF and the query share no vocabulary.
-    let mut scored: Vec<(usize, String)> = all
-        .iter()
-        .filter(|tool| !super::defs::is_model_hidden_builtin_tool_name(&tool.name))
-        .filter_map(|tool| {
-            let score = intent_score(tool, &terms);
-            (score >= 4).then(|| (score, tool.name.clone()))
-        })
-        .collect();
-    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    scored
-        .into_iter()
-        .take(limit)
-        .map(|(_, name)| name)
-        .collect()
-}
-
-fn intent_score(tool: &ToolDef, terms: &[String]) -> usize {
-    let name = tool.name.to_ascii_lowercase();
-    let description = tool.description.to_ascii_lowercase();
-    let schema = tool
-        .input_schema
-        .get("properties")
-        .map(|value| value.to_string().to_ascii_lowercase())
-        .unwrap_or_default();
-
-    let mut score = 0usize;
-    for term in terms {
-        if name == *term {
-            score += 10;
-        } else if name.contains(term) {
-            score += 6;
-        }
-        if description.contains(term) {
-            score += 3;
-        }
-        if schema.contains(term) {
-            score += 1;
-        }
-    }
-    score
-}
-
-fn intent_terms(intent: &str) -> Vec<String> {
-    let mut terms = Vec::new();
-    for raw in intent
-        .to_ascii_lowercase()
-        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-    {
-        let term = raw.trim();
-        if term.len() < 3 || INTENT_STOPWORDS.contains(&term) {
-            continue;
-        }
-        terms.push(term.to_owned());
-    }
-    dedup_preserve_order(terms)
-}
-
-const INTENT_STOPWORDS: &[&str] = &[
-    "the", "and", "for", "with", "that", "this", "from", "into", "onto", "all", "any", "can",
-    "could", "would", "should", "please", "thank", "you", "use", "using", "tool", "tools", "task",
-    "tasks", "make", "made", "work", "works", "working", "need", "needs", "want", "wants", "about",
-    "what", "when", "where", "why", "how", "fix", "add", "do", "run", "get", "set", "list", "show",
-    "tell", "find", "read", "write", "edit", "update", "create", "delete", "remove",
-];
-
 fn is_tool_discovery_call(name: &str) -> bool {
     name.eq_ignore_ascii_case("ToolSearch")
         || name.eq_ignore_ascii_case("tool_search")
@@ -289,279 +195,10 @@ fn normalize_tool_name(name: &str) -> String {
     name.trim().to_ascii_lowercase()
 }
 
-pub(crate) fn is_code_navigation_tool_name(name: &str) -> bool {
-    let normalized = normalize_tool_name(name);
-    const DIRECT_NAMES: &[&str] = &[
-        "codegraph_search",
-        "codegraph_explore",
-        "codegraph_node",
-        "codegraph_callers",
-        "codegraph_callees",
-        "codegraph_impact",
-        "codegraph_files",
-        "codegraph_status",
-    ];
-
-    DIRECT_NAMES.contains(&normalized.as_str())
-        || normalized.starts_with("mcp__codegraph__")
-        || normalized.contains("__codegraph_")
-}
-
 fn dedup_preserve_order(values: Vec<String>) -> Vec<String> {
     let mut seen = HashSet::new();
     values
         .into_iter()
         .filter(|value| seen.insert(normalize_tool_name(value)))
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use jfc_provider::{ProviderRole, ToolDef};
-
-    fn tool(name: &str, description: &str) -> ToolDef {
-        ToolDef {
-            name: name.to_owned(),
-            description: description.to_owned(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "query": { "type": "string" }
-                }
-            }),
-        }
-    }
-
-    fn assistant_tool_use(id: &str, name: &str) -> ProviderMessage {
-        ProviderMessage {
-            role: ProviderRole::Assistant,
-            content: vec![ProviderContent::ToolUse {
-                id: id.to_owned(),
-                name: name.to_owned(),
-                input: serde_json::json!({}),
-                thought_signature: None,
-            }],
-        }
-    }
-
-    fn user_tool_result(id: &str, body: &str) -> ProviderMessage {
-        ProviderMessage {
-            role: ProviderRole::User,
-            content: vec![ProviderContent::ToolResult {
-                tool_use_id: id.to_owned(),
-                content: body.to_owned(),
-                is_error: false,
-            }],
-        }
-    }
-
-    #[test]
-    fn progressive_catalog_keeps_core_tools_normal() {
-        let all = vec![
-            tool("Read", "read files"),
-            tool("ToolSearch", "search tools"),
-            tool(
-                "mcp__codegraph__codegraph_explore",
-                "Explore code graph context",
-            ),
-            tool("run_coverage", "coverage reports"),
-        ];
-
-        let selected = progressive_tool_defs(all, &[], Some("hello"));
-        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
-
-        assert!(names.contains(&"Read"));
-        assert!(names.contains(&"ToolSearch"));
-        assert!(names.contains(&"mcp__codegraph__codegraph_explore"));
-        assert!(!names.contains(&"run_coverage"));
-    }
-
-    #[test]
-    fn progressive_catalog_keeps_codegraph_tools_visible_regression() {
-        let all = vec![
-            tool("Read", "read files"),
-            tool("mcp__codegraph__codegraph_search", "Search indexed symbols"),
-            tool(
-                "mcp__codegraph__codegraph_explore",
-                "Explore related symbols and code",
-            ),
-            tool("run_coverage", "coverage reports"),
-        ];
-
-        let selected = progressive_tool_defs(all, &[], Some("fix this bug"));
-        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
-
-        assert!(names.contains(&"mcp__codegraph__codegraph_search"));
-        assert!(names.contains(&"mcp__codegraph__codegraph_explore"));
-        assert!(!names.contains(&"run_coverage"));
-    }
-
-    #[test]
-    fn progressive_catalog_reveals_tool_search_results_normal() {
-        let all = vec![
-            tool("Read", "read files"),
-            tool("ToolSearch", "search tools"),
-            tool("run_coverage", "coverage reports"),
-        ];
-        let messages = vec![
-            assistant_tool_use("toolu_1", "ToolSearch"),
-            user_tool_result(
-                "toolu_1",
-                "Matches for `coverage`:\n- tool `run_coverage`: Run cargo llvm-cov",
-            ),
-        ];
-
-        let selected = progressive_tool_defs(all, &messages, None);
-        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
-
-        assert!(names.contains(&"run_coverage"));
-    }
-
-    #[test]
-    fn progressive_catalog_keeps_all_historical_tool_names_regression() {
-        let all = vec![
-            tool("Read", "read files"),
-            tool("ToolSearch", "search tools"),
-            tool("WebSearch", "search the web for current information"),
-            tool("run_coverage", "coverage reports"),
-        ];
-        let mut messages = Vec::new();
-        messages.push(assistant_tool_use("toolu_old", "WebSearch"));
-        for idx in 0..12 {
-            messages.push(ProviderMessage {
-                role: ProviderRole::User,
-                content: vec![ProviderContent::Text(format!("turn {idx}"))],
-            });
-        }
-        messages.push(assistant_tool_use("toolu_recent", "Read"));
-
-        let selected = progressive_tool_defs(all, &messages, Some("continue"));
-        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
-
-        assert!(
-            names.contains(&"WebSearch"),
-            "historical tool_use names must stay advertised on replay"
-        );
-        assert!(!names.contains(&"run_coverage"));
-    }
-
-    #[test]
-    fn historical_tool_count_does_not_starve_discovered_tools_regression() {
-        let mut all = vec![
-            tool("Read", "read files"),
-            tool("ToolSearch", "search tools"),
-            tool("run_coverage", "coverage reports"),
-        ];
-        let mut messages = vec![
-            assistant_tool_use("toolu_search", "ToolSearch"),
-            user_tool_result(
-                "toolu_search",
-                "Matches for `coverage`:\n- tool `run_coverage`: Run cargo llvm-cov",
-            ),
-        ];
-
-        for idx in 0..32 {
-            let name = format!("Historical{idx}");
-            all.push(tool(&name, "already used in replayed history"));
-            messages.push(assistant_tool_use(&format!("toolu_hist_{idx}"), &name));
-        }
-
-        let selected = progressive_tool_defs(all, &messages, Some("continue"));
-        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
-
-        assert!(names.contains(&"run_coverage"));
-    }
-
-    #[test]
-    fn progressive_catalog_hides_runtime_output_tools_from_intent_regression() {
-        let all = vec![
-            tool("Bash", "run shell commands"),
-            tool("BashOutput", "read output from a backgrounded Bash command"),
-        ];
-
-        let selected = progressive_tool_defs(all, &[], Some("wait for background bash output"));
-        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
-
-        assert!(names.contains(&"Bash"));
-        assert!(
-            !names.contains(&"BashOutput"),
-            "BashOutput is a hidden runtime compatibility tool, not a default model action"
-        );
-    }
-
-    #[test]
-    fn progressive_catalog_hides_hidden_runtime_tools_from_history_regression() {
-        let all = vec![
-            tool("Bash", "run shell commands"),
-            tool("BashOutput", "legacy background output retrieval"),
-        ];
-        let messages = vec![assistant_tool_use("toolu_old", "BashOutput")];
-
-        let selected = progressive_tool_defs(all, &messages, Some("continue"));
-        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
-
-        assert!(
-            !names.contains(&"BashOutput"),
-            "hidden runtime compatibility tools must not be re-advertised from replay"
-        );
-    }
-
-    #[test]
-    fn progressive_catalog_selects_tools_from_intent_normal() {
-        let all = vec![
-            tool("Read", "read files"),
-            tool("ToolSearch", "search tools"),
-            tool("WebSearch", "search the web for current information"),
-        ];
-
-        let selected = progressive_tool_defs(all, &[], Some("search the web for docs"));
-        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
-
-        assert!(names.contains(&"WebSearch"));
-    }
-
-    #[serial_test::serial(env)]
-    #[test]
-    fn env_limits_ignore_invalid_values_regression() {
-        assert_eq!(env_usize("JFC_TEST_MISSING_LIMIT", 7), 7);
-
-        unsafe { std::env::set_var("JFC_TEST_INVALID_LIMIT", "0") };
-        assert_eq!(env_usize("JFC_TEST_INVALID_LIMIT", 7), 7);
-        unsafe { std::env::set_var("JFC_TEST_INVALID_LIMIT", "bogus") };
-        assert_eq!(env_usize("JFC_TEST_INVALID_LIMIT", 7), 7);
-        unsafe { std::env::set_var("JFC_TEST_INVALID_LIMIT", "3") };
-        assert_eq!(env_usize("JFC_TEST_INVALID_LIMIT", 7), 3);
-        unsafe { std::env::remove_var("JFC_TEST_INVALID_LIMIT") };
-    }
-
-    // The TF-IDF retriever surfaces a tool by *description* relevance even when
-    // the intent shares no token with the tool's name — the substring scorer
-    // (`name.contains`) would miss this. Proves the jfc-core ToolIndex is the
-    // live ranker on the progressive-disclosure path.
-    #[test]
-    fn progressive_catalog_ranks_by_description_relevance_normal() {
-        let all = vec![
-            tool("Read", "read a file from disk"),
-            tool("ToolSearch", "discover tools"),
-            tool(
-                "post_bounty",
-                "register a coding bounty and let solver agents compete to win the reward",
-            ),
-            tool(
-                "run_coverage",
-                "annotate functions with test coverage hit counts",
-            ),
-        ];
-
-        // "reward" / "compete" only appear in post_bounty's DESCRIPTION, never
-        // in any tool name — the substring name scorer would not surface it.
-        let selected = progressive_tool_defs(all, &[], Some("competition for a reward"));
-        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
-
-        assert!(
-            names.contains(&"post_bounty"),
-            "TF-IDF should surface post_bounty by description relevance, got {names:?}"
-        );
-    }
 }

@@ -740,6 +740,8 @@ fn build_agent_task_input(
         isolation: req.isolation.clone(),
         parent_task_id: None,
         schema: req.schema.clone(),
+        allowed_tools: Vec::new(),
+        disallowed_tools: Vec::new(),
         cwd: None,
     };
     apply_workflow_agent_isolation_defaults(
@@ -1191,6 +1193,8 @@ mod tests {
             isolation: isolation.map(str::to_owned),
             parent_task_id: None,
             schema: None,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
             cwd: None,
         }
     }

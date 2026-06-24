@@ -54,11 +54,14 @@ impl JournalWriter {
         let run_id = self.run_id.clone();
         let json = serde_json::to_string(entry).map_err(io_invalid)?;
         tokio::task::spawn_blocking(move || {
-            let store = jfc_knowledge::KnowledgeStore::open_default().map_err(io_other)?;
-            store
-                .append_session_artifact_event(&session_id, WORKFLOW_JOURNAL_KIND, &run_id, &json)
-                .map_err(io_other)?;
-            Ok(())
+            jfc_knowledge::block_on_knowledge(async {
+                let store = jfc_knowledge::KnowledgeStore::open_default().await.map_err(io_other)?;
+                store
+                    .append_session_artifact_event(&session_id, WORKFLOW_JOURNAL_KIND, &run_id, &json)
+                    .await
+                    .map_err(io_other)?;
+                Ok(())
+            })
         })
         .await
         .map_err(io_other)?
@@ -77,20 +80,23 @@ pub async fn load_journal(session_id: Option<&str>, run_id: &str) -> JournalCach
         .to_owned();
     let run_id = run_id.to_owned();
     let entries = tokio::task::spawn_blocking(move || {
-        let store = jfc_knowledge::KnowledgeStore::open_default().ok()?;
-        let rows = store
-            .list_session_artifact_events(
-                &session_id,
-                WORKFLOW_JOURNAL_KIND,
-                Some(&run_id),
-                100_000,
+        jfc_knowledge::block_on_knowledge(async {
+            let store = jfc_knowledge::KnowledgeStore::open_default().await.ok()?;
+            let rows = store
+                .list_session_artifact_events(
+                    &session_id,
+                    WORKFLOW_JOURNAL_KIND,
+                    Some(&run_id),
+                    100_000,
+                )
+                .await
+                .ok()?;
+            Some(
+                rows.into_iter()
+                    .filter_map(|row| serde_json::from_str::<JournalEntry>(&row.value_json).ok())
+                    .collect::<Vec<_>>(),
             )
-            .ok()?;
-        Some(
-            rows.into_iter()
-                .filter_map(|row| serde_json::from_str::<JournalEntry>(&row.value_json).ok())
-                .collect::<Vec<_>>(),
-        )
+        })
     })
     .await
     .ok()

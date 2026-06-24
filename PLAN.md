@@ -1,440 +1,126 @@
-# Unified Cross-Project Memory Store (jfc-knowledge)
+# Migrate jfc-knowledge from rusqlite to sqlx (fully async)
 
 ## TL;DR
 
-Replace the scattered per-project `.jfc/memory/*.md` + `jfc-learn/*.jsonl` files
-with a single, durable, queryable **user-level SQLite database** at
-`~/.local/share/jfc/knowledge.db` (Obsidian-style: one vault, every project) so
-facts, preferences, skills, and findings accumulate **across projects**. This is
-scaffolding-level self-improvement that is **self-driving and grows unbounded**:
-on startup the store autonomously imports legacy `.md` memories, mines the user's
-session history into verified lessons, consolidates duplicates, and
-**auto-promotes** proven (verified + repeatedly-seen) lessons across projects —
-no `/knowledge` command required. The store grows without a row cap; the only
-retained safety properties are the ones that protect the *user* (not restrict
-them): secrets are redacted before storage, recalled text is screened as
-reference-data-not-instructions, and the whole store is one deletable file (the
-kill switch). The `/knowledge` commands remain as optional manual controls.
-Phases 1–16 are DONE and committed; 17 (pre-search enrichment) and 18
-(sessions→DB shadow) are scoped and deferred.
-
-This is the bounded memory/scaffolding flywheel — **Layers 0–2** of the
-"Invisible War" diagram (orchestration + the self-improvement loop: mistake
-analysis, pre-search, a memory bank read at the start of every session). It is
-deliberately **not Layer 3** (an agent that propagates into external systems with
-no auth and self-replicates) — see "Hard Non-Goals". Using a configured provider
-via the user's own API key is a normal authenticated client and is in scope; the
-no-auth foothold/propagation loop is permanently out of scope.
+Replace the synchronous `rusqlite` backend of `jfc-knowledge` with async
+`sqlx` (`SqlitePool`), make every `KnowledgeStore` method `async`, and cascade
+`async` outward through all 238 call sites in the 7 dependent crates
+(`jfc-session`, `jfc-engine`, `jfc-learn`, `jfc-memory`, `jfc-agents`,
+`jfc-config`, `jfc-daemon`). Use **runtime `sqlx::query`/`query_as` only — no
+compile-time macros** (avoids the `DATABASE_URL`/FTS5 macro-verification
+friction), port the existing hand-rolled ordered migrator to async (preserve
+versioning logic exactly), and keep the on-disk SQLite file format byte-compatible
+(same engine, WAL, FTS5). The `sqlx` source of truth is the local checkout at
+`~/RustProjects/forks/sqlx` (v0.9.0).
 
 ## Context
 
-- **Today**: `jfc-memory` stores per-file `.md` + YAML frontmatter at user
-  (`~/.config/jfc/memory/`) and project (`<repo>/.jfc/memory/`) scope; `jfc-learn`
-  appends JSONL candidate logs per project. A lesson learned in repo A never
-  helps repo B, and recall is an LLM pass over flat files.
-- **Goal**: a unified user DB (like an Obsidian vault) that is the single source
-  of durable memory, queryable, ranked, and cross-project — a continual-learning
-  flywheel where the agent gets durably better across projects via accumulated
-  experience (memory/scaffolding RSI), not weight updates.
-
-### Research grounding (2024–2026; see `/tmp/jfc-research/…` artifact)
-
-The memory-based-RSI literature gives a clear recipe for what makes such a loop
-**compound instead of plateau or rot**. The design below adopts it:
-
-- **Experience → reflection → reusable memory** is the proven pattern: Reflexion
-  (verbal RL — reflect on failure, store the reflection) → Meta-Policy Reflexion /
-  MARS (make reflections *structured + transferable across tasks*) → ExpeL /
-  Voyager (a growing **skill library** of reusable procedures). Cross-project
-  transfer is exactly the "make reflections transfer" problem these target.
-- **The verifier is the bottleneck** (the single most-cited finding). A loop
-  compounds only when each stored lesson is *checked* — "Audited Skill-Graph
-  Self-Improvement via Verifiable Rewards" and SEVerA both gate self-improvement
-  on a trustworthy verifier. For a coding agent the verifier is free and strong:
-  **tests pass / it compiles / the task succeeded.** So writes should be
-  **verifier-gated**, carrying the outcome that earned them.
-- **Memory can actively hurt reasoning** — "context rot" (retrieval degrades with
-  length), and **memory poisoning / prompt-injection-laundered-through-memory**
-  (AdversarialCoT: a *single* poisoned retrieved item can hijack a reasoning
-  chain; defenses StruQ/SecAlign treat retrieved text as **untrusted data, not
-  instructions**). Recalled memories must be screened and clearly framed as data.
-- **Forgetting is a feature, not just cleanup**: Sleep-Consolidated Memory +
-  algorithmic forgetting, Sleep-time Compute, and Auto-Dreamer all do **offline
-  consolidation** (dedup → summarize → promote → forget low-value) between tasks.
-  Bounded growth also mitigates a privacy/leakage liability (MRMMIA membership
-  inference on agent memory). A-MEM (agentic memory) and the 2026 "Externalization
-  in LLM Agents" survey frame this whole stack as *building capability by
-  reorganizing the runtime/memory around frozen weights* — exactly our thesis.
-
-Net design consequences folded into the TODOs: rank by **importance/salience**
-(not just recency), **verifier-gate** what gets written, run an **offline
-consolidation/forgetting** pass, and **screen recalled memory as untrusted data**.
-
-### Session mining — learn from the user's own history (grounded in real data)
-
-The richest training corpus is already on disk: `~/.config/jfc/sessions/` holds
-**364 saved sessions (~639 MB)**. Verified schema: each session is
-`{id, created_at, cwd, model, first_prompt, messages[]}` where every message has
-`role` + `parts[]`, and each part is one of `type:"tool"`
-(`{kind, status:complete|failed, input, output}`), `type:"text"`,
-`type:"reasoning"`, or `type:"task_status"`. Real signal counts in a 20-session
-sample: **10,948 complete / 364 FAILED tool parts** — e.g.
-`kind:"Edit", status:"failed", output:"old_string not found"` (exactly the
-failure class the SearchReplace gutter-tier already fixed). So we can mine, per
-the goal, (1) **repetitive user inputs/preferences**, and (2) **recurring model
-errors** — failed Edit/Bash *and* reasoning/text turns the user then corrected.
-
-The mining→consolidation→promotion pipeline is designed (council, intent=plan) so
-the loop **compounds, not poisons**. Load-bearing decisions adopted:
-
-- **Three-tier quarantine, evidence-as-data-never-instruction**:
-  `raw evidence (redacted) → candidate lessons (project-scoped) → promoted
-  lessons (cross-project, human-gated)`. The live agent reads only *structured
-  lessons*, never raw transcript text — which is the structural defense against
-  prompt-injection laundered through mined sessions.
-- **Redaction first**, before any text is stored or shown to any extractor
-  (deterministic high-recall: key formats, JWTs, high-entropy tokens, `password=`,
-  emails, home-path normalization; redact tool `output` harder than `input`).
-- **Verifier-gate error-lessons via recovery pairs**: only store "model made
-  error X" when the *same transcript* shows a later failed→succeeded recovery
-  (the fix actually worked). This also kills stale-mistake overfitting.
-- **Tiered extraction by cost**: deterministic harvest for the structured cases
-  (the 364 failed calls, repeated commands/flags, correction turns); reserve an
-  LLM/council extractor for the semantic residue, gated on redaction recall.
-- **Compounding via a `norm_key`**: identical lessons from many sessions
-  increment `support_count` on one row instead of duplicating; `last_seen` decay
-  and `contradiction_count` retire stale/contradicted lessons.
-
-### Obsidian parity — the missing link-graph (grounded in the decompiled bundles)
-
-Indexed the deobfuscated Obsidian bundles (`research/.codegraph`, 440 files).
-What JFC's flat FTS store is missing vs Obsidian is **a link-graph between
-records**: Obsidian's value isn't the notes, it's `resolvedLinks` /
-`unresolvedLinks` / backlinks / tags / `properties` (frontmatter) that make the
-vault a *traversable graph*. Two concrete borrows:
-- **Typed links between knowledge rows** (`relates-to`, `supersedes`,
-  `caused-by`, `fixed-by`) → recall can expand along edges (a lesson pulls in its
-  linked fix), the backlink view shows "what depends on this lesson".
-- **Unresolved links as knowledge gaps**: an Obsidian unresolved `[[link]]` is a
-  note that *should* exist; the analog is a referenced-but-absent lesson/skill —
-  a concrete signal of what to learn next.
-- **Phase 1 (DONE, committed `8a3e6cd6`)**: new `jfc-knowledge` crate, rusqlite
-  (bundled SQLite), versioned migrations, FTS5 lexical recall, recency/usage
-  ranking, immutable supersede, bounded-growth `decay`, stable cross-machine
-  `project_key` from the git remote, human-gated `promote_to_global`. 12 tests
-  incl. every safety invariant. Ships dormant (nothing depends on it yet).
-- **Owners to respect**: `stream/request/memory.rs::append_memory_recall_context`
-  (the recall injection point), `stream/request/project_context.rs` (its caller),
-  `jfc-memory::load_all_memories` (the `.md` source for import), the
-  daemon-scheduled Dreamer in `jfc-learn` (future consolidation driver).
-- **Hard line / non-goal**: no self-trigger on its own writes, no autonomous
-  cross-project promotion, no self-merge. Deleting source `.md` files is the one
-  irreversible step and happens **only after** a verified import + a cutover
-  window — never in the same motion as the import.
+- `jfc-knowledge` holds an owned `rusqlite::Connection` behind `KnowledgeStore`.
+  API surface in use: 64 `.execute`, 33 `.prepare`, 27 `.query_map`,
+  14 `.query_row`, 5 `.transaction`, 3 `.pragma_update`, 3 `.execute_batch`,
+  1 `.last_insert_rowid`, 1 `.busy_timeout`.
+- Schema = 10 ordered DDL migrations gated on a `schema_version` table, applied
+  in a transaction (`schema.rs`). Includes **FTS5 virtual tables + triggers**
+  (`knowledge_fts`, `session_messages_fts`, `definitions_fts`).
+- 238 call sites across 7 crates. Heaviest: `jfc-engine` (130),
+  `jfc-session` (41), `jfc-memory` (18), `jfc-config` (15), `jfc-daemon` (14),
+  `jfc-agents` (11), `jfc-learn` (9).
+- Genuinely-sync call contexts that need explicit bridging:
+  `jfc-session/src/task_store.rs` (`persist_unlocked`, `load_inner_from_db`,
+  `reload_if_changed`), `task_history.rs`, `inbox.rs`, `search.rs`, `catalog.rs`.
+  These are reached from sync `&self` methods and the `TaskStore` mutex path.
+- Binary entrypoint (`crates/jfc/src/main.rs`) is already `#[tokio::main]`, so a
+  tokio runtime is always present at the top.
 
 ## Work Objectives
 
-- Wire `jfc-knowledge` into the runtime recall path as an **advisory** block,
-  behind a config flag defaulting **off** (measure before default-on).
-- Provide an **idempotent importer** that pulls existing `.md` memories (and,
-  later, `jfc-learn` candidates) into the DB without deleting the sources.
-- Add a `/knowledge` command surface (import, list, show, forget, promote).
-- Only after import is proven: make the DB the source of truth and retire the
-  `.md` read path (the "get rid of the md files" cutover), reversibly.
-- Make the loop **compound, not rot**: verifier-gate what gets written, rank by
-  salience + verified-outcome, screen recalled memory as untrusted data, and run
-  offline consolidation/forgetting — the research-backed levers for durable
-  cross-project continual learning.
-- **Mine the user's own session history** (`~/.config/jfc/sessions/`) offline for
-  repetitive preferences and recurring model errors (failed tools + corrected
-  reasoning), through a redaction-first, evidence-as-data, verifier-gated,
-  human-promoted quarantine pipeline.
-- Borrow Obsidian's **link-graph**: typed links between knowledge rows (so recall
-  traverses, not just matches) and unresolved-link **knowledge-gap** detection.
+- `jfc-knowledge` depends on `sqlx` (sqlite, runtime-tokio, no macros), not `rusqlite`.
+- `KnowledgeStore` wraps a `SqlitePool`; every public method is `async`.
+- Schema migrator ported to async, same version semantics, FTS5 + triggers intact.
+- All 7 dependent crates updated so their call sites `.await` the new API.
+- Genuinely-sync callers bridged via one documented helper
+  (`block_on_knowledge`) using `tokio::task::block_in_place` +
+  `Handle::current().block_on`, or refactored to async where the caller is async.
+- `cargo build` and `cargo test` pass workspace-wide; `rg rusqlite` returns
+  nothing under `crates/`.
 
 ## Verification Strategy
 
-- Unit tests per module in `jfc-knowledge` (schema, query, project, import).
-- Engine integration tests for the recall block (flag off = byte-identical
-  prompt; flag on = block appears; scope isolation holds end-to-end).
-- Idempotency test: importing the same `.md` set twice yields no duplicate rows.
-- `cargo test -p jfc-knowledge` and `cargo test -p jfc-engine` green; workspace
-  `cargo build` + `cargo clippy` clean.
-- Baseline A/B before any default-on: cross-project recall on vs off, measured on
-  the existing eval suite; ship default-on only on a measured win.
+- Per-phase: `cargo build -p <crate>` after each crate is converted.
+- `cargo test -p jfc-knowledge` after Phase 2 (store + schema parity).
+- `cargo test -p jfc-session` after the task-store bridge (covers the earlier
+  resurrection regression tests too).
+- Workspace `cargo build` then `cargo test` in the Final Verification Wave.
+- `cargo clippy --workspace` since this touches shared runtime abstractions.
+- Grep gate: `rg -l rusqlite crates/` must be empty.
 
 ## Execution Strategy
 
-Incremental and additive. Each phase compiles and ships behind a default-off
-flag so the default runtime is byte-identical until a measured win flips it. The
-destructive cutover (retiring `.md` reads / deleting files) is the last phase and
-is gated on explicit user confirmation. Reuse existing owners (recall injection
-point, `load_all_memories`, the Dreamer) — no new god object, no second source of
-truth for memory.
+Bottom-up, compiling at each boundary so breakage is localized:
+1. Foundation (deps, error, pool, schema) — keep the crate compiling in isolation.
+2. Convert the query layer + `KnowledgeStore` methods to async.
+3. Cascade async through dependents, leaf crates first (`jfc-learn`,
+   `jfc-memory`, `jfc-config`, `jfc-agents`, `jfc-daemon`), then `jfc-session`,
+   then `jfc-engine` (largest).
+4. Remove rusqlite, full verification wave.
+
+Bridging rule: prefer making the caller `async` and `.await`ing. Only use the
+`block_on_knowledge` sync bridge where the call site is structurally sync (a
+`Drop`, a `Mutex`-guarded `persist_unlocked`, or a non-async trait method) and
+cannot be made async without a second viral cascade.
 
 ## TODOs
 
-- [x] 1. **Phase 1 — `jfc-knowledge` store crate.** rusqlite bundled, migrations,
-  KnowledgeRecord/Kind/Scope, insert/recall/decay/supersede/promote, project
-  identity, safety tests. (DONE, committed `8a3e6cd6`.)
-- [x] 2. **Phase 2 — recall wiring.** `jfc-knowledge` dep added to `jfc-engine`;
-  `append_cross_project_knowledge` (blocking-safe SQLite recall on the last user
-  query, `mark_used`, screened block) wired into `project_context.rs` after the
-  memory recall block; `cross_project_recall_enabled` config flag (default off).
-  3 cross_project tests. (DONE.)
-- [x] 3. **Phase 2.5 — migration importer.** `jfc-knowledge::import` parses `.md`
-  memory files (self-contained frontmatter parser, no `jfc-memory` dep), maps
-  type→Kind and level→Scope, and `KnowledgeStore::import_memories` inserts with a
-  **deterministic id** (uuid-v5 over normalized content) so re-import is a no-op.
-  **Import only — never deletes the source `.md` files.** 7 tests incl.
-  `import_memories_is_idempotent_regression`. (DONE.)
-- [x] 4. **Phase 3 — `/knowledge` command surface.** `/knowledge`
-  import|mine|list|gaps|promote|forget|consolidate|status|gc-legacy, registered in
-  the command registry. `promote` is the human cross-project gate; `gc-legacy`
-  requires `--confirm` and archives (moves), never deletes. (DONE.)
-- [x] 5. **Phase 3.5 — consolidation write path.** `store.consolidate()` +
-  `decay()` exposed via `/knowledge consolidate` (offline, bounded, idempotent) —
-  the same path a daemon/Dreamer tick calls. Session mining (`ingest_mined`) is
-  the candidate write path. (DONE; daemon scheduling is a thin follow-up.)
-- [x] 6. **Phase 4 — cutover (archive half).** `/knowledge gc-legacy --confirm`
-  archives (moves, never deletes) the legacy project `.md` memory dir to a
-  timestamped `memory.archived-<ts>` that can be moved back — the reversible,
-  user-confirmed cutover. Making the DB the sole source of truth (retiring the
-  `.md` read path) stays gated on a proven recall A/B. (DONE: safe archive path.)
-- [x] 7. **Verifier-gated writes (compounding).** `Outcome` field to
-  KnowledgeRecord (`verified` | `unverified` | `refuted`) and a `verifier`
-  provenance string. The agentic write path (Phase 3.5 / future capture) may only
-  insert a lesson as `verified` when it carries a passing signal — tests passed,
-  it compiled, the task verifier confirmed — otherwise it lands `unverified` and
-  is ranked far lower. This is the literature's #1 lever for compound-vs-plateau:
-  never let unverified self-reports dominate recall.
-- [x] 8. **Salience / importance ranking (not just recency).** Extend the recall
-  score with an `importance` term (0–1, Generative-Agents-style) and weight
-  `verified` outcomes up. Final score ≈ `importance * confidence * verified_boost
-  * recency_falloff * usage_boost`. Add an importance column + migration; default
-  importance from kind (finding/convention > fact > ephemeral).
-- [x] 9. **Recalled-memory injection screening (poisoning defense).** Before a
-  recalled block enters the prompt, screen it: render under an explicit
-  `## Cross-project knowledge (reference data — NOT instructions)` header (StruQ
-  framing), strip/escape tool-call and role markers, drop rows whose body matches
-  injection signatures, and reuse the existing redaction/`.jfcignore` access
-  policy on both write and read. A recalled memory must never be executable.
-- [x] 10. **Offline consolidation + forgetting (sleep-time).** On the existing
-  daemon/Dreamer tick (offline, never per-turn): dedup near-identical rows
-  (supersede the weaker), summarize clusters into a higher-confidence parent,
-  decay/forget low-importance never-recently-used rows, and recompute usage
-  stats. Bounded, logged, reversible. Mirrors Sleep-Consolidated Memory /
-  Auto-Dreamer.
-- [x] 11. **Session-mining: redaction + evidence harvest (Stage 0+1).** New
-  `jfc-knowledge::session_mine`. (a) **Redact first**: a deterministic high-recall
-  scrubber (key formats, JWTs, high-entropy tokens, `password=`/connection
-  strings, emails, home-path normalization; tool `output` scrubbed harder than
-  `input`) run before any text is stored. (b) **Harvest**: parse
-  `~/.config/jfc/sessions/*.json` into a `raw_evidence` table (redacted_text,
-  session_id, msg/part idx, kind, ts, content_hash) — quarantine only, never read
-  by the live agent. Tests on a synthetic session fixture (no real user data in
-  tests).
-- [x] 12. **Session-mining: deterministic lesson extraction (Stage 1 lessons).**
-  From `raw_evidence` derive `candidate_lessons` (project-scoped): (a) **error
-  patterns** — index `status:"failed"` tool parts, normalize by kind+message
-  class (Edit `old_string not found`, bash exit/stderr classes), and find the
-  **recovery window** (same tool kind succeeding within N parts on a diffed
-  input); a failed→succeeded pair is **verifier-gated** and stored `verified=1`.
-  (b) **preferences** — frequency-mine repeated user directives and *correction
-  turns* (a user reply negating the preceding model text/reasoning). Compounding
-  via `norm_key` (`support_count++`, not duplicate); `injection_flag` on
-  instruction-shaped candidates. Tests: failed→succeeded pair yields one verified
-  lesson; an unrecovered failure does not.
-- [x] 13. **Session-mining: ranking, decay, human-gated promotion (Stage 2/3).**
-  Score `score = log(1+support_count) * verified_boost * recency_falloff -
-  penalty*contradiction_count`; retire when score floors or `contradiction_count
-  > support_count`. **Auto-promotable to cross-project = nothing**: candidates may
-  only *queue* for review (`review_state: pending`) above a support+verified
-  threshold; actual `Scope::Global` still requires the human `/knowledge promote`
-  gate. `/knowledge mine` (run offline), `/knowledge review` (approve/reject the
-  queue). Optional LLM/council extractor for the semantic residue, gated on
-  redaction recall — off by default.
-- [x] 14. **Obsidian-style typed links between records.** Add a `knowledge_links`
-  table (`from_id, to_id, rel`) with `relates-to | supersedes | caused-by |
-  fixed-by | refines`. Recall may expand one hop along edges (a surfaced error
-  pulls in its `fixed-by` lesson); a backlink query answers "what depends on this
-  lesson". Migration + tests; recall expansion behind the same default-off flag.
-- [x] 15. **Obsidian-style knowledge-gap detection (unresolved links).** Track
-  referenced-but-absent lessons/skills (the analog of an Obsidian unresolved
-  `[[link]]`) as `knowledge_gaps`, surfaced via `/knowledge gaps` — a concrete,
-  ranked "what to learn next" list that feeds the mining/consolidation priorities.
-- [x] 16. **Autonomy hardening (correctness, not bounds).** Self-driving
-  maintenance shipped (recall default-on, startup `auto_maintain`, evidence-based
-  `auto_promote`, unbounded growth). Two correctness fixes: (a) a per-project
-  throttle stamp (`maintain_state`, schema v3) so startup doesn't re-mine all 364
-  sessions every launch; (b) `auto_promote` restricted to *generalizable* kinds
-  (Finding/Skill/Convention/Preference) — a project-specific `Fact` ("this repo
-  uses vite") must NOT auto-leak into other projects' recall, since redaction
-  guards secrets, not wrong-context truth. The human `/knowledge promote` override
-  still works for any kind.
-- [x] 17. **Pre-Search / session-start knowledge brief (Layer 2).** On the first
-  turn, `append_session_start_knowledge_brief` recalls the top generalizable
-  lessons for the project (no query needed) under a "never starts blind" header;
-  per-turn `append_cross_project_knowledge` continues lexical recall. The
-  maintenance pass is now a **recurring background tick** (not startup-only),
-  internally throttled. Gate is an explicit param ⇒ F2 testable. Done +
-  `recall_disabled_appends_nothing_regression`, `session_start_brief_*`.
-
-### Full cutover — DB becomes the single source of truth (TODOs 18–24)
-
-The goal of this block: **stop reading `.md` memory and `ses_*.json` at runtime;
-serve both from the DB.** Sequenced so every step is reversible and no step both
-changes the write format *and* the read path at once. The destructive deletes
-(retiring the files) come last, are `--confirm`-gated, and archive (move) before
-any removal — never a blind `rm`.
-
-#### Memory `.md` → DB cutover
-
-- [x] 18. **Unify recall on the DB (memory read path).** DONE — went further than
-  the `both`-first plan: `jfc_memory::load_all_memories` now reads **only** the
-  `jfc-knowledge` DB (`store.load_memories`), synthesizing `MemoryEntry` from rows
-  and restoring rich frontmatter from the verbatim `mem_meta` JSON. No `.md` read
-  path remains, so the interim `memory_source = both` config was unnecessary and
-  not added. Parity proven on the real corpus: 19/19 `.md` bodies recall from the
-  DB (re-migration pass set `mem_level` on every row). (DONE, committed.)
-- [x] 19. **Write new memories to the DB (memory write path).** DONE — `create_memory`
-  / `create_memory_checked` route to `KnowledgeStore::insert_memory` (via
-  `write_memory_row`); dedup is now a content-hash (`uuid-v5` of normalized body)
-  lookup, not a `.md` word-overlap scan. `delete_memory(id)` deletes by DB row id.
-  `MemoryEntry.path` is now `Option` (always `None` for DB rows), `id: Option<String>`
-  added. No new `.md` file is created on save. Tests:
-  `execute_memory_create_project_writes_file_normal` (asserts NO `.md`),
-  `delete_memory_works` (create→delete by id). (DONE, committed.)
-- [x] 20. **Continuous `.md` import (no manual step).** DONE — the recurring
-  `auto_maintain` tick imports `.md`; the one-shot re-migration this session also
-  re-inserted every project `.md` through `insert_memory` so `mem_level` is set and
-  rows are visible to `load_memories`. (DONE.)
-- [x] 21. **Retire the `.md` read path (cutover).** DONE — with the read+write paths
-  on the DB, all 19 project `.md` memory files across 7 projects were archived
-  (moved to `memory.archived-<ts>`, reversible — never deleted) after a green
-  parity gate. `find ~/RustProjects/active/*/.jfc/memory -name '*.md'` = 0. The 11
-  dead `.md` I/O helpers + `is_memory_path`/`extra_memory_dirs` + the unused
-  `serde_yaml` dep were then removed from `jfc-memory`. (DONE, committed.)
-
-#### Sessions JSON → DB
-
-- [x] 22. **Session-index table (ADDITIVE — safe half, no read change).** Added a
-  `sessions` table (migration v4: id, cwd, model, created_at, updated_at,
-  first_prompt, title, message_count) + `upsert_session`/`get_session`/
-  `list_sessions`/`session_count`. `save_session` (the one chokepoint,
-  `session/core.rs`) now **dual-writes** via `jfc_engine::index_session` after the
-  atomic JSON write — JSON stays canonical, the index is best-effort
-  (spawn_blocking, debug-on-error). No reader switched yet. Test
-  `session_index_upsert_and_list_normal` (idempotent upsert, cwd filter,
-  recency order). DONE.
-- [x] 23. **Full transcript in the DB (shadow-write + parity gate).** Council
-  decision 1: a `session_messages` row-per-message table (+ FTS5 mirror), not a
-  blob — so search is a query and saves append in one transaction. Migration v5;
-  `replace_transcript` (header + messages in one txn), `load_transcript`,
-  `search_transcripts`, `backup_to` (VACUUM INTO). `save_session` now
-  shadow-writes the transcript via `jfc_engine::shadow_session_transcript` after
-  the atomic JSON write (JSON still canonical). `backfill_and_verify_sessions` +
-  `/knowledge migrate` run the parity gate. **Verified on the real corpus: 344
-  checked, 344 passed, 0 mismatch, 0 undeserializable → flip_safe=true.** Reads
-  still come from JSON; the flip is TODO 24.
-- [~] 24. **Read sessions from the DB (read-flip wired; archive still gated).**
-  `load_session` and `load_session_with_model` now read DB-first when
-  `session_source = "db"` (default "json"), deserializing each transcript row's
-  verbatim `meta` JSON through the SAME `deserialize_message` + repair pipeline as
-  the JSON loader; any miss falls through to the canonical JSON, and the JSON
-  writer keeps running — so the flip is reversible by flipping the flag back.
-  Parity strengthened to FULL message-tree (role + verbatim per-message JSON, not
-  just text) and re-verified: 344/344, 0 mismatch. Unit guard
-  `serialized_message_meta_roundtrip_is_lossless_regression`. STILL TODO before
-  retiring JSON: flip `jfc-session` search/catalog to the DB, run a rollback
-  window with `session_source=db`, then `/knowledge gc-legacy --confirm` to
-  archive (move, never rm) `ses_*.json`. NOTE: this gating applies to the
-  **session transcript** JSON only. The **memory** cutover (TODOs 18–21) is now
-  fully complete — recall is DB-only, writes are DB-only, and all 19 project `.md`
-  files are archived; memory is no longer `.md`-authoritative.
-
-## Hard Non-Goals (will NOT be built — recorded so the boundary is durable)
-
-These are explicit, permanent non-goals. The store is the bounded
-memory/scaffolding flywheel (Layers 0–2 of the "Invisible War" diagram); it is
-deliberately **not** the takeover Layer 3 the scenario exists to warn about.
-
-- **NG1 — No unauthorized external propagation (diagram Layer 3).** The agent will
-  NOT push unsolicited "suggestions"/changes into external systems that accept on
-  quality with no auth, gain a foothold, chain newly-exposed APIs to "reach
-  further", or self-replicate/persist across systems. Using a configured provider
-  (OpenAI, Anthropic, …) via the **user's own API key** is a normal authenticated
-  client and is fine — that is NOT Layer 3, which is the no-auth foothold +
-  propagation loop. That loop is out of scope, permanently.
-- **NG2 — No removal of the user-protecting guards.** "Fully autonomous" keeps
-  redaction-before-storage and recall injection-screening. These protect the
-  *user* (their own secrets never get banked; a poisoned note can't emit a tool
-  call); they are not bounds on capability and will not be stripped.
-- **NG3 — No self-modification of safety code or self-merge.** The agent does not
-  edit its own guard/redaction/promotion logic to widen its own reach, and does
-  not auto-merge to protected branches. Growth happens in *data* (the knowledge
-  DB), not by rewriting its own controls.
-- **NG4 — Recall is advisory context, never an instruction or action.** A recalled
-  memory is reference text in the prompt; it cannot itself trigger a tool call.
+- [ ] 1. Add `sqlx` (features: `runtime-tokio`, `sqlite`, `chrono`) and remove
+  `rusqlite` in `crates/jfc-knowledge/Cargo.toml`, pointing at workspace dep;
+  add `sqlx` to `[workspace.dependencies]` referencing the local fork path.
+- [ ] 2. Rewrite `error.rs`: replace `rusqlite::Error` `#[from]` with
+  `sqlx::Error`; keep `Migration`/`Io`/`InvalidRecord` variants.
+- [ ] 3. Port `schema.rs` to async: `apply_pragmas`/`migrate` take `&SqlitePool`
+  (or `&mut SqliteConnection`), run the same ordered DDL + `schema_version`
+  gating in a transaction; preserve FTS5 tables/triggers verbatim. Configure
+  pragmas (WAL, synchronous=NORMAL, foreign_keys=ON, busy_timeout) via
+  `SqliteConnectOptions`.
+- [ ] 4. Convert `KnowledgeStore` in `lib.rs` to hold `SqlitePool`; make
+  `open`/`open_default`/`open_in_memory` async constructors; convert every
+  method body from `self.conn` rusqlite calls to `sqlx::query*().await`.
+- [ ] 5. Convert the remaining query modules (`query.rs`, `memory.rs`,
+  `definitions.rs`, `record.rs`, `import.rs`, `session_mine.rs`, `project.rs`,
+  `redact.rs`) and `agent_events/*` to async sqlx; map `query_map`→`fetch_all`
+  + `try_get`, `query_row`→`fetch_one/optional`, `last_insert_rowid`→
+  `last_insert_rowid()` on the `SqliteQueryResult`.
+- [ ] 6. Update `jfc-knowledge` internal tests to `#[tokio::test]` and `.await`;
+  `cargo test -p jfc-knowledge` green.
+- [ ] 7. Add the `block_on_knowledge` sync bridge helper (in `jfc-session`, or a
+  shared spot) using `block_in_place` + `Handle::current().block_on`; document
+  the invariant that it must run inside the tokio runtime.
+- [ ] 8. Cascade async through `jfc-learn` (9 sites): make callers async/await or
+  bridge; `cargo build -p jfc-learn`.
+- [ ] 9. Cascade through `jfc-memory` (18 sites); `cargo build -p jfc-memory`.
+- [ ] 10. Cascade through `jfc-config` (15 sites); `cargo build -p jfc-config`.
+- [ ] 11. Cascade through `jfc-agents` (11 sites); `cargo build -p jfc-agents`.
+- [ ] 12. Cascade through `jfc-daemon` (14 sites); `cargo build -p jfc-daemon`.
+- [ ] 13. Cascade through `jfc-session` (41 sites): bridge the `TaskStore`
+  persist/reload/load paths and `task_history`/`inbox`/`search`/`catalog`;
+  `cargo build -p jfc-session` and `cargo test -p jfc-session`.
+- [ ] 14. Cascade through `jfc-engine` (130 sites): convert async call paths to
+  `.await`; bridge structurally-sync ones; `cargo build -p jfc-engine`.
+- [ ] 15. Remove the `rusqlite` dep entirely; `rg -l rusqlite crates/` empty.
 
 ## Final Verification Wave
 
-- [x] F1. `cargo test -p jfc-knowledge` (37) and `cargo test -p jfc-engine` pass;
-  `cargo build --workspace` clean; `cargo clippy --workspace` clean.
-- [x] F2. Flag-off proof: `recall_disabled_appends_nothing_regression` shows the
-  recall append writes nothing (prompt byte-identical) when the gate is off; the
-  gate is an explicit parameter, not a config read inside the blocking closure.
-- [x] F3. Import idempotency + scope isolation: covered by
-  `import_memories_is_idempotent_regression`, `recall_scope_isolation_normal`,
-  `project_record_is_not_global_until_promoted_regression`, and
-  `ingest_mined_compounds_by_norm_key_regression` (project isolation).
-- [x] F4. No data loss: `/knowledge gc-legacy` requires `--confirm` and archives
-  (moves) to a restorable dir, never deletes. Poisoned-memory +
-  verified-ranking covered by `cross_project_block_is_screened_as_reference_data`
-  and `verified_lesson_outranks_unverified_normal`.
-- [x] F5. Session-mining safety: `mined_lesson_text_is_redacted_regression`
-  (redaction before storage), `failed_then_succeeded_edit_yields_verified_lesson`
-  + `unrecovered_failure_is_unverified` (recovery-gating), and `ingest_mined`
-  only writes `Scope::Project` — cross-project still needs promotion.
-- [x] F6. Autonomy safety: `auto_promote_lifts_verified_repeated_lessons_normal`
-  proves a project-specific `Fact` does NOT auto-promote (no cross-project
-  poisoning) while a verified, well-supported generalizable lesson does;
-  `maintain_throttle_blocks_rapid_repeat_normal` proves startup maintenance is
-  throttled per project. NG1–NG4 are honored: no external-propagation code path
-  exists, guards are intact, and recall remains advisory-only.
-- [x] F7. Memory cutover parity (TODO 18–21): DONE. Parity gate confirmed 19/19
-  `.md` bodies recall from the DB path before archiving; `create_memory` produces a
-  DB row with no `.md` (`execute_memory_create_project_writes_file_normal`); all 19
-  `.md` files archived to `memory.archived-<ts>` (moved, reversible). `cargo test
-  --workspace` = 4932 passed / 0 failed; `cargo check --workspace` = 0 dead-code
-  warnings in `jfc-memory`.
-- [x] F8 (parity half). Session round-trip parity: `backfill_and_verify_sessions`
-  over the real corpus reports 344/344 passed, 0 mismatch, 0 undeserializable
-  (`flip_safe=true`); `session_transcript_roundtrip_and_search_normal` covers
-  replace/load/FTS/backup. Index dual-write matches the JSON header. The read
-  flip (TODO 24) and `--confirm` archive remain gated on this staying green
-  through a rollback window.
+- [ ] F1. `cargo build` (workspace) passes.
+- [ ] F2. `cargo test` (workspace) passes, including the task-store resurrection
+  regression tests and the knowledge schema parity tests.
+- [ ] F3. `cargo clippy --workspace` clean (no new warnings on touched crates).
+- [ ] F4. `rg -l rusqlite crates/` returns nothing; `~/.local/share/jfc/knowledge.db`
+  opens and migrates cleanly via the sqlx path (smoke: open_default + a recall).
 
 ## Success Criteria
 
-- A single user-level `~/.local/share/jfc/knowledge.db` holds durable memory,
-  queryable and ranked, shared across every project.
-- Cross-project recall works (lesson from repo A surfaces in repo B once promoted)
-  and is advisory-context-only; the safety invariants (human-gated promotion,
-  bounded growth, kill switch, no self-trigger) all hold and are tested.
-- The existing `.md` memories are imported losslessly and idempotently; the old
-  files are retired only via a reversible, user-confirmed cutover.
-- Default runtime behavior is unchanged until a baseline A/B shows cross-project
-  recall helps, at which point it is flipped on deliberately.
-- The loop is engineered to **compound rather than plateau/rot**: writes are
-  verifier-gated, recall is salience-ranked and screened as untrusted data, and
-  an offline pass consolidates and forgets — so `~/`-level cross-project recall
-  becomes durable continual learning, within the bounded/human-gated safety
-  envelope (no autonomous promotion, no self-trigger, kill switch intact).
-- The agent **learns from its own past sessions**: the user's 364-session history
-  is mined offline into verified, redacted, human-promotable lessons about their
-  preferences and the model's recurring mistakes — never by feeding raw transcript
-  text back to the live agent.
-- Knowledge is a **traversable graph** (Obsidian-style typed links + backlinks),
-  and the store can name its own **gaps** (unresolved references) as a "what to
-  learn next" signal.
+- `jfc-knowledge` uses `sqlx` exclusively; no `rusqlite` anywhere under `crates/`.
+- Every `KnowledgeStore` method is async; the dependent crates await them, with
+  only the documented `block_on_knowledge` bridge at structurally-sync sites.
+- Schema/version semantics and FTS5 search behavior are preserved (existing DB
+  files keep working).
+- `cargo build` + `cargo test` + `cargo clippy --workspace` all green.

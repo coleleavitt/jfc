@@ -79,41 +79,44 @@ pub async fn gc_old_sessions(max_age_days: u64, min_keep: usize) -> std::io::Res
         return Ok(0);
     }
     tokio::task::spawn_blocking(move || {
-        let mut store = match jfc_knowledge::KnowledgeStore::open_default() {
-            Ok(store) => store,
-            Err(_) => return Ok(0),
-        };
-        let mut rows = store
-            .list_sessions(None, 100_000)
-            .map_err(io_other)?
-            .into_iter()
-            .map(|row| {
-                let timestamp = row.updated_at.clone().or_else(|| row.created_at.clone());
-                let parsed = timestamp
-                    .as_deref()
-                    .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
-                    .map(|value| value.with_timezone(&chrono::Utc));
-                (parsed, row.id)
-            })
-            .collect::<Vec<_>>();
-        rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
-        let cutoff = chrono::Utc::now()
-            - chrono::Duration::days(i64::try_from(max_age_days).unwrap_or(i64::MAX));
-        let mut deleted = 0usize;
-        for (index, (timestamp, id)) in rows.into_iter().enumerate() {
-            if index < min_keep || timestamp.is_none_or(|value| value >= cutoff) {
-                continue;
+        jfc_knowledge::block_on_knowledge(async {
+            let store = match jfc_knowledge::KnowledgeStore::open_default().await {
+                Ok(store) => store,
+                Err(_) => return Ok(0),
+            };
+            let mut rows = store
+                .list_sessions(None, 100_000)
+                .await
+                .map_err(io_other)?
+                .into_iter()
+                .map(|row| {
+                    let timestamp = row.updated_at.clone().or_else(|| row.created_at.clone());
+                    let parsed = timestamp
+                        .as_deref()
+                        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                        .map(|value| value.with_timezone(&chrono::Utc));
+                    (parsed, row.id)
+                })
+                .collect::<Vec<_>>();
+            rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+            let cutoff = chrono::Utc::now()
+                - chrono::Duration::days(i64::try_from(max_age_days).unwrap_or(i64::MAX));
+            let mut deleted = 0usize;
+            for (index, (timestamp, id)) in rows.into_iter().enumerate() {
+                if index < min_keep || timestamp.is_none_or(|value| value >= cutoff) {
+                    continue;
+                }
+                if store.delete_session(&id).await.map_err(io_other)? > 0 {
+                    deleted += 1;
+                    debug!(
+                        target: "jfc::session::gc",
+                        session_id = id,
+                        "gc_old_sessions: removed stale DB session"
+                    );
+                }
             }
-            if store.delete_session(&id).map_err(io_other)? > 0 {
-                deleted += 1;
-                debug!(
-                    target: "jfc::session::gc",
-                    session_id = id,
-                    "gc_old_sessions: removed stale DB session"
-                );
-            }
-        }
-        Ok(deleted)
+            Ok(deleted)
+        })
     })
     .await
     .unwrap_or_else(|err| Err(io_other(err)))
@@ -168,7 +171,7 @@ mod tests {
         assert!(second.as_str().starts_with("ses_"));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn fsck_quarantine_moves_bad_db_session_regression() {
         let _lock = super::TEST_ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
@@ -178,7 +181,7 @@ mod tests {
         unsafe { std::env::set_var("JFC_KNOWLEDGE_DB", &db) };
 
         {
-            let mut store = KnowledgeStore::open_default().unwrap();
+            let store = KnowledgeStore::open_default().await.unwrap();
             store
                 .replace_transcript(
                     &KnowledgeSessionRow {
@@ -198,18 +201,20 @@ mod tests {
                         meta: None,
                     }],
                 )
+                .await
                 .unwrap();
         }
 
         let report = fsck_sessions(true).await.unwrap();
-        let store = KnowledgeStore::open_default().unwrap();
+        let store = KnowledgeStore::open_default().await.unwrap();
 
         assert_eq!(report.checked, 1);
         assert_eq!(report.ok, 0);
         assert_eq!(report.quarantined(), 1);
-        assert!(store.get_session("bad-session").unwrap().is_none());
+        assert!((store.get_session("bad-session").await.unwrap()).is_none());
         let artifacts = store
             .list_session_artifacts(FSCK_QUARANTINE_SESSION_ID, FSCK_QUARANTINE_KIND, 10)
+            .await
             .unwrap();
         assert_eq!(artifacts.len(), 1);
         assert!(artifacts[0].value_json.contains("\"id\":\"bad-session\""));
@@ -225,23 +230,26 @@ mod tests {
 }
 
 fn fork_session_in_db(source_id: &str, fork_id: &str, description: &str) -> std::io::Result<bool> {
-    let mut store = match jfc_knowledge::KnowledgeStore::open_default() {
-        Ok(store) => store,
-        Err(_) => return Ok(false),
-    };
-    let Some(mut row) = store.get_session(source_id).map_err(io_other)? else {
-        return Ok(false);
-    };
-    let transcript = store.load_transcript(source_id).map_err(io_other)?;
-    row.id = fork_id.to_owned();
-    row.updated_at = Some(chrono::Utc::now().to_rfc3339());
-    if !description.is_empty() {
-        row.title = Some(format!("[fork] {description}"));
-    }
-    store
-        .replace_transcript(&row, &transcript)
-        .map_err(io_other)?;
-    Ok(true)
+    jfc_knowledge::block_on_knowledge(async {
+        let store = match jfc_knowledge::KnowledgeStore::open_default().await {
+            Ok(store) => store,
+            Err(_) => return Ok(false),
+        };
+        let Some(mut row) = store.get_session(source_id).await.map_err(io_other)? else {
+            return Ok(false);
+        };
+        let transcript = store.load_transcript(source_id).await.map_err(io_other)?;
+        row.id = fork_id.to_owned();
+        row.updated_at = Some(chrono::Utc::now().to_rfc3339());
+        if !description.is_empty() {
+            row.title = Some(format!("[fork] {description}"));
+        }
+        store
+            .replace_transcript(&row, &transcript)
+            .await
+            .map_err(io_other)?;
+        Ok(true)
+    })
 }
 
 pub async fn delete_session(session_id: &str) -> std::io::Result<bool> {
@@ -249,12 +257,14 @@ pub async fn delete_session(session_id: &str) -> std::io::Result<bool> {
 }
 
 fn delete_session_from_db(session_id: &str) -> std::io::Result<bool> {
-    let mut store = match jfc_knowledge::KnowledgeStore::open_default() {
-        Ok(store) => store,
-        Err(_) => return Ok(false),
-    };
-    let deleted = store.delete_session(session_id).map_err(io_other)?;
-    Ok(deleted > 0)
+    jfc_knowledge::block_on_knowledge(async {
+        let store = match jfc_knowledge::KnowledgeStore::open_default().await {
+            Ok(store) => store,
+            Err(_) => return Ok(false),
+        };
+        let deleted = store.delete_session(session_id).await.map_err(io_other)?;
+        Ok(deleted > 0)
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -282,55 +292,57 @@ impl SessionFsckReport {
 
 pub async fn fsck_sessions(quarantine: bool) -> std::io::Result<SessionFsckReport> {
     tokio::task::spawn_blocking(move || {
-        let mut store = match KnowledgeStore::open_default() {
-            Ok(store) => store,
-            Err(_) => return Ok(SessionFsckReport::default()),
-        };
-        let mut report = SessionFsckReport::default();
-        for row in store.list_sessions(None, 100_000).map_err(io_other)? {
-            report.checked += 1;
-            let transcript = store.load_transcript(&row.id).map_err(io_other)?;
-            if transcript.is_empty() && row.message_count > 0 {
-                let reason = "session row has no transcript messages".to_owned();
-                let quarantined_to = if quarantine {
-                    Some(quarantine_session(&mut store, &row, &transcript, &reason)?)
-                } else {
-                    None
-                };
-                report.issues.push(SessionFsckIssue {
-                    path: PathBuf::from(format!("db/{}", row.id)),
-                    reason,
-                    quarantined_to,
-                });
-                continue;
+        jfc_knowledge::block_on_knowledge(async {
+            let mut store = match KnowledgeStore::open_default().await {
+                Ok(store) => store,
+                Err(_) => return Ok(SessionFsckReport::default()),
+            };
+            let mut report = SessionFsckReport::default();
+            for row in store.list_sessions(None, 100_000).await.map_err(io_other)? {
+                report.checked += 1;
+                let transcript = store.load_transcript(&row.id).await.map_err(io_other)?;
+                if transcript.is_empty() && row.message_count > 0 {
+                    let reason = "session row has no transcript messages".to_owned();
+                    let quarantined_to = if quarantine {
+                        Some(quarantine_session(&mut store, &row, &transcript, &reason).await?)
+                    } else {
+                        None
+                    };
+                    report.issues.push(SessionFsckIssue {
+                        path: PathBuf::from(format!("db/{}", row.id)),
+                        reason,
+                        quarantined_to,
+                    });
+                    continue;
+                }
+                if row.message_count >= 0 && row.message_count as usize != transcript.len() {
+                    let reason = format!(
+                        "message_count {} does not match transcript length {}",
+                        row.message_count,
+                        transcript.len()
+                    );
+                    let quarantined_to = if quarantine {
+                        Some(quarantine_session(&mut store, &row, &transcript, &reason).await?)
+                    } else {
+                        None
+                    };
+                    report.issues.push(SessionFsckIssue {
+                        path: PathBuf::from(format!("db/{}", row.id)),
+                        reason,
+                        quarantined_to,
+                    });
+                    continue;
+                }
+                report.ok += 1;
             }
-            if row.message_count >= 0 && row.message_count as usize != transcript.len() {
-                let reason = format!(
-                    "message_count {} does not match transcript length {}",
-                    row.message_count,
-                    transcript.len()
-                );
-                let quarantined_to = if quarantine {
-                    Some(quarantine_session(&mut store, &row, &transcript, &reason)?)
-                } else {
-                    None
-                };
-                report.issues.push(SessionFsckIssue {
-                    path: PathBuf::from(format!("db/{}", row.id)),
-                    reason,
-                    quarantined_to,
-                });
-                continue;
-            }
-            report.ok += 1;
-        }
-        Ok(report)
+            Ok(report)
+        })
     })
     .await
     .unwrap_or_else(|err| Err(io_other(err)))
 }
 
-fn quarantine_session(
+async fn quarantine_session(
     store: &mut KnowledgeStore,
     row: &KnowledgeSessionRow,
     transcript: &[KnowledgeSessionMessage],
@@ -382,8 +394,9 @@ fn quarantine_session(
             &key,
             &payload.to_string(),
         )
+        .await
         .map_err(io_other)?;
-    store.delete_session(&row.id).map_err(io_other)?;
+    store.delete_session(&row.id).await.map_err(io_other)?;
     Ok(PathBuf::from(format!(
         "db/{FSCK_QUARANTINE_SESSION_ID}/{FSCK_QUARANTINE_KIND}/{key}"
     )))

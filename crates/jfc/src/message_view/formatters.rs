@@ -524,8 +524,12 @@ pub(super) fn produce_git_diff_output_lines(
         });
         for (idx, (kind, content)) in hunk.drain(..).enumerate() {
             let (bg_color, fg_color, sigil) = match kind {
-                DiffLineKind::Added => (t.code_bg, ui_tokens.diff_added, '+'),
-                DiffLineKind::Removed => (t.code_bg, ui_tokens.diff_removed, '-'),
+                DiffLineKind::Added => (ui_tokens.diff_added_background, ui_tokens.diff_added, '+'),
+                DiffLineKind::Removed => (
+                    ui_tokens.diff_removed_background,
+                    ui_tokens.diff_removed,
+                    '-',
+                ),
                 DiffLineKind::Context => (t.bg, t.text_secondary, ' '),
             };
             let mut spans: Vec<Span<'static>> = vec![Span::styled(

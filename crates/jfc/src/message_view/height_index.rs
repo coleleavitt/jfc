@@ -190,7 +190,10 @@ impl HeightIndex {
             let mut role_state = prev_role;
             let mut items = Vec::new();
             build_message_items(ctx, idx, msg, &mut role_state, inner_w, &mut items);
-            let height: usize = items.iter().map(|i| i.height(inner_w)).sum();
+            let height: usize = items
+                .iter()
+                .map(|i| i.height_with_diagnostics(inner_w, ctx.diagnostics))
+                .sum();
             let entry = Entry {
                 fp,
                 height,
@@ -325,9 +328,66 @@ mod tests {
         let total = index.sync(&ctx, 80);
         let full: usize = super::super::core::build_render_items_ctx(&ctx, 80)
             .iter()
-            .map(|i| i.height(80))
+            .map(|i| i.height_with_diagnostics(80, ctx.diagnostics))
             .sum();
         assert_eq!(total, full, "index total must equal the full-walk total");
+    }
+
+    #[test]
+    fn total_matches_read_diagnostics_full_walk_regression() {
+        use jfc_core::{ToolCall, ToolDisplayState, ToolInput, ToolKind, ToolOutput, ToolStatus};
+        use jfc_engine::diagnostics::{DiagnosticEntry, Severity};
+
+        let tool = ToolCall {
+            id: "read-diagnostics".into(),
+            kind: ToolKind::Read,
+            status: ToolStatus::Completed,
+            input: ToolInput::Read {
+                file_path: "src/lib.rs".into(),
+                offset: None,
+                limit: None,
+            },
+            output: ToolOutput::Text(
+                "1: let value_abcdefghijklmnopqrstuvwxyz = compute_result();".into(),
+            ),
+            display: ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: None,
+            thought_signature: None,
+        };
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.parts.clear();
+        msg.parts.push(MessagePart::Tool(Box::new(tool)));
+        let mut app = test_app(vec![msg]);
+        app.engine.diagnostics.push(DiagnosticEntry {
+            file: "src/lib.rs".into(),
+            line: 1,
+            col: 1,
+            message: "expected semicolon".into(),
+            code: None,
+            source: Some("rust-analyzer".into()),
+            severity: Severity::Error,
+        });
+
+        let ctx = ctx_for(&app);
+        let (width, without_diagnostics, full) = (24usize..80)
+            .find_map(|width| {
+                let items = super::super::core::build_render_items_ctx(&ctx, width);
+                let without_diagnostics = items.iter().map(|i| i.height(width)).sum::<usize>();
+                let full = items
+                    .iter()
+                    .map(|i| i.height_with_diagnostics(width, ctx.diagnostics))
+                    .sum::<usize>();
+                (full > without_diagnostics).then_some((width, without_diagnostics, full))
+            })
+            .expect("diagnostic gutter should increase wrapping at some test width");
+        let mut index = HeightIndex::new();
+
+        assert_eq!(
+            index.sync(&ctx, width),
+            full,
+            "height index must include read diagnostics at width {width}; non-diagnostic height was {without_diagnostics}",
+        );
     }
 
     #[test]
@@ -358,7 +418,7 @@ mod tests {
         let brief = index.sync(&ctx, 80);
         let full: usize = super::super::core::build_render_items_ctx(&ctx, 80)
             .iter()
-            .map(|i| i.height(80))
+            .map(|i| i.height_with_diagnostics(80, ctx.diagnostics))
             .sum();
         assert_eq!(
             brief, full,
@@ -380,7 +440,7 @@ mod tests {
         // And the narrow total matches a fresh full walk at the same width.
         let full: usize = super::super::core::build_render_items_ctx(&ctx, 40)
             .iter()
-            .map(|i| i.height(40))
+            .map(|i| i.height_with_diagnostics(40, ctx.diagnostics))
             .sum();
         assert_eq!(narrow, full);
     }
@@ -401,7 +461,7 @@ mod tests {
         let total = index.sync(&ctx, 80);
         let full: usize = super::super::core::build_render_items_ctx(&ctx, 80)
             .iter()
-            .map(|i| i.height(80))
+            .map(|i| i.height_with_diagnostics(80, ctx.diagnostics))
             .sum();
         assert_eq!(total, full, "edited transcript total must match full walk");
     }
@@ -461,7 +521,7 @@ mod tests {
         let total = index.sync(&ctx, 80);
         let full: usize = super::super::core::build_render_items_ctx(&ctx, 80)
             .iter()
-            .map(|i| i.height(80))
+            .map(|i| i.height_with_diagnostics(80, ctx.diagnostics))
             .sum();
         assert_eq!(total, full);
     }

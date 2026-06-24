@@ -68,12 +68,19 @@ fn archive_compacted_range(
         summary: summary.to_owned(),
         messages: serialized,
     };
-    let store = jfc_knowledge::KnowledgeStore::open_default().map_err(std::io::Error::other)?;
+    let store = jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default()
+            .await
+            .map_err(std::io::Error::other)
+    })?;
     let session_id = project_artifact_session_id(root);
     let json = serde_json::to_string(&archive).map_err(std::io::Error::other)?;
-    store
-        .upsert_session_artifact(&session_id, COMPACT_ARCHIVE_KIND, &id, &json)
-        .map_err(std::io::Error::other)?;
+    jfc_knowledge::block_on_knowledge(async {
+        store
+            .upsert_session_artifact(&session_id, COMPACT_ARCHIVE_KIND, &id, &json)
+            .await
+            .map_err(std::io::Error::other)
+    })?;
 
     Ok(Some(CompactArchiveMeta {
         id,
@@ -188,23 +195,34 @@ fn safe_archive_id(id: &str) -> Option<&str> {
 
 fn load_archive(root: &Path, id: &str) -> Option<CompactArchive> {
     let id = safe_archive_id(id)?;
-    let store = jfc_knowledge::KnowledgeStore::open_default().ok()?;
-    let row = store
-        .get_session_artifact(&project_artifact_session_id(root), COMPACT_ARCHIVE_KIND, id)
-        .ok()
-        .flatten()?;
+    let store = jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default().await.ok()
+    })?;
+    let row = jfc_knowledge::block_on_knowledge(async {
+        store
+            .get_session_artifact(&project_artifact_session_id(root), COMPACT_ARCHIVE_KIND, id)
+            .await
+            .ok()
+            .flatten()
+    })?;
     serde_json::from_str(&row.value_json).ok()
 }
 
 fn load_archives(root: &Path) -> Vec<CompactArchive> {
-    let Ok(store) = jfc_knowledge::KnowledgeStore::open_default() else {
+    let Ok(store) = jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default().await
+    }) else {
         return Vec::new();
     };
-    let Ok(rows) = store.list_session_artifacts(
-        &project_artifact_session_id(root),
-        COMPACT_ARCHIVE_KIND,
-        500,
-    ) else {
+    let Ok(rows) = jfc_knowledge::block_on_knowledge(async {
+        store
+            .list_session_artifacts(
+                &project_artifact_session_id(root),
+                COMPACT_ARCHIVE_KIND,
+                500,
+            )
+            .await
+    }) else {
         return Vec::new();
     };
     rows.into_iter()

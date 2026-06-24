@@ -90,9 +90,12 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
     if let Some(store) = open_definition_store(project_root) {
         let project_key = jfc_knowledge::project_key(project_root);
         import_legacy_skill_definitions(&store, project_root, &project_key);
-        let mut defs = store
-            .list_definitions_for_project(DEF_KIND_SKILL, &project_key)
-            .unwrap_or_default();
+        let mut defs = jfc_knowledge::block_on_knowledge(async {
+            store
+                .list_definitions_for_project(DEF_KIND_SKILL, &project_key)
+                .await
+        })
+        .unwrap_or_default();
         defs.sort_by_key(definition_precedence);
         for def in defs {
             let path = definition_source_path(&def, DEF_KIND_SKILL);
@@ -188,14 +191,17 @@ pub fn write_agent_skill(
             "definition store unavailable",
         )));
     };
-    if store
-        .get_definition_by_name(
-            DEF_KIND_SKILL,
-            DefinitionScope::Project,
-            Some(&project_key),
-            None,
-            name,
-        )?
+    if jfc_knowledge::block_on_knowledge(async {
+        store
+            .get_definition_by_name(
+                DEF_KIND_SKILL,
+                DefinitionScope::Project,
+                Some(&project_key),
+                None,
+                name,
+            )
+            .await
+    })?
         .is_some()
     {
         return Err(SkillWriteError::AlreadyExists(
@@ -209,24 +215,26 @@ pub fn write_agent_skill(
         body.trim()
     );
     let uri = format!("db:definition:skill:{name}");
-    store.upsert_definition(&NewDefinition {
-        kind: DEF_KIND_SKILL.to_owned(),
-        scope: DefinitionScope::Project,
-        project_key: Some(project_key),
-        namespace: None,
-        name: name.to_owned(),
-        title: None,
-        description: Some(description.to_owned()),
-        body: contents.clone(),
-        metadata_json: serde_json::json!({
-            "fallback_name": name,
-            "precedence": 10_000,
-        })
-        .to_string(),
-        source_path: Some(uri.clone()),
-        source_hash: Some(content_hash(&contents)),
-        status: DefinitionStatus::Active,
-        created_by: "agent".to_owned(),
+    jfc_knowledge::block_on_knowledge(async {
+        store.upsert_definition(&NewDefinition {
+            kind: DEF_KIND_SKILL.to_owned(),
+            scope: DefinitionScope::Project,
+            project_key: Some(project_key),
+            namespace: None,
+            name: name.to_owned(),
+            title: None,
+            description: Some(description.to_owned()),
+            body: contents.clone(),
+            metadata_json: serde_json::json!({
+                "fallback_name": name,
+                "precedence": 10_000,
+            })
+            .to_string(),
+            source_path: Some(uri.clone()),
+            source_hash: Some(content_hash(&contents)),
+            status: DefinitionStatus::Active,
+            created_by: "agent".to_owned(),
+        }).await
     })?;
     tracing::info!(target: "jfc::agents", skill = name, path = %uri, "wrote agent-created skill definition");
     Ok(PathBuf::from(uri))
@@ -397,7 +405,7 @@ fn import_legacy_skill_definitions(store: &KnowledgeStore, project_root: &Path, 
                 status: DefinitionStatus::Active,
                 created_by: "legacy_import".to_owned(),
             };
-            if let Err(err) = store.upsert_definition(&def) {
+            if let Err(err) = jfc_knowledge::block_on_knowledge(async { store.upsert_definition(&def).await }) {
                 tracing::warn!(
                     target: "jfc::agents",
                     path = %md_path.display(),
@@ -431,12 +439,12 @@ fn open_definition_store(project_root: &Path) -> Option<KnowledgeStore> {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        KnowledgeStore::open(&path).ok()
+        jfc_knowledge::block_on_knowledge(KnowledgeStore::open(&path)).ok()
     }
     #[cfg(not(test))]
     {
         let _ = project_root;
-        KnowledgeStore::open_default().ok()
+        jfc_knowledge::block_on_knowledge(KnowledgeStore::open_default()).ok()
     }
 }
 
@@ -582,9 +590,12 @@ pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
     if let Some(store) = open_definition_store(project_root) {
         let project_key = jfc_knowledge::project_key(project_root);
         import_legacy_agent_definitions(&store, project_root, &project_key);
-        let mut defs = store
-            .list_definitions_for_project(DEF_KIND_AGENT, &project_key)
-            .unwrap_or_default();
+        let mut defs = jfc_knowledge::block_on_knowledge(async {
+            store
+                .list_definitions_for_project(DEF_KIND_AGENT, &project_key)
+                .await
+        })
+        .unwrap_or_default();
         defs.sort_by_key(definition_precedence);
         for def in defs {
             let path = definition_source_path(&def, DEF_KIND_AGENT);
@@ -662,7 +673,7 @@ fn import_legacy_agent_definitions(store: &KnowledgeStore, project_root: &Path, 
                 status: DefinitionStatus::Active,
                 created_by: "legacy_import".to_owned(),
             };
-            if let Err(err) = store.upsert_definition(&def) {
+            if let Err(err) = jfc_knowledge::block_on_knowledge(async { store.upsert_definition(&def).await }) {
                 tracing::warn!(
                     target: "jfc::agents",
                     path = %path.display(),

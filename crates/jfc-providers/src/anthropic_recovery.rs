@@ -380,7 +380,10 @@ fn strip_thinking_blocks(body: &mut Value) -> bool {
             removed = true;
         }
         if content.is_empty() {
-            content.push(serde_json::json!({ "type": "text", "text": "" }));
+            // Anthropic rejects empty text blocks (`messages: text content
+            // blocks must be non-empty`). Mirror the Bedrock placeholder used
+            // in `sse::request::build_messages`.
+            content.push(serde_json::json!({ "type": "text", "text": "." }));
         }
     }
     removed
@@ -519,6 +522,13 @@ mod tests {
                 .iter()
                 .all(|b| b["type"].as_str() != Some("thinking")),
             "thinking blocks must be stripped"
+        );
+        assert!(
+            assistant
+                .iter()
+                .filter(|b| b["type"].as_str() == Some("text"))
+                .all(|b| !b["text"].as_str().unwrap_or("").trim().is_empty()),
+            "text blocks must remain non-empty after thinking strip"
         );
     }
 

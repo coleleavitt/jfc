@@ -198,13 +198,13 @@ pub fn task_tool_defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "TaskStop".into(),
-            description: "Stop a running background task/agent by its task ID. The task will be cancelled and its resources released.".into(),
+            description: "Stop a running background task/agent OR a background shell by its id. Pass a subagent/task id (e.g. 'tooluse_abc123') to cancel a background agent, or a background-shell id (e.g. 'bash_1a2b3c4d5e6f', as returned by Bash with run_in_background=true or after auto-backgrounding) to SIGKILL that shell's process tree. Use this to stop a runaway or no-longer-needed background command you started.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "task_id": {
                         "type": "string",
-                        "description": "The background task id to stop (e.g. 'tooluse_abc123')"
+                        "description": "The background task/agent id (e.g. 'tooluse_abc123') or background-shell id (e.g. 'bash_1a2b3c4d5e6f') to stop"
                     }
                 },
                 "required": ["task_id"]

@@ -58,14 +58,27 @@ struct BashTaskInfo {
     total_bytes: u64,
     total_lines: u64,
     completion_rx: Option<watch::Receiver<BashTaskStatus>>,
+    /// OS process id of the spawned shell, captured at spawn. Runtime-only (not
+    /// persisted: a PID is meaningless after a process restart). Lets
+    /// [`cancel_bash_task`] signal the process tree of a *background* task, which
+    /// — unlike a foreground task — is not tracked in `bash_processes`.
+    pid: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
 enum BashTaskStatus {
     Running,
-    Completed { exit_code: i32 },
-    TimedOut { timeout_ms: u64 },
-    Failed { message: String },
+    Completed {
+        exit_code: i32,
+    },
+    TimedOut {
+        timeout_ms: u64,
+    },
+    Failed {
+        message: String,
+    },
+    /// User-requested cancellation via [`cancel_bash_task`]. Terminal.
+    Cancelled,
 }
 
 impl BashTaskStatus {
@@ -85,6 +98,7 @@ impl BashTaskStatus {
             Self::Failed { message } => PersistedBashTaskStatus::Failed {
                 message: message.clone(),
             },
+            Self::Cancelled => PersistedBashTaskStatus::Cancelled,
         }
     }
 }
@@ -96,6 +110,7 @@ enum PersistedBashTaskStatus {
     Completed { exit_code: i32 },
     TimedOut { timeout_ms: u64 },
     Failed { message: String },
+    Cancelled,
 }
 
 impl PersistedBashTaskStatus {
@@ -105,6 +120,7 @@ impl PersistedBashTaskStatus {
             Self::Completed { exit_code } => BashTaskStatus::Completed { exit_code },
             Self::TimedOut { timeout_ms } => BashTaskStatus::TimedOut { timeout_ms },
             Self::Failed { message } => BashTaskStatus::Failed { message },
+            Self::Cancelled => BashTaskStatus::Cancelled,
         }
     }
 }
@@ -151,6 +167,7 @@ impl From<PersistedBashTaskInfo> for BashTaskInfo {
             total_bytes: info.total_bytes,
             total_lines: info.total_lines,
             completion_rx: None,
+            pid: None,
         }
     }
 }
@@ -162,6 +179,7 @@ impl BashTaskStatus {
             Self::Completed { exit_code } => format!("completed exit={exit_code}"),
             Self::TimedOut { timeout_ms } => format!("timed_out after {timeout_ms}ms"),
             Self::Failed { message } => format!("failed: {message}"),
+            Self::Cancelled => "cancelled".to_owned(),
         }
     }
 }
@@ -242,6 +260,129 @@ struct RunningBashTask {
 fn bash_tasks() -> &'static Mutex<HashMap<String, BashTaskInfo>> {
     static TASKS: OnceLock<Mutex<HashMap<String, BashTaskInfo>>> = OnceLock::new();
     TASKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The currently-blocking FOREGROUND bash command, if any, plus a one-shot
+/// signal to detach it to the background (Ctrl+B). Only one foreground bash
+/// blocks at a time, so a single slot suffices; a backgrounded or settled task
+/// clears it. `background_running_foreground_bash` fires the signal.
+struct ForegroundBash {
+    task_id: String,
+    detach: Arc<tokio::sync::Notify>,
+}
+
+fn foreground_bash() -> &'static Mutex<Option<ForegroundBash>> {
+    static FG: OnceLock<Mutex<Option<ForegroundBash>>> = OnceLock::new();
+    FG.get_or_init(|| Mutex::new(None))
+}
+
+/// Detach the in-flight foreground bash command to the background (Ctrl+B).
+/// Returns its `bash_*` task id (now listable via [`list_bash_tasks`]), or
+/// `None` if no foreground command is currently blocking.
+pub async fn background_running_foreground_bash() -> Option<String> {
+    let guard = foreground_bash().lock().await;
+    let fg = guard.as_ref()?;
+    fg.detach.notify_one();
+    Some(fg.task_id.clone())
+}
+
+/// A read-only view of one tracked background Bash task, for the UI's
+/// background-shell roster (`/bashes`, the footer's shell view). Decouples the
+/// renderer from the internal `BashTaskInfo`/`BashTaskStatus` types.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BashTaskSnapshot {
+    pub id: String,
+    pub command: String,
+    pub cwd: PathBuf,
+    pub output_path: PathBuf,
+    /// Human-readable status, e.g. `running`, `completed exit=0`, `cancelled`.
+    pub status: String,
+    /// Whether the task is still alive (eligible for cancellation).
+    pub running: bool,
+    pub started_at_ms: u128,
+    pub completed_at_ms: Option<u128>,
+    pub total_bytes: u64,
+    pub total_lines: u64,
+}
+
+/// Snapshot every tracked Bash task (running and recently-settled), most-recent
+/// first. Drives the background-shell roster UI.
+pub async fn list_bash_tasks() -> Vec<BashTaskSnapshot> {
+    let tasks = bash_tasks().lock().await;
+    let mut out: Vec<BashTaskSnapshot> = tasks
+        .values()
+        .map(|info| BashTaskSnapshot {
+            id: info.id.clone(),
+            command: info.command.clone(),
+            cwd: info.cwd.clone(),
+            output_path: info.output_path.clone(),
+            status: info.status.label(),
+            running: !info.status.is_terminal(),
+            started_at_ms: info.started_at_ms,
+            completed_at_ms: info.completed_at_ms,
+            total_bytes: info.total_bytes,
+            total_lines: info.total_lines,
+        })
+        .collect();
+    out.sort_unstable_by_key(|info| std::cmp::Reverse(info.started_at_ms));
+    out
+}
+
+/// Outcome of a [`cancel_bash_task`] request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CancelOutcome {
+    /// The task was running and a kill signal was dispatched to its process tree.
+    Cancelled,
+    /// The task exists but had already finished (no-op).
+    AlreadyFinished,
+    /// No task with that id is tracked in this process.
+    Unknown,
+}
+
+/// Cancel a tracked background Bash task by id: SIGKILL its process tree and mark
+/// it `Cancelled` so the roster reflects reality immediately. The task's own
+/// watcher then settles (`child.wait()` observes the death) but preserves the
+/// `Cancelled` status set here. Idempotent on an already-finished task.
+pub async fn cancel_bash_task(task_id: &str) -> CancelOutcome {
+    let pid = {
+        let mut tasks = bash_tasks().lock().await;
+        let Some(info) = tasks.get_mut(task_id) else {
+            return CancelOutcome::Unknown;
+        };
+        if info.status.is_terminal() {
+            return CancelOutcome::AlreadyFinished;
+        }
+        // Mark cancelled up-front so the watcher won't overwrite it, and the UI
+        // reflects the request even if the process takes a moment to die.
+        info.status = BashTaskStatus::Cancelled;
+        info.completed_at_ms = Some(now_ms());
+        persist_task_info(info).await;
+        info.pid
+    };
+    if let Some(pid) = pid {
+        // SIGKILL the whole tree — background shells aren't tracked by the
+        // foreground PidGuard, and a plain SIGTERM to the parent can leak
+        // detached children (the very leak the timeout path also guards against).
+        let _ = crate::bash_processes::signal_process_tree(pid, libc_sigkill());
+        info!(target: "jfc::tools", task_id, pid, "bash: background task cancelled (SIGKILL tree)");
+    } else {
+        warn!(
+            target: "jfc::tools",
+            task_id,
+            "bash: cancel requested but no PID recorded; marked cancelled only"
+        );
+    }
+    CancelOutcome::Cancelled
+}
+
+#[cfg(unix)]
+fn libc_sigkill() -> libc::c_int {
+    libc::SIGKILL
+}
+
+#[cfg(not(unix))]
+fn libc_sigkill() -> i32 {
+    9
 }
 
 fn now_ms() -> u128 {
@@ -658,8 +799,9 @@ async fn start_bash_task(
     let mut child = cmd
         .spawn()
         .map_err(|err| format!("Failed to spawn bash: {err}"))?;
+    let child_pid = child.id();
     let pid_guard = if track_for_abort {
-        child.id().map(crate::bash_processes::PidGuard::register)
+        child_pid.map(crate::bash_processes::PidGuard::register)
     } else {
         None
     };
@@ -707,6 +849,7 @@ async fn start_bash_task(
         total_bytes: 0,
         total_lines: 0,
         completion_rx: None,
+        pid: child_pid,
     };
     let (status_tx, status_rx) = watch::channel(BashTaskStatus::Running);
     let mut registered_info = info;
@@ -758,16 +901,28 @@ async fn start_bash_task(
             let _ = file.flush().await;
         }
         let snapshot = state.lock().await.snapshot();
-        {
+        // If the user cancelled this task while it was running, `cancel_bash_task`
+        // already set the registry status to `Cancelled` and killed the process —
+        // the `child.wait()` above just observed that death. Don't overwrite the
+        // user-visible `Cancelled` state with the incidental exit status.
+        let status = {
             let mut tasks = bash_tasks().lock().await;
             if let Some(info) = tasks.get_mut(&task_id_for_wait) {
-                info.status = status.clone();
+                let effective = if matches!(info.status, BashTaskStatus::Cancelled) {
+                    BashTaskStatus::Cancelled
+                } else {
+                    status
+                };
+                info.status = effective.clone();
                 info.completed_at_ms = Some(now_ms());
                 info.total_bytes = snapshot.total_bytes;
                 info.total_lines = snapshot.total_lines;
                 persist_task_info(info).await;
+                effective
+            } else {
+                status
             }
-        }
+        };
         let _ = status_tx.send(status.clone());
         debug!(
             target: "jfc::tools",
@@ -833,6 +988,20 @@ fn format_completed_task(
                 output_file = task.output_path.display(),
                 output = completion.snapshot.content.trim_end(),
             ));
+        }
+        BashTaskStatus::Cancelled => {
+            return ExecutionResult::failure(format!(
+                "Command cancelled by user\n\
+                 task_id: {task_id}\n\
+                 output_file: {output_file}\n\n{output}",
+                task_id = task.id,
+                output_file = task.output_path.display(),
+                output = completion.snapshot.content.trim_end(),
+            ))
+            .with_provenance(ToolProvenance {
+                cwd: task.cwd.clone(),
+                source: ToolSource::LocalExecutor,
+            });
         }
         BashTaskStatus::Running => None,
     };
@@ -900,6 +1069,33 @@ pub async fn execute_bash_with_options(
     progress: ProgressSink,
     run_in_background: bool,
 ) -> ExecutionResult {
+    // Opt-in persistent shell: a `shell:<id>\n<command>` payload runs in a
+    // long-lived shell where cwd/env persist across calls. Backgrounding is not
+    // supported for persistent shells (they're for interactive stateful flows),
+    // so this path is foreground-only.
+    if let Some((shell_id, real_command)) = super::persistent_shell::parse_shell_request(command) {
+        let timeout = Duration::from_millis(clamp_timeout(timeout_ms, DEFAULT_TIMEOUT_MS));
+        let result = super::persistent_shell::run_in_shell(&shell_id, &real_command, timeout).await;
+        let body = if result.stdout.trim().is_empty() {
+            format!("(no output)\n[shell:{shell_id} exit={}]", result.exit_code)
+        } else {
+            format!(
+                "{}\n[shell:{shell_id} exit={}]",
+                result.stdout.trim_end(),
+                result.exit_code
+            )
+        };
+        return if result.exit_code == 0 {
+            ExecutionResult::success(body)
+        } else {
+            ExecutionResult::failure(body)
+        }
+        .with_provenance(ToolProvenance {
+            cwd: cwd.to_path_buf(),
+            source: ToolSource::LocalExecutor,
+        });
+    }
+
     // Determine the effective timeout for the underlying watcher task.
     // - Explicitly backgrounded tasks get the generous BACKGROUNDED_TIMEOUT_MS.
     // - Foreground tasks that might exceed the budget are treated as potentially
@@ -948,12 +1144,26 @@ pub async fn execute_bash_with_options(
         .completion
         .take()
         .expect("fresh Bash task must carry completion receiver");
-    if foreground_budget < user_timeout {
+
+    // Register this as the detachable foreground command so a Ctrl+B
+    // (`background_running_foreground_bash`) can move it to the background.
+    let detach = Arc::new(tokio::sync::Notify::new());
+    {
+        let mut fg = foreground_bash().lock().await;
+        *fg = Some(ForegroundBash {
+            task_id: task.id.clone(),
+            detach: Arc::clone(&detach),
+        });
+    }
+    let _fg_guard = ForegroundClearGuard;
+
+    let result = if foreground_budget < user_timeout {
         tokio::select! {
             completion = &mut completion => match completion {
                 Ok(completion) => format_completed_task(&task, completion),
                 Err(_) => ExecutionResult::failure("Bash task ended without a completion result"),
             },
+            _ = detach.notified() => detach_to_background(task, completion, completion_target),
             _ = tokio::time::sleep(Duration::from_millis(foreground_budget)) => {
                 let message = background_started_message(
                     &task,
@@ -966,9 +1176,48 @@ pub async fn execute_bash_with_options(
             }
         }
     } else {
-        match completion.await {
-            Ok(completion) => format_completed_task(&task, completion),
-            Err(_) => ExecutionResult::failure("Bash task ended without a completion result"),
+        tokio::select! {
+            completion = &mut completion => match completion {
+                Ok(completion) => format_completed_task(&task, completion),
+                Err(_) => ExecutionResult::failure("Bash task ended without a completion result"),
+            },
+            _ = detach.notified() => detach_to_background(task, completion, completion_target),
+        }
+    };
+    result
+}
+
+/// Move a still-running foreground task to the background: keep its watcher
+/// alive (don't kill it) and either forward its eventual completion to the UI or
+/// just leave it tracked for `/bashes`. Returns the user-facing detach message.
+fn detach_to_background(
+    task: RunningBashTask,
+    completion: oneshot::Receiver<BashTaskCompletion>,
+    completion_target: Option<(String, crate::runtime::EventSender)>,
+) -> ExecutionResult {
+    let message = background_started_message(
+        &task,
+        "Command moved to the background (Ctrl+B). It keeps running; use /bashes to view or stop it.",
+    );
+    if let Some((tool_id, tx)) = completion_target {
+        spawn_background_completion_update(task, completion, tool_id, tx);
+    }
+    ExecutionResult::success(message)
+}
+
+/// Clears the foreground-bash slot on scope exit (completion, detach, or
+/// background promotion), so a stale id can't be detached after the fact.
+struct ForegroundClearGuard;
+
+impl Drop for ForegroundClearGuard {
+    fn drop(&mut self) {
+        // Best-effort: clear the slot if the lock is immediately available.
+        // The next foreground command overwrites it regardless, so a missed
+        // clear is harmless (the detach signal targets a task that already
+        // settled, which `background_running_foreground_bash` reflects as a
+        // valid id whose watcher has already finished).
+        if let Ok(mut fg) = foreground_bash().try_lock() {
+            *fg = None;
         }
     }
 }
@@ -1031,7 +1280,8 @@ pub async fn execute_bash_output(
     let retrieval_status = match info.as_ref().map(|info| &info.status) {
         Some(BashTaskStatus::Completed { .. })
         | Some(BashTaskStatus::TimedOut { .. })
-        | Some(BashTaskStatus::Failed { .. }) => "success",
+        | Some(BashTaskStatus::Failed { .. })
+        | Some(BashTaskStatus::Cancelled) => "success",
         Some(BashTaskStatus::Running) if should_block => "timeout",
         Some(BashTaskStatus::Running) => "not_ready",
         None => "unknown",
@@ -1098,6 +1348,7 @@ pub async fn execute_bash_output(
         Some(BashTaskStatus::Completed { .. })
             | Some(BashTaskStatus::TimedOut { .. })
             | Some(BashTaskStatus::Failed { .. })
+            | Some(BashTaskStatus::Cancelled)
     );
     let total_lines_now = text.lines().count();
     if task_is_terminal && start_line >= total_lines_now && start_line > 0 {
@@ -1343,6 +1594,123 @@ mod timeout_tests {
         assert!(
             final_timeout > DEFAULT_TIMEOUT_MS,
             "fix regressed: timeout fell back to the foreground default"
+        );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod cancel_tests {
+    use super::*;
+
+    /// Isolate the global bash output dir + task registry per test so a real
+    /// spawned process writes to a tempdir and doesn't collide with siblings.
+    fn isolate_output_dir() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: tests in this module run serially via the shared `bash_tasks`
+        // registry; the env var only affects this process's bash output root.
+        unsafe { std::env::set_var("JFC_BASH_OUTPUT_DIR", dir.path()) };
+        dir
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn list_then_cancel_running_background_shell_normal() {
+        let _dir = isolate_output_dir();
+        // Start a long-running background shell. `run_in_background = true` →
+        // not PidGuard-tracked, so cancellation must rely on the recorded PID.
+        let result =
+            execute_bash_with_options("sleep 60", Some(60_000), &std::env::temp_dir(), None, true)
+                .await;
+        assert!(
+            !result.is_error(),
+            "background start should succeed: {result:?}"
+        );
+
+        // It should be visible as a running task.
+        let tasks = list_bash_tasks().await;
+        let task = tasks
+            .iter()
+            .find(|t| t.command.contains("sleep 60"))
+            .expect("spawned background task should be listed");
+        assert!(task.running, "freshly spawned task must be running");
+        let id = task.id.clone();
+
+        // Cancel it: must report Cancelled and actually settle to terminal.
+        let outcome = cancel_bash_task(&id).await;
+        assert_eq!(outcome, CancelOutcome::Cancelled);
+
+        // The registry status flips to cancelled immediately.
+        let after = list_bash_tasks().await;
+        let task = after
+            .iter()
+            .find(|t| t.id == id)
+            .expect("task still tracked");
+        assert!(!task.running, "cancelled task must not be running");
+        assert_eq!(task.status, "cancelled");
+
+        // Cancelling again is a no-op (already finished).
+        assert_eq!(cancel_bash_task(&id).await, CancelOutcome::AlreadyFinished);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn cancel_unknown_task_is_reported_normal() {
+        let _dir = isolate_output_dir();
+        assert_eq!(
+            cancel_bash_task("bash_does_not_exist").await,
+            CancelOutcome::Unknown
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn background_running_foreground_bash_detaches_normal() {
+        let _dir = isolate_output_dir();
+        // A long FOREGROUND command (no run_in_background). It will block in
+        // execute_bash_with_options; we detach it from another task.
+        let exec = tokio::spawn(async {
+            execute_bash_with_options("sleep 30", Some(30_000), &std::env::temp_dir(), None, false)
+                .await
+        });
+
+        // Wait for it to register as the foreground command.
+        let mut task_id = None;
+        for _ in 0..50 {
+            if let Some(id) = background_running_foreground_bash().await {
+                task_id = Some(id);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let task_id = task_id.expect("foreground bash should register and detach");
+        assert!(task_id.starts_with("bash_"));
+
+        // The detach makes execute_* return a background message promptly.
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), exec)
+            .await
+            .expect("detached foreground bash should return promptly")
+            .expect("exec task join");
+        assert!(!result.is_error(), "{}", result.output);
+        assert!(
+            result.output.contains("moved to the background"),
+            "{}",
+            result.output
+        );
+
+        // It is still tracked as a running background shell, and cancellable.
+        let listed = list_bash_tasks().await;
+        let task = listed
+            .iter()
+            .find(|t| t.id == task_id)
+            .expect("detached task should be listed");
+        assert!(task.running, "detached task should still be running");
+        // Clean up the real sleep process.
+        let _ = cancel_bash_task(&task_id).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn background_running_foreground_bash_noop_when_idle_normal() {
+        let _dir = isolate_output_dir();
+        assert!(
+            background_running_foreground_bash().await.is_none(),
+            "no foreground command should be detachable when idle"
         );
     }
 }

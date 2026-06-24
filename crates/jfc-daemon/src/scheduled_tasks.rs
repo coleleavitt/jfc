@@ -29,14 +29,14 @@ fn artifact_key(path: &Path) -> String {
 fn artifact_store(path: &Path) -> std::io::Result<jfc_knowledge::KnowledgeStore> {
     let default_base = crate::state::DaemonPaths::default_user().base_dir;
     if path.starts_with(&default_base) {
-        return jfc_knowledge::KnowledgeStore::open_default().map_err(std::io::Error::other);
+        return jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open_default()).map_err(std::io::Error::other);
     }
     let db_dir = path
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| std::path::PathBuf::from("."));
     std::fs::create_dir_all(&db_dir)?;
-    jfc_knowledge::KnowledgeStore::open(&db_dir.join("knowledge.db")).map_err(std::io::Error::other)
+    jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open(&db_dir.join("knowledge.db"))).map_err(std::io::Error::other)
 }
 
 /// Lifecycle state of a scheduled agentic task. Mirrors the
@@ -282,8 +282,11 @@ impl ScheduledTaskRegistry {
     pub fn load(path: &std::path::Path) -> std::io::Result<Self> {
         let store = artifact_store(path)?;
         let key = artifact_key(path);
-        if let Some(row) = store
-            .get_session_artifact(SCHEDULED_TASKS_SESSION_ID, SCHEDULED_TASKS_KIND, &key)
+        if let Some(row) = jfc_knowledge::block_on_knowledge(async {
+            store
+                .get_session_artifact(SCHEDULED_TASKS_SESSION_ID, SCHEDULED_TASKS_KIND, &key)
+                .await
+        })
             .map_err(std::io::Error::other)?
         {
             return serde_json::from_str(&row.value_json)
@@ -297,13 +300,16 @@ impl ScheduledTaskRegistry {
         };
         let json = serde_json::to_string(&legacy)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        store
-            .upsert_session_artifact(
-                SCHEDULED_TASKS_SESSION_ID,
-                SCHEDULED_TASKS_KIND,
-                &key,
-                &json,
-            )
+        jfc_knowledge::block_on_knowledge(async {
+            store
+                .upsert_session_artifact(
+                    SCHEDULED_TASKS_SESSION_ID,
+                    SCHEDULED_TASKS_KIND,
+                    &key,
+                    &json,
+                )
+                .await
+        })
             .map_err(std::io::Error::other)?;
         Ok(legacy)
     }
@@ -345,13 +351,17 @@ impl ScheduledTaskRegistry {
     pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
         let json = serde_json::to_string(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        artifact_store(path)?
-            .upsert_session_artifact(
-                SCHEDULED_TASKS_SESSION_ID,
-                SCHEDULED_TASKS_KIND,
-                &artifact_key(path),
-                &json,
-            )
+        let store = artifact_store(path)?;
+        jfc_knowledge::block_on_knowledge(async {
+            store
+                .upsert_session_artifact(
+                    SCHEDULED_TASKS_SESSION_ID,
+                    SCHEDULED_TASKS_KIND,
+                    &artifact_key(path),
+                    &json,
+                )
+                .await
+        })
             .map_err(std::io::Error::other)
     }
 }

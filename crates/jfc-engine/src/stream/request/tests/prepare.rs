@@ -68,8 +68,70 @@ async fn prepare_preserves_discovery_tools_for_plain_question_regression() {
         .collect::<Vec<_>>();
     assert!(tool_names.contains(&"ToolSearch"));
     assert!(tool_names.contains(&"ToolSuggest"));
+    assert!(tool_names.contains(&"Task"));
+    assert!(tool_names.contains(&"Research"));
+    assert!(tool_names.contains(&"Council"));
+    assert!(tool_names.contains(&"AskModel"));
     assert!(!tool_names.contains(&"Bash"));
     assert!(!tool_names.contains(&"Read"));
+    assert!(!tool_names.contains(&"TeamCreate"));
+}
+
+#[tokio::test]
+async fn prepare_advertises_team_tools_for_delegation_prompt_regression() {
+    let provider: Arc<dyn Provider> = Arc::new(TestProvider {
+        name: "openai-test",
+        convention: StreamConvention::OpenAiNative,
+    });
+    let request = prepare_stream_request(
+        provider,
+        &[user_text(
+            "why do I have to nudge it to fire off subagents or a team?",
+        )],
+        &ModelId::new("test-model"),
+        Default::default(),
+    )
+    .await;
+
+    let tool_names = request
+        .opts
+        .tools
+        .iter()
+        .map(|tool| tool.name.as_str())
+        .collect::<Vec<_>>();
+    for expected in [
+        "Task",
+        "TeamCreate",
+        "SendMessage",
+        "TeamMemberMode",
+        "ToolSearch",
+        "ToolSuggest",
+        "Research",
+        "Council",
+        "AskModel",
+    ] {
+        assert!(tool_names.contains(&expected), "missing {expected}");
+    }
+
+    let system = request.opts.system.as_deref().unwrap_or_default();
+    assert!(system.contains("Task for subagents"), "{system}");
+    assert!(system.contains("TeamCreate and SendMessage"), "{system}");
+    assert!(
+        system.contains("Subagents have isolated context"),
+        "{system}"
+    );
+    assert!(
+        system.contains("emit multiple `Task` calls in one response"),
+        "{system}"
+    );
+    assert!(system.contains("MCP `isError` results"), "{system}");
+    assert!(system.contains("Prefer MCP resources"), "{system}");
+    assert!(system.contains("Preserve provenance"), "{system}");
+    assert!(system.contains("cross-file integration pass"), "{system}");
+    assert!(
+        system.contains("Use direct execution for clear"),
+        "{system}"
+    );
 }
 
 #[tokio::test]

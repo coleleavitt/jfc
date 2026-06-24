@@ -71,10 +71,22 @@ impl From<&str> for TodoTaskId {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskError {
-    UnknownTask { id: TodoTaskId },
-    UnknownDependency { id: TodoTaskId },
-    SelfCycle { id: TodoTaskId },
-    DependencyCycle { path: Vec<TodoTaskId> },
+    UnknownTask {
+        id: TodoTaskId,
+    },
+    UnknownDependency {
+        id: TodoTaskId,
+    },
+    DuplicateSubject {
+        subject: String,
+        existing_id: TodoTaskId,
+    },
+    SelfCycle {
+        id: TodoTaskId,
+    },
+    DependencyCycle {
+        path: Vec<TodoTaskId>,
+    },
 }
 
 impl fmt::Display for TaskError {
@@ -84,6 +96,13 @@ impl fmt::Display for TaskError {
             Self::UnknownDependency { id } => {
                 write!(f, "blockedBy references unknown task id `{id}`")
             }
+            Self::DuplicateSubject {
+                subject,
+                existing_id,
+            } => write!(
+                f,
+                "task subject `{subject}` already exists as open task `{existing_id}`"
+            ),
             Self::SelfCycle { .. } => f.write_str("a task cannot block itself"),
             Self::DependencyCycle { path } => {
                 let chain = path

@@ -240,6 +240,12 @@ pub enum SerializedToolInput {
         #[serde(default)]
         parent_task_id: Option<String>,
         #[serde(default)]
+        schema: Option<serde_json::Value>,
+        #[serde(default)]
+        allowed_tools: Vec<String>,
+        #[serde(default)]
+        disallowed_tools: Vec<String>,
+        #[serde(default)]
         cwd: Option<String>,
     },
     TaskCreate {

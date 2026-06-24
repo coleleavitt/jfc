@@ -76,7 +76,7 @@ pub struct Theme {
 /// verify that each Claude UI token has an explicit home in JFC:
 /// `promptBorder`, `promptBorderShimmer`, `userMessageBackground`,
 /// `userMessageBackgroundHover`, `bashMessageBackgroundColor`, `diffAdded`,
-/// and `diffRemoved`.
+/// `diffRemoved`, `diffAddedBackground`, and `diffRemovedBackground`.
 pub const CLAUDE_TOKEN_PROMPT_BORDER: &str = "promptBorder";
 pub const CLAUDE_TOKEN_PROMPT_BORDER_SHIMMER: &str = "promptBorderShimmer";
 pub const CLAUDE_TOKEN_USER_MESSAGE_BACKGROUND: &str = "userMessageBackground";
@@ -84,6 +84,8 @@ pub const CLAUDE_TOKEN_USER_MESSAGE_BACKGROUND_HOVER: &str = "userMessageBackgro
 pub const CLAUDE_TOKEN_BASH_MESSAGE_BACKGROUND_COLOR: &str = "bashMessageBackgroundColor";
 pub const CLAUDE_TOKEN_DIFF_ADDED: &str = "diffAdded";
 pub const CLAUDE_TOKEN_DIFF_REMOVED: &str = "diffRemoved";
+pub const CLAUDE_TOKEN_DIFF_ADDED_BACKGROUND: &str = "diffAddedBackground";
+pub const CLAUDE_TOKEN_DIFF_REMOVED_BACKGROUND: &str = "diffRemovedBackground";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClaudeUiTokens {
@@ -94,6 +96,8 @@ pub struct ClaudeUiTokens {
     pub bash_message_background_color: Color,
     pub diff_added: Color,
     pub diff_removed: Color,
+    pub diff_added_background: Color,
+    pub diff_removed_background: Color,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -917,6 +921,8 @@ impl Theme {
                 bash_message_background_color: Color::Rgb(65, 60, 65),
                 diff_added: Color::Rgb(78, 186, 101),
                 diff_removed: Color::Rgb(255, 107, 128),
+                diff_added_background: Color::Rgb(33, 58, 43),
+                diff_removed_background: Color::Rgb(74, 34, 29),
             };
         }
 
@@ -928,6 +934,8 @@ impl Theme {
             bash_message_background_color: blend(self.text_secondary, self.surface_raised, 0.82),
             diff_added: self.success,
             diff_removed: self.error,
+            diff_added_background: blend(self.success, self.code_bg, 0.78),
+            diff_removed_background: blend(self.error, self.code_bg, 0.78),
         }
     }
 
@@ -1109,6 +1117,8 @@ mod tests {
         );
         assert_eq!(rgb_of(tokens.diff_added), Some((78, 186, 101)));
         assert_eq!(rgb_of(tokens.diff_removed), Some((255, 107, 128)));
+        assert_eq!(rgb_of(tokens.diff_added_background), Some((33, 58, 43)));
+        assert_eq!(rgb_of(tokens.diff_removed_background), Some((74, 34, 29)));
     }
 
     #[test]

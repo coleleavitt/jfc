@@ -186,30 +186,32 @@ fn scrub_loaded_thinking_poison(messages: &mut [ChatMessage]) -> usize {
 /// same `deserialize_message` path used by legacy migration.
 async fn load_session_header_from_db(session_id_str: &str) -> Option<jfc_knowledge::SessionRow> {
     let id = session_id_str.to_owned();
-    tokio::task::spawn_blocking(move || {
-        jfc_knowledge::KnowledgeStore::open_default()
-            .ok()
-            .and_then(|store| store.get_session(&id).ok().flatten())
+    jfc_knowledge::block_on_knowledge(async move {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+        let result = store.get_session(&id).await.ok().flatten();
+        Ok::<_, jfc_knowledge::KnowledgeError>(result)
     })
-    .await
-    .ok()
-    .flatten()
+    .unwrap_or_default()
 }
 
 async fn load_session_from_db(session_id_str: &str) -> Option<SerializedSession> {
     let id = session_id_str.to_owned();
-    let (header, rows) = tokio::task::spawn_blocking(move || {
-        let store = jfc_knowledge::KnowledgeStore::open_default().ok()?;
-        let header = store.get_session(&id).ok().flatten()?;
-        let msgs = store.load_transcript(&id).ok()?;
-        if msgs.is_empty() {
-            return None;
+    let (header, rows) = match jfc_knowledge::block_on_knowledge(async move {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+        let header = store.get_session(&id).await.ok().flatten();
+        if header.is_none() {
+            return Ok(None);
         }
-        Some((header, msgs))
-    })
-    .await
-    .ok()
-    .flatten()?;
+        let header = header.unwrap();
+        let msgs = store.load_transcript(&id).await.ok().unwrap_or_default();
+        if msgs.is_empty() {
+            return Ok(None);
+        }
+        Ok::<_, jfc_knowledge::KnowledgeError>(Some((header, msgs)))
+    }) {
+        Ok(Some(result)) => result,
+        _ => return None,
+    };
 
     let mut serialized = Vec::with_capacity(rows.len());
     for row in rows {
@@ -354,28 +356,21 @@ pub async fn set_session_title(session_id: &SessionId, title: &str) {
     let db_session_id = session_id_str.to_owned();
     let db_title = title.to_owned();
     let db_updated = chrono::Utc::now().to_rfc3339();
-    match tokio::task::spawn_blocking(move || {
-        let store = jfc_knowledge::KnowledgeStore::open_default()?;
-        if let Some(mut row) = store.get_session(&db_session_id)? {
+    match jfc_knowledge::block_on_knowledge(async move {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+        if let Some(mut row) = store.get_session(&db_session_id).await? {
             row.title = Some(db_title);
             row.updated_at = Some(db_updated);
-            store.upsert_session(&row)?;
+            store.upsert_session(&row).await?;
         }
         Ok::<(), jfc_knowledge::KnowledgeError>(())
-    })
-    .await
-    {
-        Ok(Ok(())) => {}
-        Ok(Err(err)) => warn!(
+    }) {
+        Ok(()) => {}
+        Err(err) => warn!(
             target: "jfc::session",
             session_id = session_id_str,
             error = %err,
             "session title DB update failed"
-        ),
-        Err(_) => warn!(
-            target: "jfc::session",
-            session_id = session_id_str,
-            "session title DB update task failed"
         ),
     }
 
@@ -950,6 +945,8 @@ mod disk_io_tests {
             isolation: Some("worktree".into()),
             parent_task_id: Some("t20".into()),
             schema: None,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
             cwd: None,
         });
 

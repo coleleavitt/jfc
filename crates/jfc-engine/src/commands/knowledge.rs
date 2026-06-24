@@ -55,14 +55,16 @@ pub(super) async fn handle_knowledge_command(state: &mut EngineState, arg: &str)
 async fn run_status(cwd: &std::path::Path) -> String {
     let cwd = cwd.to_path_buf();
     blocking(move || {
-        let store = KnowledgeStore::open_default()?;
-        let live = store.live_count()?;
-        let project = jfc_knowledge::project_key(&cwd);
-        let gaps = store.gaps(1000)?.len();
-        Ok(format!(
-            "Knowledge store: {live} live record(s); {gaps} open gap(s). This project's key: {project}.\n\
-             DB: ~/.local/share/jfc/knowledge.db (delete it to fully reset)."
-        ))
+        jfc_knowledge::block_on_knowledge(async {
+            let store = KnowledgeStore::open_default().await?;
+            let live = store.live_count().await?;
+            let project = jfc_knowledge::project_key(&cwd);
+            let gaps = store.gaps(1000).await?.len();
+            Ok(format!(
+                "Knowledge store: {live} live record(s); {gaps} open gap(s). This project's key: {project}.\n\
+                 DB: ~/.local/share/jfc/knowledge.db (delete it to fully reset)."
+            ))
+        })
     })
     .await
 }
@@ -70,36 +72,38 @@ async fn run_status(cwd: &std::path::Path) -> String {
 async fn run_list(cwd: &std::path::Path) -> String {
     let cwd = cwd.to_path_buf();
     blocking(move || {
-        let store = KnowledgeStore::open_default()?;
-        let project = jfc_knowledge::project_key(&cwd);
-        let hits = store.recall(
-            "",
-            &RecallFilter {
-                project_key: Some(&project),
-                limit: 20,
-            },
-        )?;
-        if hits.is_empty() {
-            return Ok(
-                "No knowledge stored yet. Try `/knowledge import` or `/knowledge mine`.".to_owned(),
-            );
-        }
-        let mut out = String::from("Recent knowledge (top-ranked):\n");
-        for h in hits {
-            let v = if h.outcome == jfc_knowledge::Outcome::Verified {
-                " ✓"
-            } else {
-                ""
-            };
-            out.push_str(&format!(
-                "- [{}] {} ({}){v}\n  id: {}\n",
-                h.scope.slug(),
-                h.title,
-                h.kind.slug(),
-                h.id
-            ));
-        }
-        Ok(out)
+        jfc_knowledge::block_on_knowledge(async {
+            let store = KnowledgeStore::open_default().await?;
+            let project = jfc_knowledge::project_key(&cwd);
+            let hits = store.recall(
+                "",
+                &RecallFilter {
+                    project_key: Some(&project),
+                    limit: 20,
+                },
+            ).await?;
+            if hits.is_empty() {
+                return Ok(
+                    "No knowledge stored yet. Try `/knowledge import` or `/knowledge mine`.".to_owned(),
+                );
+            }
+            let mut out = String::from("Recent knowledge (top-ranked):\n");
+            for h in hits {
+                let v = if h.outcome == jfc_knowledge::Outcome::Verified {
+                    " ✓"
+                } else {
+                    ""
+                };
+                out.push_str(&format!(
+                    "- [{}] {} ({}){v}\n  id: {}\n",
+                    h.scope.slug(),
+                    h.title,
+                    h.kind.slug(),
+                    h.id
+                ));
+            }
+            Ok(out)
+        })
     })
     .await
 }
@@ -107,17 +111,19 @@ async fn run_list(cwd: &std::path::Path) -> String {
 async fn run_gaps(cwd: &std::path::Path) -> String {
     let cwd = cwd.to_path_buf();
     blocking(move || {
-        let _ = cwd;
-        let store = KnowledgeStore::open_default()?;
-        let gaps = store.gaps(20)?;
-        if gaps.is_empty() {
-            return Ok("No open knowledge gaps.".to_owned());
-        }
-        let mut out = String::from("Knowledge gaps (what to learn next, by reference count):\n");
-        for g in gaps {
-            out.push_str(&format!("- ×{} {} — {}\n", g.ref_count, g.label, g.reason));
-        }
-        Ok(out)
+        jfc_knowledge::block_on_knowledge(async {
+            let _ = cwd;
+            let store = KnowledgeStore::open_default().await?;
+            let gaps = store.gaps(20).await?;
+            if gaps.is_empty() {
+                return Ok("No open knowledge gaps.".to_owned());
+            }
+            let mut out = String::from("Knowledge gaps (what to learn next, by reference count):\n");
+            for g in gaps {
+                out.push_str(&format!("- ×{} {} — {}\n", g.ref_count, g.label, g.reason));
+            }
+            Ok(out)
+        })
     })
     .await
 }
@@ -125,34 +131,36 @@ async fn run_gaps(cwd: &std::path::Path) -> String {
 async fn run_import(cwd: &std::path::Path) -> String {
     let cwd = cwd.to_path_buf();
     blocking(move || {
-        let store = KnowledgeStore::open_default()?;
-        let project = jfc_knowledge::project_key(&cwd);
-        let mut items = Vec::new();
-        // User-level memories.
-        if let Some(cfg) = dirs::config_dir() {
-            let user_dir = cfg.join("jfc").join("memory");
+        jfc_knowledge::block_on_knowledge(async {
+            let store = KnowledgeStore::open_default().await?;
+            let project = jfc_knowledge::project_key(&cwd);
+            let mut items = Vec::new();
+            // User-level memories.
+            if let Some(cfg) = dirs::config_dir() {
+                let user_dir = cfg.join("jfc").join("memory");
+                items.extend(jfc_knowledge::import::scan_markdown_dir(
+                    &user_dir,
+                    Scope::User,
+                    None,
+                ));
+            }
+            // Project-level memories.
+            let proj_dir = cwd.join(".jfc").join("memory");
             items.extend(jfc_knowledge::import::scan_markdown_dir(
-                &user_dir,
-                Scope::User,
-                None,
+                &proj_dir,
+                Scope::Project,
+                Some(project),
             ));
-        }
-        // Project-level memories.
-        let proj_dir = cwd.join(".jfc").join("memory");
-        items.extend(jfc_knowledge::import::scan_markdown_dir(
-            &proj_dir,
-            Scope::Project,
-            Some(project),
-        ));
 
-        let report = store.import_memories(&items)?;
-        Ok(format!(
-            "Imported {} new memory record(s), skipped {} already present, {} error(s). \
-             Source .md files were left untouched.",
-            report.imported,
-            report.skipped,
-            report.errors.len()
-        ))
+            let report = store.import_memories(&items).await?;
+            Ok(format!(
+                "Imported {} new memory record(s), skipped {} already present, {} error(s). \
+                 Source .md files were left untouched.",
+                report.imported,
+                report.skipped,
+                report.errors.len()
+            ))
+        })
     })
     .await
 }
@@ -160,22 +168,24 @@ async fn run_import(cwd: &std::path::Path) -> String {
 async fn run_mine(cwd: &std::path::Path) -> String {
     let cwd = cwd.to_path_buf();
     blocking(move || {
-        let store = KnowledgeStore::open_default()?;
-        let project = jfc_knowledge::project_key(&cwd);
-        let (lessons, report) = jfc_knowledge::session_mine::mine_store(&store, 10_000);
-        let (inserted, compounded) = store.ingest_mined(&project, &lessons)?;
-        Ok(format!(
-            "Mined {} session(s): {} error-lesson(s) ({} verified) + {} preference(s). \
-             Stored {} new, compounded {} existing — DB transcripts are the session source of truth. \
-             Use `/knowledge migrate` once to import old JSON sessions before mining them. \
-             Use `/knowledge promote <id>` to share one across projects.",
-            report.sessions_scanned,
-            report.error_lessons,
-            report.verified,
-            report.preference_lessons,
-            inserted,
-            compounded
-        ))
+        jfc_knowledge::block_on_knowledge(async {
+            let store = KnowledgeStore::open_default().await?;
+            let project = jfc_knowledge::project_key(&cwd);
+            let (lessons, report) = jfc_knowledge::session_mine::mine_store(&store, 10_000).await;
+            let (inserted, compounded) = store.ingest_mined(&project, &lessons).await?;
+            Ok(format!(
+                "Mined {} session(s): {} error-lesson(s) ({} verified) + {} preference(s). \
+                 Stored {} new, compounded {} existing — DB transcripts are the session source of truth. \
+                 Use `/knowledge migrate` once to import old JSON sessions before mining them. \
+                 Use `/knowledge promote <id>` to share one across projects.",
+                report.sessions_scanned,
+                report.error_lessons,
+                report.verified,
+                report.preference_lessons,
+                inserted,
+                compounded
+            ))
+        })
     })
     .await
 }
@@ -210,16 +220,18 @@ async fn run_migrate() -> String {
 async fn run_consolidate(cwd: &std::path::Path) -> String {
     let cwd = cwd.to_path_buf();
     blocking(move || {
-        let _ = cwd;
-        let mut store = KnowledgeStore::open_default()?;
-        let superseded = store.consolidate()?;
-        let removed = store.decay(
-            jfc_knowledge::DEFAULT_MAX_AGE_MS,
-            jfc_knowledge::DEFAULT_MAX_ROWS_PER_SCOPE,
-        )?;
-        Ok(format!(
-            "Consolidated: {superseded} duplicate(s) superseded, {removed} stale row(s) pruned."
-        ))
+        jfc_knowledge::block_on_knowledge(async {
+            let _ = cwd;
+            let store = KnowledgeStore::open_default().await?;
+            let superseded = store.consolidate().await?;
+            let removed = store.decay(
+                jfc_knowledge::DEFAULT_MAX_AGE_MS,
+                jfc_knowledge::DEFAULT_MAX_ROWS_PER_SCOPE,
+            ).await?;
+            Ok(format!(
+                "Consolidated: {superseded} duplicate(s) superseded, {removed} stale row(s) pruned."
+            ))
+        })
     })
     .await
 }
@@ -230,13 +242,15 @@ async fn run_promote(cwd: &std::path::Path, id: Option<&str>) -> String {
     };
     let cwd = cwd.to_path_buf();
     blocking(move || {
-        let _ = cwd;
-        let store = KnowledgeStore::open_default()?;
-        if store.promote(&id)? {
-            Ok(format!("Promoted {id} to cross-project (global) scope. It will now be recalled in every project."))
-        } else {
-            Ok(format!("No live record with id {id} (already promoted, superseded, or unknown)."))
-        }
+        jfc_knowledge::block_on_knowledge(async {
+            let _ = cwd;
+            let store = KnowledgeStore::open_default().await?;
+            if store.promote(&id).await? {
+                Ok(format!("Promoted {id} to cross-project (global) scope. It will now be recalled in every project."))
+            } else {
+                Ok(format!("No live record with id {id} (already promoted, superseded, or unknown)."))
+            }
+        })
     })
     .await
 }
@@ -247,13 +261,15 @@ async fn run_forget(cwd: &std::path::Path, id: Option<&str>) -> String {
     };
     let cwd = cwd.to_path_buf();
     blocking(move || {
-        let _ = cwd;
-        let store = KnowledgeStore::open_default()?;
-        let n = store.forget(&id)?;
-        Ok(if n > 0 {
-            format!("Forgot record {id}.")
-        } else {
-            format!("No record with id {id}.")
+        jfc_knowledge::block_on_knowledge(async {
+            let _ = cwd;
+            let store = KnowledgeStore::open_default().await?;
+            let n = store.forget(&id).await?;
+            Ok(if n > 0 {
+                format!("Forgot record {id}.")
+            } else {
+                format!("No record with id {id}.")
+            })
         })
     })
     .await
@@ -308,11 +324,11 @@ where
 
 /// Link two records (used by mining/consolidation hooks; exposed for tests).
 #[allow(dead_code)]
-pub(crate) fn link_records(
+pub(crate) async fn link_records(
     store: &KnowledgeStore,
     from: &str,
     to: &str,
     rel: RelKind,
 ) -> jfc_knowledge::Result<()> {
-    store.link(from, to, rel)
+    store.link(from, to, rel).await
 }

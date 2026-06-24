@@ -44,7 +44,7 @@ pub(super) async fn handle_dump_context_command(state: &mut EngineState) {
     }
     report.push('\n');
 
-    let memories = crate::memory::load_all_memories(&cwd);
+    let memories = crate::memory::load_all_memories(&cwd).await;
     report.push_str(&format!("### Memories ({})\n\n", memories.len()));
     for mem in &memories {
         report.push_str(&format!(

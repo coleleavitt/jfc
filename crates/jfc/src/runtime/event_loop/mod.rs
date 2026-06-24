@@ -611,7 +611,7 @@ pub(crate) async fn run(
     }
 
     // Check for pending historian transcripts from previous sessions.
-    jfc_engine::learn_lifecycle::on_session_start(&app.engine.cwd);
+    jfc_engine::learn_lifecycle::on_session_start(&app.engine.cwd).await;
 
     // Apply persisted reasoning_effort from config.toml. MUST run AFTER
     // the --continue/--resume block above (which may switch `app.engine.model` to
@@ -1161,7 +1161,7 @@ pub(crate) async fn run(
     // transcript. Runs synchronously (blocking on exit is acceptable — it's a
     // single LLM call, ~2-5s) so the user's learning is captured before the
     // process exits. Best-effort: failures are logged, never surfaced.
-    jfc_engine::learn_lifecycle::on_session_end(&app.engine.messages, &app.engine.cwd);
+    jfc_engine::learn_lifecycle::on_session_end(&app.engine.messages, &app.engine.cwd).await;
 
     Ok(())
 }

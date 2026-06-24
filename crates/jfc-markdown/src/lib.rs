@@ -1400,10 +1400,12 @@ where
                     // We retroactively wrap them by closing the OSC8 here and
                     // hoping the renderer kept them on this line — for now we
                     // just emit the inert hint.
-                    self.push_span(Span::styled(
-                        format!(" ({url})"),
-                        self.theme.style_text_muted,
-                    ));
+                    let suffix = Span::styled(format!(" ({url})"), self.theme.style_text_muted);
+                    if let Some(ref mut table) = self.table {
+                        table.current_cell.push(suffix);
+                    } else {
+                        self.push_span(suffix);
+                    }
                 }
             }
             TagEnd::Table => {
@@ -1844,6 +1846,39 @@ mod tests {
         let _ = render("   \n   \n  ");
     }
 
+    #[test]
+    fn custom_syntax_pack_loads_reported_grammars_regression() {
+        let extra = EXTRA_SYNTAX_SET
+            .as_ref()
+            .expect("extra syntax pack should load");
+
+        for extension in [
+            "dockerfile-bash",
+            "ninja",
+            "org",
+            "rego",
+            "resolv.conf",
+            "vimhelp",
+        ] {
+            assert!(
+                extra.find_syntax_by_extension(extension).is_some(),
+                "{extension} syntax should load from the extra syntax pack"
+            );
+        }
+
+        let (syntax, active_set) = find_syntax_in_sets(
+            "dockerfile-bash",
+            "dockerfile-bash",
+            &SYNTAX_SET,
+            Some(extra),
+        );
+        assert!(
+            std::ptr::eq(active_set, extra),
+            "dockerfile-bash should resolve from the extra syntax set"
+        );
+        assert_eq!(syntax.name, "Dockerfile (with bash)");
+    }
+
     // ── Headings ──────────────────────────────────────────────────────────
 
     // Normal: `## Title` no longer emits the literal `## ` prefix — instead
@@ -2187,6 +2222,26 @@ mod tests {
         assert!(
             texts.iter().any(|t| t.contains("a1") && t.contains("b1")),
             "no body: {texts:?}"
+        );
+    }
+
+    #[test]
+    fn table_link_url_stays_inside_cell_regression() {
+        let src = "| Link |\n|------|\n| [docs](https://example.com) |";
+        let lines = render(src);
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+
+        assert!(
+            texts
+                .iter()
+                .any(|text| text.contains("docs") && text.contains("https://example.com")),
+            "link destination escaped table cell: {texts:?}"
+        );
+        assert!(
+            !texts
+                .iter()
+                .any(|text| text.trim() == "(https://example.com)"),
+            "link destination rendered outside table: {texts:?}"
         );
     }
 

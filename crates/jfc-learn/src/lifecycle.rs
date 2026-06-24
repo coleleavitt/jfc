@@ -19,17 +19,20 @@ fn project_session_id(cwd: &str) -> String {
 /// Called on session start to process any pending historian transcripts
 /// from previous sessions. Runs the dreamer cycle (consolidation, archival).
 /// Best-effort: failures are logged.
-pub fn on_session_start(cwd: &str) {
-    let pending_count = jfc_knowledge::KnowledgeStore::open_default()
-        .and_then(|store| {
-            store.list_session_artifacts(
+pub async fn on_session_start(cwd: &str) {
+    let pending_count = match jfc_knowledge::KnowledgeStore::open_default().await {
+        Ok(store) => {
+            match store.list_session_artifacts(
                 &project_session_id(cwd),
                 LEARN_PENDING_TRANSCRIPT_KIND,
                 10_000,
-            )
-        })
-        .map(|rows| rows.len())
-        .unwrap_or(0);
+            ).await {
+                Ok(rows) => rows.len(),
+                Err(_) => 0,
+            }
+        }
+        Err(_) => 0,
+    };
 
     if pending_count == 0 {
         return;
@@ -50,7 +53,7 @@ pub fn on_session_start(cwd: &str) {
 /// Called after the main event loop exits. Extracts the transcript into
 /// (role, content) tuples and queues it for the historian to process on
 /// next session start (since the LLM provider is unavailable at exit time).
-pub fn on_session_end(messages: &[ChatMessage], cwd: &str) {
+pub async fn on_session_end(messages: &[ChatMessage], cwd: &str) {
     let transcript = build_transcript(messages);
     if transcript.is_empty() {
         debug!(target: "jfc::learn", "on_session_end: empty transcript, skipping");
@@ -74,17 +77,25 @@ pub fn on_session_end(messages: &[ChatMessage], cwd: &str) {
         Ok(json) => {
             let key = format!("{timestamp}-{}", uuid::Uuid::new_v4());
             let session_id = project_session_id(cwd);
-            if let Err(e) = jfc_knowledge::KnowledgeStore::open_default().and_then(|store| {
-                store.upsert_session_artifact(
-                    &session_id,
-                    LEARN_PENDING_TRANSCRIPT_KIND,
-                    &key,
-                    &json,
-                )
-            }) {
-                warn!(target: "jfc::learn", error = %e, key, "on_session_end: failed to persist pending transcript");
-            } else {
-                debug!(target: "jfc::learn", key, "on_session_end: queued transcript for historian");
+            match jfc_knowledge::KnowledgeStore::open_default().await {
+                Ok(store) => {
+                    match store.upsert_session_artifact(
+                        &session_id,
+                        LEARN_PENDING_TRANSCRIPT_KIND,
+                        &key,
+                        &json,
+                    ).await {
+                        Ok(_) => {
+                            debug!(target: "jfc::learn", key, "on_session_end: queued transcript for historian");
+                        }
+                        Err(e) => {
+                            warn!(target: "jfc::learn", error = %e, key, "on_session_end: failed to persist pending transcript");
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(target: "jfc::learn", error = %e, key, "on_session_end: failed to open knowledge store");
+                }
             }
         }
         Err(e) => {

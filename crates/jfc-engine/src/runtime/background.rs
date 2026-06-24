@@ -24,15 +24,19 @@ pub fn persist_background_result(task_id: &str, body: &str) -> Option<std::path:
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
-    jfc_knowledge::KnowledgeStore::open_default()
-        .ok()?
-        .upsert_session_artifact(
-            BACKGROUND_RESULT_SESSION_ID,
-            BACKGROUND_RESULT_KIND,
-            &safe,
-            body,
-        )
-        .ok()?;
+    jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default()
+            .await
+            .ok()?
+            .upsert_session_artifact(
+                BACKGROUND_RESULT_SESSION_ID,
+                BACKGROUND_RESULT_KIND,
+                &safe,
+                body,
+            )
+            .await
+            .ok()
+    })?;
     Some(std::path::PathBuf::from(format!(
         "db:background-result:{safe}"
     )))

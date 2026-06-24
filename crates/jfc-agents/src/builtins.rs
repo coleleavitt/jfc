@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::state::{Skill, SkillFile, parse_skill};
 
@@ -78,17 +78,29 @@ fn builtin_skill_cache_root() -> PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("jfc-builtin-skills"))
 }
 
-fn write_embedded_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    if std::fs::metadata(path)
-        .map(|metadata| metadata.len() == bytes.len() as u64)
-        .unwrap_or(false)
-    {
-        return Ok(());
+fn write_embedded_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    match std::fs::read(path) {
+        Ok(existing) if existing == bytes => return Ok(()),
+        Ok(_) => {}
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            return Err(contextual_io_error("read embedded cache file", path, error));
+        }
+        Err(_) => {}
     }
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent).map_err(|error| {
+            contextual_io_error("create embedded cache directory", parent, error)
+        })?;
     }
     std::fs::write(path, bytes)
+        .map_err(|error| contextual_io_error("write embedded cache file", path, error))
+}
+
+fn contextual_io_error(action: &str, path: &Path, source: std::io::Error) -> std::io::Error {
+    std::io::Error::new(
+        source.kind(),
+        format!("{action} `{}` failed: {source}", path.display()),
+    )
 }
 
 const BUILT_IN_SKILLS: &[BuiltInSkill] = &[
@@ -473,7 +485,7 @@ const BUILT_IN_FILES: &[BuiltInFile] = &[
 
 #[cfg(test)]
 mod tests {
-    use super::built_in_skills;
+    use super::{built_in_skills, write_embedded_file};
 
     #[test]
     fn built_in_skills_include_167_skill_pack_normal() {
@@ -560,5 +572,16 @@ mod tests {
             std::fs::metadata(&package_build.path).unwrap().len(),
             package_build.bytes
         );
+    }
+
+    #[test]
+    fn write_embedded_file_rewrites_same_length_stale_content_regression() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("skill").join("SKILL.md");
+        write_embedded_file(&path, b"aaaa").unwrap();
+
+        write_embedded_file(&path, b"bbbb").unwrap();
+
+        assert_eq!(std::fs::read(path).unwrap(), b"bbbb");
     }
 }

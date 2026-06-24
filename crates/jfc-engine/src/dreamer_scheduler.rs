@@ -133,10 +133,14 @@ fn run_learn_dreamer(
     use jfc_learn::dreamer::{Dreamer, DreamerTask, MemoryRecord, acquire_lease, release_lease};
 
     // Acquire the learn lease (cross-process exclusion).
-    let lease = acquire_lease(lease_path).map_err(|e| e.to_string())?;
+    let lease = jfc_knowledge::block_on_knowledge(async {
+        acquire_lease(lease_path).await
+    }).map_err(|e| e.to_string())?;
 
     // Load memories from disk as MemoryRecords.
-    let entries = crate::memory::load_all_memories(project_root);
+    let entries = jfc_knowledge::block_on_knowledge(async {
+        crate::memory::load_all_memories(project_root).await
+    });
     let mut records: Vec<MemoryRecord> = entries
         .iter()
         .map(|e| MemoryRecord {
@@ -211,7 +215,9 @@ fn write_digest_and_wiki(
     let digest = build_digest(records, &settings, now);
     let wiki = build_wiki(records);
 
-    let Ok(store) = jfc_knowledge::KnowledgeStore::open_default() else {
+    let Ok(store) = jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default().await
+    }) else {
         return String::new();
     };
     let session_id = format!("project:{}", jfc_knowledge::project_key(project_root));
@@ -219,37 +225,41 @@ fn write_digest_and_wiki(
     let wiki_md = wiki.to_markdown();
 
     let mut wrote = Vec::new();
-    if store
-        .upsert_session_artifact(
-            &session_id,
-            DREAMER_ARTIFACT_KIND,
-            DREAMER_DIGEST_KEY,
-            &serde_json::json!({
-                "schema_version": 1,
-                "format": "markdown",
-                "body": digest_md,
-                "item_count": digest.items.len(),
-            })
-            .to_string(),
-        )
-        .is_ok()
+    if jfc_knowledge::block_on_knowledge(async {
+        store
+            .upsert_session_artifact(
+                &session_id,
+                DREAMER_ARTIFACT_KIND,
+                DREAMER_DIGEST_KEY,
+                &serde_json::json!({
+                    "schema_version": 1,
+                    "format": "markdown",
+                    "body": digest_md,
+                    "item_count": digest.items.len(),
+                })
+                .to_string(),
+            )
+            .await
+    }).is_ok()
     {
         wrote.push(format!("digest:{}", digest.items.len()));
     }
-    if store
-        .upsert_session_artifact(
-            &session_id,
-            DREAMER_ARTIFACT_KIND,
-            DREAMER_WIKI_KEY,
-            &serde_json::json!({
-                "schema_version": 1,
-                "format": "markdown",
-                "body": wiki_md,
-                "page_count": wiki.pages.len(),
-            })
-            .to_string(),
-        )
-        .is_ok()
+    if jfc_knowledge::block_on_knowledge(async {
+        store
+            .upsert_session_artifact(
+                &session_id,
+                DREAMER_ARTIFACT_KIND,
+                DREAMER_WIKI_KEY,
+                &serde_json::json!({
+                    "schema_version": 1,
+                    "format": "markdown",
+                    "body": wiki_md,
+                    "page_count": wiki.pages.len(),
+                })
+                .to_string(),
+            )
+            .await
+    }).is_ok()
     {
         wrote.push(format!("wiki:{}", wiki.pages.len()));
     }
@@ -353,8 +363,8 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    #[test]
-    fn write_digest_and_wiki_emits_files_normal() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn write_digest_and_wiki_emits_files_normal() {
         use jfc_learn::dreamer::MemoryRecord;
 
         let now = std::time::SystemTime::now()
@@ -385,10 +395,11 @@ mod tests {
         assert!(suffix.contains("digest"), "suffix: {suffix}");
         assert!(suffix.contains("wiki"), "suffix: {suffix}");
 
-        let store = jfc_knowledge::KnowledgeStore::open_default().unwrap();
+        let store = jfc_knowledge::KnowledgeStore::open_default().await.unwrap();
         let session_id = format!("project:{}", jfc_knowledge::project_key(dir.path()));
         let digest_row = store
             .get_session_artifact(&session_id, DREAMER_ARTIFACT_KIND, DREAMER_DIGEST_KEY)
+            .await
             .unwrap()
             .unwrap();
         let digest_value: serde_json::Value = serde_json::from_str(&digest_row.value_json).unwrap();
@@ -397,6 +408,7 @@ mod tests {
         assert!(digest_md.contains("Prefer traits"));
         let wiki_row = store
             .get_session_artifact(&session_id, DREAMER_ARTIFACT_KIND, DREAMER_WIKI_KEY)
+            .await
             .unwrap()
             .unwrap();
         let wiki_value: serde_json::Value = serde_json::from_str(&wiki_row.value_json).unwrap();
@@ -406,18 +418,19 @@ mod tests {
         assert!(wiki_md.contains("# Testing"));
     }
 
-    #[test]
-    fn write_digest_and_wiki_empty_records_robust() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn write_digest_and_wiki_empty_records_robust() {
         let dir = tempfile::TempDir::new().unwrap();
         // No records -> digest is empty (0 items) but artifacts still write.
         let suffix = write_digest_and_wiki(dir.path(), &[]);
         // wiki has 0 pages, digest 0 items -> both still wrote.
         assert!(suffix.contains("digest:0"));
-        let store = jfc_knowledge::KnowledgeStore::open_default().unwrap();
+        let store = jfc_knowledge::KnowledgeStore::open_default().await.unwrap();
         let session_id = format!("project:{}", jfc_knowledge::project_key(dir.path()));
         assert!(
             store
                 .get_session_artifact(&session_id, DREAMER_ARTIFACT_KIND, DREAMER_DIGEST_KEY)
+                .await
                 .unwrap()
                 .is_some()
         );

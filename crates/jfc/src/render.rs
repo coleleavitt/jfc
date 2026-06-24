@@ -12,6 +12,7 @@ pub(crate) use jfc_core::*;
 
 mod agents;
 mod approval;
+mod bash_picker;
 /// Ported streaming-render toolkit from `openai/codex` (protocol-free pieces).
 /// Stage 1 of the selective TUI port — see `codex_stream/mod.rs`.
 pub(crate) mod codex_stream;

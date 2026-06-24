@@ -34,7 +34,9 @@ pub(super) async fn handle_submit(
                 jfc_memory::MemoryScope::Private,
                 fact,
                 &root,
-            ) {
+            )
+            .await
+            {
                 Ok(id) => format!("remembered -> {id}"),
                 Err(e) => format!("memory save failed: {e}"),
             };

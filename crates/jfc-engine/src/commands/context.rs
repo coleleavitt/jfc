@@ -1534,7 +1534,7 @@ pub(super) async fn cmd_memory(
         }
     } else {
         let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
-        let mems = crate::memory::load_all_memories(&cwd);
+        let mems = crate::memory::load_all_memories(&cwd).await;
         let body = if mems.is_empty() {
             "No memory files found. Create `.jfc/memory/*.md` (project) or \
                      `~/.config/jfc/memory/*.md` (user) with YAML frontmatter \

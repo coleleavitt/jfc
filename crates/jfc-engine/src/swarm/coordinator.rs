@@ -121,6 +121,7 @@ pub async fn run_teammate_loop(
                 break TeammateExit::Cancelled;
             }
             super::executor::TurnResult::Error { kind, message } => {
+                fail_active_task(config.task_store.as_ref(), &mut active_task_id);
                 tracing::warn!(
                     "[InProcessRunner] {} turn error ({kind:?}): {message}",
                     identity.agent_name
@@ -259,6 +260,63 @@ pub async fn run_teammate_loop(
     };
 
     Ok(exit_reason)
+}
+
+fn fail_active_task(
+    task_store: Option<&std::sync::Arc<jfc_session::TaskStore>>,
+    active_task_id: &mut Option<String>,
+) {
+    let Some(task_id) = active_task_id.take() else {
+        return;
+    };
+    let Some(store) = task_store else {
+        return;
+    };
+    let _ = store.update(
+        &task_id,
+        jfc_session::TaskPatch {
+            status: Some(jfc_session::TaskStatus::Failed),
+            ..Default::default()
+        },
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fail_active_task;
+    use std::sync::Arc;
+
+    #[test]
+    fn failed_turn_clears_and_fails_active_task_regression() {
+        let store = Arc::new(jfc_session::TaskStore::in_memory());
+        let task = store
+            .create(
+                "claimed work".into(),
+                "must not complete after a failed turn".into(),
+                None,
+                Vec::<jfc_session::TaskId>::new(),
+            )
+            .unwrap();
+        store
+            .update(
+                &task.id,
+                jfc_session::TaskPatch {
+                    status: Some(jfc_session::TaskStatus::InProgress),
+                    owner: Some("alice".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let mut active_task_id = Some(task.id.to_string());
+
+        fail_active_task(Some(&store), &mut active_task_id);
+
+        assert!(active_task_id.is_none());
+        assert_eq!(
+            store.get(&task.id).unwrap().status,
+            jfc_session::TaskStatus::Failed
+        );
+    }
 }
 
 // ─── Mailbox polling ─────────────────────────────────────────────────────────

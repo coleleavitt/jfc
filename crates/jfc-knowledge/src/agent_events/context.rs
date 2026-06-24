@@ -1,12 +1,10 @@
-use rusqlite::Transaction;
-
 use crate::{KnowledgeStore, Result};
 
 use super::rows::{ContextEventRow, context_event_from};
 
 impl KnowledgeStore {
-    pub fn record_context_event(&self, row: &ContextEventRow) -> Result<()> {
-        self.conn().execute(
+    pub async fn record_context_event(&self, row: &ContextEventRow) -> Result<()> {
+        sqlx::query(
             "INSERT INTO context_events \
              (id, session_id, turn_id, agent_id, subagent_id, model, input_tokens, output_tokens, \
               thinking_tokens, cache_read_tokens, cache_write_tokens, context_limit, bust_cause, \
@@ -17,30 +15,30 @@ impl KnowledgeStore {
                 thinking_tokens=excluded.thinking_tokens, cache_read_tokens=excluded.cache_read_tokens, \
                 cache_write_tokens=excluded.cache_write_tokens, context_limit=excluded.context_limit, \
                 bust_cause=excluded.bust_cause, drop_cause=excluded.drop_cause, \
-                payload=excluded.payload, created_at_ms=excluded.created_at_ms",
-            rusqlite::params![
-                row.id,
-                row.session_id,
-                row.turn_id,
-                row.agent_id,
-                row.subagent_id,
-                row.model,
-                row.input_tokens,
-                row.output_tokens,
-                row.thinking_tokens,
-                row.cache_read_tokens,
-                row.cache_write_tokens,
-                row.context_limit,
-                row.bust_cause,
-                row.drop_cause,
-                row.payload,
-                row.created_at_ms,
-            ],
-        )?;
+                payload=excluded.payload, created_at_ms=excluded.created_at_ms"
+        )
+            .bind(&row.id)
+            .bind(&row.session_id)
+            .bind(&row.turn_id)
+            .bind(&row.agent_id)
+            .bind(&row.subagent_id)
+            .bind(&row.model)
+            .bind(row.input_tokens)
+            .bind(row.output_tokens)
+            .bind(row.thinking_tokens)
+            .bind(row.cache_read_tokens)
+            .bind(row.cache_write_tokens)
+            .bind(row.context_limit)
+            .bind(&row.bust_cause)
+            .bind(&row.drop_cause)
+            .bind(&row.payload)
+            .bind(row.created_at_ms)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    pub fn list_context_events(
+    pub async fn list_context_events(
         &self,
         session_id: Option<&str>,
         limit: usize,
@@ -48,26 +46,31 @@ impl KnowledgeStore {
         let limit = limit as i64;
         let mut out = Vec::new();
         if let Some(session_id) = session_id {
-            let mut stmt = self.conn().prepare(
+            let rows = sqlx::query(
                 "SELECT id, session_id, turn_id, agent_id, subagent_id, model, input_tokens, \
                         output_tokens, thinking_tokens, cache_read_tokens, cache_write_tokens, \
                         context_limit, bust_cause, drop_cause, payload, created_at_ms \
-                 FROM context_events WHERE session_id = ?1 ORDER BY created_at_ms ASC LIMIT ?2",
-            )?;
-            let rows = stmt.query_map(rusqlite::params![session_id, limit], context_event_from)?;
+                 FROM context_events WHERE session_id = ?1 ORDER BY created_at_ms ASC LIMIT ?2"
+            )
+                .bind(session_id)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?;
             for row in rows {
-                out.push(row?);
+                out.push(context_event_from(&row)?);
             }
         } else {
-            let mut stmt = self.conn().prepare(
+            let rows = sqlx::query(
                 "SELECT id, session_id, turn_id, agent_id, subagent_id, model, input_tokens, \
                         output_tokens, thinking_tokens, cache_read_tokens, cache_write_tokens, \
                         context_limit, bust_cause, drop_cause, payload, created_at_ms \
-                 FROM context_events ORDER BY created_at_ms DESC LIMIT ?1",
-            )?;
-            let rows = stmt.query_map([limit], context_event_from)?;
+                 FROM context_events ORDER BY created_at_ms DESC LIMIT ?1"
+            )
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?;
             for row in rows {
-                out.push(row?);
+                out.push(context_event_from(&row)?);
             }
             out.reverse();
         }
@@ -75,29 +78,25 @@ impl KnowledgeStore {
     }
 }
 
-pub(crate) fn clear_derived_context_events(
-    tx: &Transaction<'_>,
+pub(crate) async fn clear_derived_context_events(
+    tx: &mut sqlx::sqlite::SqliteConnection,
     session_id: &str,
 ) -> Result<usize> {
-    Ok(tx.execute(
-        "DELETE FROM context_events WHERE session_id = ?1 AND agent_id IS NULL AND subagent_id IS NULL",
-        [session_id],
-    )?)
+    let result = sqlx::query(
+        "DELETE FROM context_events WHERE session_id = ?1 AND agent_id IS NULL AND subagent_id IS NULL"
+    )
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
+    Ok(result.rows_affected() as usize)
 }
 
-pub(crate) fn insert_context_events_from_messages(
-    tx: &Transaction<'_>,
+pub(crate) async fn insert_context_events_from_messages(
+    tx: &mut sqlx::sqlite::SqliteConnection,
     row: &crate::SessionRow,
     messages: &[crate::SessionMessage],
     created_at_ms: i64,
 ) -> Result<()> {
-    let mut stmt = tx.prepare(
-        "INSERT INTO context_events \
-         (id, session_id, turn_id, agent_id, subagent_id, model, input_tokens, output_tokens, \
-          thinking_tokens, cache_read_tokens, cache_write_tokens, context_limit, bust_cause, \
-          drop_cause, payload, created_at_ms) \
-         VALUES (?1,?2,?3,NULL,NULL,?4,?5,?6,?7,?8,?9,NULL,?10,?11,?12,?13)",
-    )?;
     for message in messages {
         if message.role != "assistant" {
             continue;
@@ -119,21 +118,28 @@ pub(crate) fn insert_context_events_from_messages(
             .to_owned();
         let turn_id = format!("{}:{}", row.id, message.seq);
         let payload = context_payload(message.seq, &meta);
-        stmt.execute(rusqlite::params![
-            deterministic_context_id(&row.id, message.seq),
-            row.id,
-            turn_id,
-            model,
-            usage.input_tokens,
-            usage.output_tokens,
-            usage.thinking_tokens,
-            usage.cache_read_tokens,
-            usage.cache_write_tokens,
-            cache_bust_cause(&usage),
-            Option::<String>::None,
-            payload,
-            created_at_ms,
-        ])?;
+        sqlx::query(
+            "INSERT INTO context_events \
+             (id, session_id, turn_id, agent_id, subagent_id, model, input_tokens, output_tokens, \
+              thinking_tokens, cache_read_tokens, cache_write_tokens, context_limit, bust_cause, \
+              drop_cause, payload, created_at_ms) \
+             VALUES (?1,?2,?3,NULL,NULL,?4,?5,?6,?7,?8,?9,NULL,?10,?11,?12,?13)"
+        )
+            .bind(deterministic_context_id(&row.id, message.seq))
+            .bind(&row.id)
+            .bind(&turn_id)
+            .bind(&model)
+            .bind(usage.input_tokens)
+            .bind(usage.output_tokens)
+            .bind(usage.thinking_tokens)
+            .bind(usage.cache_read_tokens)
+            .bind(usage.cache_write_tokens)
+            .bind(cache_bust_cause(&usage))
+            .bind(Option::<String>::None)
+            .bind(&payload)
+            .bind(created_at_ms)
+            .execute(&mut *tx)
+            .await?;
     }
     Ok(())
 }

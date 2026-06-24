@@ -1397,6 +1397,34 @@ impl ToolInput {
                 .and_then(|value| value.as_str())
                 .map(str::to_owned)
         };
+        let opt_string_vec_field = |key: &'static str| -> Result<Vec<String>, ToolInputError> {
+            let Some(value) = obj.and_then(|map| map.get(key)) else {
+                return Ok(Vec::new());
+            };
+            if value.is_null() {
+                return Ok(Vec::new());
+            }
+            let serde_json::Value::Array(items) = value else {
+                return Err(ToolInputError::WrongType {
+                    tool: tool(),
+                    field: key,
+                    expected: "array",
+                    got: json_type_name(value),
+                });
+            };
+            items
+                .iter()
+                .map(|item| match item {
+                    serde_json::Value::String(tool_name) => Ok(tool_name.clone()),
+                    other => Err(ToolInputError::WrongType {
+                        tool: tool(),
+                        field: key,
+                        expected: "string",
+                        got: json_type_name(other),
+                    }),
+                })
+                .collect()
+        };
         let opt_u64_field = |key: &str| -> Option<u64> {
             obj.and_then(|map| map.get(key))
                 .and_then(|value| value.as_u64())
@@ -1573,6 +1601,8 @@ impl ToolInput {
                 isolation: opt_str_field("isolation"),
                 parent_task_id: opt_str_field("parent_task_id"),
                 schema: obj.and_then(|m| m.get("schema")).cloned(),
+                allowed_tools: opt_string_vec_field("allowed_tools")?,
+                disallowed_tools: opt_string_vec_field("disallowed_tools")?,
                 cwd: opt_str_field("cwd"),
             }),
             ToolKind::Skill => Self::Skill {
@@ -1825,6 +1855,27 @@ impl ToolInput {
                 }
                 if let Some(parent_task_id) = &task_input.parent_task_id {
                     value["parent_task_id"] = json!(parent_task_id);
+                }
+                if let Some(name) = &task_input.name {
+                    value["name"] = json!(name);
+                }
+                if let Some(team_name) = &task_input.team_name {
+                    value["team_name"] = json!(team_name);
+                }
+                if let Some(mode) = &task_input.mode {
+                    value["mode"] = json!(mode);
+                }
+                if let Some(isolation) = &task_input.isolation {
+                    value["isolation"] = json!(isolation);
+                }
+                if let Some(schema) = &task_input.schema {
+                    value["schema"] = schema.clone();
+                }
+                if !task_input.allowed_tools.is_empty() {
+                    value["allowed_tools"] = json!(task_input.allowed_tools);
+                }
+                if !task_input.disallowed_tools.is_empty() {
+                    value["disallowed_tools"] = json!(task_input.disallowed_tools);
                 }
                 if let Some(cwd) = &task_input.cwd {
                     value["cwd"] = json!(cwd);

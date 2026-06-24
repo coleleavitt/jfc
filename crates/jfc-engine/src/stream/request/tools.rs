@@ -1,16 +1,15 @@
 use crate::runtime::StreamToolChoice;
 
 pub(super) fn preserve_non_action_tool(tool_name: &str) -> bool {
-    // CodeGraph (read-only MCP code navigation) stays available on
-    // informational turns: "how does X work" is exactly the question the
-    // system prompt tells the model to answer with codegraph_explore. The
-    // old behavior stripped every MCP tool here, which contradicted that
-    // guidance and trained the model to answer structure questions from
-    // memory or punt to Read/Bash on the next action turn.
     matches!(
         tool_name,
         "ToolSearch"
             | "ToolSuggest"
+            | "Task"
+            | "Advisor"
+            | "Research"
+            | "Council"
+            | "AskModel"
             | "SendUserMessage"
             | "HcomStatus"
             | "HcomList"

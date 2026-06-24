@@ -180,6 +180,9 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             mode: ti.mode.clone(),
             isolation: ti.isolation.clone(),
             parent_task_id: ti.parent_task_id.clone(),
+            schema: ti.schema.clone(),
+            allowed_tools: ti.allowed_tools.clone(),
+            disallowed_tools: ti.disallowed_tools.clone(),
             cwd: ti.cwd.clone(),
         },
         ToolInput::TaskCreate {

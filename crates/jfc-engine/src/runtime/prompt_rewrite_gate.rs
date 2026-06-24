@@ -42,7 +42,8 @@ pub fn record_accepted(original_intent: String, text: String, rationale: String)
         text,
         rationale,
     };
-    let result = jfc_knowledge::KnowledgeStore::open_default().and_then(|store| {
+    let result = jfc_knowledge::block_on_knowledge(async {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
         let json = serde_json::to_string(&rewrite).map_err(|e| {
             jfc_knowledge::KnowledgeError::InvalidRecord(format!("serialize prompt rewrite: {e}"))
         })?;
@@ -53,6 +54,7 @@ pub fn record_accepted(original_intent: String, text: String, rationale: String)
                 PROMPT_REWRITE_KEY,
                 &json,
             )
+            .await
             .map(|_| ())
     });
     if let Err(e) = result {
@@ -120,15 +122,20 @@ pub fn pipeline_from_config(cfg: Option<&PromptRewriteConfig>) -> Option<Rewrite
 }
 
 fn load_recent_exemplars(limit: usize) -> Vec<Rewrite> {
-    let Ok(store) = jfc_knowledge::KnowledgeStore::open_default() else {
+    let Ok(store) = jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default().await
+    }) else {
         return Vec::new();
     };
-    let Ok(rows) = store.list_recent_session_artifact_events(
-        PROMPT_REWRITE_SESSION_ID,
-        PROMPT_REWRITE_KIND,
-        Some(PROMPT_REWRITE_KEY),
-        limit,
-    ) else {
+    let Ok(rows) = jfc_knowledge::block_on_knowledge(async {
+        store.list_recent_session_artifact_events(
+            PROMPT_REWRITE_SESSION_ID,
+            PROMPT_REWRITE_KIND,
+            Some(PROMPT_REWRITE_KEY),
+            limit,
+        )
+        .await
+    }) else {
         return Vec::new();
     };
     rows.into_iter()

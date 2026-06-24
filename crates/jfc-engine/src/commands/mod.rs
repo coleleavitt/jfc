@@ -196,6 +196,7 @@ engine_commands! {
         "/cd" [] "change the engine working directory mid-session (`/cd <path>`)" => cmd_cd,
          "/queue" [] "show queued messages (or `/queue clear` to discard them)" => cmd_queue,
         "/hooks" [] "show registered hooks with per-rule activation metrics" => cmd_hooks,
+        "/bashes" ["/shells", "/bg"] "list background shells; `/bashes kill <id|all>` cancels them" => cmd_bashes,
 }
 
 /// Run one slash-command line against the engine. Unknown names resolve as
@@ -356,6 +357,8 @@ pub async fn skill_fallthrough(
                 isolation: None,
                 parent_task_id: None,
                 schema: skill.input_schema.clone(),
+                allowed_tools: Vec::new(),
+                disallowed_tools: Vec::new(),
                 cwd: None,
             };
             let provider = state.provider.clone();

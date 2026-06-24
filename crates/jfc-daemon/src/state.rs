@@ -321,23 +321,26 @@ impl DaemonPaths {
 fn daemon_state_store(paths: &DaemonPaths) -> jfc_knowledge::Result<jfc_knowledge::KnowledgeStore> {
     let default_base = DaemonPaths::default_user().base_dir;
     if paths.base_dir == default_base {
-        return jfc_knowledge::KnowledgeStore::open_default();
+        return jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open_default());
     }
     if let Some(parent) = paths.base_dir.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     std::fs::create_dir_all(&paths.base_dir)?;
-    jfc_knowledge::KnowledgeStore::open(&paths.base_dir.join("knowledge.db"))
+    jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open(&paths.base_dir.join("knowledge.db")))
 }
 
 fn load_state_row(
     paths: &DaemonPaths,
 ) -> jfc_knowledge::Result<Option<jfc_knowledge::SessionArtifactRow>> {
-    daemon_state_store(paths)?.get_session_artifact(
-        DAEMON_STATE_SESSION_ID,
-        DAEMON_STATE_KIND,
-        DAEMON_STATE_KEY,
-    )
+    let store = daemon_state_store(paths)?;
+    jfc_knowledge::block_on_knowledge(async {
+        store.get_session_artifact(
+            DAEMON_STATE_SESSION_ID,
+            DAEMON_STATE_KIND,
+            DAEMON_STATE_KEY,
+        ).await
+    })
 }
 
 fn db_stamp_to_system_time(ms: i64) -> Option<SystemTime> {
@@ -553,16 +556,16 @@ pub fn load_state_if_changed(
 pub fn save_state(paths: &DaemonPaths, state: &DaemonState) -> std::io::Result<()> {
     paths.ensure_dirs()?;
     let json = serde_json::to_string_pretty(state).map_err(std::io::Error::other)?;
-    daemon_state_store(paths)
-        .and_then(|store| {
-            store.upsert_session_artifact(
-                DAEMON_STATE_SESSION_ID,
-                DAEMON_STATE_KIND,
-                DAEMON_STATE_KEY,
-                &json,
-            )
-        })
-        .map_err(std::io::Error::other)
+    let store = daemon_state_store(paths).map_err(std::io::Error::other)?;
+    jfc_knowledge::block_on_knowledge(async {
+        store.upsert_session_artifact(
+            DAEMON_STATE_SESSION_ID,
+            DAEMON_STATE_KIND,
+            DAEMON_STATE_KEY,
+            &json,
+        ).await
+    })
+    .map_err(std::io::Error::other)
 }
 
 #[cfg(test)]

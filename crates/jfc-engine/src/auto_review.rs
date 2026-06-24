@@ -767,15 +767,18 @@ async fn content_hash_map(
 async fn load_content_hashes(cwd: &Path) -> std::collections::BTreeMap<String, String> {
     let artifact_key = auto_review_artifact_key(cwd, "content_hashes", "snapshot");
     tokio::task::spawn_blocking(move || {
-        let store = jfc_knowledge::KnowledgeStore::open_default().ok()?;
-        let row = store
-            .get_session_artifact(
-                REVIEW_ARTIFACT_SESSION_ID,
-                REVIEW_ARTIFACT_KIND,
-                &artifact_key,
-            )
-            .ok()??;
-        serde_json::from_str::<std::collections::BTreeMap<String, String>>(&row.value_json).ok()
+        jfc_knowledge::block_on_knowledge(async {
+            let store = jfc_knowledge::KnowledgeStore::open_default().await.ok()?;
+            let row = store
+                .get_session_artifact(
+                    REVIEW_ARTIFACT_SESSION_ID,
+                    REVIEW_ARTIFACT_KIND,
+                    &artifact_key,
+                )
+                .await
+                .ok()??;
+            serde_json::from_str::<std::collections::BTreeMap<String, String>>(&row.value_json).ok()
+        })
     })
     .await
     .ok()
@@ -797,15 +800,18 @@ async fn save_content_hashes(cwd: &Path, hashes: &std::collections::BTreeMap<Str
     };
     let artifact_key = auto_review_artifact_key(cwd, "content_hashes", "snapshot");
     let _ = tokio::task::spawn_blocking(move || {
-        let store = jfc_knowledge::KnowledgeStore::open_default().map_err(std::io::Error::other)?;
-        store
-            .upsert_session_artifact(
-                REVIEW_ARTIFACT_SESSION_ID,
-                REVIEW_ARTIFACT_KIND,
-                &artifact_key,
-                &value_json,
-            )
-            .map_err(std::io::Error::other)
+        jfc_knowledge::block_on_knowledge(async {
+            let store = jfc_knowledge::KnowledgeStore::open_default().await.map_err(std::io::Error::other)?;
+            store
+                .upsert_session_artifact(
+                    REVIEW_ARTIFACT_SESSION_ID,
+                    REVIEW_ARTIFACT_KIND,
+                    &artifact_key,
+                    &value_json,
+                )
+                .await
+                .map_err(std::io::Error::other)
+        })
     })
     .await;
 }
@@ -1214,16 +1220,19 @@ async fn append_review_artifact<T: Serialize>(
     let artifact_key = auto_review_artifact_key(cwd, stream, key);
     let value_json = serde_json::to_string(value).map_err(std::io::Error::other)?;
     tokio::task::spawn_blocking(move || {
-        let store = jfc_knowledge::KnowledgeStore::open_default().map_err(std::io::Error::other)?;
-        store
-            .append_session_artifact_event(
-                REVIEW_ARTIFACT_SESSION_ID,
-                REVIEW_ARTIFACT_KIND,
-                &artifact_key,
-                &value_json,
-            )
-            .map_err(std::io::Error::other)?;
-        Ok(())
+        jfc_knowledge::block_on_knowledge(async {
+            let store = jfc_knowledge::KnowledgeStore::open_default().await.map_err(std::io::Error::other)?;
+            store
+                .append_session_artifact_event(
+                    REVIEW_ARTIFACT_SESSION_ID,
+                    REVIEW_ARTIFACT_KIND,
+                    &artifact_key,
+                    &value_json,
+                )
+                .await
+                .map_err(std::io::Error::other)?;
+            Ok(())
+        })
     })
     .await
     .map_err(std::io::Error::other)?
@@ -1232,22 +1241,25 @@ async fn append_review_artifact<T: Serialize>(
 async fn load_existing_fingerprints(cwd: &Path) -> HashSet<String> {
     let project_key = jfc_knowledge::project_key(cwd);
     tokio::task::spawn_blocking(move || {
-        let store = jfc_knowledge::KnowledgeStore::open_default().ok()?;
-        let rows = store
-            .list_recent_session_artifact_events(
-                REVIEW_ARTIFACT_SESSION_ID,
-                REVIEW_ARTIFACT_KIND,
-                None,
-                REVIEW_FINGERPRINT_LIMIT,
+        jfc_knowledge::block_on_knowledge(async {
+            let store = jfc_knowledge::KnowledgeStore::open_default().await.ok()?;
+            let rows = store
+                .list_recent_session_artifact_events(
+                    REVIEW_ARTIFACT_SESSION_ID,
+                    REVIEW_ARTIFACT_KIND,
+                    None,
+                    REVIEW_FINGERPRINT_LIMIT,
+                )
+                .await
+                .ok()?;
+            Some(
+                rows.into_iter()
+                    .filter(|row| row.key.starts_with(&format!("{project_key}:findings:")))
+                    .filter_map(|row| serde_json::from_str::<ReviewFindingRecord>(&row.value_json).ok())
+                    .map(|record| record.fingerprint)
+                    .collect::<HashSet<_>>(),
             )
-            .ok()?;
-        Some(
-            rows.into_iter()
-                .filter(|row| row.key.starts_with(&format!("{project_key}:findings:")))
-                .filter_map(|row| serde_json::from_str::<ReviewFindingRecord>(&row.value_json).ok())
-                .map(|record| record.fingerprint)
-                .collect::<HashSet<_>>(),
-        )
+        })
     })
     .await
     .ok()
@@ -1784,7 +1796,7 @@ mod tests {
             .unwrap();
 
         let project_key = jfc_knowledge::project_key(tmp.path());
-        let store = jfc_knowledge::KnowledgeStore::open_default().unwrap();
+        let store = jfc_knowledge::KnowledgeStore::open_default().await.unwrap();
         let parsed = store
             .list_recent_session_artifact_events(
                 REVIEW_ARTIFACT_SESSION_ID,
@@ -1792,6 +1804,7 @@ mod tests {
                 None,
                 10,
             )
+            .await
             .unwrap()
             .into_iter()
             .filter(|row| row.key.starts_with(&format!("{project_key}:findings:")))

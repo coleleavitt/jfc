@@ -192,13 +192,13 @@ contexts:
         1: string.quoted.keyword.orgmode
     - include: inline
   inline:
-    - match: '(?<=^|[.,:;\s])/[^/]+/(?=$|[.,:;\s])'
+    - match: '(^|[.,:;\s])(/[^/]+/)(?=$|[.,:;\s])'
       scope: markup.italic.orgmode
-    - match: '(?<=^|[.,:;\s])\*[^*]+\*(?=$|[.,:;\s])'
+    - match: '(^|[.,:;\s])(\*[^*]+\*)(?=$|[.,:;\s])'
       scope: markup.bold.orgmode
-    - match: '(?<=^|[.,:;\s])_[^_]+_(?=$|[.,:;\s])'
+    - match: '(^|[.,:;\s])(_[^_]+_)(?=$|[.,:;\s])'
       scope: markup.underline.orgmode
-    - match: '(?<=^|[.,:;\s])([~=]).+?\1(?=$|[.,:;\s])'
+    - match: '(^|[.,:;\s])([~=]).+?\2(?=$|[.,:;\s])'
       scope: markup.raw.inline.orgmode
     - match: '\[(?:\[([^\]]*)\])?\[([^\]]*)\]\]'
       scope: meta.link.orgmode

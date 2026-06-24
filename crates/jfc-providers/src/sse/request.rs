@@ -2,6 +2,15 @@ use serde_json::{Value, json};
 
 use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole};
 
+/// Anthropic (and Bedrock-via-LiteLLM) reject `text` blocks whose `text` field
+/// is empty or whitespace-only. The `"."` placeholder matches the Bedrock
+/// sanitizer in `openwebui::bedrock_sanitize_messages`.
+const BLANK_TEXT_PLACEHOLDER: &str = ".";
+
+fn is_sendable_text(text: &str) -> bool {
+    !text.trim().is_empty()
+}
+
 /// Anthropic's Messages API requires `tool_use.input` to be a JSON object.
 /// Streamed deltas, Generic ToolInput fallbacks, and round-trip edge cases can
 /// produce a `Value::String` (stringified JSON) or `Value::Null`. This helper
@@ -59,11 +68,14 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                 ProviderRole::User => "user",
                 ProviderRole::Assistant => "assistant",
             };
-            let content: Vec<Value> = m
+            let mut content: Vec<Value> = m
                 .content
                 .iter()
-                .map(|c| match c {
-                    ProviderContent::Text(t) => json!({ "type": "text", "text": t }),
+                .filter_map(|c| match c {
+                    ProviderContent::Text(t) if is_sendable_text(t) => {
+                        Some(json!({ "type": "text", "text": t }))
+                    }
+                    ProviderContent::Text(_) => None,
                     ProviderContent::Thinking { text, signature } => {
                         let mut block = json!({
                             "type": "thinking",
@@ -72,26 +84,26 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                         if let Some(signature) = signature {
                             block["signature"] = json!(signature);
                         }
-                        block
+                        Some(block)
                     }
                     ProviderContent::ToolResult {
                         tool_use_id,
                         content,
                         is_error,
-                    } => json!({
+                    } => Some(json!({
                         "type": "tool_result",
                         "tool_use_id": tool_use_id,
                         "content": content,
                         "is_error": is_error,
-                    }),
+                    })),
                     ProviderContent::ToolUse {
                         id, name, input, ..
-                    } => json!({
+                    } => Some(json!({
                         "type": "tool_use",
                         "id": id,
                         "name": name,
                         "input": ensure_input_object(input),
-                    }),
+                    })),
                     // Server-side tools round-trip with their original
                     // wire type. Re-emitting them as plain `tool_use`
                     // breaks Anthropic's server-side sampling loop
@@ -100,12 +112,12 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                     // string OR an object on resend (cli.js v142:441090
                     // tolerates both), so we run the same coercion as
                     // for regular `tool_use` to land on the safe shape.
-                    ProviderContent::ServerToolUse { id, name, input } => json!({
+                    ProviderContent::ServerToolUse { id, name, input } => Some(json!({
                         "type": "server_tool_use",
                         "id": id,
                         "name": name,
                         "input": ensure_input_object(input),
-                    }),
+                    })),
                     // Server-side tool results re-emit verbatim with
                     // their original `type` string and content. Per
                     // cli.js v142:441375 these survive the
@@ -114,24 +126,30 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                         tool_use_id,
                         tool_kind,
                         content,
-                    } => json!({
+                    } => Some(json!({
                         "type": tool_kind.wire_type(),
                         "tool_use_id": tool_use_id,
                         "content": content,
-                    }),
+                    })),
                     // Image (PNG/JPEG/GIF/WebP) → `image` block;
                     // PDF → `document` block. Both share the base64
                     // source struct — `to_anthropic_content_block`
                     // owns the type-routing rule.
                     ProviderContent::Attachment(att) => {
-                        jfc_provider::content::to_anthropic_content_block(att)
+                        Some(jfc_provider::content::to_anthropic_content_block(att))
                     }
-                    ProviderContent::RedactedThinking { data } => json!({
+                    ProviderContent::RedactedThinking { data } => Some(json!({
                         "type": "redacted_thinking",
                         "data": data,
-                    }),
+                    })),
                 })
                 .collect();
+            if content.is_empty() {
+                content.push(json!({
+                    "type": "text",
+                    "text": BLANK_TEXT_PLACEHOLDER,
+                }));
+            }
             json!({ "role": role, "content": content })
         })
         .collect();

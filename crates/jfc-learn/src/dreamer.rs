@@ -436,18 +436,19 @@ impl Dreamer {
 // ─── Lease management ───────────────────────────────────────────────────────
 
 /// Acquire a lease. Returns the lease on success.
-pub fn acquire_lease(lease_path: &Path) -> Result<DreamerLease, LearnError> {
+pub async fn acquire_lease(lease_path: &Path) -> Result<DreamerLease, LearnError> {
     let lease = DreamerLease {
         holder_id: uuid::Uuid::new_v4().to_string(),
         expiry_ms: now_ms() + DEFAULT_LEASE_DURATION_MS,
     };
 
-    let store = jfc_knowledge::KnowledgeStore::open_default().map_err(|e| LearnError::Io {
+    let store = jfc_knowledge::KnowledgeStore::open_default().await.map_err(|e| LearnError::Io {
         source: std::io::Error::other(e),
     })?;
     let key = dreamer_lease_key(lease_path);
     if let Some(row) = store
         .get_session_artifact(DREAMER_LEASE_SESSION_ID, DREAMER_LEASE_KIND, &key)
+        .await
         .map_err(|e| LearnError::Io {
             source: std::io::Error::other(e),
         })?
@@ -465,6 +466,7 @@ pub fn acquire_lease(lease_path: &Path) -> Result<DreamerLease, LearnError> {
     let json = serde_json::to_string(&lease)?;
     store
         .upsert_session_artifact(DREAMER_LEASE_SESSION_ID, DREAMER_LEASE_KIND, &key, &json)
+        .await
         .map_err(|e| LearnError::Io {
             source: std::io::Error::other(e),
         })?;
@@ -472,13 +474,14 @@ pub fn acquire_lease(lease_path: &Path) -> Result<DreamerLease, LearnError> {
 }
 
 /// Release a lease (only the holder can release).
-pub fn release_lease(lease_path: &Path, holder_id: &str) -> Result<(), LearnError> {
-    let store = jfc_knowledge::KnowledgeStore::open_default().map_err(|e| LearnError::Io {
+pub async fn release_lease(lease_path: &Path, holder_id: &str) -> Result<(), LearnError> {
+    let store = jfc_knowledge::KnowledgeStore::open_default().await.map_err(|e| LearnError::Io {
         source: std::io::Error::other(e),
     })?;
     let key = dreamer_lease_key(lease_path);
     let Some(row) = store
         .get_session_artifact(DREAMER_LEASE_SESSION_ID, DREAMER_LEASE_KIND, &key)
+        .await
         .map_err(|e| LearnError::Io {
             source: std::io::Error::other(e),
         })?
@@ -498,6 +501,7 @@ pub fn release_lease(lease_path: &Path, holder_id: &str) -> Result<(), LearnErro
 
     store
         .delete_session_artifact(DREAMER_LEASE_SESSION_ID, DREAMER_LEASE_KIND, &key)
+        .await
         .map_err(|e| LearnError::Io {
             source: std::io::Error::other(e),
         })?;
@@ -505,13 +509,14 @@ pub fn release_lease(lease_path: &Path, holder_id: &str) -> Result<(), LearnErro
 }
 
 /// Renew a lease (extend expiry).
-pub fn renew_lease(lease_path: &Path, holder_id: &str) -> Result<(), LearnError> {
-    let store = jfc_knowledge::KnowledgeStore::open_default().map_err(|e| LearnError::Io {
+pub async fn renew_lease(lease_path: &Path, holder_id: &str) -> Result<(), LearnError> {
+    let store = jfc_knowledge::KnowledgeStore::open_default().await.map_err(|e| LearnError::Io {
         source: std::io::Error::other(e),
     })?;
     let key = dreamer_lease_key(lease_path);
     let Some(row) = store
         .get_session_artifact(DREAMER_LEASE_SESSION_ID, DREAMER_LEASE_KIND, &key)
+        .await
         .map_err(|e| LearnError::Io {
             source: std::io::Error::other(e),
         })?
@@ -535,6 +540,7 @@ pub fn renew_lease(lease_path: &Path, holder_id: &str) -> Result<(), LearnError>
     let json = serde_json::to_string(&existing)?;
     store
         .upsert_session_artifact(DREAMER_LEASE_SESSION_ID, DREAMER_LEASE_KIND, &key, &json)
+        .await
         .map_err(|e| LearnError::Io {
             source: std::io::Error::other(e),
         })?;
@@ -561,30 +567,30 @@ mod tests {
     use crate::normalize_hash::normalize_and_hash;
     use tempfile::TempDir;
 
-    #[test]
-    fn lease_acquire_release_normal() {
+    #[tokio::test]
+    async fn lease_acquire_release_normal() {
         let tmp = TempDir::new().unwrap();
         let lease_path = tmp.path().join("dreamer.lock");
 
-        let lease = acquire_lease(&lease_path).unwrap();
+        let lease = acquire_lease(&lease_path).await.unwrap();
         assert!(!lease.holder_id.is_empty());
         assert!(lease.expiry_ms > now_ms());
 
         // Can't acquire again while held
-        let result = acquire_lease(&lease_path);
+        let result = acquire_lease(&lease_path).await;
         assert!(result.is_err());
 
         // Release
-        release_lease(&lease_path, &lease.holder_id).unwrap();
+        release_lease(&lease_path, &lease.holder_id).await.unwrap();
 
         // Now can acquire again
-        let lease2 = acquire_lease(&lease_path).unwrap();
+        let lease2 = acquire_lease(&lease_path).await.unwrap();
         assert_ne!(lease.holder_id, lease2.holder_id);
-        release_lease(&lease_path, &lease2.holder_id).unwrap();
+        release_lease(&lease_path, &lease2.holder_id).await.unwrap();
     }
 
-    #[test]
-    fn lease_expired_can_reacquire_normal() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn lease_expired_can_reacquire_normal() {
         let tmp = TempDir::new().unwrap();
         let lease_path = tmp.path().join("dreamer.lock");
 
@@ -592,7 +598,7 @@ mod tests {
             holder_id: "old-holder".to_string(),
             expiry_ms: 1, // long expired
         };
-        let store = jfc_knowledge::KnowledgeStore::open_default().unwrap();
+        let store = jfc_knowledge::KnowledgeStore::open_default().await.unwrap();
         store
             .upsert_session_artifact(
                 DREAMER_LEASE_SESSION_ID,
@@ -600,12 +606,13 @@ mod tests {
                 &dreamer_lease_key(&lease_path),
                 &serde_json::to_string(&expired).unwrap(),
             )
+            .await
             .unwrap();
 
         // Should be able to acquire
-        let lease = acquire_lease(&lease_path).unwrap();
+        let lease = acquire_lease(&lease_path).await.unwrap();
         assert_ne!(lease.holder_id, "old-holder");
-        release_lease(&lease_path, &lease.holder_id).unwrap();
+        release_lease(&lease_path, &lease.holder_id).await.unwrap();
     }
 
     #[test]

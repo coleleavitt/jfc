@@ -456,6 +456,37 @@ pub async fn handle_engine_event(
                 );
             }
         }
+        EngineEvent::Control(ControlEvent::CancelBashTask(task_id)) => {
+            let (kind, text) = match crate::tools::cancel_bash_task(&task_id).await {
+                crate::tools::CancelOutcome::Cancelled => (
+                    crate::toast::ToastKind::Warning,
+                    format!("Cancelled background shell {task_id}"),
+                ),
+                crate::tools::CancelOutcome::AlreadyFinished => (
+                    crate::toast::ToastKind::Info,
+                    format!("Background shell {task_id} had already finished"),
+                ),
+                crate::tools::CancelOutcome::Unknown => (
+                    crate::toast::ToastKind::Error,
+                    format!("No background shell {task_id} is tracked"),
+                ),
+            };
+            crate::runtime::event_loop::handlers::ui_actions::handle_toast(state, kind, text);
+        }
+        EngineEvent::Control(ControlEvent::BackgroundForegroundBash) => {
+            let detached = crate::tools::background_running_foreground_bash().await;
+            let (kind, text) = match detached {
+                Some(task_id) => (
+                    crate::toast::ToastKind::Info,
+                    format!("Moved running command to background: {task_id} (see /bashes)"),
+                ),
+                None => (
+                    crate::toast::ToastKind::Info,
+                    "No foreground command is running to background".to_owned(),
+                ),
+            };
+            crate::runtime::event_loop::handlers::ui_actions::handle_toast(state, kind, text);
+        }
         EngineEvent::Control(ControlEvent::Interrupt) => {
             crate::runtime::ops::interrupt(state, tx);
         }

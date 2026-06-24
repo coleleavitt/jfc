@@ -193,20 +193,25 @@ fn team_file_key(team_name: &str) -> String {
 }
 
 fn open_team_store() -> jfc_knowledge::Result<jfc_knowledge::KnowledgeStore> {
-    if let Some(home) = mailbox::swarm_home_override() {
-        let path = home.join(".jfc").join("knowledge.db");
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+    jfc_knowledge::block_on_knowledge(async {
+        if let Some(home) = mailbox::swarm_home_override() {
+            let path = home.join(".jfc").join("knowledge.db");
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            return jfc_knowledge::KnowledgeStore::open(&path).await;
         }
-        return jfc_knowledge::KnowledgeStore::open(&path);
-    }
-    jfc_knowledge::KnowledgeStore::open_default()
+        jfc_knowledge::KnowledgeStore::open_default().await
+    })
 }
 
 fn read_team_file_db_or_legacy(team_name: &str) -> Option<TeamFile> {
     let store = open_team_store().ok()?;
     let key = team_file_key(team_name);
-    if let Ok(Some(row)) = store.get_session_artifact(TEAM_FILE_SESSION_ID, TEAM_FILE_KIND, &key) {
+    let row = jfc_knowledge::block_on_knowledge(async {
+        store.get_session_artifact(TEAM_FILE_SESSION_ID, TEAM_FILE_KIND, &key).await
+    });
+    if let Ok(Some(row)) = row {
         return serde_json::from_str(&row.value_json).ok();
     }
     let path = team_file_path(team_name);
@@ -218,21 +223,26 @@ fn read_team_file_db_or_legacy(team_name: &str) -> Option<TeamFile> {
 
 fn write_team_file_db(team_name: &str, team_file: &TeamFile) -> anyhow::Result<()> {
     let json = serde_json::to_string(team_file)?;
-    open_team_store()?.upsert_session_artifact(
-        TEAM_FILE_SESSION_ID,
-        TEAM_FILE_KIND,
-        &team_file_key(team_name),
-        &json,
-    )?;
-    Ok(())
+    let store = open_team_store()?;
+    jfc_knowledge::block_on_knowledge(async {
+        store.upsert_session_artifact(
+            TEAM_FILE_SESSION_ID,
+            TEAM_FILE_KIND,
+            &team_file_key(team_name),
+            &json,
+        ).await
+    }).map_err(|e| anyhow::anyhow!("{}", e))
 }
 
 fn delete_team_file_db(team_name: &str) -> anyhow::Result<()> {
-    open_team_store()?.delete_session_artifact(
-        TEAM_FILE_SESSION_ID,
-        TEAM_FILE_KIND,
-        &team_file_key(team_name),
-    )?;
+    let store = open_team_store()?;
+    jfc_knowledge::block_on_knowledge(async {
+        store.delete_session_artifact(
+            TEAM_FILE_SESSION_ID,
+            TEAM_FILE_KIND,
+            &team_file_key(team_name),
+        ).await
+    })?;
     Ok(())
 }
 

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::context::ReadDedupCache;
-use crate::runtime::ExecutionResult;
+use crate::runtime::{ExecutionResult, ToolErrorCategory};
 use crate::types::{ToolInput, ToolKind};
 use jfc_session::TaskStore;
 
@@ -468,7 +468,28 @@ pub async fn execute_tool_with_runtime_id(
                 Err(err) => ExecutionResult::failure(format!("TaskDone worker panicked: {err}")),
             }
         }
-        (ToolKind::TaskStop, ToolInput::TaskStop { task_id }) => execute_task_stop("", &task_id),
+        (ToolKind::TaskStop, ToolInput::TaskStop { task_id }) => {
+            // `KillBash`/`TaskStop` is overloaded: a `bash_*` id is a background
+            // SHELL (kill its process tree now), anything else is an agent task
+            // (handled by the runtime event loop). Route shells to the real
+            // cancellation primitive so the model can actually stop a runaway
+            // background command it spawned, not just signal intent.
+            if task_id.starts_with("bash_") {
+                match crate::tools::cancel_bash_task(&task_id).await {
+                    crate::tools::CancelOutcome::Cancelled => ExecutionResult::success(format!(
+                        "Cancelled background shell {task_id} (SIGKILL sent to its process tree)."
+                    )),
+                    crate::tools::CancelOutcome::AlreadyFinished => ExecutionResult::success(
+                        format!("Background shell {task_id} had already finished."),
+                    ),
+                    crate::tools::CancelOutcome::Unknown => ExecutionResult::failure(format!(
+                        "No background shell with id '{task_id}' is tracked in this session."
+                    )),
+                }
+            } else {
+                execute_task_stop("", &task_id)
+            }
+        }
         (ToolKind::TaskGet, ToolInput::TaskGet { task_id }) => {
             execute_task_get(task_store, &task_id)
         }
@@ -1186,15 +1207,21 @@ pub async fn execute_tool_with_runtime_id(
             // headless test) — surface a clean failure so the model
             // can recover rather than thinking the call hung.
             let Some(registry) = snapshot_mcp_registry() else {
-                return ExecutionResult::failure(
+                return ExecutionResult::structured_failure(
                     "MCP registry not initialized — restart jfc with the MCP module enabled."
                         .to_string(),
+                    ToolErrorCategory::Configuration,
+                    false,
                 );
             };
             match crate::mcp::dispatch_tool(&registry, &advertised_name, arguments).await {
-                Ok(outcome) if outcome.is_error => ExecutionResult::failure(outcome.text),
+                Ok(outcome) if outcome.is_error => ExecutionResult::structured_failure(
+                    outcome.text,
+                    ToolErrorCategory::Business,
+                    false,
+                ),
                 Ok(outcome) => ExecutionResult::success(outcome.text),
-                Err(e) => ExecutionResult::failure(format!("MCP dispatch failed: {e}")),
+                Err(e) => mcp_dispatch_failure("MCP dispatch failed", e),
             }
         }
         (
@@ -1460,7 +1487,11 @@ pub async fn execute_tool_with_runtime_id(
         }
         (ToolKind::ListMcpResources, ToolInput::ListMcpResources { server }) => {
             let Some(registry) = snapshot_mcp_registry() else {
-                return ExecutionResult::failure("MCP registry not initialized.".to_string());
+                return ExecutionResult::structured_failure(
+                    "MCP registry not initialized.".to_string(),
+                    ToolErrorCategory::Configuration,
+                    false,
+                );
             };
             let servers = registry.list().await;
             let mut result = String::new();
@@ -1510,11 +1541,15 @@ pub async fn execute_tool_with_runtime_id(
         }
         (ToolKind::ReadMcpResource, ToolInput::ReadMcpResource { server, uri }) => {
             let Some(registry) = snapshot_mcp_registry() else {
-                return ExecutionResult::failure("MCP registry not initialized.".to_string());
+                return ExecutionResult::structured_failure(
+                    "MCP registry not initialized.".to_string(),
+                    ToolErrorCategory::Configuration,
+                    false,
+                );
             };
             match registry.read_resource(&server, &uri).await {
                 Ok(content) => ExecutionResult::success(content),
-                Err(e) => ExecutionResult::failure(format!("Failed to read MCP resource: {e}")),
+                Err(e) => mcp_dispatch_failure("Failed to read MCP resource", e),
             }
         }
         (ToolKind::DesignProjectCreate, ToolInput::DesignProjectCreate { title }) => {
@@ -1652,9 +1687,59 @@ pub async fn execute_tool_with_runtime_id(
     }
 }
 
+fn mcp_dispatch_failure(prefix: &str, error: crate::mcp::DispatchError) -> ExecutionResult {
+    let (category, retryable) = mcp_dispatch_error_metadata(&error);
+    ExecutionResult::structured_failure(format!("{prefix}: {error}"), category, retryable)
+}
+
+fn mcp_dispatch_error_metadata(error: &crate::mcp::DispatchError) -> (ToolErrorCategory, bool) {
+    match error {
+        crate::mcp::DispatchError::NotMcpName => (ToolErrorCategory::Validation, false),
+        crate::mcp::DispatchError::UnknownServer(_) => (ToolErrorCategory::Configuration, false),
+        crate::mcp::DispatchError::ServerNotConnected(_) => (ToolErrorCategory::Transient, true),
+        crate::mcp::DispatchError::ToolBlocked { .. } => (ToolErrorCategory::Permission, false),
+        crate::mcp::DispatchError::AmbiguousToolName(_) => (ToolErrorCategory::Validation, false),
+        crate::mcp::DispatchError::Request(request_error) => match request_error {
+            crate::mcp::RequestError::Disconnected
+            | crate::mcp::RequestError::Timeout
+            | crate::mcp::RequestError::Transport { .. } => (ToolErrorCategory::Transient, true),
+            crate::mcp::RequestError::AuthHeaderRejected => (ToolErrorCategory::Permission, false),
+            crate::mcp::RequestError::BadArguments => (ToolErrorCategory::Validation, false),
+            crate::mcp::RequestError::Service(_) => (ToolErrorCategory::Business, false),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_dispatch_errors_are_categorized_regression() {
+        let blocked = mcp_dispatch_failure(
+            "MCP dispatch failed",
+            crate::mcp::DispatchError::ToolBlocked {
+                server: "fs".to_owned(),
+                tool: "write_file".to_owned(),
+                reason: "policy",
+            },
+        );
+        assert_eq!(
+            blocked.diagnostics[0].error_category,
+            Some(ToolErrorCategory::Permission)
+        );
+        assert_eq!(blocked.diagnostics[0].retryable, Some(false));
+
+        let timeout = mcp_dispatch_failure(
+            "MCP dispatch failed",
+            crate::mcp::DispatchError::Request(crate::mcp::RequestError::Timeout),
+        );
+        assert_eq!(
+            timeout.diagnostics[0].error_category,
+            Some(ToolErrorCategory::Transient)
+        );
+        assert_eq!(timeout.diagnostics[0].retryable, Some(true));
+    }
 
     #[tokio::test]
     async fn review_tools_dispatch_to_persistence_regression() {

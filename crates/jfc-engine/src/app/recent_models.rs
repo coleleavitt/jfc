@@ -11,7 +11,9 @@ fn legacy_recent_models_path() -> std::path::PathBuf {
 
 /// Load recently used models from the DB, importing the legacy JSON file once.
 pub fn load_recent_models() -> Vec<String> {
-    let Ok(store) = jfc_knowledge::KnowledgeStore::open_default() else {
+    let Ok(store) = jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default().await
+    }) else {
         return Vec::new();
     };
 
@@ -33,40 +35,52 @@ pub fn load_recent_models() -> Vec<String> {
 
 /// Save recently used models (max 5, most recent first).
 pub fn save_recent_models(models: &[String]) {
-    if let Ok(store) = jfc_knowledge::KnowledgeStore::open_default() {
+    if let Ok(store) = jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default().await
+    }) {
         save_recent_models_to_store(&store, models);
     }
 }
 
 pub fn load_recent_models_from_store(store: &jfc_knowledge::KnowledgeStore) -> Vec<String> {
-    store
-        .get_session_artifact(
-            RECENT_MODELS_SESSION_ID,
-            RECENT_MODELS_KIND,
-            RECENT_MODELS_KEY,
-        )
-        .ok()
-        .flatten()
-        .and_then(|row| serde_json::from_str(&row.value_json).ok())
-        .unwrap_or_default()
+    jfc_knowledge::block_on_knowledge(async {
+        store
+            .get_session_artifact(
+                RECENT_MODELS_SESSION_ID,
+                RECENT_MODELS_KIND,
+                RECENT_MODELS_KEY,
+            )
+            .await
+            .ok()
+            .flatten()
+            .and_then(|row| serde_json::from_str(&row.value_json).ok())
+            .unwrap_or_default()
+    })
 }
 
 pub fn save_recent_models_to_store(store: &jfc_knowledge::KnowledgeStore, models: &[String]) {
     let capped: Vec<String> = models.iter().take(5).cloned().collect();
     if let Ok(json) = serde_json::to_string(&capped) {
-        let _ = store.upsert_session_artifact(
-            RECENT_MODELS_SESSION_ID,
-            RECENT_MODELS_KIND,
-            RECENT_MODELS_KEY,
-            &json,
-        );
+        let _ = jfc_knowledge::block_on_knowledge(async {
+            store.upsert_session_artifact(
+                RECENT_MODELS_SESSION_ID,
+                RECENT_MODELS_KIND,
+                RECENT_MODELS_KEY,
+                &json,
+            )
+            .await
+        });
     }
 }
 
 pub fn open_recent_models_store(
     path: &std::path::Path,
 ) -> Result<jfc_knowledge::KnowledgeStore, String> {
-    jfc_knowledge::KnowledgeStore::open(path).map_err(|err| err.to_string())
+    jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open(path)
+            .await
+            .map_err(|err| err.to_string())
+    })
 }
 
 /// Push a model to the front of the recent list (deduplicates).

@@ -40,6 +40,14 @@ pub struct TaskInput {
     /// Optional JSON Schema that the subagent's StructuredOutput tool will
     /// validate against. Set by the parent agent to enforce output shape.
     pub schema: Option<serde_json::Value>,
+    /// Optional per-call tool allowlist. When set, this is intersected with the
+    /// selected agent definition's allowlist instead of replacing it.
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    /// Optional per-call tool denylist. This is added to the selected agent
+    /// definition's denylist.
+    #[serde(default)]
+    pub disallowed_tools: Vec<String>,
     /// Optional working directory override for the spawned subagent.
     /// When set, the agent starts in this directory instead of the
     /// parent's cwd. Useful for pointing a subagent at a git worktree
@@ -98,6 +106,8 @@ mod tests {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
             cwd: None,
         }
     }

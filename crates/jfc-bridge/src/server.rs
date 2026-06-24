@@ -102,6 +102,7 @@ async fn create_bridge(
     Json(req): Json<BridgeRequest>,
 ) -> Result<Json<BridgeResponse>, ApiError> {
     require_bootstrap(&state, &headers)?;
+    validate_bridge_request(&req)?;
     let session = state.store.create_session(CreateSessionRequest {
         environment_id: req.environment_id,
         title: req.title,
@@ -139,6 +140,7 @@ async fn create_session(
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<Json<crate::model::SessionRecord>, ApiError> {
     require_bootstrap(&state, &headers)?;
+    validate_session_request(&req)?;
     Ok(Json(state.store.create_session(req)?))
 }
 
@@ -182,6 +184,7 @@ async fn update_worker(
     Json(req): Json<WorkerUpdateRequest>,
 ) -> Result<Json<WorkerRecord>, ApiError> {
     let claims = require_worker(&state, &headers)?;
+    validate_worker_update_request(&req, &claims.worker_id)?;
     Ok(Json(state.store.upsert_worker(
         &claims.session_id,
         &claims.worker_id,
@@ -308,6 +311,145 @@ fn mint_token(state: &BridgeState, session_id: &str, worker_id: &str) -> Result<
     )?)
 }
 
+const MAX_ID_LEN: usize = 128;
+const MAX_TITLE_LEN: usize = 512;
+const MAX_TAGS: usize = 64;
+const MAX_TAG_LEN: usize = 96;
+const MAX_METADATA: usize = 128;
+const MAX_METADATA_KEY_LEN: usize = 128;
+const MAX_METADATA_VALUE_LEN: usize = 4096;
+const MAX_WORKER_METADATA_BYTES: usize = 64 * 1024;
+const MAX_WORKER_METADATA_DEPTH: usize = 16;
+
+fn validate_bridge_request(req: &BridgeRequest) -> Result<(), ApiError> {
+    validate_optional_id("environment_id", req.environment_id.as_deref())?;
+    validate_optional_text("title", req.title.as_deref(), MAX_TITLE_LEN)?;
+    validate_optional_id("worker_id", req.worker_id.as_deref())?;
+    validate_tags(&req.tags)?;
+    validate_metadata(&req.metadata)
+}
+
+fn validate_session_request(req: &CreateSessionRequest) -> Result<(), ApiError> {
+    validate_optional_id("environment_id", req.environment_id.as_deref())?;
+    validate_optional_text("title", req.title.as_deref(), MAX_TITLE_LEN)?;
+    validate_tags(&req.tags)?;
+    validate_metadata(&req.metadata)
+}
+
+fn validate_worker_update_request(
+    req: &WorkerUpdateRequest,
+    claims_worker_id: &str,
+) -> Result<(), ApiError> {
+    if let Some(worker_id) = req.worker_id.as_deref() {
+        validate_id("worker_id", worker_id)?;
+        if worker_id != claims_worker_id {
+            return Err(ApiError::BadRequest(
+                "worker_id does not match token".to_owned(),
+            ));
+        }
+    }
+    validate_json_field("external_metadata", &req.external_metadata)?;
+    validate_json_field("internal_metadata", &req.internal_metadata)
+}
+
+fn validate_optional_id(field: &str, value: Option<&str>) -> Result<(), ApiError> {
+    if let Some(value) = value {
+        validate_id(field, value)?;
+    }
+    Ok(())
+}
+
+fn validate_id(field: &str, value: &str) -> Result<(), ApiError> {
+    validate_token_text(field, value, MAX_ID_LEN)
+}
+
+fn validate_optional_text(
+    field: &str,
+    value: Option<&str>,
+    max_len: usize,
+) -> Result<(), ApiError> {
+    if let Some(value) = value {
+        validate_token_text(field, value, max_len)?;
+    }
+    Ok(())
+}
+
+fn validate_tags(tags: &[String]) -> Result<(), ApiError> {
+    if tags.len() > MAX_TAGS {
+        return Err(ApiError::BadRequest(format!(
+            "too many tags: {}",
+            tags.len()
+        )));
+    }
+    for tag in tags {
+        validate_token_text("tag", tag, MAX_TAG_LEN)?;
+    }
+    Ok(())
+}
+
+fn validate_metadata(
+    metadata: &std::collections::BTreeMap<String, String>,
+) -> Result<(), ApiError> {
+    if metadata.len() > MAX_METADATA {
+        return Err(ApiError::BadRequest(format!(
+            "too many metadata entries: {}",
+            metadata.len()
+        )));
+    }
+    for (key, value) in metadata {
+        validate_token_text("metadata key", key, MAX_METADATA_KEY_LEN)?;
+        validate_text("metadata value", value, MAX_METADATA_VALUE_LEN)?;
+    }
+    Ok(())
+}
+
+fn validate_token_text(field: &str, value: &str, max_len: usize) -> Result<(), ApiError> {
+    validate_text(field, value, max_len)?;
+    if value.trim() != value {
+        return Err(ApiError::BadRequest(format!(
+            "{field} must not have surrounding whitespace"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_text(field: &str, value: &str, max_len: usize) -> Result<(), ApiError> {
+    if value.trim().is_empty() {
+        return Err(ApiError::BadRequest(format!("{field} must not be empty")));
+    }
+    if value.len() > max_len {
+        return Err(ApiError::BadRequest(format!("{field} is too long")));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(ApiError::BadRequest(format!(
+            "{field} contains control characters"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_json_field(field: &str, value: &serde_json::Value) -> Result<(), ApiError> {
+    let bytes = serde_json::to_vec(value)
+        .map_err(|_| ApiError::BadRequest(format!("{field} is not serializable")))?;
+    if bytes.len() > MAX_WORKER_METADATA_BYTES {
+        return Err(ApiError::BadRequest(format!("{field} is too large")));
+    }
+    if json_depth(value) > MAX_WORKER_METADATA_DEPTH {
+        return Err(ApiError::BadRequest(format!(
+            "{field} is too deeply nested"
+        )));
+    }
+    Ok(())
+}
+
+fn json_depth(value: &serde_json::Value) -> usize {
+    match value {
+        serde_json::Value::Array(values) => 1 + values.iter().map(json_depth).max().unwrap_or(0),
+        serde_json::Value::Object(values) => 1 + values.values().map(json_depth).max().unwrap_or(0),
+        _ => 1,
+    }
+}
+
 fn require_bootstrap(state: &BridgeState, headers: &HeaderMap) -> Result<(), ApiError> {
     let Some(expected) = state.config.bootstrap_token.as_deref() else {
         return Ok(());
@@ -379,6 +521,7 @@ impl IntoResponse for ApiError {
                 StatusCode::NOT_FOUND
             }
             Self::BadRequest(_)
+            | Self::Store(StoreError::SessionConflict(_))
             | Self::Store(StoreError::WorkerEpochMismatch { .. })
             | Self::Store(StoreError::WorkerIdentityMismatch { .. }) => StatusCode::BAD_REQUEST,
             Self::Store(StoreError::Poisoned | StoreError::Persistence) => {
@@ -396,16 +539,22 @@ impl IntoResponse for ApiError {
 mod tests {
     use std::time::Duration;
 
+    use axum::http::HeaderValue;
+
     use super::*;
 
-    #[tokio::test]
-    async fn bridge_bootstrap_creates_worker_token() {
-        let state = BridgeState::memory(BridgeConfig {
+    fn test_state() -> BridgeState {
+        BridgeState::memory(BridgeConfig {
             api_base_url: "http://127.0.0.1:1".to_owned(),
             secret: b"secret".to_vec(),
             bootstrap_token: None,
             token_ttl: Duration::from_secs(60),
-        });
+        })
+    }
+
+    #[tokio::test]
+    async fn bridge_bootstrap_creates_worker_token() {
+        let state = test_state();
         let headers = HeaderMap::new();
         let Json(resp) = create_bridge(
             State(state),
@@ -423,5 +572,63 @@ mod tests {
         assert_eq!(resp.worker_id, "worker");
         assert_eq!(resp.worker_epoch, 1);
         assert!(!resp.worker_jwt.is_empty());
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_empty_worker_id_regression() {
+        let error = create_bridge(
+            State(test_state()),
+            HeaderMap::new(),
+            Json(BridgeRequest {
+                environment_id: None,
+                title: Some("test".to_owned()),
+                tags: vec![],
+                metadata: Default::default(),
+                worker_id: Some(" ".to_owned()),
+            }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, ApiError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn update_worker_rejects_body_worker_id_mismatch_regression() {
+        let state = test_state();
+        let Json(resp) = create_bridge(
+            State(state.clone()),
+            HeaderMap::new(),
+            Json(BridgeRequest {
+                environment_id: None,
+                title: Some("test".to_owned()),
+                tags: vec![],
+                metadata: Default::default(),
+                worker_id: Some("worker-a".to_owned()),
+            }),
+        )
+        .await
+        .unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", resp.worker_jwt)).unwrap(),
+        );
+
+        let error = update_worker(
+            State(state),
+            headers,
+            Json(WorkerUpdateRequest {
+                worker_id: Some("worker-b".to_owned()),
+                worker_epoch: resp.worker_epoch,
+                worker_status: WorkerStatus::Busy,
+                external_metadata: serde_json::Value::Null,
+                internal_metadata: serde_json::Value::Null,
+            }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, ApiError::BadRequest(_)));
     }
 }

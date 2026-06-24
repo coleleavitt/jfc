@@ -24,7 +24,11 @@ pub fn execute_learn_status() -> ExecutionResult {
     let pending = count_pending(&cwd);
     let candidates = jfc_learn::UserMemoryPipeline::load_candidates(&cwd).unwrap_or_default();
     let promoted = jfc_learn::UserMemoryPipeline::check_promotion(&candidates).len();
-    let memories = crate::memory::load_all_memories(&cwd).len();
+    let memories = jfc_knowledge::block_on_knowledge(async {
+        let entries = crate::memory::load_all_memories(&cwd).await;
+        Ok::<_, jfc_knowledge::KnowledgeError>(entries.len())
+    })
+    .unwrap_or_default();
 
     ExecutionResult::success(format!(
         "Learning subsystem: enabled\n\
@@ -38,16 +42,19 @@ pub fn execute_learn_status() -> ExecutionResult {
 /// Count pending historian transcripts staged in the project DB.
 fn count_pending(cwd: &std::path::Path) -> usize {
     import_legacy_pending(cwd).ok();
-    jfc_knowledge::KnowledgeStore::open_default()
-        .and_then(|store| {
-            store.list_session_artifacts(
-                &project_session_id(cwd),
+    let cwd = cwd.to_owned();
+    jfc_knowledge::block_on_knowledge(async move {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+        let rows = store
+            .list_session_artifacts(
+                &project_session_id(&cwd),
                 LEARN_PENDING_TRANSCRIPT_KIND,
                 10_000,
             )
-        })
-        .map(|rows| rows.len())
-        .unwrap_or(0)
+            .await?;
+        Ok::<_, jfc_knowledge::KnowledgeError>(rows.len())
+    })
+    .unwrap_or_default()
 }
 
 /// `/learn historize` — consume pending transcripts into durable project memory.
@@ -84,70 +91,94 @@ struct HistorizeWriteThroughReport {
 
 fn historize_pending(cwd: &Path) -> Result<HistorizeWriteThroughReport, String> {
     import_legacy_pending(cwd)?;
-    let store = jfc_knowledge::KnowledgeStore::open_default().map_err(|e| e.to_string())?;
-    let session_id = project_session_id(cwd);
-    let mut rows = store
-        .list_session_artifacts(&session_id, LEARN_PENDING_TRANSCRIPT_KIND, 10_000)
-        .map_err(|e| e.to_string())?;
-    rows.sort_by(|a, b| a.key.cmp(&b.key));
-    let mut report = HistorizeWriteThroughReport {
-        pending: rows.len(),
-        ..Default::default()
-    };
+    let cwd = cwd.to_owned();
+    jfc_knowledge::block_on_knowledge(async move {
+        let store = jfc_knowledge::KnowledgeStore::open_default()
+            .await
+            .map_err(|e| e.to_string())?;
+        let session_id = project_session_id(&cwd);
+        let mut rows = store
+            .list_session_artifacts(&session_id, LEARN_PENDING_TRANSCRIPT_KIND, 10_000)
+            .await
+            .map_err(|e| e.to_string())?;
+        rows.sort_by(|a, b| a.key.cmp(&b.key));
+        let mut report = HistorizeWriteThroughReport {
+            pending: rows.len(),
+            ..Default::default()
+        };
 
-    for row in rows {
-        match historize_one(cwd, &row.key, &row.value_json) {
-            Ok(true) => {
-                report.created += 1;
-                store
-                    .upsert_session_artifact(
-                        &session_id,
-                        LEARN_PROCESSED_TRANSCRIPT_KIND,
-                        &row.key,
-                        &row.value_json,
-                    )
-                    .map_err(|e| e.to_string())?;
-                store
-                    .delete_session_artifact(&session_id, LEARN_PENDING_TRANSCRIPT_KIND, &row.key)
-                    .map_err(|e| e.to_string())?;
-            }
-            Ok(false) => {
-                report.skipped += 1;
-                store
-                    .upsert_session_artifact(
-                        &session_id,
-                        LEARN_PROCESSED_TRANSCRIPT_KIND,
-                        &row.key,
-                        &row.value_json,
-                    )
-                    .map_err(|e| e.to_string())?;
-                store
-                    .delete_session_artifact(&session_id, LEARN_PENDING_TRANSCRIPT_KIND, &row.key)
-                    .map_err(|e| e.to_string())?;
-            }
-            Err(error) => {
-                report.failed += 1;
-                tracing::warn!(
-                    target: "jfc::learn",
-                    key = %row.key,
-                    error = %error,
-                    "historian write-through failed for pending transcript"
-                );
-                store
-                    .upsert_session_artifact(
-                        &session_id,
-                        LEARN_FAILED_TRANSCRIPT_KIND,
-                        &row.key,
-                        &row.value_json,
-                    )
-                    .map_err(|e| e.to_string())?;
-                store
-                    .delete_session_artifact(&session_id, LEARN_PENDING_TRANSCRIPT_KIND, &row.key)
-                    .map_err(|e| e.to_string())?;
+        for row in rows {
+            match historize_one_async(&cwd, &row.key, &row.value_json).await {
+                Ok(true) => {
+                    report.created += 1;
+                    store
+                        .upsert_session_artifact(
+                            &session_id,
+                            LEARN_PROCESSED_TRANSCRIPT_KIND,
+                            &row.key,
+                            &row.value_json,
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    store
+                        .delete_session_artifact(
+                            &session_id,
+                            LEARN_PENDING_TRANSCRIPT_KIND,
+                            &row.key,
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+                Ok(false) => {
+                    report.skipped += 1;
+                    store
+                        .upsert_session_artifact(
+                            &session_id,
+                            LEARN_PROCESSED_TRANSCRIPT_KIND,
+                            &row.key,
+                            &row.value_json,
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    store
+                        .delete_session_artifact(
+                            &session_id,
+                            LEARN_PENDING_TRANSCRIPT_KIND,
+                            &row.key,
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+                Err(error) => {
+                    report.failed += 1;
+                    tracing::warn!(
+                        target: "jfc::learn",
+                        key = %row.key,
+                        error = %error,
+                        "historian write-through failed for pending transcript"
+                    );
+                    store
+                        .upsert_session_artifact(
+                            &session_id,
+                            LEARN_FAILED_TRANSCRIPT_KIND,
+                            &row.key,
+                            &row.value_json,
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    store
+                        .delete_session_artifact(
+                            &session_id,
+                            LEARN_PENDING_TRANSCRIPT_KIND,
+                            &row.key,
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
             }
         }
-    }
-    Ok(report)
+        Ok::<_, String>(report)
+    })
 }
 
 fn import_legacy_pending(cwd: &Path) -> Result<(), String> {
@@ -155,30 +186,36 @@ fn import_legacy_pending(cwd: &Path) -> Result<(), String> {
     let Ok(entries) = std::fs::read_dir(pending_dir) else {
         return Ok(());
     };
-    let store = jfc_knowledge::KnowledgeStore::open_default().map_err(|e| e.to_string())?;
-    let session_id = project_session_id(cwd);
-    for path in entries
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
-    {
-        let Ok(raw) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let key = path
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or("legacy-pending")
-            .to_owned();
-        store
-            .upsert_session_artifact(&session_id, LEARN_PENDING_TRANSCRIPT_KIND, &key, &raw)
+    let cwd = cwd.to_owned();
+    jfc_knowledge::block_on_knowledge(async move {
+        let store = jfc_knowledge::KnowledgeStore::open_default()
+            .await
             .map_err(|e| e.to_string())?;
-        let _ = std::fs::remove_file(&path);
-    }
-    Ok(())
+        let session_id = project_session_id(&cwd);
+        for path in entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        {
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let key = path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or("legacy-pending")
+                .to_owned();
+            store
+                .upsert_session_artifact(&session_id, LEARN_PENDING_TRANSCRIPT_KIND, &key, &raw)
+                .await
+                .map_err(|e| e.to_string())?;
+            let _ = std::fs::remove_file(&path);
+        }
+        Ok::<_, String>(())
+    })
 }
 
-fn historize_one(cwd: &Path, key: &str, raw_json: &str) -> Result<bool, String> {
+async fn historize_one_async(cwd: &Path, key: &str, raw_json: &str) -> Result<bool, String> {
     let transcript: Vec<(String, String)> =
         serde_json::from_str(raw_json).map_err(|e| e.to_string())?;
     let Some(body) = build_handoff_memory(key, &transcript) else {
@@ -190,7 +227,8 @@ fn historize_one(cwd: &Path, key: &str, raw_json: &str) -> Result<bool, String> 
         MemoryScope::Private,
         &body,
         cwd,
-    )?;
+    )
+    .await?;
     Ok(true)
 }
 
@@ -287,39 +325,46 @@ pub fn execute_learn_dream() -> ExecutionResult {
 
     use jfc_learn::dreamer::{Dreamer, DreamerTask, MemoryRecord, acquire_lease, release_lease};
 
-    let lease = match acquire_lease(&lease_path) {
-        Ok(l) => l,
-        Err(e) => {
-            return ExecutionResult::failure(format!("Failed to acquire dreamer lease: {e}"));
+    let result = match jfc_knowledge::block_on_knowledge(async {
+        let lease = match acquire_lease(&lease_path).await {
+            Ok(l) => l,
+            Err(e) => {
+                return Err(format!("Failed to acquire dreamer lease: {e}"));
+            }
+        };
+
+        let entries = crate::memory::load_all_memories(&cwd).await;
+        let mut records: Vec<MemoryRecord> = entries
+            .iter()
+            .map(|e| MemoryRecord {
+                path: e.source_display().into_owned(),
+                category: Some(e.frontmatter.memory_type.to_string()),
+                normalized_hash: e.frontmatter.normalized_hash.clone(),
+                content: e.body.clone(),
+                last_seen_at: e.frontmatter.last_seen_at,
+                memory_status: e.frontmatter.memory_status.clone(),
+            })
+            .collect();
+
+        let dreamer = Dreamer::new(lease_path.clone());
+        let tasks = [
+            DreamerTask::Consolidate,
+            DreamerTask::ArchiveStale,
+            DreamerTask::Verify,
+            DreamerTask::Improve,
+            DreamerTask::MaintainDocs,
+        ];
+
+        let result = dreamer.run_cycle(&tasks, &mut records);
+        if let Err(e) = release_lease(&lease_path, &lease.holder_id).await {
+            tracing::warn!(target: "jfc::learn", error = %e, "failed to release dreamer lease");
         }
+
+        Ok::<_, String>(result)
+    }) {
+        Ok(dreamer_result) => dreamer_result,
+        Err(e) => return ExecutionResult::failure(e),
     };
-
-    let entries = crate::memory::load_all_memories(&cwd);
-    let mut records: Vec<MemoryRecord> = entries
-        .iter()
-        .map(|e| MemoryRecord {
-            path: e.source_display().into_owned(),
-            category: Some(e.frontmatter.memory_type.to_string()),
-            normalized_hash: e.frontmatter.normalized_hash.clone(),
-            content: e.body.clone(),
-            last_seen_at: e.frontmatter.last_seen_at,
-            memory_status: e.frontmatter.memory_status.clone(),
-        })
-        .collect();
-
-    let dreamer = Dreamer::new(lease_path.clone());
-    let tasks = [
-        DreamerTask::Consolidate,
-        DreamerTask::ArchiveStale,
-        DreamerTask::Verify,
-        DreamerTask::Improve,
-        DreamerTask::MaintainDocs,
-    ];
-
-    let result = dreamer.run_cycle(&tasks, &mut records);
-    if let Err(e) = release_lease(&lease_path, &lease.holder_id) {
-        tracing::warn!(target: "jfc::learn", error = %e, "failed to release dreamer lease");
-    }
 
     match result {
         Ok(report) => {
@@ -439,9 +484,9 @@ mod tests {
 
     /// End-to-end test: a pending learning row is historized into a DB memory
     /// row and removed from the pending artifact set.
-    #[test]
+    #[tokio::test(flavor = "multi_thread")]
     #[serial_test::serial]
-    fn historize_pending_creates_memory_and_moves_db_row_normal() {
+    async fn historize_pending_creates_memory_and_moves_db_row_normal() {
         let temp = tempfile::tempdir().unwrap();
         // SAFETY: tests are run single-threaded via #[serial_test::serial]
         unsafe {
@@ -470,13 +515,14 @@ mod tests {
         let report = historize_pending(temp.path()).unwrap();
 
         assert_eq!(report.pending, 1);
-        let store = jfc_knowledge::KnowledgeStore::open_default().unwrap();
+        let store = jfc_knowledge::KnowledgeStore::open_default().await.unwrap();
         let processed = store
             .get_session_artifact(
                 &project_session_id(temp.path()),
                 LEARN_PROCESSED_TRANSCRIPT_KIND,
                 "20260616_010203",
             )
+            .await
             .unwrap();
         assert!(processed.is_some());
         assert_eq!(count_pending(temp.path()), 0);

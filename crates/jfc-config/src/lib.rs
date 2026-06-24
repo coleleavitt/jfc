@@ -1757,16 +1757,19 @@ fn load_system_prompt_definition(name: &str, base_dir: Option<&std::path::Path>)
     let current_dir = std::env::current_dir().ok();
     let project_root = base_dir.or(current_dir.as_deref())?;
     let project_key = jfc_knowledge::project_key(project_root);
-    let project = store
-        .get_definition_by_name(
-            "system_prompt",
-            jfc_knowledge::DefinitionScope::Project,
-            Some(&project_key),
-            None,
-            name,
-        )
-        .ok()
-        .flatten();
+    let project = jfc_knowledge::block_on_knowledge(async {
+        store
+            .get_definition_by_name(
+                "system_prompt",
+                jfc_knowledge::DefinitionScope::Project,
+                Some(&project_key),
+                None,
+                name,
+            )
+            .await
+    })
+    .ok()
+    .flatten();
     project.map(|def| def.body)
 }
 
@@ -1804,7 +1807,7 @@ fn import_system_prompt_definition(
         status: jfc_knowledge::DefinitionStatus::Active,
         created_by: "legacy_import".to_owned(),
     };
-    if let Err(err) = store.upsert_definition(&def) {
+    if let Err(err) = jfc_knowledge::block_on_knowledge(async { store.upsert_definition(&def).await }) {
         tracing::warn!(
             target: "jfc::config",
             path = %path.display(),
@@ -1824,12 +1827,12 @@ fn open_definition_store(
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        jfc_knowledge::KnowledgeStore::open(&path).ok()
+        jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open(&path)).ok()
     }
     #[cfg(not(test))]
     {
         let _ = base_dir;
-        jfc_knowledge::KnowledgeStore::open_default().ok()
+        jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open_default()).ok()
     }
 }
 

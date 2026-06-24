@@ -115,14 +115,14 @@ pub fn mine_session_json(raw: &str) -> Vec<MinedLesson> {
     lessons
 }
 
-pub fn mine_store(store: &KnowledgeStore, limit: usize) -> (Vec<MinedLesson>, MineReport) {
+pub async fn mine_store(store: &KnowledgeStore, limit: usize) -> (Vec<MinedLesson>, MineReport) {
     let mut lessons = Vec::new();
     let mut report = MineReport::default();
-    let Ok(sessions) = store.list_sessions(None, limit) else {
+    let Ok(sessions) = store.list_sessions(None, limit).await else {
         return (lessons, report);
     };
     for session in sessions {
-        let Ok(messages) = store.load_transcript(&session.id) else {
+        let Ok(messages) = store.load_transcript(&session.id).await else {
             continue;
         };
         if messages.is_empty() {
@@ -395,9 +395,9 @@ mod tests {
         assert!(lessons[0].claim.contains("exact background task ids"));
     }
 
-    #[test]
-    fn mine_store_reads_lossless_db_meta_normal() {
-        let mut store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn mine_store_reads_lossless_db_meta_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let row = crate::SessionRow {
             id: "ses_db".into(),
             cwd: Some("/repo".into()),
@@ -450,9 +450,9 @@ mod tests {
                 ),
             },
         ];
-        store.replace_transcript(&row, &messages).unwrap();
+        store.replace_transcript(&row, &messages).await.unwrap();
 
-        let (lessons, report) = mine_store(&store, 10);
+        let (lessons, report) = mine_store(&store, 10).await;
 
         assert_eq!(report.sessions_scanned, 1);
         assert_eq!(report.verified, 1);

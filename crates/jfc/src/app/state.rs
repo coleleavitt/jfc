@@ -332,6 +332,13 @@ pub struct App {
     pub show_session_picker: bool,
     pub session_picker_filter: String,
     pub session_picker_state: TableState,
+    /// Background-shell picker popup: lists running + settled background shells
+    /// (`/bashes` as a modal), navigable with ↑/↓, `x`/`d` cancels the selected
+    /// running shell. Opened via the Ctrl+X leader chord then `b`. Snapshot is
+    /// captured when the modal opens (the source is async; the modal is sync).
+    pub show_bash_picker: bool,
+    pub bash_picker_state: TableState,
+    pub bash_picker_tasks: Vec<jfc_engine::tools::BashTaskSnapshot>,
     /// Drives selection + scroll for the picker's `Table`. Kept in sync with
     /// `model_picker_selected` so existing handlers keep working, but ratatui's
     /// stateful render uses the `TableState` for autoscroll when the cursor moves
@@ -607,6 +614,9 @@ impl App {
             show_session_picker: false,
             session_picker_filter: String::new(),
             session_picker_state: TableState::default().with_selected(Some(0)),
+            show_bash_picker: false,
+            bash_picker_state: TableState::default().with_selected(Some(0)),
+            bash_picker_tasks: Vec::new(),
             model_picker_selected: 0,
             model_picker_models: Vec::new(),
             model_picker_state: TableState::default().with_selected(Some(0)),

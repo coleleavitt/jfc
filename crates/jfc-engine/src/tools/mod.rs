@@ -1,8 +1,10 @@
 mod bash;
 mod catalog;
+mod code_navigation;
 mod daemon;
 mod defs;
 mod design;
+mod discovery;
 mod dispatch;
 mod dispatch_heavy;
 mod economy;
@@ -13,10 +15,13 @@ mod lsp;
 mod memory;
 mod notebook;
 mod notifications;
+mod persistent_shell;
 pub mod plans;
 mod registry;
 pub(crate) mod research;
 mod safe_tools;
+#[cfg(test)]
+mod schema_tests;
 mod scratchpad;
 mod search;
 pub mod structured_output;
@@ -36,6 +41,11 @@ pub use crate::runtime::{ExecutionResult, ToolProvenance, ToolSource};
 
 // main dispatcher
 pub use bash::execute_bash_inner;
+// background-shell roster API (list/cancel/detach), surfaced in the TUI.
+pub use bash::{
+    BashTaskSnapshot, CancelOutcome, background_running_foreground_bash, cancel_bash_task,
+    list_bash_tasks,
+};
 pub use dispatch::{execute_tool, execute_tool_with_runtime_id};
 
 // plan↔task linkage hook, shared by the manual TaskDone path and the
@@ -43,15 +53,15 @@ pub use dispatch::{execute_tool, execute_tool_with_runtime_id};
 pub use dispatch::advance_linked_plans;
 
 // tool definitions (for advertised tool list)
-pub(crate) use catalog::is_code_navigation_tool_name;
 pub use catalog::progressive_tool_defs;
+pub(crate) use code_navigation::is_code_navigation_tool_name;
 pub use defs::{
     all_tool_defs, is_model_hidden_builtin_tool_name, model_tool_defs, sync_tool_definitions_to_db,
 };
+pub use discovery::all_tool_defs_with_mcp;
 pub use hcom::{
     hcom_available, is_hcom_tool_name, system_prompt_section as hcom_system_prompt_section,
 };
-pub use safe_tools::all_tool_defs_with_mcp;
 
 const PEWTER_OWL_SEND_USER_MESSAGE_PROMPT: &str = "Send a message the user will read verbatim. Use this for content they need to see exactly as written between tool calls — a generated code snippet, a specific value, a direct reply to something they asked mid-task. Don't use it for routine narration of what you're about to do, or for your final answer — normal text reaches them for those.\n\n`status`: 'normal' when replying to what they just asked; 'proactive' when you're surfacing something unprompted.";
 

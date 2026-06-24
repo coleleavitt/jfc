@@ -1,7 +1,7 @@
 use crate::app::App;
 
 use super::tool_blocks::{
-    bash_continuation_lines, tool_body_line_count, tool_body_line_count_with_app,
+    bash_continuation_lines, tool_body_line_count, tool_body_line_count_with_diagnostics,
 };
 use super::*;
 
@@ -22,13 +22,24 @@ pub(super) fn tool_block_height_with_app(
     inner_w: usize,
     app: Option<&App>,
 ) -> usize {
+    let diagnostics = app
+        .map(|app| app.engine.diagnostics.as_slice())
+        .unwrap_or(&[]);
+    tool_block_height_with_diagnostics(tool, inner_w, diagnostics)
+}
+
+pub(super) fn tool_block_height_with_diagnostics(
+    tool: &ToolCall,
+    inner_w: usize,
+    diagnostics: &[jfc_engine::diagnostics::DiagnosticEntry],
+) -> usize {
     if tool.display.is_collapsed() {
         return 1;
     }
 
     let content_w = inner_w.saturating_sub(2);
     let cont = bash_continuation_lines(tool, content_w).len();
-    1 + cont + tool_content_height_with_tool_and_app(tool, content_w, app)
+    1 + cont + tool_content_height_with_tool_and_diagnostics(tool, content_w, diagnostics)
 }
 pub fn tool_block_height_pub(tool: &ToolCall, inner_w: usize) -> usize {
     tool_block_height(tool, inner_w)
@@ -42,10 +53,10 @@ pub(super) fn tool_content_height_with_tool(tool: &ToolCall, content_w: usize) -
     tool_body_line_count(tool, content_w)
 }
 
-pub(super) fn tool_content_height_with_tool_and_app(
+pub(super) fn tool_content_height_with_tool_and_diagnostics(
     tool: &ToolCall,
     content_w: usize,
-    app: Option<&App>,
+    diagnostics: &[jfc_engine::diagnostics::DiagnosticEntry],
 ) -> usize {
-    tool_body_line_count_with_app(tool, content_w, app)
+    tool_body_line_count_with_diagnostics(tool, content_w, diagnostics)
 }

@@ -11,7 +11,7 @@ pub async fn load_session_metadata(session_id: &SessionId) -> Option<SessionMeta
 }
 
 fn open_session_db() -> Option<KnowledgeStore> {
-    KnowledgeStore::open_default().ok()
+    jfc_knowledge::block_on_knowledge(async { KnowledgeStore::open_default().await.ok() })
 }
 
 fn metadata_from_row(row: SessionRow) -> SessionMetadata {
@@ -28,11 +28,14 @@ fn metadata_from_row(row: SessionRow) -> SessionMetadata {
 
 fn load_session_metadata_from_db(session_id: &str) -> Option<SessionMetadata> {
     let store = open_session_db()?;
-    store
-        .get_session(session_id)
-        .ok()
-        .flatten()
-        .map(metadata_from_row)
+    jfc_knowledge::block_on_knowledge(async {
+        store
+            .get_session(session_id)
+            .await
+            .ok()
+            .flatten()
+            .map(metadata_from_row)
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -239,17 +242,15 @@ pub async fn list_sessions_with_metadata() -> Vec<SessionMetadata> {
 pub async fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMetadata> {
     debug!(target: "jfc::session", ?cwd_filter, "listing sessions with filter");
     let mut sessions = Vec::new();
-    if let Some(store) = open_session_db()
-        && let Ok(rows) = store.list_sessions(None, 100_000)
-    {
-        sessions.extend(
-            rows.into_iter()
-                .map(metadata_from_row)
-                .filter(|meta| match cwd_filter {
+    if let Some(store) = open_session_db() {
+        if let Ok(rows) = store.list_sessions(None, 100_000).await {
+            sessions.extend(rows.into_iter().map(metadata_from_row).filter(
+                |meta| match cwd_filter {
                     None => true,
                     Some(target) => meta.cwd.as_deref() == Some(target),
-                }),
-        );
+                },
+            ));
+        }
     }
     sessions.sort_by(|a, b| {
         let a_time = a.updated_at.as_ref().unwrap_or(&a.created_at);

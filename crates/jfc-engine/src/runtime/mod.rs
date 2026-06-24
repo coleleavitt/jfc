@@ -29,7 +29,7 @@ pub use events::{
     TaskEvent, TeamEvent, ToolEvent, VoiceEvent, WorkflowProgressEvent, scoped_stream_sender,
     send_critical, stream_event,
 };
-pub use execution::{ExecutionResult, ToolProvenance, ToolSource};
+pub use execution::{ExecutionResult, ToolErrorCategory, ToolProvenance, ToolSource};
 pub use factory::{factory_mode_enabled, maybe_continue_task_factory};
 pub use goal_loop::{dispatch_goal_evaluator_if_active, handle_goal_verdict};
 pub use jfc_core::{

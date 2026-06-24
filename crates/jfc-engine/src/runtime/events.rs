@@ -145,6 +145,16 @@ pub enum ControlEvent {
         id: String,
         response: crate::mcp_elicitation::ElicitationResponse,
     },
+    /// Cancel a background shell by its `bash_*` id. Picker/footer cancel is
+    /// sync, but `cancel_bash_task` is async (it locks the task registry and
+    /// signals the process tree), so it routes through the event loop. A toast
+    /// reports the outcome.
+    CancelBashTask(String),
+    /// Detach the in-flight FOREGROUND bash command to the background (Ctrl+B).
+    /// The engine flips the running tool's lifecycle so its watcher reports a
+    /// background task id instead of blocking, mirroring the auto-background
+    /// path. No-op if no foreground bash is running.
+    BackgroundForegroundBash,
 }
 
 /// Outbound engine→frontend requests that previously rode on `UiEvent`.

@@ -4,8 +4,8 @@ mod tests {
     use crate::session::deserialize::*;
     use crate::session::serialize::*;
     use crate::types::{
-        DiffHunk, DiffLine, DiffLineKind, DiffView, MessagePart, ReplacementMode, TaskLifecycle,
-        TaskStatusPart, ToolInput, ToolOutput,
+        DiffHunk, DiffLine, DiffLineKind, DiffView, MessagePart, ReplacementMode, TaskInput,
+        TaskLifecycle, TaskStatusPart, ToolInput, ToolOutput,
     };
     use jfc_session::{
         SessionMetadata, cwd_mismatch_message, group_by_cwd, relative_time, shorten_cwd,
@@ -50,6 +50,47 @@ mod tests {
             ToolInput::TaskStop { task_id } => assert_eq!(task_id, "t42"),
             other => panic!("expected TaskStop, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn roundtrip_tool_input_task_preserves_contract_fields_regression() {
+        let input = ToolInput::Task(TaskInput {
+            description: "inspect".into(),
+            prompt: "inspect".into(),
+            subagent_type: Some("explore".into()),
+            category: Some("audit".into()),
+            run_in_background: false,
+            model: None,
+            effort: None,
+            name: Some("reader".into()),
+            team_name: Some("review".into()),
+            mode: Some("plan".into()),
+            isolation: Some("worktree".into()),
+            parent_task_id: Some("t3".into()),
+            schema: Some(serde_json::json!({
+                "type": "object",
+                "required": ["summary"],
+                "properties": { "summary": { "type": "string" } }
+            })),
+            allowed_tools: vec!["Read".into(), "Grep".into()],
+            disallowed_tools: vec!["Bash".into()],
+            cwd: Some("/tmp/project".into()),
+        });
+
+        let serialized = serialize_tool_input(&input);
+        let deserialized = deserialize_tool_input(serialized);
+        let ToolInput::Task(task) = deserialized else {
+            panic!("expected Task input");
+        };
+        assert_eq!(
+            task.schema.as_ref().and_then(|v| v.get("type")),
+            Some(&serde_json::json!("object"))
+        );
+        assert_eq!(task.allowed_tools, vec!["Read", "Grep"]);
+        assert_eq!(task.disallowed_tools, vec!["Bash"]);
+        assert_eq!(task.name.as_deref(), Some("reader"));
+        assert_eq!(task.team_name.as_deref(), Some("review"));
+        assert_eq!(task.isolation.as_deref(), Some("worktree"));
     }
 
     #[test]

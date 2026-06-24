@@ -90,92 +90,90 @@ pub struct ContextEventRow {
     pub created_at_ms: i64,
 }
 
-pub(super) fn agent_session_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentSessionRow> {
+pub(super) fn agent_session_from(row: &sqlx::sqlite::SqliteRow) -> crate::Result<AgentSessionRow> {
+    use sqlx::Row;
     Ok(AgentSessionRow {
-        id: row.get(0)?,
-        parent_session_id: row.get(1)?,
-        role: row.get(2)?,
-        model: row.get(3)?,
-        status: row.get(4)?,
-        budget_tokens: row.get(5)?,
-        task_id: row.get(6)?,
-        team_id: row.get(7)?,
-        created_at_ms: row.get(8)?,
-        updated_at_ms: row.get(9)?,
+        id: row.try_get(0)?,
+        parent_session_id: row.try_get(1)?,
+        role: row.try_get(2)?,
+        model: row.try_get(3)?,
+        status: row.try_get(4)?,
+        budget_tokens: row.try_get(5)?,
+        task_id: row.try_get(6)?,
+        team_id: row.try_get(7)?,
+        created_at_ms: row.try_get(8)?,
+        updated_at_ms: row.try_get(9)?,
     })
 }
 
-pub(super) fn agent_event_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentEventRow> {
+pub(super) fn agent_event_from(row: &sqlx::sqlite::SqliteRow) -> crate::Result<AgentEventRow> {
+    use sqlx::Row;
     Ok(AgentEventRow {
-        id: row.get(0)?,
-        session_id: row.get(1)?,
-        from_agent: row.get(2)?,
-        to_agent: row.get(3)?,
-        kind: row.get(4)?,
-        content: row.get(5)?,
-        turn_id: row.get(6)?,
-        causal_parent_id: row.get(7)?,
-        created_at_ms: row.get(8)?,
+        id: row.try_get(0)?,
+        session_id: row.try_get(1)?,
+        from_agent: row.try_get(2)?,
+        to_agent: row.try_get(3)?,
+        kind: row.try_get(4)?,
+        content: row.try_get(5)?,
+        turn_id: row.try_get(6)?,
+        causal_parent_id: row.try_get(7)?,
+        created_at_ms: row.try_get(8)?,
     })
 }
 
-pub(super) fn agent_mailbox_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentMailboxRow> {
+pub(super) fn agent_mailbox_from(row: &sqlx::sqlite::SqliteRow) -> crate::Result<AgentMailboxRow> {
+    use sqlx::Row;
     Ok(AgentMailboxRow {
-        id: row.get(0)?,
-        to_agent: row.get(1)?,
-        from_agent: row.get(2)?,
-        thread_id: row.get(3)?,
-        task_id: row.get(4)?,
-        priority: row.get(5)?,
-        content: row.get(6)?,
-        read_at_ms: row.get(7)?,
-        summarized_at_ms: row.get(8)?,
-        created_at_ms: row.get(9)?,
+        id: row.try_get(0)?,
+        to_agent: row.try_get(1)?,
+        from_agent: row.try_get(2)?,
+        thread_id: row.try_get(3)?,
+        task_id: row.try_get(4)?,
+        priority: row.try_get(5)?,
+        content: row.try_get(6)?,
+        read_at_ms: row.try_get(7)?,
+        summarized_at_ms: row.try_get(8)?,
+        created_at_ms: row.try_get(9)?,
     })
 }
 
-pub(super) fn learning_event_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<LearningEventRow> {
+pub(super) fn learning_event_from(row: &sqlx::sqlite::SqliteRow) -> crate::Result<LearningEventRow> {
+    use sqlx::Row;
     Ok(LearningEventRow {
-        id: row.get(0)?,
-        source_session_id: row.get(1)?,
-        source_turn_id: row.get(2)?,
-        source_tool_run_id: row.get(3)?,
-        candidate_rule: row.get(4)?,
-        status: row.get(5)?,
-        verifier_evidence: row.get(6)?,
-        recurrence_count: row.get(7)?,
-        created_at_ms: row.get(8)?,
-        updated_at_ms: row.get(9)?,
+        id: row.try_get(0)?,
+        source_session_id: row.try_get(1)?,
+        source_turn_id: row.try_get(2)?,
+        source_tool_run_id: row.try_get(3)?,
+        candidate_rule: row.try_get(4)?,
+        status: row.try_get(5)?,
+        verifier_evidence: row.try_get(6)?,
+        recurrence_count: row.try_get(7)?,
+        created_at_ms: row.try_get(8)?,
+        updated_at_ms: row.try_get(9)?,
     })
 }
 
-pub(super) fn context_event_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContextEventRow> {
+pub(super) fn context_event_from(row: &sqlx::sqlite::SqliteRow) -> crate::Result<ContextEventRow> {
+    use sqlx::Row;
     Ok(ContextEventRow {
-        id: row.get(0)?,
-        session_id: row.get(1)?,
-        turn_id: row.get(2)?,
-        agent_id: row.get(3)?,
-        subagent_id: row.get(4)?,
-        model: row.get(5)?,
-        input_tokens: row.get(6)?,
-        output_tokens: row.get(7)?,
-        thinking_tokens: row.get(8)?,
-        cache_read_tokens: row.get(9)?,
-        cache_write_tokens: row.get(10)?,
-        context_limit: row.get(11)?,
-        bust_cause: row.get(12)?,
-        drop_cause: row.get(13)?,
-        payload: row.get(14)?,
-        created_at_ms: row.get(15)?,
+        id: row.try_get(0)?,
+        session_id: row.try_get(1)?,
+        turn_id: row.try_get(2)?,
+        agent_id: row.try_get(3)?,
+        subagent_id: row.try_get(4)?,
+        model: row.try_get(5)?,
+        input_tokens: row.try_get(6)?,
+        output_tokens: row.try_get(7)?,
+        thinking_tokens: row.try_get(8)?,
+        cache_read_tokens: row.try_get(9)?,
+        cache_write_tokens: row.try_get(10)?,
+        context_limit: row.try_get(11)?,
+        bust_cause: row.try_get(12)?,
+        drop_cause: row.try_get(13)?,
+        payload: row.try_get(14)?,
+        created_at_ms: row.try_get(15)?,
     })
 }
 
-pub(super) fn collect_rows<T>(
-    rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>>,
-) -> crate::Result<Vec<T>> {
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(out)
-}
+// collect_rows is no longer needed with sqlx — callers just use fetch_all/fetch_one
+// and map rows directly using the helper functions above

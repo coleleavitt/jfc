@@ -20,6 +20,9 @@ struct StatusSeg {
     prio: u8,
 }
 
+const VOICE_INTERIM_PREVIEW_MAX_CHARS: usize = 40;
+const VOICE_INTERIM_PREVIEW_PREFIX_CHARS: usize = VOICE_INTERIM_PREVIEW_MAX_CHARS - 3;
+
 pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 || area.width == 0 {
         return;
@@ -254,8 +257,11 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         jfc_voice::VoiceState::Idle => {
             // Also show interim transcript if available
             if let Some(ref interim) = app.voice_interim {
-                let preview = if interim.chars().count() > 40 {
-                    let prefix: String = interim.chars().take(37).collect();
+                let preview = if interim.chars().count() > VOICE_INTERIM_PREVIEW_MAX_CHARS {
+                    let prefix: String = interim
+                        .chars()
+                        .take(VOICE_INTERIM_PREVIEW_PREFIX_CHARS)
+                        .collect();
                     format!("{prefix}...")
                 } else {
                     interim.clone()

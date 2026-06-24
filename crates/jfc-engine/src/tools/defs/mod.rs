@@ -71,7 +71,9 @@ pub fn sync_tool_definitions_to_db(tools: &[ToolDef]) {
             status: jfc_knowledge::DefinitionStatus::Active,
             created_by: "runtime_catalog".to_owned(),
         };
-        if let Err(err) = store.upsert_definition(&def) {
+        if let Err(err) = jfc_knowledge::block_on_knowledge(async {
+            store.upsert_definition(&def).await
+        }) {
             tracing::warn!(
                 target: "jfc::tools",
                 tool = %tool.name,
@@ -89,12 +91,17 @@ fn open_definition_store(project_root: &std::path::Path) -> Option<jfc_knowledge
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        jfc_knowledge::KnowledgeStore::open(&path).ok()
+        let path = path.clone();
+        jfc_knowledge::block_on_knowledge(async move {
+            jfc_knowledge::KnowledgeStore::open(&path).await
+        }).ok()
     }
     #[cfg(not(test))]
     {
         let _ = project_root;
-        jfc_knowledge::KnowledgeStore::open_default().ok()
+        jfc_knowledge::block_on_knowledge(async {
+            jfc_knowledge::KnowledgeStore::open_default().await
+        }).ok()
     }
 }
 

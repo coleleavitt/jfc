@@ -35,18 +35,21 @@ pub fn load_background_agent_launch(
 ) -> std::io::Result<BackgroundAgentLaunch> {
     let key = launch_path.display().to_string();
     let store = if paths.base_dir == DaemonPaths::default_user().base_dir {
-        jfc_knowledge::KnowledgeStore::open_default()
+        jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open_default())
     } else {
         std::fs::create_dir_all(&paths.base_dir)?;
-        jfc_knowledge::KnowledgeStore::open(&paths.base_dir.join("knowledge.db"))
+        jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open(&paths.base_dir.join("knowledge.db")))
     }
     .map_err(std::io::Error::other)?;
-    let row = store
-        .get_session_artifact(
-            BACKGROUND_AGENT_LAUNCH_SESSION_ID,
-            BACKGROUND_AGENT_LAUNCH_KIND,
-            &key,
-        )
+    let row = jfc_knowledge::block_on_knowledge(async {
+        store
+            .get_session_artifact(
+                BACKGROUND_AGENT_LAUNCH_SESSION_ID,
+                BACKGROUND_AGENT_LAUNCH_KIND,
+                &key,
+            )
+            .await
+    })
         .map_err(std::io::Error::other)?
         .ok_or_else(|| {
             std::io::Error::new(
@@ -65,20 +68,23 @@ fn persist_background_agent_launch(
     let key = launch_path.display().to_string();
     let json = serde_json::to_string(launch).map_err(std::io::Error::other)?;
     let store = if paths.base_dir == DaemonPaths::default_user().base_dir {
-        jfc_knowledge::KnowledgeStore::open_default()
+        jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open_default())
     } else {
         std::fs::create_dir_all(&paths.base_dir)?;
-        jfc_knowledge::KnowledgeStore::open(&paths.base_dir.join("knowledge.db"))
+        jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open(&paths.base_dir.join("knowledge.db")))
     }
     .map_err(std::io::Error::other)?;
-    store
-        .upsert_session_artifact(
-            BACKGROUND_AGENT_LAUNCH_SESSION_ID,
-            BACKGROUND_AGENT_LAUNCH_KIND,
-            &key,
-            &json,
-        )
-        .map_err(std::io::Error::other)
+    jfc_knowledge::block_on_knowledge(async {
+        store
+            .upsert_session_artifact(
+                BACKGROUND_AGENT_LAUNCH_SESSION_ID,
+                BACKGROUND_AGENT_LAUNCH_KIND,
+                &key,
+                &json,
+            )
+            .await
+    })
+    .map_err(std::io::Error::other)
 }
 
 fn path_is_executable_file(path: &Path) -> bool {

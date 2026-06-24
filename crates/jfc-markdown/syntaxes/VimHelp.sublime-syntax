@@ -9,7 +9,7 @@ file_extensions:
 # $VIMRUNTIME/syntax/help.vim
 contexts:
   main:
-    - match: '(?<=^\s*)(vim?|ex):\s*([a-z]+(=[^\s:]+)?(\s+|:))+'
+    - match: '^\s*(vim?|ex):\s*([a-z]+(=[^\s:]+)?(\s+|:))+'
       scope: comment.line.modeline.vimhelp
     - match: '^[-A-Z .][-A-Z0-9 .()_]*(?=\s+\*|$)'
       scope: markup.heading.headline.vimhelp
@@ -62,15 +62,15 @@ contexts:
         1: punctuation.definition.link.command.begin.vimhelp
         2: markup.underline.link.command.vimhelp
         3: punctuation.definition.link.command.end.vimhelp
-    - match: '(?<=^|[^a-z"\[])(`)([^`]+)(`)(?=[^a-z\t."'']|$)'
+    - match: '(^|[^a-z"\[])(`)([^`]+)(`)(?=[^a-z\t."'']|$)'
       captures:
-        1: punctuation.definition.link.command.begin.vimhelp
-        2: markup.underline.link.command.vimhelp
-        3: punctuation.definition.link.command.end.vimhelp
-    - match: '(?<=\s*)(.*?)(?=\s?)(~)$'
+        2: punctuation.definition.link.command.begin.vimhelp
+        3: markup.underline.link.command.vimhelp
+        4: punctuation.definition.link.command.end.vimhelp
+    - match: '^\s*(.*?)(\s?)(~)$'
       captures:
         1: markup.heading.header.vimhelp
-        2: punctuation.definition.keyword.vimhelp
+        3: punctuation.definition.keyword.vimhelp
     - match: '(.*) (?=`$)'
       captures:
         1: variable.other.graphic.vimhelp

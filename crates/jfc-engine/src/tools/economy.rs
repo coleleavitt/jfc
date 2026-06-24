@@ -384,6 +384,15 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
             isolation: None, // Worktree already created by SwarmProvider
             parent_task_id: None,
             schema: None,
+            allowed_tools: vec![
+                "Read".to_string(),
+                "Write".to_string(),
+                "Edit".to_string(),
+                "Bash".to_string(),
+                "Grep".to_string(),
+                "Glob".to_string(),
+            ],
+            disallowed_tools: Vec::new(),
             cwd: None,
         };
 

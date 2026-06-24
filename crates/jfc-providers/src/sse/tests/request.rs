@@ -72,6 +72,36 @@ fn build_messages_thinking_shape_includes_signature_regression() {
 }
 
 #[test]
+fn build_messages_omits_blank_text_blocks_robust() {
+    let msg = ProviderMessage {
+        role: ProviderRole::User,
+        content: vec![
+            ProviderContent::Text(String::new()),
+            ProviderContent::Text("  ".into()),
+            ProviderContent::Text("hello".into()),
+        ],
+    };
+    let v = build_messages(&[msg]);
+    let content = v[0]["content"].as_array().unwrap();
+    assert_eq!(content.len(), 1);
+    assert_eq!(content[0]["text"], "hello");
+}
+
+#[test]
+fn build_messages_blank_only_message_uses_placeholder_robust() {
+    let msg = ProviderMessage {
+        role: ProviderRole::User,
+        content: vec![ProviderContent::Text(String::new())],
+    };
+    let v = build_messages(&[msg]);
+    let content = v[0]["content"].as_array().unwrap();
+    assert_eq!(content.len(), 1);
+    assert_eq!(content[0]["type"], "text");
+    assert_eq!(content[0]["text"], ".");
+    assert!(!content[0]["text"].as_str().unwrap().trim().is_empty());
+}
+
+#[test]
 fn build_tools_shape() {
     let tools = vec![ToolDef {
         name: "bash".into(),

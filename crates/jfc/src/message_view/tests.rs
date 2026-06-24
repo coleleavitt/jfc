@@ -6,7 +6,7 @@ use super::core::{
     message_view_total_lines, severity_rank,
 };
 use super::detection::{looks_like_difftastic_output, looks_like_git_diff_output};
-use super::file_tool::{diff_lang, produce_diff_view_lines};
+use super::file_tool::{diff_lang, produce_diff_view_lines, render_diff_skip};
 use super::formatters::{
     produce_command_output_lines, produce_git_diff_output_line_count,
     produce_git_diff_output_lines, produce_grep_output_lines,
@@ -65,7 +65,7 @@ mod diff_lang_tests {
     #[test]
     fn diff_lang_handles_no_extension_robust() {
         let lang = diff_lang(&diff_with_path("Makefile"));
-        assert_eq!(lang.as_deref(), Some("makefile"));
+        assert_eq!(lang.as_deref(), Some("Makefile"));
     }
 }
 
@@ -1300,16 +1300,23 @@ mod helper_tests {
         assert_eq!(changed_rows.len(), 2, "missing changed rows:\n{rendered}");
 
         for (kind, line) in changed_rows {
-            let expected = match kind {
-                DiffLineKind::Removed => ui_tokens.diff_removed,
-                DiffLineKind::Added => ui_tokens.diff_added,
+            let (expected_fg, expected_bg) = match kind {
+                DiffLineKind::Removed => {
+                    (ui_tokens.diff_removed, ui_tokens.diff_removed_background)
+                }
+                DiffLineKind::Added => (ui_tokens.diff_added, ui_tokens.diff_added_background),
                 DiffLineKind::Context => unreachable!(),
             };
+            assert_eq!(
+                line.style.bg,
+                Some(expected_bg),
+                "changed diff row should carry a whole-line diff background:\n{rendered}"
+            );
             for span in line.spans.iter().skip(2) {
                 if span.content.trim().is_empty() {
                     continue;
                 }
-                assert_eq!(span.style.bg, Some(theme.code_bg));
+                assert_eq!(span.style.bg, Some(expected_bg));
             }
 
             let has_syntax_fg = line
@@ -1318,7 +1325,7 @@ mod helper_tests {
                 .skip(2)
                 .filter(|span| !span.content.trim().is_empty())
                 .filter_map(|span| span.style.fg)
-                .any(|fg| fg != expected);
+                .any(|fg| fg != expected_fg);
             assert!(
                 has_syntax_fg,
                 "changed diff content should syntax-highlight code, not paint every token the diff color:\n{rendered}"
@@ -1326,10 +1333,56 @@ mod helper_tests {
             assert!(
                 line.spans
                     .get(1)
-                    .is_some_and(|span| span.style.fg == Some(expected)),
+                    .is_some_and(|span| span.style.fg == Some(expected_fg)
+                        && span.style.bg == Some(expected_bg)),
                 "diff gutter should keep add/remove color:\n{rendered}"
             );
         }
+    }
+
+    #[test]
+    fn structured_diff_changed_rows_fill_rendered_row_background_regression() {
+        let diff = DiffView {
+            file_path: "src/lib.rs".into(),
+            additions: 1,
+            deletions: 1,
+            hunks: vec![DiffHunk {
+                old_start: 10,
+                new_start: 10,
+                header: "@@ -10,1 +10,1 @@".into(),
+                lines: vec![
+                    DiffLine {
+                        kind: DiffLineKind::Removed,
+                        old_line: Some(10),
+                        new_line: None,
+                        content: "let answer = 41;".into(),
+                    },
+                    DiffLine {
+                        kind: DiffLineKind::Added,
+                        old_line: None,
+                        new_line: Some(10),
+                        content: "let answer = 42;".into(),
+                    },
+                ],
+            }],
+        };
+        let theme = Theme::dark();
+        let ui_tokens = theme.claude_ui_tokens();
+        let area = ratatui::layout::Rect::new(0, 0, 80, 4);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+
+        render_diff_skip(&diff, area, theme, &mut buf, 0, true);
+
+        assert_eq!(
+            buf[(79, 2)].bg,
+            ui_tokens.diff_removed_background,
+            "removed row background should fill to the row edge"
+        );
+        assert_eq!(
+            buf[(79, 3)].bg,
+            ui_tokens.diff_added_background,
+            "added row background should fill to the row edge"
+        );
     }
 
     #[test]
@@ -1391,7 +1444,11 @@ mod helper_tests {
         let lines = produce_diff_view_lines(&diff, theme, true, 120);
         let rendered = lines_to_plain(&lines);
 
-        for needle in ["old_value", "new_value"] {
+        let ui_tokens = theme.claude_ui_tokens();
+        for (needle, expected_bg) in [
+            ("old_value", ui_tokens.diff_removed_background),
+            ("new_value", ui_tokens.diff_added_background),
+        ] {
             let row = lines
                 .iter()
                 .find(|line| {
@@ -1409,7 +1466,7 @@ mod helper_tests {
             assert!(
                 content_spans
                     .iter()
-                    .all(|span| span.style.bg == Some(theme.code_bg)),
+                    .all(|span| span.style.bg == Some(expected_bg)),
                 "hunk-highlighted code should keep diff row background:\n{rendered}"
             );
             assert!(
@@ -3209,23 +3266,27 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
     fn ansi_git_diff_add_and_remove_lines_get_distinct_styles() {
         let lines = render_bash_git_diff(ANSI_GIT_DIFF, true);
         let theme = Theme::dark();
+        let ui_tokens = theme.claude_ui_tokens();
 
         let mut add_fg: Option<ratatui::style::Color> = None;
         let mut del_fg: Option<ratatui::style::Color> = None;
+        let mut add_bg: Option<ratatui::style::Color> = None;
+        let mut del_bg: Option<ratatui::style::Color> = None;
         for line in &lines {
             let plain: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
             let first_fg = line.spans.iter().find_map(|s| s.style.fg);
             if plain.starts_with('+') && !plain.starts_with("+++") && add_fg.is_none() {
                 add_fg = first_fg;
+                add_bg = line.style.bg;
             }
             if plain.starts_with('-') && !plain.starts_with("---") && del_fg.is_none() {
                 del_fg = first_fg;
+                del_bg = line.style.bg;
             }
         }
 
         let add = add_fg.expect("expected at least one `+` line with foreground style");
         let del = del_fg.expect("expected at least one `-` line with foreground style");
-        let ui_tokens = theme.claude_ui_tokens();
         assert_ne!(
             add, del,
             "`+` and `-` lines rendered with the same fg color (add={add:?}, del={del:?})",
@@ -3240,6 +3301,8 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
             "`-` remove line should use diffRemoved, got {del:?} (diffRemoved = {:?})",
             ui_tokens.diff_removed,
         );
+        assert_eq!(add_bg, Some(ui_tokens.diff_added_background));
+        assert_eq!(del_bg, Some(ui_tokens.diff_removed_background));
     }
 
     #[test]
@@ -3440,7 +3503,7 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
         let ctx = RenderCtx::from_app(app);
         build_render_items_ctx(&ctx, inner_w)
             .iter()
-            .map(|i| i.height(inner_w))
+            .map(|i| i.height_with_app(inner_w, Some(app)))
             .sum()
     }
 
@@ -3510,6 +3573,7 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
             live_thinking_tokens: 0,
             tool_group_expanded: &groups,
             render_cache: &app.render_cache,
+            diagnostics: &app.engine.diagnostics,
             theme: app.theme,
             brief_mode: false,
             revealed_streaming_lines: None,
@@ -3517,7 +3581,7 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
         let w = 60usize;
         let expected: usize = build_render_items_ctx(&ctx, w)
             .iter()
-            .map(|item| item.height(w))
+            .map(|item| item.height_with_app(w, Some(&app)))
             .sum();
         let mut index = super::height_index::HeightIndex::new();
 

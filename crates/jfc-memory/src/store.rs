@@ -322,13 +322,13 @@ pub fn team_memory_dir(project_root: &Path) -> PathBuf {
 /// canonical store after the MD→DB cutover). Synthesizes `MemoryEntry` from each
 /// row, restoring rich frontmatter from the verbatim `mem_meta` JSON. TTL-expired
 /// entries are filtered (same rule the `.md` loader applied).
-pub fn load_all_memories(project_root: &Path) -> Vec<MemoryEntry> {
-    if let Err(e) = import_legacy_memory_dirs(project_root) {
+pub async fn load_all_memories(project_root: &Path) -> Vec<MemoryEntry> {
+    if let Err(e) = import_legacy_memory_dirs(project_root).await {
         tracing::warn!(target: "jfc::memory", error = %e, "legacy memory import failed");
     }
     let project_key = jfc_knowledge::project_key(project_root);
-    let rows = match jfc_knowledge::KnowledgeStore::open_default() {
-        Ok(store) => store.load_memories(Some(&project_key)).unwrap_or_default(),
+    let rows = match jfc_knowledge::KnowledgeStore::open_default().await {
+        Ok(store) => store.load_memories(Some(&project_key)).await.unwrap_or_default(),
         Err(e) => {
             tracing::warn!(target: "jfc::memory", error = %e, "knowledge store open failed; no memories loaded");
             return Vec::new();
@@ -430,29 +430,29 @@ fn content_hash(body: &str) -> String {
         .to_string()
 }
 
-fn open_store_or_err() -> Result<jfc_knowledge::KnowledgeStore, String> {
-    jfc_knowledge::KnowledgeStore::open_default().map_err(|e| format!("knowledge store: {e}"))
+async fn open_store_or_err() -> Result<jfc_knowledge::KnowledgeStore, String> {
+    jfc_knowledge::KnowledgeStore::open_default().await.map_err(|e| format!("knowledge store: {e}"))
 }
 
-fn import_legacy_memory_dirs(project_root: &Path) -> Result<(), String> {
+async fn import_legacy_memory_dirs(project_root: &Path) -> Result<(), String> {
     import_memory_dir_to_db(
         project_root,
         &user_memory_dir(),
         MemoryLevel::User,
         MemoryScope::Private,
-    )?;
+    ).await?;
     import_memory_dir_to_db(
         project_root,
         &project_memory_dir(project_root),
         MemoryLevel::Project,
         MemoryScope::Private,
-    )?;
+    ).await?;
     import_memory_dir_to_db(
         project_root,
         &team_memory_dir(project_root),
         MemoryLevel::Team,
         MemoryScope::Team,
-    )?;
+    ).await?;
     Ok(())
 }
 
@@ -462,19 +462,20 @@ fn import_legacy_memory_dirs(project_root: &Path) -> Result<(), String> {
 /// file scan with an exact-normalized-content check). Returns
 /// `conflicting_memory_id` so the caller can decide whether to delete the old
 /// row or merge.
-pub fn create_memory_checked(
+pub async fn create_memory_checked(
     level: MemoryLevel,
     memory_type: MemoryType,
     scope: MemoryScope,
     body: &str,
     project_root: &Path,
 ) -> Result<CreateMemoryResult, String> {
-    let store = open_store_or_err()?;
+    let store = open_store_or_err().await?;
     let hash = content_hash(body);
     let conflicting = store
         .find_memory_by_hash(&hash)
+        .await
         .map_err(|e| e.to_string())?;
-    let id = write_memory_row(&store, level, memory_type, scope, body, project_root, &hash)?;
+    let id = write_memory_row(&store, level, memory_type, scope, body, project_root, &hash).await?;
     tracing::info!(
         target: "jfc::memory",
         id = %id,
@@ -491,16 +492,16 @@ pub fn create_memory_checked(
 }
 
 /// Create a new memory row in the DB. Returns the row id.
-pub fn create_memory(
+pub async fn create_memory(
     level: MemoryLevel,
     memory_type: MemoryType,
     scope: MemoryScope,
     body: &str,
     project_root: &Path,
 ) -> Result<String, String> {
-    let store = open_store_or_err()?;
+    let store = open_store_or_err().await?;
     let hash = content_hash(body);
-    let id = write_memory_row(&store, level, memory_type, scope, body, project_root, &hash)?;
+    let id = write_memory_row(&store, level, memory_type, scope, body, project_root, &hash).await?;
     tracing::info!(
         target: "jfc::memory",
         id = %id,
@@ -513,7 +514,7 @@ pub fn create_memory(
 }
 
 /// Insert one memory row, mapping level→project_key + serializing frontmatter.
-fn write_memory_row(
+async fn write_memory_row(
     store: &jfc_knowledge::KnowledgeStore,
     level: MemoryLevel,
     memory_type: MemoryType,
@@ -544,6 +545,7 @@ fn write_memory_row(
             hash,
             meta_json: &meta_json,
         })
+        .await
         .map_err(|e| format!("failed to insert memory: {e}"))?;
     Ok(id)
 }
@@ -551,10 +553,11 @@ fn write_memory_row(
 /// Delete a memory file by path.
 /// Delete a memory by its DB id (the delete-by-id contract after the MD→DB
 /// cutover). Returns an error if no such memory row exists.
-pub fn delete_memory(id: &str) -> Result<(), String> {
-    let store = open_store_or_err()?;
+pub async fn delete_memory(id: &str) -> Result<(), String> {
+    let store = open_store_or_err().await?;
     let removed = store
         .delete_memory_by_id(id)
+        .await
         .map_err(|e| format!("failed to delete memory: {e}"))?;
     if removed == 0 {
         return Err(format!("no memory with id {id}"));
@@ -569,7 +572,7 @@ pub fn delete_memory(id: &str) -> Result<(), String> {
 /// overwritten; the remote copy is written into the local team directory as
 /// `<stem>.conflict-<timestamp>.md` so the next normal memory load exposes it
 /// for manual reconciliation.
-pub fn sync_team_memory(
+pub async fn sync_team_memory(
     project_root: &Path,
     remote_dir: &Path,
 ) -> Result<TeamMemorySyncReport, String> {
@@ -578,7 +581,7 @@ pub fn sync_team_memory(
         .map_err(|e| format!("failed to create local team memory dir: {e}"))?;
     std::fs::create_dir_all(remote_dir)
         .map_err(|e| format!("failed to create remote team memory dir: {e}"))?;
-    export_team_db_memories(project_root, &local_dir)?;
+    export_team_db_memories(project_root, &local_dir).await?;
 
     let mut names = std::collections::BTreeSet::new();
     collect_md_file_names(&local_dir, &mut names)?;
@@ -636,7 +639,7 @@ pub fn sync_team_memory(
         &local_dir,
         MemoryLevel::Team,
         MemoryScope::Team,
-    )?;
+    ).await?;
 
     Ok(report)
 }
@@ -681,8 +684,9 @@ fn collect_md_file_names(
     Ok(())
 }
 
-fn export_team_db_memories(project_root: &Path, local_dir: &Path) -> Result<(), String> {
+async fn export_team_db_memories(project_root: &Path, local_dir: &Path) -> Result<(), String> {
     for mem in load_all_memories(project_root)
+        .await
         .into_iter()
         .filter(|m| m.level == MemoryLevel::Team)
     {
@@ -694,7 +698,7 @@ fn export_team_db_memories(project_root: &Path, local_dir: &Path) -> Result<(), 
     Ok(())
 }
 
-fn import_memory_dir_to_db(
+async fn import_memory_dir_to_db(
     project_root: &Path,
     local_dir: &Path,
     level: MemoryLevel,
@@ -722,7 +726,7 @@ fn import_memory_dir_to_db(
             frontmatter.scope,
             body.trim(),
             project_root,
-        ) {
+        ).await {
             tracing::warn!(
                 target: "jfc::memory",
                 path = %path.display(),
@@ -910,9 +914,9 @@ mod tests {
         EnvGuard::set("JFC_KNOWLEDGE_DB", &tmp.path().join("knowledge.db"))
     }
 
-    #[test]
+    #[tokio::test]
     #[serial_test::serial]
-    fn create_project_memory_persists_db_row_normal() {
+    async fn create_project_memory_persists_db_row_normal() {
         let tmp = TempDir::new().unwrap();
         let _guard = use_temp_knowledge_db(&tmp);
         let root = tmp.path();
@@ -923,9 +927,10 @@ mod tests {
             "Build runs from the workspace root via cargo build.",
             root,
         )
+        .await
         .unwrap();
 
-        let memories = load_all_memories(root);
+        let memories = load_all_memories(root).await;
         let created = memories
             .iter()
             .find(|mem| mem.id.as_deref() == Some(id.as_str()))
@@ -940,9 +945,9 @@ mod tests {
         );
     }
 
-    #[test]
+    #[tokio::test]
     #[serial_test::serial]
-    fn create_user_memory_does_not_write_project_index_robust() {
+    async fn create_user_memory_does_not_write_project_index_robust() {
         let tmp = TempDir::new().unwrap();
         let _guard = use_temp_knowledge_db(&tmp);
         let root = tmp.path();
@@ -954,6 +959,7 @@ mod tests {
             "A user-scoped preference.",
             root,
         )
+        .await
         .unwrap();
         assert!(
             !root.join("MEMORY.md").exists(),
@@ -961,9 +967,9 @@ mod tests {
         );
     }
 
-    #[test]
+    #[tokio::test]
     #[serial_test::serial]
-    fn create_and_load_memory() {
+    async fn create_and_load_memory() {
         let tmp = TempDir::new().unwrap();
         let _guard = use_temp_knowledge_db(&tmp);
         let project = tmp.path().to_path_buf();
@@ -976,10 +982,11 @@ mod tests {
             "Always run tests before committing.",
             &project,
         )
+        .await
         .unwrap();
 
         // Load it back
-        let memories = load_all_memories(&project);
+        let memories = load_all_memories(&project).await;
         let created = memories
             .iter()
             .find(|mem| mem.id.as_deref() == Some(id.as_str()))
@@ -990,9 +997,9 @@ mod tests {
         assert!(created.body.contains("Always run tests before committing."));
     }
 
-    #[test]
+    #[tokio::test]
     #[serial_test::serial]
-    fn delete_memory_works() {
+    async fn delete_memory_works() {
         let tmp = TempDir::new().unwrap();
         let _guard = use_temp_knowledge_db(&tmp);
         let project = tmp.path().to_path_buf();
@@ -1006,24 +1013,27 @@ mod tests {
             "Some fact to be deleted.",
             &project,
         )
+        .await
         .unwrap();
         assert!(
             load_all_memories(&project)
+                .await
                 .iter()
                 .any(|m| m.id.as_deref() == Some(id.as_str())),
             "memory should exist before delete"
         );
 
-        delete_memory(&id).unwrap();
+        delete_memory(&id).await.unwrap();
 
         assert!(
             !load_all_memories(&project)
+                .await
                 .iter()
                 .any(|m| m.id.as_deref() == Some(id.as_str())),
             "memory should be gone after delete"
         );
         // Deleting a nonexistent id surfaces an error.
-        assert!(delete_memory("no-such-id").is_err());
+        assert!(delete_memory("no-such-id").await.is_err());
     }
 
     #[test]

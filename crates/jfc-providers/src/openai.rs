@@ -578,9 +578,9 @@ fn responses_tool(tool: &ToolDef) -> Value {
 
 pub(crate) fn responses_event_stream(resp: reqwest::Response) -> EventStream {
     let event_stream = jfc_anthropic_sdk::sse::response_event_stream(resp)
-        .scan((), |_, result| {
+        .scan(ResponsesStreamState::default(), |state, result| {
             let emitted = match result {
-                Ok(event) => responses_events_from_sse(&event.data),
+                Ok(event) => responses_events_from_sse_with_state(&event.data, state),
                 Err(e) => vec![Err(anyhow::anyhow!("OpenAI SSE stream parse error: {e}"))],
             };
             futures::future::ready(Some(emitted))
@@ -590,7 +590,21 @@ pub(crate) fn responses_event_stream(resp: reqwest::Response) -> EventStream {
     Box::pin(event_stream)
 }
 
+#[derive(Default)]
+struct ResponsesStreamState {
+    saw_tool_call: bool,
+}
+
+#[cfg(test)]
 fn responses_events_from_sse(data: &str) -> Vec<anyhow::Result<StreamEvent>> {
+    let mut state = ResponsesStreamState::default();
+    responses_events_from_sse_with_state(data, &mut state)
+}
+
+fn responses_events_from_sse_with_state(
+    data: &str,
+    state: &mut ResponsesStreamState,
+) -> Vec<anyhow::Result<StreamEvent>> {
     if data.trim() == "[DONE]" || data.is_empty() {
         return Vec::new();
     }
@@ -651,31 +665,27 @@ fn responses_events_from_sse(data: &str) -> Vec<anyhow::Result<StreamEvent>> {
             .get("item")
             .filter(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
             .map(|item| {
-                vec![
-                    Ok(StreamEvent::ToolDone {
-                        index: output_index(&value),
-                        tool_name: item
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string(),
-                        tool_use_id: item
-                            .get("call_id")
-                            .and_then(Value::as_str)
-                            .or_else(|| item.get("id").and_then(Value::as_str))
-                            .unwrap_or_default()
-                            .to_string(),
-                        input_json: item
-                            .get("arguments")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string(),
-                        thought_signature: None,
-                    }),
-                    Ok(StreamEvent::Done {
-                        stop_reason: StopReason::ToolUse,
-                    }),
-                ]
+                state.saw_tool_call = true;
+                vec![Ok(StreamEvent::ToolDone {
+                    index: output_index(&value),
+                    tool_name: item
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    tool_use_id: item
+                        .get("call_id")
+                        .and_then(Value::as_str)
+                        .or_else(|| item.get("id").and_then(Value::as_str))
+                        .unwrap_or_default()
+                        .to_string(),
+                    input_json: item
+                        .get("arguments")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    thought_signature: None,
+                })]
             })
             .unwrap_or_default(),
         "response.completed" => {
@@ -703,7 +713,11 @@ fn responses_events_from_sse(data: &str) -> Vec<anyhow::Result<StreamEvent>> {
                 }));
             }
             events.push(Ok(StreamEvent::Done {
-                stop_reason: StopReason::EndTurn,
+                stop_reason: if state.saw_tool_call {
+                    StopReason::ToolUse
+                } else {
+                    StopReason::EndTurn
+                },
             }));
             events
         }
@@ -1039,14 +1053,17 @@ mod tests {
 
     #[test]
     fn parses_responses_stream_events() {
+        let mut state = ResponsesStreamState::default();
         let text = responses_events_from_sse(
             r#"{"type":"response.output_text.delta","output_index":0,"delta":"hi"}"#,
         );
-        let tool = responses_events_from_sse(
+        let tool = responses_events_from_sse_with_state(
             r#"{"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","call_id":"call_1","name":"inspect","arguments":"{\"path\":\"Cargo.toml\"}"}}"#,
+            &mut state,
         );
-        let done = responses_events_from_sse(
+        let done = responses_events_from_sse_with_state(
             r#"{"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2,"input_tokens_details":{"cached_tokens":7}}}}"#,
+            &mut state,
         );
 
         assert!(
@@ -1055,12 +1072,7 @@ mod tests {
         assert!(
             matches!(tool[0].as_ref().unwrap(), StreamEvent::ToolDone { tool_name, tool_use_id, .. } if tool_name == "inspect" && tool_use_id == "call_1")
         );
-        assert!(matches!(
-            tool[1].as_ref().unwrap(),
-            StreamEvent::Done {
-                stop_reason: StopReason::ToolUse
-            }
-        ));
+        assert_eq!(tool.len(), 1);
         assert!(matches!(
             done[0].as_ref().unwrap(),
             StreamEvent::Usage {
@@ -1070,6 +1082,22 @@ mod tests {
                 ..
             }
         ));
+        assert!(matches!(
+            done[1].as_ref().unwrap(),
+            StreamEvent::Done {
+                stop_reason: StopReason::ToolUse
+            }
+        ));
+    }
+
+    #[test]
+    fn responses_completed_without_tool_call_remains_endturn_normal() {
+        let mut state = ResponsesStreamState::default();
+        let done = responses_events_from_sse_with_state(
+            r#"{"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2}}}"#,
+            &mut state,
+        );
+
         assert!(matches!(
             done[1].as_ref().unwrap(),
             StreamEvent::Done {

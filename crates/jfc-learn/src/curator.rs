@@ -140,7 +140,7 @@ mod tests {
     /// Build a store with one record backdated by `idle_days`. This writes the
     /// legacy `name -> SkillUsage` JSON map and loads it through the import
     /// path so DB-backed callers keep old telemetry.
-    fn store_with(name: &str, by: CreatedBy, idle_days: i64, pinned: bool) -> SkillUsageStore {
+    async fn store_with(name: &str, by: CreatedBy, idle_days: i64, pinned: bool) -> SkillUsageStore {
         let ts = (Utc::now() - Duration::days(idle_days)).to_rfc3339();
         let rec = SkillUsage {
             use_count: 1,
@@ -160,15 +160,15 @@ mod tests {
         let path = SkillUsageStore::path_for(&dir);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, serde_json::to_vec(&map).unwrap()).unwrap();
-        let store = SkillUsageStore::load(&path);
+        let store = SkillUsageStore::load(&path).await;
         std::fs::remove_dir_all(&dir).ok();
         store
     }
 
     // Normal: an agent skill idle past stale_after but under archive_after → Stale.
-    #[test]
-    fn agent_skill_goes_stale_normal() {
-        let store = store_with("s", CreatedBy::Agent, 20, false);
+    #[tokio::test]
+    async fn agent_skill_goes_stale_normal() {
+        let store = store_with("s", CreatedBy::Agent, 20, false).await;
         let plan = plan_transitions(
             &store,
             &CuratorConfig::default(),
@@ -179,9 +179,9 @@ mod tests {
     }
 
     // Normal: idle past archive_after → Archived (even from Active).
-    #[test]
-    fn agent_skill_archives_normal() {
-        let store = store_with("s", CreatedBy::Agent, 45, false);
+    #[tokio::test]
+    async fn agent_skill_archives_normal() {
+        let store = store_with("s", CreatedBy::Agent, 45, false).await;
         let plan = plan_transitions(
             &store,
             &CuratorConfig::default(),
@@ -192,9 +192,9 @@ mod tests {
     }
 
     // Robust: user-created skills are NEVER transitioned, however idle.
-    #[test]
-    fn user_skill_never_transitions_robust() {
-        let store = store_with("s", CreatedBy::User, 365, false);
+    #[tokio::test]
+    async fn user_skill_never_transitions_robust() {
+        let store = store_with("s", CreatedBy::User, 365, false).await;
         let plan = plan_transitions(
             &store,
             &CuratorConfig::default(),
@@ -204,9 +204,9 @@ mod tests {
     }
 
     // Robust: pinned agent skills are exempt.
-    #[test]
-    fn pinned_skill_is_exempt_robust() {
-        let store = store_with("s", CreatedBy::Agent, 365, true);
+    #[tokio::test]
+    async fn pinned_skill_is_exempt_robust() {
+        let store = store_with("s", CreatedBy::Agent, 365, true).await;
         let plan = plan_transitions(
             &store,
             &CuratorConfig::default(),
@@ -216,9 +216,9 @@ mod tests {
     }
 
     // Normal: a fresh agent skill (recently used) is left Active.
-    #[test]
-    fn fresh_skill_stays_active_normal() {
-        let store = store_with("s", CreatedBy::Agent, 1, false);
+    #[tokio::test]
+    async fn fresh_skill_stays_active_normal() {
+        let store = store_with("s", CreatedBy::Agent, 1, false).await;
         let plan = plan_transitions(
             &store,
             &CuratorConfig::default(),
@@ -228,9 +228,9 @@ mod tests {
     }
 
     // Normal: apply_plan mutates the store's states.
-    #[test]
-    fn apply_plan_mutates_state_normal() {
-        let mut store = store_with("s", CreatedBy::Agent, 45, false);
+    #[tokio::test]
+    async fn apply_plan_mutates_state_normal() {
+        let mut store = store_with("s", CreatedBy::Agent, 45, false).await;
         let plan = plan_transitions(
             &store,
             &CuratorConfig::default(),

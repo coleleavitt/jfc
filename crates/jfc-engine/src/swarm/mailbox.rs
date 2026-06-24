@@ -4,7 +4,6 @@
 //! traffic is persisted in `jfc-knowledge.agent_mailbox`, keyed by team+agent.
 
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
 
 use tokio::fs;
 use tracing::{debug, trace};
@@ -65,7 +64,9 @@ pub async fn ensure_inbox_dir(team_name: &str) -> anyhow::Result<()> {
 /// Read all messages from an agent's inbox.
 pub async fn read_mailbox(agent_name: &str, team_name: &str) -> Vec<MailboxMessage> {
     let key = mailbox_key(agent_name, team_name);
-    let rows = match run_mailbox_db(move |store| store.list_agent_mailbox(&key, false)).await {
+    let rows = match run_mailbox_db(move |store| {
+        Box::pin(async move { store.list_agent_mailbox(&key, false).await })
+    }).await {
         Ok(rows) => rows,
         Err(err) => {
             debug!("[Mailbox] Failed to read DB inbox for {agent_name}: {err}");
@@ -106,7 +107,9 @@ pub async fn write_to_mailbox(
     );
 
     let row = mailbox_row(recipient, team_name, message)?;
-    run_mailbox_db(move |store| store.enqueue_agent_mailbox(&row)).await?;
+    run_mailbox_db(move |store| {
+        Box::pin(async move { store.enqueue_agent_mailbox(&row).await })
+    }).await?;
 
     debug!("[Mailbox] Wrote message to {recipient}'s inbox");
     Ok(())
@@ -121,11 +124,13 @@ pub async fn mark_message_read(
 ) -> anyhow::Result<()> {
     let key = mailbox_key(agent_name, team_name);
     run_mailbox_db(move |store| {
-        let rows = store.list_agent_mailbox(&key, false)?;
-        if let Some(row) = rows.get(index) {
-            store.mark_agent_mailbox_read(&row.id)?;
-        }
-        Ok(())
+        Box::pin(async move {
+            let rows = store.list_agent_mailbox(&key, false).await?;
+            if let Some(row) = rows.get(index) {
+                store.mark_agent_mailbox_read(&row.id).await?;
+            }
+            Ok(())
+        })
     })
     .await?;
     Ok(())
@@ -135,8 +140,10 @@ pub async fn mark_message_read(
 pub async fn mark_all_read(agent_name: &str, team_name: &str) -> anyhow::Result<()> {
     let key = mailbox_key(agent_name, team_name);
     run_mailbox_db(move |store| {
-        store.mark_all_agent_mailbox_read(&key)?;
-        Ok(())
+        Box::pin(async move {
+            store.mark_all_agent_mailbox_read(&key).await?;
+            Ok(())
+        })
     })
     .await?;
     Ok(())
@@ -146,8 +153,10 @@ pub async fn mark_all_read(agent_name: &str, team_name: &str) -> anyhow::Result<
 pub async fn clear_mailbox(agent_name: &str, team_name: &str) -> anyhow::Result<()> {
     let key = mailbox_key(agent_name, team_name);
     run_mailbox_db(move |store| {
-        store.clear_agent_mailbox(&key)?;
-        Ok(())
+        Box::pin(async move {
+            store.clear_agent_mailbox(&key).await?;
+            Ok(())
+        })
     })
     .await?;
     debug!("[Mailbox] Cleared inbox for {agent_name}");
@@ -189,36 +198,25 @@ fn row_to_message(row: jfc_knowledge::AgentMailboxRow) -> Option<MailboxMessage>
     Some(message)
 }
 
-async fn run_mailbox_db<T, F>(f: F) -> anyhow::Result<T>
+async fn run_mailbox_db<T, F, Fut>(f: F) -> anyhow::Result<T>
 where
     T: Send + 'static,
-    F: FnOnce(jfc_knowledge::KnowledgeStore) -> jfc_knowledge::Result<T> + Send + 'static,
+    Fut: std::future::Future<Output = jfc_knowledge::Result<T>> + Send + 'static,
+    F: FnOnce(jfc_knowledge::KnowledgeStore) -> Fut + Send + 'static,
 {
-    tokio::task::spawn_blocking(move || -> anyhow::Result<T> {
-        let _guard = mailbox_db_lock()
-            .lock()
-            .map_err(|_| anyhow::anyhow!("mailbox DB lock poisoned"))?;
-        let store = open_mailbox_store().map_err(anyhow::Error::from)?;
-        f(store).map_err(anyhow::Error::from)
-    })
-    .await
-    .map_err(anyhow::Error::from)?
+    let store = open_mailbox_store().await?;
+    f(store).await.map_err(anyhow::Error::from)
 }
 
-fn mailbox_db_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-fn open_mailbox_store() -> jfc_knowledge::Result<jfc_knowledge::KnowledgeStore> {
+async fn open_mailbox_store() -> jfc_knowledge::Result<jfc_knowledge::KnowledgeStore> {
     if let Some(home) = swarm_home_override() {
         let path = home.join(".jfc").join("knowledge.db");
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        return jfc_knowledge::KnowledgeStore::open(&path);
+        return jfc_knowledge::KnowledgeStore::open(&path).await;
     }
-    jfc_knowledge::KnowledgeStore::open_default()
+    jfc_knowledge::KnowledgeStore::open_default().await
 }
 
 // ─── Convenience: send message to leader ─────────────────────────────────────

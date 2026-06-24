@@ -65,7 +65,7 @@ fn project_store(project_root: &Path) -> std::io::Result<jfc_knowledge::Knowledg
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    jfc_knowledge::KnowledgeStore::open(&db_path).map_err(std::io::Error::other)
+    jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open(&db_path)).map_err(std::io::Error::other)
 }
 
 /// Load all durable scheduled tasks from the project DB.
@@ -75,11 +75,13 @@ pub fn load_scheduled_tasks(project_root: &Path) -> Vec<ScheduledTask> {
     let Ok(store) = project_store(project_root) else {
         return Vec::new();
     };
-    if let Ok(Some(row)) = store.get_session_artifact(
-        &project_session_id(project_root),
-        SCHEDULED_TASKS_KIND,
-        SCHEDULED_TASKS_KEY,
-    ) {
+    if let Ok(Some(row)) = jfc_knowledge::block_on_knowledge(async {
+        store.get_session_artifact(
+            &project_session_id(project_root),
+            SCHEDULED_TASKS_KIND,
+            SCHEDULED_TASKS_KEY,
+        ).await
+    }) {
         return serde_json::from_str::<Vec<ScheduledTask>>(&row.value_json).unwrap_or_default();
     }
     let path = scheduled_tasks_path(project_root);
@@ -117,14 +119,18 @@ pub fn load_scheduled_tasks(project_root: &Path) -> Vec<ScheduledTask> {
 pub fn save_scheduled_tasks(project_root: &Path, tasks: &[ScheduledTask]) -> std::io::Result<()> {
     let json = serde_json::to_string(tasks)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
-    project_store(project_root)?
-        .upsert_session_artifact(
-            &project_session_id(project_root),
-            SCHEDULED_TASKS_KIND,
-            SCHEDULED_TASKS_KEY,
-            &json,
-        )
-        .map_err(std::io::Error::other)
+    let store = project_store(project_root)?;
+    jfc_knowledge::block_on_knowledge(async {
+        store
+            .upsert_session_artifact(
+                &project_session_id(project_root),
+                SCHEDULED_TASKS_KIND,
+                SCHEDULED_TASKS_KEY,
+                &json,
+            )
+            .await
+    })
+    .map_err(std::io::Error::other)
 }
 
 /// Add a task to the persisted list (idempotent by `id`).

@@ -33,6 +33,25 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "dhat-heap")]
     let _dhat_profiler = dhat::Profiler::new_heap();
 
+    install_default_crypto_provider();
+
     let cli = cli::Cli::parse();
     cli::run(cli).await
+}
+
+fn install_default_crypto_provider() {
+    match rustls::crypto::ring::default_provider().install_default() {
+        Ok(()) => {}
+        Err(_already_installed) => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn installs_crypto_provider_when_rustls_features_are_ambiguous() {
+        super::install_default_crypto_provider();
+
+        assert!(rustls::crypto::CryptoProvider::get_default().is_some());
+    }
 }

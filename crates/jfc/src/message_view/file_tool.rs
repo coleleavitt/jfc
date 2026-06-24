@@ -190,8 +190,12 @@ fn push_diff_line(
 ) {
     let ui_tokens = t.claude_ui_tokens();
     let (bg_color, fg_color, sigil) = match dl.kind {
-        DiffLineKind::Added => (t.code_bg, ui_tokens.diff_added, "+"),
-        DiffLineKind::Removed => (t.code_bg, ui_tokens.diff_removed, "-"),
+        DiffLineKind::Added => (ui_tokens.diff_added_background, ui_tokens.diff_added, "+"),
+        DiffLineKind::Removed => (
+            ui_tokens.diff_removed_background,
+            ui_tokens.diff_removed,
+            "-",
+        ),
         DiffLineKind::Context => (t.bg, t.text_secondary, " "),
     };
     let lineno = match dl.kind {

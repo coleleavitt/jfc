@@ -35,7 +35,7 @@ pub async fn execute_skill_in(cwd: &Path, name: &str, args: Option<&str>) -> Exe
             }
             // Best-effort usage telemetry (the curator's foundation). Never
             // affects invocation — errors are logged inside record_skill_use.
-            jfc_learn::record_skill_use(cwd, &skill.name);
+            jfc_learn::record_skill_use(cwd, &skill.name).await;
             let memory_root = jfc_memory::project_memory_dir(cwd);
             let context = crate::agents::SkillRenderContext::new(Some(cwd), Some(&memory_root));
             let body = crate::agents::render_skill_invocation(skill, context, args);
@@ -94,6 +94,37 @@ pub fn filter_tools_for_agent(
             !disallowed.iter().any(|d| d.eq_ignore_ascii_case(&t.name))
         })
         .collect()
+}
+
+fn scoped_allowed_tools(agent_allowed: &[String], task_allowed: &[String]) -> Vec<String> {
+    if task_allowed.is_empty() {
+        return agent_allowed.to_vec();
+    }
+    if agent_allowed.is_empty() {
+        return task_allowed.to_vec();
+    }
+    agent_allowed
+        .iter()
+        .filter(|tool| {
+            task_allowed
+                .iter()
+                .any(|task_tool| task_tool.eq_ignore_ascii_case(tool))
+        })
+        .cloned()
+        .collect()
+}
+
+fn scoped_disallowed_tools(agent_disallowed: &[String], task_disallowed: &[String]) -> Vec<String> {
+    let mut disallowed = agent_disallowed.to_vec();
+    for tool in task_disallowed {
+        if !disallowed
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(tool))
+        {
+            disallowed.push(tool.clone());
+        }
+    }
+    disallowed
 }
 
 fn subagent_model_alias(model: &str, provider_name: &str) -> String {
@@ -311,7 +342,7 @@ pub fn selected_subagent_model(
         .map_err(|e| format!("invalid subagent model {raw:?}: {e}"))?;
 
     if let Some(prefix) = spec.provider()
-        && prefix.as_str() != provider_name
+        && !crate::runtime::bootstrap::provider_name_matches_request(provider_name, prefix.as_str())
     {
         return Err(format!(
             "subagent model {aliased:?} targets provider {prefix}, but the active provider is {provider_name}; provider switching for subagents is not wired yet"
@@ -524,10 +555,12 @@ async fn execute_task_inner(
     // Tool catalogue: full list filtered by the agent's allow/disallow.
     // When there's no agent definition we still drop `Task` to avoid
     // recursive subagent spawning, but otherwise pass everything.
-    let (allowed, disallowed): (&[String], &[String]) = match agent_def {
+    let (agent_allowed, agent_disallowed): (&[String], &[String]) = match agent_def {
         Some(a) => (&a.allowed_tools, &a.disallowed_tools),
         None => (&[], &[]),
     };
+    let allowed = scoped_allowed_tools(agent_allowed, &task_input.allowed_tools);
+    let disallowed = scoped_disallowed_tools(agent_disallowed, &task_input.disallowed_tools);
     let schema_required = task_input.schema.is_some();
     if schema_required
         && disallowed
@@ -544,7 +577,7 @@ async fn execute_task_inner(
         .iter()
         .find(|tool| tool.name.eq_ignore_ascii_case("StructuredOutput"))
         .cloned();
-    let mut tools = filter_tools_for_agent(all_tools, allowed, disallowed, allow_nested_task);
+    let mut tools = filter_tools_for_agent(all_tools, &allowed, &disallowed, allow_nested_task);
     if schema_required {
         if !tools
             .iter()
@@ -1377,8 +1410,8 @@ mod tests {
         assert_eq!(out, "Plan:");
     }
 
-    #[test]
-    fn persist_background_result_writes_full_body_to_db_normal() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn persist_background_result_writes_full_body_to_db_normal() {
         let body = "X".repeat(5000);
         let handle = crate::runtime::persist_background_result("toolu_test_abc123", &body)
             .expect("artifact written");
@@ -1387,8 +1420,10 @@ mod tests {
             "db:background-result:toolu_test_abc123"
         );
         let row = jfc_knowledge::KnowledgeStore::open_default()
+            .await
             .unwrap()
             .get_session_artifact("__daemon__", "background_result", "toolu_test_abc123")
+            .await
             .unwrap()
             .expect("read back");
         assert_eq!(
@@ -1413,8 +1448,25 @@ mod tests {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
             cwd: None,
         }
+    }
+
+    #[test]
+    fn scoped_task_tools_narrow_agent_tool_lists_regression() {
+        let allowed = scoped_allowed_tools(
+            &["Read".to_owned(), "Grep".to_owned(), "Edit".to_owned()],
+            &["read".to_owned(), "Bash".to_owned()],
+        );
+        assert_eq!(allowed, vec!["Read"]);
+
+        let disallowed = scoped_disallowed_tools(
+            &["Write".to_owned()],
+            &["write".to_owned(), "Grep".to_owned()],
+        );
+        assert_eq!(disallowed, vec!["Write", "Grep"]);
     }
 
     fn agent_model(model: Option<&str>) -> crate::agents::AgentDef {
@@ -1507,6 +1559,29 @@ mod tests {
 
         assert_eq!(resolved_provider.name(), "openai");
         assert_eq!(resolved_model.as_str(), "gpt-5.2");
+    }
+
+    #[test]
+    fn selected_subagent_provider_model_accepts_anthropic_prefix_under_oauth_regression() {
+        let _guard = env_lock();
+        clear_subagent_model_env();
+
+        let anthropic: std::sync::Arc<dyn jfc_provider::Provider> =
+            std::sync::Arc::new(NamedTestProvider("anthropic-oauth"));
+        let registry = vec![anthropic.clone()];
+
+        let Ok((resolved_provider, resolved_model)) = selected_subagent_provider_model(
+            &task_input(Some("anthropic/claude-opus-4-6")),
+            None,
+            anthropic,
+            jfc_provider::ModelId::new("claude-sonnet-4-6"),
+            &registry,
+        ) else {
+            panic!("anthropic prefix should resolve to OAuth Anthropic provider");
+        };
+
+        assert_eq!(resolved_provider.name(), "anthropic-oauth");
+        assert_eq!(resolved_model.as_str(), "claude-opus-4-6");
     }
 
     #[test]

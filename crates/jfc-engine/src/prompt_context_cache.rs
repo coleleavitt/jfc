@@ -65,7 +65,9 @@ pub fn context_hierarchy(cwd: &Path, extra_dirs: &[PathBuf]) -> ContextHierarchy
 
 pub fn memories(cwd: &Path) -> Vec<MemoryEntry> {
     cached_path_value(MEMORIES.get_or_init(Default::default), cwd, || {
-        crate::memory::load_all_memories(cwd)
+        jfc_knowledge::block_on_knowledge(async {
+            crate::memory::load_all_memories(cwd).await
+        })
     })
 }
 

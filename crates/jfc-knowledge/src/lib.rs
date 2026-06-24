@@ -33,8 +33,14 @@ mod schema;
 pub mod session_mine;
 
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
-use rusqlite::{Connection, OptionalExtension};
+use sqlx::Row;
+use sqlx::AssertSqlSafe;
+use sqlx::sqlite::{
+    SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions, SqliteRow,
+    SqliteSynchronous,
+};
 
 pub use agent_events::{
     AgentEventRow, AgentMailboxRow, AgentSessionRow, ContextEventRow, LearningEventRow,
@@ -50,6 +56,69 @@ pub use record::{Kind, KnowledgeRecord, Outcome, RelKind, Scope};
 // `SessionRow` is defined in this module; re-stated in the public surface for
 // discoverability alongside the other exported types.
 
+/// Run an async knowledge-store future to completion from a **synchronous**
+/// call site (a `Drop` impl, a `Mutex`-guarded persist path, a non-async trait
+/// method).
+///
+/// The knowledge store is async (sqlx), but a handful of callers are
+/// structurally synchronous and cannot be made async without a second viral
+/// cascade. This bridge drives the future on a **dedicated OS thread that owns a
+/// fresh current-thread runtime**. Running on a separate thread is what makes it
+/// safe from *any* context:
+///
+/// - From inside a multi-thread Tokio runtime (JFC's `#[tokio::main]` binary):
+///   the worker thread isn't blocked re-entrantly, and there is no
+///   `block_in_place` requirement.
+/// - From inside a **current-thread** runtime (`#[tokio::test]` default flavor):
+///   a plain `Handle::block_on` / `block_in_place` would panic ("Cannot start a
+///   runtime from within a runtime" / "can call blocking only when running on
+///   the multi-threaded runtime"). The dedicated thread has no ambient runtime,
+///   so its `block_on` is valid.
+/// - From a pure sync context (no runtime at all): same path, works directly.
+///
+/// `F` and its output must be `Send` because they cross the thread boundary —
+/// satisfied by every call site (sqlx `SqlitePool` and its query futures are
+/// `Send`).
+pub fn block_on_knowledge<F>(fut: F) -> F::Output
+where
+    F: std::future::Future + Send,
+    F::Output: Send,
+{
+    use std::sync::OnceLock;
+    use tokio::runtime::Runtime;
+
+    // One persistent multi-thread runtime, shared by every bridge call. This is
+    // load-bearing for the `sqlx` SQLite pool: a pooled connection is bound to
+    // the runtime that created it, and an in-memory (`:memory:`, shared-cache)
+    // database lives only as long as that connection. A fresh runtime-per-call
+    // would tear down a runtime after each bridged operation, dropping the
+    // pool's connection (and, for in-memory stores, destroying the database —
+    // "no such table" on the next read). Reusing one runtime keeps the
+    // connection — and the data — alive across calls.
+    static BRIDGE: OnceLock<Runtime> = OnceLock::new();
+    let runtime = BRIDGE.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("build shared runtime for block_on_knowledge")
+    });
+
+    // Drive the future on a short-lived scoped thread that has NO ambient Tokio
+    // runtime, so `Runtime::block_on` is valid even when the CALLER is inside a
+    // runtime (the app's `#[tokio::main]`, or a `#[tokio::test]` — where a plain
+    // `block_on`/`block_in_place` on the caller thread would panic with "Cannot
+    // start a runtime from within a runtime"). The scoped thread reuses the
+    // shared runtime above (keeping the pool connection alive) and joins before
+    // returning, so `fut` may borrow non-`'static` local state (e.g. `&store`).
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| runtime.block_on(fut))
+            .join()
+            .expect("block_on_knowledge worker thread panicked")
+    })
+}
+
 /// Optional per-scope row cap for [`KnowledgeStore::decay`]. The store grows
 /// **unbounded by default** — `decay` is opt-in maintenance, not an automatic
 /// ceiling. This constant is only used when a caller explicitly chooses to cap.
@@ -64,50 +133,73 @@ pub const DEFAULT_AUTO_PROMOTE_SUPPORT: i64 = 3;
 
 /// A handle to the knowledge database.
 ///
-/// Holds an owned [`Connection`]. SQLite calls are synchronous; callers in the
-/// async engine should wrap usage in `tokio::task::spawn_blocking`. WAL mode +
-/// a busy timeout (set in [`schema::apply_pragmas`]) make concurrent JFC
-/// processes safe.
+/// Holds a [`SqlitePool`] (capped at one connection so writes serialize like the
+/// old single `Connection`, and an in-memory DB isn't dropped under the pool).
+/// All methods are `async`. WAL mode + a busy timeout (set on the connect
+/// options) make concurrent JFC processes safe.
 pub struct KnowledgeStore {
-    conn: Connection,
+    pool: SqlitePool,
 }
 
 impl KnowledgeStore {
-    /// Crate-internal connection accessor, so the split-out `memory` module can
-    /// add `impl KnowledgeStore` methods without the field being `pub`.
-    pub(crate) fn conn(&self) -> &Connection {
-        &self.conn
+    /// Crate-internal pool accessor, so the split-out modules (`memory`,
+    /// `definitions`, `agent_events`) can add `impl KnowledgeStore` methods and
+    /// the `schema` tests can reach the pool without the field being `pub`.
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
     }
 
     /// Open (creating if needed) and migrate the store at the default path
     /// `~/.local/share/jfc/knowledge.db`.
-    pub fn open_default() -> Result<Self> {
+    pub async fn open_default() -> Result<Self> {
         let path = default_db_path();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        Self::open(&path)
+        Self::open(&path).await
     }
 
     /// Open (creating if needed) and migrate the store at `path`.
-    pub fn open(path: &Path) -> Result<Self> {
-        let mut conn = Connection::open(path)?;
-        schema::apply_pragmas(&conn)?;
-        schema::migrate(&mut conn)?;
-        Ok(Self { conn })
+    pub async fn open(path: &Path) -> Result<Self> {
+        let opts = SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal)
+            .foreign_keys(true)
+            .busy_timeout(std::time::Duration::from_secs(5));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await?;
+        schema::migrate(&pool).await?;
+        Ok(Self { pool })
     }
 
     /// An in-memory store — for tests and ephemeral use.
-    pub fn open_in_memory() -> Result<Self> {
-        let mut conn = Connection::open_in_memory()?;
-        schema::apply_pragmas(&conn)?;
-        schema::migrate(&mut conn)?;
-        Ok(Self { conn })
+    ///
+    /// A `sqlite::memory:` database lives only as long as its connection. The
+    /// pool is therefore pinned to exactly one permanent connection
+    /// (`min_connections(1)` + `max_connections(1)`, no idle/max-lifetime
+    /// eviction) so the database isn't destroyed when the pool would otherwise
+    /// reap an idle connection — which happened between a write on one runtime
+    /// and a read driven from the `block_on_knowledge` bridge thread.
+    pub async fn open_in_memory() -> Result<Self> {
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:")?;
+        let pool = SqlitePoolOptions::new()
+            .min_connections(1)
+            .max_connections(1)
+            .idle_timeout(None)
+            .max_lifetime(None)
+            .connect_with(opts)
+            .await?;
+        schema::migrate(&pool).await?;
+        Ok(Self { pool })
     }
 
     /// Insert a record (validated at the boundary).
-    pub fn insert(&self, rec: &KnowledgeRecord) -> Result<()> {
-        query::insert(&self.conn, rec)
+    pub async fn insert(&self, rec: &KnowledgeRecord) -> Result<()> {
+        query::insert(&self.pool, rec).await
     }
 
     /// Fold mined session lessons (`session_mine`) into **project-scoped**
@@ -117,7 +209,7 @@ impl KnowledgeStore {
     /// promotes directly; callers run [`Self::auto_promote`] after compounding
     /// enough verified evidence. Returns
     /// `(inserted, compounded)`.
-    pub fn ingest_mined(
+    pub async fn ingest_mined(
         &self,
         project_key: &str,
         lessons: &[session_mine::MinedLesson],
@@ -134,14 +226,18 @@ impl KnowledgeStore {
             .simple()
             .to_string();
 
-            if self.contains(&id)? {
+            if self.contains(&id).await? {
                 // Compound: bump support, and upgrade outcome if newly verified.
-                self.conn.execute(
+                sqlx::query(
                     "UPDATE knowledge SET use_count = use_count + 1, last_used_ms = ?2, \
                      outcome = CASE WHEN ?3 = 'verified' THEN 'verified' ELSE outcome END \
                      WHERE id = ?1",
-                    rusqlite::params![id, record::now_ms(), lesson.outcome.slug()],
-                )?;
+                )
+                .bind(&id)
+                .bind(record::now_ms())
+                .bind(lesson.outcome.slug())
+                .execute(&self.pool)
+                .await?;
                 compounded += 1;
                 continue;
             }
@@ -157,22 +253,18 @@ impl KnowledgeStore {
             .with_source(format!("mined:session:{}", lesson.session_id));
             rec.id = id;
             rec.tags = lesson.norm_key.clone();
-            self.insert(&rec)?;
+            self.insert(&rec).await?;
             inserted += 1;
         }
         Ok((inserted, compounded))
     }
 
     /// Whether a record id already exists (live or superseded).
-    pub fn contains(&self, id: &str) -> Result<bool> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT 1 FROM knowledge WHERE id = ?1 LIMIT 1",
-                [id],
-                |_| Ok(()),
-            )
-            .optional()?
+    pub async fn contains(&self, id: &str) -> Result<bool> {
+        Ok(sqlx::query("SELECT 1 FROM knowledge WHERE id = ?1 LIMIT 1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
             .is_some())
     }
 
@@ -180,11 +272,11 @@ impl KnowledgeStore {
     /// id (uuid-v5 over its normalized content), so re-running is a no-op: items
     /// already present are skipped, not duplicated. Never deletes any source.
     /// Per-item failures are collected into the report rather than aborting.
-    pub fn import_memories(&self, items: &[ImportableMemory]) -> Result<ImportReport> {
+    pub async fn import_memories(&self, items: &[ImportableMemory]) -> Result<ImportReport> {
         let mut report = ImportReport::default();
         for item in items {
             let id = import::deterministic_id(item);
-            match self.contains(&id) {
+            match self.contains(&id).await {
                 Ok(true) => {
                     report.skipped += 1;
                     continue;
@@ -198,15 +290,18 @@ impl KnowledgeStore {
             let (level, project_key) = import_memory_level(item);
             let hash = import_memory_hash(item);
             let meta_json = import_memory_meta_json(item, &hash);
-            match self.insert_memory(&NewMemory {
-                id,
-                level,
-                project_key,
-                title: &item.title,
-                body: &item.body,
-                hash: &hash,
-                meta_json: &meta_json,
-            }) {
+            match self
+                .insert_memory(&NewMemory {
+                    id,
+                    level,
+                    project_key,
+                    title: &item.title,
+                    body: &item.body,
+                    hash: &hash,
+                    meta_json: &meta_json,
+                })
+                .await
+            {
                 Ok(()) => report.imported += 1,
                 Err(e) => report.errors.push(format!("{}: {e}", item.title)),
             }
@@ -215,15 +310,15 @@ impl KnowledgeStore {
     }
 
     /// Mark `old_id` superseded by `new_id` (immutable revision).
-    pub fn supersede(&self, old_id: &str, new_id: &str) -> Result<()> {
-        query::supersede(&self.conn, old_id, new_id)
+    pub async fn supersede(&self, old_id: &str, new_id: &str) -> Result<()> {
+        query::supersede(&self.pool, old_id, new_id).await
     }
 
     /// Promote a record to global (cross-project) scope. Returns `true` if a
     /// live record was promoted. Used by the explicit `/knowledge promote`
     /// command or an approved proposal.
-    pub fn promote(&self, id: &str) -> Result<bool> {
-        query::promote_to_global(&self.conn, id)
+    pub async fn promote(&self, id: &str) -> Result<bool> {
+        query::promote_to_global(&self.pool, id).await
     }
 
     /// Promote project lessons that have *proven themselves* to global
@@ -236,75 +331,83 @@ impl KnowledgeStore {
     /// is restricted to `Finding`/`Skill`/`Convention`/`Preference` — lessons
     /// whose value transfers. A project-specific fact can still be promoted
     /// deliberately via `/knowledge promote <id>`.
-    pub fn auto_promote(&self, min_support: i64) -> Result<usize> {
-        let n = self.conn.execute(
+    pub async fn auto_promote(&self, min_support: i64) -> Result<usize> {
+        let result = sqlx::query(
             "UPDATE knowledge SET scope = 'global', project_key = NULL, promoted = 1 \
              WHERE scope = 'project' AND superseded_by IS NULL \
                AND outcome = 'verified' AND use_count >= ?1 \
                AND kind IN ('finding','skill','convention','preference')",
-            [min_support],
-        )?;
-        Ok(n)
+        )
+        .bind(min_support)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() as usize)
     }
 
     /// Recall advisory context for `query` (lexical FTS). Eligible rows are
     /// user + global + this-project. Does not bump usage — call [`Self::mark_used`]
     /// on the records you actually surface.
-    pub fn recall(&self, query: &str, filter: &RecallFilter<'_>) -> Result<Vec<KnowledgeRecord>> {
-        query::recall(&self.conn, query, filter)
+    pub async fn recall(
+        &self,
+        query: &str,
+        filter: &RecallFilter<'_>,
+    ) -> Result<Vec<KnowledgeRecord>> {
+        query::recall(&self.pool, query, filter).await
     }
 
     /// Bump usage metrics for records that were surfaced.
-    pub fn mark_used(&self, ids: &[String]) -> Result<()> {
-        query::mark_used(&self.conn, ids)
+    pub async fn mark_used(&self, ids: &[String]) -> Result<()> {
+        query::mark_used(&self.pool, ids).await
     }
 
     /// Bounded-growth maintenance. Returns the number of rows removed.
-    pub fn decay(&mut self, max_age_ms: i64, max_rows_per_scope: i64) -> Result<usize> {
-        query::decay(&mut self.conn, max_age_ms, max_rows_per_scope)
+    pub async fn decay(&self, max_age_ms: i64, max_rows_per_scope: i64) -> Result<usize> {
+        query::decay(&self.pool, max_age_ms, max_rows_per_scope).await
     }
 
     /// Consolidate near-duplicate live records (offline). Returns rows superseded.
-    pub fn consolidate(&mut self) -> Result<usize> {
-        query::consolidate(&mut self.conn)
+    pub async fn consolidate(&self) -> Result<usize> {
+        query::consolidate(&self.pool).await
     }
 
     /// Create a typed link `from -rel-> to` (Obsidian-style graph edge).
-    pub fn link(&self, from_id: &str, to_id: &str, rel: RelKind) -> Result<()> {
-        query::link(&self.conn, from_id, to_id, rel)
+    pub async fn link(&self, from_id: &str, to_id: &str, rel: RelKind) -> Result<()> {
+        query::link(&self.pool, from_id, to_id, rel).await
     }
 
     /// Records one hop out from `id` along outgoing edges (live targets).
-    pub fn linked(&self, id: &str) -> Result<Vec<LinkedRecord>> {
-        query::linked(&self.conn, id)
+    pub async fn linked(&self, id: &str) -> Result<Vec<LinkedRecord>> {
+        query::linked(&self.pool, id).await
     }
 
     /// Ids that link *at* `id` (backlinks — "what depends on this").
-    pub fn backlinks(&self, id: &str) -> Result<Vec<String>> {
-        query::backlinks(&self.conn, id)
+    pub async fn backlinks(&self, id: &str) -> Result<Vec<String>> {
+        query::backlinks(&self.pool, id).await
     }
 
     /// Record/bump a knowledge gap (referenced-but-absent lesson).
-    pub fn note_gap(&self, label: &str, reason: &str) -> Result<()> {
-        query::note_gap(&self.conn, label, reason)
+    pub async fn note_gap(&self, label: &str, reason: &str) -> Result<()> {
+        query::note_gap(&self.pool, label, reason).await
     }
 
     /// Open knowledge gaps, most-referenced first ("what to learn next").
-    pub fn gaps(&self, limit: usize) -> Result<Vec<Gap>> {
-        query::gaps(&self.conn, limit)
+    pub async fn gaps(&self, limit: usize) -> Result<Vec<Gap>> {
+        query::gaps(&self.pool, limit).await
     }
 
     /// Permanently delete one record by id. Returns rows removed (0 or 1).
-    pub fn forget(&self, id: &str) -> Result<usize> {
-        Ok(self
-            .conn
-            .execute("DELETE FROM knowledge WHERE id = ?1", [id])?)
+    pub async fn forget(&self, id: &str) -> Result<usize> {
+        let result = sqlx::query("DELETE FROM knowledge WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() as usize)
     }
 
     /// Upsert a session-index row. The SQLite session catalog is the primary
     /// picker/search surface.
-    pub fn upsert_session(&self, row: &SessionRow) -> Result<()> {
-        self.conn.execute(
+    pub async fn upsert_session(&self, row: &SessionRow) -> Result<()> {
+        sqlx::query(
             "INSERT INTO sessions \
              (id, cwd, model, created_at, updated_at, first_prompt, title, message_count) \
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8) \
@@ -312,102 +415,94 @@ impl KnowledgeStore {
                 cwd=excluded.cwd, model=excluded.model, created_at=excluded.created_at, \
                 updated_at=excluded.updated_at, first_prompt=excluded.first_prompt, \
                 title=excluded.title, message_count=excluded.message_count",
-            rusqlite::params![
-                row.id,
-                row.cwd,
-                row.model,
-                row.created_at,
-                row.updated_at,
-                row.first_prompt,
-                row.title,
-                row.message_count,
-            ],
-        )?;
+        )
+        .bind(&row.id)
+        .bind(&row.cwd)
+        .bind(&row.model)
+        .bind(&row.created_at)
+        .bind(&row.updated_at)
+        .bind(&row.first_prompt)
+        .bind(&row.title)
+        .bind(row.message_count)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     /// One session-index row by id (or `None`).
-    pub fn get_session(&self, id: &str) -> Result<Option<SessionRow>> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT id, cwd, model, created_at, updated_at, first_prompt, title, message_count \
-                 FROM sessions WHERE id = ?1",
-                [id],
-                session_row_from,
-            )
-            .optional()?)
+    pub async fn get_session(&self, id: &str) -> Result<Option<SessionRow>> {
+        sqlx::query(
+            "SELECT id, cwd, model, created_at, updated_at, first_prompt, title, message_count \
+             FROM sessions WHERE id = ?1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .as_ref()
+        .map(session_row_from)
+        .transpose()
     }
 
     /// Session-index rows, most-recently-updated first. `cwd` filters to one
     /// project when `Some`.
-    pub fn list_sessions(&self, cwd: Option<&str>, limit: usize) -> Result<Vec<SessionRow>> {
-        let mut out = Vec::new();
-        if let Some(cwd) = cwd {
-            let mut stmt = self.conn.prepare(
+    pub async fn list_sessions(
+        &self,
+        cwd: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SessionRow>> {
+        let rows = if let Some(cwd) = cwd {
+            sqlx::query(
                 "SELECT id, cwd, model, created_at, updated_at, first_prompt, title, message_count \
                  FROM sessions WHERE cwd = ?1 ORDER BY updated_at DESC LIMIT ?2",
-            )?;
-            let rows = stmt.query_map(rusqlite::params![cwd, limit as i64], session_row_from)?;
-            for r in rows {
-                out.push(r?);
-            }
+            )
+            .bind(cwd)
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?
         } else {
-            let mut stmt = self.conn.prepare(
+            sqlx::query(
                 "SELECT id, cwd, model, created_at, updated_at, first_prompt, title, message_count \
                  FROM sessions ORDER BY updated_at DESC LIMIT ?1",
-            )?;
-            let rows = stmt.query_map([limit as i64], session_row_from)?;
-            for r in rows {
-                out.push(r?);
-            }
-        }
-        Ok(out)
+            )
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?
+        };
+        rows.iter().map(session_row_from).collect()
     }
 
     /// Delete one session row and its transcript. Returns the number of DB rows
     /// removed across session-owned tables.
-    pub fn delete_session(&mut self, id: &str) -> Result<usize> {
-        let tx = self.conn.transaction()?;
-        let agent_scoped = agent_events::delete_session_scoped_rows(&tx, id)?;
-        let artifact_events = tx.execute(
+    pub async fn delete_session(&self, id: &str) -> Result<usize> {
+        let mut tx = self.pool.begin().await?;
+        let agent_scoped =
+            agent_events::delete_session_scoped_rows(&mut tx, id).await?;
+        let mut removed = agent_scoped;
+        for sql in [
             "DELETE FROM session_artifact_events WHERE session_id = ?1",
-            [id],
-        )?;
-        let artifacts = tx.execute("DELETE FROM session_artifacts WHERE session_id = ?1", [id])?;
-        let findings = tx.execute("DELETE FROM session_findings WHERE session_id = ?1", [id])?;
-        let compactions = tx.execute(
+            "DELETE FROM session_artifacts WHERE session_id = ?1",
+            "DELETE FROM session_findings WHERE session_id = ?1",
             "DELETE FROM session_compactions WHERE session_id = ?1",
-            [id],
-        )?;
-        let retrievals = tx.execute(
             "DELETE FROM session_retrieval_events WHERE session_id = ?1",
-            [id],
-        )?;
-        let tools = tx.execute("DELETE FROM session_tool_runs WHERE session_id = ?1", [id])?;
-        let turns = tx.execute("DELETE FROM session_turns WHERE session_id = ?1", [id])?;
-        let events = tx.execute("DELETE FROM session_events WHERE session_id = ?1", [id])?;
-        let messages = tx.execute("DELETE FROM session_messages WHERE session_id = ?1", [id])?;
-        let session = tx.execute("DELETE FROM sessions WHERE id = ?1", [id])?;
-        tx.commit()?;
-        Ok(agent_scoped
-            + artifact_events
-            + artifacts
-            + findings
-            + compactions
-            + retrievals
-            + tools
-            + turns
-            + events
-            + messages
-            + session)
+            "DELETE FROM session_tool_runs WHERE session_id = ?1",
+            "DELETE FROM session_turns WHERE session_id = ?1",
+            "DELETE FROM session_events WHERE session_id = ?1",
+            "DELETE FROM session_messages WHERE session_id = ?1",
+            "DELETE FROM sessions WHERE id = ?1",
+        ] {
+            let result = sqlx::query(sql).bind(id).execute(&mut *tx).await?;
+            removed += result.rows_affected() as usize;
+        }
+        tx.commit().await?;
+        Ok(removed)
     }
 
     /// Count of indexed sessions — for tests/metrics.
-    pub fn session_count(&self) -> Result<i64> {
-        Ok(self
-            .conn
-            .query_row("SELECT count(*) FROM sessions", [], |r| r.get(0))?)
+    pub async fn session_count(&self) -> Result<i64> {
+        Ok(sqlx::query("SELECT count(*) FROM sessions")
+            .fetch_one(&self.pool)
+            .await?
+            .try_get(0)?)
     }
 
     /// Replace a session's full transcript. The header upsert and
@@ -415,13 +510,13 @@ impl KnowledgeStore {
     /// cross-row atomicity the per-file rename never gave us). We delete+reinsert
     /// rather than diff because the engine coalesces messages on save, so seq
     /// numbers can shift; the FTS mirror stays consistent via triggers.
-    pub fn replace_transcript(
-        &mut self,
+    pub async fn replace_transcript(
+        &self,
         row: &SessionRow,
         messages: &[SessionMessage],
     ) -> Result<()> {
-        let tx = self.conn.transaction()?;
-        tx.execute(
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
             "INSERT INTO sessions \
              (id, cwd, model, created_at, updated_at, first_prompt, title, message_count) \
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8) \
@@ -429,207 +524,221 @@ impl KnowledgeStore {
                 cwd=excluded.cwd, model=excluded.model, created_at=excluded.created_at, \
                 updated_at=excluded.updated_at, first_prompt=excluded.first_prompt, \
                 title=excluded.title, message_count=excluded.message_count",
-            rusqlite::params![
-                row.id,
-                row.cwd,
-                row.model,
-                row.created_at,
-                row.updated_at,
-                row.first_prompt,
-                row.title,
-                row.message_count,
-            ],
-        )?;
-        tx.execute(
+        )
+        .bind(&row.id)
+        .bind(&row.cwd)
+        .bind(&row.model)
+        .bind(&row.created_at)
+        .bind(&row.updated_at)
+        .bind(&row.first_prompt)
+        .bind(&row.title)
+        .bind(row.message_count)
+        .execute(&mut *tx)
+        .await?;
+        for sql in [
             "DELETE FROM session_messages WHERE session_id = ?1",
-            [&row.id],
-        )?;
-        tx.execute(
             "DELETE FROM session_events WHERE session_id = ?1",
-            [&row.id],
-        )?;
-        tx.execute("DELETE FROM session_turns WHERE session_id = ?1", [&row.id])?;
-        tx.execute(
+            "DELETE FROM session_turns WHERE session_id = ?1",
             "DELETE FROM session_tool_runs WHERE session_id = ?1",
-            [&row.id],
-        )?;
-        agent_events::clear_derived_context_events(&tx, &row.id)?;
-        {
-            let mut stmt = tx.prepare(
+        ] {
+            sqlx::query(sql).bind(&row.id).execute(&mut *tx).await?;
+        }
+        agent_events::clear_derived_context_events(&mut tx, &row.id).await?;
+        for m in messages {
+            sqlx::query(
                 "INSERT INTO session_messages (session_id, seq, role, content, meta) \
                  VALUES (?1,?2,?3,?4,?5)",
-            )?;
-            for m in messages {
-                stmt.execute(rusqlite::params![row.id, m.seq, m.role, m.content, m.meta])?;
-            }
+            )
+            .bind(&row.id)
+            .bind(m.seq)
+            .bind(&m.role)
+            .bind(&m.content)
+            .bind(&m.meta)
+            .execute(&mut *tx)
+            .await?;
         }
-        insert_derived_session_rows(&tx, row, messages)?;
-        agent_events::insert_context_events_from_messages(&tx, row, messages, record::now_ms())?;
-        tx.commit()?;
+        insert_derived_session_rows(&mut tx, row, messages).await?;
+        agent_events::insert_context_events_from_messages(&mut tx, row, messages, record::now_ms())
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 
     /// Load a session's full transcript in `seq` order (resume path, post-flip).
-    pub fn load_transcript(&self, session_id: &str) -> Result<Vec<SessionMessage>> {
-        let mut stmt = self.conn.prepare(
+    pub async fn load_transcript(&self, session_id: &str) -> Result<Vec<SessionMessage>> {
+        let rows = sqlx::query(
             "SELECT seq, role, content, meta FROM session_messages \
              WHERE session_id = ?1 ORDER BY seq ASC",
-        )?;
-        let rows = stmt.query_map([session_id], |r| {
-            Ok(SessionMessage {
-                seq: r.get(0)?,
-                role: r.get(1)?,
-                content: r.get(2)?,
-                meta: r.get(3)?,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(SessionMessage {
+                    seq: r.try_get(0)?,
+                    role: r.try_get(1)?,
+                    content: r.try_get(2)?,
+                    meta: r.try_get(3)?,
+                })
             })
-        })?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r?);
-        }
-        Ok(out)
+            .collect()
     }
 
     /// Whether a session has any transcript rows (parity bookkeeping).
-    pub fn has_transcript(&self, session_id: &str) -> Result<bool> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT 1 FROM session_messages WHERE session_id = ?1 LIMIT 1",
-                [session_id],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some())
+    pub async fn has_transcript(&self, session_id: &str) -> Result<bool> {
+        Ok(
+            sqlx::query("SELECT 1 FROM session_messages WHERE session_id = ?1 LIMIT 1")
+                .bind(session_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .is_some(),
+        )
     }
 
-    pub fn list_session_events(
+    pub async fn list_session_events(
         &self,
         session_id: &str,
         limit: usize,
     ) -> Result<Vec<SessionEventRow>> {
-        let mut stmt = self.conn.prepare(
+        let rows = sqlx::query(
             "SELECT id, session_id, seq, kind, created_at_ms, payload \
              FROM session_events WHERE session_id = ?1 ORDER BY seq ASC, created_at_ms ASC \
              LIMIT ?2",
-        )?;
-        let rows = stmt.query_map(rusqlite::params![session_id, limit as i64], |r| {
-            Ok(SessionEventRow {
-                id: r.get(0)?,
-                session_id: r.get(1)?,
-                seq: r.get(2)?,
-                kind: r.get(3)?,
-                created_at_ms: r.get(4)?,
-                payload: r.get(5)?,
+        )
+        .bind(session_id)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(SessionEventRow {
+                    id: r.try_get(0)?,
+                    session_id: r.try_get(1)?,
+                    seq: r.try_get(2)?,
+                    kind: r.try_get(3)?,
+                    created_at_ms: r.try_get(4)?,
+                    payload: r.try_get(5)?,
+                })
             })
-        })?;
-        collect_rows(rows)
+            .collect()
     }
 
-    pub fn list_session_turns(&self, session_id: &str) -> Result<Vec<SessionTurnRow>> {
-        let mut stmt = self.conn.prepare(
+    pub async fn list_session_turns(&self, session_id: &str) -> Result<Vec<SessionTurnRow>> {
+        let rows = sqlx::query(
             "SELECT session_id, turn_index, user_seq, assistant_seq, user_text, assistant_text, \
                     status, model, created_at_ms \
              FROM session_turns WHERE session_id = ?1 ORDER BY turn_index ASC",
-        )?;
-        let rows = stmt.query_map([session_id], |r| {
-            Ok(SessionTurnRow {
-                session_id: r.get(0)?,
-                turn_index: r.get(1)?,
-                user_seq: r.get(2)?,
-                assistant_seq: r.get(3)?,
-                user_text: r.get(4)?,
-                assistant_text: r.get(5)?,
-                status: r.get(6)?,
-                model: r.get(7)?,
-                created_at_ms: r.get(8)?,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(SessionTurnRow {
+                    session_id: r.try_get(0)?,
+                    turn_index: r.try_get(1)?,
+                    user_seq: r.try_get(2)?,
+                    assistant_seq: r.try_get(3)?,
+                    user_text: r.try_get(4)?,
+                    assistant_text: r.try_get(5)?,
+                    status: r.try_get(6)?,
+                    model: r.try_get(7)?,
+                    created_at_ms: r.try_get(8)?,
+                })
             })
-        })?;
-        collect_rows(rows)
+            .collect()
     }
 
-    pub fn list_session_tool_runs(&self, session_id: &str) -> Result<Vec<SessionToolRunRow>> {
-        let mut stmt = self.conn.prepare(
+    pub async fn list_session_tool_runs(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<SessionToolRunRow>> {
+        let rows = sqlx::query(
             "SELECT id, session_id, message_seq, part_index, tool_call_id, runtime_id, kind, \
                     status, input_json, output_json, duration_ms, created_at_ms \
              FROM session_tool_runs WHERE session_id = ?1 \
              ORDER BY message_seq ASC, part_index ASC",
-        )?;
-        let rows = stmt.query_map([session_id], |r| {
-            Ok(SessionToolRunRow {
-                id: r.get(0)?,
-                session_id: r.get(1)?,
-                message_seq: r.get(2)?,
-                part_index: r.get(3)?,
-                tool_call_id: r.get(4)?,
-                runtime_id: r.get(5)?,
-                kind: r.get(6)?,
-                status: r.get(7)?,
-                input_json: r.get(8)?,
-                output_json: r.get(9)?,
-                duration_ms: r.get(10)?,
-                created_at_ms: r.get(11)?,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(SessionToolRunRow {
+                    id: r.try_get(0)?,
+                    session_id: r.try_get(1)?,
+                    message_seq: r.try_get(2)?,
+                    part_index: r.try_get(3)?,
+                    tool_call_id: r.try_get(4)?,
+                    runtime_id: r.try_get(5)?,
+                    kind: r.try_get(6)?,
+                    status: r.try_get(7)?,
+                    input_json: r.try_get(8)?,
+                    output_json: r.try_get(9)?,
+                    duration_ms: r.try_get(10)?,
+                    created_at_ms: r.try_get(11)?,
+                })
             })
-        })?;
-        collect_rows(rows)
+            .collect()
     }
 
-    pub fn record_retrieval_event(&self, event: &SessionRetrievalEvent) -> Result<()> {
-        self.conn.execute(
+    pub async fn record_retrieval_event(&self, event: &SessionRetrievalEvent) -> Result<()> {
+        sqlx::query(
             "INSERT INTO session_retrieval_events \
              (id, session_id, query, source, result_count, payload, created_at_ms) \
              VALUES (?1,?2,?3,?4,?5,?6,?7)",
-            rusqlite::params![
-                event.id,
-                event.session_id,
-                event.query,
-                event.source,
-                event.result_count,
-                event.payload,
-                event.created_at_ms,
-            ],
-        )?;
+        )
+        .bind(&event.id)
+        .bind(&event.session_id)
+        .bind(&event.query)
+        .bind(&event.source)
+        .bind(event.result_count)
+        .bind(&event.payload)
+        .bind(event.created_at_ms)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    pub fn record_compaction(&self, compaction: &SessionCompactionRow) -> Result<()> {
-        self.conn.execute(
+    pub async fn record_compaction(&self, compaction: &SessionCompactionRow) -> Result<()> {
+        sqlx::query(
             "INSERT INTO session_compactions \
              (id, session_id, before_tokens, after_tokens, summary, payload, created_at_ms) \
              VALUES (?1,?2,?3,?4,?5,?6,?7)",
-            rusqlite::params![
-                compaction.id,
-                compaction.session_id,
-                compaction.before_tokens,
-                compaction.after_tokens,
-                compaction.summary,
-                compaction.payload,
-                compaction.created_at_ms,
-            ],
-        )?;
+        )
+        .bind(&compaction.id)
+        .bind(&compaction.session_id)
+        .bind(compaction.before_tokens)
+        .bind(compaction.after_tokens)
+        .bind(&compaction.summary)
+        .bind(&compaction.payload)
+        .bind(compaction.created_at_ms)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    pub fn record_session_finding(&self, finding: &SessionFindingRow) -> Result<()> {
-        self.conn.execute(
+    pub async fn record_session_finding(&self, finding: &SessionFindingRow) -> Result<()> {
+        sqlx::query(
             "INSERT INTO session_findings \
              (id, session_id, kind, summary, evidence, status, created_at_ms, resolved_at_ms) \
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-            rusqlite::params![
-                finding.id,
-                finding.session_id,
-                finding.kind,
-                finding.summary,
-                finding.evidence,
-                finding.status,
-                finding.created_at_ms,
-                finding.resolved_at_ms,
-            ],
-        )?;
+        )
+        .bind(&finding.id)
+        .bind(&finding.session_id)
+        .bind(&finding.kind)
+        .bind(&finding.summary)
+        .bind(&finding.evidence)
+        .bind(&finding.status)
+        .bind(finding.created_at_ms)
+        .bind(finding.resolved_at_ms)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    pub fn upsert_session_artifact(
+    pub async fn upsert_session_artifact(
         &self,
         session_id: &str,
         kind: &str,
@@ -637,80 +746,101 @@ impl KnowledgeStore {
         value_json: &str,
     ) -> Result<()> {
         let now = record::now_ms();
-        self.conn.execute(
+        sqlx::query(
             "INSERT INTO session_artifacts \
              (session_id, kind, key, value_json, created_at_ms, updated_at_ms) \
              VALUES (?1,?2,?3,?4,?5,?5) \
              ON CONFLICT(session_id, kind, key) DO UPDATE SET \
                 value_json=excluded.value_json, updated_at_ms=excluded.updated_at_ms",
-            rusqlite::params![session_id, kind, key, value_json, now],
-        )?;
+        )
+        .bind(session_id)
+        .bind(kind)
+        .bind(key)
+        .bind(value_json)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    pub fn get_session_artifact(
+    pub async fn get_session_artifact(
         &self,
         session_id: &str,
         kind: &str,
         key: &str,
     ) -> Result<Option<SessionArtifactRow>> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT session_id, kind, key, value_json, created_at_ms, updated_at_ms \
-                 FROM session_artifacts WHERE session_id = ?1 AND kind = ?2 AND key = ?3",
-                rusqlite::params![session_id, kind, key],
-                session_artifact_from,
-            )
-            .optional()?)
+        sqlx::query(
+            "SELECT session_id, kind, key, value_json, created_at_ms, updated_at_ms \
+             FROM session_artifacts WHERE session_id = ?1 AND kind = ?2 AND key = ?3",
+        )
+        .bind(session_id)
+        .bind(kind)
+        .bind(key)
+        .fetch_optional(&self.pool)
+        .await?
+        .as_ref()
+        .map(session_artifact_from)
+        .transpose()
     }
 
-    pub fn list_session_artifacts(
+    pub async fn list_session_artifacts(
         &self,
         session_id: &str,
         kind: &str,
         limit: usize,
     ) -> Result<Vec<SessionArtifactRow>> {
-        let mut stmt = self.conn.prepare(
+        let rows = sqlx::query(
             "SELECT session_id, kind, key, value_json, created_at_ms, updated_at_ms \
              FROM session_artifacts WHERE session_id = ?1 AND kind = ?2 \
              ORDER BY updated_at_ms DESC LIMIT ?3",
-        )?;
-        let rows = stmt.query_map(
-            rusqlite::params![session_id, kind, limit as i64],
-            session_artifact_from,
-        )?;
-        collect_rows(rows)
+        )
+        .bind(session_id)
+        .bind(kind)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(session_artifact_from).collect()
     }
 
-    pub fn delete_session_artifact(
+    pub async fn delete_session_artifact(
         &self,
         session_id: &str,
         kind: &str,
         key: &str,
     ) -> Result<usize> {
-        Ok(self.conn.execute(
+        let result = sqlx::query(
             "DELETE FROM session_artifacts WHERE session_id = ?1 AND kind = ?2 AND key = ?3",
-            rusqlite::params![session_id, kind, key],
-        )?)
+        )
+        .bind(session_id)
+        .bind(kind)
+        .bind(key)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() as usize)
     }
 
-    pub fn append_session_artifact_event(
+    pub async fn append_session_artifact_event(
         &self,
         session_id: &str,
         kind: &str,
         key: &str,
         value_json: &str,
     ) -> Result<i64> {
-        self.conn.execute(
+        let result = sqlx::query(
             "INSERT INTO session_artifact_events (session_id, kind, key, value_json, created_at_ms) \
              VALUES (?1,?2,?3,?4,?5)",
-            rusqlite::params![session_id, kind, key, value_json, record::now_ms()],
-        )?;
-        Ok(self.conn.last_insert_rowid())
+        )
+        .bind(session_id)
+        .bind(kind)
+        .bind(key)
+        .bind(value_json)
+        .bind(record::now_ms())
+        .execute(&self.pool)
+        .await?;
+        Ok(result.last_insert_rowid())
     }
 
-    pub fn list_session_artifact_events(
+    pub async fn list_session_artifact_events(
         &self,
         session_id: &str,
         kind: &str,
@@ -718,40 +848,36 @@ impl KnowledgeStore {
         limit: usize,
     ) -> Result<Vec<SessionArtifactEventRow>> {
         let limit = limit as i64;
-        let mut out = Vec::new();
-        if let Some(key) = key {
-            let mut stmt = self.conn.prepare(
+        let rows = if let Some(key) = key {
+            sqlx::query(
                 "SELECT id, session_id, kind, key, value_json, created_at_ms \
                  FROM session_artifact_events \
                  WHERE session_id = ?1 AND kind = ?2 AND key = ?3 \
                  ORDER BY id ASC LIMIT ?4",
-            )?;
-            let rows = stmt.query_map(
-                rusqlite::params![session_id, kind, key, limit],
-                session_artifact_event_from,
-            )?;
-            for row in rows {
-                out.push(row?);
-            }
+            )
+            .bind(session_id)
+            .bind(kind)
+            .bind(key)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
         } else {
-            let mut stmt = self.conn.prepare(
+            sqlx::query(
                 "SELECT id, session_id, kind, key, value_json, created_at_ms \
                  FROM session_artifact_events \
                  WHERE session_id = ?1 AND kind = ?2 \
                  ORDER BY id ASC LIMIT ?3",
-            )?;
-            let rows = stmt.query_map(
-                rusqlite::params![session_id, kind, limit],
-                session_artifact_event_from,
-            )?;
-            for row in rows {
-                out.push(row?);
-            }
-        }
-        Ok(out)
+            )
+            .bind(session_id)
+            .bind(kind)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
+        };
+        rows.iter().map(session_artifact_event_from).collect()
     }
 
-    pub fn list_recent_session_artifact_events(
+    pub async fn list_recent_session_artifact_events(
         &self,
         session_id: &str,
         kind: &str,
@@ -759,61 +885,68 @@ impl KnowledgeStore {
         limit: usize,
     ) -> Result<Vec<SessionArtifactEventRow>> {
         let limit = limit as i64;
-        let mut out = Vec::new();
-        if let Some(key) = key {
-            let mut stmt = self.conn.prepare(
+        let rows = if let Some(key) = key {
+            sqlx::query(
                 "SELECT id, session_id, kind, key, value_json, created_at_ms \
                  FROM session_artifact_events \
                  WHERE session_id = ?1 AND kind = ?2 AND key = ?3 \
                  ORDER BY id DESC LIMIT ?4",
-            )?;
-            let rows = stmt.query_map(
-                rusqlite::params![session_id, kind, key, limit],
-                session_artifact_event_from,
-            )?;
-            for row in rows {
-                out.push(row?);
-            }
+            )
+            .bind(session_id)
+            .bind(kind)
+            .bind(key)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
         } else {
-            let mut stmt = self.conn.prepare(
+            sqlx::query(
                 "SELECT id, session_id, kind, key, value_json, created_at_ms \
                  FROM session_artifact_events \
                  WHERE session_id = ?1 AND kind = ?2 \
                  ORDER BY id DESC LIMIT ?3",
-            )?;
-            let rows = stmt.query_map(
-                rusqlite::params![session_id, kind, limit],
-                session_artifact_event_from,
-            )?;
-            for row in rows {
-                out.push(row?);
-            }
-        }
+            )
+            .bind(session_id)
+            .bind(kind)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
+        };
+        let mut out: Vec<SessionArtifactEventRow> =
+            rows.iter().map(session_artifact_event_from).collect::<Result<_>>()?;
         out.reverse();
         Ok(out)
     }
 
-    pub fn clear_session_artifact_events(
+    pub async fn clear_session_artifact_events(
         &self,
         session_id: &str,
         kind: &str,
         key: Option<&str>,
     ) -> Result<usize> {
-        if let Some(key) = key {
-            return Ok(self.conn.execute(
+        let result = if let Some(key) = key {
+            sqlx::query(
                 "DELETE FROM session_artifact_events \
                  WHERE session_id = ?1 AND kind = ?2 AND key = ?3",
-                rusqlite::params![session_id, kind, key],
-            )?);
-        }
-        Ok(self.conn.execute(
-            "DELETE FROM session_artifact_events WHERE session_id = ?1 AND kind = ?2",
-            rusqlite::params![session_id, kind],
-        )?)
+            )
+            .bind(session_id)
+            .bind(kind)
+            .bind(key)
+            .execute(&self.pool)
+            .await?
+        } else {
+            sqlx::query(
+                "DELETE FROM session_artifact_events WHERE session_id = ?1 AND kind = ?2",
+            )
+            .bind(session_id)
+            .bind(kind)
+            .execute(&self.pool)
+            .await?
+        };
+        Ok(result.rows_affected() as usize)
     }
 
     /// Session ids whose transcript matches an FTS query (substring search path).
-    pub fn search_transcripts(&self, query: &str, limit: usize) -> Result<Vec<String>> {
+    pub async fn search_transcripts(&self, query: &str, limit: usize) -> Result<Vec<String>> {
         let terms = query
             .split_whitespace()
             .filter(|t| t.len() >= 2)
@@ -823,41 +956,44 @@ impl KnowledgeStore {
         if terms.is_empty() {
             return Ok(Vec::new());
         }
-        let mut stmt = self.conn.prepare(
+        let rows = sqlx::query(
             "SELECT DISTINCT m.session_id FROM session_messages_fts f \
              JOIN session_messages m ON m.rowid = f.rowid \
              WHERE session_messages_fts MATCH ?1 LIMIT ?2",
-        )?;
-        let rows = stmt.query_map(rusqlite::params![terms, limit as i64], |r| {
-            r.get::<_, String>(0)
-        })?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r?);
-        }
-        Ok(out)
+        )
+        .bind(&terms)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(|r| Ok(r.try_get::<String, _>(0)?)).collect()
     }
 
     /// Fast, consistent file-level backup (council decision 5: one DB is a single
     /// failure domain, so keep a recoverable snapshot). `VACUUM INTO` writes a
     /// fully-consistent copy without blocking writers for long.
-    pub fn backup_to(&self, path: &Path) -> Result<()> {
-        self.conn
-            .execute("VACUUM INTO ?1", [path.to_string_lossy().as_ref()])?;
+    pub async fn backup_to(&self, path: &Path) -> Result<()> {
+        // SQLite's `VACUUM INTO` does not accept a bound parameter for the target
+        // path (the bind silently no-ops and no file is written), so the path is
+        // inlined. Single-quotes are SQL-escaped to keep this injection-safe even
+        // though the caller controls the path.
+        // `VACUUM INTO` can't be a prepared statement; run it via `raw_sql`.
+        let target = path.to_string_lossy().replace('\'', "''");
+        sqlx::raw_sql(AssertSqlSafe(format!("VACUUM INTO '{target}'")))
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
     /// Whether an autonomous maintenance pass is due for `project_key` (no pass
     /// within `throttle_ms`). True on the first ever run.
-    pub fn maintain_due(&self, project_key: &str, throttle_ms: i64) -> Result<bool> {
-        let last: Option<i64> = self
-            .conn
-            .query_row(
-                "SELECT last_run_ms FROM maintain_state WHERE project_key = ?1",
-                [project_key],
-                |r| r.get(0),
-            )
-            .optional()?;
+    pub async fn maintain_due(&self, project_key: &str, throttle_ms: i64) -> Result<bool> {
+        let last: Option<i64> =
+            sqlx::query("SELECT last_run_ms FROM maintain_state WHERE project_key = ?1")
+                .bind(project_key)
+                .fetch_optional(&self.pool)
+                .await?
+                .map(|r| r.try_get(0))
+                .transpose()?;
         Ok(match last {
             Some(ts) => record::now_ms() - ts >= throttle_ms,
             None => true,
@@ -865,22 +1001,26 @@ impl KnowledgeStore {
     }
 
     /// Record that a maintenance pass ran now for `project_key`.
-    pub fn stamp_maintain(&self, project_key: &str) -> Result<()> {
-        self.conn.execute(
+    pub async fn stamp_maintain(&self, project_key: &str) -> Result<()> {
+        sqlx::query(
             "INSERT INTO maintain_state (project_key, last_run_ms) VALUES (?1, ?2) \
              ON CONFLICT(project_key) DO UPDATE SET last_run_ms = ?2",
-            rusqlite::params![project_key, record::now_ms()],
-        )?;
+        )
+        .bind(project_key)
+        .bind(record::now_ms())
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     /// Count of live (non-superseded) records — for tests/metrics.
-    pub fn live_count(&self) -> Result<i64> {
-        Ok(self.conn.query_row(
-            "SELECT count(*) FROM knowledge WHERE superseded_by IS NULL",
-            [],
-            |r| r.get(0),
-        )?)
+    pub async fn live_count(&self) -> Result<i64> {
+        Ok(
+            sqlx::query("SELECT count(*) FROM knowledge WHERE superseded_by IS NULL")
+                .fetch_one(&self.pool)
+                .await?
+                .try_get(0)?,
+        )
     }
 }
 
@@ -952,16 +1092,16 @@ pub struct SessionRow {
     pub message_count: i64,
 }
 
-fn session_row_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRow> {
+fn session_row_from(row: &SqliteRow) -> Result<SessionRow> {
     Ok(SessionRow {
-        id: row.get(0)?,
-        cwd: row.get(1)?,
-        model: row.get(2)?,
-        created_at: row.get(3)?,
-        updated_at: row.get(4)?,
-        first_prompt: row.get(5)?,
-        title: row.get(6)?,
-        message_count: row.get(7)?,
+        id: row.try_get(0)?,
+        cwd: row.try_get(1)?,
+        model: row.try_get(2)?,
+        created_at: row.try_get(3)?,
+        updated_at: row.try_get(4)?,
+        first_prompt: row.try_get(5)?,
+        title: row.try_get(6)?,
+        message_count: row.try_get(7)?,
     })
 }
 
@@ -1069,124 +1209,112 @@ pub struct SessionArtifactEventRow {
     pub created_at_ms: i64,
 }
 
-fn session_artifact_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionArtifactRow> {
+fn session_artifact_from(row: &SqliteRow) -> Result<SessionArtifactRow> {
     Ok(SessionArtifactRow {
-        session_id: row.get(0)?,
-        kind: row.get(1)?,
-        key: row.get(2)?,
-        value_json: row.get(3)?,
-        created_at_ms: row.get(4)?,
-        updated_at_ms: row.get(5)?,
+        session_id: row.try_get(0)?,
+        kind: row.try_get(1)?,
+        key: row.try_get(2)?,
+        value_json: row.try_get(3)?,
+        created_at_ms: row.try_get(4)?,
+        updated_at_ms: row.try_get(5)?,
     })
 }
 
-fn session_artifact_event_from(
-    row: &rusqlite::Row<'_>,
-) -> rusqlite::Result<SessionArtifactEventRow> {
+fn session_artifact_event_from(row: &SqliteRow) -> Result<SessionArtifactEventRow> {
     Ok(SessionArtifactEventRow {
-        id: row.get(0)?,
-        session_id: row.get(1)?,
-        kind: row.get(2)?,
-        key: row.get(3)?,
-        value_json: row.get(4)?,
-        created_at_ms: row.get(5)?,
+        id: row.try_get(0)?,
+        session_id: row.try_get(1)?,
+        kind: row.try_get(2)?,
+        key: row.try_get(3)?,
+        value_json: row.try_get(4)?,
+        created_at_ms: row.try_get(5)?,
     })
 }
 
-fn collect_rows<T>(
-    rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>>,
-) -> Result<Vec<T>> {
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(out)
-}
-
-fn insert_derived_session_rows(
-    tx: &rusqlite::Transaction<'_>,
+async fn insert_derived_session_rows(
+    tx: &mut sqlx::sqlite::SqliteConnection,
     row: &SessionRow,
     messages: &[SessionMessage],
 ) -> Result<()> {
     let created_at_ms = record::now_ms();
-    insert_session_events(tx, row, messages, created_at_ms)?;
-    insert_session_turns(tx, row, messages, created_at_ms)?;
-    insert_session_tool_runs(tx, row, messages, created_at_ms)?;
+    insert_session_events(tx, row, messages, created_at_ms).await?;
+    insert_session_turns(tx, row, messages, created_at_ms).await?;
+    insert_session_tool_runs(tx, row, messages, created_at_ms).await?;
     Ok(())
 }
 
-fn insert_session_events(
-    tx: &rusqlite::Transaction<'_>,
+async fn insert_session_events(
+    tx: &mut sqlx::sqlite::SqliteConnection,
     row: &SessionRow,
     messages: &[SessionMessage],
     created_at_ms: i64,
 ) -> Result<()> {
-    let mut stmt = tx.prepare(
-        "INSERT INTO session_events (id, session_id, seq, kind, created_at_ms, payload) \
-         VALUES (?1,?2,?3,?4,?5,?6)",
-    )?;
     for message in messages {
         let id = deterministic_session_row_id("message", &row.id, message.seq, 0);
         let kind = format!("message:{}", message.role);
         let payload = session_event_payload(message);
-        stmt.execute(rusqlite::params![
-            id,
-            row.id,
-            message.seq,
-            kind,
-            created_at_ms,
-            payload
-        ])?;
+        sqlx::query(
+            "INSERT INTO session_events (id, session_id, seq, kind, created_at_ms, payload) \
+             VALUES (?1,?2,?3,?4,?5,?6)",
+        )
+        .bind(id)
+        .bind(&row.id)
+        .bind(message.seq)
+        .bind(kind)
+        .bind(created_at_ms)
+        .bind(payload)
+        .execute(&mut *tx)
+        .await?;
     }
     Ok(())
 }
 
-fn insert_session_turns(
-    tx: &rusqlite::Transaction<'_>,
+async fn insert_session_turns(
+    tx: &mut sqlx::sqlite::SqliteConnection,
     row: &SessionRow,
     messages: &[SessionMessage],
     created_at_ms: i64,
 ) -> Result<()> {
-    let mut stmt = tx.prepare(
-        "INSERT INTO session_turns \
+    const TURN_SQL: &str = "INSERT INTO session_turns \
          (session_id, turn_index, user_seq, assistant_seq, user_text, assistant_text, status, \
           model, created_at_ms) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-    )?;
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)";
     let mut pending_user: Option<(i64, String)> = None;
     let mut turn_index = 0_i64;
     for message in messages {
         match message.role.as_str() {
             "user" => {
                 if let Some((seq, text)) = pending_user.take() {
-                    stmt.execute(rusqlite::params![
-                        row.id,
-                        turn_index,
-                        seq,
-                        Option::<i64>::None,
-                        text,
-                        "",
-                        "open",
-                        row.model,
-                        created_at_ms,
-                    ])?;
+                    sqlx::query(TURN_SQL)
+                        .bind(&row.id)
+                        .bind(turn_index)
+                        .bind(seq)
+                        .bind(Option::<i64>::None)
+                        .bind(text)
+                        .bind("")
+                        .bind("open")
+                        .bind(&row.model)
+                        .bind(created_at_ms)
+                        .execute(&mut *tx)
+                        .await?;
                     turn_index += 1;
                 }
                 pending_user = Some((message.seq, message.content.clone()));
             }
             "assistant" => {
                 if let Some((seq, text)) = pending_user.take() {
-                    stmt.execute(rusqlite::params![
-                        row.id,
-                        turn_index,
-                        seq,
-                        message.seq,
-                        text,
-                        message.content,
-                        "complete",
-                        row.model,
-                        created_at_ms,
-                    ])?;
+                    sqlx::query(TURN_SQL)
+                        .bind(&row.id)
+                        .bind(turn_index)
+                        .bind(seq)
+                        .bind(message.seq)
+                        .bind(text)
+                        .bind(&message.content)
+                        .bind("complete")
+                        .bind(&row.model)
+                        .bind(created_at_ms)
+                        .execute(&mut *tx)
+                        .await?;
                     turn_index += 1;
                 }
             }
@@ -1194,37 +1322,34 @@ fn insert_session_turns(
         }
     }
     if let Some((seq, text)) = pending_user.take() {
-        stmt.execute(rusqlite::params![
-            row.id,
-            turn_index,
-            seq,
-            Option::<i64>::None,
-            text,
-            "",
-            "open",
-            row.model,
-            created_at_ms,
-        ])?;
+        sqlx::query(TURN_SQL)
+            .bind(&row.id)
+            .bind(turn_index)
+            .bind(seq)
+            .bind(Option::<i64>::None)
+            .bind(text)
+            .bind("")
+            .bind("open")
+            .bind(&row.model)
+            .bind(created_at_ms)
+            .execute(&mut *tx)
+            .await?;
     }
     Ok(())
 }
 
-fn insert_session_tool_runs(
-    tx: &rusqlite::Transaction<'_>,
+async fn insert_session_tool_runs(
+    tx: &mut sqlx::sqlite::SqliteConnection,
     row: &SessionRow,
     messages: &[SessionMessage],
     created_at_ms: i64,
 ) -> Result<()> {
-    let mut stmt = tx.prepare(
-        "INSERT INTO session_tool_runs \
+    const TOOL_SQL: &str = "INSERT INTO session_tool_runs \
          (id, session_id, message_seq, part_index, tool_call_id, runtime_id, kind, status, \
           input_json, output_json, duration_ms, created_at_ms) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
-    )?;
-    let mut event_stmt = tx.prepare(
-        "INSERT INTO session_events (id, session_id, seq, kind, created_at_ms, payload) \
-         VALUES (?1,?2,?3,?4,?5,?6)",
-    )?;
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)";
+    const EVENT_SQL: &str = "INSERT INTO session_events (id, session_id, seq, kind, created_at_ms, payload) \
+         VALUES (?1,?2,?3,?4,?5,?6)";
     for message in messages {
         let Some(meta) = message.meta.as_deref().and_then(parse_json) else {
             continue;
@@ -1247,30 +1372,32 @@ fn insert_session_tool_runs(
                 .get("elapsed_ms")
                 .or_else(|| output.and_then(|v| v.get("elapsed_ms")))
                 .and_then(serde_json::Value::as_i64);
-            stmt.execute(rusqlite::params![
-                id,
-                row.id,
-                message.seq,
-                part_index,
-                tool_call_id,
-                runtime_id,
-                kind,
-                status,
-                input_json,
-                output_json,
-                duration_ms,
-                created_at_ms,
-            ])?;
+            sqlx::query(TOOL_SQL)
+                .bind(id)
+                .bind(&row.id)
+                .bind(message.seq)
+                .bind(part_index)
+                .bind(tool_call_id)
+                .bind(runtime_id)
+                .bind(kind)
+                .bind(status)
+                .bind(input_json)
+                .bind(output_json)
+                .bind(duration_ms)
+                .bind(created_at_ms)
+                .execute(&mut *tx)
+                .await?;
             let event_id =
                 deterministic_session_row_id("tool_event", &row.id, message.seq, part_index);
-            event_stmt.execute(rusqlite::params![
-                event_id,
-                row.id,
-                message.seq,
-                "tool_run",
-                created_at_ms,
-                tool.to_string(),
-            ])?;
+            sqlx::query(EVENT_SQL)
+                .bind(event_id)
+                .bind(&row.id)
+                .bind(message.seq)
+                .bind("tool_run")
+                .bind(created_at_ms)
+                .bind(tool.to_string())
+                .execute(&mut *tx)
+                .await?;
         }
     }
     Ok(())
@@ -1375,7 +1502,7 @@ pub const MAINTAIN_THROTTLE_MS: i64 = 6 * 3600 * 1000;
 ///
 /// `sessions_dir` is kept for caller compatibility with the old migration
 /// surface; DB-only mining ignores it.
-pub fn auto_maintain(
+pub async fn auto_maintain(
     project_root: &Path,
     sessions_dir: Option<&Path>,
     user_memory_dir: Option<&Path>,
@@ -1388,11 +1515,12 @@ pub fn auto_maintain(
         project_memory_dir,
         false,
     )
+    .await
 }
 
 /// Like [`auto_maintain`] but `force` bypasses the throttle (manual `/knowledge
 /// mine`).
-pub fn auto_maintain_forced(
+pub async fn auto_maintain_forced(
     project_root: &Path,
     sessions_dir: Option<&Path>,
     user_memory_dir: Option<&Path>,
@@ -1405,24 +1533,25 @@ pub fn auto_maintain_forced(
         project_memory_dir,
         true,
     )
+    .await
 }
 
-fn auto_maintain_inner(
+async fn auto_maintain_inner(
     project_root: &Path,
     _sessions_dir: Option<&Path>,
     user_memory_dir: Option<&Path>,
     project_memory_dir: Option<&Path>,
     force: bool,
 ) -> Result<MaintainReport> {
-    let mut store = KnowledgeStore::open_default()?;
+    let store = KnowledgeStore::open_default().await?;
     let project = project::project_key(project_root);
     let mut report = MaintainReport::default();
 
     // Throttle: skip if a pass ran recently (per-project stamp), unless forced.
-    if !force && !store.maintain_due(&project, MAINTAIN_THROTTLE_MS)? {
+    if !force && !store.maintain_due(&project, MAINTAIN_THROTTLE_MS).await? {
         return Ok(report);
     }
-    store.stamp_maintain(&project)?;
+    store.stamp_maintain(&project).await?;
 
     // 1. Import legacy .md memories (idempotent; never deletes sources).
     let mut items = Vec::new();
@@ -1437,19 +1566,19 @@ fn auto_maintain_inner(
         ));
     }
     if !items.is_empty() {
-        report.imported = store.import_memories(&items)?.imported;
+        report.imported = store.import_memories(&items).await?.imported;
     }
 
     // 2. Mine DB-backed session history.
-    let (lessons, mine_report) = session_mine::mine_store(&store, 10_000);
+    let (lessons, mine_report) = session_mine::mine_store(&store, 10_000).await;
     report.sessions_scanned = mine_report.sessions_scanned;
-    let (ins, comp) = store.ingest_mined(&project, &lessons)?;
+    let (ins, comp) = store.ingest_mined(&project, &lessons).await?;
     report.mined_inserted = ins;
     report.mined_compounded = comp;
 
     // 3. Consolidate duplicates (dedup only — no decay; the store grows).
-    report.consolidated = store.consolidate()?;
-    report.auto_promoted = store.auto_promote(DEFAULT_AUTO_PROMOTE_SUPPORT)?;
+    report.consolidated = store.consolidate().await?;
+    report.auto_promoted = store.auto_promote(DEFAULT_AUTO_PROMOTE_SUPPORT).await?;
 
     Ok(report)
 }
@@ -1463,9 +1592,9 @@ mod tests {
         KnowledgeRecord::new(Kind::Fact, scope, project.map(str::to_owned), title, body)
     }
 
-    #[test]
-    fn insert_and_recall_round_trip_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn insert_and_recall_round_trip_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let r = rec(
             Scope::Global,
             None,
@@ -1473,9 +1602,9 @@ mod tests {
             "This workspace uses edition 2024",
         )
         .with_confidence(0.9);
-        store.insert(&r).unwrap();
+        store.insert(&r).await.unwrap();
 
-        let hits = store.recall("edition", &RecallFilter::default()).unwrap();
+        let hits = store.recall("edition", &RecallFilter::default()).await.unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, r.id);
         assert_eq!(hits[0].title, "Rust edition");
@@ -1483,49 +1612,49 @@ mod tests {
 
     // SAFETY INVARIANT (PLAN §3.3): a record reaches global scope ONLY via the
     // explicit promote() gate, never via insert at runtime.
-    #[test]
-    fn project_record_is_not_global_until_promoted_regression() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn project_record_is_not_global_until_promoted_regression() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let r = rec(
             Scope::Project,
             Some("projA"),
             "local lesson",
             "use ripgrep here",
         );
-        store.insert(&r).unwrap();
+        store.insert(&r).await.unwrap();
 
         // From a DIFFERENT project, the project-scoped row must NOT be recalled.
         let other = RecallFilter {
             project_key: Some("projB"),
             limit: 8,
         };
-        assert!(store.recall("ripgrep", &other).unwrap().is_empty());
+        assert!(store.recall("ripgrep", &other).await.unwrap().is_empty());
 
         // After human-gated promotion, it becomes visible everywhere.
-        assert!(store.promote(&r.id).unwrap());
-        assert_eq!(store.recall("ripgrep", &other).unwrap().len(), 1);
+        assert!(store.promote(&r.id).await.unwrap());
+        assert_eq!(store.recall("ripgrep", &other).await.unwrap().len(), 1);
     }
 
     // SAFETY INVARIANT (PLAN §3): project rows for THIS project are visible;
     // user/global always visible; other projects' rows never.
-    #[test]
-    fn recall_scope_isolation_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn recall_scope_isolation_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         store
-            .insert(&rec(Scope::Project, Some("A"), "a-only", "alpha secret"))
+            .insert(&rec(Scope::Project, Some("A"), "a-only", "alpha secret")).await
             .unwrap();
         store
-            .insert(&rec(Scope::Project, Some("B"), "b-only", "beta secret"))
+            .insert(&rec(Scope::Project, Some("B"), "b-only", "beta secret")).await
             .unwrap();
         store
-            .insert(&rec(Scope::User, None, "user-pref", "alpha beta gamma"))
+            .insert(&rec(Scope::User, None, "user-pref", "alpha beta gamma")).await
             .unwrap();
 
         let from_a = RecallFilter {
             project_key: Some("A"),
             limit: 8,
         };
-        let hits = store.recall("alpha", &from_a).unwrap();
+        let hits = store.recall("alpha", &from_a).await.unwrap();
         let titles: Vec<_> = hits.iter().map(|h| h.title.as_str()).collect();
         assert!(titles.contains(&"a-only"), "{titles:?}");
         assert!(titles.contains(&"user-pref"), "{titles:?}");
@@ -1535,38 +1664,38 @@ mod tests {
         );
     }
 
-    #[test]
-    fn supersede_hides_old_row_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn supersede_hides_old_row_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let old = rec(Scope::Global, None, "stack", "uses webpack");
-        store.insert(&old).unwrap();
+        store.insert(&old).await.unwrap();
         let new = rec(Scope::Global, None, "stack", "uses vite now");
-        store.insert(&new).unwrap();
-        store.supersede(&old.id, &new.id).unwrap();
+        store.insert(&new).await.unwrap();
+        store.supersede(&old.id, &new.id).await.unwrap();
 
-        let hits = store.recall("stack", &RecallFilter::default()).unwrap();
+        let hits = store.recall("stack", &RecallFilter::default()).await.unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, new.id, "stale row should be filtered out");
     }
 
-    #[test]
-    fn insert_rejects_invalid_records_robust() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
-        assert!(store.insert(&rec(Scope::Global, None, "t", "  ")).is_err());
-        assert!(store.insert(&rec(Scope::Project, None, "t", "b")).is_err());
+    #[tokio::test]
+    async fn insert_rejects_invalid_records_robust() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
+        assert!(store.insert(&rec(Scope::Global, None, "t", "  ")).await.is_err());
+        assert!(store.insert(&rec(Scope::Project, None, "t", "b")).await.is_err());
         assert!(
             store
-                .insert(&rec(Scope::Global, Some("x"), "t", "b"))
+                .insert(&rec(Scope::Global, Some("x"), "t", "b")).await
                 .is_err()
         );
         let mut bad = rec(Scope::Global, None, "t", "b");
         bad.confidence = 5.0;
-        assert!(store.insert(&bad).is_err());
+        assert!(store.insert(&bad).await.is_err());
     }
 
-    #[test]
-    fn insert_rejects_unredacted_secrets_before_sqlite_regression() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn insert_rejects_unredacted_secrets_before_sqlite_regression() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let raw_secret = rec(
             Scope::User,
             None,
@@ -1574,19 +1703,19 @@ mod tests {
             "token=ghp_0123456789abcdefghij",
         );
 
-        assert!(store.insert(&raw_secret).is_err());
-        assert_eq!(store.live_count().unwrap(), 0);
+        assert!(store.insert(&raw_secret).await.is_err());
+        assert_eq!(store.live_count().await.unwrap(), 0);
     }
 
     // SAFETY INVARIANT (PLAN §3.4): bounded growth. Insert well past the cap and
     // assert decay holds the live count at/under it, and that a promoted/global
     // row survives the cull.
-    #[test]
-    fn decay_enforces_row_cap_and_spares_promoted_regression() {
-        let mut store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn decay_enforces_row_cap_and_spares_promoted_regression() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let mut keep = rec(Scope::Global, None, "promoted keeper", "must survive decay");
         keep.promoted = true;
-        store.insert(&keep).unwrap();
+        store.insert(&keep).await.unwrap();
 
         for i in 0..50 {
             store
@@ -1595,7 +1724,7 @@ mod tests {
                     Some("P"),
                     &format!("row {i}"),
                     "filler body",
-                ))
+                )).await
                 .unwrap();
         }
         for i in 0..50 {
@@ -1605,43 +1734,43 @@ mod tests {
                     None,
                     &format!("global row {i}"),
                     "global filler body",
-                ))
+                )).await
                 .unwrap();
         }
-        assert_eq!(store.live_count().unwrap(), 101);
+        assert_eq!(store.live_count().await.unwrap(), 101);
 
-        let removed = store.decay(DEFAULT_MAX_AGE_MS, 10).unwrap();
+        let removed = store.decay(DEFAULT_MAX_AGE_MS, 10).await.unwrap();
         assert!(
             removed >= 80,
             "decay should prune project/global rows over the cap; removed={removed}"
         );
-        assert!(store.live_count().unwrap() <= 21);
+        assert!(store.live_count().await.unwrap() <= 21);
 
-        let hits = store.recall("keeper", &RecallFilter::default()).unwrap();
+        let hits = store.recall("keeper", &RecallFilter::default()).await.unwrap();
         assert_eq!(hits.len(), 1);
     }
 
-    #[test]
-    fn mark_used_bumps_usage_and_influences_rank_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn mark_used_bumps_usage_and_influences_rank_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let a = rec(Scope::Global, None, "shared term apple", "alpha").with_confidence(0.5);
         let b = rec(Scope::Global, None, "shared term apple", "beta").with_confidence(0.5);
-        store.insert(&a).unwrap();
-        store.insert(&b).unwrap();
+        store.insert(&a).await.unwrap();
+        store.insert(&b).await.unwrap();
         // Use `a` repeatedly → it should rank first on the next recall.
         for _ in 0..5 {
-            store.mark_used(std::slice::from_ref(&a.id)).unwrap();
+            store.mark_used(std::slice::from_ref(&a.id)).await.unwrap();
         }
-        let hits = store.recall("apple", &RecallFilter::default()).unwrap();
+        let hits = store.recall("apple", &RecallFilter::default()).await.unwrap();
         assert_eq!(hits.first().map(|h| h.id.as_str()), Some(a.id.as_str()));
     }
 
     // SAFETY INVARIANT (PLAN §F3): import is idempotent — re-running adds rows
     // once. Mirrors the legacy `.md` → DB migration's no-deletion contract.
-    #[test]
-    fn import_memories_is_idempotent_regression() {
+    #[tokio::test]
+    async fn import_memories_is_idempotent_regression() {
         use crate::import::ImportableMemory;
-        let store = KnowledgeStore::open_in_memory().unwrap();
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let items = vec![
             ImportableMemory {
                 source_path: None,
@@ -1661,12 +1790,12 @@ mod tests {
             },
         ];
 
-        let r1 = store.import_memories(&items).unwrap();
+        let r1 = store.import_memories(&items).await.unwrap();
         assert_eq!(r1.imported, 2);
         assert_eq!(r1.skipped, 0);
-        assert_eq!(store.live_count().unwrap(), 2);
-        assert_eq!(store.memory_count().unwrap(), 2);
-        let rows = store.load_memories(Some("P")).unwrap();
+        assert_eq!(store.live_count().await.unwrap(), 2);
+        assert_eq!(store.memory_count().await.unwrap(), 2);
+        let rows = store.load_memories(Some("P")).await.unwrap();
         assert_eq!(rows.len(), 2);
         let project_row = rows
             .iter()
@@ -1679,20 +1808,20 @@ mod tests {
         assert_eq!(meta["scope"], "team");
 
         // Second run: same content → all skipped, no duplicates.
-        let r2 = store.import_memories(&items).unwrap();
+        let r2 = store.import_memories(&items).await.unwrap();
         assert_eq!(r2.imported, 0);
         assert_eq!(r2.skipped, 2);
         assert_eq!(
-            store.live_count().unwrap(),
+            store.live_count().await.unwrap(),
             2,
             "re-import must not duplicate"
         );
     }
 
-    #[test]
-    fn imported_project_memory_is_hidden_from_other_projects_regression() {
+    #[tokio::test]
+    async fn imported_project_memory_is_hidden_from_other_projects_regression() {
         use crate::import::ImportableMemory;
-        let store = KnowledgeStore::open_in_memory().unwrap();
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let items = vec![ImportableMemory {
             source_path: None,
             kind: Kind::Fact,
@@ -1702,21 +1831,21 @@ mod tests {
             body: "This repo uses ratatui.".into(),
         }];
 
-        let report = store.import_memories(&items).unwrap();
+        let report = store.import_memories(&items).await.unwrap();
 
         assert_eq!(report.imported, 1);
-        assert_eq!(store.load_memories(Some("P")).unwrap().len(), 1);
+        assert_eq!(store.load_memories(Some("P")).await.unwrap().len(), 1);
         assert!(
-            store.load_memories(Some("Q")).unwrap().is_empty(),
+            store.load_memories(Some("Q")).await.unwrap().is_empty(),
             "project-scoped imported memories must not leak into unrelated projects"
         );
     }
 
     // TODO 7+8: a verified, salient lesson outranks an unverified one on equal
     // lexical relevance.
-    #[test]
-    fn verified_lesson_outranks_unverified_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn verified_lesson_outranks_unverified_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let weak = rec(Scope::Global, None, "edit term apple", "alpha")
             .with_confidence(0.5)
             .with_importance(0.5);
@@ -1724,9 +1853,9 @@ mod tests {
             .with_confidence(0.5)
             .with_importance(0.5)
             .with_outcome(Outcome::Verified);
-        store.insert(&weak).unwrap();
-        store.insert(&strong).unwrap();
-        let hits = store.recall("apple", &RecallFilter::default()).unwrap();
+        store.insert(&weak).await.unwrap();
+        store.insert(&strong).await.unwrap();
+        let hits = store.recall("apple", &RecallFilter::default()).await.unwrap();
         assert_eq!(
             hits.first().map(|h| h.id.as_str()),
             Some(strong.id.as_str()),
@@ -1735,9 +1864,9 @@ mod tests {
     }
 
     // TODO 14: typed links + recall expansion + backlinks.
-    #[test]
-    fn typed_links_and_backlinks_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn typed_links_and_backlinks_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let err = rec(Scope::Global, None, "error", "old_string not found");
         let fix = rec(
             Scope::Global,
@@ -1745,33 +1874,33 @@ mod tests {
             "fix",
             "strip the line-number gutter first",
         );
-        store.insert(&err).unwrap();
-        store.insert(&fix).unwrap();
-        store.link(&err.id, &fix.id, RelKind::FixedBy).unwrap();
+        store.insert(&err).await.unwrap();
+        store.insert(&fix).await.unwrap();
+        store.link(&err.id, &fix.id, RelKind::FixedBy).await.unwrap();
 
-        let linked = store.linked(&err.id).unwrap();
+        let linked = store.linked(&err.id).await.unwrap();
         assert_eq!(linked.len(), 1);
         assert_eq!(linked[0].rel, RelKind::FixedBy);
         assert_eq!(linked[0].record.id, fix.id);
 
-        assert_eq!(store.backlinks(&fix.id).unwrap(), vec![err.id.clone()]);
+        assert_eq!(store.backlinks(&fix.id).await.unwrap(), vec![err.id.clone()]);
         // Idempotent: re-linking the same edge doesn't duplicate.
-        store.link(&err.id, &fix.id, RelKind::FixedBy).unwrap();
-        assert_eq!(store.linked(&err.id).unwrap().len(), 1);
+        store.link(&err.id, &fix.id, RelKind::FixedBy).await.unwrap();
+        assert_eq!(store.linked(&err.id).await.unwrap().len(), 1);
     }
 
     // TODO 15: knowledge gaps rank by reference count.
-    #[test]
-    fn knowledge_gaps_rank_by_ref_count_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn knowledge_gaps_rank_by_ref_count_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         store
-            .note_gap("how to mock the network layer", "referenced, no lesson")
+            .note_gap("how to mock the network layer", "referenced, no lesson").await
             .unwrap();
         store
-            .note_gap("how to mock the network layer", "again")
+            .note_gap("how to mock the network layer", "again").await
             .unwrap();
-        store.note_gap("CI cache config", "once").unwrap();
-        let gaps = store.gaps(10).unwrap();
+        store.note_gap("CI cache config", "once").await.unwrap();
+        let gaps = store.gaps(10).await.unwrap();
         assert_eq!(gaps.len(), 2);
         assert_eq!(gaps[0].label, "how to mock the network layer");
         assert_eq!(gaps[0].ref_count, 2);
@@ -1779,20 +1908,20 @@ mod tests {
 
     // TODO 10: consolidation collapses duplicates to the strongest, supersedes
     // the rest, and is idempotent.
-    #[test]
-    fn consolidate_collapses_duplicates_regression() {
-        let mut store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn consolidate_collapses_duplicates_regression() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let weak = rec(Scope::Project, Some("P"), "dup", "use ripgrep here").with_confidence(0.3);
         let strong = rec(Scope::Project, Some("P"), "dup", "use   ripgrep here")
             .with_confidence(0.9)
             .with_outcome(Outcome::Verified);
-        store.insert(&weak).unwrap();
-        store.insert(&strong).unwrap();
-        assert_eq!(store.live_count().unwrap(), 2);
+        store.insert(&weak).await.unwrap();
+        store.insert(&strong).await.unwrap();
+        assert_eq!(store.live_count().await.unwrap(), 2);
 
-        let n = store.consolidate().unwrap();
+        let n = store.consolidate().await.unwrap();
         assert_eq!(n, 1, "one duplicate should be superseded");
-        assert_eq!(store.live_count().unwrap(), 1);
+        assert_eq!(store.live_count().await.unwrap(), 1);
         // The verified/stronger one survives.
         let hits = store
             .recall(
@@ -1801,20 +1930,20 @@ mod tests {
                     project_key: Some("P"),
                     limit: 8,
                 },
-            )
+            ).await
             .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, strong.id);
         // Idempotent.
-        assert_eq!(store.consolidate().unwrap(), 0);
+        assert_eq!(store.consolidate().await.unwrap(), 0);
     }
 
     // TODO 11-13: mined lessons fold into project candidates and COMPOUND by
     // norm_key (support bump + verified upgrade) instead of duplicating.
-    #[test]
-    fn ingest_mined_compounds_by_norm_key_regression() {
+    #[tokio::test]
+    async fn ingest_mined_compounds_by_norm_key_regression() {
         use crate::session_mine::MinedLesson;
-        let store = KnowledgeStore::open_in_memory().unwrap();
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let unverified = MinedLesson {
             kind: Kind::Finding,
             trigger: "Edit failed: old_string-not-found".into(),
@@ -1824,18 +1953,18 @@ mod tests {
             session_id: "s1".into(),
         };
         let (ins, comp) = store
-            .ingest_mined("P", std::slice::from_ref(&unverified))
+            .ingest_mined("P", std::slice::from_ref(&unverified)).await
             .unwrap();
         assert_eq!((ins, comp), (1, 0));
-        assert_eq!(store.live_count().unwrap(), 1);
+        assert_eq!(store.live_count().await.unwrap(), 1);
 
         // Same norm_key, now VERIFIED → compounds onto the existing row + upgrades.
         let mut verified = unverified;
         verified.outcome = Outcome::Verified;
         verified.session_id = "s2".into();
-        let (ins2, comp2) = store.ingest_mined("P", &[verified]).unwrap();
+        let (ins2, comp2) = store.ingest_mined("P", &[verified]).await.unwrap();
         assert_eq!((ins2, comp2), (0, 1), "should compound, not duplicate");
-        assert_eq!(store.live_count().unwrap(), 1);
+        assert_eq!(store.live_count().await.unwrap(), 1);
 
         let hits = store
             .recall(
@@ -1844,7 +1973,7 @@ mod tests {
                     project_key: Some("P"),
                     limit: 8,
                 },
-            )
+            ).await
             .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(
@@ -1862,40 +1991,40 @@ mod tests {
                     project_key: Some("Q"),
                     limit: 8,
                 },
-            )
+            ).await
             .unwrap();
         assert!(other.is_empty());
     }
 
     // Autonomy: a verified, repeatedly-seen project lesson auto-promotes to
     // global; an unverified or rarely-seen one does NOT.
-    #[test]
-    fn auto_promote_lifts_verified_repeated_lessons_normal() {
+    #[tokio::test]
+    async fn auto_promote_lifts_verified_repeated_lessons_normal() {
         use crate::record::Kind;
-        let store = KnowledgeStore::open_in_memory().unwrap();
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let mk = |kind: Kind, title: &str, body: &str| {
             KnowledgeRecord::new(kind, Scope::Project, Some("P".into()), title, body)
         };
         // Generalizable (Finding), verified + enough support → promoted.
         let mut hot = mk(Kind::Finding, "hot", "use ripgrep").with_outcome(Outcome::Verified);
         hot.use_count = 3;
-        store.insert(&hot).unwrap();
+        store.insert(&hot).await.unwrap();
         // Verified but under the support bar → stays project.
         let mut rare = mk(Kind::Finding, "rare", "niche tip").with_outcome(Outcome::Verified);
         rare.use_count = 1;
-        store.insert(&rare).unwrap();
+        store.insert(&rare).await.unwrap();
         // High support but unverified → stays project.
         let mut noisy = mk(Kind::Finding, "noisy", "unconfirmed");
         noisy.use_count = 9;
-        store.insert(&noisy).unwrap();
+        store.insert(&noisy).await.unwrap();
         // A project-specific FACT, verified + well-supported, must NOT auto-promote
         // (it would poison other projects with wrong-context truth).
         let mut fact =
             mk(Kind::Fact, "stack", "this repo uses vite").with_outcome(Outcome::Verified);
         fact.use_count = 9;
-        store.insert(&fact).unwrap();
+        store.insert(&fact).await.unwrap();
 
-        let promoted = store.auto_promote(3).unwrap();
+        let promoted = store.auto_promote(3).await.unwrap();
         assert_eq!(
             promoted, 1,
             "only the verified, well-supported, generalizable lesson promotes"
@@ -1906,39 +2035,39 @@ mod tests {
             project_key: Some("Q"),
             limit: 8,
         };
-        let hits = store.recall("ripgrep", &other).unwrap();
+        let hits = store.recall("ripgrep", &other).await.unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, hot.id);
         // The unverified/rare/fact ones did not leak across projects.
-        assert!(store.recall("niche", &other).unwrap().is_empty());
-        assert!(store.recall("unconfirmed", &other).unwrap().is_empty());
+        assert!(store.recall("niche", &other).await.unwrap().is_empty());
+        assert!(store.recall("unconfirmed", &other).await.unwrap().is_empty());
         assert!(
-            store.recall("vite", &other).unwrap().is_empty(),
+            store.recall("vite", &other).await.unwrap().is_empty(),
             "project-specific fact must not leak"
         );
     }
 
     // The throttle prevents re-processing on a second startup within the window.
-    #[test]
-    fn maintain_throttle_blocks_rapid_repeat_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn maintain_throttle_blocks_rapid_repeat_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         assert!(
-            store.maintain_due("P", MAINTAIN_THROTTLE_MS).unwrap(),
+            store.maintain_due("P", MAINTAIN_THROTTLE_MS).await.unwrap(),
             "first run is due"
         );
-        store.stamp_maintain("P").unwrap();
+        store.stamp_maintain("P").await.unwrap();
         assert!(
-            !store.maintain_due("P", MAINTAIN_THROTTLE_MS).unwrap(),
+            !store.maintain_due("P", MAINTAIN_THROTTLE_MS).await.unwrap(),
             "just-stamped is not due"
         );
         // A different project is independently due.
-        assert!(store.maintain_due("Q", MAINTAIN_THROTTLE_MS).unwrap());
+        assert!(store.maintain_due("Q", MAINTAIN_THROTTLE_MS).await.unwrap());
         // With a zero window, it's due again immediately.
-        assert!(store.maintain_due("P", 0).unwrap());
+        assert!(store.maintain_due("P", 0).await.unwrap());
     }
 
-    #[test]
-    fn auto_maintain_imports_and_grows_normal() {
+    #[tokio::test]
+    async fn auto_maintain_imports_and_grows_normal() {
         // Hermetic: point the store + dirs at temp paths via JFC_KNOWLEDGE_DB.
         let dir = tempfile::tempdir().unwrap();
         let dbpath = dir.path().join("k.db");
@@ -1951,7 +2080,7 @@ mod tests {
         .unwrap();
         // Isolate the global store path for this test.
         let _guard = EnvGuard::set("JFC_KNOWLEDGE_DB", dbpath.to_str().unwrap());
-        let mut store = KnowledgeStore::open(&dbpath).unwrap();
+        let store = KnowledgeStore::open(&dbpath).await.unwrap();
         store
             .replace_transcript(
                 &SessionRow {
@@ -2006,27 +2135,29 @@ mod tests {
                         ),
                     },
                 ],
-            )
+            ).await
             .unwrap();
         drop(store);
 
-        let report = auto_maintain(dir.path(), None, Some(&user_mem), None).unwrap();
+        let report = auto_maintain(dir.path(), None, Some(&user_mem), None)
+            .await
+            .unwrap();
         assert_eq!(report.imported, 1, "imported the .md preference");
         assert_eq!(report.sessions_scanned, 1);
         assert!(report.mined_inserted >= 1, "mined the recovered Edit error");
 
         // The store actually grew and persists.
-        let store = KnowledgeStore::open(&dbpath).unwrap();
-        assert!(store.live_count().unwrap() >= 2);
+        let store = KnowledgeStore::open(&dbpath).await.unwrap();
+        assert!(store.live_count().await.unwrap() >= 2);
     }
 
-    #[test]
-    fn auto_maintain_promotes_proven_generalizable_lessons_regression() {
+    #[tokio::test]
+    async fn auto_maintain_promotes_proven_generalizable_lessons_regression() {
         let dir = tempfile::tempdir().unwrap();
         let dbpath = dir.path().join("k.db");
         let _guard = EnvGuard::set("JFC_KNOWLEDGE_DB", dbpath.to_str().unwrap());
         let project = project::project_key(dir.path());
-        let store = KnowledgeStore::open(&dbpath).unwrap();
+        let store = KnowledgeStore::open(&dbpath).await.unwrap();
         let mut lesson = KnowledgeRecord::new(
             Kind::Finding,
             Scope::Project,
@@ -2037,13 +2168,13 @@ mod tests {
         .with_outcome(Outcome::Verified);
         lesson.use_count = DEFAULT_AUTO_PROMOTE_SUPPORT;
         let id = lesson.id.clone();
-        store.insert(&lesson).unwrap();
+        store.insert(&lesson).await.unwrap();
         drop(store);
 
-        let report = auto_maintain(dir.path(), None, None, None).unwrap();
+        let report = auto_maintain(dir.path(), None, None, None).await.unwrap();
 
         assert_eq!(report.auto_promoted, 1);
-        let store = KnowledgeStore::open(&dbpath).unwrap();
+        let store = KnowledgeStore::open(&dbpath).await.unwrap();
         let hits = store
             .recall(
                 "ripgrep",
@@ -2051,7 +2182,7 @@ mod tests {
                     project_key: Some("other-project"),
                     limit: 8,
                 },
-            )
+            ).await
             .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, id);
@@ -2100,9 +2231,15 @@ mod tests {
     // TODO 23: full-transcript store — replace/load round-trips in seq
     // order, FTS search finds the right session, replace is idempotent (coalesce-
     // safe), and backup writes a consistent copy.
-    #[test]
-    fn session_transcript_roundtrip_and_search_normal() {
-        let mut store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn session_transcript_roundtrip_and_search_normal() {
+        // File-backed (not in-memory) because this test exercises `backup_to`,
+        // and SQLite's `VACUUM INTO` produces no output file for a `:memory:`
+        // source database.
+        let src_dir = tempfile::tempdir().unwrap();
+        let store = KnowledgeStore::open(&src_dir.path().join("src.db"))
+            .await
+            .unwrap();
         let hdr = SessionRow {
             id: "ses_x".into(),
             cwd: Some("/proj".into()),
@@ -2127,26 +2264,26 @@ mod tests {
                 meta: Some("{\"k\":1}".into()),
             },
         ];
-        store.replace_transcript(&hdr, &msgs).unwrap();
+        store.replace_transcript(&hdr, &msgs).await.unwrap();
 
         // Round-trips in order with meta intact.
-        let loaded = store.load_transcript("ses_x").unwrap();
+        let loaded = store.load_transcript("ses_x").await.unwrap();
         assert_eq!(loaded, msgs);
-        assert!(store.has_transcript("ses_x").unwrap());
+        assert!(store.has_transcript("ses_x").await.unwrap());
         assert_eq!(
-            store.session_count().unwrap(),
+            store.session_count().await.unwrap(),
             1,
             "header upserted in same txn"
         );
 
         // FTS search finds the session by a content term.
         assert_eq!(
-            store.search_transcripts("ripgrep", 10).unwrap(),
+            store.search_transcripts("ripgrep", 10).await.unwrap(),
             vec!["ses_x".to_string()]
         );
         assert!(
             store
-                .search_transcripts("nonexistentterm", 10)
+                .search_transcripts("nonexistentterm", 10).await
                 .unwrap()
                 .is_empty()
         );
@@ -2165,18 +2302,18 @@ mod tests {
                     ..hdr.clone()
                 },
                 &shorter,
-            )
+            ).await
             .unwrap();
-        assert_eq!(store.load_transcript("ses_x").unwrap(), shorter);
+        assert_eq!(store.load_transcript("ses_x").await.unwrap(), shorter);
         assert!(
-            store.search_transcripts("ripgrep", 10).unwrap().is_empty(),
+            store.search_transcripts("ripgrep", 10).await.unwrap().is_empty(),
             "old content gone from FTS"
         );
 
-        let deleted = store.delete_session("ses_x").unwrap();
+        let deleted = store.delete_session("ses_x").await.unwrap();
         assert!(deleted >= 2);
-        assert_eq!(store.session_count().unwrap(), 0);
-        assert!(store.load_transcript("ses_x").unwrap().is_empty());
+        assert_eq!(store.session_count().await.unwrap(), 0);
+        assert!(store.load_transcript("ses_x").await.unwrap().is_empty());
 
         store
             .replace_transcript(
@@ -2185,20 +2322,20 @@ mod tests {
                     ..hdr.clone()
                 },
                 &shorter,
-            )
+            ).await
             .unwrap();
 
         // Backup writes a consistent, openable copy.
         let dir = tempfile::tempdir().unwrap();
         let bpath = dir.path().join("backup.db");
-        store.backup_to(&bpath).unwrap();
-        let restored = KnowledgeStore::open(&bpath).unwrap();
-        assert_eq!(restored.load_transcript("ses_x").unwrap(), shorter);
+        store.backup_to(&bpath).await.unwrap();
+        let restored = KnowledgeStore::open(&bpath).await.unwrap();
+        assert_eq!(restored.load_transcript("ses_x").await.unwrap(), shorter);
     }
 
-    #[test]
-    fn session_event_substrate_is_derived_from_transcript_normal() {
-        let mut store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn session_event_substrate_is_derived_from_transcript_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let hdr = SessionRow {
             id: "ses_events".into(),
             cwd: Some("/proj".into()),
@@ -2254,21 +2391,21 @@ mod tests {
             },
         ];
 
-        store.replace_transcript(&hdr, &msgs).unwrap();
+        store.replace_transcript(&hdr, &msgs).await.unwrap();
 
-        let events = store.list_session_events("ses_events", 20).unwrap();
+        let events = store.list_session_events("ses_events", 20).await.unwrap();
         assert_eq!(events.len(), 3);
         assert!(events.iter().any(|event| event.kind == "message:user"));
         assert!(events.iter().any(|event| event.kind == "tool_run"));
 
-        let turns = store.list_session_turns("ses_events").unwrap();
+        let turns = store.list_session_turns("ses_events").await.unwrap();
         assert_eq!(turns.len(), 1);
         assert_eq!(turns[0].user_text, "run tests");
         assert_eq!(turns[0].assistant_text, "done");
         assert_eq!(turns[0].status, "complete");
         assert_eq!(turns[0].model.as_deref(), Some("claude-sonnet-4"));
 
-        let tools = store.list_session_tool_runs("ses_events").unwrap();
+        let tools = store.list_session_tool_runs("ses_events").await.unwrap();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].tool_call_id.as_deref(), Some("toolu_1"));
         assert_eq!(tools[0].runtime_id.as_deref(), Some("bash_123"));
@@ -2276,7 +2413,7 @@ mod tests {
         assert_eq!(tools[0].status, "success");
         assert_eq!(tools[0].duration_ms, Some(742));
 
-        let context = store.list_context_events(Some("ses_events"), 20).unwrap();
+        let context = store.list_context_events(Some("ses_events"), 20).await.unwrap();
         assert_eq!(context.len(), 1);
         assert_eq!(context[0].turn_id.as_deref(), Some("ses_events:1"));
         assert_eq!(context[0].model, "anthropic/claude-opus-4-7");
@@ -2286,9 +2423,9 @@ mod tests {
         assert_eq!(context[0].bust_cause.as_deref(), Some("cache_miss"));
     }
 
-    #[test]
-    fn agent_learning_substrate_roundtrips_normal() {
-        let mut store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn agent_learning_substrate_roundtrips_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let now = record::now_ms();
         let agent = AgentSessionRow {
             id: "agent_advisor_1".into(),
@@ -2302,7 +2439,7 @@ mod tests {
             created_at_ms: now,
             updated_at_ms: now,
         };
-        store.upsert_agent_session(&agent).unwrap();
+        store.upsert_agent_session(&agent).await.unwrap();
 
         let event = AgentEventRow {
             id: "evt_1".into(),
@@ -2315,7 +2452,7 @@ mod tests {
             causal_parent_id: None,
             created_at_ms: now,
         };
-        store.record_agent_event(&event).unwrap();
+        store.record_agent_event(&event).await.unwrap();
 
         let mail = AgentMailboxRow {
             id: "mail_1".into(),
@@ -2329,7 +2466,7 @@ mod tests {
             summarized_at_ms: None,
             created_at_ms: now,
         };
-        store.enqueue_agent_mailbox(&mail).unwrap();
+        store.enqueue_agent_mailbox(&mail).await.unwrap();
 
         let run = ToolRunLedgerRow {
             id: "tool_1".into(),
@@ -2346,7 +2483,7 @@ mod tests {
             created_at_ms: now,
             updated_at_ms: now,
         };
-        store.record_tool_run(&run).unwrap();
+        store.record_tool_run(&run).await.unwrap();
 
         let learning = LearningEventRow {
             id: "learn_1".into(),
@@ -2360,51 +2497,51 @@ mod tests {
             created_at_ms: now,
             updated_at_ms: now,
         };
-        store.record_learning_event(&learning).unwrap();
+        store.record_learning_event(&learning).await.unwrap();
 
         assert_eq!(
-            store.get_agent_session("agent_advisor_1").unwrap(),
+            store.get_agent_session("agent_advisor_1").await.unwrap(),
             Some(agent)
         );
         assert_eq!(
-            store.list_agent_events("ses_parent", 10).unwrap(),
+            store.list_agent_events("ses_parent", 10).await.unwrap(),
             vec![event]
         );
         assert_eq!(
-            store.list_agent_mailbox("agent_advisor_1", true).unwrap(),
+            store.list_agent_mailbox("agent_advisor_1", true).await.unwrap(),
             vec![mail.clone()]
         );
-        assert_eq!(store.mark_agent_mailbox_read("mail_1").unwrap(), 1);
+        assert_eq!(store.mark_agent_mailbox_read("mail_1").await.unwrap(), 1);
         assert!(
             store
-                .list_agent_mailbox("agent_advisor_1", true)
+                .list_agent_mailbox("agent_advisor_1", true).await
                 .unwrap()
                 .is_empty()
         );
         assert_eq!(
-            store.list_learning_events(Some("candidate"), 10).unwrap(),
+            store.list_learning_events(Some("candidate"), 10).await.unwrap(),
             vec![learning]
         );
 
-        let deleted = store.delete_session("ses_parent").unwrap();
+        let deleted = store.delete_session("ses_parent").await.unwrap();
         assert!(deleted >= 3);
         assert!(
             store
-                .list_agent_events("ses_parent", 10)
+                .list_agent_events("ses_parent", 10).await
                 .unwrap()
                 .is_empty()
         );
         assert!(
             store
-                .list_learning_events(Some("candidate"), 10)
+                .list_learning_events(Some("candidate"), 10).await
                 .unwrap()
                 .is_empty()
         );
     }
 
-    #[test]
-    fn session_index_upsert_and_list_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test]
+    async fn session_index_upsert_and_list_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let row = |id: &str, cwd: &str, updated: &str, n: i64| SessionRow {
             id: id.into(),
             cwd: Some(cwd.into()),
@@ -2416,33 +2553,33 @@ mod tests {
             message_count: n,
         };
         store
-            .upsert_session(&row("s1", "/a", "2026-01-01T01:00:00Z", 2))
+            .upsert_session(&row("s1", "/a", "2026-01-01T01:00:00Z", 2)).await
             .unwrap();
         store
-            .upsert_session(&row("s2", "/a", "2026-01-01T03:00:00Z", 4))
+            .upsert_session(&row("s2", "/a", "2026-01-01T03:00:00Z", 4)).await
             .unwrap();
         store
-            .upsert_session(&row("s3", "/b", "2026-01-01T02:00:00Z", 6))
+            .upsert_session(&row("s3", "/b", "2026-01-01T02:00:00Z", 6)).await
             .unwrap();
-        assert_eq!(store.session_count().unwrap(), 3);
+        assert_eq!(store.session_count().await.unwrap(), 3);
 
         // Re-upsert s1 with a new message_count → updates, not duplicates.
         store
-            .upsert_session(&row("s1", "/a", "2026-01-01T05:00:00Z", 9))
+            .upsert_session(&row("s1", "/a", "2026-01-01T05:00:00Z", 9)).await
             .unwrap();
-        assert_eq!(store.session_count().unwrap(), 3);
-        assert_eq!(store.get_session("s1").unwrap().unwrap().message_count, 9);
+        assert_eq!(store.session_count().await.unwrap(), 3);
+        assert_eq!(store.get_session("s1").await.unwrap().unwrap().message_count, 9);
 
         // List for /a, most-recently-updated first (s1 now newest after re-upsert).
-        let a = store.list_sessions(Some("/a"), 10).unwrap();
+        let a = store.list_sessions(Some("/a"), 10).await.unwrap();
         assert_eq!(
             a.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
             ["s1", "s2"]
         );
         // Global list includes all three.
-        assert_eq!(store.list_sessions(None, 10).unwrap().len(), 3);
+        assert_eq!(store.list_sessions(None, 10).await.unwrap().len(), 3);
         // Unknown cwd → empty.
-        assert!(store.list_sessions(Some("/nope"), 10).unwrap().is_empty());
+        assert!(store.list_sessions(Some("/nope"), 10).await.unwrap().is_empty());
     }
 
     #[test]
@@ -2459,3 +2596,5 @@ mod tests {
         }
     }
 }
+
+

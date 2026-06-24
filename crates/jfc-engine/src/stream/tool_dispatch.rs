@@ -1632,6 +1632,8 @@ mod isolation_inheritance_tests {
             isolation: isolation.map(str::to_owned),
             parent_task_id: None,
             schema: None,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
             cwd: None,
         }
     }
@@ -1791,6 +1793,8 @@ mod task_fanout_tests {
                 isolation: Some("none".to_owned()),
                 parent_task_id: None,
                 schema: None,
+                allowed_tools: Vec::new(),
+                disallowed_tools: Vec::new(),
                 cwd: None,
             }),
         )

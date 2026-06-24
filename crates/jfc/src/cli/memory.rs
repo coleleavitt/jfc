@@ -88,6 +88,7 @@ pub(super) async fn run_memory_subcommand(sub: MemorySubcommand) -> anyhow::Resu
         MemorySubcommand::Sync { dir, json } => {
             let cwd = std::env::current_dir()?;
             let report = jfc_engine::memory::sync_team_memory(&cwd, &dir)
+                .await
                 .map_err(|e| anyhow::anyhow!("memory sync failed: {e}"))?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);

@@ -1,6 +1,6 @@
 use super::assistant_parts::{sanitize_terminal_text, truncate_str};
 use super::bash::{BashCmdKind, classify_bash_cmd};
-use super::core::diagnostics_for_path;
+use super::core::{diagnostics_for_input, diagnostics_for_path};
 use super::detection::detect_background_task_notification;
 use super::detection::looks_like_git_diff_output;
 use super::file_tool::{
@@ -43,6 +43,17 @@ pub(super) fn tool_body_line_count_with_app(
     content_w: usize,
     app: Option<&App>,
 ) -> usize {
+    let diagnostics = app
+        .map(|app| app.engine.diagnostics.as_slice())
+        .unwrap_or(&[]);
+    tool_body_line_count_with_diagnostics(tool, content_w, diagnostics)
+}
+
+pub(super) fn tool_body_line_count_with_diagnostics(
+    tool: &ToolCall,
+    content_w: usize,
+    diagnostics: &[jfc_engine::diagnostics::DiagnosticEntry],
+) -> usize {
     let t = crate::theme::Theme::dark();
     let expanded = tool.display.is_expanded();
     // AskModel has a bespoke gutter renderer; count its lines directly so the
@@ -74,8 +85,7 @@ pub(super) fn tool_body_line_count_with_app(
             }
             if let Some(lang) = infer_lang_from_tool(tool) {
                 let diag_lines = if matches!(tool.kind, ToolKind::Read) {
-                    app.map(|app| diagnostics_for_path(app, &tool.input))
-                        .unwrap_or_default()
+                    diagnostics_for_input(diagnostics, &tool.input)
                 } else {
                     std::collections::HashMap::new()
                 };

@@ -27,6 +27,7 @@ hex = "0.4"
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "stream", "rustls", "query", "http2", "form", "gzip", "brotli"] }
 serde = { version = "1.0.221", features = ["derive", "rc"] }
 serde_json = { version = "1.0.144", features = ["preserve_order", "raw_value"] }
+sqlx = { path = "/home/cole/RustProjects/forks/sqlx", default-features = false, features = ["runtime-tokio", "sqlite", "chrono"] }
 sha2 = "0.11.0"
 thiserror = "2.0.12"
 tokio = { version = "1" }

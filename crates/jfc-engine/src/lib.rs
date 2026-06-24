@@ -414,7 +414,11 @@ pub fn index_session(
         title: title.map(str::to_owned),
         message_count,
     };
-    match jfc_knowledge::KnowledgeStore::open_default().and_then(|s| s.upsert_session(&row)) {
+    let result = jfc_knowledge::block_on_knowledge(async {
+        let s = jfc_knowledge::KnowledgeStore::open_default().await?;
+        s.upsert_session(&row).await
+    });
+    match result {
         Ok(()) => {}
         Err(e) => tracing::debug!(
             target: "jfc::knowledge",
@@ -508,9 +512,11 @@ pub fn save_session_transcript_to_db(
     messages: Vec<jfc_knowledge::SessionMessage>,
 ) {
     let id = row.id.clone();
-    match jfc_knowledge::KnowledgeStore::open_default()
-        .and_then(|mut s| s.replace_transcript(&row, &messages))
-    {
+    let result = jfc_knowledge::block_on_knowledge(async {
+        let s = jfc_knowledge::KnowledgeStore::open_default().await?;
+        s.replace_transcript(&row, &messages).await
+    });
+    match result {
         Ok(()) => {}
         Err(e) => tracing::debug!(
             target: "jfc::knowledge",
@@ -550,8 +556,11 @@ pub fn backfill_and_verify_sessions(sessions_dir: &std::path::Path) -> SessionPa
     let Ok(entries) = std::fs::read_dir(sessions_dir) else {
         return report;
     };
-    let Ok(store) = jfc_knowledge::KnowledgeStore::open_default() else {
-        return report;
+    let store = match jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::KnowledgeStore::open_default().await
+    }) {
+        Ok(s) => s,
+        Err(_) => return report,
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -594,7 +603,9 @@ pub fn backfill_and_verify_sessions(sessions_dir: &std::path::Path) -> SessionPa
         save_session_transcript_to_db(row, to_session_messages(&session.messages));
 
         // Reload from the DB and compare the full per-message JSON stream.
-        let actual: Vec<(String, Option<String>)> = match store.load_transcript(&session.id) {
+        let actual: Vec<(String, Option<String>)> = match jfc_knowledge::block_on_knowledge(async {
+            store.load_transcript(&session.id).await
+        }) {
             Ok(msgs) => msgs.into_iter().map(|m| (m.role, m.meta)).collect(),
             Err(_) => {
                 report.mismatched.push(id);
@@ -619,12 +630,14 @@ pub fn knowledge_maintain(
     user_memory_dir: Option<&std::path::Path>,
     project_memory_dir: Option<&std::path::Path>,
 ) -> jfc_knowledge::Result<jfc_knowledge::MaintainReport> {
-    jfc_knowledge::auto_maintain(
-        project_root,
-        sessions_dir,
-        user_memory_dir,
-        project_memory_dir,
-    )
+    jfc_knowledge::block_on_knowledge(async {
+        jfc_knowledge::auto_maintain(
+            project_root,
+            sessions_dir,
+            user_memory_dir,
+            project_memory_dir,
+        ).await
+    })
 }
 
 fn knowledge_maintain_disabled_by_env() -> bool {

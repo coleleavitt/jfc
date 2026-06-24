@@ -27,7 +27,7 @@ pub const MAX_CONCURRENCY: usize = 10;
 /// A scheduled batch of tool calls.
 #[derive(Debug)]
 pub enum ToolBatch {
-    /// Tools that can execute simultaneously (Read, Glob, Grep, Search).
+    /// Tools that can execute simultaneously (Read, Glob, Grep, Search, Research).
     Parallel(Vec<ToolCall>),
     /// A single tool that must run alone (Edit, Write, Bash, ApplyPatch).
     Sequential(Box<ToolCall>),
@@ -46,6 +46,7 @@ pub fn is_concurrency_safe(kind: &ToolKind) -> bool {
             | ToolKind::Glob
             | ToolKind::Grep
             | ToolKind::Search
+            | ToolKind::Research
             | ToolKind::BashOutput
             | ToolKind::TaskList
             | ToolKind::Skill
@@ -467,6 +468,7 @@ mod tests {
             ToolKind::Glob,
             ToolKind::Grep,
             ToolKind::Search,
+            ToolKind::Research,
             ToolKind::TaskList,
             ToolKind::Skill,
             ToolKind::ToolSearch,
@@ -501,6 +503,23 @@ mod tests {
         ] {
             assert!(!is_concurrency_safe(&kind), "expected {kind:?} unsafe");
         }
+    }
+
+    #[test]
+    fn schedule_groups_adjacent_research_tools_parallel_regression() {
+        let calls = vec![
+            make_call(ToolKind::Research, "research1"),
+            make_call(ToolKind::Research, "research2"),
+        ];
+
+        let batches = schedule_tools(calls);
+
+        assert_eq!(batches.len(), 1);
+        assert!(matches!(
+            &batches[0],
+            ToolBatch::Parallel(calls)
+                if calls.len() == 2 && calls.iter().all(|call| call.kind == ToolKind::Research)
+        ));
     }
 
     // Robust: a parallel batch larger than MAX_CONCURRENCY is split into

@@ -89,31 +89,29 @@ impl SkillUsageStore {
     }
 
     /// Load (or create an empty) store for the given legacy path.
-    pub fn load(path: impl Into<PathBuf>) -> Self {
+    pub async fn load(path: impl Into<PathBuf>) -> Self {
         let path = path.into();
         let skills = load_usage_from_db(&path)
+            .await
             .or_else(|| {
                 std::fs::read(&path)
                     .ok()
                     .and_then(|b| serde_json::from_slice::<BTreeMap<String, SkillUsage>>(&b).ok())
-                    .inspect(|skills| {
-                        let _ = save_usage_to_db(&path, skills);
-                    })
             })
             .unwrap_or_default();
         Self { skills, path }
     }
 
     /// Load the store for a project root.
-    pub fn open(project_root: &Path) -> Self {
-        Self::load(Self::path_for(project_root))
+    pub async fn open(project_root: &Path) -> Self {
+        Self::load(Self::path_for(project_root)).await
     }
 
     /// Persist the store to the DB artifact. Errors are
     /// returned so a curator can surface them, but the recording helpers below
     /// log-and-swallow so telemetry never breaks skill invocation.
-    pub fn save(&self) -> std::io::Result<()> {
-        save_usage_to_db(&self.path, &self.skills)
+    pub async fn save(&self) -> std::io::Result<()> {
+        save_usage_to_db(&self.path, &self.skills).await
     }
 
     pub fn get(&self, name: &str) -> Option<&SkillUsage> {
@@ -211,36 +209,38 @@ fn usage_key(path: &Path) -> String {
     path.display().to_string()
 }
 
-fn load_usage_from_db(path: &Path) -> Option<BTreeMap<String, SkillUsage>> {
-    let store = jfc_knowledge::KnowledgeStore::open_default().ok()?;
+async fn load_usage_from_db(path: &Path) -> Option<BTreeMap<String, SkillUsage>> {
+    let store = jfc_knowledge::KnowledgeStore::open_default().await.ok()?;
     let row = store
         .get_session_artifact(SKILL_USAGE_SESSION_ID, SKILL_USAGE_KIND, &usage_key(path))
+        .await
         .ok()
         .flatten()?;
     serde_json::from_str(&row.value_json).ok()
 }
 
-fn save_usage_to_db(path: &Path, skills: &BTreeMap<String, SkillUsage>) -> std::io::Result<()> {
+async fn save_usage_to_db(path: &Path, skills: &BTreeMap<String, SkillUsage>) -> std::io::Result<()> {
     let json = serde_json::to_string(skills).map_err(std::io::Error::other)?;
-    jfc_knowledge::KnowledgeStore::open_default()
-        .and_then(|store| {
-            store.upsert_session_artifact(
-                SKILL_USAGE_SESSION_ID,
-                SKILL_USAGE_KIND,
-                &usage_key(path),
-                &json,
-            )
-        })
-        .map_err(std::io::Error::other)
+    let store = jfc_knowledge::KnowledgeStore::open_default()
+        .await
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    store.upsert_session_artifact(
+        SKILL_USAGE_SESSION_ID,
+        SKILL_USAGE_KIND,
+        &usage_key(path),
+        &json,
+    )
+    .await
+    .map_err(|e| std::io::Error::other(e.to_string()))
 }
 
 /// Best-effort: record a skill invocation for a project without the caller
 /// holding a store. Loads, bumps, saves; logs on error (never panics/propagates
 /// — telemetry must not break skill execution).
-pub fn record_skill_use(project_root: &Path, name: &str) {
-    let mut store = SkillUsageStore::open(project_root);
+pub async fn record_skill_use(project_root: &Path, name: &str) {
+    let mut store = SkillUsageStore::open(project_root).await;
     store.record_use(name);
-    if let Err(e) = store.save() {
+    if let Err(e) = store.save().await {
         tracing::debug!(target: "jfc::skill_usage", skill = name, error = %e, "could not persist skill-usage ledger");
     }
 }
@@ -253,16 +253,16 @@ fn now_iso() -> String {
 mod tests {
     use super::*;
 
-    fn temp_store() -> (SkillUsageStore, tempfile::TempDir) {
+    async fn temp_store() -> (SkillUsageStore, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
         let path = SkillUsageStore::path_for(dir.path());
-        (SkillUsageStore::load(path), dir)
+        (SkillUsageStore::load(path).await, dir)
     }
 
     // Normal: recording a use bumps the count, stamps activity, sets Active.
-    #[test]
-    fn record_use_bumps_count_normal() {
-        let (mut s, _d) = temp_store();
+    #[tokio::test]
+    async fn record_use_bumps_count_normal() {
+        let (mut s, _d) = temp_store().await;
         s.record_use("deploy");
         s.record_use("deploy");
         let u = s.get("deploy").unwrap();
@@ -272,18 +272,18 @@ mod tests {
     }
 
     // Normal: the usage ledger round-trips through the DB.
-    #[test]
-    fn usage_ledger_roundtrips_to_db_normal() {
+    #[tokio::test]
+    async fn usage_ledger_roundtrips_to_db_normal() {
         let dir = tempfile::tempdir().unwrap();
         let path = SkillUsageStore::path_for(dir.path());
         {
-            let mut s = SkillUsageStore::load(&path);
+            let mut s = SkillUsageStore::load(&path).await;
             s.record_use("commit");
             s.set_created_by("commit", CreatedBy::Agent);
             s.set_pinned("commit", true);
-            s.save().unwrap();
+            s.save().await.unwrap();
         }
-        let reloaded = SkillUsageStore::load(&path);
+        let reloaded = SkillUsageStore::load(&path).await;
         let u = reloaded.get("commit").unwrap();
         assert_eq!(u.use_count, 1);
         assert_eq!(u.created_by, CreatedBy::Agent);
@@ -292,9 +292,9 @@ mod tests {
 
     // Robust: `curatable` only returns agent-created, unpinned skills — the
     // safety filter that keeps a curator off user skills and pinned ones.
-    #[test]
-    fn curatable_excludes_user_and_pinned_robust() {
-        let (mut s, _d) = temp_store();
+    #[tokio::test]
+    async fn curatable_excludes_user_and_pinned_robust() {
+        let (mut s, _d) = temp_store().await;
         s.record_use("user-skill"); // defaults to User provenance
         s.record_use("agent-a");
         s.set_created_by("agent-a", CreatedBy::Agent);
@@ -310,9 +310,9 @@ mod tests {
 
     // Robust: re-invoking an archived skill revives it to Active (clearly used),
     // but archival is otherwise sticky.
-    #[test]
-    fn archived_skill_revives_on_use_robust() {
-        let (mut s, _d) = temp_store();
+    #[tokio::test]
+    async fn archived_skill_revives_on_use_robust() {
+        let (mut s, _d) = temp_store().await;
         s.record_use("x");
         s.set_state("x", SkillState::Archived);
         assert_eq!(s.get("x").unwrap().state, SkillState::Archived);

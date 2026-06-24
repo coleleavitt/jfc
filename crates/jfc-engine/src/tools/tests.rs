@@ -2669,6 +2669,89 @@ async fn execute_tool_bash_output_blocks_by_default_regression() {
     assert!(output.output.contains("startdone"), "{}", output.output);
 }
 
+/// The model-facing `TaskStop`/`KillBash` tool must actually cancel a
+/// background SHELL when given its `bash_*` id (not just signal intent): the
+/// dispatch routes shell ids to `cancel_bash_task`, which SIGKILLs the process
+/// tree and settles the task as cancelled.
+#[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
+async fn execute_tool_taskstop_cancels_background_shell_normal() {
+    crate::sandbox::reset_active_bash_sandbox_for_test();
+    let dir = tempfile::tempdir().expect("temp dir");
+    // Start a long-running background shell.
+    let result = execute_tool(
+        ToolKind::Bash,
+        ToolInput::Bash {
+            command: "sleep 60".into(),
+            timeout: Some(60_000),
+            workdir: None,
+            run_in_background: Some(true),
+            suppress_output: None,
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+    assert!(!result.is_error(), "{}", result.output);
+    let task_id = parse_bash_task_id(&result.output);
+    assert!(task_id.starts_with("bash_"), "unexpected id: {task_id}");
+
+    // Stop it via the model-facing TaskStop tool with the shell id.
+    let stop = execute_tool(
+        ToolKind::TaskStop,
+        ToolInput::TaskStop {
+            task_id: task_id.clone(),
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+    assert!(!stop.is_error(), "{}", stop.output);
+    assert!(
+        stop.output.contains("Cancelled background shell"),
+        "{}",
+        stop.output
+    );
+
+    // It must now report as cancelled (terminal), not running.
+    let listed = crate::tools::list_bash_tasks().await;
+    let task = listed
+        .iter()
+        .find(|t| t.id == task_id)
+        .expect("task still tracked");
+    assert!(!task.running, "cancelled shell must not be running");
+    assert_eq!(task.status, "cancelled");
+}
+
+/// A non-`bash_*` id still flows to the agent-task stop path (unchanged
+/// behavior), so `TaskStop` stays overloaded without breaking agent cancel.
+#[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
+async fn execute_tool_taskstop_non_shell_id_uses_task_path_normal() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let stop = execute_tool(
+        ToolKind::TaskStop,
+        ToolInput::TaskStop {
+            task_id: "tooluse_agent_123".into(),
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+    assert!(!stop.is_error(), "{}", stop.output);
+    assert!(
+        stop.output.contains("Stop signal sent to task"),
+        "{}",
+        stop.output
+    );
+}
+
 #[tokio::test]
 #[serial_test::serial]
 async fn execute_tool_bash_output_nonblocking_snapshot_regression() {
@@ -3031,6 +3114,8 @@ async fn execute_tool_task_kind_rejects_with_streaming_message_robust() {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
             cwd: None,
         }),
         PathBuf::from("."),

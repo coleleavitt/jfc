@@ -1,4 +1,4 @@
-use rusqlite::{OptionalExtension, params};
+use sqlx::Row;
 use serde::{Deserialize, Serialize};
 
 use crate::record::now_ms;
@@ -117,34 +117,34 @@ pub fn definition_id(
     .to_string()
 }
 
-fn row_to_definition(row: &rusqlite::Row<'_>) -> rusqlite::Result<DefinitionRecord> {
+fn row_to_definition(row: &sqlx::sqlite::SqliteRow) -> Result<DefinitionRecord> {
     Ok(DefinitionRecord {
-        id: row.get(0)?,
-        kind: row.get(1)?,
-        scope: row.get(2)?,
-        project_key: row.get(3)?,
-        namespace: row.get(4)?,
-        name: row.get(5)?,
-        title: row.get(6)?,
-        description: row.get(7)?,
-        body: row.get(8)?,
-        metadata_json: row.get(9)?,
-        source_path: row.get(10)?,
-        source_hash: row.get(11)?,
-        status: row.get(12)?,
-        version: row.get(13)?,
-        created_by: row.get(14)?,
-        created_at_ms: row.get(15)?,
-        updated_at_ms: row.get(16)?,
-        superseded_by: row.get(17)?,
+        id: row.try_get(0)?,
+        kind: row.try_get(1)?,
+        scope: row.try_get(2)?,
+        project_key: row.try_get(3)?,
+        namespace: row.try_get(4)?,
+        name: row.try_get(5)?,
+        title: row.try_get(6)?,
+        description: row.try_get(7)?,
+        body: row.try_get(8)?,
+        metadata_json: row.try_get(9)?,
+        source_path: row.try_get(10)?,
+        source_hash: row.try_get(11)?,
+        status: row.try_get(12)?,
+        version: row.try_get(13)?,
+        created_by: row.try_get(14)?,
+        created_at_ms: row.try_get(15)?,
+        updated_at_ms: row.try_get(16)?,
+        superseded_by: row.try_get(17)?,
     })
 }
 
 impl KnowledgeStore {
-    pub fn upsert_definition(&self, def: &NewDefinition) -> Result<String> {
+    pub async fn upsert_definition(&self, def: &NewDefinition) -> Result<String> {
         let id = def.id();
         let now = now_ms();
-        self.conn().execute(
+        sqlx::query(
             "INSERT INTO definitions (
                 id, kind, scope, project_key, namespace, name, title, description,
                 body, metadata_json, source_path, source_hash, status, version,
@@ -168,29 +168,29 @@ impl KnowledgeStore {
                     THEN definitions.version + 1
                     ELSE definitions.version
                 END,
-                superseded_by = NULL",
-            params![
-                id,
-                def.kind,
-                def.scope.slug(),
-                def.project_key,
-                def.namespace,
-                def.name,
-                def.title,
-                def.description,
-                def.body,
-                def.metadata_json,
-                def.source_path,
-                def.source_hash,
-                def.status.slug(),
-                def.created_by,
-                now,
-            ],
-        )?;
+                superseded_by = NULL"
+        )
+            .bind(&id)
+            .bind(&def.kind)
+            .bind(def.scope.slug())
+            .bind(&def.project_key)
+            .bind(&def.namespace)
+            .bind(&def.name)
+            .bind(&def.title)
+            .bind(&def.description)
+            .bind(&def.body)
+            .bind(&def.metadata_json)
+            .bind(&def.source_path)
+            .bind(&def.source_hash)
+            .bind(def.status.slug())
+            .bind(&def.created_by)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
         Ok(id)
     }
 
-    pub fn get_definition_by_name(
+    pub async fn get_definition_by_name(
         &self,
         kind: &str,
         scope: DefinitionScope,
@@ -199,26 +199,25 @@ impl KnowledgeStore {
         name: &str,
     ) -> Result<Option<DefinitionRecord>> {
         let id = definition_id(kind, scope.slug(), project_key, namespace, name);
-        self.conn()
-            .query_row(
-                "SELECT id, kind, scope, project_key, namespace, name, title, description,
-                        body, metadata_json, source_path, source_hash, status, version,
-                        created_by, created_at_ms, updated_at_ms, superseded_by
-                 FROM definitions
-                 WHERE id = ?1 AND superseded_by IS NULL",
-                [id],
-                row_to_definition,
-            )
-            .optional()
-            .map_err(Into::into)
+        let row = sqlx::query(
+            "SELECT id, kind, scope, project_key, namespace, name, title, description,
+                    body, metadata_json, source_path, source_hash, status, version,
+                    created_by, created_at_ms, updated_at_ms, superseded_by
+             FROM definitions
+             WHERE id = ?1 AND superseded_by IS NULL"
+        )
+            .bind(&id)
+            .fetch_optional(&self.pool)
+            .await?;
+        row.map(|r| row_to_definition(&r)).transpose()
     }
 
-    pub fn list_definitions_for_project(
+    pub async fn list_definitions_for_project(
         &self,
         kind: &str,
         project_key: &str,
     ) -> Result<Vec<DefinitionRecord>> {
-        let mut stmt = self.conn().prepare(
+        let rows = sqlx::query(
             "SELECT id, kind, scope, project_key, namespace, name, title, description,
                     body, metadata_json, source_path, source_hash, status, version,
                     created_by, created_at_ms, updated_at_ms, superseded_by
@@ -227,12 +226,15 @@ impl KnowledgeStore {
                AND status = 'active'
                AND superseded_by IS NULL
                AND (project_key IS NULL OR project_key = ?2)
-             ORDER BY updated_at_ms ASC",
-        )?;
-        let rows = stmt.query_map(params![kind, project_key], row_to_definition)?;
+             ORDER BY updated_at_ms ASC"
+        )
+            .bind(kind)
+            .bind(project_key)
+            .fetch_all(&self.pool)
+            .await?;
         let mut out = Vec::new();
         for row in rows {
-            out.push(row?);
+            out.push(row_to_definition(&row)?);
         }
         Ok(out)
     }
@@ -260,10 +262,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn upsert_definition_round_trips_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
-        let id = store.upsert_definition(&sample("deploy", "body")).unwrap();
+    #[tokio::test]
+    async fn upsert_definition_round_trips_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
+        let id = store.upsert_definition(&sample("deploy", "body")).await.unwrap();
 
         let loaded = store
             .get_definition_by_name(
@@ -273,6 +275,7 @@ mod tests {
                 None,
                 "deploy",
             )
+            .await
             .unwrap()
             .unwrap();
 
@@ -281,12 +284,13 @@ mod tests {
         assert_eq!(loaded.version, 1);
     }
 
-    #[test]
-    fn upsert_definition_bumps_version_when_body_changes_normal() {
-        let store = KnowledgeStore::open_in_memory().unwrap();
-        store.upsert_definition(&sample("deploy", "body")).unwrap();
+    #[tokio::test]
+    async fn upsert_definition_bumps_version_when_body_changes_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
+        store.upsert_definition(&sample("deploy", "body")).await.unwrap();
         store
             .upsert_definition(&sample("deploy", "better body"))
+            .await
             .unwrap();
 
         let loaded = store
@@ -297,6 +301,7 @@ mod tests {
                 None,
                 "deploy",
             )
+            .await
             .unwrap()
             .unwrap();
 

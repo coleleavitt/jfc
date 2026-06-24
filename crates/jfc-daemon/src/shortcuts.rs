@@ -25,14 +25,14 @@ fn artifact_key(path: &Path) -> String {
 fn artifact_store(path: &Path) -> std::io::Result<jfc_knowledge::KnowledgeStore> {
     let default_base = crate::state::DaemonPaths::default_user().base_dir;
     if path.starts_with(&default_base) {
-        return jfc_knowledge::KnowledgeStore::open_default().map_err(std::io::Error::other);
+        return jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open_default()).map_err(std::io::Error::other);
     }
     let db_dir = path
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| std::path::PathBuf::from("."));
     std::fs::create_dir_all(&db_dir)?;
-    jfc_knowledge::KnowledgeStore::open(&db_dir.join("knowledge.db")).map_err(std::io::Error::other)
+    jfc_knowledge::block_on_knowledge(jfc_knowledge::KnowledgeStore::open(&db_dir.join("knowledge.db"))).map_err(std::io::Error::other)
 }
 
 /// A saved prompt template.
@@ -225,8 +225,11 @@ impl ShortcutStore {
     pub fn load(path: &std::path::Path) -> std::io::Result<Self> {
         let store = artifact_store(path)?;
         let key = artifact_key(path);
-        if let Some(row) = store
-            .get_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key)
+        if let Some(row) = jfc_knowledge::block_on_knowledge(async {
+            store
+                .get_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key)
+                .await
+        })
             .map_err(std::io::Error::other)?
         {
             let mut loaded: Self = serde_json::from_str(&row.value_json)
@@ -242,8 +245,11 @@ impl ShortcutStore {
         };
         let json = serde_json::to_string(&legacy)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        store
-            .upsert_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key, &json)
+        jfc_knowledge::block_on_knowledge(async {
+            store
+                .upsert_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key, &json)
+                .await
+        })
             .map_err(std::io::Error::other)?;
         Ok(legacy.with_loaded_json(json))
     }
@@ -252,8 +258,11 @@ impl ShortcutStore {
     pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
         let store = artifact_store(path)?;
         let key = artifact_key(path);
-        let current_json = store
-            .get_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key)
+        let current_json = jfc_knowledge::block_on_knowledge(async {
+            store
+                .get_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key)
+                .await
+        })
             .map_err(std::io::Error::other)?
             .map(|row| row.value_json);
         let to_save =
@@ -267,8 +276,11 @@ impl ShortcutStore {
             };
         let json = serde_json::to_string(&to_save)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        store
-            .upsert_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key, &json)
+        jfc_knowledge::block_on_knowledge(async {
+            store
+                .upsert_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key, &json)
+                .await
+        })
             .map_err(std::io::Error::other)
     }
 

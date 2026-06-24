@@ -4,6 +4,8 @@
 name: Dockerfile (with bash)
 
 scope: source.dockerfile.bash
+file_extensions:
+  - dockerfile-bash
 
 variables:
   identifier: '[[:alnum:]]+'

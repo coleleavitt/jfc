@@ -79,59 +79,62 @@ impl DreamerLease {
         }
     }
 
-    fn store(&self) -> Result<jfc_knowledge::KnowledgeStore> {
-        Ok(jfc_knowledge::KnowledgeStore::open_default()?)
-    }
-
     /// Try to acquire the lease. Returns Ok(()) if acquired, Err if held.
     fn acquire(&self, ttl: Duration) -> Result<()> {
-        let store = self.store()?;
-        if let Some(row) = store.get_session_artifact(
-            &self.session_id,
-            PLAN_DREAMER_LEASE_KIND,
-            PLAN_DREAMER_LEASE_KEY,
-        )? && let Ok(claim) = serde_json::from_str::<LeaseClaim>(&row.value_json)
-        {
+        jfc_knowledge::block_on_knowledge(async {
+            let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+            if let Some(row) = store.get_session_artifact(
+                &self.session_id,
+                PLAN_DREAMER_LEASE_KIND,
+                PLAN_DREAMER_LEASE_KEY,
+            ).await? && let Ok(claim) = serde_json::from_str::<LeaseClaim>(&row.value_json)
+            {
+                let now_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                if claim.expiry_ms > now_ms {
+                    bail!(
+                        "lease held by {} until {}",
+                        claim.holder_id,
+                        claim.expiry_ms
+                    );
+                }
+            }
+
             let now_ms = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
-            if claim.expiry_ms > now_ms {
-                bail!(
-                    "lease held by {} until {}",
-                    claim.holder_id,
-                    claim.expiry_ms
-                );
-            }
-        }
-
-        let now_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-        let claim = LeaseClaim {
-            holder_id: self.holder_id.clone(),
-            expiry_ms: now_ms + ttl.as_millis() as u64,
-        };
-        let json = serde_json::to_string(&claim)?;
-        store.upsert_session_artifact(
-            &self.session_id,
-            PLAN_DREAMER_LEASE_KIND,
-            PLAN_DREAMER_LEASE_KEY,
-            &json,
-        )?;
-        Ok(())
+            let claim = LeaseClaim {
+                holder_id: self.holder_id.clone(),
+                expiry_ms: now_ms + ttl.as_millis() as u64,
+            };
+            let json = serde_json::to_string(&claim)?;
+            store.upsert_session_artifact(
+                &self.session_id,
+                PLAN_DREAMER_LEASE_KIND,
+                PLAN_DREAMER_LEASE_KEY,
+                &json,
+            ).await?;
+            Ok(())
+        })
     }
 
     /// Release the lease row.
     fn release(&self) {
-        if let Ok(store) = self.store() {
-            let _ = store.delete_session_artifact(
-                &self.session_id,
-                PLAN_DREAMER_LEASE_KIND,
-                PLAN_DREAMER_LEASE_KEY,
-            );
-        }
+        let _ = jfc_knowledge::block_on_knowledge(async {
+            if let Ok(store) = jfc_knowledge::KnowledgeStore::open_default().await {
+                let _ = store
+                    .delete_session_artifact(
+                        &self.session_id,
+                        PLAN_DREAMER_LEASE_KIND,
+                        PLAN_DREAMER_LEASE_KEY,
+                    )
+                    .await;
+            }
+            Ok::<_, jfc_knowledge::KnowledgeError>(())
+        });
     }
 }
 
@@ -474,8 +477,8 @@ mod tests {
         assert_eq!(plan.frontmatter.status, PlanStatus::Archived);
     }
 
-    #[test]
-    fn lease_prevents_concurrent_normal() {
+    #[tokio::test(flavor="multi_thread")]
+    async fn lease_prevents_concurrent_normal() {
         let dir = TempDir::new().unwrap();
         let plans_dir = dir.path().join("plans");
         std::fs::create_dir_all(&plans_dir).unwrap();

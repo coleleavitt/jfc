@@ -107,6 +107,38 @@ fn floor_char_boundary(value: &str, index: usize) -> usize {
     boundary
 }
 
+fn normalized_subject_key(subject: &str) -> String {
+    let mut key = String::new();
+    for word in subject.split_whitespace() {
+        if !key.is_empty() {
+            key.push(' ');
+        }
+        key.push_str(word);
+    }
+    key.make_ascii_lowercase();
+    key
+}
+
+fn duplicate_open_subject(
+    inner: &TaskStoreInner,
+    subject: &str,
+    except_id: Option<&str>,
+) -> Option<TaskId> {
+    let subject_key = normalized_subject_key(subject);
+    if subject_key.is_empty() {
+        return None;
+    }
+    inner
+        .tasks
+        .values()
+        .find(|task| {
+            Some(task.id.as_str()) != except_id
+                && task.status.is_open()
+                && normalized_subject_key(&task.subject) == subject_key
+        })
+        .map(|task| task.id.clone())
+}
+
 fn is_legacy_placeholder_task(task: &Task) -> bool {
     task.subject.trim().eq_ignore_ascii_case("subj")
         && task.description.trim().eq_ignore_ascii_case("desc")
@@ -625,14 +657,18 @@ impl TaskStore {
     }
 
     fn load_inner_from_db(session_id: &str) -> TaskStoreInner {
-        let Ok(store) = jfc_knowledge::KnowledgeStore::open_default() else {
-            return TaskStoreInner::default();
-        };
-        let Ok(Some(row)) = store.get_session_artifact(session_id, TASK_STORE_KIND, TASK_STORE_KEY)
-        else {
-            return TaskStoreInner::default();
-        };
-        serde_json::from_str::<TaskStoreInner>(&row.value_json).unwrap_or_default()
+        jfc_knowledge::block_on_knowledge(async {
+            let Ok(store) = jfc_knowledge::KnowledgeStore::open_default().await else {
+                return TaskStoreInner::default();
+            };
+            let Ok(Some(row)) = store
+                .get_session_artifact(session_id, TASK_STORE_KIND, TASK_STORE_KEY)
+                .await
+            else {
+                return TaskStoreInner::default();
+            };
+            serde_json::from_str::<TaskStoreInner>(&row.value_json).unwrap_or_default()
+        })
     }
 
     fn load_inner_from_db_or_legacy(session_id: &str, legacy_path: &PathBuf) -> TaskStoreInner {
@@ -645,8 +681,12 @@ impl TaskStore {
             return legacy;
         }
         if let Ok(json) = serde_json::to_string(&legacy) {
-            let result = jfc_knowledge::KnowledgeStore::open_default().and_then(|store| {
-                store.upsert_session_artifact(session_id, TASK_STORE_KIND, TASK_STORE_KEY, &json)
+            let result = jfc_knowledge::block_on_knowledge(async {
+                let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+                store
+                    .upsert_session_artifact(session_id, TASK_STORE_KIND, TASK_STORE_KEY, &json)
+                    .await?;
+                Ok::<_, jfc_knowledge::KnowledgeError>(())
             });
             if let Err(error) = result {
                 tracing::warn!(
@@ -694,48 +734,24 @@ impl TaskStore {
         inner.next_id = inner.next_id.max(micros.saturating_mul(1_000) + counter);
     }
 
+    /// Fold a re-read of the persisted store (`remote`) back into the
+    /// just-edited in-memory state (`local`) at persist time.
+    ///
+    /// Local is authoritative for every id it already knows about: our edits —
+    /// status changes, field patches, and soft-delete tombstones
+    /// (`status: deleted`) — win over the copy we previously persisted. We only
+    /// fold in tasks that exist *solely* in the remote copy, i.e. created by
+    /// another process (background worker / teammate) since our last load, so a
+    /// concurrent writer's new tasks aren't clobbered.
+    ///
+    /// We must NOT rename a locally-edited row and re-insert the stale remote
+    /// version on "conflict": with the DB store's microsecond-seeded ids a true
+    /// cross-process id collision is astronomically unlikely, so every apparent
+    /// conflict is really our own edit racing the value we just read back.
+    /// Renaming + re-inserting there resurrected just-deleted/updated tasks and
+    /// accumulated duplicates (the "it comes back" bug).
     fn merge_remote_inner(local: &mut TaskStoreInner, remote: TaskStoreInner) {
         local.next_id = local.next_id.max(remote.next_id);
-        let mut remap = HashMap::<TaskId, TaskId>::new();
-        for (id, remote_task) in &remote.tasks {
-            match local.tasks.get(id) {
-                None => {}
-                Some(local_task)
-                    if serde_json::to_value(local_task).ok()
-                        == serde_json::to_value(remote_task).ok() =>
-                {
-                    continue;
-                }
-                Some(_) => {
-                    local.next_id += 1;
-                    let new_id = TaskId::new(format!("t{}", local.next_id));
-                    if let Some(mut local_task) = local.tasks.remove(id) {
-                        local_task.id = new_id.clone();
-                        local.tasks.insert(new_id.clone(), local_task);
-                        remap.insert(id.clone(), new_id);
-                    }
-                }
-            }
-        }
-        if !remap.is_empty() {
-            for task in local.tasks.values_mut() {
-                task.blocks = task
-                    .blocks
-                    .iter()
-                    .map(|id| remap.get(id).cloned().unwrap_or_else(|| id.clone()))
-                    .collect();
-                task.blocked_by = task
-                    .blocked_by
-                    .iter()
-                    .map(|id| remap.get(id).cloned().unwrap_or_else(|| id.clone()))
-                    .collect();
-                if let Some(parent) = task.parent_id.as_mut()
-                    && let Some(new_id) = remap.get(parent)
-                {
-                    *parent = new_id.clone();
-                }
-            }
-        }
         for (id, remote_task) in remote.tasks {
             local.tasks.entry(id).or_insert(remote_task);
         }
@@ -777,19 +793,44 @@ impl TaskStore {
     fn persist_unlocked(&self, inner: &TaskStoreInner) {
         if let Some(session_id) = &self.db_session_id {
             let mut merged = inner.clone();
-            if let Ok(store) = jfc_knowledge::KnowledgeStore::open_default()
-                && let Ok(Some(row)) =
-                    store.get_session_artifact(session_id, TASK_STORE_KIND, TASK_STORE_KEY)
-                && let Ok(remote) = serde_json::from_str::<TaskStoreInner>(&row.value_json)
-            {
-                Self::merge_remote_inner(&mut merged, remote);
+            let session_id = session_id.clone();
+
+            // First, fetch remote and merge if it exists
+            let result = jfc_knowledge::block_on_knowledge(async {
+                let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+                if let Ok(Some(row)) = store
+                    .get_session_artifact(&session_id, TASK_STORE_KIND, TASK_STORE_KEY)
+                    .await
+                {
+                    if let Ok(remote) = serde_json::from_str::<TaskStoreInner>(&row.value_json) {
+                        Self::merge_remote_inner(&mut merged, remote);
+                    }
+                }
+                Ok::<_, jfc_knowledge::KnowledgeError>(())
+            });
+
+            if let Err(error) = result {
+                tracing::warn!(
+                    target: "jfc::tasks",
+                    session_id,
+                    %error,
+                    "failed to fetch remote for merge in persist"
+                );
             }
+
             let Ok(json) = serde_json::to_string(&merged) else {
                 return;
             };
-            let result = jfc_knowledge::KnowledgeStore::open_default().and_then(|store| {
-                store.upsert_session_artifact(session_id, TASK_STORE_KIND, TASK_STORE_KEY, &json)
+
+            // Now upsert the merged state
+            let result = jfc_knowledge::block_on_knowledge(async {
+                let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+                store
+                    .upsert_session_artifact(&session_id, TASK_STORE_KIND, TASK_STORE_KEY, &json)
+                    .await?;
+                Ok::<_, jfc_knowledge::KnowledgeError>(())
             });
+
             if let Err(error) = result {
                 tracing::warn!(
                     target: "jfc::tasks",
@@ -812,9 +853,8 @@ impl TaskStore {
         );
     }
 
-    /// Create a new task. Returns Err on duplicate `subject` if you'd want to
-    /// dedupe — currently always succeeds. Validates that any `blocked_by`
-    /// targets exist.
+    /// Create a new task. Returns Err on duplicate live `subject`. Validates
+    /// that any `blocked_by` targets exist.
     pub fn create<B>(
         &self,
         subject: String,
@@ -834,6 +874,12 @@ impl TaskStore {
             if !inner.tasks.contains_key(dep.as_str()) {
                 return Err(TaskError::UnknownDependency { id: dep.clone() });
             }
+        }
+        if let Some(existing_id) = duplicate_open_subject(&inner, &subject, None) {
+            return Err(TaskError::DuplicateSubject {
+                subject,
+                existing_id,
+            });
         }
         if self.db_session_id.is_some() {
             Self::seed_db_task_id(&mut inner);
@@ -930,6 +976,14 @@ impl TaskStore {
                     return Err(TaskError::DependencyCycle { path });
                 }
             }
+        }
+        if let Some(subject) = patch.subject.as_ref()
+            && let Some(existing_id) = duplicate_open_subject(&inner, subject, Some(id))
+        {
+            return Err(TaskError::DuplicateSubject {
+                subject: subject.clone(),
+                existing_id,
+            });
         }
 
         let task = inner.tasks.get_mut(id).unwrap();
@@ -2004,22 +2058,222 @@ mod tests {
     }
 
     #[test]
-    fn merge_remote_inner_preserves_conflicting_tasks_regression() {
+    fn create_duplicate_open_subject_errors_without_allocating_id_regression() {
+        let store = TaskStore::in_memory();
+        let first = store
+            .create(
+                "Map /goal loop engineering architecture".into(),
+                "first".into(),
+                None,
+                Vec::<TaskId>::new(),
+            )
+            .unwrap();
+
+        let duplicate = store
+            .create(
+                "  map   /goal loop engineering architecture  ".into(),
+                "duplicate".into(),
+                None,
+                Vec::<TaskId>::new(),
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            duplicate,
+            TaskError::DuplicateSubject { existing_id, .. } if existing_id == first.id
+        ));
+
+        let next = store
+            .create(
+                "Deep research: agentic loop / goal termination bug classes".into(),
+                "next".into(),
+                None,
+                Vec::<TaskId>::new(),
+            )
+            .unwrap();
+        assert_eq!(next.id, "t2");
+    }
+
+    #[test]
+    fn update_duplicate_open_subject_errors_regression() {
+        let store = TaskStore::in_memory();
+        let first = store
+            .create(
+                "Map /goal loop engineering architecture".into(),
+                "first".into(),
+                None,
+                Vec::<TaskId>::new(),
+            )
+            .unwrap();
+        let second = store
+            .create(
+                "Deep research: agentic loop / goal termination bug classes".into(),
+                "second".into(),
+                None,
+                Vec::<TaskId>::new(),
+            )
+            .unwrap();
+
+        let duplicate = store
+            .update(
+                &second.id,
+                TaskPatch {
+                    subject: Some("map /goal loop engineering architecture".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            duplicate,
+            TaskError::DuplicateSubject { existing_id, .. } if existing_id == first.id
+        ));
+        assert_eq!(
+            store.get(&second.id).unwrap().subject,
+            "Deep research: agentic loop / goal termination bug classes"
+        );
+    }
+
+    #[test]
+    fn create_reuses_subject_after_terminal_task_normal() {
+        let store = TaskStore::in_memory();
+        let first = store
+            .create(
+                "Map /goal loop engineering architecture".into(),
+                "first".into(),
+                None,
+                Vec::<TaskId>::new(),
+            )
+            .unwrap();
+        store
+            .update(
+                &first.id,
+                TaskPatch {
+                    status: Some(TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let next = store
+            .create(
+                "map /goal loop engineering architecture".into(),
+                "next".into(),
+                None,
+                Vec::<TaskId>::new(),
+            )
+            .unwrap();
+
+        assert_eq!(next.id, "t2");
+    }
+
+    // Regression: the persist-time merge must treat the local (just-edited)
+    // copy as authoritative for ids it already knows, and only fold in tasks
+    // that exist solely in the remote copy. The old behavior renamed the local
+    // row and re-inserted the stale remote version, which resurrected
+    // deleted/updated tasks and accumulated duplicates ("it comes back").
+    #[test]
+    fn merge_remote_inner_local_wins_and_keeps_remote_only_regression() {
         let mut local = TaskStoreInner {
             next_id: 1,
-            tasks: [(TaskId::new("t1"), test_task("t1", "local"))].into(),
+            tasks: [(TaskId::new("t1"), test_task("t1", "local-edit"))].into(),
         };
         let remote = TaskStoreInner {
-            next_id: 1,
-            tasks: [(TaskId::new("t1"), test_task("t1", "remote"))].into(),
+            next_id: 2,
+            tasks: [
+                (TaskId::new("t1"), test_task("t1", "stale-remote")),
+                (TaskId::new("t2"), test_task("t2", "remote-only")),
+            ]
+            .into(),
         };
 
         TaskStore::merge_remote_inner(&mut local, remote);
 
-        assert_eq!(local.tasks.get("t1").unwrap().subject, "remote");
-        assert!(local.tasks.values().any(|task| task.subject == "local"));
+        // Local edit wins; no resurrected/renamed duplicate of t1.
+        assert_eq!(local.tasks.get("t1").unwrap().subject, "local-edit");
+        assert_eq!(
+            local
+                .tasks
+                .values()
+                .filter(|t| t.subject == "local-edit" || t.subject == "stale-remote")
+                .count(),
+            1,
+            "t1 must not be duplicated by the merge"
+        );
+        // A task created by another process is still folded in.
+        assert_eq!(local.tasks.get("t2").unwrap().subject, "remote-only");
         assert_eq!(local.tasks.len(), 2);
-        assert!(local.next_id > 1);
+        assert!(local.next_id >= 2);
+    }
+
+    // Regression for the user-reported "deleting/clearing a task doesn't stick,
+    // it just comes back": a DB-backed soft delete must survive the persist-time
+    // re-read/merge, both in the same store and after reopening the session.
+    #[test]
+    fn delete_db_task_stays_deleted_after_persist_regression() {
+        let _db = TempKnowledgeDb::new();
+        let session_id = "ses_delete_sticks";
+        let store = TaskStore::open(session_id);
+        let task = store
+            .create("doomed".into(), String::new(), None, Vec::<TaskId>::new())
+            .unwrap();
+
+        store.delete(task.id.as_str()).unwrap();
+
+        assert!(
+            store
+                .list(DeletedFilter::Exclude)
+                .iter()
+                .all(|t| t.id != task.id),
+            "deleted task still visible in the same store"
+        );
+
+        let reloaded = TaskStore::open(session_id);
+        let visible = reloaded.list(DeletedFilter::Exclude);
+        assert!(
+            visible.iter().all(|t| t.id != task.id),
+            "deleted task came back after reopening the session"
+        );
+        assert_eq!(
+            visible.iter().filter(|t| t.subject == "doomed").count(),
+            0,
+            "deleted task resurrected as a live duplicate"
+        );
+    }
+
+    // Regression for "task update doesn't update, it just comes back": a
+    // DB-backed status change must persist as a single updated row, not a
+    // duplicate pair of (stale original + updated copy).
+    #[test]
+    fn update_db_task_status_sticks_after_persist_regression() {
+        let _db = TempKnowledgeDb::new();
+        let session_id = "ses_update_sticks";
+        let store = TaskStore::open(session_id);
+        let task = store
+            .create("workitem".into(), String::new(), None, Vec::<TaskId>::new())
+            .unwrap();
+        store
+            .update(
+                task.id.as_str(),
+                TaskPatch {
+                    status: Some(TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let reloaded = TaskStore::open(session_id);
+        let matching: Vec<Task> = reloaded
+            .list_all()
+            .into_iter()
+            .filter(|t| t.subject == "workitem")
+            .collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "update created a duplicate task instead of editing in place"
+        );
+        assert_eq!(matching[0].status, TaskStatus::Completed);
     }
 
     // Normal: the count cap keeps the most-recent terminal rows and never
@@ -2452,7 +2706,7 @@ mod tests {
             .unwrap();
         let keeper = store
             .create(
-                "subj".into(),
+                "real subject".into(),
                 "real task body".into(),
                 None,
                 vec![placeholder.id.clone()],
@@ -2519,8 +2773,8 @@ mod tests {
     #[test]
     fn migrate_from_advances_next_id_robust() {
         let src = TaskStore::in_memory();
-        for _ in 0..5 {
-            src.create("x".into(), "".into(), None, Vec::<TaskId>::new())
+        for n in 0..5 {
+            src.create(format!("x{n}"), "".into(), None, Vec::<TaskId>::new())
                 .unwrap();
         }
         // src is now at next_id=5

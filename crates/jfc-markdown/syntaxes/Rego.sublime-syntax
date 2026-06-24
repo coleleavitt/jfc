@@ -61,7 +61,7 @@ contexts:
         )
       scope: constant.numeric.rego
   operator:
-    - match: \=|\!\=|>|<|<\=|>\=|\+|-|\*|%|/|\||&|:\=
+    - match: :\=|\!\=|<\=|>\=|\=|>|<|\+|-|\*|%|/|\||&
       scope: keyword.operator.comparison.rego
   string:
     - match: '"'

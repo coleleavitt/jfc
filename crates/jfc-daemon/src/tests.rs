@@ -48,6 +48,8 @@ fn test_task_input() -> jfc_core::TaskInput {
         parent_task_id: None,
         effort: None,
         schema: None,
+        allowed_tools: Vec::new(),
+        disallowed_tools: Vec::new(),
         cwd: None,
     }
 }

@@ -102,7 +102,7 @@ fn slice_messages(all: &[SessionMessage], center: usize, radius: usize) -> Vec<S
 }
 
 fn open_session_db() -> Option<KnowledgeStore> {
-    KnowledgeStore::open_default().ok()
+    jfc_knowledge::block_on_knowledge(async { KnowledgeStore::open_default().await.ok() })
 }
 
 fn db_row_title(row: &jfc_knowledge::SessionRow) -> String {
@@ -178,19 +178,36 @@ fn discover_db_from_store(
     let terms = query_terms(&needle);
     let candidate_limit = limit.saturating_mul(4).max(limit).max(16);
     let mut hits = Vec::new();
-    let Ok(ids) = store.search_transcripts(query, candidate_limit) else {
-        return Vec::new();
-    };
-    for id in ids {
-        if exclude_session == Some(id.as_str()) {
-            continue;
+    // Do ALL of this query's DB reads inside ONE bridge call. `block_on_knowledge`
+    // drives the future on a dedicated runtime; a `sqlx` pooled connection is
+    // bound to the runtime that created it, so splitting the search + per-row
+    // loads across multiple bridge calls (each its own runtime) can race the
+    // pool's single connection and, for in-memory stores, read a different
+    // database. One block keeps the whole sequence on one runtime/connection.
+    let rows: Vec<(
+        jfc_knowledge::SessionRow,
+        Vec<jfc_knowledge::SessionMessage>,
+    )> = jfc_knowledge::block_on_knowledge(async {
+        let ids = store
+            .search_transcripts(query, candidate_limit)
+            .await
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for id in ids {
+            if exclude_session == Some(id.as_str()) {
+                continue;
+            }
+            let Some(row) = store.get_session(&id).await.ok().flatten() else {
+                continue;
+            };
+            let Ok(loaded) = store.load_transcript(&id).await else {
+                continue;
+            };
+            out.push((row, loaded));
         }
-        let Some(row) = store.get_session(&id).ok().flatten() else {
-            continue;
-        };
-        let Ok(loaded) = store.load_transcript(&id) else {
-            continue;
-        };
+        out
+    });
+    for (row, loaded) in rows {
         let msgs = db_messages(loaded);
         let Some((match_index, score)) = best_match(&msgs, &needle, &terms) else {
             continue;
@@ -240,7 +257,10 @@ fn scroll_db_from_store(
     anchor_index: usize,
     window: usize,
 ) -> Option<Vec<SessionMessage>> {
-    let msgs = db_messages(store.load_transcript(session_id).ok()?);
+    let msgs = db_messages(
+        jfc_knowledge::block_on_knowledge(async { store.load_transcript(session_id).await })
+            .ok()?,
+    );
     if msgs.is_empty() {
         return None;
     }
@@ -254,12 +274,16 @@ fn browse_db(limit: usize) -> Option<Vec<SessionBrief>> {
 }
 
 fn browse_db_from_store(store: &KnowledgeStore, limit: usize) -> Vec<SessionBrief> {
-    let Ok(rows) = store.list_sessions(None, limit) else {
+    let Ok(rows) =
+        jfc_knowledge::block_on_knowledge(async { store.list_sessions(None, limit).await })
+    else {
         return Vec::new();
     };
     let mut briefs = Vec::with_capacity(rows.len());
     for row in rows {
-        let transcript = store.load_transcript(&row.id).unwrap_or_default();
+        let transcript = jfc_knowledge::block_on_knowledge(async {
+            store.load_transcript(&row.id).await.unwrap_or_default()
+        });
         let preview = transcript
             .iter()
             .find(|m| m.role == "user")
@@ -314,9 +338,12 @@ pub fn prior_user_prompts(
 ) -> Vec<String> {
     let mut collected = Vec::new();
     let mut loaded = 0usize;
-    if let Some(store) = open_session_db()
-        && let Ok(rows) = store.list_sessions(None, 100_000)
-    {
+    if let Some(store) = open_session_db() {
+        let Ok(rows) =
+            jfc_knowledge::block_on_knowledge(async { store.list_sessions(None, 100_000).await })
+        else {
+            return collected;
+        };
         for row in rows {
             if loaded >= max_sessions {
                 break;
@@ -324,7 +351,9 @@ pub fn prior_user_prompts(
             if exclude_session == Some(row.id.as_str()) {
                 continue;
             }
-            let Ok(messages) = store.load_transcript(&row.id) else {
+            let Ok(messages) =
+                jfc_knowledge::block_on_knowledge(async { store.load_transcript(&row.id).await })
+            else {
                 continue;
             };
             collected.extend(prompts_from_db_messages(&messages, max_prompts_per_session));
@@ -481,9 +510,9 @@ mod tests {
         assert!(discover_excluding("", 5, 1, Some("ses_x")).is_empty());
     }
 
-    #[test]
-    fn db_discover_browse_and_scroll_use_transcript_store_normal() {
-        let mut store = KnowledgeStore::open_in_memory().unwrap();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn db_discover_browse_and_scroll_use_transcript_store_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
         let row = jfc_knowledge::SessionRow {
             id: "ses_db".into(),
             cwd: Some("/repo".into()),
@@ -508,7 +537,7 @@ mod tests {
                 meta: None,
             },
         ];
-        store.replace_transcript(&row, &transcript).unwrap();
+        store.replace_transcript(&row, &transcript).await.unwrap();
 
         let hits = discover_db_from_store(&store, "sqlite", 5, 1, None);
         assert_eq!(hits.len(), 1);
@@ -524,10 +553,10 @@ mod tests {
         assert_eq!(scrolled[1].text, "used sqlite transcript search");
     }
 
-    #[test]
-    fn default_search_uses_db_and_ignores_legacy_json_normal() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn default_search_uses_db_and_ignores_legacy_json_normal() {
         let _env = EnvGuard::new();
-        let mut store = KnowledgeStore::open_default().unwrap();
+        let store = KnowledgeStore::open_default().await.unwrap();
         let row = jfc_knowledge::SessionRow {
             id: "ses_db_only".into(),
             cwd: Some("/repo".into()),
@@ -554,6 +583,7 @@ mod tests {
                     ),
                 }],
             )
+            .await
             .unwrap();
 
         let dir = crate::sessions_dir();

@@ -42,6 +42,28 @@ fn action_intent_detects_toolish_prompts_normal() {
     assert!(user_text_requests_action(
         "use primo please use the tool calls please"
     ));
+    assert!(user_text_requests_action(
+        "toolsearch for the right delegation tool"
+    ));
+}
+
+#[test]
+fn action_intent_detects_delegation_prompts_regression() {
+    assert!(user_text_requests_action(
+        "why do i have to nudge it to fire off subagents or a team?"
+    ));
+    assert!(user_text_requests_action(
+        "spin up a team to audit the prompt flow"
+    ));
+    assert!(user_text_requests_action(
+        "delegate the codebase mapping to subagents"
+    ));
+    assert!(user_text_requests_action(
+        "convene a council for this architecture decision"
+    ));
+    assert!(user_text_requests_action(
+        "askmodel for a second opinion on this bug"
+    ));
 }
 
 #[test]
@@ -73,10 +95,17 @@ fn action_intent_keeps_tools_for_local_environment_questions_regression() {
 fn non_action_catalog_keeps_discovery_tools_regression() {
     assert!(preserve_non_action_tool("ToolSearch"));
     assert!(preserve_non_action_tool("ToolSuggest"));
+    assert!(preserve_non_action_tool("Task"));
+    assert!(preserve_non_action_tool("Advisor"));
+    assert!(preserve_non_action_tool("Research"));
+    assert!(preserve_non_action_tool("Council"));
+    assert!(preserve_non_action_tool("AskModel"));
     assert!(preserve_non_action_tool("SendUserMessage"));
     assert!(preserve_non_action_tool("HcomList"));
     assert!(preserve_non_action_tool("HcomTranscript"));
     assert!(!preserve_non_action_tool("Bash"));
+    assert!(!preserve_non_action_tool("TeamCreate"));
+    assert!(!preserve_non_action_tool("TeamDelete"));
     assert!(!preserve_non_action_tool("HcomSend"));
     assert!(!preserve_non_action_tool("Read"));
     assert!(!preserve_non_action_tool("WebFetch"));

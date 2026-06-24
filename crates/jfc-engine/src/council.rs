@@ -694,6 +694,19 @@ async fn deliberate_agentic_member(
             isolation: None,
             parent_task_id: None,
             schema: Some(schema.clone()),
+            allowed_tools: vec![
+                "Read".to_owned(),
+                "Glob".to_owned(),
+                "Grep".to_owned(),
+                "LSP".to_owned(),
+                "Search".to_owned(),
+                "ToolSearch".to_owned(),
+                "ToolSuggest".to_owned(),
+                "ListMcpResources".to_owned(),
+                "ReadMcpResource".to_owned(),
+                "StructuredOutput".to_owned(),
+            ],
+            disallowed_tools: Vec::new(),
             cwd: None,
         };
         let call = crate::tools::execute_task(
@@ -837,7 +850,7 @@ fn archive_id(question: &str) -> String {
     format!("{now_ms}-{:016x}", hasher.finish())
 }
 
-fn archive_council_report(root: &Path, report: &CouncilReport) -> Result<PathBuf> {
+async fn archive_council_report(root: &Path, report: &CouncilReport) -> Result<PathBuf> {
     let id = archive_id(&report.question);
     let meta = serde_json::json!({
         "schema_version": 1,
@@ -852,12 +865,14 @@ fn archive_council_report(root: &Path, report: &CouncilReport) -> Result<PathBuf
     });
     let session_id = format!("project:{}", jfc_knowledge::project_key(root));
     let value_json = serde_json::to_string(&meta)?;
-    jfc_knowledge::KnowledgeStore::open_default()?.upsert_session_artifact(
+    let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+    store.upsert_session_artifact(
         &session_id,
         COUNCIL_ARCHIVE_KIND,
         &id,
         &value_json,
-    )?;
+    )
+    .await?;
     Ok(PathBuf::from(format!("db:council:{id}")))
 }
 
@@ -936,7 +951,7 @@ pub async fn run_council(mut request: CouncilRequest) -> Result<CouncilReport> {
             .options
             .archive_root
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-        match archive_council_report(&root, &report) {
+        match archive_council_report(&root, &report).await {
             Ok(dir) => report.archive_dir = Some(dir),
             Err(e) => tracing::warn!(
                 target: "jfc::council",
@@ -1027,7 +1042,7 @@ pub async fn run_agentic_council(
 
     if request.options.archive {
         let root = request.options.archive_root.unwrap_or(cwd);
-        match archive_council_report(&root, &report) {
+        match archive_council_report(&root, &report).await {
             Ok(dir) => report.archive_dir = Some(dir),
             Err(e) => tracing::warn!(
                 target: "jfc::council",
@@ -1316,13 +1331,13 @@ mod tests {
             .strip_prefix("db:council:")
             .expect("db council handle")
             .to_owned();
-        let row = jfc_knowledge::KnowledgeStore::open_default()
-            .unwrap()
+        let row = jfc_knowledge::KnowledgeStore::open_default().await.unwrap()
             .get_session_artifact(
                 &format!("project:{}", jfc_knowledge::project_key(&root)),
                 COUNCIL_ARCHIVE_KIND,
                 &archive_id,
             )
+            .await
             .unwrap()
             .expect("db council archive");
         assert!(row.value_json.contains("Archived answer."));

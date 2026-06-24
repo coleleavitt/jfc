@@ -83,6 +83,10 @@ pub async fn handle_key(
         return Ok(false);
     }
 
+    if handle_bash_picker_key(app, key, tx) {
+        return Ok(false);
+    }
+
     if app.leader_key_active
         && let Some(t) = app.leader_key_timeout
         && t.elapsed() >= std::time::Duration::from_secs(2)
@@ -128,6 +132,16 @@ pub async fn handle_key(
             KeyCode::Esc => {}
             _ => {}
         }
+        return Ok(false);
+    }
+
+    // Leader chord `Ctrl+X` then `b` opens the background-shell picker. Handled
+    // here (before the sync leader handler) because populating the modal needs
+    // the async `list_bash_tasks()` snapshot.
+    if app.leader_key_active && matches!(key.code, KeyCode::Char('b')) {
+        app.leader_key_active = false;
+        app.leader_key_timeout = None;
+        open_bash_picker(app).await;
         return Ok(false);
     }
 
@@ -1641,6 +1655,20 @@ fn handle_leader_key_keys(
                         ),
                     );
                 }
+            }
+            // `z` detaches the in-flight FOREGROUND bash command to the
+            // background (Claude Code's Ctrl+B). The engine flips the running
+            // tool to a background task and toasts the new id. No-op if nothing
+            // is running. (`b` opens the shell picker; both live under Ctrl+X.)
+            KeyCode::Char('z') => {
+                let tx_clone = tx.clone();
+                tokio::spawn(async move {
+                    let _ = tx_clone
+                        .send(crate::runtime::EngineEvent::Control(
+                            crate::runtime::ControlEvent::BackgroundForegroundBash,
+                        ))
+                        .await;
+                });
             }
             _ => {}
         }

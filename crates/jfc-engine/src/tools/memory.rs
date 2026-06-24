@@ -35,7 +35,11 @@ pub fn execute_memory_create(
         return ExecutionResult::failure("Memory body cannot be empty.");
     }
 
-    match memory::create_memory(mem_level, mem_type, mem_scope, body.trim(), project_root) {
+    let body = body.trim().to_owned();
+    let project_root = project_root.to_owned();
+    match jfc_knowledge::block_on_knowledge(async move {
+        memory::create_memory(mem_level, mem_type, mem_scope, &body, &project_root).await
+    }) {
         Ok(id) => ExecutionResult::success(format!(
             "Memory saved with id: {id}\n\nThis memory will be included in future conversations."
         )),
@@ -48,9 +52,13 @@ pub fn execute_memory_create(
 pub fn execute_memory_delete(id: &str) -> ExecutionResult {
     use crate::memory;
 
-    match memory::delete_memory(id.trim()) {
+    let id_for_format = id.trim().to_owned();
+    let id_for_call = id_for_format.clone();
+    match jfc_knowledge::block_on_knowledge(async move {
+        memory::delete_memory(&id_for_call).await
+    }) {
         Ok(()) => ExecutionResult::success(format!(
-            "Memory deleted: {id}\n\nThis memory will no longer be included in future conversations."
+            "Memory deleted: {id_for_format}\n\nThis memory will no longer be included in future conversations."
         )),
         Err(e) => ExecutionResult::failure(format!("Failed to delete memory: {e}")),
     }

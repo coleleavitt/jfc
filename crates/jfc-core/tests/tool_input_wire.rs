@@ -49,6 +49,8 @@ mod tests {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
             cwd: None,
         };
         assert!(fg.summary().contains("foreground"));
@@ -76,13 +78,24 @@ mod tests {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            allowed_tools: vec!["Read".into(), "Grep".into()],
+            disallowed_tools: vec!["Bash".into()],
             cwd: None,
         });
         let v = input.to_value();
         assert_eq!(v["description"], "research");
         assert_eq!(v["subagent_type"], "explore");
         assert_eq!(v["run_in_background"], true);
+        assert_eq!(v["allowed_tools"], serde_json::json!(["Read", "Grep"]));
+        assert_eq!(v["disallowed_tools"], serde_json::json!(["Bash"]));
         assert!(v.get("category").is_none() || v["category"].is_null());
+
+        let parsed = ToolInput::from_value("Task", v).expect("task input should round-trip");
+        let ToolInput::Task(parsed) = parsed else {
+            panic!("expected Task input");
+        };
+        assert_eq!(parsed.allowed_tools, vec!["Read", "Grep"]);
+        assert_eq!(parsed.disallowed_tools, vec!["Bash"]);
     }
 
     #[test]
@@ -220,6 +233,8 @@ mod tests {
             isolation: None,
             parent_task_id: None,
             schema: None,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
             cwd: None,
         }
     }
