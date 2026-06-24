@@ -5,6 +5,7 @@
 //! index surface: paths, IDs, metadata listing, and picker helpers.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use jfc_core::SessionId;
 use tracing::debug;
@@ -53,9 +54,16 @@ pub fn sessions_dir() -> PathBuf {
         .join("sessions")
 }
 
+static SESSION_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 pub fn generate_session_id() -> SessionId {
     let now = chrono::Utc::now();
-    let id = SessionId::new(format!("ses_{}", now.format("%Y%m%d_%H%M%S")));
+    let counter = SESSION_ID_COUNTER.fetch_add(1, Ordering::Relaxed) & 0xffff;
+    let id = SessionId::new(format!(
+        "ses_{}_{:06}_{counter:04x}",
+        now.format("%Y%m%d_%H%M%S"),
+        now.timestamp_subsec_micros()
+    ));
     debug!(target: "jfc::session", %id, "generated session id");
     id
 }
@@ -130,6 +138,21 @@ pub async fn fork_session(source_id: &str, description: &str) -> std::io::Result
 
 fn io_other(error: impl std::fmt::Display) -> std::io::Error {
     std::io::Error::other(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate_session_id;
+
+    #[test]
+    fn generated_session_ids_are_unique_within_one_second_regression() {
+        let first = generate_session_id();
+        let second = generate_session_id();
+
+        assert_ne!(first, second);
+        assert!(first.as_str().starts_with("ses_"));
+        assert!(second.as_str().starts_with("ses_"));
+    }
 }
 
 fn fork_session_in_db(source_id: &str, fork_id: &str, description: &str) -> std::io::Result<bool> {

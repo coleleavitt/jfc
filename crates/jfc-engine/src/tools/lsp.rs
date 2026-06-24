@@ -80,7 +80,9 @@ pub async fn execute_lsp(
     // Spawn a discard channel for app events — this client is one-shot
     // and we don't need its publishDiagnostics notifications.
     let (tx, _rx) = tokio::sync::mpsc::channel::<crate::runtime::EngineEvent>(16);
-    let root_uri = format!("file://{}", cwd.display());
+    let Some(root_uri) = crate::lsp_client::path_to_file_uri(cwd) else {
+        return ExecutionResult::failure(format!("lsp: invalid workspace path {}", cwd.display()));
+    };
     let owned_args: Vec<&str> = args.to_vec();
     let Some(client) =
         crate::lsp_client::LspClient::spawn(cmd, &owned_args, cwd, &root_uri, tx).await
@@ -101,7 +103,9 @@ pub async fn execute_lsp(
         Some("go") => "go",
         _ => "plaintext",
     };
-    let uri = format!("file://{}", path.display());
+    let Some(uri) = crate::lsp_client::path_to_file_uri(&path) else {
+        return ExecutionResult::failure(format!("lsp: invalid file path {}", path.display()));
+    };
     if let Ok(text) = tokio::fs::read_to_string(&path).await {
         client.did_open(&uri, language_id, 1, &text);
         // Give rust-analyzer a moment to index the file before queries.
@@ -124,7 +128,7 @@ pub async fn execute_lsp(
             }
         }
         "definition" => match client.goto_definition_async(&path, line, column).await {
-            Some(loc) => format!("{}:{}:{}", loc.file.display(), loc.line + 1, loc.col + 1,),
+            Some(loc) => format!("{}:{}:{}", loc.file.display(), loc.line, loc.col,),
             None => "lsp: definition not found".to_owned(),
         },
         "references" => {
@@ -133,7 +137,7 @@ pub async fn execute_lsp(
                 "lsp: no references found".to_owned()
             } else {
                 locs.iter()
-                    .map(|loc| format!("{}:{}:{}", loc.file.display(), loc.line + 1, loc.col + 1,))
+                    .map(|loc| format!("{}:{}:{}", loc.file.display(), loc.line, loc.col,))
                     .collect::<Vec<_>>()
                     .join("\n")
             }
@@ -404,7 +408,7 @@ fn format_location_response(v: &serde_json::Value) -> String {
             let start = range.get("start")?;
             let line = start.get("line")?.as_u64()? + 1;
             let col = start.get("character")?.as_u64()? + 1;
-            let path = uri.strip_prefix("file://")?;
+            let path = format_uri_path(uri);
             Some(format!("{path}:{line}:{col}"))
         })
         .collect::<Vec<_>>()
@@ -432,7 +436,7 @@ fn format_symbols_response(v: &serde_json::Value) -> String {
                 let uri = loc.get("uri")?.as_str()?;
                 let range = loc.get("range")?;
                 let line = range.get("start")?.get("line")?.as_u64()? + 1;
-                let path = uri.strip_prefix("file://").unwrap_or(uri);
+                let path = format_uri_path(uri);
                 Some(format!("{kind_label} {name} — {path}:{line}"))
             } else if let Some(range) = sym.get("range") {
                 let line = range.get("start")?.get("line")?.as_u64()? + 1;
@@ -461,11 +465,17 @@ fn format_call_hierarchy(v: &serde_json::Value) -> String {
             let uri = item.get("uri")?.as_str()?;
             let range = item.get("range")?;
             let line = range.get("start")?.get("line")?.as_u64()? + 1;
-            let path = uri.strip_prefix("file://").unwrap_or(uri);
+            let path = format_uri_path(uri);
             Some(format!("{name} — {path}:{line}"))
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn format_uri_path(uri: &str) -> String {
+    crate::lsp_client::file_uri_to_path(uri)
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| uri.to_owned())
 }
 
 fn lsp_symbol_kind(kind: u64) -> &'static str {
@@ -494,5 +504,29 @@ fn lsp_symbol_kind(kind: u64) -> &'static str {
         24 => "Operator",
         25 => "TypeParameter",
         _ => "Symbol",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn format_location_response_decodes_file_uri_regression() {
+        let out = format_location_response(&json!({
+            "uri": "file:///tmp/jfc%20lsp/%23file%25.rs",
+            "range": {
+                "start": { "line": 0, "character": 2 },
+                "end": { "line": 0, "character": 5 }
+            }
+        }));
+
+        assert_eq!(out, "/tmp/jfc lsp/#file%.rs:1:3");
+    }
+
+    #[test]
+    fn format_uri_path_leaves_non_file_uri_visible_robust() {
+        assert_eq!(format_uri_path("untitled:scratch"), "untitled:scratch");
     }
 }

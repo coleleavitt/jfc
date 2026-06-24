@@ -54,26 +54,9 @@ async function main() {
 
 async function evalJs(request) {
   const started = Date.now();
-  if (request.script) {
-    return {
-      ok: false,
-      url: null,
-      title: null,
-      result: {
-        kind: 'error',
-        value: {
-          message: 'eval-js no longer accepts raw scripts; use direct-edit-inspect or selector/property inspection'
-        }
-      },
-      logs: [],
-      errors: [],
-      duration_ms: Date.now() - started
-    };
-  }
-
   const { browser, page, logs, errors } = await openPage(request);
   try {
-    const result = await page.evaluate(({ selector, property }) => {
+    const result = await page.evaluate(async ({ selector, property, script }) => {
       const serialize = (value) => {
         if (value === undefined) return { kind: 'undefined' };
         if (value === null) return { kind: 'json', value: null };
@@ -93,6 +76,20 @@ async function evalJs(request) {
           return { kind: 'string', value: String(value) };
         }
       };
+
+      if (script) {
+        try {
+          const value = await (0, eval)(script);
+          return serialize(value);
+        } catch (error) {
+          return {
+            kind: 'error',
+            value: {
+              message: error instanceof Error ? error.message : String(error)
+            }
+          };
+        }
+      }
 
       const target = selector ? document.querySelector(selector) : document.documentElement;
       if (!target) {

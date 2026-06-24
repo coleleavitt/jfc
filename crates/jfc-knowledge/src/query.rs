@@ -204,7 +204,7 @@ pub fn recall(
     // FTS path: join the fts table on rowid, rank by our score.
     let sql = format!(
         "SELECT k.* FROM knowledge k \
-         JOIN knowledge_fts f ON f.rowid = k.rowid \
+         JOIN knowledge_fts ON knowledge_fts.rowid = k.rowid \
          WHERE knowledge_fts MATCH :q AND k.superseded_by IS NULL AND {scope_clause} \
          ORDER BY {score_expr} DESC \
          LIMIT :lim"

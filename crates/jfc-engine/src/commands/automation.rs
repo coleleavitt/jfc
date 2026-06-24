@@ -138,14 +138,14 @@ fn parse_loop_interval(args: &str) -> (&str, &str) {
     let args = args.trim();
     let end = args.find(|c: char| c.is_whitespace()).unwrap_or(args.len());
     let candidate = &args[..end];
-    let valid = candidate.len() >= 2
-        && candidate[..candidate.len() - 1]
-            .chars()
-            .all(|c| c.is_ascii_digit())
-        && matches!(
-            candidate.chars().last(),
-            Some('s') | Some('m') | Some('h') | Some('d')
-        );
+    let (digits, suffix) = candidate
+        .char_indices()
+        .next_back()
+        .map(|(idx, ch)| (&candidate[..idx], ch))
+        .unwrap_or(("", '\0'));
+    let valid = !digits.is_empty()
+        && digits.chars().all(|c| c.is_ascii_digit())
+        && matches!(suffix, 's' | 'm' | 'h' | 'd');
     if valid {
         let rest = args[end..].trim();
         (candidate, rest)
@@ -598,5 +598,23 @@ fn mutate_scheduled_task(
     match result.and_then(|()| registry.save(path).map_err(|e| e.to_string())) {
         Ok(()) => format!("Task `{id}` {verb}d."),
         Err(e) => format!("Could not {verb} `{id}`: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_loop_interval;
+
+    #[test]
+    fn parse_loop_interval_accepts_ascii_interval_normal() {
+        assert_eq!(
+            parse_loop_interval("5m check the deploy"),
+            ("5m", "check the deploy")
+        );
+    }
+
+    #[test]
+    fn parse_loop_interval_keeps_non_ascii_prompt_robust() {
+        assert_eq!(parse_loop_interval("é deploy"), ("10m", "é deploy"));
     }
 }

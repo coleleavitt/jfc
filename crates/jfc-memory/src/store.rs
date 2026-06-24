@@ -524,7 +524,8 @@ fn write_memory_row(
 ) -> Result<String, String> {
     let mem_level = memory_level_to_mem_level(level);
     let project_key = jfc_knowledge::project_key(project_root);
-    let project_key_opt = matches!(level, MemoryLevel::Project).then_some(project_key.as_str());
+    let project_key_opt =
+        matches!(level, MemoryLevel::Project | MemoryLevel::Team).then_some(project_key.as_str());
     let id = jfc_knowledge::memory_id(mem_level, project_key_opt, body);
     let (_fm, meta_json) = new_frontmatter_json(memory_type, scope, hash);
     let title: String = body

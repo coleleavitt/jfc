@@ -84,10 +84,9 @@ impl super::KnowledgeStore {
             MemLevel::Team | MemLevel::External => "global",
             MemLevel::Project => "project",
         };
-        let project_key = if scope == "project" {
-            m.project_key
-        } else {
-            None
+        let project_key = match m.level {
+            MemLevel::Project | MemLevel::Team => m.project_key,
+            MemLevel::User | MemLevel::External => None,
         };
         self.conn().execute(
             "INSERT INTO knowledge \
@@ -120,15 +119,14 @@ impl super::KnowledgeStore {
             .optional()?)
     }
 
-    /// Load all live memory rows visible to a project: user + team + external
-    /// (global-ish) plus this project's project-scoped memories. Mirrors
-    /// `load_all_memories`'s four-level union.
+    /// Load all live memory rows visible to a project: user + external
+    /// (global-ish) plus this project's project/team-scoped memories.
     pub fn load_memories(&self, project_key: Option<&str>) -> Result<Vec<MemoryRow>> {
         let mut stmt = self.conn().prepare(
             "SELECT id, mem_level, project_key, body, mem_meta FROM knowledge \
              WHERE mem_level IS NOT NULL AND superseded_by IS NULL \
-               AND (mem_level IN ('user','team','external') \
-                    OR (mem_level = 'project' AND project_key IS ?1)) \
+               AND (mem_level IN ('user','external') \
+                    OR (mem_level IN ('project','team') AND project_key IS ?1)) \
              ORDER BY created_at_ms ASC",
         )?;
         let rows = stmt.query_map([project_key], |r| {
@@ -238,14 +236,24 @@ mod tests {
     }
 
     #[test]
-    fn team_and_external_are_globally_visible_normal() {
+    fn team_memory_is_project_scoped_but_external_is_global_regression() {
         let store = KnowledgeStore::open_in_memory().unwrap();
-        let (_t, tm) = newmem(MemLevel::Team, None, "team rule", "ht", "{}");
+        let (_t, tm) = newmem(MemLevel::Team, Some("P"), "team rule", "ht", "{}");
         let (_e, em) = newmem(MemLevel::External, None, "ext note", "he", "{}");
         store.insert_memory(&tm).unwrap();
         store.insert_memory(&em).unwrap();
-        // Visible from any project.
-        assert_eq!(store.load_memories(Some("anyproj")).unwrap().len(), 2);
+
+        let project_rows = store.load_memories(Some("P")).unwrap();
+        assert_eq!(project_rows.len(), 2);
+        assert!(
+            project_rows
+                .iter()
+                .any(|row| row.level == MemLevel::Team && row.project_key.as_deref() == Some("P"))
+        );
+
+        let other_rows = store.load_memories(Some("Q")).unwrap();
+        assert_eq!(other_rows.len(), 1);
+        assert_eq!(other_rows[0].level, MemLevel::External);
     }
 
     #[test]

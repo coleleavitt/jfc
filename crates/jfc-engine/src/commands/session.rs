@@ -577,7 +577,11 @@ pub(super) async fn cmd_recap(
                 .filter_map(|p| match p {
                     jfc_core::MessagePart::Tool(t) => match &t.input {
                         jfc_core::ToolInput::Edit { file_path, .. }
-                        | jfc_core::ToolInput::Write { file_path, .. } => Some(file_path.clone()),
+                        | jfc_core::ToolInput::Write { file_path, .. }
+                        | jfc_core::ToolInput::MultiEdit { file_path, .. } => {
+                            Some(file_path.clone())
+                        }
+                        jfc_core::ToolInput::NotebookEdit { path, .. } => Some(path.clone()),
                         _ => None,
                     },
                     _ => None,

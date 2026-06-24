@@ -81,7 +81,7 @@ impl ToolCall {
             output: ToolOutput::Empty,
             display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
-            started_at: Some(std::time::Instant::now()),
+            started_at: None,
             thought_signature: None,
         }
     }
@@ -150,6 +150,9 @@ impl ToolCall {
                 from: self.status,
                 to: target,
             });
+        }
+        if target == ExecutionStatus::Running && self.started_at.is_none() {
+            self.started_at = Some(std::time::Instant::now());
         }
         self.status = target;
         Ok(())
@@ -281,8 +284,10 @@ mod tests {
     fn tool_call_pending_to_running_normal() {
         let mut tc = fixture_pending_tool();
         assert_eq!(tc.status, ExecutionStatus::Pending);
+        assert!(tc.started_at.is_none());
         assert!(tc.mark_running().is_ok());
         assert_eq!(tc.status, ExecutionStatus::Running);
+        assert!(tc.started_at.is_some());
     }
 
     #[test]
@@ -347,8 +352,16 @@ mod tests {
         // when the provider replays an event mid-stream.
         let mut tc = fixture_pending_tool();
         tc.mark_running().unwrap();
+        let started_at = tc.started_at;
         tc.mark_running().expect("Running → Running is idempotent");
         assert_eq!(tc.status, ExecutionStatus::Running);
+        assert_eq!(tc.started_at, started_at);
+    }
+
+    #[test]
+    fn tool_call_pending_does_not_start_elapsed_clock_regression() {
+        let tc = fixture_pending_tool();
+        assert!(tc.started_at.is_none());
     }
 
     #[test]

@@ -672,11 +672,8 @@ fn switch_session_resets_state_normal() {
     );
 }
 
-// Normal: switch_session(None) installs a freshly-generated id and
-// never leaves current_session_id as None. (The id may match the
-// prior one if the call lands within the same second-resolution
-// timestamp — generate_session_id uses `%Y%m%d_%H%M%S` — so we don't
-// assert distinctness.)
+// Normal: switch_session(None) installs a freshly-generated id and never leaves
+// current_session_id as None.
 #[test]
 fn switch_session_none_mints_fresh_id_normal() {
     let mut app = new_app();

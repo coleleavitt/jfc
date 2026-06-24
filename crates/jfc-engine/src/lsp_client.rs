@@ -55,6 +55,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio::sync::oneshot;
+use url::Url;
 
 use crate::lsp_rpc;
 use crate::runtime::{EngineEvent, ProviderEvent};
@@ -186,7 +187,7 @@ impl LspClient {
         line: u32,
         col: u32,
     ) -> Option<LspLocation> {
-        let uri = format!("file://{}", file.display());
+        let uri = path_to_file_uri(file)?;
         let params = json!({
             "textDocument": { "uri": uri },
             "position": { "line": line.saturating_sub(1), "character": col.saturating_sub(1) }
@@ -203,7 +204,9 @@ impl LspClient {
         line: u32,
         col: u32,
     ) -> Vec<LspLocation> {
-        let uri = format!("file://{}", file.display());
+        let Some(uri) = path_to_file_uri(file) else {
+            return Vec::new();
+        };
         let params = json!({
             "textDocument": { "uri": uri },
             "position": { "line": line.saturating_sub(1), "character": col.saturating_sub(1) },
@@ -543,6 +546,14 @@ async fn handle_inbound(
     }
 }
 
+pub fn path_to_file_uri(path: &Path) -> Option<String> {
+    Url::from_file_path(path).ok().map(String::from)
+}
+
+pub fn file_uri_to_path(uri: &str) -> Option<PathBuf> {
+    Url::parse(uri).ok()?.to_file_path().ok()
+}
+
 /// Fold one file's `publishDiagnostics` into the per-file accumulator and
 /// return the cross-file union to ship as the full-snapshot
 /// `DiagnosticsUpdated` payload.
@@ -612,9 +623,8 @@ fn try_parse_location(value: &Value) -> Option<LspLocation> {
     let start = range.get("start")?;
     let line = start.get("line")?.as_u64()? as u32 + 1;
     let col = start.get("character")?.as_u64()? as u32 + 1;
-    let file = uri.strip_prefix("file://").unwrap_or(uri);
     Some(LspLocation {
-        file: std::path::PathBuf::from(file),
+        file: file_uri_to_path(uri)?,
         line,
         col,
     })
@@ -626,9 +636,8 @@ fn try_parse_location_link(value: &Value) -> Option<LspLocation> {
     let start = range.get("start")?;
     let line = start.get("line")?.as_u64()? as u32 + 1;
     let col = start.get("character")?.as_u64()? as u32 + 1;
-    let file = uri.strip_prefix("file://").unwrap_or(uri);
     Some(LspLocation {
-        file: std::path::PathBuf::from(file),
+        file: file_uri_to_path(uri)?,
         line,
         col,
     })
@@ -764,7 +773,10 @@ pub fn maybe_spawn_lsp_clients(cwd: std::path::PathBuf, app_tx: mpsc::Sender<Eng
         "spawning lsp client"
     );
     tokio::spawn(async move {
-        let root_uri = format!("file://{}", cwd.display());
+        let Some(root_uri) = path_to_file_uri(&cwd) else {
+            tracing::warn!(target: "jfc::lsp", ?cwd, "invalid LSP root path");
+            return;
+        };
         let owned_args: Vec<&str> = args.to_vec();
         let lsp_tx = app_tx.clone();
         let server_name = cmd.to_owned();
@@ -858,6 +870,32 @@ mod tests {
             .expect("contentChanges must be an array");
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0]["text"], "new content");
+    }
+
+    #[test]
+    fn file_uri_round_trips_paths_with_special_chars_regression() {
+        let path = PathBuf::from("/tmp/jfc lsp/#file%.rs");
+        let uri = path_to_file_uri(&path).expect("file uri");
+
+        assert!(uri.contains("jfc%20lsp"));
+        assert!(uri.contains("%23file%25.rs"));
+        assert_eq!(file_uri_to_path(&uri).as_deref(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn parse_location_decodes_file_uri_and_returns_one_based_position_regression() {
+        let loc = try_parse_location(&json!({
+            "uri": "file:///tmp/jfc%20lsp/%23file%25.rs",
+            "range": {
+                "start": { "line": 0, "character": 2 },
+                "end": { "line": 0, "character": 5 }
+            }
+        }))
+        .expect("location");
+
+        assert_eq!(loc.file, PathBuf::from("/tmp/jfc lsp/#file%.rs"));
+        assert_eq!(loc.line, 1);
+        assert_eq!(loc.col, 3);
     }
 
     #[test]

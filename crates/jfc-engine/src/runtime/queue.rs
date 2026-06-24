@@ -7,6 +7,15 @@ use crate::{
 use jfc_core::{QueuedPrompt, queued_prompt_placeholder};
 
 pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
+    if state.queued_prompts.is_empty() {
+        return;
+    }
+    if state.queued_prompts.iter().any(|queued| !queued.is_meta)
+        && crate::runtime::ops::refuse_budget_cap_if_reached(state)
+    {
+        return;
+    }
+
     let drained: Vec<QueuedPrompt> = state.queued_prompts.drain_all();
     if drained.is_empty() {
         return;
@@ -27,10 +36,11 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
         let QueuedPrompt {
             text,
             is_meta,
-            attachments,
+            mut attachments,
             ..
         } = queued;
         let placeholder = queued_prompt_placeholder(&text, is_meta);
+        let mut promoted = false;
         for msg in state.messages.iter_mut() {
             if msg.role == Role::User {
                 let mut replaced = false;
@@ -53,8 +63,9 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
                             count = attachments.len(),
                             "drain_queued_prompts: attaching images to promoted message"
                         );
-                        msg.attachments = attachments;
+                        msg.attachments = std::mem::take(&mut attachments);
                     }
+                    promoted = true;
                     break;
                 }
             }
@@ -66,6 +77,13 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
                 EngineEvent::Control(crate::runtime::ControlEvent::RunCommand(text.clone())),
             );
         } else {
+            if !promoted {
+                let mut message = ChatMessage::user(text.clone());
+                if !attachments.is_empty() {
+                    message.attachments = attachments;
+                }
+                state.messages.push(message);
+            }
             non_meta_texts.push(text);
         }
     }
@@ -87,9 +105,6 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     }
 
     let assistant_idx = state.messages.len();
-    if crate::runtime::ops::refuse_budget_cap_if_reached(state) {
-        return;
-    }
 
     #[cfg(debug_assertions)]
     if let Err(error) = crate::types::validate_turn_invariants_inner(
@@ -185,4 +200,102 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
     crate::runtime::spawn_stream_response_scoped(
         state, tx, provider, messages, model, interrupt, cancel, None, overrides,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jfc_core::{QueuePriority, QueuedPrompt, queued_prompt_placeholder};
+    use std::sync::Arc;
+
+    struct NoopProvider;
+
+    #[async_trait::async_trait]
+    impl jfc_provider::Provider for NoopProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<jfc_provider::ProviderMessage>,
+            _options: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for NoopProvider {}
+
+    fn state() -> EngineState {
+        EngineState::new(Arc::new(NoopProvider), "test-model")
+    }
+
+    fn queued(text: &str) -> QueuedPrompt {
+        QueuedPrompt {
+            text: text.to_owned(),
+            is_meta: false,
+            priority: QueuePriority::Later,
+            attachments: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn drain_appends_user_message_when_placeholder_was_lost_regression() {
+        let mut state = state();
+        state
+            .queued_prompts
+            .push(queued("finish the compacted turn"));
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        drain_queued_prompts(&mut state, &tx).await;
+
+        assert_eq!(state.messages.len(), 2);
+        assert_eq!(state.messages[0].role, Role::User);
+        assert!(matches!(
+            &state.messages[0].parts[..],
+            [MessagePart::Text(text)] if text == "finish the compacted turn"
+        ));
+        assert_eq!(state.messages[1].role, Role::Assistant);
+        assert!(state.is_streaming);
+        assert!(state.queued_prompts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn drain_budget_refusal_keeps_queue_and_placeholder_regression() {
+        let mut state = state();
+        state.max_budget_usd = Some(1.00);
+        state.usage_by_model.insert(
+            "claude-opus-4-7".into(),
+            crate::types::ModelUsage {
+                input_tokens: 1_000_000,
+                output_tokens: 0,
+                thinking_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                cost_usd: None,
+            },
+        );
+        let placeholder = queued_prompt_placeholder("do more", false);
+        state
+            .messages
+            .push(ChatMessage::user_queued(placeholder.clone()));
+        state.queued_prompts.push(queued("do more"));
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        drain_queued_prompts(&mut state, &tx).await;
+
+        assert_eq!(state.queued_prompts.len(), 1);
+        assert_eq!(state.messages.len(), 1);
+        assert!(state.messages[0].queued);
+        assert!(matches!(
+            &state.messages[0].parts[..],
+            [MessagePart::Text(text)] if text == &placeholder
+        ));
+        assert!(!state.is_streaming);
+    }
 }

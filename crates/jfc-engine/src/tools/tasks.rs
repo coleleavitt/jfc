@@ -369,11 +369,10 @@ pub fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) -> Execut
             Ok(result) => {
                 let stderr = String::from_utf8_lossy(&result.stderr);
                 let stdout = String::from_utf8_lossy(&result.stdout);
-                let truncated_output: String = format!(
-                    "stdout: {}\nstderr: {}",
-                    &stdout[..stdout.len().min(500)],
-                    &stderr[..stderr.len().min(500)]
-                );
+                let stdout_truncated: String = stdout.chars().take(500).collect();
+                let stderr_truncated: String = stderr.chars().take(500).collect();
+                let truncated_output: String =
+                    format!("stdout: {}\nstderr: {}", stdout_truncated, stderr_truncated);
                 warn!(
                     target: "jfc::tools",
                     task_id,
@@ -488,6 +487,7 @@ pub async fn execute_skill(name: &str, args: Option<&str>) -> ExecutionResult {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use serde_json::json;
 
     fn is_internal(metadata: Option<&serde_json::Value>) -> bool {
@@ -527,5 +527,33 @@ mod tests {
             ["t1".to_string(), "t3".to_string()].into();
         arr.retain(|id| id.as_str().map(|s| !completed.contains(s)).unwrap_or(true));
         assert_eq!(arr, vec![json!("t2")]);
+    }
+
+    #[test]
+    fn task_done_verification_failure_truncates_unicode_safely_regression() {
+        let store = TaskStore::in_memory();
+        let task = store
+            .create(
+                "unicode verifier".into(),
+                "prove truncation is char safe".into(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        store
+            .update(
+                task.id.as_str(),
+                TaskPatch {
+                    verification_command: Some("printf '中%.0s' {1..200}; exit 1".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let result = execute_task_done(Some(store), task.id.as_str());
+
+        assert!(result.is_error());
+        assert!(result.output.contains("Verification failed"));
+        assert!(result.output.contains('中'));
     }
 }

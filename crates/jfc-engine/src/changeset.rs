@@ -12,6 +12,7 @@
 //! convenience, never a correctness dependency of the agent run. Failures are
 //! logged and swallowed so a git hiccup can't break a task.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use jfc_changeset::{
@@ -319,8 +320,7 @@ pub async fn open_for_worktree(
     }
 }
 
-/// `git -C <worktree> diff --numstat <base_head>` → per-file insert/delete
-/// counts plus a one-line summary. Empty when there are no changes.
+/// `git -C <worktree> diff --numstat <base_head>` plus untracked files.
 async fn diff_against_base(worktree: &str, base_head: &str) -> (Vec<ChangedFile>, String) {
     let mut args = vec!["-C".to_string(), worktree.to_string(), "diff".to_string()];
     if !base_head.is_empty() {
@@ -339,6 +339,7 @@ async fn diff_against_base(worktree: &str, base_head: &str) -> (Vec<ChangedFile>
 
     let text = String::from_utf8_lossy(&out.stdout);
     let mut files = Vec::new();
+    let mut seen = HashSet::new();
     let (mut total_ins, mut total_del) = (0u32, 0u32);
     for line in text.lines() {
         // Format: "<insertions>\t<deletions>\t<path>"; binary files use "-".
@@ -350,11 +351,38 @@ async fn diff_against_base(worktree: &str, base_head: &str) -> (Vec<ChangedFile>
         let deletions = del.parse().unwrap_or(0);
         total_ins += insertions;
         total_del += deletions;
+        seen.insert(path.to_string());
         files.push(ChangedFile {
             path: path.to_string(),
             insertions,
             deletions,
         });
+    }
+
+    if let Ok(out) = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["ls-files", "--others", "--exclude-standard", "-z"])
+        .output()
+        .await
+        && out.status.success()
+    {
+        for raw in out.stdout.split(|byte| *byte == 0) {
+            if raw.is_empty() {
+                continue;
+            }
+            let path = String::from_utf8_lossy(raw).to_string();
+            if !seen.insert(path.clone()) {
+                continue;
+            }
+            let insertions = count_file_lines(&Path::new(worktree).join(&path)).await;
+            total_ins += insertions;
+            files.push(ChangedFile {
+                path,
+                insertions,
+                deletions: 0,
+            });
+        }
     }
 
     let summary = if files.is_empty() {
@@ -367,6 +395,18 @@ async fn diff_against_base(worktree: &str, base_head: &str) -> (Vec<ChangedFile>
         )
     };
     (files, summary)
+}
+
+async fn count_file_lines(path: &Path) -> u32 {
+    let Ok(bytes) = tokio::fs::read(path).await else {
+        return 0;
+    };
+    if bytes.is_empty() || bytes.contains(&0) {
+        return 0;
+    }
+    let newlines = bytes.iter().filter(|byte| **byte == b'\n').count();
+    let trailing = usize::from(!bytes.ends_with(b"\n"));
+    u32::try_from(newlines.saturating_add(trailing)).unwrap_or(u32::MAX)
 }
 
 /// Finalize a change-set after the agent completes: compute the diff against
@@ -945,6 +985,33 @@ mod tests {
             "new.rs should be in the diff: {:?}",
             cs.changed_files
         );
+    }
+
+    #[tokio::test]
+    async fn finalize_untracked_new_file_is_ready_regression() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        init_repo(root).await;
+        let wt = root.to_string_lossy().to_string();
+
+        let id = open_for_worktree(root, &wt, "jfc/untracked", &ChangeOrigin::default())
+            .await
+            .expect("change-set opened");
+
+        std::fs::write(root.join("created.rs"), "fn created() {}\n").unwrap();
+
+        finalize_for_worktree(root, &id, &wt).await;
+
+        let store = ChangeStore::open_project(root).unwrap();
+        let cs = store.get(&id).expect("persisted");
+        assert_eq!(cs.state, ChangeState::Ready);
+        let created = cs
+            .changed_files
+            .iter()
+            .find(|file| file.path == "created.rs")
+            .expect("untracked file recorded");
+        assert_eq!(created.insertions, 1);
+        assert_eq!(created.deletions, 0);
     }
 
     // Robust: a clean worktree (no diff vs base) is Abandoned, not left as a

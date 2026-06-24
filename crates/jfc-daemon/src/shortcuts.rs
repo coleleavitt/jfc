@@ -103,8 +103,12 @@ impl Shortcut {
                     }
                 }
             }
-            out.push(self.template.as_bytes()[i] as char);
-            i += 1;
+            let ch = self.template[i..]
+                .chars()
+                .next()
+                .expect("template index is in bounds");
+            out.push(ch);
+            i += ch.len_utf8();
         }
         out
     }
@@ -320,6 +324,13 @@ mod tests {
         let s = Shortcut::new("PR", "Open a PR titled {title} against {branch}");
         let out = s.expand(&args(&[("title", "Fix bug"), ("branch", "main")]));
         assert_eq!(out, "Open a PR titled Fix bug against main");
+    }
+
+    #[test]
+    fn expand_preserves_non_ascii_literal_text_regression() {
+        let s = Shortcut::new("Resume", "Résumé for {name}: café");
+        let out = s.expand(&args(&[("name", "Cole")]));
+        assert_eq!(out, "Résumé for Cole: café");
     }
 
     #[test]

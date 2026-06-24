@@ -45,15 +45,16 @@ pub(crate) async fn handle_submit(
                         _ => None,
                     })
                     .collect();
-                // Surface which files the agent actually touched (Edit/Write/
-                // MultiEdit/NotebookEdit carry a `file_path`).
+                // Surface which files the agent actually touched.
                 let files_changed: Vec<String> = m
                     .parts
                     .iter()
                     .filter_map(|p| match p {
                         MessagePart::Tool(t) => match &t.input {
                             ToolInput::Edit { file_path, .. }
-                            | ToolInput::Write { file_path, .. } => Some(file_path.clone()),
+                            | ToolInput::Write { file_path, .. }
+                            | ToolInput::MultiEdit { file_path, .. } => Some(file_path.clone()),
+                            ToolInput::NotebookEdit { path, .. } => Some(path.clone()),
                             _ => None,
                         },
                         _ => None,

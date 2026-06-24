@@ -40,6 +40,18 @@ crates/**/.jfc/
 # Agent runtime state (exec-call captures)
 .code/
 .omo/run-continuation/
+.playwright-mcp/
+
+# Generated Coq/Rocq build outputs.
+rcoq-tests/Makefile.coq.conf
+rcoq-tests/.Makefile.coq.d
+rcoq-tests/.lia.cache
+rcoq-tests/.nia.cache
+rcoq-tests/**/*.aux
+rcoq-tests/**/*.glob
+rcoq-tests/**/*.vo
+rcoq-tests/**/*.vok
+rcoq-tests/**/*.vos
 
 # Local agent skills and runtime config (machine-specific, not project config)
 .agents/skills/jfc-design/
