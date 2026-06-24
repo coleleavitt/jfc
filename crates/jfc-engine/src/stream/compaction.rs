@@ -131,9 +131,10 @@ pub async fn auto_compact_subagent_history(
         return false;
     }
 
+    let mut summary_view = messages.clone();
     const PRECOMPACT_MAX_CHARS: usize = 500;
     let preserve_start = messages.len().saturating_sub(2);
-    for msg in messages.iter_mut().take(preserve_start) {
+    for msg in summary_view.iter_mut().take(preserve_start) {
         for content in &mut msg.content {
             if let ProviderContent::ToolResult { content: c, .. } = content
                 && c.len() > PRECOMPACT_MAX_CHARS
@@ -151,7 +152,7 @@ pub async fn auto_compact_subagent_history(
 
     let to_summarize_end = messages.len().saturating_sub(2);
     let mut transcript = String::new();
-    for msg in messages.iter().take(to_summarize_end).skip(1) {
+    for msg in summary_view.iter().take(to_summarize_end).skip(1) {
         transcript.push_str(&render_message_as_text(msg));
         transcript.push_str("\n\n");
     }
@@ -324,17 +325,23 @@ pub fn cap_messages_for_budget(messages: &mut Vec<ProviderMessage>, max_bytes: u
             drop_until += 1;
         }
         messages.drain(1..drop_until);
-        messages.insert(
-            1,
-            ProviderMessage {
-                role: ProviderRole::Assistant,
-                content: vec![ProviderContent::Text(
-                    "[earlier subagent turns elided to fit the request budget — \
-                     continuing from the most recent results]"
-                        .to_owned(),
-                )],
-            },
-        );
+        let marker = "[earlier subagent turns elided to fit the request budget — \
+                      continuing from the most recent results]"
+            .to_owned();
+        if let Some(next) = messages.get_mut(1)
+            && matches!(next.role, ProviderRole::Assistant)
+            && let Some(ProviderContent::Text(text)) = next.content.first_mut()
+        {
+            *text = format!("{marker}\n\n{text}");
+        } else {
+            messages.insert(
+                1,
+                ProviderMessage {
+                    role: ProviderRole::Assistant,
+                    content: vec![ProviderContent::Text(marker)],
+                },
+            );
+        }
         true
     } else {
         false
@@ -435,6 +442,30 @@ mod budget_tests {
             _ => panic!("expected marker text"),
         }
         assert!(matches!(msgs[1].role, ProviderRole::Assistant));
+    }
+
+    #[test]
+    fn cap_messages_merges_marker_into_assistant_tail_regression() {
+        let big = "x".repeat(20_000);
+        let mut msgs = vec![
+            user_text("PROMPT"),
+            assistant_tool_use("t1", "Read"),
+            user_tool_result("t1", &big),
+            assistant_text("recent"),
+        ];
+
+        cap_messages_for_budget(&mut msgs, 5_000);
+
+        assert_eq!(msgs.len(), 2);
+        assert!(matches!(msgs[0].role, ProviderRole::User));
+        assert!(matches!(msgs[1].role, ProviderRole::Assistant));
+        match &msgs[1].content[0] {
+            ProviderContent::Text(t) => {
+                assert!(t.contains("elided"));
+                assert!(t.contains("recent"));
+            }
+            _ => panic!("expected merged marker text"),
+        }
     }
 
     #[test]
@@ -662,6 +693,10 @@ mod auto_compact_tests {
         let did = auto_compact_subagent_history(&mut msgs, &provider, ModelId::new("stub")).await;
         assert!(!did);
         assert_eq!(msgs.len(), original_len);
+        match &msgs[2].content[0] {
+            ProviderContent::ToolResult { content, .. } => assert_eq!(content.len(), big.len()),
+            _ => panic!("expected original tool result"),
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]

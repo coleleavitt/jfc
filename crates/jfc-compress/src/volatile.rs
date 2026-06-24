@@ -247,7 +247,7 @@ fn scan_object(
         if out.len() >= MAX_FINDINGS_PER_REQUEST {
             return;
         }
-        if is_id_named_key(k) && !is_value_empty(sub) {
+        if is_id_named_key(k) && !is_json_schema_properties_map(location) && !is_value_empty(sub) {
             out.push(VolatileFinding {
                 kind: VolatileKind::IdField,
                 location: format!("{location}.{k}"),
@@ -343,6 +343,13 @@ fn is_id_named_key(key: &str) -> bool {
         .any(|needle| lowered.contains(needle))
 }
 
+fn is_json_schema_properties_map(location: &str) -> bool {
+    location
+        .rsplit('.')
+        .next()
+        .is_some_and(|segment| segment == "properties")
+}
+
 fn is_value_empty(v: &Value) -> bool {
     match v {
         Value::Null => true,
@@ -412,18 +419,17 @@ mod tests {
     #[test]
     fn detects_request_id_field_in_nested_object() {
         let body = json!({
-            "tools": [{
-                "name": "lookup",
-                "description": "Look up a user.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "user_id": {"type": "string"},
-                        "request_id": "req-2026-abc-12345"
-                    }
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "request_id": "req-2026-abc-12345"
+                        }
+                    ]
                 }
-            }],
-            "messages": [],
+            ],
         });
         let findings = detect_volatile_content(&body, ApiKind::Anthropic);
         let id_field = findings
@@ -432,6 +438,37 @@ mod tests {
             .expect("expected an IdField finding");
         assert!(id_field.location.ends_with(".request_id"));
         assert!(id_field.sample.contains("req-2026-abc-12345"));
+    }
+
+    #[test]
+    fn json_schema_property_names_are_not_runtime_id_fields_regression() {
+        let body = json!({
+            "tools": [{
+                "name": "lookup",
+                "description": "Look up a user.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "request_id": {"type": "string"},
+                        "trace_id": {"type": "string"},
+                        "nested": {
+                            "type": "object",
+                            "properties": {
+                                "correlation_id": {"type": "string"}
+                            }
+                        }
+                    }
+                }
+            }],
+            "messages": [],
+        });
+        let findings = detect_volatile_content(&body, ApiKind::Anthropic);
+        assert!(
+            findings
+                .iter()
+                .all(|finding| finding.kind != VolatileKind::IdField),
+            "schema property names should not be flagged: {findings:?}"
+        );
     }
 
     #[test]

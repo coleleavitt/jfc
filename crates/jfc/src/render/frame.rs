@@ -420,7 +420,10 @@ pub(super) fn extract_selection_text(
     let inner_w = content_w as usize;
     let ctx = crate::message_view::RenderCtx::from_app(app);
     let items = crate::message_view::build_render_items_pub(&ctx, inner_w);
-    let total_h: usize = items.iter().map(|i| i.height(inner_w)).sum();
+    let total_h: usize = items
+        .iter()
+        .map(|i| i.height_with_app(inner_w, Some(app)))
+        .sum();
     let tmp_area = Rect::new(0, 0, content_w, span as u16);
     let mut tmp = ratatui::buffer::Buffer::empty(tmp_area);
     crate::message_view::MessageView {

@@ -55,13 +55,14 @@ pub fn try_spawn_teammate(
         .subagent_type
         .as_deref()
         .and_then(|t| agents.iter().find(|a| a.name.eq_ignore_ascii_case(t)));
-    let teammate_model = match crate::tools::selected_subagent_model(
+    let (teammate_provider, teammate_model) = match crate::tools::selected_subagent_provider_model(
         task_input,
         agent_def,
+        provider.clone(),
         model,
-        provider.name(),
+        registry,
     ) {
-        Ok(model) => model,
+        Ok(resolved) => resolved,
         Err(error) => {
             send_critical(
                 &tx_task,
@@ -75,15 +76,6 @@ pub fn try_spawn_teammate(
         }
     };
     let teammate_model_name = teammate_model.as_str().to_string();
-
-    // Bind the teammate to the provider that actually serves its selected
-    // model. When the leader runs Claude but the teammate's model is `gpt-5.5`,
-    // inheriting the leader's provider would send the request to the wrong API.
-    // Resolve against the registry; only the (provider, model) pair changes —
-    // everything else (mailbox, task store, system prompt) is identical, so
-    // heterogeneous teammates debate through the same swarm machinery.
-    let (teammate_provider, teammate_model) =
-        bind_teammate_provider(registry, provider.clone(), teammate_model);
 
     let config = TeammateRunnerConfig {
         identity: TeammateIdentity {
@@ -223,6 +215,7 @@ pub fn try_spawn_teammate(
 /// teammates — e.g. a `gpt-5.5` teammate under a Claude leader). When nothing
 /// resolves (no registry, or an unknown id), the teammate falls back to the
 /// leader's `fallback_provider` and the unchanged model id.
+#[cfg(test)]
 fn bind_teammate_provider(
     registry: &[Arc<dyn Provider>],
     fallback_provider: Arc<dyn Provider>,

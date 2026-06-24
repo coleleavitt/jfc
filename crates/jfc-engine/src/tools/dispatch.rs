@@ -1652,6 +1652,70 @@ pub async fn execute_tool_with_runtime_id(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn review_tools_dispatch_to_persistence_regression() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().to_path_buf();
+        let file = cwd.join("src/lib.rs");
+        tokio::fs::create_dir_all(file.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&file, "fn main() {}\n").await.unwrap();
+
+        let plan = execute_tool(
+            ToolKind::SubmitPlan,
+            ToolInput::SubmitPlan {
+                short_name: "tighten review".to_owned(),
+                summary: "Persist review plan".to_owned(),
+                plan: "1. Fix it\n2. Test it".to_owned(),
+            },
+            cwd.clone(),
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(!plan.is_error(), "{}", plan.output);
+        assert!(plan.output.contains("Plan submitted and saved"));
+
+        let comment = execute_tool(
+            ToolKind::AddReviewComment,
+            ToolInput::AddReviewComment {
+                file_path: "src/lib.rs".to_owned(),
+                start_line: 1,
+                end_line: 1,
+                text: "Tighten the behavior here.".to_owned(),
+            },
+            cwd.clone(),
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(!comment.is_error(), "{}", comment.output);
+        assert!(comment.output.contains("Review comment saved"));
+
+        let commit = execute_tool(
+            ToolKind::SuggestCommitMessage,
+            ToolInput::SuggestCommitMessage {
+                message: "fix(review): persist model review artifacts".to_owned(),
+                scope: Some("review".to_owned()),
+            },
+            cwd,
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(!commit.is_error(), "{}", commit.output);
+        assert!(commit.output.contains("Commit message suggestion saved"));
+    }
+}
+
 /// Post-TaskDone hook: open the project PlanStore and advance any plan whose
 /// `linked_task_ids` contains `task_id`. If every linked task is complete,
 /// the plan's status flips to `Done`. Errors are logged-and-swallowed —

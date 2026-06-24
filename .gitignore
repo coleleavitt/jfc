@@ -27,20 +27,27 @@ core.*
 # jfc runtime state (caches, task store, pending learning, skills usage,
 # audit ledgers, change-sets, …) is all per-run noise — ignore the whole
 # .jfc/ tree by default, then re-include only the deliberately-tracked
-# project config dirs (agents, memory, workflows, plans). This catches new
+# project config dirs (agents, workflows, plans). This catches new
 # runtime subdirs (e.g. .jfc/skills/) automatically without growing the list.
 .jfc/*
 !.jfc/agents/
-!.jfc/memory/
 !.jfc/workflows/
 !.jfc/plans/
 # Per-crate runtime state dirs created when running jfc from a subdir.
 crates/**/.jfc/
+crates/**/jfc-handover.md
+crates/**/jfc-transcript.md
 
 # Agent runtime state (exec-call captures)
 .code/
+.omo/boulder.json
 .omo/run-continuation/
+.opencode/magic-context/
 .playwright-mcp/
+
+# Local research/source dumps belong under ignored research/ or outside the repo.
+/AutoCompressor.pdf
+/AutoCompressor.txt
 
 # Generated Coq/Rocq build outputs.
 rcoq-tests/Makefile.coq.conf

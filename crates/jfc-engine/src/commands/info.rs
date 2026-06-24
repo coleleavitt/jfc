@@ -3,6 +3,24 @@
 use crate::commands::prelude::*;
 use crate::runtime::EngineEvent;
 
+fn active_cwd(cwd: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(cwd)
+}
+
+const REVIEW_DIFF_CAP: usize = 12_000;
+
+fn cap_review_diff(diff_output: String) -> String {
+    if diff_output.len() > REVIEW_DIFF_CAP {
+        let cap = diff_output.floor_char_boundary(REVIEW_DIFF_CAP);
+        format!(
+            "{}\n\n[... diff truncated at 12000 chars ...]",
+            &diff_output[..cap]
+        )
+    } else {
+        diff_output
+    }
+}
+
 pub(super) async fn cmd_diff(
     state: &mut EngineState,
     _parts: &[&str],
@@ -15,7 +33,7 @@ pub(super) async fn cmd_diff(
     // message (markdown code block) so the user — and the
     // model on the next turn — can see what's pending.
     state.messages.push(ChatMessage::user(text.to_owned()));
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cwd = active_cwd(&state.cwd);
     let in_repo = std::process::Command::new("git")
         .args(["rev-parse", "--is-inside-work-tree"])
         .current_dir(&cwd)
@@ -78,7 +96,7 @@ pub(super) async fn cmd_turn_diff(
         ));
         return;
     }
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cwd = active_cwd(&state.cwd);
     let files: Vec<String> = state.turn_edited_files.iter().cloned().collect();
     // `git diff HEAD -- <files>` shows tracked-file changes; brand-new files
     // (created by Write) won't appear, so list those separately.
@@ -514,14 +532,7 @@ pub(super) async fn cmd_review(
                 .into(),
         ));
     } else {
-        let capped = if diff_output.len() > 12_000 {
-            format!(
-                "{}\n\n[... diff truncated at 12000 chars ...]",
-                &diff_output[..12_000]
-            )
-        } else {
-            diff_output
-        };
+        let capped = cap_review_diff(diff_output);
         let target = req.target_or_default();
         let prompt = format!(
             "Review level: {}.\nTarget: {}.\n\n\
@@ -691,6 +702,23 @@ mod review_tests {
     use super::*;
 
     #[test]
+    fn active_cwd_uses_engine_state_value_regression() {
+        let cwd = active_cwd("/tmp/jfc-active-workspace");
+
+        assert_eq!(cwd, std::path::PathBuf::from("/tmp/jfc-active-workspace"));
+    }
+
+    #[test]
+    fn cap_review_diff_uses_utf8_boundary_regression() {
+        let diff = format!("{}🙂tail", "a".repeat(REVIEW_DIFF_CAP - 1));
+
+        let capped = cap_review_diff(diff);
+
+        assert!(capped.contains("[... diff truncated at 12000 chars ...]"));
+        assert!(!capped.contains("🙂"));
+    }
+
+    #[test]
     fn parse_review_request_defaults_to_medium_normal() {
         let req = parse_review_request(&["/review"]);
         assert_eq!(req.level, ReviewLevel::Medium);
@@ -743,8 +771,8 @@ pub(super) async fn cmd_skills(
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    let skills =
-        crate::agents::load_skills(&std::env::current_dir().unwrap_or_else(|_| ".".into()));
+    let cwd = active_cwd(&state.cwd);
+    let skills = crate::agents::load_skills(&cwd);
     let visible: Vec<_> = skills
         .iter()
         .filter(|skill| skill.is_discoverable())
@@ -801,8 +829,8 @@ pub(super) async fn cmd_agents(
     _text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    let agents =
-        crate::agents::load_agents(&std::env::current_dir().unwrap_or_else(|_| ".".into()));
+    let cwd = active_cwd(&state.cwd);
+    let agents = crate::agents::load_agents(&cwd);
     let body = if agents.is_empty() {
         "No agent definitions found. Create or import DB-backed agent definitions \
                  with `name` plus optional `model`, `permissionMode`, `allowedTools`, \

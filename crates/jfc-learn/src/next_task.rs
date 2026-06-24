@@ -93,8 +93,7 @@ pub const MAX_SUGGESTIONS: usize = 5;
 pub fn infer_next_tasks(transcript: &str) -> Vec<NextTaskSuggestion> {
     let lines: Vec<&str> = transcript.lines().collect();
     let total = lines.len();
-    let mut seen = std::collections::HashSet::new();
-    let mut suggestions: Vec<NextTaskSuggestion> = Vec::new();
+    let mut suggestions_by_text = std::collections::HashMap::<String, NextTaskSuggestion>::new();
 
     for (i, raw) in lines.iter().enumerate() {
         let line = raw.trim();
@@ -106,7 +105,7 @@ pub fn infer_next_tasks(transcript: &str) -> Vec<NextTaskSuggestion> {
             continue;
         };
         let text = clean_action_text(line);
-        if text.is_empty() || !seen.insert(text.clone()) {
+        if text.is_empty() {
             continue;
         }
         // Recency bonus: 0..=20 by position in the transcript.
@@ -115,12 +114,22 @@ pub fn infer_next_tasks(transcript: &str) -> Vec<NextTaskSuggestion> {
         } else {
             0
         };
-        suggestions.push(NextTaskSuggestion {
-            text,
+        let suggestion = NextTaskSuggestion {
+            text: text.clone(),
             signal,
             score: signal.weight() + recency,
-        });
+        };
+        suggestions_by_text
+            .entry(text)
+            .and_modify(|existing| {
+                if suggestion.score > existing.score {
+                    *existing = suggestion.clone();
+                }
+            })
+            .or_insert(suggestion);
     }
+
+    let mut suggestions: Vec<NextTaskSuggestion> = suggestions_by_text.into_values().collect();
 
     suggestions.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.text.cmp(&b.text)));
     suggestions.truncate(MAX_SUGGESTIONS);
@@ -189,6 +198,16 @@ mod tests {
         let t = "Next step: run tests\nNext step: run tests";
         let out = infer_next_tasks(t);
         assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn duplicate_action_keeps_stronger_newer_signal_regression() {
+        let t = "TODO: run tests\nnotes\nNext step: run tests";
+        let out = infer_next_tasks(t);
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "run tests");
+        assert_eq!(out[0].signal, SignalKind::NextStep);
     }
 
     #[test]

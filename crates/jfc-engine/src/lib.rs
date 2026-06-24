@@ -123,30 +123,102 @@ pub mod hooks {
         OnUserInputRequired,
     }
 
-    pub struct HookContext;
+    #[derive(Debug, Clone)]
+    pub struct HookContext {
+        pub tool_name: String,
+        pub tool_input: String,
+        pub session_id: String,
+        pub intent: Option<String>,
+        pub file_path: Option<String>,
+        pub agent_name: Option<String>,
+        pub extra: Vec<(String, String)>,
+        pub env_vars: Vec<(String, String)>,
+    }
 
     impl HookContext {
-        pub fn for_session(_session_id: impl AsRef<str>) -> Self {
-            Self
+        pub fn for_session(session_id: impl AsRef<str>) -> Self {
+            Self {
+                tool_name: String::new(),
+                tool_input: String::new(),
+                session_id: session_id.as_ref().to_string(),
+                intent: None,
+                file_path: None,
+                agent_name: None,
+                extra: Vec::new(),
+                env_vars: Vec::new(),
+            }
         }
-        pub fn for_tool(_tool_name: &str, _tool_input: &str, _session_id: impl AsRef<str>) -> Self {
-            Self
+        pub fn for_tool(tool_name: &str, tool_input: &str, session_id: impl AsRef<str>) -> Self {
+            Self {
+                tool_name: tool_name.to_string(),
+                tool_input: tool_input.to_string(),
+                session_id: session_id.as_ref().to_string(),
+                intent: None,
+                file_path: None,
+                agent_name: None,
+                extra: Vec::new(),
+                env_vars: Vec::new(),
+            }
         }
-        pub fn for_agent(_agent_name: &str, _session_id: impl AsRef<str>) -> Self {
-            Self
+        pub fn for_agent(agent_name: &str, session_id: impl AsRef<str>) -> Self {
+            let mut ctx = Self::for_session(session_id);
+            ctx.agent_name = Some(agent_name.to_string());
+            ctx
         }
-        pub fn for_file(_file_path: &str, _session_id: impl AsRef<str>) -> Self {
-            Self
+        pub fn for_file(file_path: &str, session_id: impl AsRef<str>) -> Self {
+            let mut ctx = Self::for_session(session_id);
+            ctx.file_path = Some(file_path.to_string());
+            ctx
         }
         #[must_use]
-        pub fn with_extra(self, _key: impl Into<String>, _value: impl Into<String>) -> Self {
+        pub fn with_extra(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+            self.extra.push((key.into(), value.into()));
             self
         }
     }
 
+    #[derive(Debug, Clone)]
+    pub struct HookMetadata {
+        pub key: String,
+        pub value: String,
+    }
+
+    #[derive(Debug, Clone)]
     pub enum HookAction {
         Continue,
+        Skip,
+        Replace(String),
         Abort(String),
+        Emit(HookMetadata),
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum HookHandler {
+        Logger,
+        PermissionCheck,
+        IntentEnricher,
+        CommentChecker,
+        ShellCommand {
+            command: String,
+        },
+        Shell {
+            command: String,
+            async_mode: bool,
+            matcher: Option<String>,
+        },
+        Custom {
+            name: String,
+            action: HookAction,
+        },
+    }
+
+    impl HookHandler {
+        pub fn execute(&self, _point: HookPoint, _ctx: &HookContext) -> HookAction {
+            match self {
+                Self::Custom { action, .. } => action.clone(),
+                _ => HookAction::Continue,
+            }
+        }
     }
 
     /// No-op metrics stub (feature = "hooks" is off).
@@ -177,10 +249,79 @@ pub mod hooks {
         Vec::new()
     }
 
-    pub struct HookRegistry;
+    #[derive(Default)]
+    pub struct HookRegistry {
+        hooks: Vec<(HookPoint, HookHandler)>,
+    }
+
+    impl HookRegistry {
+        pub fn new() -> Self {
+            Self { hooks: Vec::new() }
+        }
+
+        pub fn register(&mut self, point: HookPoint, handler: HookHandler) {
+            self.hooks.push((point, handler));
+        }
+
+        pub fn register_multi(&mut self, points: &[HookPoint], handler: HookHandler) {
+            for &point in points {
+                self.register(point, handler.clone());
+            }
+        }
+
+        pub fn fire(&self, point: HookPoint, ctx: &HookContext) -> HookAction {
+            for (hook_point, handler) in &self.hooks {
+                if *hook_point == point {
+                    match handler.execute(point, ctx) {
+                        HookAction::Continue | HookAction::Emit(_) => {}
+                        action => return action,
+                    }
+                }
+            }
+            HookAction::Continue
+        }
+
+        pub fn fire_async(&self, point: HookPoint, ctx: &HookContext) {
+            let _ = self.fire(point, ctx);
+        }
+
+        pub fn len(&self) -> usize {
+            self.hooks.len()
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.hooks.is_empty()
+        }
+
+        pub fn has_hooks(&self, point: HookPoint) -> bool {
+            self.hooks
+                .iter()
+                .any(|(hook_point, _)| *hook_point == point)
+        }
+
+        pub fn registered_points(&self) -> Vec<HookPoint> {
+            let mut points: Vec<HookPoint> = self.hooks.iter().map(|(point, _)| *point).collect();
+            points.dedup();
+            points
+        }
+
+        pub fn clear_point(&mut self, point: HookPoint) {
+            self.hooks.retain(|(hook_point, _)| *hook_point != point);
+        }
+
+        pub fn clear_all(&mut self) {
+            self.hooks.clear();
+        }
+
+        pub fn register_from_config(&mut self, _config: &crate::config::Config) {}
+
+        pub fn metrics_snapshot(&self) -> std::collections::HashMap<String, HookMetrics> {
+            std::collections::HashMap::new()
+        }
+    }
 
     pub fn default_registry() -> HookRegistry {
-        HookRegistry
+        HookRegistry::new()
     }
 
     pub fn init_global(_registry: HookRegistry) {}
@@ -394,7 +535,7 @@ pub struct SessionParityReport {
 impl SessionParityReport {
     /// Safe to flip reads to the DB: every deserializable session matched.
     pub fn flip_safe(&self) -> bool {
-        self.mismatched.is_empty() && self.checked > 0
+        self.mismatched.is_empty() && self.passed > 0
     }
 }
 
@@ -739,5 +880,32 @@ mod knowledge_maintenance_tests {
             paths.project_mem,
             std::path::PathBuf::from("/repo/.jfc/memory")
         );
+    }
+
+    #[test]
+    fn session_parity_flip_requires_verified_db_roundtrip_regression() {
+        let report = SessionParityReport {
+            checked: 2,
+            passed: 0,
+            mismatched: Vec::new(),
+            undeserializable: vec!["ses_bad_1".into(), "ses_bad_2".into()],
+        };
+
+        assert!(
+            !report.flip_safe(),
+            "undeserializable-only legacy candidates must not authorize DB-only reads"
+        );
+    }
+
+    #[test]
+    fn session_parity_flip_safe_when_at_least_one_session_passes_normal() {
+        let report = SessionParityReport {
+            checked: 2,
+            passed: 1,
+            mismatched: Vec::new(),
+            undeserializable: vec!["ses_bad".into()],
+        };
+
+        assert!(report.flip_safe());
     }
 }

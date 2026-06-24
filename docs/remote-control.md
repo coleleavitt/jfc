@@ -43,7 +43,7 @@ tailscale serve https+insecure://localhost:4242
 On the client:
 
 ```bash
-jfc rc connect ws://<tailscale-ip>:4242 --token <TOKEN>
+jfc rc connect wss://<machine-name>.<tailnet-name>.ts.net --token <TOKEN>
 ```
 
 Zero extra config. Traffic is WireGuard-encrypted end-to-end.

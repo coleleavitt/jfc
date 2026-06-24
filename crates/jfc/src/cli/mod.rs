@@ -460,6 +460,7 @@ pub(crate) struct CliRuntimeConfig {
     pub custom_betas: Vec<String>,
     pub fine_grained_tool_streaming: bool,
     pub strict_tool_schemas: bool,
+    pub plugins_disabled_by_managed_policy: bool,
     /// Start the remote-control server at launch (from `--remote-control`
     /// or the `[remote_control] auto_start = true` config).
     pub remote_control: bool,
@@ -656,6 +657,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         provider = resolved.provider;
         model = resolved.model;
     }
+    jfc_engine::tools::register_provider_registry(providers.clone());
 
     // TLS/DNS preconnect warmup: fire-and-forget before the first user turn.
     // Skip in `--print` one-shot mode (the response will arrive before the
@@ -849,6 +851,9 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         custom_betas: cfg.anthropic_betas(cli.betas.clone()),
         fine_grained_tool_streaming: cli.fine_grained_tool_streaming,
         strict_tool_schemas: cli.strict_tool_schemas,
+        plugins_disabled_by_managed_policy: managed_settings
+            .as_ref()
+            .is_some_and(|m| m.disable_plugin_dirs || m.disable_plugin_urls),
         remote_control,
         quiet: cli.quiet,
         cwd_override: cli.cwd.clone(),

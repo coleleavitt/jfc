@@ -70,11 +70,7 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
             97
         );
     }
-    let managed = jfc_engine::config::load_managed_settings();
-    let plugins_disabled = safe_mode
-        || managed
-            .as_ref()
-            .is_some_and(|m| m.disable_plugin_dirs || m.disable_plugin_urls);
+    let plugins_disabled = safe_mode || app.plugins_disabled_by_managed_policy;
     if plugins_disabled {
         push1!("plugins off".to_owned(), muted, 62);
     }

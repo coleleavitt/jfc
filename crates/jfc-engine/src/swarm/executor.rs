@@ -25,7 +25,16 @@ pub enum TurnResult {
         last_tool: Option<String>,
     },
     Aborted,
-    Error(String),
+    Error {
+        kind: TurnErrorKind,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnErrorKind {
+    ProviderStreamOpen,
+    StreamDrain,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -157,7 +166,10 @@ pub async fn run_single_turn(
                         }
                         continue;
                     }
-                    return TurnResult::Error(format!("provider stream error: {e}"));
+                    return TurnResult::Error {
+                        kind: TurnErrorKind::ProviderStreamOpen,
+                        message: e.to_string(),
+                    };
                 }
             };
 
@@ -183,7 +195,10 @@ pub async fn run_single_turn(
                 AgentDrainOutcome::Completed(turn_data) => turn_data,
                 AgentDrainOutcome::Cancelled => return TurnResult::Aborted,
                 AgentDrainOutcome::Fatal(message) => {
-                    return TurnResult::Error(format!("stream error: {message}"));
+                    return TurnResult::Error {
+                        kind: TurnErrorKind::StreamDrain,
+                        message,
+                    };
                 }
                 AgentDrainOutcome::Retryable(message) => {
                     let Some(retry) = jfc_provider::retry::retryable_stream_error(&message) else {

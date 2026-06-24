@@ -289,7 +289,7 @@ pub fn execute_task_list(
         .map(|t| {
             let mut v = serde_json::to_value(t).unwrap_or(serde_json::Value::Null);
             if let Some(obj) = v.as_object_mut() {
-                if let Some(blocked) = obj.get_mut("blocked_by") {
+                if let Some(blocked) = obj.get_mut("blockedBy") {
                     if let Some(arr) = blocked.as_array_mut() {
                         arr.retain(|id| {
                             id.as_str()
@@ -527,6 +527,49 @@ mod tests {
             ["t1".to_string(), "t3".to_string()].into();
         arr.retain(|id| id.as_str().map(|s| !completed.contains(s)).unwrap_or(true));
         assert_eq!(arr, vec![json!("t2")]);
+    }
+
+    #[test]
+    fn task_list_strips_completed_blocked_by_ids_regression() {
+        let store = TaskStore::in_memory();
+        let completed = store
+            .create(
+                "done".into(),
+                "completed dependency".into(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        store
+            .create(
+                "blocked".into(),
+                "blocked task".into(),
+                None,
+                vec![completed.id.to_string()],
+            )
+            .unwrap();
+        store
+            .update(
+                completed.id.as_str(),
+                TaskPatch {
+                    status: Some(TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let result = execute_task_list(Some(store), None, None, false, None);
+        let value: serde_json::Value = serde_json::from_str(&result.output).unwrap();
+        let blocked_by = value
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|task| task["subject"] == "blocked")
+            .unwrap()["blockedBy"]
+            .as_array()
+            .unwrap();
+
+        assert!(blocked_by.is_empty());
     }
 
     #[test]

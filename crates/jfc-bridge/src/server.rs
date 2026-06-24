@@ -378,9 +378,9 @@ impl IntoResponse for ApiError {
             Self::NotFound(_) | Self::Store(StoreError::SessionNotFound(_)) => {
                 StatusCode::NOT_FOUND
             }
-            Self::BadRequest(_) | Self::Store(StoreError::WorkerEpochMismatch { .. }) => {
-                StatusCode::BAD_REQUEST
-            }
+            Self::BadRequest(_)
+            | Self::Store(StoreError::WorkerEpochMismatch { .. })
+            | Self::Store(StoreError::WorkerIdentityMismatch { .. }) => StatusCode::BAD_REQUEST,
             Self::Store(StoreError::Poisoned | StoreError::Persistence) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }

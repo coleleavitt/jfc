@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Default per-project context budget in bytes (~16k tokens of plain text).
 pub const DEFAULT_CONTEXT_BUDGET_BYTES: usize = 64 * 1024;
+const TRUNCATION_MARKER: &str = "\n…(truncated)\n";
 
 /// A single registered reference file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,23 +137,31 @@ impl ProjectFileSet {
         let mut truncated = false;
 
         for file in &self.files {
+            let label = file.display_label();
             if out.len() >= self.budget_bytes {
-                skipped.push(file.display_label());
+                skipped.push(label);
                 continue;
             }
-            let header = format!("\n=== {} ===\n", file.display_label());
+            let header = format!("\n=== {label} ===\n");
+            if header.len() > self.budget_bytes - out.len() {
+                skipped.push(label);
+                continue;
+            }
             let content = match std::fs::read_to_string(resolve(root, &file.path)) {
                 Ok(c) => c,
                 Err(e) => format!("(could not read: {e})\n"),
             };
-            let remaining = self.budget_bytes.saturating_sub(out.len() + header.len());
             out.push_str(&header);
+            let remaining = self.budget_bytes - out.len();
             if content.len() <= remaining {
                 out.push_str(&content);
             } else {
-                let end = floor_char_boundary(&content, remaining);
+                let content_budget = content_budget_for_truncation(remaining);
+                let end = floor_char_boundary(&content, content_budget);
                 out.push_str(&content[..end]);
-                out.push_str("\n…(truncated)\n");
+                if TRUNCATION_MARKER.len() <= self.budget_bytes - out.len() {
+                    out.push_str(TRUNCATION_MARKER);
+                }
                 truncated = true;
             }
             included += 1;
@@ -218,6 +227,10 @@ fn floor_char_boundary(s: &str, max: usize) -> usize {
         i -= 1;
     }
     i
+}
+
+fn content_budget_for_truncation(remaining: usize) -> usize {
+    remaining.saturating_sub(TRUNCATION_MARKER.len())
 }
 
 #[cfg(test)]
@@ -308,7 +321,22 @@ mod tests {
         assert!(ctx.body.contains("…(truncated)"));
         // Budget exhausted → second file skipped.
         assert_eq!(ctx.skipped.len(), 1);
-        assert!(ctx.body.len() <= 200);
+        assert!(ctx.body.len() <= 120);
+    }
+
+    #[test]
+    fn assemble_context_skips_header_that_cannot_fit_budget_regression() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write(dir.path(), "big-label.md", "content");
+        let mut set = ProjectFileSet::new().with_budget(16);
+        set.add(ProjectFile::new("big-label.md").with_label("label larger than budget"));
+
+        let ctx = set.assemble_context(dir.path());
+
+        assert!(ctx.body.is_empty());
+        assert_eq!(ctx.included, 0);
+        assert_eq!(ctx.skipped, vec!["label larger than budget"]);
+        assert!(ctx.body.len() <= 16);
     }
 
     #[test]

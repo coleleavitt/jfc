@@ -506,7 +506,9 @@ pub async fn drain_stream_events(
                     "StreamEvent::Done"
                 );
                 saw_terminal_done = true;
-                if !matches!(stop_reason, StopReason::ToolUse | StopReason::PauseTurn) {
+                if matches!(r, StopReason::PauseTurn)
+                    || !matches!(stop_reason, StopReason::ToolUse | StopReason::PauseTurn)
+                {
                     stop_reason = r;
                 }
                 terminal_done_deadline

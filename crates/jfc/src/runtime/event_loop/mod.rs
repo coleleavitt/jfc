@@ -128,6 +128,7 @@ pub(crate) async fn run(
     app.engine.custom_betas = cli_config.custom_betas;
     app.engine.fine_grained_tool_streaming = cli_config.fine_grained_tool_streaming;
     app.engine.strict_tool_schemas = cli_config.strict_tool_schemas;
+    app.plugins_disabled_by_managed_policy = cli_config.plugins_disabled_by_managed_policy;
     let startup_config = config::load_arc();
 
     // Feature: session GC — remove stale DB sessions at startup so the

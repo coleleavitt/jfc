@@ -757,14 +757,23 @@ pub async fn compact(
                 // files, capped at N45 total tokens). We snapshot the cache
                 // paths before clearing, then inject shortened file contents.
                 let restored_files = restore_recent_files(&tool_ctx.read_cache);
-                tool_ctx.read_cache.clear();
 
                 if !restored_files.is_empty() {
                     insert_restored_files(&mut compacted, &restored_files);
                     // Recompute post_tokens with the restored files included
                     let post_tokens = estimate_tokens(&compacted);
                     tool_ctx.approx_tokens = post_tokens;
+                    if post_tokens >= blocked {
+                        warn!(
+                            target: "jfc::compact",
+                            post_tokens, blocked, restored_files = restored_files.len(),
+                            attempts = attempt,
+                            "post-compact restored files pushed context back over blocked threshold"
+                        );
+                        return CompactResult::Exhausted { attempts: attempt };
+                    }
                 }
+                tool_ctx.read_cache.clear();
 
                 info!(
                     target: "jfc::compact",
@@ -1502,6 +1511,41 @@ mod level_tests {
     }
 
     impl jfc_provider::seal::Sealed for CatalogCapProvider {}
+
+    struct SummaryProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for SummaryProvider {
+        fn name(&self) -> &str {
+            "anthropic"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            vec![]
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(stream::empty()))
+        }
+
+        async fn complete(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<jfc_provider::CompletionResponse> {
+            Ok(jfc_provider::CompletionResponse {
+                content: "<summary>short summary</summary>".to_owned(),
+                usage: Default::default(),
+                context_signals: None,
+            })
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for SummaryProvider {}
 
     fn clear_env() {
         for k in [
@@ -2425,6 +2469,40 @@ mod level_tests {
             .collect();
         assert!(text.contains("a.rs"));
         assert!(text.contains("b.rs"));
+    }
+
+    #[tokio::test]
+    async fn compact_exhausts_when_restored_files_exceed_blocked_budget_regression() {
+        let _g = lock();
+        clear_env();
+        unsafe {
+            std::env::set_var("JFC_BLOCKING_LIMIT_OVERRIDE", "300");
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("large.rs");
+        std::fs::write(&file, "fn restored() {}\n".repeat(1_000)).unwrap();
+
+        let provider = SummaryProvider;
+        let opts = StreamOptions::new("claude-summary");
+        let mut ctx = ToolContext::default();
+        ctx.read_cache.record_read(file);
+        let messages = vec![
+            user_msg("first user turn"),
+            assistant_msg("first assistant turn"),
+            user_msg("latest user turn"),
+            assistant_msg("latest assistant turn"),
+        ];
+
+        let result = compact(&messages, &provider, &opts, &mut ctx, 200_000, None, None).await;
+
+        assert!(matches!(result, CompactResult::Exhausted { .. }));
+        assert!(
+            !ctx.read_cache.paths().is_empty(),
+            "failed post-restore compaction must not clear read cache"
+        );
+
+        clear_env();
     }
 }
 

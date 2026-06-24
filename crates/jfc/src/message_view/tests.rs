@@ -21,7 +21,10 @@ use super::tool_blocks::{
     render_tool_block, tool_body_line_count, tool_body_lines_themed, tool_kind_color,
     tool_progress_verb, tool_status_icon_animated, tool_title_width_cap,
 };
-use super::tool_height::{tool_block_height, tool_block_height_pub, tool_content_height_with_tool};
+use super::tool_height::{
+    tool_block_height, tool_block_height_pub, tool_block_height_with_app,
+    tool_content_height_with_tool,
+};
 use super::truncation::{
     GrepLine, grep_is_case_insensitive, grep_search_pattern, grep_target_file, parse_grep_line,
     parse_grep_no_path, parse_grep_with_sep,
@@ -3610,7 +3613,7 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
     /// its leftmost cell was overwritten, regardless of whether that
     /// overwrite landed a space or a glyph.
     fn rendered_tool_rows(app: &App, tool: &ToolCall, width: u16) -> usize {
-        let predicted = tool_block_height(tool, width as usize) as u16;
+        let predicted = tool_block_height_with_app(tool, width as usize, Some(app)) as u16;
         let h = predicted.saturating_add(8).max(16);
         let area = Rect {
             x: 0,
@@ -3639,7 +3642,8 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
     }
 
     fn rendered_tool_text(app: &App, tool: &ToolCall, width: u16) -> String {
-        let h = tool_block_height(tool, width as usize).saturating_add(4) as u16;
+        let h =
+            tool_block_height_with_app(tool, width as usize, Some(app)).saturating_add(4) as u16;
         let area = Rect {
             x: 0,
             y: 0,
@@ -3919,6 +3923,51 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
                 );
             }
         }
+    }
+
+    #[test]
+    fn tool_block_height_counts_read_diagnostic_gutter_regression() {
+        use jfc_engine::diagnostics::{DiagnosticEntry, Severity};
+
+        let mut app = stub_app();
+        app.engine.diagnostics.push(DiagnosticEntry {
+            file: "src/lib.rs".into(),
+            line: 1,
+            col: 1,
+            message: "expected semicolon".into(),
+            code: None,
+            source: Some("rust-analyzer".into()),
+            severity: Severity::Error,
+        });
+        let tool = ToolCall {
+            id: "tb-diag".into(),
+            kind: ToolKind::Read,
+            status: ToolStatus::Completed,
+            input: ToolInput::Read {
+                file_path: "src/lib.rs".into(),
+                offset: None,
+                limit: None,
+            },
+            output: ToolOutput::Text(
+                "1: let value_abcdefghijklmnopqrstuvwxyz = compute_result();".into(),
+            ),
+            display: jfc_core::ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: None,
+            thought_signature: None,
+        };
+
+        let (width, without_diagnostics, predicted) = (24u16..80)
+            .find_map(|width| {
+                let without_diagnostics = tool_block_height(&tool, width as usize);
+                let predicted = tool_block_height_with_app(&tool, width as usize, Some(&app));
+                (predicted > without_diagnostics).then_some((width, without_diagnostics, predicted))
+            })
+            .expect("diagnostic gutter should increase wrapping at some test width");
+        let actual = rendered_tool_rows(&app, &tool, width);
+
+        assert!(predicted > without_diagnostics);
+        assert_eq!(predicted, actual);
     }
 
     #[test]

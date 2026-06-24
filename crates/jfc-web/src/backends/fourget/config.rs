@@ -58,6 +58,20 @@ pub fn instance_limit() -> usize {
         .clamp(1, 256)
 }
 
+pub fn discovery_enabled() -> bool {
+    std::env::var("FOURGET_DISCOVER_INSTANCES")
+        .map(|raw| matches!(raw.trim(), "1" | "true" | "TRUE" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+pub fn page_fanout_limit() -> usize {
+    std::env::var("FOURGET_PAGE_FANOUT_LIMIT")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .unwrap_or(8)
+        .clamp(1, 64)
+}
+
 fn configured_list(multi_env: &str, single_env: &str, default: &[&str]) -> Vec<String> {
     std::env::var(multi_env)
         .ok()

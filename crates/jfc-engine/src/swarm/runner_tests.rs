@@ -1,5 +1,5 @@
 use super::super::coordinator::check_task_list_for_work;
-use super::super::executor::{TurnResult, run_single_turn};
+use super::super::executor::{TurnErrorKind, TurnResult, run_single_turn};
 use super::*;
 use crate::swarm::mailbox;
 use crate::swarm::test_support::HomeOverride;
@@ -322,6 +322,59 @@ impl jfc_provider::Provider for StubProvider {
     }
 }
 impl jfc_provider::seal::Sealed for StubProvider {}
+
+#[tokio::test(flavor = "current_thread")]
+async fn run_single_turn_classifies_provider_open_error_regression() {
+    let _g = HomeOverride::new();
+    let provider: std::sync::Arc<dyn jfc_provider::Provider> =
+        std::sync::Arc::new(StubProvider::new(vec![]));
+    let config = TeammateRunnerConfig {
+        identity: make_identity(),
+        prompt: "hello".into(),
+        description: "test".into(),
+        model: None,
+        agent_type: None,
+        provider,
+        model_id: jfc_provider::ModelId::new("stub-model"),
+        system_prompt: None,
+        task_store: None,
+    };
+    let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (_abort_tx, mut abort_rx) = tokio::sync::watch::channel(false);
+    let mut history = Vec::new();
+
+    let first = run_single_turn(
+        &config,
+        "go",
+        &mut history,
+        &event_tx,
+        "task",
+        &mut abort_rx,
+    )
+    .await;
+    assert!(matches!(first, TurnResult::Completed { .. }));
+
+    let second = run_single_turn(
+        &config,
+        "go again",
+        &mut history,
+        &event_tx,
+        "task",
+        &mut abort_rx,
+    )
+    .await;
+
+    assert!(
+        matches!(
+            second,
+            TurnResult::Error {
+                kind: TurnErrorKind::ProviderStreamOpen,
+                ..
+            }
+        ),
+        "expected provider-open error, got {second:?}"
+    );
+}
 
 #[tokio::test(flavor = "current_thread")]
 async fn start_teammate_completes_after_endturn_normal() {

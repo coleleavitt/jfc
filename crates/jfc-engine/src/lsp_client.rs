@@ -48,7 +48,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -74,7 +74,25 @@ pub struct LspLocation {
 /// awaits while the lock is held — and we need to lock from a sync `Drop`
 /// impl on `PendingGuard` for exception-safe cleanup. Switching to the std
 /// mutex avoids spawning a runtime task per drop.
-type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
+type PendingMap = HashMap<u64, oneshot::Sender<Value>>;
+type PendingRequests = Arc<Mutex<PendingMap>>;
+
+fn lock_pending<'a>(
+    pending: &'a PendingRequests,
+    operation: &'static str,
+) -> MutexGuard<'a, PendingMap> {
+    match pending.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            tracing::error!(
+                target: "jfc::lsp",
+                operation,
+                "pending requests mutex was poisoned; recovering map for explicit cleanup"
+            );
+            poisoned.into_inner()
+        }
+    }
+}
 
 /// RAII guard that removes its `(id)` entry from the pending-requests
 /// map on drop. Constructed by `send_request` immediately after inserting
@@ -99,13 +117,7 @@ struct PendingGuard {
 
 impl Drop for PendingGuard {
     fn drop(&mut self) {
-        // Best-effort cleanup. A poisoned mutex means a different thread
-        // panicked while holding the lock — we don't have a recovery
-        // story here, so we just skip cleanup. The map will be dropped
-        // when the whole client tears down.
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.remove(&self.id);
-        }
+        lock_pending(&self.pending, "pending_guard_drop").remove(&self.id);
     }
 }
 
@@ -146,10 +158,7 @@ impl LspClient {
 
         let (tx, rx) = oneshot::channel();
         {
-            let mut pending = match self.pending.lock() {
-                Ok(g) => g,
-                Err(_) => return None,
-            };
+            let mut pending = lock_pending(&self.pending, "send_request_insert");
             pending.insert(id, tx);
         }
         // Guard takes ownership of the (id) entry's lifecycle. Once
@@ -807,6 +816,7 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
     use std::sync::Arc;
+    use std::thread;
 
     fn fresh_client() -> LspClient {
         let (tx, _rx) = mpsc::unbounded_channel::<Vec<u8>>();
@@ -816,6 +826,44 @@ mod tests {
             next_id: AtomicU64::new(1),
             pending: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    fn fresh_client_with_pending(pending: PendingRequests) -> LspClient {
+        let (tx, _rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        LspClient {
+            _child: None,
+            stdin_tx: tx,
+            next_id: AtomicU64::new(1),
+            pending,
+        }
+    }
+
+    fn closed_writer_client() -> LspClient {
+        let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        drop(rx);
+        LspClient {
+            _child: None,
+            stdin_tx: tx,
+            next_id: AtomicU64::new(1),
+            pending: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn poison_pending(pending: PendingRequests) -> PendingRequests {
+        let clone = Arc::clone(&pending);
+        let _ = thread::spawn(move || {
+            let _guard = clone.lock().unwrap();
+            panic!("poison pending mutex for regression test");
+        })
+        .join();
+        pending
+    }
+
+    fn pending_len(pending: &PendingRequests) -> usize {
+        pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .len()
     }
 
     #[test]
@@ -842,6 +890,35 @@ mod tests {
             100,
             "100 concurrent next_id() calls produced duplicate ids: {ids:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn send_request_cleans_pending_when_stdin_channel_is_closed_regression() {
+        let client = closed_writer_client();
+
+        assert!(
+            client
+                .send_request("workspace/symbol", json!({}))
+                .await
+                .is_none()
+        );
+
+        assert_eq!(pending_len(&client.pending), 0);
+    }
+
+    #[tokio::test]
+    async fn send_request_recovers_poisoned_pending_mutex_regression() {
+        let pending = poison_pending(Arc::new(Mutex::new(HashMap::new())));
+        let client = fresh_client_with_pending(Arc::clone(&pending));
+
+        assert!(
+            client
+                .send_request("workspace/symbol", json!({}))
+                .await
+                .is_none()
+        );
+
+        assert_eq!(pending_len(&pending), 0);
     }
 
     #[test]

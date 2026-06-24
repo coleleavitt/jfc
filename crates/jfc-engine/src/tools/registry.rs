@@ -74,10 +74,16 @@ pub fn agent_registry() -> &'static Arc<crate::agents::AgentRegistryImpl> {
 /// of `execute_tool`. RwLock so future model swaps can update it
 /// without restarting the process.
 type ActiveProvider = Option<(Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId)>;
+type ProviderRegistry = Vec<Arc<dyn jfc_provider::Provider>>;
 
 fn active_provider_handle() -> &'static std::sync::RwLock<ActiveProvider> {
     static H: OnceLock<std::sync::RwLock<ActiveProvider>> = OnceLock::new();
     H.get_or_init(|| std::sync::RwLock::new(None))
+}
+
+fn provider_registry_handle() -> &'static std::sync::RwLock<ProviderRegistry> {
+    static H: OnceLock<std::sync::RwLock<ProviderRegistry>> = OnceLock::new();
+    H.get_or_init(|| std::sync::RwLock::new(Vec::new()))
 }
 
 /// Called by main.rs after the provider chain is built so
@@ -93,6 +99,12 @@ pub fn register_active_provider(
     }
 }
 
+pub fn register_provider_registry(providers: Vec<Arc<dyn jfc_provider::Provider>>) {
+    if let Ok(mut g) = provider_registry_handle().write() {
+        *g = providers;
+    }
+}
+
 /// Snapshot the active provider + model. None when main.rs hasn't
 /// registered one yet (early-boot tool calls, tests).
 pub fn snapshot_active_provider() -> Option<(Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId)>
@@ -101,6 +113,13 @@ pub fn snapshot_active_provider() -> Option<(Arc<dyn jfc_provider::Provider>, jf
         .read()
         .ok()
         .and_then(|g| g.as_ref().map(|(p, m)| (Arc::clone(p), m.clone())))
+}
+
+pub fn snapshot_provider_registry() -> Vec<Arc<dyn jfc_provider::Provider>> {
+    provider_registry_handle()
+        .read()
+        .map(|g| g.iter().cloned().collect())
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------

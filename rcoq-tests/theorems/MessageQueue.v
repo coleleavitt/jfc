@@ -44,6 +44,13 @@ Definition priority_lt (p1 p2 : QueuePriority) : bool :=
   | _, _ => false
   end.
 
+(** Boolean priority equality. *)
+Definition prio_eqb (p t : QueuePriority) : bool :=
+  match p, t with
+  | Later, Later | Next, Next | Now, Now => true
+  | _, _ => false
+  end.
+
 (** ** Queued Prompt Record *)
 
 Record QueuedPrompt : Type := mkPrompt {
@@ -115,27 +122,28 @@ Definition pop_max_priority (queue : MessageQueue) : option (QueuedPrompt * Mess
       end
   end.
 
+(** Stable descending priority ordering, matching Rust's stable
+    [sort_by_key(Reverse(priority))]: all [Now] prompts first, then [Next],
+    then [Later], preserving FIFO order inside each priority bucket. *)
+Definition priority_bucket (target : QueuePriority) (queue : list QueuedPrompt)
+    : list QueuedPrompt :=
+  filter (fun p => prio_eqb (prompt_priority p) target) queue.
+
+Definition sort_by_priority_desc (queue : list QueuedPrompt) : list QueuedPrompt :=
+  priority_bucket Now queue ++ priority_bucket Next queue ++ priority_bucket Later queue.
+
 (** Drain all elements with priority >= min_priority *)
 Definition drain_at_least (queue : MessageQueue) (min_priority : QueuePriority) 
     : (list QueuedPrompt * MessageQueue) :=
   let (drained, remaining) := partition 
     (fun p => negb (priority_lt (prompt_priority p) min_priority)) 
     queue in
-  (* Sort drained by priority descending - simplified: just return *)
-  (drained, remaining).
+  (sort_by_priority_desc drained, remaining).
 
 (** ** Structural Helper Lemmas
 
     These lemmas expose the structure of [find_priority_idx], [remove_at], and
     the priority order that the queue invariants below rely on. *)
-
-(** Boolean priority equality, matching the inline match used inside
-    [find_priority_idx]. *)
-Definition prio_eqb (p t : QueuePriority) : bool :=
-  match p, t with
-  | Later, Later | Next, Next | Now, Now => true
-  | _, _ => false
-  end.
 
 Lemma prio_eqb_true : forall p t, prio_eqb p t = true -> p = t.
 Proof. intros p t H. destruct p, t; simpl in H; try discriminate; reflexivity. Qed.
@@ -147,6 +155,50 @@ Lemma inline_eq_prio_eqb :
     | Later, Later | Next, Next | Now, Now => true
     | _, _ => false end = prio_eqb p t.
 Proof. intros p t. destruct p, t; reflexivity. Qed.
+
+(** Sorting drained prompts by priority changes order only; it preserves
+    exactly the same elements. *)
+Lemma sort_by_priority_desc_In :
+  forall p queue,
+    In p (sort_by_priority_desc queue) <-> In p queue.
+Proof.
+  intros p queue.
+  unfold sort_by_priority_desc, priority_bucket.
+  repeat rewrite in_app_iff.
+  repeat rewrite filter_In.
+  split.
+  - intros [[Hin _] | [[Hin _] | [Hin _]]]; exact Hin.
+  - intros Hin.
+    destruct (prompt_priority p) eqn:Hprio.
+    + right. right. split; [exact Hin|]. simpl. reflexivity.
+    + right. left. split; [exact Hin|]. simpl. reflexivity.
+    + left. split; [exact Hin|]. simpl. reflexivity.
+Qed.
+
+(** The priority sort is a permutation, so it preserves length. *)
+Lemma priority_buckets_length_sum :
+  forall queue,
+    length (priority_bucket Now queue) +
+    length (priority_bucket Next queue) +
+    length (priority_bucket Later queue) = length queue.
+Proof.
+  induction queue as [|p rest IH].
+  - reflexivity.
+  - unfold priority_bucket in *.
+    simpl.
+    destruct (prompt_priority p); simpl; lia.
+Qed.
+
+Lemma sort_by_priority_desc_length :
+  forall queue,
+    length (sort_by_priority_desc queue) = length queue.
+Proof.
+  intros queue.
+  unfold sort_by_priority_desc.
+  repeat rewrite app_length.
+  pose proof (priority_buckets_length_sum queue).
+  lia.
+Qed.
 
 (** Removing a valid index drops the length by exactly one. *)
 Lemma remove_at_length :
@@ -346,7 +398,8 @@ Proof.
   rewrite partition_as_filter in Hdrain.
   injection Hdrain as Hd Hr. subst drained remaining.
   split.
-  - rewrite filter_In. reflexivity.
+  - rewrite sort_by_priority_desc_In.
+    rewrite filter_In. reflexivity.
   - rewrite filter_In.
     split.
     + intros [Hin Hng]. split; [exact Hin|].
@@ -366,7 +419,8 @@ Proof.
   destruct (partition
     (fun p => negb (priority_lt (prompt_priority p) min_priority)) queue)
     as [d r] eqn:Hp.
-  injection Hdrain as Hd Hr. subst d r.
+  injection Hdrain as Hd Hr. subst drained remaining.
+  rewrite sort_by_priority_desc_length.
   apply partition_length in Hp. lia.
 Qed.
 
@@ -381,6 +435,7 @@ Proof.
   unfold drain_at_least in Hdrain.
   rewrite partition_as_filter in Hdrain.
   injection Hdrain as Hd Hr. subst drained remaining.
+  repeat rewrite sort_by_priority_desc_In in Hin.
   apply filter_In in Hin. destruct Hin as [_ Hng].
   apply negb_true_iff in Hng.
   apply priority_lt_false_leb. exact Hng.

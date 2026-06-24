@@ -116,6 +116,8 @@ pub struct ProvisionResult {
     pub skipped: Vec<String>,
 }
 
+const STANDARD_PROJECT_FILES: [&str; 3] = ["CLAUDE.md", "AGENTS.md", "MEMORY.md"];
+
 /// Provision a project root: for each standard config file that does NOT already
 /// exist, generate its scaffold and write it — but only after `confirm` returns
 /// true (the caller supplies the user-confirmation gate). Existing files are
@@ -130,14 +132,22 @@ pub fn provision_project(
 ) -> std::io::Result<ProvisionResult> {
     let exists = |f: &str| root.join(f).exists();
     let to_make = files_to_scaffold(&exists);
-    let mut result = ProvisionResult::default();
+    let mut result = ProvisionResult {
+        written: Vec::new(),
+        skipped: STANDARD_PROJECT_FILES
+            .into_iter()
+            .filter(|file| exists(file))
+            .map(str::to_owned)
+            .collect(),
+    };
 
     if to_make.is_empty() {
         return Ok(result);
     }
     if !confirm(&to_make) {
-        // User declined: everything stays skipped.
-        result.skipped = to_make.iter().map(|s| (*s).to_owned()).collect();
+        result
+            .skipped
+            .extend(to_make.iter().map(|s| (*s).to_owned()));
         return Ok(result);
     }
 
@@ -251,7 +261,22 @@ mod tests {
             std::fs::read_to_string(root.join("CLAUDE.md")).unwrap(),
             "PRE-EXISTING"
         );
+        assert_eq!(res.skipped, vec!["CLAUDE.md"]);
         assert!(res.written.contains(&"AGENTS.md".to_owned()));
+    }
+
+    #[test]
+    fn provision_project_reports_all_existing_files_as_skipped_regression() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        for file in STANDARD_PROJECT_FILES {
+            std::fs::write(root.join(file), "PRE-EXISTING").unwrap();
+        }
+
+        let res = provision_project(root, &summary(), &|_| true).unwrap();
+
+        assert!(res.written.is_empty());
+        assert_eq!(res.skipped, vec!["CLAUDE.md", "AGENTS.md", "MEMORY.md"]);
     }
 
     #[test]

@@ -195,18 +195,18 @@ impl KnowledgeStore {
                     continue;
                 }
             }
-            let mut rec = KnowledgeRecord::new(
-                item.kind,
-                item.scope,
-                item.project_key.clone(),
-                item.title.clone(),
-                item.body.clone(),
-            );
-            rec.id = id;
-            if let Some(src) = &item.source_path {
-                rec.source = Some(format!("import:{}", src.display()));
-            }
-            match self.insert(&rec) {
+            let (level, project_key) = import_memory_level(item);
+            let hash = import_memory_hash(item);
+            let meta_json = import_memory_meta_json(item, &hash);
+            match self.insert_memory(&NewMemory {
+                id,
+                level,
+                project_key,
+                title: &item.title,
+                body: &item.body,
+                hash: &hash,
+                meta_json: &meta_json,
+            }) {
                 Ok(()) => report.imported += 1,
                 Err(e) => report.errors.push(format!("{}: {e}", item.title)),
             }
@@ -882,6 +882,47 @@ impl KnowledgeStore {
             |r| r.get(0),
         )?)
     }
+}
+
+fn import_memory_level(item: &ImportableMemory) -> (MemLevel, Option<&str>) {
+    match item.scope {
+        Scope::User => (MemLevel::User, None),
+        Scope::Project => (MemLevel::Project, item.project_key.as_deref()),
+        Scope::Global => (MemLevel::External, None),
+    }
+}
+
+fn import_memory_hash(item: &ImportableMemory) -> String {
+    item.body
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn import_memory_meta_json(item: &ImportableMemory, hash: &str) -> String {
+    let memory_type = match item.kind {
+        Kind::Preference => "preference",
+        Kind::Finding => "feedback",
+        Kind::Fact | Kind::Skill | Kind::Convention => "context",
+    };
+    let memory_scope = if item.scope == Scope::Project {
+        "team"
+    } else {
+        "private"
+    };
+    let source_path = item
+        .source_path
+        .as_ref()
+        .map(|path| path.display().to_string());
+    serde_json::json!({
+        "type": memory_type,
+        "scope": memory_scope,
+        "normalized_hash": hash,
+        "source_type": "legacy-import",
+        "source_path": source_path,
+    })
+    .to_string()
 }
 
 /// `~/.local/share/jfc/knowledge.db`, honoring `JFC_KNOWLEDGE_DB` and
@@ -1624,6 +1665,18 @@ mod tests {
         assert_eq!(r1.imported, 2);
         assert_eq!(r1.skipped, 0);
         assert_eq!(store.live_count().unwrap(), 2);
+        assert_eq!(store.memory_count().unwrap(), 2);
+        let rows = store.load_memories(Some("P")).unwrap();
+        assert_eq!(rows.len(), 2);
+        let project_row = rows
+            .iter()
+            .find(|row| row.body == "This repo is edition 2024.")
+            .unwrap();
+        assert_eq!(project_row.level, MemLevel::Project);
+        let meta: serde_json::Value =
+            serde_json::from_str(project_row.meta.as_deref().unwrap()).unwrap();
+        assert_eq!(meta["type"], "context");
+        assert_eq!(meta["scope"], "team");
 
         // Second run: same content → all skipped, no duplicates.
         let r2 = store.import_memories(&items).unwrap();
@@ -1633,6 +1686,29 @@ mod tests {
             store.live_count().unwrap(),
             2,
             "re-import must not duplicate"
+        );
+    }
+
+    #[test]
+    fn imported_project_memory_is_hidden_from_other_projects_regression() {
+        use crate::import::ImportableMemory;
+        let store = KnowledgeStore::open_in_memory().unwrap();
+        let items = vec![ImportableMemory {
+            source_path: None,
+            kind: Kind::Fact,
+            scope: Scope::Project,
+            project_key: Some("P".into()),
+            title: "stack".into(),
+            body: "This repo uses ratatui.".into(),
+        }];
+
+        let report = store.import_memories(&items).unwrap();
+
+        assert_eq!(report.imported, 1);
+        assert_eq!(store.load_memories(Some("P")).unwrap().len(), 1);
+        assert!(
+            store.load_memories(Some("Q")).unwrap().is_empty(),
+            "project-scoped imported memories must not leak into unrelated projects"
         );
     }
 

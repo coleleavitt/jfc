@@ -649,10 +649,10 @@ async fn headless_permission_decision(
             serde_json::json!({
                 "type": "permission_response",
                 "tool_use_id": tool_id,
-                "decision": "allow",
+                "decision": "deny",
             }),
         )?;
-        return Ok(true);
+        return Ok(false);
     }
     let parsed: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| anyhow::anyhow!("permission prompt response was not JSON: {e}"))?;

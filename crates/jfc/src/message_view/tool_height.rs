@@ -1,4 +1,8 @@
-use super::tool_blocks::{bash_continuation_lines, tool_body_line_count};
+use crate::app::App;
+
+use super::tool_blocks::{
+    bash_continuation_lines, tool_body_line_count, tool_body_line_count_with_app,
+};
 use super::*;
 
 /// Exact visual height for one tool block at `inner_w`.
@@ -10,13 +14,21 @@ use super::*;
 /// directly and delegates only the truly expensive primitive, syntax
 /// highlighting, to `jfc_markdown::highlight_code_line_count`.
 pub(super) fn tool_block_height(tool: &ToolCall, inner_w: usize) -> usize {
+    tool_block_height_with_app(tool, inner_w, None)
+}
+
+pub(super) fn tool_block_height_with_app(
+    tool: &ToolCall,
+    inner_w: usize,
+    app: Option<&App>,
+) -> usize {
     if tool.display.is_collapsed() {
         return 1;
     }
 
     let content_w = inner_w.saturating_sub(2);
     let cont = bash_continuation_lines(tool, content_w).len();
-    1 + cont + tool_content_height_with_tool(tool, content_w)
+    1 + cont + tool_content_height_with_tool_and_app(tool, content_w, app)
 }
 pub fn tool_block_height_pub(tool: &ToolCall, inner_w: usize) -> usize {
     tool_block_height(tool, inner_w)
@@ -25,6 +37,15 @@ pub fn tool_block_height_pub(tool: &ToolCall, inner_w: usize) -> usize {
 /// Body-only row count for a tool. Title and Bash continuation rows are handled
 /// by `tool_block_height`; this function mirrors `tool_body_lines_themed` for
 /// the body itself.
+#[allow(dead_code)]
 pub(super) fn tool_content_height_with_tool(tool: &ToolCall, content_w: usize) -> usize {
     tool_body_line_count(tool, content_w)
+}
+
+pub(super) fn tool_content_height_with_tool_and_app(
+    tool: &ToolCall,
+    content_w: usize,
+    app: Option<&App>,
+) -> usize {
+    tool_body_line_count_with_app(tool, content_w, app)
 }

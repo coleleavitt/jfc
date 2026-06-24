@@ -77,10 +77,61 @@ async function evalJs(request) {
         }
       };
 
+      const readElement = (querySelector) => {
+        const element = document.querySelector(querySelector);
+        if (!element) throw new Error(`selector not found: ${querySelector}`);
+        return element;
+      };
+
+      const inspectQuery = (source) => {
+        const query = String(source ?? '').trim();
+        if (!query || query === 'document.documentElement') return document.documentElement;
+        if (query === 'document.title') return document.title;
+        if (query === 'document.URL' || query === 'location.href') return location.href;
+        if (query === 'document.body.innerText' || query === 'body.text') {
+          return document.body?.innerText ?? '';
+        }
+        if (query === 'document.body.innerHTML' || query === 'body.html') {
+          return document.body?.innerHTML ?? '';
+        }
+        if (query === 'document.documentElement.outerHTML' || query === 'html') {
+          return document.documentElement?.outerHTML ?? '';
+        }
+        if (query.startsWith('text:')) return readElement(query.slice(5).trim()).textContent ?? '';
+        if (query.startsWith('html:')) return readElement(query.slice(5).trim()).innerHTML ?? '';
+        if (query.startsWith('count:')) return document.querySelectorAll(query.slice(6).trim()).length;
+        if (query.startsWith('rect:')) {
+          const rect = readElement(query.slice(5).trim()).getBoundingClientRect();
+          return {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            left: rect.left
+          };
+        }
+        if (query.startsWith('attr:')) {
+          const [, querySelector, name] = query.split(':', 3);
+          if (!querySelector || !name) throw new Error('attr query must be attr:<selector>:<name>');
+          return readElement(querySelector.trim()).getAttribute(name.trim());
+        }
+        if (query.startsWith('style:')) {
+          const [, querySelector, name] = query.split(':', 3);
+          if (!querySelector || !name) throw new Error('style query must be style:<selector>:<property>');
+          return getComputedStyle(readElement(querySelector.trim())).getPropertyValue(name.trim());
+        }
+        if (/^[.#\[:a-zA-Z]/.test(query)) return readElement(query);
+        throw new Error(
+          `unsupported eval-js query: ${query}. Use document.title, text:<selector>, html:<selector>, count:<selector>, rect:<selector>, attr:<selector>:<name>, or style:<selector>:<property>.`
+        );
+      };
+
       if (script) {
         try {
-          const value = await (0, eval)(script);
-          return serialize(value);
+          return serialize(inspectQuery(script));
         } catch (error) {
           return {
             kind: 'error',

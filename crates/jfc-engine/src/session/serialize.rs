@@ -490,9 +490,12 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
             summary: summary.clone(),
         },
-        ToolInput::SendUserMessage { message, .. } => SerializedToolInput::Generic {
-            summary: format!("SendUserMessage: {}", &message[..message.len().min(80)]),
-        },
+        ToolInput::SendUserMessage { message, .. } => {
+            let preview: String = message.chars().take(80).collect();
+            SerializedToolInput::Generic {
+                summary: format!("SendUserMessage: {preview}"),
+            }
+        }
         ToolInput::SendUserFile { caption, .. } => SerializedToolInput::Generic {
             summary: format!("SendUserFile: {}", caption.as_deref().unwrap_or("file(s)")),
         },
@@ -609,5 +612,26 @@ pub fn serialize_diff_line(line: &DiffLine) -> SerializedDiffLine {
         old_line: line.old_line,
         new_line: line.new_line,
         content: line.content.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn send_user_message_preview_is_utf8_safe_regression() {
+        let message = format!("{}🙂", "a".repeat(79));
+        let serialized = serialize_tool_input(&ToolInput::SendUserMessage {
+            message,
+            summary: None,
+            attachments: None,
+            status: None,
+        });
+
+        let SerializedToolInput::Generic { summary } = serialized else {
+            panic!("SendUserMessage should serialize as a generic summary");
+        };
+        assert!(summary.ends_with("🙂"));
     }
 }

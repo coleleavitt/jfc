@@ -568,7 +568,7 @@ fn identify_spans(
                             // inside the matched span — their open
                             // markers were already recorded as spans
                             // and we keep them).
-                            stack.truncate(stack_idx);
+                            stack.truncate(stack_idx + 1);
                             let _ = stack.pop();
                             spans.push(Span {
                                 start: i,
@@ -864,6 +864,17 @@ mod tests {
         assert!(!cleaned.contains("</system-reminder>"));
         assert!(cleaned.contains("Compressible content"));
         assert_eq!(blocks.len(), 2);
+    }
+
+    #[test]
+    fn marker_mode_nested_close_preserves_parent_stack_regression() {
+        let text = "<outer><inner>x</inner></outer>";
+        let (cleaned, blocks, _stats) = protect_tags(text, true);
+
+        assert_eq!(blocks.len(), 4, "{blocks:?}");
+        assert!(!cleaned.contains("<outer>"));
+        assert!(!cleaned.contains("</outer>"));
+        assert_eq!(restore_tags(&cleaned, &blocks), text);
     }
 
     #[test]

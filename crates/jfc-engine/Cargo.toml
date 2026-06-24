@@ -32,6 +32,7 @@ hex = "0.4"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
+ed25519-dalek = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 url = "2"
 urlencoding = "2"

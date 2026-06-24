@@ -97,10 +97,9 @@ pub struct Config {
     pub memory_recall_enabled: bool,
     #[serde(default = "default_plan_recall_enabled")]
     pub plan_recall_enabled: bool,
-    /// Cross-project knowledge recall (jfc-knowledge). Default ON: the store is
-    /// self-driving — it imports, mines your session history, promotes proven
-    /// generalizable lessons, and recalls them across projects automatically.
-    /// Set to `false` to disable prompt injection from the knowledge store.
+    /// Cross-project knowledge recall (jfc-knowledge). Default OFF: the store
+    /// may still self-drive imports, mining, and evidence-gated promotion, but
+    /// prompt injection from other projects is an explicit config choice.
     #[serde(default = "default_cross_project_recall_enabled")]
     pub cross_project_recall_enabled: bool,
     #[serde(default)]
@@ -488,7 +487,7 @@ fn default_memory_recall_enabled() -> bool {
 }
 
 fn default_cross_project_recall_enabled() -> bool {
-    true
+    false
 }
 fn default_plan_recall_enabled() -> bool {
     true
@@ -2490,6 +2489,15 @@ theme = "local-theme"
     fn auto_compact_threshold_pct_defaults_to_85_normal() {
         let cfg = Config::default();
         assert_eq!(cfg.auto_compact_threshold_pct, 85);
+    }
+
+    #[test]
+    fn cross_project_recall_defaults_off_regression() {
+        let cfg = Config::default();
+        assert!(!cfg.cross_project_recall_enabled);
+
+        let parsed: Config = toml::from_str("").expect("parse minimal config");
+        assert!(!parsed.cross_project_recall_enabled);
     }
 
     #[test]

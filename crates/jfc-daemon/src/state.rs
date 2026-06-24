@@ -398,20 +398,36 @@ where
 /// Load daemon state from the DB. Returns `None` when the row is missing
 /// or unparseable; callers should fall back to `DaemonState::default()`.
 pub fn load_state(paths: &DaemonPaths) -> Option<DaemonState> {
-    let row = load_state_row(paths).ok()??;
-    serde_json::from_str(&row.value_json).ok()
+    match load_state_row(paths).ok()? {
+        Some(row) => serde_json::from_str(&row.value_json).ok(),
+        None => import_legacy_state(paths).ok().flatten(),
+    }
 }
 
 /// Load daemon state for a read-modify-write cycle. Unlike [`load_state`], this
 /// distinguishes a genuinely-absent row from a corrupt/unreadable row.
 pub fn load_state_for_update(paths: &DaemonPaths) -> std::io::Result<DaemonState> {
     let Some(row) = load_state_row(paths).map_err(std::io::Error::other)? else {
-        return Ok(DaemonState::default());
+        return import_legacy_state(paths).map(|state| state.unwrap_or_default());
     };
     if row.value_json.trim().is_empty() {
         return Ok(DaemonState::default());
     }
     serde_json::from_str(&row.value_json).map_err(std::io::Error::other)
+}
+
+fn import_legacy_state(paths: &DaemonPaths) -> std::io::Result<Option<DaemonState>> {
+    let raw = match std::fs::read_to_string(&paths.state_file) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err),
+    };
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+    let state: DaemonState = serde_json::from_str(&raw).map_err(std::io::Error::other)?;
+    save_state(paths, &state)?;
+    Ok(Some(state))
 }
 
 /// Default retention for terminal (completed/failed/cancelled) background
@@ -805,5 +821,39 @@ mod tests {
         let (loaded, new_mtime) = second.unwrap();
         assert_eq!(loaded.pid, 42);
         assert!(new_mtime > cached);
+    }
+
+    #[test]
+    fn load_state_imports_legacy_json_when_db_missing_regression() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = DaemonPaths::new(tmp.path());
+        paths.ensure_dirs().unwrap();
+        let legacy = DaemonState {
+            pid: 77,
+            ..DaemonState::default()
+        };
+        std::fs::write(&paths.state_file, serde_json::to_string(&legacy).unwrap()).unwrap();
+
+        let loaded = load_state(&paths).expect("legacy state should import");
+
+        assert_eq!(loaded.pid, 77);
+        assert_eq!(load_state(&paths).unwrap().pid, 77);
+    }
+
+    #[test]
+    fn load_state_for_update_imports_legacy_json_when_db_missing_regression() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = DaemonPaths::new(tmp.path());
+        paths.ensure_dirs().unwrap();
+        let legacy = DaemonState {
+            pid: 88,
+            ..DaemonState::default()
+        };
+        std::fs::write(&paths.state_file, serde_json::to_string(&legacy).unwrap()).unwrap();
+
+        let loaded = load_state_for_update(&paths).unwrap();
+
+        assert_eq!(loaded.pid, 88);
+        assert_eq!(load_state(&paths).unwrap().pid, 88);
     }
 }

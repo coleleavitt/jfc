@@ -214,12 +214,11 @@ pub fn parse_retry_after(headers: &HeaderMap, now_ms: u64) -> Option<Duration> {
     if let Ok(secs) = raw.parse::<u64>() {
         return Some(clamp_retry(Duration::from_secs(secs)));
     }
-    // HTTP-date fallback (RFC 7231 §7.1.3) is intentionally not implemented:
-    // Anthropic's API consistently returns integer seconds, and pulling in a
-    // date parser for a path we never hit isn't worth the dependency. Caller
-    // applies its own fallback when this returns None.
-    let _ = now_ms; // kept in signature so callers don't need to plumb time twice
-    None
+    let retry_at = chrono::DateTime::parse_from_rfc2822(raw).ok()?;
+    let now_ms = i64::try_from(now_ms).ok()?;
+    let remaining_ms = retry_at.timestamp_millis().saturating_sub(now_ms).max(0);
+    let remaining_ms = u64::try_from(remaining_ms).ok()?;
+    Some(clamp_retry(Duration::from_millis(remaining_ms)))
 }
 
 /// Parse every relevant rate-limit header off the response into a single
@@ -329,6 +328,17 @@ mod tests {
     fn retry_after_seconds() {
         let h = hm(&[("retry-after", "45")]);
         assert_eq!(parse_retry_after(&h, 0).unwrap(), Duration::from_secs(45));
+    }
+
+    #[test]
+    fn retry_after_http_date_uses_remaining_duration_regression() {
+        let h = hm(&[("retry-after", "Wed, 21 Oct 2015 07:28:00 GMT")]);
+        let now_ms = 1_445_412_430_000;
+
+        assert_eq!(
+            parse_retry_after(&h, now_ms).unwrap(),
+            Duration::from_secs(50)
+        );
     }
 
     // Edge: retry-after of "0" gets clamped up to the min (1s).

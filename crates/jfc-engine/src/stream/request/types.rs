@@ -1,6 +1,12 @@
 use crate::runtime::StreamRequestMetadata;
 use jfc_provider::StreamOptions;
 
+/// Fully assembled provider request state for one assistant turn.
+///
+/// `prepare_stream_request` builds this after prompt/context assembly and
+/// before streaming starts. Downstream stream execution consumes `opts` as the
+/// provider-facing request, while the token counts and metadata are retained
+/// for telemetry, compaction decisions, and user-visible recall indicators.
 pub struct PreparedStreamRequest {
     pub opts: StreamOptions,
     pub system_prompt_tokens: usize,

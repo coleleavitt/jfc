@@ -1,5 +1,4 @@
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::state::{Skill, SkillFile, parse_skill};
 
@@ -10,92 +9,86 @@ struct BuiltInSkill {
     package_root: &'static str,
 }
 
+struct BuiltInFile {
+    package_root: &'static str,
+    relative_path: &'static str,
+    bytes: &'static [u8],
+}
+
 pub fn built_in_skills() -> Vec<Skill> {
     BUILT_IN_SKILLS
         .iter()
         .filter_map(|spec| {
-            let package_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(spec.package_root);
-            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(spec.skill_path);
+            let source_package_root =
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(spec.package_root);
+            let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(spec.skill_path);
+            let embedded_package = materialize_embedded_package(spec);
+            let package_root = embedded_package
+                .as_ref()
+                .map(|(root, _)| root.clone())
+                .unwrap_or(source_package_root);
+            let path = embedded_package
+                .as_ref()
+                .map(|(root, _)| root.join("SKILL.md"))
+                .unwrap_or(source_path);
             parse_skill(&path, spec.body).map(|mut skill| {
                 if skill.name == "unnamed" || skill.name == "SKILL" {
                     skill.name = spec.name.to_owned();
                 }
                 skill.source = path;
                 skill.package_root = package_root;
-                skill.files = collect_builtin_files(&skill.package_root, &skill.source);
+                skill.files = embedded_package.map(|(_, files)| files).unwrap_or_default();
                 skill
             })
         })
         .collect()
 }
 
-fn collect_builtin_files(package_root: &Path, skill_md_path: &Path) -> Vec<SkillFile> {
-    const MAX_SCAN_DEPTH: usize = 8;
-    const MAX_DIRS: usize = 512;
-    const MAX_FILES: usize = 512;
-
-    if !package_root.is_dir() {
-        return Vec::new();
+fn materialize_embedded_package(spec: &BuiltInSkill) -> Option<(PathBuf, Vec<SkillFile>)> {
+    let files: Vec<&BuiltInFile> = BUILT_IN_FILES
+        .iter()
+        .filter(|file| file.package_root == spec.package_root)
+        .collect();
+    if files.is_empty() {
+        return None;
     }
-
-    let canonical_skill = skill_md_path.canonicalize().ok();
+    let root = builtin_skill_cache_root().join(spec.package_root);
+    if write_embedded_file(&root.join("SKILL.md"), spec.body.as_bytes()).is_err() {
+        return None;
+    }
     let mut out = Vec::new();
-    let mut queue = std::collections::VecDeque::from([(package_root.to_path_buf(), 0usize)]);
-    let mut seen_dirs = HashSet::new();
-    if let Ok(canon) = package_root.canonicalize() {
-        seen_dirs.insert(canon);
-    }
-
-    while let Some((dir, depth)) = queue.pop_front() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            if file_name.starts_with('.') {
-                continue;
-            }
-            if path.is_dir() {
-                if depth >= MAX_SCAN_DEPTH || seen_dirs.len() >= MAX_DIRS {
-                    continue;
-                }
-                if let Ok(canon) = path.canonicalize()
-                    && seen_dirs.insert(canon)
-                {
-                    queue.push_back((path, depth + 1));
-                }
-                continue;
-            }
-            if !path.is_file() {
-                continue;
-            }
-            if canonical_skill
-                .as_ref()
-                .is_some_and(|skill| path.canonicalize().ok().as_ref() == Some(skill))
-            {
-                continue;
-            }
-            let Ok(metadata) = std::fs::metadata(&path) else {
-                continue;
-            };
-            let relative_path = path
-                .strip_prefix(package_root)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .replace('\\', "/");
+    for file in files {
+        let path = root.join(file.relative_path);
+        if write_embedded_file(&path, file.bytes).is_ok() {
             out.push(SkillFile {
-                relative_path,
+                relative_path: file.relative_path.to_owned(),
                 path,
-                bytes: metadata.len(),
+                bytes: file.bytes.len() as u64,
             });
-            if out.len() >= MAX_FILES {
-                return out;
-            }
         }
     }
     out.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    out
+    Some((root, out))
+}
+
+fn builtin_skill_cache_root() -> PathBuf {
+    std::env::var_os("JFC_BUILTIN_SKILL_CACHE")
+        .map(PathBuf::from)
+        .or_else(|| dirs::cache_dir().map(|dir| dir.join("jfc").join("builtin-skills")))
+        .unwrap_or_else(|| std::env::temp_dir().join("jfc-builtin-skills"))
+}
+
+fn write_embedded_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    if std::fs::metadata(path)
+        .map(|metadata| metadata.len() == bytes.len() as u64)
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, bytes)
 }
 
 const BUILT_IN_SKILLS: &[BuiltInSkill] = &[
@@ -202,6 +195,282 @@ Avoid broad rewrites. Keep diffs reviewable, preserve public contracts, and run 
     },
 ];
 
+const BUILT_IN_FILES: &[BuiltInFile] = &[
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/run",
+        relative_path: "examples/cli.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/run/examples/cli.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/run",
+        relative_path: "examples/server.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/run/examples/server.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/run",
+        relative_path: "examples/tui.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/run/examples/tui.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/run",
+        relative_path: "examples/electron.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/run/examples/electron.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/run",
+        relative_path: "examples/playwright.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/run/examples/playwright.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/run",
+        relative_path: "examples/library.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/run/examples/library.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/verify",
+        relative_path: "examples/cli.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/verify/examples/cli.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/verify",
+        relative_path: "examples/server.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/verify/examples/server.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/verify",
+        relative_path: "examples/tui.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/verify/examples/tui.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/verify",
+        relative_path: "examples/electron.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/verify/examples/electron.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/verify",
+        relative_path: "examples/playwright.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/verify/examples/playwright.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/frontmatter-skills/verify",
+        relative_path: "examples/library.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/frontmatter-skills/verify/examples/library.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/cowork-plugin",
+        relative_path: "references/component-schemas.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/cowork-plugin/references/component-schemas.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/cowork-plugin",
+        relative_path: "references/example-plugins.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/cowork-plugin/references/example-plugins.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/cowork-plugin",
+        relative_path: "references/search-strategies.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/cowork-plugin/references/search-strategies.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/bundle.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/bundle.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/common.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/common.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/css-fallback.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/css-fallback.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/css.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/css.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/detect.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/detect.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/docs.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/docs.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/dts.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/dts.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/emit.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/emit.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/preview-gen-package.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/preview-gen-package.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/preview-gen-storybook.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/preview-gen-storybook.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/previews.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/previews.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/source-kit.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/source-kit.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/source-storybook.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/source-storybook.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/stories-static.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/stories-static.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "lib/stories.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/lib/stories.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "package-build.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/package-build.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "package-validate.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/package-validate.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "storybook/build.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/storybook/build.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "storybook/emit.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/storybook/emit.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "storybook/http-serve.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/storybook/http-serve.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "storybook/probe.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/storybook/probe.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/design-sync",
+        relative_path: "storybook/validate.mjs",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/design-sync/storybook/validate.mjs"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/simplify",
+        relative_path: "examples/cli.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/simplify/examples/cli.md"
+        ),
+    },
+    BuiltInFile {
+        package_root: "builtin-skills/claude-2.1.167/by-skill-registration/simplify",
+        relative_path: "examples/server.md",
+        bytes: include_bytes!(
+            "../builtin-skills/claude-2.1.167/by-skill-registration/simplify/examples/server.md"
+        ),
+    },
+];
+
 #[cfg(test)]
 mod tests {
     use super::built_in_skills;
@@ -242,6 +511,54 @@ mod tests {
                 .iter()
                 .any(|file| file.relative_path == "package-build.mjs"),
             "design-sync should expose extracted package files"
+        );
+        let run = skills.iter().find(|skill| skill.name == "run").unwrap();
+        assert!(
+            run.files
+                .iter()
+                .any(|file| file.relative_path == "examples/cli.md"),
+            "run should expose fallback example files"
+        );
+        let verify = skills.iter().find(|skill| skill.name == "verify").unwrap();
+        assert!(
+            verify
+                .files
+                .iter()
+                .any(|file| file.relative_path == "examples/server.md"),
+            "verify should expose fallback example files"
+        );
+    }
+
+    #[test]
+    fn built_in_skill_files_materialize_from_embedded_bytes_regression() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let prior = std::env::var_os("JFC_BUILTIN_SKILL_CACHE");
+        unsafe { std::env::set_var("JFC_BUILTIN_SKILL_CACHE", dir.path()) };
+
+        let skills = built_in_skills();
+
+        unsafe {
+            match prior {
+                Some(value) => std::env::set_var("JFC_BUILTIN_SKILL_CACHE", value),
+                None => std::env::remove_var("JFC_BUILTIN_SKILL_CACHE"),
+            }
+        }
+        let design_sync = skills
+            .iter()
+            .find(|skill| skill.name == "design-sync")
+            .unwrap();
+        let package_build = design_sync
+            .files
+            .iter()
+            .find(|file| file.relative_path == "package-build.mjs")
+            .unwrap();
+
+        assert!(design_sync.package_root.starts_with(dir.path()));
+        assert!(package_build.path.starts_with(dir.path()));
+        assert!(package_build.path.is_file());
+        assert_eq!(
+            std::fs::metadata(&package_build.path).unwrap().len(),
+            package_build.bytes
         );
     }
 }

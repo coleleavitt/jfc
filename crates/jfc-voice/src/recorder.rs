@@ -90,6 +90,14 @@ impl VadDetector {
             Self::Neural(v) => v.reset(),
         }
     }
+
+    fn force_end(&mut self) -> bool {
+        match self {
+            Self::Energy(v) => v.force_end(),
+            #[cfg(feature = "vad-neural")]
+            Self::Neural(v) => v.force_end(),
+        }
+    }
 }
 
 /// Optional target-speaker gate (the BVC decision layer). When enabled in
@@ -333,6 +341,10 @@ pub struct VoiceRecorder {
     stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
     /// Stop signal for the VAD listen loop (VAD mode only).
     vad_stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Per-utterance force-end command for the VAD listen loop. Unlike
+    /// `vad_stop_tx`, this keeps the loop alive and only tells the active
+    /// detector to finish the current utterance.
+    vad_force_end_tx: Option<mpsc::UnboundedSender<()>>,
     /// Discard flag shared with the active recording task. `stop()` (finish)
     /// leaves it false → the task finalizes and emits a `Final`; `cancel()`
     /// (discard) sets it true → the task drops the utterance with NO `Final`.
@@ -354,6 +366,7 @@ impl VoiceRecorder {
             state: Arc::new(Mutex::new(VoiceState::Idle)),
             stop_tx: None,
             vad_stop_tx: None,
+            vad_force_end_tx: None,
             cancel_flag: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             token_provider: None,
             events,
@@ -383,6 +396,7 @@ impl VoiceRecorder {
     /// Start the VAD listen loop (VAD mode only).
     /// The loop runs continuously until `cancel()` is called.
     pub async fn start_vad_loop(&mut self) {
+        self.clear_stale_vad_loop_handles();
         if self.vad_stop_tx.is_some() {
             return; // already running
         }
@@ -400,7 +414,9 @@ impl VoiceRecorder {
         };
         info!(target: "jfc::voice", backend = %backend.label(), "starting VAD listen loop");
         let (vad_stop_tx, vad_stop_rx) = tokio::sync::oneshot::channel::<()>();
+        let (vad_force_end_tx, vad_force_end_rx) = mpsc::unbounded_channel::<()>();
         self.vad_stop_tx = Some(vad_stop_tx);
+        self.vad_force_end_tx = Some(vad_force_end_tx);
         self.cancel_flag
             .store(false, std::sync::atomic::Ordering::SeqCst);
 
@@ -416,6 +432,7 @@ impl VoiceRecorder {
                 events,
                 state,
                 vad_stop_rx,
+                vad_force_end_rx,
                 cancel_flag,
                 token_provider,
             )
@@ -440,7 +457,7 @@ impl VoiceRecorder {
             (VoiceMode::Tap, true, VoiceState::Idle) => self.start_recording().await,
             (VoiceMode::Tap, true, VoiceState::Recording) => self.stop_recording().await,
             // VAD mode: Space key force-stops an active utterance early.
-            (VoiceMode::Vad, true, VoiceState::Recording) => self.stop_recording().await,
+            (VoiceMode::Vad, true, VoiceState::Recording) => self.force_end_vad_utterance(),
             // Remaining cases are intentionally inactive:
             // - hold key-up when not recording (spurious release)
             // - tap while STT is processing (debounce)
@@ -505,6 +522,31 @@ impl VoiceRecorder {
         }
     }
 
+    fn force_end_vad_utterance(&mut self) {
+        self.clear_stale_vad_loop_handles();
+        let Some(tx) = self.vad_force_end_tx.as_ref() else {
+            debug!(
+                target: "jfc::voice::vad",
+                "force-end requested but no VAD control channel is active"
+            );
+            return;
+        };
+        if tx.send(()).is_err() {
+            debug!(
+                target: "jfc::voice::vad",
+                "force-end command had no receiver (VAD loop already exited)"
+            );
+            self.vad_force_end_tx = None;
+            if self
+                .vad_stop_tx
+                .as_ref()
+                .is_some_and(tokio::sync::oneshot::Sender::is_closed)
+            {
+                self.vad_stop_tx = None;
+            }
+        }
+    }
+
     /// Discard an in-flight hold/tap recording WITHOUT finalizing — the task
     /// drops the utterance and emits no `Final`. No-op when nothing is recording
     /// or in VAD mode (which has no per-key recording task, so the continuous
@@ -559,13 +601,33 @@ impl VoiceRecorder {
                 debug!(target: "jfc::voice", "cancel: VAD stop signal had no receiver");
             }
         }
+        self.vad_force_end_tx = None;
         self.set_state(VoiceState::Idle).await;
     }
 
     /// Whether the VAD listen loop is currently running. Used by tests and the
     /// UI to reflect mic-hot state accurately.
     pub fn vad_loop_running(&self) -> bool {
-        self.vad_stop_tx.is_some()
+        self.vad_stop_tx.as_ref().is_some_and(|tx| !tx.is_closed())
+    }
+
+    fn clear_stale_vad_loop_handles(&mut self) {
+        if self
+            .vad_stop_tx
+            .as_ref()
+            .is_some_and(tokio::sync::oneshot::Sender::is_closed)
+        {
+            self.vad_stop_tx = None;
+            self.vad_force_end_tx = None;
+            return;
+        }
+        if self
+            .vad_force_end_tx
+            .as_ref()
+            .is_some_and(mpsc::UnboundedSender::is_closed)
+        {
+            self.vad_force_end_tx = None;
+        }
     }
 }
 
@@ -620,6 +682,7 @@ async fn vad_listen_loop(
     events: mpsc::UnboundedSender<VoiceTranscriptEvent>,
     state: Arc<Mutex<VoiceState>>,
     stop_rx: tokio::sync::oneshot::Receiver<()>,
+    mut force_end_rx: mpsc::UnboundedReceiver<()>,
     cancel_flag: Arc<std::sync::atomic::AtomicBool>,
     token_provider: Option<TokenProvider>,
 ) {
@@ -659,6 +722,12 @@ async fn vad_listen_loop(
         let speech_started = loop {
             tokio::select! {
                 _ = &mut stop_rx => break false,
+                Some(()) = force_end_rx.recv() => {
+                    debug!(
+                        target: "jfc::voice::vad",
+                        "force-end ignored while VAD is waiting for speech"
+                    );
+                }
                 n = capture.read_chunk(&mut chunk) => match n {
                     Ok(0) | Err(_) => break false,
                     Ok(n) => {
@@ -715,6 +784,16 @@ async fn vad_listen_loop(
         let speech_ended = loop {
             tokio::select! {
                 _ = &mut stop_rx => break false,
+                Some(()) = force_end_rx.recv() => {
+                    let detector_was_speaking = detector.force_end();
+                    debug!(
+                        target: "jfc::voice::vad",
+                        detector_was_speaking,
+                        frames = frames_seen,
+                        "force-ending active VAD utterance"
+                    );
+                    break true;
+                }
                 n = capture.read_chunk(&mut chunk) => match n {
                     Ok(0) | Err(_) => break true,
                     Ok(n) => {
@@ -947,6 +1026,76 @@ mod tests {
             Ok(()),
             "VAD loop must receive the stop signal"
         );
+    }
+
+    #[tokio::test]
+    async fn vad_space_force_ends_active_utterance_not_loop_regression() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut rec = VoiceRecorder::new(
+            VoiceConfig {
+                mode: VoiceMode::Vad,
+                ..Default::default()
+            },
+            tx,
+        );
+        let (hold_stop_tx, mut hold_stop_rx) = tokio::sync::oneshot::channel::<()>();
+        let (vad_stop_tx, mut vad_stop_rx) = tokio::sync::oneshot::channel::<()>();
+        let (force_tx, mut force_rx) = mpsc::unbounded_channel::<()>();
+        rec.stop_tx = Some(hold_stop_tx);
+        rec.vad_stop_tx = Some(vad_stop_tx);
+        rec.vad_force_end_tx = Some(force_tx);
+        rec.set_state(VoiceState::Recording).await;
+
+        rec.activate(true).await;
+
+        assert_eq!(
+            force_rx.try_recv(),
+            Ok(()),
+            "Space in VAD recording state should force-end the utterance"
+        );
+        assert!(
+            matches!(
+                hold_stop_rx.try_recv(),
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+            ),
+            "VAD force-end must not signal the hold/tap recording channel"
+        );
+        assert!(
+            matches!(
+                vad_stop_rx.try_recv(),
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+            ),
+            "VAD force-end must not stop the continuous listen loop"
+        );
+        assert!(rec.stop_tx.is_some());
+        assert!(rec.vad_loop_running());
+    }
+
+    #[tokio::test]
+    async fn stale_vad_loop_handle_is_cleared_before_restart_regression() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut rec = VoiceRecorder::new(
+            VoiceConfig {
+                mode: VoiceMode::Vad,
+                ..Default::default()
+            },
+            tx,
+        );
+        let (vad_stop_tx, vad_stop_rx) = tokio::sync::oneshot::channel::<()>();
+        let (force_tx, force_rx) = mpsc::unbounded_channel::<()>();
+        drop(vad_stop_rx);
+        drop(force_rx);
+        rec.vad_stop_tx = Some(vad_stop_tx);
+        rec.vad_force_end_tx = Some(force_tx);
+
+        assert!(
+            !rec.vad_loop_running(),
+            "closed stop receiver must not count as a running VAD loop"
+        );
+        rec.clear_stale_vad_loop_handles();
+
+        assert!(rec.vad_stop_tx.is_none());
+        assert!(rec.vad_force_end_tx.is_none());
     }
 
     // REGRESSION (long sentence cut off mid-utterance): the max-utterance cap

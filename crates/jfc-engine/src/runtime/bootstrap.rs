@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::providers::{
-    AnthropicOAuthProvider, AnthropicProvider, AntigravityOAuthProvider, BedrockProvider,
-    CodexOAuthProvider, GeminiApiProvider, LiteLLMProvider, OpenAIProvider, OpenRouterProvider,
-    OpenWebUIProvider, VertexProvider,
+    AnthropicOAuthProvider, AnthropicProvider, AntigravityOAuthProvider, CodexOAuthProvider,
+    GeminiApiProvider, LiteLLMProvider, OpenAIProvider, OpenRouterProvider, OpenWebUIProvider,
+    VertexProvider,
 };
 use jfc_provider::{
     ModelId, ModelResolutionReason, ModelSpec, Provider, ProviderId, ResolvedModel,
@@ -147,18 +147,9 @@ pub fn build_providers() -> ProvidersInit {
         }
     }
 
-    // Bedrock + Vertex: register as candidates when the wizard config is on
-    // disk *and* the relevant CLI is installed. Neither becomes the default
-    // — the user opts in by picking a Bedrock/Vertex model from the picker
-    // or by using a `bedrock/<id>` / `vertex/<id>` qualified ModelSpec.
-    let bedrock = BedrockProvider::new();
-    if bedrock.has_usable_config() {
-        tracing::info!(
-            target: "jfc::startup",
-            "registering Bedrock provider (config + aws CLI present)"
-        );
-        providers.push(Arc::new(bedrock));
-    }
+    // Vertex registers when configured. Bedrock stays hidden until its
+    // streaming path is implemented; otherwise the picker advertises models
+    // that fail on the first request.
     let vertex = VertexProvider::new();
     if vertex.has_usable_config() {
         tracing::info!(

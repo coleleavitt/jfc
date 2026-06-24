@@ -9,7 +9,9 @@ use crate::backend::{BackendId, BackendResult, SearchBackend, SearchResult};
 use async_trait::async_trait;
 
 use self::api::{discover_instances, fetch_page};
-use self::config::{FourGetRequest, configured_instances, configured_scrapers, instance_limit};
+use self::config::{
+    FourGetRequest, configured_instances, configured_scrapers, instance_limit, page_fanout_limit,
+};
 
 pub struct FourGetBackend;
 
@@ -41,7 +43,7 @@ pub async fn search_fourget_structured(query: &str, max_results: usize) -> Backe
         .scraper
         .map(|scraper| vec![scraper.to_owned()])
         .unwrap_or_else(configured_scrapers);
-    let mut states = SearchStates::new(instances, scrapers);
+    let mut states = SearchStates::new(instances, scrapers, page_fanout_limit());
 
     states.collect(&client, request.query, target).await
 }
@@ -56,10 +58,13 @@ struct SearchState {
 struct SearchStates {
     states: Vec<SearchState>,
     errors: Vec<String>,
+    page_fanout_limit: usize,
 }
 
+type ActivePageRequest = (usize, String, String, Option<String>);
+
 impl SearchStates {
-    fn new(instances: Vec<String>, scrapers: Vec<String>) -> Self {
+    fn new(instances: Vec<String>, scrapers: Vec<String>, page_fanout_limit: usize) -> Self {
         let states = instances
             .into_iter()
             .flat_map(|instance| {
@@ -75,6 +80,7 @@ impl SearchStates {
         Self {
             states,
             errors: Vec::new(),
+            page_fanout_limit: page_fanout_limit.max(1),
         }
     }
 
@@ -89,20 +95,7 @@ impl SearchStates {
 
         while results.len() < target && self.states.iter().any(|state| !state.exhausted) {
             let mut progressed = false;
-            let active: Vec<_> = self
-                .states
-                .iter()
-                .enumerate()
-                .filter(|(_, state)| !state.exhausted)
-                .map(|(index, state)| {
-                    (
-                        index,
-                        state.instance.clone(),
-                        state.scraper.clone(),
-                        state.next_page.clone(),
-                    )
-                })
-                .collect();
+            let active = self.active_page_requests();
             let pages = futures::future::join_all(active.iter().map(
                 |(_, instance, scraper, next_page)| {
                     fetch_page(client, instance, query, scraper, next_page.as_deref())
@@ -158,6 +151,23 @@ impl SearchStates {
             Ok(results)
         }
     }
+
+    fn active_page_requests(&self) -> Vec<ActivePageRequest> {
+        self.states
+            .iter()
+            .enumerate()
+            .filter(|(_, state)| !state.exhausted)
+            .take(self.page_fanout_limit)
+            .map(|(index, state)| {
+                (
+                    index,
+                    state.instance.clone(),
+                    state.scraper.clone(),
+                    state.next_page.clone(),
+                )
+            })
+            .collect()
+    }
 }
 
 fn push_unique(
@@ -180,6 +190,25 @@ fn push_unique(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_states_caps_active_page_batch_regression() {
+        let states = SearchStates::new(
+            vec!["https://a.example".into(), "https://b.example".into()],
+            vec!["s1".into(), "s2".into(), "s3".into()],
+            3,
+        );
+
+        assert_eq!(states.states.len(), 6);
+        assert_eq!(states.active_page_requests().len(), 3);
+    }
+
+    #[test]
+    fn search_states_clamps_zero_fanout_normal() {
+        let states = SearchStates::new(vec!["https://a.example".into()], vec!["s1".into()], 0);
+
+        assert_eq!(states.page_fanout_limit, 1);
+    }
 
     #[test]
     fn push_unique_skips_duplicate_url_robust() {

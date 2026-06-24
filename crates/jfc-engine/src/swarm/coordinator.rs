@@ -120,8 +120,11 @@ pub async fn run_teammate_loop(
                 debug!("[InProcessRunner] {} turn aborted", identity.agent_name);
                 break TeammateExit::Cancelled;
             }
-            super::executor::TurnResult::Error(e) => {
-                tracing::warn!("[InProcessRunner] {} turn error: {e}", identity.agent_name);
+            super::executor::TurnResult::Error { kind, message } => {
+                tracing::warn!(
+                    "[InProcessRunner] {} turn error ({kind:?}): {message}",
+                    identity.agent_name
+                );
                 // Continue to idle — don't crash the teammate
             }
         }

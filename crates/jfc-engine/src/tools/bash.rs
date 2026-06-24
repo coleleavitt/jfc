@@ -727,9 +727,17 @@ async fn start_bash_task(
             Ok(Ok(status)) => BashTaskStatus::Completed {
                 exit_code: status.code().unwrap_or(-1),
             },
-            Ok(Err(err)) => BashTaskStatus::Failed {
-                message: format!("failed to wait for child: {err}"),
-            },
+            Ok(Err(err)) => {
+                warn!(
+                    target: "jfc::tools",
+                    task_id = %task_id_for_wait,
+                    error = %err,
+                    "bash: failed while waiting for child process"
+                );
+                BashTaskStatus::Failed {
+                    message: format!("failed to wait for child: {err}"),
+                }
+            }
             Err(_) => {
                 terminate_bash_child(&mut child).await;
                 let marker = format!("\n[Command timed out after {timeout}ms]\n");

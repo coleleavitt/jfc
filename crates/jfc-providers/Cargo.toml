@@ -17,6 +17,7 @@ chrono = { workspace = true }
 dirs = "6"
 futures = { workspace = true }
 fs2 = "0.4"
+gcp_auth = "0.12.7"
 hmac = "0.12"
 hex = { workspace = true }
 rand = "0.10"

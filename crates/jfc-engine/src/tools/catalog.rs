@@ -27,8 +27,8 @@ const STARTER_TOOL_NAMES: &[&str] = &[
     "SendUserMessage",
 ];
 
-const MAX_INTENT_MATCHES: usize = 12;
-const MAX_DISCOVERED_MATCHES: usize = 24;
+const DEFAULT_MAX_INTENT_MATCHES: usize = 12;
+const DEFAULT_MAX_DISCOVERED_MATCHES: usize = 24;
 
 pub fn progressive_tool_defs(
     all: Vec<ToolDef>,
@@ -61,9 +61,10 @@ pub fn progressive_tool_defs(
         selected.insert(normalize_tool_name(&name));
     }
 
+    let max_discovered_matches = discovered_match_limit();
     let mut discovered_added = 0usize;
     for name in discovered_tool_names(messages) {
-        if discovered_added >= MAX_DISCOVERED_MATCHES {
+        if discovered_added >= max_discovered_matches {
             break;
         }
         if super::defs::is_model_hidden_builtin_tool_name(&name) {
@@ -75,7 +76,7 @@ pub fn progressive_tool_defs(
     }
 
     if let Some(intent) = user_intent {
-        for name in intent_tool_matches(intent, &all, MAX_INTENT_MATCHES) {
+        for name in intent_tool_matches(intent, &all, intent_match_limit()) {
             selected.insert(normalize_tool_name(&name));
         }
     }
@@ -83,6 +84,25 @@ pub fn progressive_tool_defs(
     all.into_iter()
         .filter(|tool| selected.contains(&normalize_tool_name(&tool.name)))
         .collect()
+}
+
+fn intent_match_limit() -> usize {
+    env_usize("JFC_MAX_INTENT_TOOL_MATCHES", DEFAULT_MAX_INTENT_MATCHES)
+}
+
+fn discovered_match_limit() -> usize {
+    env_usize(
+        "JFC_MAX_DISCOVERED_TOOL_MATCHES",
+        DEFAULT_MAX_DISCOVERED_MATCHES,
+    )
+}
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
 }
 
 fn discovered_tool_names(messages: &[ProviderMessage]) -> Vec<String> {
@@ -499,6 +519,20 @@ mod tests {
         let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
 
         assert!(names.contains(&"WebSearch"));
+    }
+
+    #[serial_test::serial(env)]
+    #[test]
+    fn env_limits_ignore_invalid_values_regression() {
+        assert_eq!(env_usize("JFC_TEST_MISSING_LIMIT", 7), 7);
+
+        unsafe { std::env::set_var("JFC_TEST_INVALID_LIMIT", "0") };
+        assert_eq!(env_usize("JFC_TEST_INVALID_LIMIT", 7), 7);
+        unsafe { std::env::set_var("JFC_TEST_INVALID_LIMIT", "bogus") };
+        assert_eq!(env_usize("JFC_TEST_INVALID_LIMIT", 7), 7);
+        unsafe { std::env::set_var("JFC_TEST_INVALID_LIMIT", "3") };
+        assert_eq!(env_usize("JFC_TEST_INVALID_LIMIT", 7), 3);
+        unsafe { std::env::remove_var("JFC_TEST_INVALID_LIMIT") };
     }
 
     // The TF-IDF retriever surfaces a tool by *description* relevance even when

@@ -16,7 +16,7 @@ use jfc_core::*;
 
 use super::assistant_parts::{push_advisor_lines, push_reasoning_lines, push_task_status_lines};
 use super::tool_blocks::{ProviderFamily, ProviderStyle, render_tool_block, tool_kind_color};
-use super::tool_height::tool_block_height;
+use super::tool_height::tool_block_height_with_app;
 
 /// Test-only accessor for [`attribution_for_message`] (private fn, exercised by
 /// the tool_blocks provider-attribution tests).
@@ -222,7 +222,7 @@ pub fn build_render_items_window<'a>(
 pub fn message_view_total_lines(app: &App, inner_w: usize) -> usize {
     build_render_items_inner(&RenderCtx::from_app(app), inner_w)
         .iter()
-        .map(|i| i.height(inner_w))
+        .map(|i| i.height_with_app(inner_w, Some(app)))
         .sum()
 }
 
@@ -238,7 +238,10 @@ impl Widget for MessageView<'_> {
             Some(p) => (p.items, p.total_h, Some(p.scroll)),
             None => {
                 let items = build_render_items_inner(&fallback_ctx, inner_w);
-                let total_h: usize = items.iter().map(|i| i.height(inner_w)).sum();
+                let total_h: usize = items
+                    .iter()
+                    .map(|i| i.height_with_app(inner_w, Some(self.app)))
+                    .sum();
                 (items, total_h, None)
             }
         };
@@ -351,7 +354,7 @@ impl Widget for MessageView<'_> {
                 _ => {}
             }
 
-            let h = item.height(inner_w);
+            let h = item.height_with_app(inner_w, Some(self.app));
             if lines_skipped + h <= scroll {
                 lines_skipped += h;
                 continue;
@@ -511,6 +514,10 @@ pub enum RenderItem<'a> {
 
 impl<'a> RenderItem<'a> {
     pub fn height(&self, width: usize) -> usize {
+        self.height_with_app(width, None)
+    }
+
+    pub fn height_with_app(&self, width: usize, app: Option<&App>) -> usize {
         match self {
             RenderItem::Blank => 1,
             RenderItem::TextLine(line) => {
@@ -531,7 +538,7 @@ impl<'a> RenderItem<'a> {
                     p.line_count(width as u16).max(1)
                 }
             }
-            RenderItem::ToolBlock(tool) => tool_block_height(tool, width),
+            RenderItem::ToolBlock(tool) => tool_block_height_with_app(tool, width, app),
             RenderItem::ToolGroup { .. } => 1,
             RenderItem::AttachmentBlock { .. } => 1,
             // Scope markers occupy no rows — they only affect the

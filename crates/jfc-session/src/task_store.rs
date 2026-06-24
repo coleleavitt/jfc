@@ -30,7 +30,10 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{
+    Arc, Mutex, OnceLock,
+    atomic::{AtomicU64, Ordering},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -122,6 +125,7 @@ const TERMINAL_TASK_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 const MAX_TERMINAL_TASKS: usize = 200;
 const TASK_STORE_KIND: &str = "task_store";
 const TASK_STORE_KEY: &str = "active";
+static DB_TASK_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn task_store_db_id_for_path(path: &std::path::Path) -> Option<String> {
     if path.as_os_str().is_empty() {
@@ -233,7 +237,7 @@ pub struct TaskStore {
     disk_mtime: Mutex<Option<std::time::SystemTime>>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct TaskStoreInner {
     /// Next free numeric suffix for `t<N>` task ids.
     next_id: u64,
@@ -681,6 +685,62 @@ impl TaskStore {
         TaskStoreInner::default()
     }
 
+    fn seed_db_task_id(inner: &mut TaskStoreInner) {
+        let micros = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_micros() as u64)
+            .unwrap_or(0);
+        let counter = DB_TASK_ID_COUNTER.fetch_add(1, Ordering::Relaxed) % 1_000;
+        inner.next_id = inner.next_id.max(micros.saturating_mul(1_000) + counter);
+    }
+
+    fn merge_remote_inner(local: &mut TaskStoreInner, remote: TaskStoreInner) {
+        local.next_id = local.next_id.max(remote.next_id);
+        let mut remap = HashMap::<TaskId, TaskId>::new();
+        for (id, remote_task) in &remote.tasks {
+            match local.tasks.get(id) {
+                None => {}
+                Some(local_task)
+                    if serde_json::to_value(local_task).ok()
+                        == serde_json::to_value(remote_task).ok() =>
+                {
+                    continue;
+                }
+                Some(_) => {
+                    local.next_id += 1;
+                    let new_id = TaskId::new(format!("t{}", local.next_id));
+                    if let Some(mut local_task) = local.tasks.remove(id) {
+                        local_task.id = new_id.clone();
+                        local.tasks.insert(new_id.clone(), local_task);
+                        remap.insert(id.clone(), new_id);
+                    }
+                }
+            }
+        }
+        if !remap.is_empty() {
+            for task in local.tasks.values_mut() {
+                task.blocks = task
+                    .blocks
+                    .iter()
+                    .map(|id| remap.get(id).cloned().unwrap_or_else(|| id.clone()))
+                    .collect();
+                task.blocked_by = task
+                    .blocked_by
+                    .iter()
+                    .map(|id| remap.get(id).cloned().unwrap_or_else(|| id.clone()))
+                    .collect();
+                if let Some(parent) = task.parent_id.as_mut()
+                    && let Some(new_id) = remap.get(parent)
+                {
+                    *parent = new_id.clone();
+                }
+            }
+        }
+        for (id, remote_task) in remote.tasks {
+            local.tasks.entry(id).or_insert(remote_task);
+        }
+    }
+
     /// Cross-process advisory lock guarding read-modify-write cycles on the
     /// backing file (UI process vs detached background workers). Best-effort:
     /// returns `None` when the lock file can't be created, in which case the
@@ -716,7 +776,15 @@ impl TaskStore {
     /// the file branch is legacy test/import compatibility.
     fn persist_unlocked(&self, inner: &TaskStoreInner) {
         if let Some(session_id) = &self.db_session_id {
-            let Ok(json) = serde_json::to_string(inner) else {
+            let mut merged = inner.clone();
+            if let Ok(store) = jfc_knowledge::KnowledgeStore::open_default()
+                && let Ok(Some(row)) =
+                    store.get_session_artifact(session_id, TASK_STORE_KIND, TASK_STORE_KEY)
+                && let Ok(remote) = serde_json::from_str::<TaskStoreInner>(&row.value_json)
+            {
+                Self::merge_remote_inner(&mut merged, remote);
+            }
+            let Ok(json) = serde_json::to_string(&merged) else {
                 return;
             };
             let result = jfc_knowledge::KnowledgeStore::open_default().and_then(|store| {
@@ -729,6 +797,11 @@ impl TaskStore {
                     %error,
                     "failed to persist DB task store"
                 );
+            }
+            if let Ok(mut current) = self.inner.try_lock()
+                && serde_json::to_string(&*current).ok() != Some(json)
+            {
+                *current = merged;
             }
             return;
         }
@@ -761,6 +834,9 @@ impl TaskStore {
             if !inner.tasks.contains_key(dep.as_str()) {
                 return Err(TaskError::UnknownDependency { id: dep.clone() });
             }
+        }
+        if self.db_session_id.is_some() {
+            Self::seed_db_task_id(&mut inner);
         }
         inner.next_id += 1;
         let id = TaskId::new(format!("t{}", inner.next_id));
@@ -1019,6 +1095,71 @@ impl TaskStore {
         let task = task.clone();
         self.persist(&inner);
         Some(task)
+    }
+
+    /// Atomically claim the current ready frontier for one worker wave.
+    ///
+    /// This is the claiming counterpart to [`Self::ready_frontier`]: it marks
+    /// every selected task `InProgress` under `owner` while holding the store
+    /// lock, so a scheduler that wants to fan out a ready DAG layer does not
+    /// accidentally collapse back to [`Self::claim_next_available`]'s single
+    /// task behavior.
+    pub fn claim_ready_frontier(
+        &self,
+        owner: &str,
+        limit: usize,
+        include_high_risk: bool,
+    ) -> Vec<Task> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let mut inner = self.inner.lock().unwrap();
+        let completed = inner
+            .tasks
+            .values()
+            .filter(|t| t.status == TaskStatus::Completed)
+            .map(|t| t.id.clone())
+            .collect::<BTreeSet<_>>();
+        let now = now_ms();
+        let mut ready_ids = inner
+            .tasks
+            .values()
+            .filter(|task| {
+                task.status == TaskStatus::Pending
+                    && task.owner.as_deref().unwrap_or("").is_empty()
+                    && task.blocked_by.iter().all(|dep| completed.contains(dep))
+                    && !in_retry_backoff(task, now)
+                    && (include_high_risk || !matches!(task.risk, Some(TaskRisk::High)))
+            })
+            .map(|task| task.id.clone())
+            .collect::<Vec<_>>();
+        ready_ids.sort_by(|left, right| {
+            match (
+                inner.tasks.get(left.as_str()),
+                inner.tasks.get(right.as_str()),
+            ) {
+                (Some(left_task), Some(right_task)) => {
+                    cmp_priority_then_creation(left_task, right_task)
+                }
+                _ => left.as_str().cmp(right.as_str()),
+            }
+        });
+
+        let mut claimed = Vec::new();
+        for id in ready_ids.into_iter().take(limit) {
+            let Some(task) = inner.tasks.get_mut(id.as_str()) else {
+                continue;
+            };
+            task.owner = Some(owner.to_owned());
+            task.status = TaskStatus::InProgress;
+            clear_retry_after(task);
+            claimed.push(task.clone());
+        }
+        if !claimed.is_empty() {
+            self.persist(&inner);
+        }
+        claimed
     }
 
     /// The ready frontier: every pending, unowned task whose blockers are all
@@ -1801,6 +1942,31 @@ mod tests {
         }
     }
 
+    fn test_task(id: &str, subject: &str) -> Task {
+        Task {
+            id: TaskId::new(id),
+            subject: subject.to_owned(),
+            description: String::new(),
+            active_form: None,
+            status: TaskStatus::Pending,
+            owner: None,
+            blocks: BTreeSet::new(),
+            blocked_by: BTreeSet::new(),
+            metadata: None,
+            created_at_ms: 0,
+            acceptance_criteria: None,
+            verification_command: None,
+            risk: None,
+            parent_id: None,
+            kind: None,
+            tags: Vec::new(),
+            priority: None,
+            effort: None,
+            model: None,
+            attempt_count: 0,
+        }
+    }
+
     // Normal: create→get→update→list round-trips.
     #[test]
     fn create_get_update_list_roundtrip_normal() {
@@ -1835,6 +2001,25 @@ mod tests {
 
         let list = store.list(DeletedFilter::Exclude);
         assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn merge_remote_inner_preserves_conflicting_tasks_regression() {
+        let mut local = TaskStoreInner {
+            next_id: 1,
+            tasks: [(TaskId::new("t1"), test_task("t1", "local"))].into(),
+        };
+        let remote = TaskStoreInner {
+            next_id: 1,
+            tasks: [(TaskId::new("t1"), test_task("t1", "remote"))].into(),
+        };
+
+        TaskStore::merge_remote_inner(&mut local, remote);
+
+        assert_eq!(local.tasks.get("t1").unwrap().subject, "remote");
+        assert!(local.tasks.values().any(|task| task.subject == "local"));
+        assert_eq!(local.tasks.len(), 2);
+        assert!(local.next_id > 1);
     }
 
     // Normal: the count cap keeps the most-recent terminal rows and never
@@ -2681,6 +2866,59 @@ mod tests {
         assert_eq!(store.ready_frontier().len(), 1);
         store.claim_next_available("worker").unwrap();
         assert!(store.ready_frontier().is_empty());
+    }
+
+    #[test]
+    fn claim_ready_frontier_claims_parallel_wave_regression() {
+        let store = TaskStore::in_memory();
+        store
+            .create("a".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        store
+            .create("b".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+
+        let claimed = store.claim_ready_frontier("jfc-factory", 8, false);
+
+        let claimed_ids = claimed
+            .iter()
+            .map(|task| task.id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(claimed_ids, vec!["t1".to_owned(), "t2".to_owned()]);
+        assert!(store.ready_frontier().is_empty());
+        for id in claimed_ids {
+            let task = store.get(&id).unwrap();
+            assert_eq!(task.status, TaskStatus::InProgress);
+            assert_eq!(task.owner.as_deref(), Some("jfc-factory"));
+        }
+    }
+
+    #[test]
+    fn claim_ready_frontier_skips_high_risk_by_default_robust() {
+        let store = TaskStore::in_memory();
+        let high = store
+            .create("danger".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        store
+            .update(
+                high.id.as_str(),
+                TaskPatch {
+                    risk: Some(TaskRisk::High),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        store
+            .create("safe".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+
+        let claimed = store.claim_ready_frontier("jfc-factory", 8, false);
+
+        assert_eq!(claimed.len(), 1);
+        assert_eq!(claimed[0].id.as_str(), "t2");
+        let high = store.get("t1").unwrap();
+        assert_eq!(high.status, TaskStatus::Pending);
+        assert!(high.owner.is_none());
     }
 
     // Robust: transitive upstreamFailed — a failed task taints every task that

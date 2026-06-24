@@ -9,40 +9,40 @@ This skill provides a comprehensive guide to the development patterns, coding co
 
 ## Coding Conventions
 
-- **File Naming:**  
-  Use `camelCase` for file names.  
-  _Example:_  
+- **File Naming:**
+  Use `snake_case` for Rust file, module, function, and variable names.
+  _Example:_
   ```
-  messageView.rs
+  message_view.rs
   main.rs
-  agentTools.rs
+  agent_tools.rs
   ```
 
-- **Import Style:**  
-  Mixed usage of absolute and relative imports, depending on context.  
-  _Example:_  
+- **Import Style:**
+  Mixed usage of absolute and relative imports, depending on context.
+  _Example:_
   ```rust
   use crate::types::AgentType;
   use std::collections::HashMap;
   ```
 
-- **Export Style:**  
-  Named exports are preferred.  
-  _Example:_  
+- **Export Style:**
+  Named exports are preferred.
+  _Example:_
   ```rust
   pub struct Agent { /* ... */ }
   pub fn run_agent() { /* ... */ }
   ```
 
-- **Module Organization:**  
+- **Module Organization:**
   - Core logic in `main.rs`
   - Feature-specific logic in dedicated modules (e.g., `tools.rs`, `agents.rs`)
   - Types in `types.rs`
-  - Rendering in `render.rs` or `messageView.rs`
+  - Rendering in `render.rs` or `message_view.rs`
   - Input handling in `input.rs`
   - Session/config in `session.rs` and `config.rs`
 
-- **Commit Messages:**  
+- **Commit Messages:**
   - Use prefixes: `merge`, `fix`, `agent`, `feat`, `test`, `compact`
   - Keep messages concise (~57 characters on average)
   - Reference the feature, fix, or module affected
@@ -50,14 +50,14 @@ This skill provides a comprehensive guide to the development patterns, coding co
 ## Workflows
 
 ### Submodule Update: wgpui
-**Trigger:** When upstream wgpui changes need to be integrated or a bugfix is required  
+**Trigger:** When upstream wgpui changes need to be integrated or a bugfix is required
 **Command:** `/update-wgpui`
 
 1. Update the `references/wgpui` submodule:
    ```sh
    git submodule update --remote references/wgpui
    ```
-2. Optionally update integration code in `crates/jfc-ui/src/main.rs` or related UI files.
+2. Optionally update integration code in `crates/jfc/src/main.rs`, `crates/jfc/src/app/`, or related UI files.
 3. Commit changes with a message referencing the wgpui update:
    ```
    fix: update wgpui submodule to latest upstream
@@ -66,13 +66,13 @@ This skill provides a comprehensive guide to the development patterns, coding co
 ---
 
 ### Feature Addition: Multi-Module
-**Trigger:** When adding a significant new feature, tool, or capability to the UI  
+**Trigger:** When adding a significant new feature, tool, or capability to the UI
 **Command:** `/add-feature`
 
-1. Add or update types in `crates/jfc-ui/src/types.rs`.
-2. Update or create main logic in `crates/jfc-ui/src/main.rs` and/or feature-specific modules (e.g., `tools.rs`, `agents.rs`, `tasks.rs`).
-3. Update rendering logic in `crates/jfc-ui/src/render.rs` or `messageView.rs`.
-4. Update or create input handling in `crates/jfc-ui/src/input.rs`.
+1. Add or update shared state/types in `crates/jfc/src/app/`, `crates/jfc-core`, or the owning crate.
+2. Update or create main logic in `crates/jfc/src/app/`, `crates/jfc/src/runtime/`, or feature-specific modules.
+3. Update rendering logic in `crates/jfc/src/render/` or `crates/jfc/src/message_view/`.
+4. Update or create input handling in `crates/jfc/src/input/`.
 5. Optionally update or add tests.
 
 _Example:_
@@ -91,12 +91,12 @@ pub fn render_new_feature() { /* ... */ }
 ---
 
 ### Agent or Skill System Extension
-**Trigger:** When expanding agent/skill/task capabilities or introducing new agent features  
+**Trigger:** When expanding agent/skill/task capabilities or introducing new agent features
 **Command:** `/add-agent`
 
-1. Create or update `crates/jfc-ui/src/agents.rs` and/or `skills/tasks` modules.
-2. Update types in `crates/jfc-ui/src/types.rs`.
-3. Update `main.rs`, `input.rs`, and possibly `scheduler.rs` to wire up new commands or agent logic.
+1. Create or update `crates/jfc/src/render/agents.rs`, `crates/jfc/src/render/teammates_panel.rs`, or the owning agent/task crate.
+2. Update shared types in `crates/jfc-core`, `crates/jfc-agent`, or the owning crate.
+3. Update `crates/jfc/src/app/`, `crates/jfc/src/input/`, and `crates/jfc-daemon` scheduling code as needed to wire commands or agent logic.
 4. Add or update YAML/frontmatter parsing logic.
 5. Update help text and documentation as needed.
 
@@ -115,11 +115,11 @@ pub enum AgentType {
 ---
 
 ### Session or Config Enhancement
-**Trigger:** When improving session persistence, configuration, or CLI interface  
+**Trigger:** When improving session persistence, configuration, or CLI interface
 **Command:** `/update-session`
 
-1. Update `crates/jfc-ui/src/session.rs` and/or `config.rs`.
-2. Update `main.rs` and `input.rs` to handle new session/config features.
+1. Update `crates/jfc-session`, `crates/jfc-config`, or the session/config owner crate.
+2. Update `crates/jfc/src/app/` and `crates/jfc/src/input/` to handle new session/config features.
 3. Update `Cargo.toml` if new dependencies are needed.
 4. Add or update tests for session/config behavior.
 
@@ -135,7 +135,7 @@ pub fn load_config() { /* ... */ }
 ---
 
 ### Merge Worktree or Agent Branch
-**Trigger:** When agent or feature work is completed in a branch/worktree and needs to be merged  
+**Trigger:** When agent or feature work is completed in a branch/worktree and needs to be merged
 **Command:** `/merge-agent`
 
 1. Merge changes from worktree or agent branch:
@@ -152,11 +152,11 @@ pub fn load_config() { /* ... */ }
 ---
 
 ### Syntax Theme Bundle Extension
-**Trigger:** When supporting new languages or improving syntax highlighting  
+**Trigger:** When supporting new languages or improving syntax highlighting
 **Command:** `/add-syntax`
 
-1. Add new `.sublime-syntax` files to `crates/jfc-ui/syntaxes/`.
-2. Update `crates/jfc-ui/src/markdown.rs` or related files to register new grammars/themes.
+1. Add new `.sublime-syntax` files to `crates/jfc-markdown/syntaxes/`.
+2. Update `crates/jfc-markdown/src/lib.rs` or related files to register new grammars/themes.
 3. Update `Cargo.toml` if new dependencies are required.
 4. Commit with a message referencing the new languages/themes:
    ```

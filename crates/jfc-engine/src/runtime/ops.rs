@@ -638,39 +638,6 @@ pub async fn submit_prompt(
         }
     }
 
-    // Edit mode: if the user is editing an earlier message, rewrite
-    // history at that index and drop everything after before
-    // continuing as a fresh submit. The new turn arrives as if the
-    // user had typed it just now — agentic loop, tool calls, and
-    // streaming all flow normally.
-    if let Some(edit_idx) = edit_at {
-        if edit_idx < state.messages.len() {
-            tracing::info!(
-                target: "jfc::input",
-                edit_idx,
-                kept = edit_idx,
-                dropped = state.messages.len() - edit_idx,
-                "edit-resubmit: rewriting history"
-            );
-            state.messages.truncate(edit_idx);
-        }
-        // Clear streaming-related state that might be tied to the
-        // dropped messages (assistant placeholder index, etc.).
-        state.streaming_text.clear();
-        state.streaming_reasoning.clear();
-        state.streaming_response_bytes = 0;
-        state.streaming_response_baseline = 0;
-        state.streaming_thinking_tokens = 0;
-        state.token_rate_samples.clear();
-        state.token_rate_sample_thinking = None;
-        state.turn_output_tokens = 0;
-        state.refusal_fallback_attempted = false;
-        state.refusal_resend_count = 0;
-        state.refusal_rewrite_retry_count = 0;
-        state.refusal_rewrite_attempts.clear();
-        state.streaming_assistant_idx = None;
-        state.clear_active_stream_scope();
-    }
     // Pre-submit compaction gate (mirrors v126 `Du7` running before the API
     // call rather than only after tool batches). Without this, a long
     // text-only assistant reply pushes the context past 200K — by the time
@@ -940,6 +907,36 @@ pub async fn submit_prompt(
             );
         });
         return Ok(SubmitOutcome::CompactingFirst);
+    }
+
+    // Edit mode is applied only after the compaction gate has decided the turn
+    // can proceed without first replacing history. If compaction is needed and
+    // then fails/cancels, the live transcript is still intact.
+    if let Some(edit_idx) = edit_at {
+        if edit_idx < state.messages.len() {
+            tracing::info!(
+                target: "jfc::input",
+                edit_idx,
+                kept = edit_idx,
+                dropped = state.messages.len() - edit_idx,
+                "edit-resubmit: rewriting history"
+            );
+            state.messages.truncate(edit_idx);
+        }
+        state.streaming_text.clear();
+        state.streaming_reasoning.clear();
+        state.streaming_response_bytes = 0;
+        state.streaming_response_baseline = 0;
+        state.streaming_thinking_tokens = 0;
+        state.token_rate_samples.clear();
+        state.token_rate_sample_thinking = None;
+        state.turn_output_tokens = 0;
+        state.refusal_fallback_attempted = false;
+        state.refusal_resend_count = 0;
+        state.refusal_rewrite_retry_count = 0;
+        state.refusal_rewrite_attempts.clear();
+        state.streaming_assistant_idx = None;
+        state.clear_active_stream_scope();
     }
 
     // Keyword scan: detect and strip magic keywords (e.g. "ultrawork")
@@ -1291,8 +1288,7 @@ pub async fn start_turn_from_transcript(
         .current_session_id
         .clone()
         .unwrap_or_else(jfc_session::generate_session_id);
-    // Fire-and-forget session save — don't block the UI on disk I/O.
-    {
+    if !state.no_session_persistence {
         let sid = session_id.clone();
         let msgs = state.messages.clone();
         let cwd = state.cwd.clone();

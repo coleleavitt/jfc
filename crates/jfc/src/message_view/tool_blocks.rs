@@ -28,12 +28,21 @@ use super::syntax::{
     produce_highlighted_block_line_count, produce_highlighted_block_lines,
     produce_highlighted_with_line_numbers_line_count, produce_highlighted_with_line_numbers_lines,
 };
-use super::tool_height::tool_block_height;
+use super::tool_height::tool_block_height_with_app;
 use super::*;
 
 /// Count the rows produced by `tool_body_lines_themed` without constructing
 /// the styled line Vecs used for painting.
+#[allow(dead_code)]
 pub(super) fn tool_body_line_count(tool: &ToolCall, content_w: usize) -> usize {
+    tool_body_line_count_with_app(tool, content_w, None)
+}
+
+pub(super) fn tool_body_line_count_with_app(
+    tool: &ToolCall,
+    content_w: usize,
+    app: Option<&App>,
+) -> usize {
     let t = crate::theme::Theme::dark();
     let expanded = tool.display.is_expanded();
     // AskModel has a bespoke gutter renderer; count its lines directly so the
@@ -64,13 +73,19 @@ pub(super) fn tool_body_line_count(tool: &ToolCall, content_w: usize) -> usize {
                 return 1;
             }
             if let Some(lang) = infer_lang_from_tool(tool) {
+                let diag_lines = if matches!(tool.kind, ToolKind::Read) {
+                    app.map(|app| diagnostics_for_path(app, &tool.input))
+                        .unwrap_or_default()
+                } else {
+                    std::collections::HashMap::new()
+                };
                 produce_highlighted_with_line_numbers_line_count(
                     &lang,
                     s,
                     content_w,
                     t,
                     expanded,
-                    &std::collections::HashMap::new(),
+                    &diag_lines,
                 )
             } else if looks_like_git_diff_output(s) {
                 produce_git_diff_output_line_count(s, "", Some(0), content_w, expanded)
@@ -534,7 +549,7 @@ pub(super) fn render_tool_block(
     let frame_idx = app.spinner_frame;
     let (status_icon, status_style) = tool_status_icon_animated(tool, &t, frame_idx);
 
-    let full_h = tool_block_height(tool, area.width as usize) as u16;
+    let full_h = tool_block_height_with_app(tool, area.width as usize, Some(app)) as u16;
     if skip >= full_h as usize {
         return;
     }

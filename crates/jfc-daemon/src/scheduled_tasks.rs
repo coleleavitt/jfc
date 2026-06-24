@@ -151,6 +151,20 @@ impl ScheduledTask {
             last.note = note.into();
         }
     }
+
+    pub fn record_outcome_at(
+        &mut self,
+        ran_at: SystemTime,
+        ok: bool,
+        note: impl Into<String>,
+    ) -> bool {
+        let Some(run) = self.runs.iter_mut().find(|run| run.ran_at == ran_at) else {
+            return false;
+        };
+        run.ok = ok;
+        run.note = note.into();
+        true
+    }
 }
 
 /// A registry of scheduled agentic tasks. Provides the create / list-scheduled /
@@ -213,8 +227,8 @@ impl ScheduledTaskRegistry {
         let mut fired = Vec::new();
         for task in &mut self.tasks {
             if task.should_fire(now) {
-                fired.push(task.clone());
                 task.record_run(now, true, "fired");
+                fired.push(task.clone());
             }
         }
         fired
@@ -306,6 +320,22 @@ impl ScheduledTaskRegistry {
         let mut registry = Self::load(path)?;
         if let Some(task) = registry.get_mut(task_id) {
             task.record_outcome(ok, note);
+            registry.save(path)?;
+        }
+        Ok(())
+    }
+
+    pub fn record_run_outcome_at(
+        path: &std::path::Path,
+        task_id: &str,
+        ran_at: SystemTime,
+        ok: bool,
+        note: impl Into<String>,
+    ) -> std::io::Result<()> {
+        let mut registry = Self::load(path)?;
+        if let Some(task) = registry.get_mut(task_id)
+            && task.record_outcome_at(ran_at, ok, note)
+        {
             registry.save(path)?;
         }
         Ok(())
@@ -506,6 +536,20 @@ mod tests {
     }
 
     #[test]
+    fn record_outcome_at_updates_exact_run_regression() {
+        let mut t = task("a", every(60), at(0));
+        t.record_run(at(60), true, "first fired");
+        t.record_run(at(120), true, "second fired");
+
+        assert!(t.record_outcome_at(at(60), false, "first failed"));
+
+        assert!(!t.runs[0].ok);
+        assert_eq!(t.runs[0].note, "first failed");
+        assert!(t.runs[1].ok);
+        assert_eq!(t.runs[1].note, "second fired");
+    }
+
+    #[test]
     fn record_run_outcome_persists_normal() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = ScheduledTaskRegistry::default_path(dir.path());
@@ -520,6 +564,28 @@ mod tests {
         let run = back.get("a").unwrap().runs.last().unwrap();
         assert!(run.ok);
         assert!(run.note.contains("ok →"));
+    }
+
+    #[test]
+    fn record_run_outcome_at_does_not_update_newer_run_regression() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = ScheduledTaskRegistry::default_path(dir.path());
+        let mut reg = ScheduledTaskRegistry::new();
+        let mut t = task("a", every(60), at(0));
+        t.record_run(at(60), true, "first fired");
+        t.record_run(at(120), true, "second fired");
+        reg.create(t).unwrap();
+        reg.save(&path).unwrap();
+
+        ScheduledTaskRegistry::record_run_outcome_at(&path, "a", at(60), false, "first failed")
+            .unwrap();
+
+        let back = ScheduledTaskRegistry::load(&path).unwrap();
+        let task = back.get("a").unwrap();
+        assert!(!task.runs[0].ok);
+        assert_eq!(task.runs[0].note, "first failed");
+        assert!(task.runs[1].ok);
+        assert_eq!(task.runs[1].note, "second fired");
     }
 
     #[test]

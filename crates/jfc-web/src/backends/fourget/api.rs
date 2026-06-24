@@ -1,8 +1,10 @@
 use std::collections::HashSet;
+use std::net::IpAddr;
 
 use reqwest::header::{ACCEPT, USER_AGENT};
 use serde::Deserialize;
 
+use super::config::discovery_enabled;
 use super::response::FourGetResponse;
 
 const FOURGET_USER_AGENT: &str =
@@ -17,6 +19,9 @@ pub async fn discover_instances(
     let mut seen = HashSet::new();
     let mut fetched = HashSet::new();
     let mut frontier = push_instances(seeds, &mut seen, &mut instances, limit);
+    if !discovery_enabled() {
+        return instances;
+    }
 
     while !frontier.is_empty() && instances.len() < limit {
         let current = frontier;
@@ -112,8 +117,10 @@ fn push_instances(
 ) -> Vec<String> {
     let mut added = Vec::new();
     for candidate in candidates {
-        let instance = candidate.trim_end_matches('/').to_owned();
-        if instance.starts_with("https://") && seen.insert(instance.clone()) {
+        let Some(instance) = normalize_public_instance(&candidate) else {
+            continue;
+        };
+        if seen.insert(instance.clone()) {
             added.push(instance.clone());
             instances.push(instance);
         }
@@ -122,6 +129,62 @@ fn push_instances(
         }
     }
     added
+}
+
+fn normalize_public_instance(candidate: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(candidate.trim()).ok()?;
+    if parsed.scheme() != "https" || parsed.username() != "" || parsed.password().is_some() {
+        return None;
+    }
+    if parsed.host_str().is_none()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || !parsed.path().trim_matches('/').is_empty()
+    {
+        return None;
+    }
+    if let Some(host) = parsed.host_str()
+        && is_blocked_host(host)
+    {
+        return None;
+    }
+    let host = parsed.host_str()?;
+    let port = parsed
+        .port()
+        .map(|port| format!(":{port}"))
+        .unwrap_or_default();
+    Some(format!("https://{host}{port}"))
+}
+
+fn is_blocked_host(host: &str) -> bool {
+    let lower = host.trim_matches('.').to_ascii_lowercase();
+    if matches!(lower.as_str(), "localhost" | "localhost.localdomain")
+        || lower.ends_with(".localhost")
+        || lower.ends_with(".local")
+        || lower.ends_with(".internal")
+    {
+        return true;
+    }
+    lower.parse::<IpAddr>().map(is_blocked_ip).unwrap_or(false)
+}
+
+fn is_blocked_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_broadcast()
+                || ip.is_unspecified()
+                || ip.is_documentation()
+        }
+        IpAddr::V6(ip) => {
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.is_unique_local()
+                || ip.is_unicast_link_local()
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -164,6 +227,31 @@ mod tests {
 
         assert_eq!(instances, vec!["https://4get.example"]);
         assert_eq!(added, vec!["https://4get.example"]);
+    }
+
+    #[test]
+    fn push_instances_rejects_non_public_roots_regression() {
+        let mut seen = HashSet::new();
+        let mut instances = Vec::new();
+
+        let added = push_instances(
+            vec![
+                "http://4get.example".into(),
+                "https://127.0.0.1".into(),
+                "https://10.0.0.4".into(),
+                "https://metadata.google.internal".into(),
+                "https://4get.example/path".into(),
+                "https://4get.example?q=x".into(),
+                "https://user:pass@4get.example".into(),
+                "https://4get.example:8443/".into(),
+            ],
+            &mut seen,
+            &mut instances,
+            10,
+        );
+
+        assert_eq!(instances, vec!["https://4get.example:8443"]);
+        assert_eq!(added, vec!["https://4get.example:8443"]);
     }
 
     #[test]

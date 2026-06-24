@@ -8,6 +8,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jfc_core::SessionId;
+use jfc_knowledge::{
+    KnowledgeStore, SessionMessage as KnowledgeSessionMessage, SessionRow as KnowledgeSessionRow,
+};
+use serde_json::json;
 use tracing::debug;
 
 #[cfg(test)]
@@ -140,9 +144,19 @@ fn io_other(error: impl std::fmt::Display) -> std::io::Error {
     std::io::Error::other(error.to_string())
 }
 
+const FSCK_QUARANTINE_SESSION_ID: &str = "__session_fsck__";
+const FSCK_QUARANTINE_KIND: &str = "quarantined_session";
+
 #[cfg(test)]
 mod tests {
-    use super::generate_session_id;
+    use jfc_knowledge::{
+        KnowledgeStore, SessionMessage as KnowledgeSessionMessage,
+        SessionRow as KnowledgeSessionRow,
+    };
+
+    use super::{
+        FSCK_QUARANTINE_KIND, FSCK_QUARANTINE_SESSION_ID, fsck_sessions, generate_session_id,
+    };
 
     #[test]
     fn generated_session_ids_are_unique_within_one_second_regression() {
@@ -152,6 +166,61 @@ mod tests {
         assert_ne!(first, second);
         assert!(first.as_str().starts_with("ses_"));
         assert!(second.as_str().starts_with("ses_"));
+    }
+
+    #[tokio::test]
+    async fn fsck_quarantine_moves_bad_db_session_regression() {
+        let _lock = super::TEST_ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("knowledge.db");
+        let previous = std::env::var_os("JFC_KNOWLEDGE_DB");
+        // SAFETY: guarded by TEST_ENV_LOCK and restored before returning.
+        unsafe { std::env::set_var("JFC_KNOWLEDGE_DB", &db) };
+
+        {
+            let mut store = KnowledgeStore::open_default().unwrap();
+            store
+                .replace_transcript(
+                    &KnowledgeSessionRow {
+                        id: "bad-session".into(),
+                        cwd: Some("/tmp/project".into()),
+                        model: Some("claude".into()),
+                        created_at: Some("2026-01-01T00:00:00Z".into()),
+                        updated_at: Some("2026-01-01T00:00:01Z".into()),
+                        first_prompt: Some("hello".into()),
+                        title: Some("bad".into()),
+                        message_count: 2,
+                    },
+                    &[KnowledgeSessionMessage {
+                        seq: 0,
+                        role: "user".into(),
+                        content: "hello".into(),
+                        meta: None,
+                    }],
+                )
+                .unwrap();
+        }
+
+        let report = fsck_sessions(true).await.unwrap();
+        let store = KnowledgeStore::open_default().unwrap();
+
+        assert_eq!(report.checked, 1);
+        assert_eq!(report.ok, 0);
+        assert_eq!(report.quarantined(), 1);
+        assert!(store.get_session("bad-session").unwrap().is_none());
+        let artifacts = store
+            .list_session_artifacts(FSCK_QUARANTINE_SESSION_ID, FSCK_QUARANTINE_KIND, 10)
+            .unwrap();
+        assert_eq!(artifacts.len(), 1);
+        assert!(artifacts[0].value_json.contains("\"id\":\"bad-session\""));
+
+        // SAFETY: guarded by TEST_ENV_LOCK.
+        unsafe {
+            match previous {
+                Some(value) => std::env::set_var("JFC_KNOWLEDGE_DB", value),
+                None => std::env::remove_var("JFC_KNOWLEDGE_DB"),
+            }
+        }
     }
 }
 
@@ -211,9 +280,9 @@ impl SessionFsckReport {
     }
 }
 
-pub async fn fsck_sessions(_quarantine: bool) -> std::io::Result<SessionFsckReport> {
+pub async fn fsck_sessions(quarantine: bool) -> std::io::Result<SessionFsckReport> {
     tokio::task::spawn_blocking(move || {
-        let store = match jfc_knowledge::KnowledgeStore::open_default() {
+        let mut store = match KnowledgeStore::open_default() {
             Ok(store) => store,
             Err(_) => return Ok(SessionFsckReport::default()),
         };
@@ -222,22 +291,34 @@ pub async fn fsck_sessions(_quarantine: bool) -> std::io::Result<SessionFsckRepo
             report.checked += 1;
             let transcript = store.load_transcript(&row.id).map_err(io_other)?;
             if transcript.is_empty() && row.message_count > 0 {
+                let reason = "session row has no transcript messages".to_owned();
+                let quarantined_to = if quarantine {
+                    Some(quarantine_session(&mut store, &row, &transcript, &reason)?)
+                } else {
+                    None
+                };
                 report.issues.push(SessionFsckIssue {
                     path: PathBuf::from(format!("db/{}", row.id)),
-                    reason: "session row has no transcript messages".to_owned(),
-                    quarantined_to: None,
+                    reason,
+                    quarantined_to,
                 });
                 continue;
             }
             if row.message_count >= 0 && row.message_count as usize != transcript.len() {
+                let reason = format!(
+                    "message_count {} does not match transcript length {}",
+                    row.message_count,
+                    transcript.len()
+                );
+                let quarantined_to = if quarantine {
+                    Some(quarantine_session(&mut store, &row, &transcript, &reason)?)
+                } else {
+                    None
+                };
                 report.issues.push(SessionFsckIssue {
                     path: PathBuf::from(format!("db/{}", row.id)),
-                    reason: format!(
-                        "message_count {} does not match transcript length {}",
-                        row.message_count,
-                        transcript.len()
-                    ),
-                    quarantined_to: None,
+                    reason,
+                    quarantined_to,
                 });
                 continue;
             }
@@ -247,4 +328,63 @@ pub async fn fsck_sessions(_quarantine: bool) -> std::io::Result<SessionFsckRepo
     })
     .await
     .unwrap_or_else(|err| Err(io_other(err)))
+}
+
+fn quarantine_session(
+    store: &mut KnowledgeStore,
+    row: &KnowledgeSessionRow,
+    transcript: &[KnowledgeSessionMessage],
+    reason: &str,
+) -> std::io::Result<PathBuf> {
+    let quarantined_at = chrono::Utc::now();
+    let key = format!(
+        "{}-{}",
+        quarantined_at.timestamp_micros(),
+        row.id
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                    ch
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>()
+    );
+    let messages = transcript
+        .iter()
+        .map(|message| {
+            json!({
+                "seq": message.seq,
+                "role": message.role,
+                "content": message.content,
+                "meta": message.meta,
+            })
+        })
+        .collect::<Vec<_>>();
+    let payload = json!({
+        "id": row.id,
+        "cwd": row.cwd,
+        "model": row.model,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "first_prompt": row.first_prompt,
+        "title": row.title,
+        "message_count": row.message_count,
+        "reason": reason,
+        "quarantined_at": quarantined_at.to_rfc3339(),
+        "transcript": messages,
+    });
+    store
+        .upsert_session_artifact(
+            FSCK_QUARANTINE_SESSION_ID,
+            FSCK_QUARANTINE_KIND,
+            &key,
+            &payload.to_string(),
+        )
+        .map_err(io_other)?;
+    store.delete_session(&row.id).map_err(io_other)?;
+    Ok(PathBuf::from(format!(
+        "db/{FSCK_QUARANTINE_SESSION_ID}/{FSCK_QUARANTINE_KIND}/{key}"
+    )))
 }

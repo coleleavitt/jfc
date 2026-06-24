@@ -1,4 +1,5 @@
 use crate::app::EngineState;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::mpsc;
 
 use crate::runtime::EngineEvent;
@@ -561,13 +562,7 @@ fn add_scheduled_task(
     let schedule =
         crate::daemon::parse_schedule(&cron_expr).map_err(|e| format!("bad cron: {e}"))?;
 
-    let id = format!(
-        "task-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    );
+    let id = new_scheduled_task_id();
     let title = prompt.chars().take(48).collect::<String>();
     let task = crate::daemon::ScheduledTask::new(
         id.clone(),
@@ -578,6 +573,16 @@ fn add_scheduled_task(
     );
     registry.create(task)?;
     Ok(id)
+}
+
+fn new_scheduled_task_id() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("task-{nanos}-{seq}")
 }
 
 fn mutate_scheduled_task(
@@ -603,7 +608,7 @@ fn mutate_scheduled_task(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_loop_interval;
+    use super::{add_scheduled_task, parse_loop_interval};
 
     #[test]
     fn parse_loop_interval_accepts_ascii_interval_normal() {
@@ -616,5 +621,16 @@ mod tests {
     #[test]
     fn parse_loop_interval_keeps_non_ascii_prompt_robust() {
         assert_eq!(parse_loop_interval("é deploy"), ("10m", "é deploy"));
+    }
+
+    #[test]
+    fn scheduled_task_add_generates_unique_ids_within_one_second_regression() {
+        let mut registry = crate::daemon::ScheduledTaskRegistry::new();
+
+        let first = add_scheduled_task(&mut registry, "* * * * * check one").unwrap();
+        let second = add_scheduled_task(&mut registry, "* * * * * check two").unwrap();
+
+        assert_ne!(first, second);
+        assert_eq!(registry.len(), 2);
     }
 }

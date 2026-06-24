@@ -1,6 +1,8 @@
 use crate::app::EngineState;
 use crate::runtime::{ControlEvent, EngineEvent, EventSender};
-use jfc_session::{TaskPatch, TaskRisk, TaskStatus};
+use jfc_session::{Task, TaskRisk, TaskStatus};
+
+const FACTORY_FANOUT_LIMIT: usize = 4;
 
 pub fn factory_mode_enabled() -> bool {
     !matches!(
@@ -26,6 +28,76 @@ async fn commit_factory_turn(state: &mut EngineState, tx: &EventSender, prompt: 
     let _ = tx
         .send(EngineEvent::Control(ControlEvent::SubmitPrompt(prompt)))
         .await;
+}
+
+fn append_task_overrides(prompt: &mut String, task: &Task) {
+    if let Some(ref criteria) = task.acceptance_criteria {
+        prompt.push_str(&format!("\nAcceptance criteria: {criteria}"));
+    }
+    if let Some(ref command) = task.verification_command {
+        prompt.push_str(&format!("\nVerification command: `{command}`"));
+    }
+    if let Some(ref model) = task.model {
+        prompt.push_str(&format!("\nTask model override: `{model}`."));
+    }
+    if let Some(ref effort) = task.effort {
+        prompt.push_str(&format!("\nTask reasoning effort: `{effort}`."));
+    }
+}
+
+fn build_single_task_prompt(task: &Task) -> String {
+    let mut prompt = format!(
+        "Continue the task queue. Work on task `{}`: {}\n\n{}",
+        task.id, task.subject, task.description
+    );
+    append_task_overrides(&mut prompt, task);
+    prompt.push_str(&format!(
+        "\n\nWhen this task is done, update its task status before stopping. \
+         If you delegate this work via the Task tool, pass `parent_task_id: \"{}\"` \
+         so the runtime auto-marks the task in_progress/completed/failed as the \
+         subagent runs - no separate TaskUpdate/TaskDone needed. \
+         If more unblocked tasks remain, continue with the next one.",
+        task.id
+    ));
+    prompt
+}
+
+fn build_fanout_task_spec(task: &Task) -> String {
+    let mut spec = format!(
+        "- parent_task_id: \"{}\"\n  description: {}\n  prompt: {}",
+        task.id, task.subject, task.description
+    );
+    append_task_overrides(&mut spec, task);
+    spec
+}
+
+fn build_fanout_prompt(tasks: &[Task]) -> String {
+    let specs = tasks
+        .iter()
+        .map(build_fanout_task_spec)
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    format!(
+        "Continue the task queue by fanning out {} independent ready tasks.\n\n\
+         Launch one Task tool call for each item below in the same assistant response. \
+         Do not work these serially in the leader. Each Task call must include the exact \
+         parent_task_id shown so completion is wired back to the task store.\n\n{specs}\n\n\
+         After the agents finish, synthesize their results and continue with any newly \
+         unblocked task wave.",
+        tasks.len()
+    )
+}
+
+fn build_high_risk_prompt(task: &Task) -> String {
+    format!(
+        "Task `{}` ('{}') is marked high-risk. Please review and approve before I execute it.\n\
+         Description: {}\n\
+         Acceptance criteria: {}",
+        task.id,
+        task.subject,
+        task.description,
+        task.acceptance_criteria.as_deref().unwrap_or("(none)")
+    )
 }
 
 pub async fn maybe_continue_task_factory(state: &mut EngineState, tx: &EventSender) {
@@ -182,74 +254,36 @@ pub async fn maybe_continue_task_factory(state: &mut EngineState, tx: &EventSend
         return;
     }
 
-    let Some(task) = state.task_store.claim_next_available("jfc-factory") else {
+    let claimed = state
+        .task_store
+        .claim_ready_frontier("jfc-factory", FACTORY_FANOUT_LIMIT, false);
+    if claimed.is_empty() {
+        if let Some(task) = state
+            .task_store
+            .ready_frontier()
+            .into_iter()
+            .find(|task| matches!(task.risk, Some(TaskRisk::High)))
+        {
+            tracing::info!(
+                target: "jfc::tasks::factory",
+                task_id = %task.id,
+                "high-risk task requires user approval; skipping auto-execution"
+            );
+            commit_factory_turn(state, tx, build_high_risk_prompt(&task)).await;
+        }
         return;
+    }
+
+    let prompt = if claimed.len() == 1 {
+        build_single_task_prompt(&claimed[0])
+    } else {
+        build_fanout_prompt(&claimed)
     };
-
-    if matches!(task.risk, Some(TaskRisk::High)) {
-        let _ = state.task_store.update(
-            task.id.as_str(),
-            TaskPatch {
-                status: Some(TaskStatus::Pending),
-                owner: None,
-                ..Default::default()
-            },
-        );
-        tracing::info!(
-            target: "jfc::tasks::factory",
-            task_id = %task.id,
-            "high-risk task requires user approval; skipping auto-execution"
-        );
-        let prompt = format!(
-            "Task `{}` ('{}') is marked high-risk. Please review and approve before I execute it.\n\
-             Description: {}\n\
-             Acceptance criteria: {}",
-            task.id,
-            task.subject,
-            task.description,
-            task.acceptance_criteria.as_deref().unwrap_or("(none)")
-        );
-        commit_factory_turn(state, tx, prompt).await;
-        return;
-    }
-
-    let mut prompt = format!(
-        "Continue the task queue. Work on task `{}`: {}\n\n{}",
-        task.id, task.subject, task.description
-    );
-    if let Some(ref criteria) = task.acceptance_criteria {
-        prompt.push_str(&format!("\n\nAcceptance criteria: {criteria}"));
-    }
-    if let Some(ref command) = task.verification_command {
-        prompt.push_str(&format!("\nVerification command: `{command}`"));
-    }
-    // Per-task model/effort overrides: surface them so the leader can switch
-    // model (`/model …`) or reasoning effort for this task before working it,
-    // honoring the Task.effort > AgentDef.effort > global precedence used for
-    // subagents. (Applied advisory-style: the leader owns the model switch.)
-    if let Some(ref model) = task.model {
-        prompt.push_str(&format!(
-            "\nPreferred model for this task: `{model}` — switch with `/model {model}` if not already active."
-        ));
-    }
-    if let Some(ref effort) = task.effort {
-        prompt.push_str(&format!(
-            "\nPreferred reasoning effort for this task: `{effort}`."
-        ));
-    }
-    prompt.push_str(&format!(
-        "\n\nWhen this task is done, update its task status before stopping. \
-         If you delegate this work via the Task tool, pass `parent_task_id: \"{}\"` \
-         so the runtime auto-marks the task in_progress/completed/failed as the \
-         subagent runs - no separate TaskUpdate/TaskDone needed. \
-         If more unblocked tasks remain, continue with the next one.",
-        task.id
-    ));
     tracing::info!(
         target: "jfc::tasks::factory",
-        task_id = %task.id,
-        subject = %task.subject,
-        "auto-continuing next available task"
+        count = claimed.len(),
+        task_ids = ?claimed.iter().map(|task| task.id.as_str()).collect::<Vec<_>>(),
+        "auto-continuing ready task wave"
     );
     commit_factory_turn(state, tx, prompt).await;
 }
@@ -297,13 +331,20 @@ mod tests {
     }
 
     fn submit_count(rx: &mut mpsc::Receiver<EngineEvent>) -> usize {
+        submit_prompts(rx).len()
+    }
+
+    fn submit_prompts(rx: &mut mpsc::Receiver<EngineEvent>) -> Vec<String> {
         let mut n = 0;
+        let mut prompts = Vec::new();
         while let Ok(ev) = rx.try_recv() {
-            if matches!(ev, EngineEvent::Control(ControlEvent::SubmitPrompt(_))) {
+            if let EngineEvent::Control(ControlEvent::SubmitPrompt(prompt)) = ev {
                 n += 1;
+                prompts.push(prompt);
             }
         }
-        n
+        assert_eq!(n, prompts.len());
+        prompts
     }
 
     #[tokio::test]
@@ -358,8 +399,48 @@ mod tests {
             "second same-burst call must not enqueue a second Submit"
         );
         let counts = state.task_store.counts();
-        assert_eq!(counts.in_progress, 1, "only one task claimed");
-        assert_eq!(counts.pending, 1, "the other stays pending");
+        assert_eq!(
+            counts.in_progress, 2,
+            "the first call should claim the whole ready wave"
+        );
+        assert_eq!(counts.pending, 0, "no ready task is left for re-entry");
+    }
+
+    #[tokio::test]
+    async fn multiple_ready_tasks_prompt_parallel_task_fanout_regression() {
+        let mut state = factory_app();
+        state
+            .task_store
+            .create(
+                "audit auth".into(),
+                "inspect authentication".into(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        state
+            .task_store
+            .create(
+                "audit billing".into(),
+                "inspect billing".into(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(16);
+
+        maybe_continue_task_factory(&mut state, &tx).await;
+
+        let prompts = submit_prompts(&mut rx);
+        assert_eq!(prompts.len(), 1);
+        let prompt = &prompts[0];
+        assert!(prompt.contains("fanning out 2 independent ready tasks"));
+        assert!(prompt.contains("Launch one Task tool call for each item"));
+        assert!(prompt.contains("parent_task_id: \"t1\""));
+        assert!(prompt.contains("parent_task_id: \"t2\""));
+        let counts = state.task_store.counts();
+        assert_eq!(counts.in_progress, 2);
+        assert_eq!(counts.pending, 0);
     }
 
     #[tokio::test]

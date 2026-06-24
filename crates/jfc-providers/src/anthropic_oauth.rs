@@ -496,6 +496,14 @@ async fn refresh_access_token(
     client: &reqwest::Client,
     refresh_token: &str,
 ) -> anyhow::Result<(String, String, u64)> {
+    refresh_access_token_with_url(client, TOKEN_URL, refresh_token).await
+}
+
+async fn refresh_access_token_with_url(
+    client: &reqwest::Client,
+    token_url: &str,
+    refresh_token: &str,
+) -> anyhow::Result<(String, String, u64)> {
     tracing::info!(
         target: "jfc::provider::anthropic_oauth",
         "attempting token refresh"
@@ -509,7 +517,7 @@ async fn refresh_access_token(
     };
 
     let resp = client
-        .post(TOKEN_URL)
+        .post(token_url)
         .header("content-type", "application/json")
         .timeout(TOKEN_REFRESH_TIMEOUT)
         .json(&body)
@@ -4250,6 +4258,39 @@ mod tests {
         // Hit a closed loopback port — hard guarantee of "no service".
         let req = client.post("http://127.0.0.1:1/oauth/token").send().await;
         assert!(req.is_err(), "expected network error: {req:?}");
+    }
+
+    #[tokio::test]
+    async fn refresh_access_token_non_success_status_errors_regression() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = [0_u8; 2048];
+            let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buffer).await;
+            tokio::io::AsyncWriteExt::write_all(
+                &mut stream,
+                b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 15\r\n\r\ninvalid_refresh",
+            )
+            .await
+            .unwrap();
+        });
+
+        let client = reqwest::Client::new();
+        let err = refresh_access_token_with_url(
+            &client,
+            &format!("http://{addr}/oauth/token"),
+            "refresh-token",
+        )
+        .await
+        .unwrap_err();
+
+        server.await.unwrap();
+        let message = err.to_string();
+        assert!(
+            message.contains("401") && message.contains("invalid_refresh"),
+            "unexpected error: {message}"
+        );
     }
 
     // Normal: sweep jitter is bounded to the configured window and is stable

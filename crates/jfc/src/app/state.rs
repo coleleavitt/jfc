@@ -161,6 +161,7 @@ pub struct App {
     pub engine: EngineState,
     pub theme: Theme,
     pub active_theme_name: String,
+    pub plugins_disabled_by_managed_policy: bool,
     /// Text saved by Esc-clear so Up-arrow can recall it. Single slot —
     /// each Esc-clear overwrites. None when no text has been cleared.
     pub esc_saved_text: Option<String>,
@@ -556,6 +557,7 @@ impl App {
             paced_stream_key: None,
             theme: Theme::claude(),
             active_theme_name: "claude".to_owned(),
+            plugins_disabled_by_managed_policy: false,
             esc_saved_text: None,
             history_cursor: None,
             scroll_offset: 0,

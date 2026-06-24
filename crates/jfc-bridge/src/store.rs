@@ -20,6 +20,8 @@ pub enum StoreError {
     SessionNotFound(String),
     #[error("worker epoch mismatch: current={current} request={request}")]
     WorkerEpochMismatch { current: u64, request: u64 },
+    #[error("worker identity mismatch: current={current} request={request}")]
+    WorkerIdentityMismatch { current: String, request: String },
     #[error("store lock poisoned")]
     Poisoned,
     #[error("failed to persist bridge state")]
@@ -183,22 +185,25 @@ impl BridgeStore for MemoryBridgeStore {
             return Err(StoreError::SessionNotFound(session_id.to_owned()));
         }
         let now = now_ms();
-        // worker_epoch == 0 means "unspecified": preserve the existing
-        // worker's epoch instead of resetting it to 1.
+        let worker_id = worker_id.to_owned();
         let worker_epoch = if req.worker_epoch == 0 {
             inner.workers.get(session_id).map_or(1, |w| w.worker_epoch)
         } else {
             req.worker_epoch
         };
-        let worker_id = req.worker_id.unwrap_or_else(|| worker_id.to_owned());
-        if let Some(current) = inner.workers.get(session_id)
-            && req.worker_epoch != 0
-            && current.worker_epoch > req.worker_epoch
-        {
-            return Err(StoreError::WorkerEpochMismatch {
-                current: current.worker_epoch,
-                request: req.worker_epoch,
-            });
+        if let Some(current) = inner.workers.get(session_id) {
+            if current.worker_id != worker_id {
+                return Err(StoreError::WorkerIdentityMismatch {
+                    current: current.worker_id.clone(),
+                    request: worker_id,
+                });
+            }
+            if req.worker_epoch != 0 && current.worker_epoch > req.worker_epoch {
+                return Err(StoreError::WorkerEpochMismatch {
+                    current: current.worker_epoch,
+                    request: req.worker_epoch,
+                });
+            }
         }
         let record = WorkerRecord {
             session_id: session_id.to_owned(),
@@ -382,6 +387,77 @@ mod tests {
             store.list_events(&session.id, false, None).unwrap().len(),
             1
         );
+    }
+
+    #[test]
+    fn upsert_worker_uses_authenticated_worker_id_regression() {
+        let store = MemoryBridgeStore::new();
+        let session = store
+            .create_session(CreateSessionRequest {
+                environment_id: None,
+                title: None,
+                tags: vec![],
+                metadata: Default::default(),
+            })
+            .unwrap();
+
+        let worker = store
+            .upsert_worker(
+                &session.id,
+                "auth-worker",
+                WorkerUpdateRequest {
+                    worker_id: Some("body-worker".to_owned()),
+                    worker_epoch: 1,
+                    worker_status: WorkerStatus::Idle,
+                    external_metadata: Value::Null,
+                    internal_metadata: Value::Null,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(worker.worker_id, "auth-worker");
+    }
+
+    #[test]
+    fn upsert_worker_rejects_competing_worker_regression() {
+        let store = MemoryBridgeStore::new();
+        let session = store
+            .create_session(CreateSessionRequest {
+                environment_id: None,
+                title: None,
+                tags: vec![],
+                metadata: Default::default(),
+            })
+            .unwrap();
+        store
+            .upsert_worker(
+                &session.id,
+                "worker-a",
+                WorkerUpdateRequest {
+                    worker_id: None,
+                    worker_epoch: 1,
+                    worker_status: WorkerStatus::Idle,
+                    external_metadata: Value::Null,
+                    internal_metadata: Value::Null,
+                },
+            )
+            .unwrap();
+
+        let error = store
+            .upsert_worker(
+                &session.id,
+                "worker-b",
+                WorkerUpdateRequest {
+                    worker_id: None,
+                    worker_epoch: 2,
+                    worker_status: WorkerStatus::Busy,
+                    external_metadata: Value::Null,
+                    internal_metadata: Value::Null,
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(error, StoreError::WorkerIdentityMismatch { .. }));
     }
 
     #[test]

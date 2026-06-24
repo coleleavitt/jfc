@@ -103,9 +103,6 @@ dhat = { version = "0.3.3", optional = true }
 pprof = { version = "0.14", features = ["flamegraph", "criterion"], optional = true }
 console-subscriber = { version = "0.4", optional = true }
 
-[build-dependencies]
-syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-onig", "yaml-load", "dump-create", "dump-load"] }
-
 [dev-dependencies]
 criterion = { version = "4.7.0", features = ["html_reports"], package = "codspeed-criterion-compat" }
 divan = "0.1"

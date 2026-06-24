@@ -1,6 +1,0 @@
-# jfc transcript
-
-## User
-
-/export
-

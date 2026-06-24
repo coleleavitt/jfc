@@ -30,8 +30,8 @@ pub enum LoginDispatch {
     /// `/login antigravity` — point at Google Antigravity OAuth commands
     /// (Gemini 3.x + Claude via the Google AI Pro / Antigravity subscription).
     AntigravityOAuth(String),
-    /// `/login bedrock` — kick off [`super::bedrock_wizard::BedrockWizard`].
-    StartBedrockWizard,
+    /// `/login bedrock` — reserved until the Bedrock stream path is implemented.
+    BedrockUnavailable(String),
     /// `/login vertex` — kick off [`super::vertex_wizard::VertexWizard`].
     StartVertexWizard,
     /// `/login litellm` — point at the LiteLLM proxy credential file.
@@ -53,9 +53,9 @@ impl fmt::Display for LoginDispatch {
             | Self::CodexOAuth(s)
             | Self::AntigravityOAuth(s)
             | Self::LiteLlm(s)
+            | Self::BedrockUnavailable(s)
             | Self::ConsoleApiKey(s)
             | Self::Unknown(s) => f.write_str(s),
-            Self::StartBedrockWizard => f.write_str("Starting Bedrock wizard…"),
             Self::StartVertexWizard => f.write_str("Starting Vertex wizard…"),
         }
     }
@@ -69,9 +69,15 @@ Choose an authentication target:
   /login antigravity  Google Antigravity OAuth (Gemini 3.x + Claude via AI Pro)
   /login gemini-api   Gemini API key (GEMINI_API_KEY from AI Studio)
   /login litellm      LiteLLM proxy (base URL + API key)
-  /login bedrock      AWS Bedrock (requires `aws` CLI)
   /login vertex       GCP Vertex (requires `gcloud` CLI)
   /login console      Anthropic Console API key";
+
+const BEDROCK_UNAVAILABLE_BODY: &str = "\
+Bedrock sign-in is not enabled yet.
+
+The Bedrock wizard/config code exists, but the Bedrock provider is hidden until
+streaming is implemented so model selection cannot route to a provider that
+fails every request.";
 
 const ANTHROPIC_API_KEY_BODY: &str = "\
 Anthropic API key sign-in:
@@ -169,11 +175,13 @@ pub fn dispatch(arg: Option<&str>) -> LoginDispatch {
                 LoginDispatch::AntigravityOAuth(ANTIGRAVITY_OAUTH_BODY.to_owned())
             }
             "litellm" | "lite-llm" | "lite_llm" => LoginDispatch::LiteLlm(LITELLM_BODY.to_owned()),
-            "bedrock" | "aws" => LoginDispatch::StartBedrockWizard,
+            "bedrock" | "aws" => {
+                LoginDispatch::BedrockUnavailable(BEDROCK_UNAVAILABLE_BODY.to_owned())
+            }
             "vertex" | "gcp" | "gcloud" => LoginDispatch::StartVertexWizard,
             "console" => LoginDispatch::ConsoleApiKey(CONSOLE_API_KEY_BODY.to_owned()),
             other => LoginDispatch::Unknown(format!(
-                "Unknown login target {:?}. Try one of: anthropic, claudeai, codex, antigravity, litellm, bedrock, vertex, console.",
+                "Unknown login target {:?}. Try one of: anthropic, claudeai, codex, antigravity, litellm, vertex, console.",
                 other
             )),
         },
@@ -190,7 +198,7 @@ mod tests {
         match dispatch(None) {
             LoginDispatch::ShowChooser(body) => {
                 assert!(body.contains("anthropic"));
-                assert!(body.contains("bedrock"));
+                assert!(!body.contains("bedrock"));
                 assert!(body.contains("vertex"));
                 assert!(body.contains("claudeai"));
                 assert!(body.contains("codex"));
@@ -227,7 +235,7 @@ mod tests {
         ));
         assert!(matches!(
             dispatch(Some("bedrock")),
-            LoginDispatch::StartBedrockWizard
+            LoginDispatch::BedrockUnavailable(_)
         ));
         assert!(matches!(
             dispatch(Some("vertex")),
@@ -244,7 +252,7 @@ mod tests {
     fn dispatch_case_insensitive_normal() {
         assert!(matches!(
             dispatch(Some("BEDROCK")),
-            LoginDispatch::StartBedrockWizard
+            LoginDispatch::BedrockUnavailable(_)
         ));
         assert!(matches!(
             dispatch(Some("Vertex")),
@@ -261,7 +269,7 @@ mod tests {
         ));
         assert!(matches!(
             dispatch(Some("aws")),
-            LoginDispatch::StartBedrockWizard
+            LoginDispatch::BedrockUnavailable(_)
         ));
         assert!(matches!(
             dispatch(Some("gcp")),
@@ -303,7 +311,7 @@ mod tests {
         match dispatch(Some("snowflake")) {
             LoginDispatch::Unknown(msg) => {
                 assert!(msg.contains("snowflake"));
-                assert!(msg.contains("bedrock"));
+                assert!(!msg.contains("bedrock"));
                 assert!(msg.contains("codex"));
                 assert!(msg.contains("vertex"));
             }

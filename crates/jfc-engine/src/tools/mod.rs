@@ -94,9 +94,12 @@ pub use swarm::CURRENT_AGENT_NAME;
 // registry
 pub use registry::{
     agent_registry, pop_undo_entry, push_undo_entry, register_active_provider,
-    register_event_sender, register_mcp_registry, restore_undo_entry,
+    register_event_sender, register_mcp_registry, register_provider_registry, restore_undo_entry,
 };
-pub use registry::{snapshot_active_provider, snapshot_event_sender, snapshot_mcp_registry};
+pub use registry::{
+    snapshot_active_provider, snapshot_event_sender, snapshot_mcp_registry,
+    snapshot_provider_registry,
+};
 
 // slop guard sentinel
 pub use safe_tools::SLOP_GUARD_MARKER;

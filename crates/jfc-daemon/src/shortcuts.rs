@@ -141,6 +141,8 @@ pub struct ShortcutStore {
     /// Opaque copy tokens → slug, for the copy/paste share flow.
     #[serde(default)]
     tokens: HashMap<String, String>,
+    #[serde(skip)]
+    loaded_json: Option<String>,
 }
 
 impl ShortcutStore {
@@ -227,8 +229,10 @@ impl ShortcutStore {
             .get_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key)
             .map_err(std::io::Error::other)?
         {
-            return serde_json::from_str(&row.value_json)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e));
+            let mut loaded: Self = serde_json::from_str(&row.value_json)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            loaded.loaded_json = Some(row.value_json);
+            return Ok(loaded);
         }
         let legacy = match std::fs::read_to_string(path) {
             Ok(s) => serde_json::from_str::<Self>(&s)
@@ -241,21 +245,78 @@ impl ShortcutStore {
         store
             .upsert_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key, &json)
             .map_err(std::io::Error::other)?;
-        Ok(legacy)
+        Ok(legacy.with_loaded_json(json))
     }
 
     /// Persist to the DB row keyed by `path`.
     pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
-        let json = serde_json::to_string(self)
+        let store = artifact_store(path)?;
+        let key = artifact_key(path);
+        let current_json = store
+            .get_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key)
+            .map_err(std::io::Error::other)?
+            .map(|row| row.value_json);
+        let to_save =
+            if current_json.as_deref() == self.loaded_json.as_deref() || current_json.is_none() {
+                self.clone()
+            } else {
+                let remote_json = current_json.as_deref().unwrap_or_default();
+                let remote: Self = serde_json::from_str(remote_json)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                merge_shortcut_stores(remote, self)
+            };
+        let json = serde_json::to_string(&to_save)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        artifact_store(path)?
-            .upsert_session_artifact(
-                SHORTCUTS_SESSION_ID,
-                SHORTCUTS_KIND,
-                &artifact_key(path),
-                &json,
-            )
+        store
+            .upsert_session_artifact(SHORTCUTS_SESSION_ID, SHORTCUTS_KIND, &key, &json)
             .map_err(std::io::Error::other)
+    }
+
+    fn with_loaded_json(mut self, json: String) -> Self {
+        self.loaded_json = Some(json);
+        self
+    }
+}
+
+fn merge_shortcut_stores(mut remote: ShortcutStore, local: &ShortcutStore) -> ShortcutStore {
+    let mut slug_map = HashMap::new();
+    for shortcut in &local.shortcuts {
+        let merged_slug = match remote.get(&shortcut.slug) {
+            Some(existing) if existing == shortcut => shortcut.slug.clone(),
+            Some(_) => {
+                let slug = unique_shortcut_slug(&remote.shortcuts, &shortcut.slug);
+                let mut copy = shortcut.clone();
+                copy.slug = slug.clone();
+                remote.shortcuts.push(copy);
+                slug
+            }
+            None => {
+                remote.shortcuts.push(shortcut.clone());
+                shortcut.slug.clone()
+            }
+        };
+        slug_map.insert(shortcut.slug.clone(), merged_slug);
+    }
+    for (token, slug) in &local.tokens {
+        let merged_slug = slug_map.get(slug).unwrap_or(slug);
+        remote
+            .tokens
+            .entry(token.clone())
+            .or_insert_with(|| merged_slug.clone());
+    }
+    remote.loaded_json = None;
+    remote
+}
+
+fn unique_shortcut_slug(shortcuts: &[Shortcut], base: &str) -> String {
+    let base = if base.is_empty() { "shortcut" } else { base };
+    let mut suffix = 2usize;
+    loop {
+        let candidate = format!("{base}-{suffix}");
+        if shortcuts.iter().all(|shortcut| shortcut.slug != candidate) {
+            return candidate;
+        }
+        suffix += 1;
     }
 }
 
@@ -418,5 +479,44 @@ mod tests {
         let back = ShortcutStore::load(&path).unwrap();
         assert_eq!(back.len(), 1);
         assert_eq!(back.get("saved").unwrap().template, "body {p}");
+    }
+
+    #[test]
+    fn stale_shortcut_saves_merge_duplicate_slugs_regression() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = ShortcutStore::default_path(dir.path());
+
+        let mut first = ShortcutStore::load(&path).unwrap();
+        let mut second = ShortcutStore::load(&path).unwrap();
+        first
+            .create(Shortcut::new("Deploy", "deploy prod"))
+            .unwrap();
+        second
+            .create(Shortcut::new("Deploy", "deploy staging"))
+            .unwrap();
+
+        first.save(&path).unwrap();
+        second.save(&path).unwrap();
+
+        let back = ShortcutStore::load(&path).unwrap();
+        assert_eq!(back.len(), 2);
+        assert_eq!(back.get("deploy").unwrap().template, "deploy prod");
+        assert_eq!(back.get("deploy-2").unwrap().template, "deploy staging");
+    }
+
+    #[test]
+    fn loaded_shortcut_save_can_delete_without_merge_resurrecting_regression() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = ShortcutStore::default_path(dir.path());
+        let mut store = ShortcutStore::load(&path).unwrap();
+        store.create(Shortcut::new("Delete Me", "body")).unwrap();
+        store.save(&path).unwrap();
+
+        let mut loaded = ShortcutStore::load(&path).unwrap();
+        assert!(loaded.delete("delete-me").is_some());
+        loaded.save(&path).unwrap();
+
+        let back = ShortcutStore::load(&path).unwrap();
+        assert!(back.is_empty());
     }
 }

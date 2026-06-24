@@ -677,7 +677,7 @@ pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_
             let est_items = build_render_items_ctx(&ctx, inner_width);
             est_items
                 .iter()
-                .map(|i| i.height(inner_width))
+                .map(|i| i.height_with_app(inner_width, Some(app)))
                 .sum::<usize>()
         };
         let new_scroll = if should_snap_to_bottom(app, visible, total_lines_est) {

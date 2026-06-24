@@ -172,13 +172,17 @@ fn is_quiet_hours_now() -> bool {
     let (Some(start), Some(end)) = (parse_hhmm(start_str), parse_hhmm(end_str)) else {
         return false;
     };
-    // Current UTC minutes — approximate; production would use TZ-aware logic.
-    use std::time::UNIX_EPOCH;
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let now = ((secs % 86400) / 60) as u32;
+    let now = local_minutes_now();
+    quiet_hours_contains(start, end, now)
+}
+
+fn local_minutes_now() -> u32 {
+    use chrono::Timelike;
+    let now = chrono::Local::now();
+    now.hour() * 60 + now.minute()
+}
+
+fn quiet_hours_contains(start: u32, end: u32, now: u32) -> bool {
     if start <= end {
         now >= start && now < end
     } else {
@@ -448,7 +452,8 @@ impl DaemonService for ScheduledTaskService {
             let path = path.clone();
             let results_dir = results_dir.clone();
             tokio::spawn(async move {
-                run_scheduled_task(&task.id, &task.prompt, &path, &results_dir).await;
+                let ran_at = task.runs.last().map(|run| run.ran_at).unwrap_or(now);
+                run_scheduled_task(&task.id, &task.prompt, ran_at, &path, &results_dir).await;
             });
         }
         daemon.touch_activity();
@@ -465,6 +470,7 @@ impl DaemonService for ScheduledTaskService {
 async fn run_scheduled_task(
     task_id: &str,
     prompt: &str,
+    ran_at: SystemTime,
     path: &std::path::Path,
     results_dir: &std::path::Path,
 ) {
@@ -474,9 +480,10 @@ async fn run_scheduled_task(
     let exe = match crate::worker::resolve_worker_exe(None) {
         Ok(p) => p,
         Err(e) => {
-            let _ = crate::scheduled_tasks::ScheduledTaskRegistry::record_run_outcome(
+            let _ = crate::scheduled_tasks::ScheduledTaskRegistry::record_run_outcome_at(
                 path,
                 task_id,
+                ran_at,
                 false,
                 format!("spawn failed: {e}"),
             );
@@ -534,9 +541,9 @@ async fn run_scheduled_task(
         Err(e) => (false, format!("run failed: {e}")),
     };
 
-    if let Err(e) =
-        crate::scheduled_tasks::ScheduledTaskRegistry::record_run_outcome(path, task_id, ok, note)
-    {
+    if let Err(e) = crate::scheduled_tasks::ScheduledTaskRegistry::record_run_outcome_at(
+        path, task_id, ran_at, ok, note,
+    ) {
         tracing::warn!(
             target: "jfc::daemon",
             task_id = %task_id,
@@ -645,6 +652,34 @@ mod tests {
         let mut svc = ScheduledTaskService;
         let outcome = svc.tick(&mut daemon, SystemTime::now()).await;
         assert_eq!(outcome, TickOutcome::Continue);
+    }
+
+    #[test]
+    fn quiet_hours_contains_same_day_window_normal() {
+        assert!(quiet_hours_contains(9 * 60, 17 * 60, 12 * 60));
+        assert!(!quiet_hours_contains(9 * 60, 17 * 60, 17 * 60));
+    }
+
+    #[test]
+    fn quiet_hours_contains_midnight_wrap_regression() {
+        assert!(quiet_hours_contains(22 * 60, 6 * 60, 23 * 60));
+        assert!(quiet_hours_contains(22 * 60, 6 * 60, 2 * 60));
+        assert!(!quiet_hours_contains(22 * 60, 6 * 60, 12 * 60));
+    }
+
+    #[test]
+    fn local_minutes_now_uses_local_clock_regression() {
+        use chrono::Timelike;
+        let before = chrono::Local::now();
+        let actual = local_minutes_now();
+        let after = chrono::Local::now();
+        let before_minutes = before.hour() * 60 + before.minute();
+        let after_minutes = after.hour() * 60 + after.minute();
+
+        assert!(
+            actual == before_minutes || actual == after_minutes,
+            "local minute {actual} should be between observed local clock samples"
+        );
     }
 
     // Normal: a due wakeup fires through the WakeupService and is drained from

@@ -1,9 +1,9 @@
 //! GCP Vertex AI provider for Claude models.
 //!
 //! Mirrors v2.1.132's `tengu_oauth_vertex_wizard` flow: the wizard writes
-//! `~/.config/jfc/vertex.toml`; at runtime we shell out to
-//! `gcloud auth print-access-token` for an ephemeral OAuth bearer and POST it
-//! to the Vertex Anthropic endpoint:
+//! `~/.config/jfc/vertex.toml`; at runtime we resolve a Google OAuth bearer
+//! with Application Default Credentials (service account env, gcloud ADC, or
+//! metadata service) and POST it to the Vertex Anthropic endpoint:
 //!
 //! ```text
 //! https://{region}-aiplatform.googleapis.com/v1/projects/{project}/locations/{region}/publishers/anthropic/models/{model}:streamRawPredict
@@ -13,13 +13,11 @@
 //! API shape, so the existing [`super::sse`] helpers handle decoding without
 //! a Vertex-specific code path.
 //!
-//! ## Why shell out to gcloud
+//! ## Credential resolution
 //!
-//! gcloud handles every credential variant (user OAuth, service account,
-//! workload identity, impersonation, MFA-gated org policies) and refreshes
-//! tokens automatically. Re-implementing that surface in Rust is far outside
-//! the scope of this provider, and the wizard already detects gcloud as a
-//! prerequisite. Trade-off: we depend on `gcloud` being on `$PATH`.
+//! The hot path uses `gcp_auth`, so service-account and ADC setups do not
+//! require JFC to shell out. A fixed-argv `gcloud auth print-access-token`
+//! fallback remains for legacy local setups where ADC is unavailable.
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -37,6 +35,7 @@ use jfc_provider::{
 
 const PROVIDER_ID: &str = "vertex";
 const ANTHROPIC_VERSION: &str = "vertex-2023-10-16";
+const CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
 
 /// Default region for Anthropic-on-Vertex. Mirrors the wizard's default.
 pub(crate) const DEFAULT_REGION: &str = "us-central1";
@@ -137,14 +136,11 @@ impl VertexProvider {
         }
     }
 
-    /// True when (a) gcloud is on PATH and (b) the wizard has stored a config
-    /// with a project id. We don't pre-flight a real token here — the user
-    /// might be temporarily offline and we should still surface Vertex models
-    /// in the picker for cosmetic continuity.
+    /// True when the wizard has stored a config with a project id. We don't
+    /// pre-flight a real token here — the user might be temporarily offline
+    /// and we should still surface Vertex models in the picker for cosmetic
+    /// continuity.
     pub fn has_usable_config(&self) -> bool {
-        if !gcloud_cli_available() {
-            return false;
-        }
         match &self.config {
             Some(cfg) => cfg.is_complete(),
             None => false,
@@ -164,7 +160,17 @@ impl VertexProvider {
                 return Ok(c.token.clone());
             }
         }
-        let fresh = fetch_gcloud_token()?;
+        let fresh = match fetch_google_auth_token().await {
+            Ok(token) => token,
+            Err(auth_err) => {
+                tracing::debug!(
+                    target: "jfc::provider::vertex",
+                    error = %auth_err,
+                    "gcp_auth token resolution failed; falling back to fixed-argv gcloud token"
+                );
+                fetch_gcloud_token()?
+            }
+        };
         let mut guard = self.token_cache.lock().await;
         *guard = Some(TokenCache {
             token: fresh.clone(),
@@ -392,6 +398,16 @@ pub fn fetch_gcloud_token() -> anyhow::Result<String> {
     Ok(token)
 }
 
+pub async fn fetch_google_auth_token() -> anyhow::Result<String> {
+    let provider = gcp_auth::provider().await?;
+    let token = provider.token(&[CLOUD_PLATFORM_SCOPE]).await?;
+    let token = token.as_str().trim();
+    if token.is_empty() {
+        anyhow::bail!("Google auth provider returned an empty access token");
+    }
+    Ok(token.to_owned())
+}
+
 /// Read the active gcloud project (`gcloud config get-value project`). Used
 /// by the wizard to pre-fill the prompt with what the user likely wants.
 #[allow(dead_code)]
@@ -477,6 +493,17 @@ mod tests {
         let models = p.available_models();
         assert!(!models.is_empty());
         assert!(models.iter().all(|m| m.provider == PROVIDER_ID));
+    }
+
+    #[test]
+    fn usable_config_does_not_require_gcloud_cli_regression() {
+        let mut p = VertexProvider::new();
+        p.config = Some(VertexConfig {
+            project: Some("acme-prod".into()),
+            region: Some("us-central1".into()),
+        });
+
+        assert!(p.has_usable_config());
     }
 
     // Normal: every catalog entry uses the Vertex `name@version` convention.

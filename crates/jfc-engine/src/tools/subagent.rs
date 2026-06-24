@@ -250,50 +250,54 @@ fn cached_agent_models() -> &'static std::collections::HashMap<String, crate::co
     CACHE.get_or_init(|| crate::config::load_arc().agents.clone())
 }
 
-pub fn selected_subagent_model(
+fn selected_subagent_model_request(
     task_input: &crate::types::TaskInput,
     agent_def: Option<&crate::agents::AgentDef>,
-    parent_model: jfc_provider::ModelId,
-    provider_name: &str,
-) -> Result<jfc_provider::ModelId, String> {
+) -> Option<String> {
     let config_model = task_input
         .subagent_type
         .as_deref()
         .and_then(|name| cached_agent_models().get(name))
-        .and_then(|a| a.model.clone())
-        .filter(|s| !s.is_empty());
+        .and_then(|a| a.model.clone());
 
-    // Category-based tier is the LAST fallback before parent inheritance, so
-    // explicit choices (env, Task `model`, config, agent-def) always win, but a
-    // bare `category` still routes to a cost-appropriate model instead of always
-    // inheriting the (often heavy) parent model.
+    selected_subagent_model_request_from_sources(task_input, agent_def, config_model)
+}
+
+fn selected_subagent_model_request_from_sources(
+    task_input: &crate::types::TaskInput,
+    agent_def: Option<&crate::agents::AgentDef>,
+    config_model: Option<String>,
+) -> Option<String> {
     let category_tier = task_input
         .category
         .as_deref()
         .and_then(category_to_tier)
         .map(str::to_string);
 
-    // Complexity-based tier from the task text — the lowest-priority hint, used
-    // only when NO category was given at all, so a bare `Task { prompt }` still
-    // routes cost-appropriately instead of inheriting the heavy parent. An
-    // explicit category (even an unrecognized one) is a deliberate signal we
-    // must not override: unknown categories keep inheriting the parent.
     let complexity_tier = if task_input.category.is_none() {
         prompt_complexity_tier(&task_input.prompt, &task_input.description).map(str::to_string)
     } else {
         None
     };
 
-    let raw = std::env::var("CLAUDE_CODE_SUBAGENT_MODEL")
+    std::env::var("CLAUDE_CODE_SUBAGENT_MODEL")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .or_else(|| task_input.model.clone())
-        .or(config_model)
+        .or_else(|| config_model.filter(|s| !s.is_empty()))
         .or_else(|| agent_def.and_then(|a| a.model.clone()))
         .or(category_tier)
-        .or(complexity_tier);
+        .or(complexity_tier)
+}
 
+pub fn selected_subagent_model(
+    task_input: &crate::types::TaskInput,
+    agent_def: Option<&crate::agents::AgentDef>,
+    parent_model: jfc_provider::ModelId,
+    provider_name: &str,
+) -> Result<jfc_provider::ModelId, String> {
+    let raw = selected_subagent_model_request(task_input, agent_def);
     let Some(raw) = raw else {
         return Ok(parent_model);
     };
@@ -343,12 +347,7 @@ pub fn selected_subagent_provider_model(
             // Cross-provider spec: re-derive the raw request and route it
             // through the registry. Resolution failure reports the original
             // error so the message still names the missing provider.
-            let raw = std::env::var("CLAUDE_CODE_SUBAGENT_MODEL")
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .or_else(|| task_input.model.clone())
-                .or_else(|| agent_def.and_then(|a| a.model.clone()));
+            let raw = selected_subagent_model_request(task_input, agent_def);
             if let Some(raw) = raw
                 && let Some(resolution) =
                     crate::runtime::bootstrap::resolve_provider_model(registry, &raw)
@@ -432,12 +431,33 @@ async fn execute_task_inner(
 ) -> ExecutionResult {
     use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole, StreamOptions};
 
-    let model = match selected_subagent_model(task_input, agent_def, model_id, provider.name()) {
-        Ok(model) => model,
-        Err(error) => {
+    let provider_registry = crate::tools::snapshot_provider_registry();
+    let resolved_provider_model = provider_registry
+        .iter()
+        .find(|candidate| candidate.name() == provider.name())
+        .cloned()
+        .map(|parent_provider| {
+            selected_subagent_provider_model(
+                task_input,
+                agent_def,
+                parent_provider,
+                model_id.clone(),
+                &provider_registry,
+            )
+        });
+    let (provider_override, model) = match resolved_provider_model {
+        Some(Ok((resolved_provider, model))) => (Some(resolved_provider), model),
+        Some(Err(error)) => {
             return ExecutionResult::failure(error);
         }
+        None => match selected_subagent_model(task_input, agent_def, model_id, provider.name()) {
+            Ok(model) => (None, model),
+            Err(error) => {
+                return ExecutionResult::failure(error);
+            }
+        },
     };
+    let provider = provider_override.as_deref().unwrap_or(provider);
 
     let cwd = cwd_override
         .clone()
@@ -809,7 +829,8 @@ async fn execute_task_inner(
                 }
                 AgentDrainOutcome::Retryable(message) => {
                     let Some(retry) = jfc_provider::retry::retryable_stream_error(&message) else {
-                        unreachable!("message was classified by the drain");
+                        last_error = Some(message);
+                        break 'outer;
                     };
                     let delay = jfc_provider::retry::stream_retry_delay(stream_retry_attempt);
                     tracing::warn!(
@@ -1309,6 +1330,20 @@ mod tests {
         ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    fn clear_subagent_model_env() {
+        // SAFETY: subagent model-selection tests hold `env_lock()`, so no
+        // sibling test in this module mutates this process environment key at
+        // the same time.
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+    }
+
+    fn set_subagent_model_env(value: &str) {
+        // SAFETY: subagent model-selection tests hold `env_lock()`, so no
+        // sibling test in this module mutates this process environment key at
+        // the same time.
+        unsafe { std::env::set_var("CLAUDE_CODE_SUBAGENT_MODEL", value) };
+    }
+
     #[test]
     fn harvest_returns_full_narrative_when_final_is_preamble_normal() {
         // The agent did substantive work, then its last turn was a preamble
@@ -1412,7 +1447,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_uses_agent_model_before_parent() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let model = selected_subagent_model(
             &task_input(None),
@@ -1452,7 +1487,7 @@ mod tests {
     #[test]
     fn selected_subagent_provider_model_switches_provider_regression() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let anthropic: std::sync::Arc<dyn jfc_provider::Provider> =
             std::sync::Arc::new(NamedTestProvider("anthropic-oauth"));
@@ -1474,12 +1509,27 @@ mod tests {
         assert_eq!(resolved_model.as_str(), "gpt-5.2");
     }
 
+    #[test]
+    fn subagent_model_request_keeps_config_source_for_provider_resolution_regression() {
+        let _guard = env_lock();
+        clear_subagent_model_env();
+
+        let task = task_input(None);
+        let raw = selected_subagent_model_request_from_sources(
+            &task,
+            Some(&agent_model(Some("anthropic/claude-sonnet"))),
+            Some("openai/gpt-5.2".to_owned()),
+        );
+
+        assert_eq!(raw.as_deref(), Some("openai/gpt-5.2"));
+    }
+
     // Robust: a qualified spec naming a provider that is NOT configured
     // still errors, and the error names the missing provider.
     #[test]
     fn selected_subagent_provider_model_unknown_provider_errors_robust() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let anthropic: std::sync::Arc<dyn jfc_provider::Provider> =
             std::sync::Arc::new(NamedTestProvider("anthropic-oauth"));
@@ -1532,7 +1582,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_env_overrides_task_model() {
         let _guard = env_lock();
-        unsafe { std::env::set_var("CLAUDE_CODE_SUBAGENT_MODEL", "haiku") };
+        set_subagent_model_env("haiku");
 
         let model = selected_subagent_model(
             &task_input(Some("opus")),
@@ -1542,14 +1592,14 @@ mod tests {
         )
         .unwrap();
 
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
         assert_eq!(model.as_str(), "bedrock-claude-4-5-haiku");
     }
 
     #[test]
     fn selected_subagent_model_maps_builtin_tiers_for_openai() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let model = selected_subagent_model(
             &task_input(None),
@@ -1565,7 +1615,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_maps_builtin_tiers_for_anthropic_oauth() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let model = selected_subagent_model(
             &task_input(Some("haiku")),
@@ -1638,7 +1688,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_routes_by_prompt_complexity_when_no_category_normal() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let mut input = task_input(None);
         input.subagent_type = None; // no config-model lookup
@@ -1668,7 +1718,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_weak_signal_inherits_parent_normal() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let mut input = task_input(None);
         input.subagent_type = None;
@@ -1693,7 +1743,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_category_beats_complexity_robust() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let mut input = task_input(None);
         input.subagent_type = None;
@@ -1720,7 +1770,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_rejects_cross_provider_models() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let error = selected_subagent_model(
             &task_input(Some("anthropic/claude-haiku-4-5")),
@@ -1745,7 +1795,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_routes_explore_category_to_haiku_normal() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let model = selected_subagent_model(
             &task_input_with_category("explore"),
@@ -1760,7 +1810,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_routes_security_category_to_opus_normal() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let model = selected_subagent_model(
             &task_input_with_category("security"),
@@ -1775,7 +1825,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_explicit_model_overrides_category_robust() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         // category says haiku, but an explicit Task `model` must win.
         let mut t = task_input_with_category("explore");
@@ -1793,7 +1843,7 @@ mod tests {
     #[test]
     fn selected_subagent_model_unknown_category_inherits_parent_robust() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        clear_subagent_model_env();
 
         let parent = jfc_provider::ModelId::new("claude-opus-4-6");
         let model = selected_subagent_model(
@@ -1807,13 +1857,19 @@ mod tests {
     }
 
     struct ScriptedProvider {
+        name: &'static str,
         scripts: Mutex<VecDeque<Vec<jfc_provider::StreamEvent>>>,
         calls: AtomicUsize,
     }
 
     impl ScriptedProvider {
         fn new(scripts: Vec<Vec<jfc_provider::StreamEvent>>) -> Self {
+            Self::named("anthropic", scripts)
+        }
+
+        fn named(name: &'static str, scripts: Vec<Vec<jfc_provider::StreamEvent>>) -> Self {
             Self {
+                name,
                 scripts: Mutex::new(scripts.into()),
                 calls: AtomicUsize::new(0),
             }
@@ -1823,7 +1879,7 @@ mod tests {
     #[async_trait::async_trait]
     impl jfc_provider::Provider for ScriptedProvider {
         fn name(&self) -> &str {
-            "anthropic"
+            self.name
         }
 
         fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
@@ -1889,6 +1945,58 @@ mod tests {
         );
         assert_eq!(result.output, "recovered");
         assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn execute_task_switches_provider_from_registered_registry_regression() {
+        let _guard = env_lock();
+        clear_subagent_model_env();
+        let anthropic: std::sync::Arc<ScriptedProvider> =
+            std::sync::Arc::new(ScriptedProvider::named("anthropic", Vec::new()));
+        let openai: std::sync::Arc<ScriptedProvider> =
+            std::sync::Arc::new(ScriptedProvider::named(
+                "openai",
+                vec![vec![
+                    jfc_provider::StreamEvent::TextDelta {
+                        index: 0,
+                        delta: "switched".into(),
+                    },
+                    jfc_provider::StreamEvent::Done {
+                        stop_reason: jfc_provider::StopReason::EndTurn,
+                    },
+                ]],
+            ));
+        crate::tools::register_provider_registry(vec![
+            anthropic.clone() as std::sync::Arc<dyn jfc_provider::Provider>,
+            openai.clone() as std::sync::Arc<dyn jfc_provider::Provider>,
+        ]);
+
+        let result = execute_task(
+            &task_input(Some("openai/gpt-5.2")),
+            anthropic.as_ref(),
+            jfc_provider::ModelId::new("claude-opus-4-7"),
+            None,
+            None,
+            Some(&agent_model(None)),
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        crate::tools::register_provider_registry(Vec::new());
+        assert!(
+            !result.is_error(),
+            "qualified subagent model should switch providers: {}",
+            result.output
+        );
+        assert_eq!(result.output, "switched");
+        assert_eq!(
+            anthropic.calls.load(Ordering::SeqCst),
+            0,
+            "parent provider must not receive a provider-qualified child stream"
+        );
+        assert_eq!(openai.calls.load(Ordering::SeqCst), 1);
     }
 
     // ── Effort precedence tests ──────────────────────────────────────────────

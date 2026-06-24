@@ -913,6 +913,26 @@ mod tests {
         );
     }
 
+    #[serial_test::serial(env)]
+    #[test]
+    fn from_env_honors_openai_base_url_regression() {
+        unsafe {
+            std::env::set_var("OPENAI_API_KEY", "sk-test");
+            std::env::set_var("OPENAI_BASE_URL", "https://proxy.example.test/openai/");
+        }
+        let provider = OpenAIProvider::from_env().expect("provider from env");
+        unsafe {
+            std::env::remove_var("OPENAI_API_KEY");
+            std::env::remove_var("OPENAI_BASE_URL");
+        }
+
+        assert_eq!(provider.base_url, "https://proxy.example.test/openai");
+        assert_eq!(
+            provider.chat_url(),
+            "https://proxy.example.test/openai/chat/completions"
+        );
+    }
+
     #[test]
     fn routes_gpt5_class_models_to_responses() {
         assert!(model_uses_responses("gpt-5.5"));

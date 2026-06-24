@@ -124,7 +124,9 @@ fn verify_timestamp(timestamp: &str, tolerance: Duration) -> Result<()> {
     let ts = timestamp
         .parse::<u64>()
         .map_err(|_| Error::Authentication("invalid webhook timestamp".to_owned()))?;
-    let event_time = UNIX_EPOCH + Duration::from_secs(ts);
+    let event_time = UNIX_EPOCH
+        .checked_add(Duration::from_secs(ts))
+        .ok_or_else(|| Error::Authentication("invalid webhook timestamp".to_owned()))?;
     let now = SystemTime::now();
     let age = if now >= event_time {
         now.duration_since(event_time).unwrap_or_default()
@@ -206,5 +208,13 @@ mod tests {
         let service = WebhookService::new(key);
         let event = service.unwrap(payload, &headers).unwrap();
         assert_eq!(event.data.type_, "session.status_idled");
+    }
+
+    #[test]
+    fn verify_rejects_overflowing_timestamp_regression() {
+        let err = verify_timestamp(&u64::MAX.to_string(), DEFAULT_TOLERANCE).unwrap_err();
+        assert!(
+            matches!(err, Error::Authentication(message) if message == "invalid webhook timestamp")
+        );
     }
 }
