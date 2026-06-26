@@ -262,6 +262,11 @@ fn bash_tasks() -> &'static Mutex<HashMap<String, BashTaskInfo>> {
     TASKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+#[cfg(test)]
+async fn clear_bash_tasks_for_test() {
+    bash_tasks().lock().await.clear();
+}
+
 /// The currently-blocking FOREGROUND bash command, if any, plus a one-shot
 /// signal to detach it to the background (Ctrl+B). Only one foreground bash
 /// blocks at a time, so a single slot suffices; a backgrounded or settled task
@@ -326,6 +331,38 @@ pub async fn list_bash_tasks() -> Vec<BashTaskSnapshot> {
         .collect();
     out.sort_unstable_by_key(|info| std::cmp::Reverse(info.started_at_ms));
     out
+}
+
+pub fn bash_task_command(task_id: &str) -> Option<String> {
+    if !is_safe_task_id(task_id) {
+        return None;
+    }
+    if let Ok(tasks) = bash_tasks().try_lock()
+        && let Some(info) = tasks.get(task_id)
+    {
+        return Some(info.command.clone());
+    }
+    let bytes = std::fs::read(task_metadata_path(task_id)).ok()?;
+    serde_json::from_slice::<PersistedBashTaskInfo>(&bytes)
+        .ok()
+        .map(|info| info.command)
+}
+
+pub fn bash_task_is_running(task_id: &str) -> bool {
+    if !is_safe_task_id(task_id) {
+        return false;
+    }
+    if let Ok(tasks) = bash_tasks().try_lock()
+        && let Some(info) = tasks.get(task_id)
+    {
+        return !info.status.is_terminal();
+    }
+    let Some(bytes) = std::fs::read(task_metadata_path(task_id)).ok() else {
+        return false;
+    };
+    serde_json::from_slice::<PersistedBashTaskInfo>(&bytes)
+        .ok()
+        .is_some_and(|info| matches!(info.status, PersistedBashTaskStatus::Running))
 }
 
 /// Outcome of a [`cancel_bash_task`] request.
@@ -543,6 +580,26 @@ fn clamp_timeout(timeout_ms: Option<u64>, max_bound: u64) -> u64 {
         None => DEFAULT_TIMEOUT_MS,
         Some(0) | Some(1..=999) => MIN_TIMEOUT_MS, // Reject tiny explicit timeouts
         Some(t) => t.min(max_bound),               // Clamp to max_bound
+    }
+}
+
+fn background_watcher_timeout_ms(timeout_ms: Option<u64>) -> u64 {
+    match timeout_ms {
+        None => BACKGROUNDED_TIMEOUT_MS,
+        Some(timeout) => clamp_timeout(Some(timeout), BACKGROUNDED_TIMEOUT_MS),
+    }
+}
+
+fn resolve_watcher_timeout_ms(
+    timeout_ms: Option<u64>,
+    run_in_background: bool,
+    foreground_budget: u64,
+) -> u64 {
+    let user_timeout = clamp_timeout(timeout_ms, DEFAULT_TIMEOUT_MS);
+    if run_in_background || user_timeout > foreground_budget {
+        background_watcher_timeout_ms(timeout_ms)
+    } else {
+        user_timeout
     }
 }
 
@@ -1102,14 +1159,8 @@ pub async fn execute_bash_with_options(
     //   backgrounded, so they also get the generous timeout to avoid premature kills.
     // - Only truly short foreground tasks (timeout < budget) are limited by their timeout.
     let foreground_budget = foreground_budget_ms();
-    let user_timeout = clamp_timeout(timeout_ms, DEFAULT_TIMEOUT_MS);
-    let effective_timeout_for_watcher = if run_in_background || user_timeout > foreground_budget {
-        // This task will (or might) run in the background; give it the max generous timeout.
-        clamp_timeout(timeout_ms, BACKGROUNDED_TIMEOUT_MS)
-    } else {
-        // Pure foreground task that will complete before the budget expires.
-        user_timeout
-    };
+    let effective_timeout_for_watcher =
+        resolve_watcher_timeout_ms(timeout_ms, run_in_background, foreground_budget);
 
     let completion_target = progress
         .as_ref()
@@ -1157,7 +1208,7 @@ pub async fn execute_bash_with_options(
     }
     let _fg_guard = ForegroundClearGuard;
 
-    let result = if foreground_budget < user_timeout {
+    let result = if foreground_budget < effective_timeout_for_watcher {
         tokio::select! {
             completion = &mut completion => match completion {
                 Ok(completion) => format_completed_task(&task, completion),
@@ -1485,47 +1536,47 @@ mod timeout_tests {
         assert_eq!(DEFAULT_TIMEOUT_MS, 120_000);
     }
 
-    #[tokio::test]
-    async fn test_explicitly_backgrounded_task_gets_generous_timeout() {
+    #[test]
+    fn default_explicit_background_task_gets_generous_timeout_regression() {
+        assert_eq!(
+            resolve_watcher_timeout_ms(None, true, DEFAULT_FOREGROUND_BUDGET_MS),
+            BACKGROUNDED_TIMEOUT_MS,
+            "default background tasks must not inherit the 120s foreground timeout"
+        );
+    }
+
+    #[test]
+    fn default_auto_background_task_gets_generous_timeout_regression() {
+        assert_eq!(
+            resolve_watcher_timeout_ms(None, false, DEFAULT_FOREGROUND_BUDGET_MS),
+            BACKGROUNDED_TIMEOUT_MS,
+            "default foreground commands that can auto-background need the long watcher timeout"
+        );
+    }
+
+    #[test]
+    fn test_explicitly_backgrounded_task_gets_generous_timeout() {
         // When run_in_background=true, the task should get BACKGROUNDED_TIMEOUT_MS
         // to allow it to run long. We test by checking that the timeout calculation
         // uses the generous bound.
-        let foreground_budget = foreground_budget_ms();
-        let user_timeout = clamp_timeout(Some(50_000), DEFAULT_TIMEOUT_MS); // 50s user timeout
-
-        // For an explicitly backgrounded task:
-        let effective_for_bg_true = if true || user_timeout > foreground_budget {
-            clamp_timeout(Some(50_000), BACKGROUNDED_TIMEOUT_MS)
-        } else {
-            user_timeout
-        };
+        let foreground_budget = DEFAULT_FOREGROUND_BUDGET_MS;
+        let effective_for_bg_true =
+            resolve_watcher_timeout_ms(Some(50_000), true, foreground_budget);
 
         // Should use BACKGROUNDED_TIMEOUT_MS bound
         assert_eq!(effective_for_bg_true, 50_000);
 
         // But if the timeout exceeds backgrounded bound (unlikely), it would be clamped:
-        let user_timeout_high = clamp_timeout(Some(700_000), DEFAULT_TIMEOUT_MS); // 700s clamped to 120s
-        let effective_high = if true || user_timeout_high > foreground_budget {
-            clamp_timeout(Some(700_000), BACKGROUNDED_TIMEOUT_MS)
-        } else {
-            user_timeout_high
-        };
+        let effective_high = resolve_watcher_timeout_ms(Some(700_000), true, foreground_budget);
         assert_eq!(effective_high, BACKGROUNDED_TIMEOUT_MS);
     }
 
-    #[tokio::test]
-    async fn test_foreground_task_might_get_generous_timeout() {
+    #[test]
+    fn test_foreground_task_might_get_generous_timeout() {
         // When foreground_budget < timeout, the task might be auto-backgrounded,
         // so it should get BACKGROUNDED_TIMEOUT_MS to survive the transition.
-        let foreground_budget = foreground_budget_ms();
-        let user_timeout = clamp_timeout(Some(30_000), DEFAULT_TIMEOUT_MS); // 30s, > 15s budget
-
-        // For a foreground task with timeout > budget:
-        let effective = if false || user_timeout > foreground_budget {
-            clamp_timeout(Some(30_000), BACKGROUNDED_TIMEOUT_MS)
-        } else {
-            user_timeout
-        };
+        let foreground_budget = DEFAULT_FOREGROUND_BUDGET_MS;
+        let effective = resolve_watcher_timeout_ms(Some(30_000), false, foreground_budget);
 
         // Should use BACKGROUNDED_TIMEOUT_MS bound (30s < 600s, so 30s is kept)
         assert_eq!(effective, 30_000);
@@ -1535,19 +1586,12 @@ mod timeout_tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_short_foreground_task_keeps_timeout() {
+    #[test]
+    fn test_short_foreground_task_keeps_timeout() {
         // A foreground task with timeout < budget is not auto-backgrounded,
         // so it keeps its specified timeout.
-        let foreground_budget = foreground_budget_ms();
-        let user_timeout = clamp_timeout(Some(5_000), DEFAULT_TIMEOUT_MS); // 5s, < 15s budget
-
-        // For a foreground task with timeout < budget:
-        let effective = if false || user_timeout > foreground_budget {
-            clamp_timeout(Some(5_000), BACKGROUNDED_TIMEOUT_MS)
-        } else {
-            user_timeout
-        };
+        let foreground_budget = DEFAULT_FOREGROUND_BUDGET_MS;
+        let effective = resolve_watcher_timeout_ms(Some(5_000), false, foreground_budget);
 
         // Should keep the user timeout
         assert_eq!(effective, 5_000);
@@ -1566,19 +1610,14 @@ mod timeout_tests {
     // caller's resolved timeout survives. This reproduces the full composition.
     #[tokio::test]
     async fn long_foreground_command_keeps_resolved_timeout_regression() {
-        let foreground_budget = foreground_budget_ms();
+        let foreground_budget = DEFAULT_FOREGROUND_BUDGET_MS;
         // Model asks for 300s on a foreground (run_in_background=false) command.
         let requested = Some(300_000_u64);
         let run_in_background = false;
 
         // Stage 1 — execute_bash_with_options resolves the watcher timeout.
-        let user_timeout = clamp_timeout(requested, DEFAULT_TIMEOUT_MS);
-        let effective_timeout_for_watcher = if run_in_background || user_timeout > foreground_budget
-        {
-            clamp_timeout(requested, BACKGROUNDED_TIMEOUT_MS)
-        } else {
-            user_timeout
-        };
+        let effective_timeout_for_watcher =
+            resolve_watcher_timeout_ms(requested, run_in_background, foreground_budget);
 
         // Stage 2 — start_bash_task now clamps ONLY to the absolute ceiling
         // (the fix), instead of re-applying DEFAULT_TIMEOUT_MS for foreground.
@@ -1612,6 +1651,15 @@ mod cancel_tests {
         dir
     }
 
+    fn task_id_from_output(output: &str) -> String {
+        output
+            .lines()
+            .find_map(|line| line.strip_prefix("task_id: "))
+            .map(str::trim)
+            .expect("bash background result should include task_id")
+            .to_owned()
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn list_then_cancel_running_background_shell_normal() {
         let _dir = isolate_output_dir();
@@ -1633,6 +1681,10 @@ mod cancel_tests {
             .expect("spawned background task should be listed");
         assert!(task.running, "freshly spawned task must be running");
         let id = task.id.clone();
+        assert!(
+            bash_task_is_running(&id),
+            "freshly spawned task metadata should be running"
+        );
 
         // Cancel it: must report Cancelled and actually settle to terminal.
         let outcome = cancel_bash_task(&id).await;
@@ -1646,6 +1698,10 @@ mod cancel_tests {
             .expect("task still tracked");
         assert!(!task.running, "cancelled task must not be running");
         assert_eq!(task.status, "cancelled");
+        assert!(
+            !bash_task_is_running(&id),
+            "cancelled task metadata should not be running"
+        );
 
         // Cancelling again is a no-op (already finished).
         assert_eq!(cancel_bash_task(&id).await, CancelOutcome::AlreadyFinished);
@@ -1711,6 +1767,55 @@ mod cancel_tests {
         assert!(
             background_running_foreground_bash().await.is_none(),
             "no foreground command should be detachable when idle"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn bash_output_recovers_command_from_persisted_metadata_regression() {
+        let _dir = isolate_output_dir();
+        clear_bash_tasks_for_test().await;
+
+        let command = "printf 'persisted command ok\\n'";
+        let result =
+            execute_bash_with_options(command, Some(10_000), &std::env::temp_dir(), None, true)
+                .await;
+        assert!(
+            !result.is_error(),
+            "background start should succeed: {result:?}"
+        );
+        let task_id = task_id_from_output(&result.output);
+
+        let first_read = execute_bash_output(&task_id, None, None, Some(true), Some(10_000)).await;
+        assert!(
+            !first_read.is_error(),
+            "initial BashOutput should settle task: {first_read:?}"
+        );
+        assert!(
+            first_read.output.contains("persisted command ok"),
+            "{}",
+            first_read.output
+        );
+
+        clear_bash_tasks_for_test().await;
+
+        let recovered = execute_bash_output(&task_id, None, None, Some(false), None).await;
+        assert!(
+            !recovered.is_error(),
+            "BashOutput should load persisted metadata after registry reset: {recovered:?}"
+        );
+        assert!(
+            recovered.output.contains(&format!("command: {command}")),
+            "persisted command should be visible to UI/status consumers:\n{}",
+            recovered.output
+        );
+        assert!(
+            recovered.output.contains("cwd: "),
+            "persisted cwd should be visible to UI/status consumers:\n{}",
+            recovered.output
+        );
+        assert!(
+            !bash_task_is_running(&task_id),
+            "completed persisted task must not be reported as running"
         );
     }
 }

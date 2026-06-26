@@ -4,7 +4,7 @@ pub fn filesystem_tool_defs() -> Vec<ToolDef> {
     vec![
         ToolDef {
             name: "Bash".into(),
-            description: "Executes a bash command in a fresh non-interactive shell. Shell state does not persist between calls; use `workdir` to run in a specific directory. Prefer Glob/Grep/Read/Edit/Write for file discovery and edits. Use Bash for real shell commands, scripts, builds, tests, and package managers. Set `suppressOutput=true` when raw stdout/stderr would be noisy or sensitive but success/failure status is enough. For long-running commands, set `run_in_background=true`; JFC also auto-backgrounds commands that exceed the foreground budget and tracks them as background shell tasks with a task id and output file. PERSISTENT SHELL (opt-in): to keep cwd/env across calls (e.g. a `cd` or `export` that should persist), prefix the command with `shell:<id>` and a newline, e.g. command = \"shell:build\\ncd src && make\". All commands sharing the same `<id>` run in one long-lived shell, in order; omit the prefix for the default fresh-shell behavior.".into(),
+            description: "Executes a bash command in a fresh non-interactive shell. Shell state does not persist between calls; use `workdir` to run in a specific directory. Prefer Glob/Grep/Read/Edit/Write for file discovery and edits. Use Bash for real shell commands, scripts, builds, tests, and package managers. Set `suppressOutput=true` when raw stdout/stderr would be noisy or sensitive but success/failure status is enough. For long-running commands, set `run_in_background=true`; JFC tracks the task id and output file and will report completion, so do not spawn separate sleep/poll commands. If waiting for a remote condition, run one bounded background watcher such as `until check; do sleep 2; done`, and JFC reports its output when the watcher settles. JFC also auto-backgrounds commands that exceed the foreground budget. PERSISTENT SHELL (opt-in): to keep cwd/env across calls (e.g. a `cd` or `export` that should persist), prefix the command with `shell:<id>` and a newline, e.g. command = \"shell:build\\ncd src && make\". All commands sharing the same `<id>` run in one long-lived shell, in order; omit the prefix for the default fresh-shell behavior.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -22,7 +22,7 @@ pub fn filesystem_tool_defs() -> Vec<ToolDef> {
                     },
                     "run_in_background": {
                         "type": "boolean",
-                        "description": "Start the command as a background Bash task and return immediately with a task id and output file."
+                        "description": "Start the command as a background Bash task and return immediately with a task id and output file. Use this for builds, servers, long scans, remote waits, and condition watchers instead of foreground sleep/poll loops."
                     },
                     "suppressOutput": {
                         "type": "boolean",
@@ -38,7 +38,7 @@ pub fn filesystem_tool_defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "BashOutput".into(),
-            description: "Read or wait for output from a Bash command that was backgrounded by `Bash.run_in_background` or auto-backgrounded after exceeding the foreground budget. By default block=true waits up to timeout for task completion and returns retrieval_status success/timeout/not_ready. Use block=false for a snapshot. Use offset/limit for large logs.".into(),
+            description: "Read or wait for output from a Bash command that was backgrounded by `Bash.run_in_background` or auto-backgrounded after exceeding the foreground budget. By default block=true waits up to timeout for task completion and returns retrieval_status success/timeout/not_ready. Prefer this over issuing separate sleep commands while a background task is running. Use block=false for a snapshot. Use offset/limit for large logs.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {

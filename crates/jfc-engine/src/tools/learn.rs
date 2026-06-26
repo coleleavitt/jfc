@@ -555,6 +555,10 @@ mod tests {
                         private_blocks_seen: 1,
                         thinking_tokens: 32,
                         raw_stored: false,
+                        support: jfc_learn::rsi_curator::ThinkingSupport::ObservableSignals,
+                        self_consistency:
+                            jfc_learn::rsi_curator::ThinkingSelfConsistency::SingleSignal,
+                        observable_support_count: 1,
                     },
                 }],
                 experience_graph: jfc_learn::ExperienceGraph::default(),

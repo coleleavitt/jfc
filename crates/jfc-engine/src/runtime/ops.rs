@@ -249,7 +249,7 @@ pub async fn start_manual_compaction(state: &mut EngineState, tx: &EventSender) 
         return false;
     }
 
-    let est = state.tool_ctx.approx_tokens;
+    let est = crate::context_accounting::model_visible_tokens_for_display(state);
     let level = crate::compact::compact_level_with_output(
         est,
         state.max_context_tokens,
@@ -340,7 +340,7 @@ pub fn interrupt(state: &mut EngineState, tx: &EventSender) {
             target: "jfc::input::abort",
             "marking in-flight goal evaluator cancelled"
         );
-        state.goal_evaluator_in_flight = false;
+        crate::runtime::cancel_goal_evaluator(state);
     }
 
     // Zero the in-flight auto-mode classifier counter. Each classifier task
@@ -651,10 +651,8 @@ pub async fn submit_prompt(
     // part of the request we're about to send; ignoring it makes huge pastes
     // skip this gate and fall through to provider-side prompt_too_long.
     let pending_prompt_tokens = crate::compact::estimate_tokens(&[ChatMessage::user(text.clone())]);
-    let mut est = state
-        .tool_ctx
-        .approx_tokens
-        .saturating_add(pending_prompt_tokens);
+    let mut est =
+        crate::context_accounting::model_visible_tokens_for_request(state, pending_prompt_tokens);
     let mut level = crate::compact::compact_level_with_output(
         est,
         state.max_context_tokens,
@@ -667,10 +665,10 @@ pub async fn submit_prompt(
             level,
         );
         if saved_tokens > 0 {
-            est = state
-                .tool_ctx
-                .approx_tokens
-                .saturating_add(pending_prompt_tokens);
+            est = crate::context_accounting::model_visible_tokens_for_request(
+                state,
+                pending_prompt_tokens,
+            );
             level = crate::compact::compact_level_with_output(
                 est,
                 state.max_context_tokens,
@@ -981,10 +979,44 @@ pub async fn submit_prompt(
         );
     }
 
-    let mut user_msg = ChatMessage::user(display_text.clone());
     // Combine pasted images ([Image #N] refs) with @-mention binary files.
     let mut all_attachments = attachments;
     all_attachments.extend(mention_attachments);
+    let attachment_count = all_attachments.len();
+    let mission_route = jfc_core::MissionRouter::route_prompt(&display_text, attachment_count);
+    let seeded_mission_task_id =
+        super::mission::seed_mission_task(&state.task_store, &mission_route, &display_text);
+    let mission_route_reminder = mission_route.should_inject_turn_reminder().then(|| {
+        let mut reminder = mission_route.turn_reminder();
+        if let Some(task_id) = seeded_mission_task_id.as_deref() {
+            reminder.push_str(&format!(
+                "\nRoot mission task: `{task_id}`. Create child TaskCreate records with \
+                 `parent_id: \"{task_id}\"` when decomposing this mission, and do not \
+                 create a duplicate root task for the same user prompt."
+            ));
+        }
+        reminder
+    });
+    if mission_route_reminder.is_some() {
+        tracing::info!(
+            target: "jfc::mission_router",
+            route = mission_route.kind.label(),
+            task_graph = mission_route.create_task_graph,
+            attachment_count,
+            seeded_task_id = ?seeded_mission_task_id,
+            "injecting mission-routing reminder"
+        );
+    } else {
+        tracing::debug!(
+            target: "jfc::mission_router",
+            route = mission_route.kind.label(),
+            task_graph = mission_route.create_task_graph,
+            attachment_count,
+            "mission-routing reminder not needed"
+        );
+    }
+
+    let mut user_msg = ChatMessage::user(display_text.clone());
     user_msg.attachments = all_attachments;
     state.messages.push(user_msg);
     state.tool_ctx.total_user_turns += 1;
@@ -1094,6 +1126,10 @@ pub async fn submit_prompt(
     // previous turn). See the comment on `deferred_text_reminders` at
     // the scan site for why this had to be split.
     for body in deferred_text_reminders {
+        crate::system_reminder::append_to_last_user(&mut state.messages, &body);
+    }
+
+    if let Some(body) = mission_route_reminder {
         crate::system_reminder::append_to_last_user(&mut state.messages, &body);
     }
 
@@ -1423,6 +1459,7 @@ mod submit_prompt_tests {
                 content,
                 usage: TokenUsage::default(),
                 context_signals: None,
+                reasoning: None,
             })
         }
     }
@@ -1517,6 +1554,63 @@ mod submit_prompt_tests {
         state.cancel_token.cancel();
     }
 
+    #[tokio::test]
+    async fn pre_submit_compact_adds_request_overhead_for_no_usage_resume_robust() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.max_context_tokens = 200_000;
+        state.max_output_tokens = None;
+        state.tool_ctx.approx_tokens = 140_000;
+        state.last_system_prompt_len = Some(30_000);
+        state.messages = vec![
+            ChatMessage::user("legacy prompt without usage".to_owned()),
+            ChatMessage::assistant("legacy reply without usage".to_owned()),
+        ];
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(&mut state, &tx, "continue".into(), Vec::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::CompactingFirst);
+        assert!(
+            state.compacting_started_at.is_some(),
+            "pre-submit compaction must reserve system/tool overhead for no-usage resumed sessions"
+        );
+        assert_eq!(state.messages.len(), 2);
+        state.cancel_token.cancel();
+    }
+
+    #[tokio::test]
+    async fn pre_submit_compact_does_not_double_count_usage_backed_overhead_normal() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.max_context_tokens = 200_000;
+        state.max_output_tokens = None;
+        state.tool_ctx.approx_tokens = 140_000;
+        state.last_system_prompt_len = Some(30_000);
+        let mut assistant = ChatMessage::assistant("reply with provider usage".to_owned());
+        assistant.usage = Some(crate::types::ModelUsage {
+            input_tokens: 140_000,
+            output_tokens: 0,
+            thinking_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            cost_usd: None,
+        });
+        state.messages = vec![
+            ChatMessage::user("prompt with provider usage".to_owned()),
+            assistant,
+        ];
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(&mut state, &tx, "continue".into(), Vec::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        assert!(state.compacting_started_at.is_none());
+        state.cancel_token.cancel();
+    }
+
     // Explicitly disabled: the gate is a no-op pass-through and the prompt takes
     // the legacy path — a user message is pushed and the turn starts.
     //
@@ -1528,6 +1622,7 @@ mod submit_prompt_tests {
     async fn explicit_prompt_rewrite_opt_out_starts_turn_unchanged() {
         let tmp = tempfile::tempdir().unwrap();
         let prev = std::env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: this serial test is the only code in this module mutating XDG_CONFIG_HOME.
         unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.path()) };
 
         let mut state = state_with(Arc::new(ScriptProvider::inert()));
@@ -1561,12 +1656,126 @@ mod submit_prompt_tests {
 
         // Let the spawned session-save settle inside the tempdir, then restore.
         tokio::task::yield_now().await;
+        // SAFETY: this restores the process environment changed by this serial test.
         unsafe {
             match prev {
                 Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
                 None => std::env::remove_var("XDG_CONFIG_HOME"),
             }
         }
+    }
+
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn bounty_mission_prompt_injects_task_factory_reminder_normal() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.no_session_persistence = true;
+        state.task_store = jfc_session::TaskStore::in_memory();
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "audit the RSI bounty architecture and implement all prompt, skill, tool definition, and memory improvements".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        let last = last_user_text(&state).expect("user text");
+        assert!(last.contains("audit the RSI bounty architecture"));
+        assert!(last.contains("Mission router: route=bounty"));
+        assert!(last.contains("TaskCreate records"));
+        assert!(last.contains("risk=\"high\""));
+        assert!(last.contains("Do not store private chain-of-thought"));
+        let tasks = state.task_store.list(jfc_session::DeletedFilter::Exclude);
+        assert_eq!(tasks.len(), 1, "one root mission task should be seeded");
+        let task = &tasks[0];
+        assert!(last.contains(&format!("Root mission task: `{}`", task.id)));
+        assert!(
+            task.subject
+                .starts_with("Mission: audit the RSI bounty architecture")
+        );
+        assert_eq!(task.risk, Some(jfc_session::TaskRisk::High));
+        assert!(task.tags.iter().any(|tag| tag == "bounty"));
+        assert_eq!(
+            jfc_session::TaskExecutionMetadata::from_task(&task).map(|metadata| metadata.mode),
+            Some(jfc_session::TaskExecutionMode::Bounty)
+        );
+    }
+
+    #[tokio::test]
+    async fn solo_task_graph_prompt_seeds_solo_root_mission_normal() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.no_session_persistence = true;
+        state.task_store = jfc_session::TaskStore::in_memory();
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "fix the resume bug and verify the tests".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        let last = last_user_text(&state).expect("user text");
+        assert!(last.contains("Mission router: route=solo"));
+        let tasks = state.task_store.list(jfc_session::DeletedFilter::Exclude);
+        assert_eq!(
+            tasks.len(),
+            1,
+            "one solo root mission task should be seeded"
+        );
+        let task = &tasks[0];
+        assert!(last.contains(&format!("Root mission task: `{}`", task.id)));
+        assert!(task.subject.starts_with("Mission: fix the resume bug"));
+        assert_eq!(task.risk, None);
+        assert_eq!(
+            jfc_session::TaskExecutionMetadata::from_task(task).map(|metadata| metadata.mode),
+            Some(jfc_session::TaskExecutionMode::Solo)
+        );
+    }
+
+    #[tokio::test]
+    async fn assisted_task_graph_prompt_seeds_assisted_root_mission_normal() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.no_session_persistence = true;
+        state.task_store = jfc_session::TaskStore::in_memory();
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "review the task architecture and map the remaining gaps".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        let last = last_user_text(&state).expect("user text");
+        assert!(last.contains("Mission router: route=assisted"));
+        let tasks = state.task_store.list(jfc_session::DeletedFilter::Exclude);
+        assert_eq!(
+            tasks.len(),
+            1,
+            "one assisted root mission task should be seeded"
+        );
+        let task = &tasks[0];
+        assert!(last.contains(&format!("Root mission task: `{}`", task.id)));
+        assert_eq!(task.risk, Some(jfc_session::TaskRisk::Medium));
+        assert!(task.tags.iter().any(|tag| tag == "architecture"));
+        assert_eq!(
+            jfc_session::TaskExecutionMetadata::from_task(task).map(|metadata| metadata.mode),
+            Some(jfc_session::TaskExecutionMode::Assisted)
+        );
     }
 
     // Flag ON no longer gates submission. Prompt rewrite is a response-side

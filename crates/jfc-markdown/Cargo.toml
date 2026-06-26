@@ -8,13 +8,13 @@ publish.workspace = true
 [dependencies]
 serde_json = { workspace = true }
 jfc-theme = { path = "../jfc-theme" }
-itertools = "0.14"
-pulldown-cmark = "0.12"
+itertools = { workspace = true }
+pulldown-cmark = { workspace = true }
 ratatui = { version = "0.30", default-features = false }
-regex = "1"
+regex = { workspace = true }
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
-two-face = "0.5"
-unicode-width = "0.2"
+two-face = { workspace = true }
+unicode-width = { workspace = true }
 
 [build-dependencies]
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-onig", "yaml-load", "dump-create", "dump-load"] }

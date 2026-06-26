@@ -76,20 +76,45 @@ const DEFAULT_AGENT_MAX_TURNS: Option<u32> = None;
 /// `allowed` is exact membership. `disallowed` always subtracts.
 /// The Task tool itself is also dropped — recursive subagent spawning
 /// is intentionally not wired (would deadlock the single-stream model).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ToolAllowScope {
+    All,
+    Only(Vec<String>),
+}
+
+#[cfg(test)]
 pub fn filter_tools_for_agent(
     all: Vec<ToolDef>,
     allowed: &[String],
     disallowed: &[String],
     allow_nested_task: bool,
 ) -> Vec<ToolDef> {
-    let allow_all = allowed.is_empty();
+    let scope = if allowed.is_empty() {
+        ToolAllowScope::All
+    } else {
+        ToolAllowScope::Only(allowed.to_vec())
+    };
+    filter_tools_for_agent_scope(all, &scope, disallowed, allow_nested_task)
+}
+
+fn filter_tools_for_agent_scope(
+    all: Vec<ToolDef>,
+    allowed: &ToolAllowScope,
+    disallowed: &[String],
+    allow_nested_task: bool,
+) -> Vec<ToolDef> {
     all.into_iter()
         .filter(|t| {
             if !allow_nested_task && t.name.eq_ignore_ascii_case("Task") {
                 return false;
             }
-            if !allow_all && !allowed.iter().any(|a| tool_policy_matches(a, &t.name)) {
-                return false;
+            match allowed {
+                ToolAllowScope::All => {}
+                ToolAllowScope::Only(allowed) => {
+                    if !allowed.iter().any(|a| tool_policy_matches(a, &t.name)) {
+                        return false;
+                    }
+                }
             }
             !disallowed.iter().any(|d| tool_policy_matches(d, &t.name))
         })
@@ -113,22 +138,24 @@ fn code_navigation_leaf(name: &str) -> &str {
     trimmed.rsplit("__").next().unwrap_or(trimmed)
 }
 
-fn scoped_allowed_tools(agent_allowed: &[String], task_allowed: &[String]) -> Vec<String> {
-    if task_allowed.is_empty() {
-        return agent_allowed.to_vec();
-    }
-    if agent_allowed.is_empty() {
-        return task_allowed.to_vec();
-    }
-    agent_allowed
-        .iter()
-        .filter(|tool| {
-            task_allowed
+fn scoped_allowed_tools(agent_allowed: &[String], task_allowed: &[String]) -> ToolAllowScope {
+    match (agent_allowed.is_empty(), task_allowed.is_empty()) {
+        (true, true) => ToolAllowScope::All,
+        (false, true) => ToolAllowScope::Only(agent_allowed.to_vec()),
+        (true, false) => ToolAllowScope::Only(task_allowed.to_vec()),
+        (false, false) => ToolAllowScope::Only(
+            agent_allowed
                 .iter()
-                .any(|task_tool| task_tool.eq_ignore_ascii_case(tool))
-        })
-        .cloned()
-        .collect()
+                .filter(|agent_tool| {
+                    task_allowed.iter().any(|task_tool| {
+                        tool_policy_matches(task_tool, agent_tool)
+                            || tool_policy_matches(agent_tool, task_tool)
+                    })
+                })
+                .cloned()
+                .collect(),
+        ),
+    }
 }
 
 fn scoped_disallowed_tools(agent_disallowed: &[String], task_disallowed: &[String]) -> Vec<String> {
@@ -628,7 +655,8 @@ async fn execute_task_inner(
         .iter()
         .find(|tool| tool.name.eq_ignore_ascii_case("StructuredOutput"))
         .cloned();
-    let mut tools = filter_tools_for_agent(all_tools, &allowed, &disallowed, allow_nested_task);
+    let mut tools =
+        filter_tools_for_agent_scope(all_tools, &allowed, &disallowed, allow_nested_task);
     if schema_required {
         if !tools
             .iter()
@@ -1453,6 +1481,14 @@ mod tests {
         unsafe { std::env::set_var("CLAUDE_CODE_SUBAGENT_MODEL", value) };
     }
 
+    fn make_tool_def(name: &str) -> ToolDef {
+        ToolDef {
+            name: name.to_owned(),
+            description: "test".to_owned(),
+            input_schema: serde_json::json!({"type": "object"}),
+        }
+    }
+
     #[test]
     fn harvest_returns_full_narrative_when_final_is_preamble_normal() {
         // The agent did substantive work, then its last turn was a preamble
@@ -1536,13 +1572,54 @@ mod tests {
             &["Read".to_owned(), "Grep".to_owned(), "Edit".to_owned()],
             &["read".to_owned(), "Bash".to_owned()],
         );
-        assert_eq!(allowed, vec!["Read"]);
+        assert_eq!(allowed, ToolAllowScope::Only(vec!["Read".to_owned()]));
 
         let disallowed = scoped_disallowed_tools(
             &["Write".to_owned()],
             &["write".to_owned(), "Grep".to_owned()],
         );
         assert_eq!(disallowed, vec!["Write", "Grep"]);
+    }
+
+    #[test]
+    fn scoped_task_tools_empty_intersection_denies_all_regression() {
+        let allowed = scoped_allowed_tools(&["Read".to_owned()], &["Bash".to_owned()]);
+        assert_eq!(allowed, ToolAllowScope::Only(Vec::new()));
+
+        let tools = filter_tools_for_agent_scope(
+            vec![make_tool_def("Read"), make_tool_def("Bash")],
+            &allowed,
+            &[],
+            false,
+        );
+        assert!(
+            tools.is_empty(),
+            "empty scoped intersection must not widen to all tools"
+        );
+    }
+
+    #[test]
+    fn scoped_task_tools_match_raw_codegraph_to_mcp_allowlist_regression() {
+        let allowed = scoped_allowed_tools(
+            &["mcp__codegraph__codegraph_explore".to_owned()],
+            &["codegraph_explore".to_owned()],
+        );
+        assert_eq!(
+            allowed,
+            ToolAllowScope::Only(vec!["mcp__codegraph__codegraph_explore".to_owned()])
+        );
+
+        let tools = filter_tools_for_agent_scope(
+            vec![
+                make_tool_def("Read"),
+                make_tool_def("mcp__codegraph__codegraph_explore"),
+            ],
+            &allowed,
+            &[],
+            false,
+        );
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].name, "mcp__codegraph__codegraph_explore");
     }
 
     fn agent_model(model: Option<&str>) -> crate::agents::AgentDef {

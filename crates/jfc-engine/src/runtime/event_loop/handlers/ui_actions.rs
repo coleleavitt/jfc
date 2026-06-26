@@ -40,7 +40,7 @@ pub fn handle_set_goal(state: &mut EngineState, condition: String) {
     let arg = condition.trim();
     if arg.is_empty() || crate::goal::is_clear_arg(arg) {
         let prev = state.goal.take();
-        state.goal_evaluator_in_flight = false;
+        crate::runtime::cancel_goal_evaluator(state);
         if let Some(sid) = state.current_session_id.as_ref() {
             crate::goal::save_sidecar(sid.as_str(), None);
         }
@@ -57,6 +57,7 @@ pub fn handle_set_goal(state: &mut EngineState, condition: String) {
     match crate::goal::validate_condition(arg) {
         Ok(condition) => {
             state.goal = Some(crate::goal::ActiveGoal::new(condition.clone()));
+            crate::runtime::cancel_goal_evaluator(state);
             if let Some(sid) = state.current_session_id.as_ref() {
                 crate::goal::save_sidecar(sid.as_str(), state.goal.as_ref());
             }

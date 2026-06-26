@@ -126,7 +126,10 @@ fn find_closing_frontmatter(s: &str) -> Option<usize> {
 /// "file unchanged" stub instead of full content, saving tokens.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReadDedupCache {
+    #[serde(default)]
     entries: HashMap<PathBuf, ReadEntry>,
+    #[serde(default)]
+    stale_edit_misses: HashMap<PathBuf, ReadEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,43 +143,50 @@ impl ReadDedupCache {
         Self::default()
     }
 
+    fn entry_for(path: &Path) -> Option<ReadEntry> {
+        let meta = std::fs::metadata(path).ok()?;
+        let mtime_secs = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        Some(ReadEntry {
+            mtime_secs,
+            len: meta.len(),
+        })
+    }
+
     /// Returns `true` if path was previously read and disk mtime+size still match.
     pub fn is_unchanged(&self, path: &Path) -> bool {
         let Some(entry) = self.entries.get(path) else {
             return false;
         };
-        match std::fs::metadata(path) {
-            Ok(meta) => {
-                let mtime = meta
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                let len = meta.len();
-                entry.mtime_secs == mtime && entry.len == len
-            }
-            Err(_) => false,
+        Self::entry_for(path).is_some_and(|current| {
+            entry.mtime_secs == current.mtime_secs && entry.len == current.len
+        })
+    }
+
+    /// Returns `true` when a previous Edit/MultiEdit for this file missed
+    /// `old_string` and the model must refresh via a full Read before retrying.
+    pub fn requires_stale_edit_refresh(&self, path: &Path) -> bool {
+        self.stale_edit_misses.contains_key(path)
+    }
+
+    /// Mark that an Edit/MultiEdit failed against stale contents. A later full
+    /// Read clears this marker; until then mutation retries fail fast.
+    pub fn mark_stale_edit_miss(&mut self, path: PathBuf) {
+        if let Some(entry) = Self::entry_for(&path) {
+            self.stale_edit_misses.insert(path, entry);
         }
     }
 
     #[tracing::instrument(target = "jfc::context", skip(self), fields(path = %path.display()))]
     pub fn record_read(&mut self, path: PathBuf) {
         tracing::trace!(target: "jfc::context", path = %path.display(), "recording file read");
-        if let Ok(meta) = std::fs::metadata(&path) {
-            let mtime = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            self.entries.insert(
-                path,
-                ReadEntry {
-                    mtime_secs: mtime,
-                    len: meta.len(),
-                },
-            );
+        self.stale_edit_misses.remove(&path);
+        if let Some(entry) = Self::entry_for(&path) {
+            self.entries.insert(path, entry);
         }
     }
 
@@ -184,12 +194,14 @@ impl ReadDedupCache {
     pub fn invalidate(&mut self, path: &Path) {
         tracing::debug!(target: "jfc::context", path = %path.display(), "invalidating cache entry");
         self.entries.remove(path);
+        self.stale_edit_misses.remove(path);
     }
 
     #[tracing::instrument(target = "jfc::context", skip(self))]
     pub fn clear(&mut self) {
         tracing::debug!(target: "jfc::context", entries = self.entries.len(), "clearing read cache");
         self.entries.clear();
+        self.stale_edit_misses.clear();
     }
 
     /// Return all cached file paths (unordered).

@@ -8,12 +8,12 @@ name = "jfc"
 path = "src/main.rs"
 
 [dependencies]
-async-trait = "0.1"
+async-trait = { workspace = true }
 chrono = { workspace = true }
 dirs = "5"
-notify = "8"
-toml = "0.8"
-url = "2"
+notify = { workspace = true }
+toml = { workspace = true }
+url = { workspace = true }
 uuid = { workspace = true }
 # `unstable-rendered-line-info` opts into `Paragraph::line_count(width)` which
 # we need for accurate scroll math. ratatui's word-wrap can produce more rows
@@ -31,7 +31,7 @@ tokio = { workspace = true, features = ["full"] }
 # and session-save tasks. The transitive dep is already present via reqwest /
 # tokio-util in our Cargo.lock; declaring it directly so the rt feature is
 # explicit and the API is stable for our use.
-tokio-util = { version = "0.7", features = ["rt"] }
+tokio-util = { workspace = true }
 futures = { workspace = true }
 anyhow = { workspace = true }
 # Cell-width aware string measurement. Used by the input wrap to
@@ -40,29 +40,29 @@ anyhow = { workspace = true }
 # at character count, so 60 chars of CJK rendered as 120 cells —
 # overshot the textarea width and got clipped by `LineTruncator`,
 # making typed text disappear at the right edge.
-unicode-width = "0.2"
+unicode-width = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
 arboard = { version = "3", default-features = false, features = ["wayland-data-control", "image-data"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { workspace = true }
 serde_json = { workspace = true }
 unicode-segmentation = { workspace = true }
 serde = { workspace = true }
 reqwest = { workspace = true }
 rustls = { version = "0.23.40", default-features = false, features = ["ring"] }
 parking_lot = { workspace = true }
-pulldown-cmark = "0.12"
+pulldown-cmark = { workspace = true }
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
 # two-face bundles ~250 language grammars + 32 themes on top of syntect's
 # defaults. Codex CLI's renderer (research/openai-codex/codex-rs/tui/src/
 # render/highlight.rs:33-44) uses the same primitive — gives us Zig, Nix,
 # Fish, Hare, Roc, etc. without hand-rolling .sublime-syntax files. Themes
 # include Catppuccin variants used as adaptive defaults.
-two-face = "0.5"
+two-face = { workspace = true }
 ansi-to-tui = "8"
-itertools = "0.14"
+itertools = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 jfc-engine = { path = "../jfc-engine" }
 jfc-voice = { path = "../jfc-voice" }
@@ -85,8 +85,8 @@ jfc-tools = { path = "../jfc-tools" }
 # parser. Default features include unicode + perl classes which is
 # overkill for our needs but the binary already pulls regex through
 # `tracing-subscriber`'s env-filter, so this is essentially free.
-regex = "1"
-indexmap = "2"
+regex = { workspace = true }
+indexmap = { workspace = true }
 jfc-theme = { path = "../jfc-theme" }
 jfc-markdown = { path = "../jfc-markdown" }
 jfc-economy = { path = "../jfc-economy" }
@@ -105,11 +105,11 @@ pprof = { version = "0.14", features = ["flamegraph", "criterion"], optional = t
 console-subscriber = { version = "0.4", optional = true }
 
 [dev-dependencies]
-criterion = { version = "4.7.0", features = ["html_reports"], package = "codspeed-criterion-compat" }
+criterion = { workspace = true }
 divan = "0.1"
-proptest = "1"
-serial_test = "3"
-tempfile = "3.27.0"
+proptest = { workspace = true }
+serial_test = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 default = ["hooks", "permission-automation", "anthropic-oauth-sensitive", "intent-gate", "vad-neural"]

@@ -373,12 +373,14 @@ pub fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             acceptance_criteria,
             max_solvers,
             auto_dispatch,
+            parent_task_id,
         } => SerializedToolInput::PostBounty {
             description: description.clone(),
             budget: *budget,
             acceptance_criteria: acceptance_criteria.clone(),
             max_solvers: *max_solvers,
             auto_dispatch: *auto_dispatch,
+            parent_task_id: parent_task_id.clone(),
         },
         ToolInput::MarketStatus { bounty_id } => SerializedToolInput::MarketStatus {
             bounty_id: bounty_id.clone(),

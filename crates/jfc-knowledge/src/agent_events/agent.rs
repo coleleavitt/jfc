@@ -44,6 +44,27 @@ impl KnowledgeStore {
         row.map(|r| agent_session_from(&r)).transpose()
     }
 
+    pub async fn list_agent_sessions_by_team(
+        &self,
+        team_id: &str,
+        limit: usize,
+    ) -> Result<Vec<AgentSessionRow>> {
+        let rows = sqlx::query(
+            "SELECT id, parent_session_id, role, model, status, budget_tokens, task_id, \
+                    team_id, created_at_ms, updated_at_ms \
+             FROM agent_sessions WHERE team_id = ?1 ORDER BY updated_at_ms DESC LIMIT ?2",
+        )
+        .bind(team_id)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(agent_session_from(&row)?);
+        }
+        Ok(out)
+    }
+
     pub async fn record_agent_event(&self, row: &AgentEventRow) -> Result<()> {
         sqlx::query(
             "INSERT INTO agent_events \

@@ -490,6 +490,7 @@ mod tests {
                 content: self.reply.clone(),
                 usage: TokenUsage::default(),
                 context_signals: None,
+                reasoning: None,
             })
         }
     }

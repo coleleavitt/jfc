@@ -379,6 +379,18 @@ impl VoiceRecorder {
         self
     }
 
+    pub fn reconfigure(&mut self, cfg: VoiceConfig) {
+        if !cfg.enabled || cfg.mode != VoiceMode::Vad {
+            if let Some(tx) = self.vad_stop_tx.take() {
+                let _ = tx.send(());
+            }
+            self.vad_force_end_tx = None;
+        }
+        self.cfg = cfg;
+        self.cancel_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
     /// Resolve the current OAuth token via the provider, falling back to the
     /// legacy env vars so manual setups keep working.
     async fn resolve_token(&self) -> Option<String> {
@@ -1029,6 +1041,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reconfigure_updates_mode_and_stops_stale_vad_loop_regression() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut rec = VoiceRecorder::new(
+            VoiceConfig {
+                enabled: true,
+                mode: VoiceMode::Vad,
+                ..Default::default()
+            },
+            tx,
+        );
+        let (vad_stop_tx, vad_stop_rx) = tokio::sync::oneshot::channel();
+        let (force_tx, _force_rx) = mpsc::unbounded_channel();
+        rec.vad_stop_tx = Some(vad_stop_tx);
+        rec.vad_force_end_tx = Some(force_tx);
+
+        rec.reconfigure(VoiceConfig {
+            enabled: true,
+            mode: VoiceMode::Tap,
+            ..Default::default()
+        });
+
+        assert_eq!(rec.cfg.mode, VoiceMode::Tap);
+        assert!(rec.vad_stop_tx.is_none());
+        assert!(rec.vad_force_end_tx.is_none());
+        assert_eq!(vad_stop_rx.await, Ok(()));
+    }
+
+    #[tokio::test]
     async fn vad_space_force_ends_active_utterance_not_loop_regression() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut rec = VoiceRecorder::new(
@@ -1148,8 +1188,11 @@ mod tests {
     fn large_env_cap_passes_through_normal() {
         const KEY: &str = "JFC_VAD_MAX_UTTERANCE_MS";
         let prev = std::env::var(KEY).ok();
+        // SAFETY: this test mutates one process env var and restores it before
+        // returning; no code under test spawns threads that read it concurrently.
         unsafe { std::env::set_var(KEY, "120000") };
         let resolved = max_utterance_cap_ms();
+        // SAFETY: restore the same test-owned env var to its prior value.
         unsafe {
             match &prev {
                 Some(v) => std::env::set_var(KEY, v),

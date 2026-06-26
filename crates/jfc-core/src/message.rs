@@ -1,5 +1,23 @@
 use super::{ModelUsage, TaskStatusPart, ToolCall, ToolStatus};
 
+pub fn strip_system_reminders(s: &str) -> String {
+    const OPEN: &str = "<system-reminder>";
+    const CLOSE: &str = "</system-reminder>";
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(start) = rest.find(OPEN) {
+        out.push_str(&rest[..start]);
+        if let Some(end) = rest[start..].find(CLOSE) {
+            rest = &rest[start + end + CLOSE.len()..];
+        } else {
+            rest = "";
+            break;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Return the current Unix timestamp in seconds. Used as the default for
 /// `ChatMessage::created_at` when a new message is created at runtime.
 fn now_unix_secs() -> u64 {

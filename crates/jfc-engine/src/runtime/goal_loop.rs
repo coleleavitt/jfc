@@ -2,13 +2,34 @@ use super::{drain_queued_prompts, maybe_continue_task_factory};
 use crate::runtime::{EngineEvent, EventSender, GoalEvent};
 use crate::{app, stream, types};
 
+pub fn cancel_goal_evaluator(state: &mut app::EngineState) {
+    state.goal_evaluator_in_flight = false;
+    state.goal_evaluator_epoch_in_flight = None;
+    if let Some(cancel) = state.goal_evaluator_cancel.take() {
+        cancel.cancel();
+    }
+}
+
 pub fn dispatch_goal_evaluator_if_active(state: &mut app::EngineState, tx: &EventSender) -> bool {
     let Some(goal) = state.goal.as_ref() else {
         return false;
     };
     if state.goal_evaluator_in_flight {
-        tracing::debug!(target: "jfc::goal", "evaluator already in flight, skipping");
-        return true;
+        if state.goal_evaluator_epoch_in_flight == Some(goal.epoch) {
+            tracing::debug!(target: "jfc::goal", "evaluator already in flight, skipping");
+            return true;
+        }
+        tracing::debug!(
+            target: "jfc::goal",
+            active_epoch = goal.epoch,
+            in_flight_epoch = ?state.goal_evaluator_epoch_in_flight,
+            "clearing stale goal evaluator flag before dispatch"
+        );
+        state.goal_evaluator_in_flight = false;
+        state.goal_evaluator_epoch_in_flight = None;
+        if let Some(cancel) = state.goal_evaluator_cancel.take() {
+            cancel.cancel();
+        }
     }
     if goal.is_exhausted() {
         let banner = crate::goal::format_exhaustion_banner(goal);
@@ -25,11 +46,14 @@ pub fn dispatch_goal_evaluator_if_active(state: &mut app::EngineState, tx: &Even
     }
 
     state.goal_evaluator_in_flight = true;
+    state.goal_evaluator_epoch_in_flight = Some(goal.epoch);
+    let epoch = goal.epoch;
     let condition = goal.condition.clone();
     let history = state.messages.clone();
     let provider = std::sync::Arc::clone(&state.provider);
     let model = state.model.clone();
-    let cancel = state.cancel_token.clone();
+    let cancel = state.cancel_token.child_token();
+    state.goal_evaluator_cancel = Some(cancel.clone());
     let tx_eval = tx.clone();
 
     // Opt-in high-stakes path: when council-verdict is enabled and a distinct
@@ -75,6 +99,7 @@ pub fn dispatch_goal_evaluator_if_active(state: &mut app::EngineState, tx: &Even
         };
         let event = match verdict {
             Ok(verdict) => EngineEvent::Goal(GoalEvent::Verdict {
+                epoch,
                 ok: verdict.ok,
                 reason: verdict.reason,
             }),
@@ -85,6 +110,7 @@ pub fn dispatch_goal_evaluator_if_active(state: &mut app::EngineState, tx: &Even
                     "evaluator call failed; surfacing as unmet"
                 );
                 EngineEvent::Goal(GoalEvent::Verdict {
+                    epoch,
                     ok: false,
                     reason: format!("evaluator error: {error}"),
                 })
@@ -98,16 +124,40 @@ pub fn dispatch_goal_evaluator_if_active(state: &mut app::EngineState, tx: &Even
 pub async fn handle_goal_verdict(
     state: &mut app::EngineState,
     tx: &EventSender,
+    epoch: u64,
     ok: bool,
     reason: String,
 ) {
+    if state.goal_evaluator_epoch_in_flight != Some(epoch) {
+        tracing::info!(
+            target: "jfc::goal",
+            verdict_epoch = epoch,
+            in_flight_epoch = ?state.goal_evaluator_epoch_in_flight,
+            active_epoch = ?state.goal.as_ref().map(|goal| goal.epoch),
+            "dropping stale goal verdict"
+        );
+        return;
+    }
     state.goal_evaluator_in_flight = false;
+    state.goal_evaluator_epoch_in_flight = None;
+    state.goal_evaluator_cancel = None;
     let Some(mut goal) = state.goal.take() else {
         persist_goal_for_session(state);
         drain_queued_prompts(state, tx).await;
         maybe_continue_task_factory(state, tx).await;
         return;
     };
+    if goal.epoch != epoch {
+        tracing::info!(
+            target: "jfc::goal",
+            verdict_epoch = epoch,
+            active_epoch = goal.epoch,
+            "dropping goal verdict for replaced goal"
+        );
+        state.goal = Some(goal);
+        persist_goal_for_session(state);
+        return;
+    }
 
     if ok {
         let banner = crate::goal::format_success_banner(&goal, &reason);
@@ -174,4 +224,83 @@ fn persist_goal_for_session(state: &app::EngineState) {
         return;
     };
     crate::goal::save_sidecar(session_id.as_str(), state.goal.as_ref());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{app::EngineState, goal::ActiveGoal, types::ChatMessage};
+    use std::sync::Arc;
+
+    struct NoopProvider;
+
+    #[async_trait::async_trait]
+    impl jfc_provider::Provider for NoopProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<jfc_provider::ProviderMessage>,
+            _options: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for NoopProvider {}
+
+    fn test_state() -> EngineState {
+        let mut state = EngineState::new(Arc::new(NoopProvider), "test-model");
+        state.current_session_id = None;
+        state
+    }
+
+    #[tokio::test]
+    async fn stale_verdict_does_not_mutate_replaced_goal() {
+        let mut state = test_state();
+        let old_epoch = ActiveGoal::new("old goal".into()).epoch;
+        let new_goal = ActiveGoal::new("new goal".into());
+        let new_epoch = new_goal.epoch;
+        state.goal = Some(new_goal);
+        state.goal_evaluator_in_flight = true;
+        state.goal_evaluator_epoch_in_flight = Some(new_epoch);
+        state
+            .messages
+            .push(ChatMessage::assistant("still working".into()));
+        let (tx, _rx) = tokio::sync::mpsc::channel(4);
+
+        handle_goal_verdict(&mut state, &tx, old_epoch, true, "old done".into()).await;
+
+        let goal = state.goal.as_ref().expect("new goal survives");
+        assert_eq!(goal.epoch, new_epoch);
+        assert_eq!(goal.condition, "new goal");
+        assert_eq!(goal.iterations, 0);
+        assert!(state.goal_evaluator_in_flight);
+        assert_eq!(state.goal_evaluator_epoch_in_flight, Some(new_epoch));
+        assert_eq!(state.messages.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn duplicate_verdict_after_in_flight_cleared_is_ignored() {
+        let mut state = test_state();
+        let goal = ActiveGoal::new("finish".into());
+        let epoch = goal.epoch;
+        state.goal = Some(goal);
+        state.goal_evaluator_in_flight = false;
+        state.goal_evaluator_epoch_in_flight = None;
+        let (tx, _rx) = tokio::sync::mpsc::channel(4);
+
+        handle_goal_verdict(&mut state, &tx, epoch, false, "not yet".into()).await;
+
+        let goal = state.goal.as_ref().expect("goal survives");
+        assert_eq!(goal.epoch, epoch);
+        assert_eq!(goal.iterations, 0);
+        assert!(state.messages.is_empty());
+    }
 }

@@ -5,12 +5,17 @@ use crate::app::{self, EngineState};
 use crate::runtime::{EventSender, drain_queued_prompts};
 use crate::types::*;
 use crate::{config, stream, types};
+use serde::Serialize;
 
 const MALFORMED_TOOL_USE_RETRY_MARKER: &str = "jfc_malformed_tool_use_clean_retry";
 const MALFORMED_TOOL_USE_RETRY_REMINDER: &str = "The previous assistant response ended with a \
 tool-use stop reason but did not produce a valid tool call. Treat that assistant response as \
 invalid and retry cleanly now. If a tool is needed, emit it through the provider tool-use channel \
 with valid JSON input. Do not repeat malformed XML or text-form tool calls.";
+const REFUSAL_DIAGNOSTIC_KIND: &str = "refusal_diagnostic";
+const REFUSAL_DIAGNOSTIC_KEY: &str = "stream_done";
+const REFUSAL_INPUT_PREVIEW_CHARS: usize = 400;
+const REFUSAL_VISIBLE_PREVIEW_CHARS: usize = 400;
 
 /// Handle `StreamEvent::Done(stop_reason)`.
 pub async fn handle_stream_done(
@@ -63,6 +68,19 @@ pub async fn handle_stream_done(
                 _ => None,
             })
             .sum();
+        // The visible reasoning/CoT text of the refusing turn, concatenated. Only
+        // used (and only ever emitted to an ephemeral debug log) when
+        // `refusal_log_reasoning` is opted in; the durable diagnostic keeps counts
+        // only — see `record_refusal_diagnostic`.
+        let reasoning_text: String = msg
+            .parts
+            .iter()
+            .filter_map(|p| match p {
+                crate::types::MessagePart::Reasoning(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         let out_tokens = msg.usage.as_ref().map(|u| u.output_tokens).unwrap_or(0);
         // `safe_to_discard` is intentionally STRICTER than text+tools alone: a
         // turn that produced reasoning (interleaved thinking) but no text/tools
@@ -394,7 +412,28 @@ pub async fn handle_stream_done(
             resend_count: state.empty_billed_resend_count,
             resend_cap: empty_billed_resend_cap(),
         };
-        match decide_empty_billed(&inputs) {
+        let empty_billed_action = decide_empty_billed(&inputs);
+        if refusal_detected {
+            record_refusal_diagnostic(
+                state,
+                RefusalDiagnosticInput {
+                    stop_reason: &stop_reason,
+                    stop_reason_refusal,
+                    model_refusal,
+                    assistant_idx: idx,
+                    text_chars,
+                    reasoning_chars,
+                    tool_parts,
+                    out_tokens,
+                    safe_to_discard,
+                    thinking_only,
+                    empty_billed_action,
+                    visible_response_text: &assistant_response_text,
+                    reasoning_text: &reasoning_text,
+                },
+            );
+        }
+        match empty_billed_action {
             EmptyBilledAction::DiscardAndResend => {
                 state.empty_billed_resend_count += 1;
                 tracing::warn!(
@@ -761,7 +800,9 @@ pub async fn handle_stream_done(
     // genuinely concluded — EndTurn stop reason AND no
     // tools pending. ToolUse means an agentic continuation
     // is about to fire and the turn timer must keep running.
-    let turn_genuinely_done = stop_reason == jfc_provider::StopReason::EndTurn
+    let terminal_blank_refusal = empty_billed_refusal_cap_reached;
+    let turn_genuinely_done = (stop_reason == jfc_provider::StopReason::EndTurn
+        || terminal_blank_refusal)
         && state.pending_approval.is_none()
         && state.approval_queue.is_empty()
         && state.pending_tool_calls.is_empty()
@@ -1235,6 +1276,307 @@ fn set_message_text_parts(msg: &mut crate::types::ChatMessage, text: String) {
     msg.parts.insert(0, crate::types::MessagePart::Text(text));
 }
 
+struct RefusalDiagnosticInput<'a> {
+    stop_reason: &'a jfc_provider::StopReason,
+    stop_reason_refusal: bool,
+    model_refusal: bool,
+    assistant_idx: usize,
+    text_chars: usize,
+    reasoning_chars: usize,
+    tool_parts: usize,
+    out_tokens: u64,
+    safe_to_discard: bool,
+    thinking_only: bool,
+    empty_billed_action: EmptyBilledAction,
+    visible_response_text: &'a str,
+    /// Concatenated visible reasoning/CoT of the refusing turn. Emitted ONLY to an
+    /// ephemeral debug log and ONLY when `refusal_log_reasoning` is opted in; never
+    /// written to the durable diagnostic record.
+    reasoning_text: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct RefusalDiagnosticRecord {
+    schema_version: u8,
+    stop_reason: String,
+    stop_reason_refusal: bool,
+    model_refusal: bool,
+    category: &'static str,
+    provider: String,
+    model: String,
+    assistant_idx: usize,
+    text_chars: usize,
+    reasoning_chars: usize,
+    tool_parts: usize,
+    out_tokens: u64,
+    safe_to_discard: bool,
+    thinking_only: bool,
+    empty_billed_action: &'static str,
+    empty_billed_resend_count: u32,
+    empty_billed_resend_cap: u32,
+    refusal_resend_count: u32,
+    refusal_resend_cap: u32,
+    refusal_rewrite_retry_count: u32,
+    refusal_rewrite_retry_cap: u32,
+    streaming_response_bytes: usize,
+    pending_tool_calls: usize,
+    pending_classifications: usize,
+    in_flight_eager_dispatches: usize,
+    in_flight_tool_batches: usize,
+    pending_approval: bool,
+    approval_queue_depth: usize,
+    input: RefusalInputDiagnostic,
+    visible_response_preview: Option<String>,
+    privacy_note: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct RefusalInputDiagnostic {
+    user_idx: Option<usize>,
+    user_text_chars: usize,
+    user_part_count: usize,
+    user_tool_parts: usize,
+    user_attachment_count: usize,
+    user_preview: Option<String>,
+    conversation_messages: usize,
+    advertised_tool_count: Option<usize>,
+    action_expected: Option<bool>,
+    tool_choice: Option<String>,
+    request_resolved_model: Option<String>,
+}
+
+/// Whether refusal chain-of-thought debug logging is opted in via config.
+/// Separated so the gate is a single, mockable read of the cached config.
+fn refusal_reasoning_logging_enabled() -> bool {
+    crate::config::load_arc().refusal_log_reasoning
+}
+
+/// Emit the refusing turn's reasoning/CoT and full visible response to an
+/// ephemeral debug log. Pure side-effect helper; callers gate it on
+/// [`refusal_reasoning_logging_enabled`]. Skips the log entirely when there is
+/// no reasoning text to show, so a turn that refused without thinking doesn't
+/// produce an empty line.
+fn emit_refusal_reasoning_debug(input: &RefusalDiagnosticInput<'_>) {
+    let cot = input.reasoning_text.trim();
+    if cot.is_empty() {
+        tracing::debug!(
+            target: "jfc::stream::refusal_diagnostic",
+            "refusal_log_reasoning=on but the refusing turn carried no reasoning/CoT to log"
+        );
+        return;
+    }
+    tracing::debug!(
+        target: "jfc::stream::refusal_diagnostic",
+        reasoning = %cot,
+        visible_response = %input.visible_response_text,
+        "refusal chain-of-thought (refusal_log_reasoning=on; ephemeral debug log, not persisted)"
+    );
+}
+
+fn record_refusal_diagnostic(state: &EngineState, input: RefusalDiagnosticInput<'_>) {
+    // Opt-in, local-debug only: surface the refusing turn's chain-of-thought (and
+    // full visible response) to an EPHEMERAL debug log so a user can see *why* the
+    // turn refused and how the rewrite chain adapts. This never touches the durable
+    // record built below, which stays counts-only — preserving the privacy
+    // guarantee for everyone who hasn't opted in.
+    if refusal_reasoning_logging_enabled() {
+        emit_refusal_reasoning_debug(&input);
+    }
+    let diagnostic = build_refusal_diagnostic(state, input);
+    tracing::warn!(
+        target: "jfc::stream::refusal_diagnostic",
+        stop_reason = %diagnostic.stop_reason,
+        category = diagnostic.category,
+        provider = %diagnostic.provider,
+        model = %diagnostic.model,
+        out_tokens = diagnostic.out_tokens,
+        text_chars = diagnostic.text_chars,
+        reasoning_chars = diagnostic.reasoning_chars,
+        input_user_idx = ?diagnostic.input.user_idx,
+        input_user_chars = diagnostic.input.user_text_chars,
+        input_user_parts = diagnostic.input.user_part_count,
+        input_user_attachments = diagnostic.input.user_attachment_count,
+        input_user_preview = ?diagnostic.input.user_preview.as_deref(),
+        advertised_tool_count = ?diagnostic.input.advertised_tool_count,
+        action_expected = ?diagnostic.input.action_expected,
+        tool_choice = ?diagnostic.input.tool_choice.as_deref(),
+        request_resolved_model = ?diagnostic.input.request_resolved_model.as_deref(),
+        input_conversation_messages = diagnostic.input.conversation_messages,
+        visible_response_preview = ?diagnostic.visible_response_preview.as_deref(),
+        stop_reason_refusal = diagnostic.stop_reason_refusal,
+        model_refusal = diagnostic.model_refusal,
+        empty_billed_action = diagnostic.empty_billed_action,
+        resend_count = diagnostic.empty_billed_resend_count,
+        "provider refusal diagnostic captured"
+    );
+    if cfg!(test) {
+        tracing::debug!(
+            target: "jfc::stream::refusal_diagnostic",
+            "test build; refusal diagnostic kept in logs only"
+        );
+        return;
+    }
+    let Some(session_id) = state.current_session_id.as_ref().map(ToString::to_string) else {
+        tracing::debug!(
+            target: "jfc::stream::refusal_diagnostic",
+            "no current session id; refusal diagnostic kept in logs only"
+        );
+        return;
+    };
+    let Ok(value_json) = serde_json::to_string(&diagnostic) else {
+        tracing::warn!(
+            target: "jfc::stream::refusal_diagnostic",
+            "failed to serialize refusal diagnostic"
+        );
+        return;
+    };
+    tokio::spawn(async move {
+        let result: jfc_knowledge::Result<()> = async {
+            let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+            store
+                .append_session_artifact_event(
+                    &session_id,
+                    REFUSAL_DIAGNOSTIC_KIND,
+                    REFUSAL_DIAGNOSTIC_KEY,
+                    &value_json,
+                )
+                .await?;
+            Ok(())
+        }
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(
+                target: "jfc::stream::refusal_diagnostic",
+                error = %error,
+                "failed to persist refusal diagnostic"
+            );
+        }
+    });
+}
+
+fn build_refusal_diagnostic(
+    state: &EngineState,
+    input: RefusalDiagnosticInput<'_>,
+) -> RefusalDiagnosticRecord {
+    RefusalDiagnosticRecord {
+        schema_version: 1,
+        stop_reason: format!("{:?}", input.stop_reason),
+        stop_reason_refusal: input.stop_reason_refusal,
+        model_refusal: input.model_refusal,
+        category: refusal_diagnostic_category(input.safe_to_discard, input.out_tokens),
+        provider: state.provider.name().to_owned(),
+        model: state.model.to_string(),
+        assistant_idx: input.assistant_idx,
+        text_chars: input.text_chars,
+        reasoning_chars: input.reasoning_chars,
+        tool_parts: input.tool_parts,
+        out_tokens: input.out_tokens,
+        safe_to_discard: input.safe_to_discard,
+        thinking_only: input.thinking_only,
+        empty_billed_action: empty_billed_action_label(input.empty_billed_action),
+        empty_billed_resend_count: state.empty_billed_resend_count,
+        empty_billed_resend_cap: empty_billed_resend_cap(),
+        refusal_resend_count: state.refusal_resend_count,
+        refusal_resend_cap: refusal_resend_cap(),
+        refusal_rewrite_retry_count: state.refusal_rewrite_retry_count,
+        refusal_rewrite_retry_cap: refusal_rewrite_retry_cap(state.refusal_rewrite_retry_max),
+        streaming_response_bytes: state.streaming_response_bytes,
+        pending_tool_calls: state.pending_tool_calls.len(),
+        pending_classifications: state.pending_classifications,
+        in_flight_eager_dispatches: state.in_flight_eager_dispatches,
+        in_flight_tool_batches: state.in_flight_tool_batches,
+        pending_approval: state.pending_approval.is_some(),
+        approval_queue_depth: state.approval_queue.len(),
+        input: build_refusal_input_diagnostic(state, input.assistant_idx),
+        visible_response_preview: visible_refusal_preview(input.visible_response_text),
+        privacy_note: "private reasoning is intentionally not persisted; only counts and visible text preview are stored",
+    }
+}
+
+fn build_refusal_input_diagnostic(
+    state: &EngineState,
+    assistant_idx: usize,
+) -> RefusalInputDiagnostic {
+    let user_idx = state.messages[..assistant_idx.min(state.messages.len())]
+        .iter()
+        .rposition(|m| matches!(m.role, crate::types::Role::User));
+    let (user_text_chars, user_part_count, user_tool_parts, user_attachment_count, user_preview) =
+        if let Some(idx) = user_idx {
+            let msg = &state.messages[idx];
+            let text = message_text_parts(msg);
+            (
+                text.chars().count(),
+                msg.parts.len(),
+                msg.parts
+                    .iter()
+                    .filter(|part| matches!(part, crate::types::MessagePart::Tool(_)))
+                    .count(),
+                msg.attachments.len(),
+                redacted_input_preview(&text),
+            )
+        } else {
+            (0, 0, 0, 0, None)
+        };
+    let request = state.current_stream_request.as_ref();
+    RefusalInputDiagnostic {
+        user_idx,
+        user_text_chars,
+        user_part_count,
+        user_tool_parts,
+        user_attachment_count,
+        user_preview,
+        conversation_messages: state.messages.len(),
+        advertised_tool_count: request.map(|meta| meta.advertised_tool_count),
+        action_expected: request.map(|meta| meta.action_expected),
+        tool_choice: request.map(|meta| format!("{:?}", meta.tool_choice)),
+        request_resolved_model: request
+            .and_then(|meta| meta.resolved_model.as_ref())
+            .map(|resolved| resolved.effective.to_string()),
+    }
+}
+
+fn refusal_diagnostic_category(safe_to_discard: bool, out_tokens: u64) -> &'static str {
+    if safe_to_discard && out_tokens > 0 {
+        "blank_billed_refusal"
+    } else if safe_to_discard {
+        "blank_unbilled_refusal"
+    } else {
+        "content_refusal"
+    }
+}
+
+fn empty_billed_action_label(action: EmptyBilledAction) -> &'static str {
+    match action {
+        EmptyBilledAction::DiscardAndResend => "discard_and_resend",
+        EmptyBilledAction::CapReached => "cap_reached",
+        EmptyBilledAction::WarnOnly => "warn_only",
+        EmptyBilledAction::ResetBudget => "reset_budget",
+        EmptyBilledAction::None => "none",
+    }
+}
+
+fn visible_refusal_preview(text: &str) -> Option<String> {
+    bounded_preview(text, REFUSAL_VISIBLE_PREVIEW_CHARS)
+}
+
+fn redacted_input_preview(text: &str) -> Option<String> {
+    let stripped = jfc_core::strip_system_reminders(text);
+    let redacted = jfc_knowledge::redact::redact(&stripped, false);
+    bounded_preview(&redacted, REFUSAL_INPUT_PREVIEW_CHARS)
+}
+
+fn bounded_preview(text: &str, max_chars: usize) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut preview = trimmed.chars().take(max_chars).collect::<String>();
+    if trimmed.chars().count() > max_chars {
+        preview.push_str("...");
+    }
+    Some(preview)
+}
+
 /// Value-only snapshot of everything `decide_empty_billed` needs, so the
 /// discard-and-resend decision is unit-testable without an `App`, env vars, or
 /// a live stream (mirrors the `TurnIdleness` pattern). All fields are resolved
@@ -1574,6 +1916,7 @@ mod stream_done_lifecycle_tests {
                 content: content.to_string(),
                 usage: jfc_provider::TokenUsage::default(),
                 context_signals: None,
+                reasoning: None,
             })
         }
     }
@@ -1760,6 +2103,154 @@ mod stream_done_lifecycle_tests {
         state
     }
 
+    #[test]
+    fn refusal_diagnostic_persists_counts_not_private_reasoning_regression() {
+        let mut state = app_with_content_turn();
+        state.messages[0] = ChatMessage::user(
+            "please explain why this fails token=sk-proj-0123456789abcdef\n\
+             <system-reminder>internal-only hint</system-reminder>"
+                .into(),
+        );
+        state.current_stream_request = Some(crate::runtime::StreamRequestMetadata {
+            advertised_tool_count: 7,
+            action_expected: true,
+            tool_choice: crate::runtime::StreamToolChoice::Auto,
+            resolved_model: None,
+        });
+        let hidden_reasoning = "private diagnostic chain";
+        let (visible, reasoning_chars) = {
+            let msg = state.messages.get_mut(1).expect("assistant turn present");
+            msg.parts
+                .push(MessagePart::Reasoning(hidden_reasoning.into()));
+            let visible = message_text_parts(msg);
+            let reasoning_chars = msg
+                .parts
+                .iter()
+                .filter_map(|part| match part {
+                    MessagePart::Reasoning(text) => Some(text.chars().count()),
+                    _ => None,
+                })
+                .sum();
+            (visible, reasoning_chars)
+        };
+
+        let diagnostic = build_refusal_diagnostic(
+            &state,
+            RefusalDiagnosticInput {
+                stop_reason: &jfc_provider::StopReason::Refusal,
+                stop_reason_refusal: true,
+                model_refusal: false,
+                assistant_idx: 1,
+                text_chars: visible.chars().count(),
+                reasoning_chars,
+                tool_parts: 0,
+                out_tokens: 32,
+                safe_to_discard: false,
+                thinking_only: false,
+                empty_billed_action: EmptyBilledAction::ResetBudget,
+                visible_response_text: &visible,
+                reasoning_text: hidden_reasoning,
+            },
+        );
+        let json = serde_json::to_string(&diagnostic).expect("diagnostic serializes");
+
+        assert!(
+            !json.contains(hidden_reasoning),
+            "private reasoning text must never be persisted: {json}"
+        );
+        assert!(
+            json.contains("\"reasoning_chars\":24"),
+            "diagnostic should keep only the reasoning length: {json}"
+        );
+        assert!(
+            json.contains("I can't help with that."),
+            "visible refusal text preview is safe to persist: {json}"
+        );
+        assert!(
+            json.contains("please explain why this fails token=[REDACTED]"),
+            "diagnostic should persist a redacted last-user preview: {json}"
+        );
+        assert!(
+            !json.contains("sk-proj-0123456789abcdef")
+                && !json.contains("internal-only hint")
+                && !json.contains("<system-reminder>"),
+            "input preview must redact secrets and strip system reminders: {json}"
+        );
+        assert!(
+            json.contains("\"advertised_tool_count\":7")
+                && json.contains("\"action_expected\":true"),
+            "diagnostic should include request-shape metadata: {json}"
+        );
+        assert!(
+            json.contains("private reasoning is intentionally not persisted"),
+            "diagnostic should document the privacy boundary: {json}"
+        );
+    }
+
+    // The durable record stays counts-only regardless of the opt-in flag; the CoT
+    // only ever travels the ephemeral debug-log path. This pins the two channels
+    // apart: `build_refusal_diagnostic` never reads `reasoning_text`.
+    #[test]
+    fn refusal_diagnostic_record_ignores_reasoning_text_field() {
+        let state = app_with_content_turn();
+        let secret = "chain-of-thought that must not be serialized";
+        let diagnostic = build_refusal_diagnostic(
+            &state,
+            RefusalDiagnosticInput {
+                stop_reason: &jfc_provider::StopReason::Refusal,
+                stop_reason_refusal: true,
+                model_refusal: false,
+                assistant_idx: 1,
+                text_chars: 4,
+                reasoning_chars: secret.chars().count(),
+                tool_parts: 0,
+                out_tokens: 1,
+                safe_to_discard: false,
+                thinking_only: false,
+                empty_billed_action: EmptyBilledAction::None,
+                visible_response_text: "I can't help with that.",
+                reasoning_text: secret,
+            },
+        );
+        let json = serde_json::to_string(&diagnostic).expect("serializes");
+        assert!(
+            !json.contains(secret),
+            "reasoning_text must never reach the durable record: {json}"
+        );
+    }
+
+    // The ephemeral CoT log is strictly gated: it fires only when a turn has
+    // reasoning AND (at the call site) the opt-in flag is on. `emit_*` is a pure
+    // side-effect; here we exercise the empty-CoT branch (no panic, early return)
+    // and the populated branch to lock the helper's shape.
+    #[test]
+    fn emit_refusal_reasoning_debug_handles_empty_and_present() {
+        let base = RefusalDiagnosticInput {
+            stop_reason: &jfc_provider::StopReason::Refusal,
+            stop_reason_refusal: true,
+            model_refusal: false,
+            assistant_idx: 0,
+            text_chars: 0,
+            reasoning_chars: 0,
+            tool_parts: 0,
+            out_tokens: 0,
+            safe_to_discard: false,
+            thinking_only: false,
+            empty_billed_action: EmptyBilledAction::None,
+            visible_response_text: "I can't help with that.",
+            reasoning_text: "   ",
+        };
+        // Empty/whitespace CoT: early-returns without emitting the populated line.
+        emit_refusal_reasoning_debug(&base);
+        // Present CoT: emits the populated line. (Assertion is no-panic; tracing
+        // capture is covered by integration-level subscribers, not this unit.)
+        let present = RefusalDiagnosticInput {
+            reasoning_text: "the model reasoned then declined",
+            ..base
+        };
+        emit_refusal_reasoning_debug(&present);
+    }
+
     // REGRESSION (content-bearing refusal dead-stop): a refusal that produced
     // text used to neither empty-billed-resend (it has content) nor self-
     // continue (Refusal excluded) — so it stalled. It must now auto-resend on
@@ -1908,6 +2399,7 @@ mod stream_done_lifecycle_tests {
         unsafe { std::env::set_var("JFC_AUTO_CONTINUE", "1") };
         let mut state = app_with_empty_billed_turn();
         state.empty_billed_resend_count = empty_billed_resend_cap();
+        state.turn_started_at = Some(Instant::now());
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
         handle_stream_done(&mut state, &tx, jfc_provider::StopReason::Refusal).await;
@@ -1929,6 +2421,11 @@ mod stream_done_lifecycle_tests {
                 .iter()
                 .any(|t| t.text == "The model refused this request."),
             "blank refusal cap must not surface as a normal semantic refusal"
+        );
+        assert!(
+            state.turn_started_at.is_none(),
+            "blank refusal cap is terminal; the TUI must not keep showing \
+             `Working between model/tool steps`"
         );
         unsafe { std::env::remove_var("JFC_AUTO_CONTINUE") };
     }

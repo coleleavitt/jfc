@@ -1540,6 +1540,28 @@ fn completion_response_from_json(json: &Value) -> CompletionResponse {
         })
         .unwrap_or_default();
 
+    // Collect any visible `thinking` content blocks into the reasoning channel so
+    // the non-streaming complete() path no longer drops the model's chain-of-thought
+    // (the "No reasoning content, no hidden CoT" gap on refusal-classifier/rewrite
+    // calls). `redacted_thinking` is an opaque encrypted blob, not human-readable
+    // CoT, so it is intentionally excluded.
+    let reasoning = json
+        .get("content")
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|block| {
+                    if block.get("type")?.as_str()? == "thinking" {
+                        block.get("thinking")?.as_str().map(str::to_owned)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|blocks| !blocks.is_empty())
+        .map(|blocks| blocks.join("\n"));
+
     let usage = json.get("usage");
     let input_tokens = usage
         .and_then(|u| u.get("input_tokens"))
@@ -1560,6 +1582,7 @@ fn completion_response_from_json(json: &Value) -> CompletionResponse {
             cache_creation_tokens: 0,
         },
         context_signals: None,
+        reasoning,
     }
 }
 
@@ -2875,6 +2898,57 @@ mod tests {
     fn system_blocks_no_caller_system_has_two_blocks() {
         let v = build_system_blocks(TEST_BH, None);
         assert_eq!(v.as_array().expect("system must be array").len(), 2);
+    }
+
+    // Regression: the non-streaming complete() path must surface `thinking`
+    // content blocks as `reasoning` so the refusal-classifier / rewrite system
+    // can see the model's chain-of-thought (the "No reasoning content, no hidden
+    // CoT" gap). `redacted_thinking` is opaque and intentionally excluded.
+    #[test]
+    fn completion_response_captures_thinking_as_reasoning() {
+        let json = serde_json::json!({
+            "content": [
+                { "type": "thinking", "thinking": "the user asked X; this is allowed", "signature": "sig" },
+                { "type": "text", "text": "{\"verdict\":\"answered\"}" }
+            ],
+            "usage": { "input_tokens": 10, "output_tokens": 5 }
+        });
+        let resp = completion_response_from_json(&json);
+        assert_eq!(resp.content, "{\"verdict\":\"answered\"}");
+        assert_eq!(
+            resp.reasoning.as_deref(),
+            Some("the user asked X; this is allowed"),
+            "thinking block must be surfaced as reasoning"
+        );
+    }
+
+    #[test]
+    fn completion_response_without_thinking_has_no_reasoning() {
+        let json = serde_json::json!({
+            "content": [ { "type": "text", "text": "hi" } ],
+            "usage": { "input_tokens": 1, "output_tokens": 1 }
+        });
+        let resp = completion_response_from_json(&json);
+        assert_eq!(resp.content, "hi");
+        assert!(
+            resp.reasoning.is_none(),
+            "no thinking block => reasoning stays None"
+        );
+    }
+
+    #[test]
+    fn completion_response_excludes_redacted_thinking() {
+        let json = serde_json::json!({
+            "content": [
+                { "type": "redacted_thinking", "data": "ENCRYPTED_BLOB" },
+                { "type": "text", "text": "ok" }
+            ]
+        });
+        let resp = completion_response_from_json(&json);
+        assert!(
+            resp.reasoning.is_none(),
+            "opaque redacted_thinking must not be surfaced as readable CoT"
+        );
     }
 
     #[test]

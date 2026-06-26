@@ -108,6 +108,7 @@ pub async fn stream_to_completion(
         content,
         usage,
         context_signals: None,
+        reasoning: None,
     })
 }
 
@@ -281,6 +282,7 @@ mod tests {
                 cache_creation_tokens: 0,
             },
             context_signals: None,
+            reasoning: None,
         });
         let resp = complete_once(&provider, vec![], &opts()).await.unwrap();
         assert_eq!(resp.content, "native");

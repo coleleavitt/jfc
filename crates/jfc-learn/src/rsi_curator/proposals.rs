@@ -87,8 +87,16 @@ pub(super) fn context_playbook_patch(
     analysis: &ThinkingAnalysis,
 ) -> CandidateChange {
     let pattern = analysis.pattern.slug();
+    let retrievals = trace.retrieval_steps.len();
+    let useful_retrievals = trace
+        .retrieval_steps
+        .iter()
+        .filter(|step| step.result_count > 0)
+        .count();
+    let fanout_agents: u64 = trace.agent_fanouts.iter().map(|fanout| fanout.count).sum();
+    let selections = trace.selections.len();
     let body = format!(
-        "Context Playbook: {pattern}\nPattern: {}\nLesson: {}\nRetrieval: apply this playbook when a future trace has the same outcome, tool-recovery shape, or verification pattern.\nValidation: keep the playbook only when the next run includes an observable verification and no provider reasoning transcript is copied into memory, skills, prompts, or tool definitions.",
+        "Context Playbook: {pattern}\nPattern: {}\nLesson: {}\nObserved Signals: retrievals={retrievals}, useful_retrievals={useful_retrievals}, fanout_agents={fanout_agents}, selections={selections}.\nApplication: for similar tasks, ground the run with current context, use parallel attempts only for independent solution paths, and select from observable evidence instead of private reasoning text.\nValidation: keep the playbook only when the next run includes an observable verification and no provider reasoning transcript is copied into memory, skills, prompts, or tool definitions.",
         pattern_label(analysis.pattern),
         analysis.lesson
     );
@@ -154,6 +162,8 @@ fn harness_name(trace: &RsiTrace, recovered_tool: Option<&str>) -> String {
 fn pattern_label(pattern: super::ThinkingPatternKind) -> &'static str {
     match pattern {
         super::ThinkingPatternKind::VerifiedEfficient => "verified efficient run",
+        super::ThinkingPatternKind::GroundedSearch => "grounded search",
+        super::ThinkingPatternKind::ParallelSelection => "parallel selection",
         super::ThinkingPatternKind::OverthoughtFailure => "overthought failure",
         super::ThinkingPatternKind::ToolRecovery => "tool recovery",
         super::ThinkingPatternKind::CorrectionRecovery => "correction recovery",

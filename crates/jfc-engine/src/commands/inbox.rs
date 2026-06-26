@@ -141,6 +141,7 @@ mod tests {
                 content: String::new(),
                 usage: TokenUsage::default(),
                 context_signals: None,
+                reasoning: None,
             })
         }
     }

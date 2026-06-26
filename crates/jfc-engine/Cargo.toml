@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 tokio = { workspace = true, features = ["full"] }
-tokio-util = { version = "0.7", features = ["rt"] }
+tokio-util = { workspace = true }
 tokio-stream = "0.1"
 futures = { workspace = true }
 anyhow = { workspace = true }
@@ -13,36 +13,36 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { package = "serde_norway", version = "0.9" }
-toml = "0.8"
+serde_yaml = { workspace = true }
+toml = { workspace = true }
 dirs = "5"
 chrono = { workspace = true }
 uuid = { workspace = true }
 reqwest = { workspace = true }
-regex = "1"
+regex = { workspace = true }
 ignore = "0.4"
-indexmap = "2"
+indexmap = { workspace = true }
 boa_engine = { workspace = true }
 num_cpus = { workspace = true }
 parking_lot = { workspace = true }
 rand = "0.10.1"
-libc = "0.2.186"
-async-trait = "0.1"
-hex = "0.4"
+libc = { workspace = true }
+async-trait = { workspace = true }
+hex = { workspace = true }
 hmac = "0.12"
 sha2 = "0.10"
-base64 = "0.22"
+base64 = { workspace = true }
 ed25519-dalek = "2"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-url = "2"
-urlencoding = "2"
-serde_urlencoded = "0.7"
+image = { workspace = true }
+url = { workspace = true }
+urlencoding = { workspace = true }
+serde_urlencoded = { workspace = true }
 unicode-segmentation = { workspace = true }
 jsonschema = { version = "0.46.5", default-features = false }
 # OS-level desktop notifications (engine handlers fire turn-complete /
 # tool-failed bubbles; disabled via JFC_DISABLE_NOTIFICATIONS=1).
 notify-rust = { version = "4", default-features = false, features = ["d"] }
-notify = "8"
+notify = { workspace = true }
 
 jfc-config = { path = "../jfc-config" }
 jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
@@ -69,9 +69,9 @@ jfc-design = { path = "../jfc-design" }
 jfc-remote = { path = "../jfc-remote" }
 
 [dev-dependencies]
-tempfile = "3.27.0"
-proptest = "1"
-serial_test = "3"
+tempfile = { workspace = true }
+proptest = { workspace = true }
+serial_test = { workspace = true }
 
 [features]
 # The engine ships every feature off; the jfc bin selects and forwards.

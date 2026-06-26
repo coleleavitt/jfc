@@ -266,6 +266,7 @@ impl MarketOrchestrator {
             .into_iter()
             .cloned()
             .collect();
+        let solution_count = solutions.len() as u64;
         tracing::debug!(
             target: "jfc::economy::cycle",
             bounty_id = %bounty_id,
@@ -390,6 +391,36 @@ impl MarketOrchestrator {
         self.bounties
             .transition(bounty_id, MarketState::Settling)
             .map_err(OrchestratorError::Bounty)?;
+        let verdicts = self.validators.verdicts();
+        let evidence = crate::reporting::CycleEvidence {
+            solver_count: actual_solvers as u64,
+            solution_count,
+            validator_count: verdicts.len() as u64,
+            flaws_upheld: verdicts
+                .iter()
+                .filter(|(_, verdict)| {
+                    matches!(verdict, crate::types::ValidationVerdict::FlawUpheld)
+                })
+                .count() as u64,
+            flaws_dismissed: verdicts
+                .iter()
+                .filter(|(_, verdict)| {
+                    matches!(verdict, crate::types::ValidationVerdict::FlawDismissed)
+                })
+                .count() as u64,
+            no_flaw_found: verdicts
+                .iter()
+                .filter(|(_, verdict)| {
+                    matches!(verdict, crate::types::ValidationVerdict::NoFlawFound)
+                })
+                .count() as u64,
+            early_terminations: verdicts
+                .iter()
+                .filter(|(_, verdict)| {
+                    matches!(verdict, crate::types::ValidationVerdict::EarlyTermination)
+                })
+                .count() as u64,
+        };
         // Capture the winning solution before settlement mutates pools.
         // run_bounty in the dispatcher needs `winning_solution.patch`
         // to actually write the work to disk — without it, the cycle
@@ -415,6 +446,7 @@ impl MarketOrchestrator {
         Ok(CycleOutcome {
             settlement,
             winning_solution,
+            evidence,
         })
     }
 

@@ -10,19 +10,27 @@ use std::path::Path;
 
 use crate::runtime::ExecutionResult;
 
-use super::economy::{EconomyAgentInvoker, EconomySwarmProvider, apply_winning_solution};
+use super::bounty_learning::{BountyLearningContext, persist_bounty_learning};
+pub(crate) use super::bounty_tasks::{PostBountyExecution, RunBountyExecution};
+use super::bounty_tasks::{create_bounty_task, ensure_bounty_task_for_run, update_bounty_task};
+use super::economy::{
+    EconomyAgentInvoker, EconomySwarmProvider, apply_winning_solution, persist_bounty_event,
+};
 use super::registry::{market_orchestrator, snapshot_active_provider};
+use jfc_session::TaskStatus;
 
 /// `post_bounty` tool — register a bounty and (when `auto_dispatch`) drive
 /// the full Solve→Validate→Settle cycle.
-pub async fn execute_post_bounty(
-    description: String,
-    budget: u64,
-    acceptance_criteria: String,
-    max_solvers: Option<u8>,
-    auto_dispatch: bool,
-    cwd: &Path,
-) -> ExecutionResult {
+pub async fn execute_post_bounty(input: PostBountyExecution, cwd: &Path) -> ExecutionResult {
+    let PostBountyExecution {
+        description,
+        budget,
+        acceptance_criteria,
+        max_solvers,
+        auto_dispatch,
+        parent_task_id,
+        task_store,
+    } = input;
     // The orchestrator's lock is process-global; only one
     // post_bounty runs at a time. That's fine — bounties are
     // posted in the LLM's main loop, not from concurrent
@@ -36,13 +44,28 @@ pub async fn execute_post_bounty(
     // would block /market and concurrent post_bounty calls.
     let bounty_id = {
         let mut orch = market_orchestrator().lock().await;
-        match orch.post_bounty(description, budget, acceptance_criteria, max_solvers) {
+        match orch.post_bounty(
+            description.clone(),
+            budget,
+            acceptance_criteria.clone(),
+            max_solvers,
+        ) {
             Ok(id) => id,
             Err(e) => {
                 return ExecutionResult::failure(format!("post_bounty failed: {e}"));
             }
         }
     };
+    let task_id = create_bounty_task(
+        task_store.as_ref(),
+        &bounty_id,
+        &description,
+        budget,
+        &acceptance_criteria,
+        max_solvers,
+        auto_dispatch,
+        parent_task_id.as_deref(),
+    );
     let max_solvers_text = match max_solvers {
         Some(n) => n.to_string(),
         None => {
@@ -50,6 +73,20 @@ pub async fn execute_post_bounty(
             orch.charter().max_solvers.to_string()
         }
     };
+    persist_bounty_event(
+        cwd,
+        &bounty_id,
+        "posted",
+        serde_json::json!({
+            "state": "Open",
+            "budget": budget,
+            "max_solvers": max_solvers,
+            "max_solvers_effective": max_solvers_text,
+            "auto_dispatch": auto_dispatch,
+            "task_id": task_id,
+        }),
+    )
+    .await;
     if !auto_dispatch {
         return ExecutionResult::success(format!(
             "Bounty `{bounty_id}` registered. State=Open, budget={budget} tok, \
@@ -66,6 +103,17 @@ pub async fn execute_post_bounty(
     // post_bounty calls aren't blocked across the network
     // round-trips.
     let Some((provider, model)) = snapshot_active_provider() else {
+        persist_bounty_event(
+            cwd,
+            &bounty_id,
+            "dispatch_skipped",
+            serde_json::json!({
+                "reason": "no_active_provider",
+                "state": "Open",
+                "task_id": task_id,
+            }),
+        )
+        .await;
         return ExecutionResult::success(format!(
             "Bounty `{bounty_id}` registered (budget {budget} tok, \
              max_solvers={max_solvers_text}, State=Open). \
@@ -90,6 +138,25 @@ pub async fn execute_post_bounty(
         cwd = %cwd.display(),
         "post_bounty auto_dispatch: kicking off cycle"
     );
+    let task_id = update_bounty_task(
+        task_store.as_ref(),
+        &bounty_id,
+        task_id.as_deref(),
+        TaskStatus::InProgress,
+        format!("Running bounty {bounty_id}"),
+    )
+    .or(task_id);
+    persist_bounty_event(
+        cwd,
+        &bounty_id,
+        "dispatch_started",
+        serde_json::json!({
+            "n_solvers": n_solvers,
+            "mode": "auto_dispatch",
+            "task_id": task_id,
+        }),
+    )
+    .await;
     let cycle_result = {
         let mut orch = market_orchestrator().lock().await;
         orch.run_bounty_cycle(&bounty_id, &invoker, &swarm, n_solvers, 1)
@@ -106,6 +173,43 @@ pub async fn execute_post_bounty(
                 files_written = written.files.len(),
                 "post_bounty auto_dispatch settled"
             );
+            let task_id = update_bounty_task(
+                task_store.as_ref(),
+                &bounty_id,
+                task_id.as_deref(),
+                TaskStatus::Completed,
+                format!("Bounty {bounty_id} settled"),
+            )
+            .or(task_id);
+            let learning = persist_bounty_learning(
+                BountyLearningContext {
+                    cwd,
+                    bounty_id: &bounty_id,
+                    mode: "auto_dispatch",
+                    task_id: task_id.as_deref(),
+                },
+                &outcome,
+                &written,
+            )
+            .await;
+            persist_bounty_event(
+                cwd,
+                &bounty_id,
+                "settled",
+                serde_json::json!({
+                    "winner": outcome.settlement.winner.as_ref().map(|a| a.label()),
+                    "total_cost": outcome.settlement.total_cost,
+                    "payouts": outcome.settlement.payouts.len(),
+                    "trust_updates": outcome.settlement.trust_updates.len(),
+                    "files_written": written.files,
+                    "mode": "auto_dispatch",
+                    "task_id": task_id,
+                    "rsi_learning_events": learning.as_ref().map(|report| report.learning_events),
+                    "rsi_definitions": learning.as_ref().map(|report| report.definitions),
+                    "rsi_memories": learning.as_ref().map(|report| report.memories),
+                }),
+            )
+            .await;
             ExecutionResult::success(format!(
                 "Bounty `{bounty_id}` settled.\n\
                  Winner: {}\n\
@@ -127,6 +231,25 @@ pub async fn execute_post_bounty(
             ))
         }
         Err(e) => {
+            let task_id = update_bounty_task(
+                task_store.as_ref(),
+                &bounty_id,
+                task_id.as_deref(),
+                TaskStatus::Failed,
+                format!("Bounty {bounty_id} failed"),
+            )
+            .or(task_id);
+            persist_bounty_event(
+                cwd,
+                &bounty_id,
+                "failed",
+                serde_json::json!({
+                    "error": e.to_string(),
+                    "mode": "auto_dispatch",
+                    "task_id": task_id,
+                }),
+            )
+            .await;
             ExecutionResult::failure(format!("auto_dispatch cycle for `{bounty_id}` failed: {e}"))
         }
     }
@@ -134,11 +257,12 @@ pub async fn execute_post_bounty(
 
 /// `run_bounty` tool — drive an already-posted Open bounty through the full
 /// Solve→Validate→Settle cycle.
-pub async fn execute_run_bounty(
-    bounty_id: String,
-    max_solvers: Option<u8>,
-    cwd: &Path,
-) -> ExecutionResult {
+pub async fn execute_run_bounty(input: RunBountyExecution, cwd: &Path) -> ExecutionResult {
+    let RunBountyExecution {
+        bounty_id,
+        max_solvers,
+        task_store,
+    } = input;
     // Drive an already-posted Open bounty through the full
     // Solve→Validate→Settle cycle. Same code path as
     // PostBounty's auto_dispatch=true, just without the
@@ -169,6 +293,15 @@ pub async fn execute_run_bounty(
     let invoker = EconomyAgentInvoker::new(provider, model);
     let swarm = EconomySwarmProvider::new(cwd.to_path_buf());
     let n_solvers = max_solvers.unwrap_or(2).clamp(1, 5);
+    let task_id = ensure_bounty_task_for_run(task_store.as_ref(), &bounty_id, Some(n_solvers));
+    let task_id = update_bounty_task(
+        task_store.as_ref(),
+        &bounty_id,
+        task_id.as_deref(),
+        TaskStatus::InProgress,
+        format!("Running bounty {bounty_id}"),
+    )
+    .or(task_id);
     tracing::info!(
         target: "jfc::ui::bounty",
         bounty_id = %bounty_id,
@@ -176,6 +309,17 @@ pub async fn execute_run_bounty(
         cwd = %cwd.display(),
         "run_bounty: kicking off cycle"
     );
+    persist_bounty_event(
+        cwd,
+        &bounty_id,
+        "dispatch_started",
+        serde_json::json!({
+            "n_solvers": n_solvers,
+            "mode": "run_bounty",
+            "task_id": task_id,
+        }),
+    )
+    .await;
     let cycle_result = {
         let mut orch = market_orchestrator().lock().await;
         orch.run_bounty_cycle(&bounty_id, &invoker, &swarm, n_solvers, 1)
@@ -192,6 +336,43 @@ pub async fn execute_run_bounty(
                 files_written = written.files.len(),
                 "run_bounty settled"
             );
+            let task_id = update_bounty_task(
+                task_store.as_ref(),
+                &bounty_id,
+                task_id.as_deref(),
+                TaskStatus::Completed,
+                format!("Bounty {bounty_id} settled"),
+            )
+            .or(task_id);
+            let learning = persist_bounty_learning(
+                BountyLearningContext {
+                    cwd,
+                    bounty_id: &bounty_id,
+                    mode: "run_bounty",
+                    task_id: task_id.as_deref(),
+                },
+                &outcome,
+                &written,
+            )
+            .await;
+            persist_bounty_event(
+                cwd,
+                &bounty_id,
+                "settled",
+                serde_json::json!({
+                    "winner": outcome.settlement.winner.as_ref().map(|a| a.label()),
+                    "total_cost": outcome.settlement.total_cost,
+                    "payouts": outcome.settlement.payouts.len(),
+                    "trust_updates": outcome.settlement.trust_updates.len(),
+                    "files_written": written.files,
+                    "mode": "run_bounty",
+                    "task_id": task_id,
+                    "rsi_learning_events": learning.as_ref().map(|report| report.learning_events),
+                    "rsi_definitions": learning.as_ref().map(|report| report.definitions),
+                    "rsi_memories": learning.as_ref().map(|report| report.memories),
+                }),
+            )
+            .await;
             ExecutionResult::success(format!(
                 "Bounty `{bounty_id}` settled.\n\
                  Winner: {}\n\
@@ -213,6 +394,25 @@ pub async fn execute_run_bounty(
             ))
         }
         Err(e) => {
+            let task_id = update_bounty_task(
+                task_store.as_ref(),
+                &bounty_id,
+                task_id.as_deref(),
+                TaskStatus::Failed,
+                format!("Bounty {bounty_id} failed"),
+            )
+            .or(task_id);
+            persist_bounty_event(
+                cwd,
+                &bounty_id,
+                "failed",
+                serde_json::json!({
+                    "error": e.to_string(),
+                    "mode": "run_bounty",
+                    "task_id": task_id,
+                }),
+            )
+            .await;
             ExecutionResult::failure(format!("run_bounty cycle for `{bounty_id}` failed: {e}"))
         }
     }

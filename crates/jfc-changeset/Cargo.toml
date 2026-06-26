@@ -7,7 +7,7 @@ publish.workspace = true
 description = "Durable, reviewable, reversible agent change-set lifecycle for jfc"
 
 [dependencies]
-fs2 = "0.4"
+fs2 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -15,8 +15,8 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-criterion = { version = "4.7.0", features = ["html_reports"], package = "codspeed-criterion-compat" }
-tempfile = "3"
+criterion = { workspace = true }
+tempfile = { workspace = true }
 
 [[bench]]
 name = "changeset"

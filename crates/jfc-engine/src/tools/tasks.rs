@@ -4,7 +4,9 @@ use tracing::{debug, info, warn};
 
 use super::ExecutionResult;
 use super::subagent::execute_skill_in;
-use jfc_session::{DeletedFilter, TaskKind, TaskPatch, TaskRisk, TaskStatus, TaskStore};
+use jfc_session::{
+    DeletedFilter, TaskExecutionMetadata, TaskKind, TaskPatch, TaskRisk, TaskStatus, TaskStore,
+};
 
 pub struct TaskCreateRequest {
     pub subject: String,
@@ -73,44 +75,41 @@ pub fn execute_task_create(
             "TaskCreate rejected placeholder subject/description; provide a real task title and description",
         );
     }
+    let parsed_risk = risk.as_deref().and_then(parse_risk);
+    let parsed_kind = kind.as_deref().and_then(parse_kind);
+    let execution = TaskExecutionMetadata::recommended_for_fields(
+        &subject,
+        &description,
+        parsed_risk,
+        &tags,
+        0,
+    );
     match store.create(subject, description, active_form, blocked_by) {
         Ok(task) => {
             // Apply optional extended fields via a patch
-            let parsed_risk = risk.as_deref().and_then(parse_risk);
-            let parsed_kind = kind.as_deref().and_then(parse_kind);
-            let has_extras = acceptance_criteria.is_some()
-                || verification_command.is_some()
-                || parsed_risk.is_some()
-                || parent_id.is_some()
-                || parsed_kind.is_some()
-                || !tags.is_empty()
-                || priority.is_some()
-                || effort.is_some()
-                || model.is_some();
-            if has_extras {
-                let patch = TaskPatch {
-                    acceptance_criteria,
-                    verification_command,
-                    risk: parsed_risk,
-                    parent_id: parent_id.map(jfc_session::TaskId::from),
-                    kind: parsed_kind,
-                    tags: if tags.is_empty() { None } else { Some(tags) },
-                    priority,
-                    effort,
-                    model,
-                    ..Default::default()
-                };
-                match store.update(task.id.as_str(), patch) {
-                    Ok(updated) => {
-                        debug!(target: "jfc::tools", task_id = %updated.id, "task_create: success with extras");
-                        return ExecutionResult::success(
-                            serde_json::to_string_pretty(&updated)
-                                .unwrap_or_else(|_| format!("{updated:?}")),
-                        );
-                    }
-                    Err(e) => {
-                        warn!(target: "jfc::tools", error = %e, "task_create: extras patch failed");
-                    }
+            let patch = TaskPatch {
+                metadata: Some(execution.to_task_metadata(task.metadata.as_ref())),
+                acceptance_criteria,
+                verification_command,
+                risk: parsed_risk,
+                parent_id: parent_id.map(jfc_session::TaskId::from),
+                kind: parsed_kind,
+                tags: if tags.is_empty() { None } else { Some(tags) },
+                priority,
+                effort,
+                model,
+                ..Default::default()
+            };
+            match store.update(task.id.as_str(), patch) {
+                Ok(updated) => {
+                    debug!(target: "jfc::tools", task_id = %updated.id, "task_create: success with execution metadata");
+                    return ExecutionResult::success(
+                        serde_json::to_string_pretty(&updated)
+                            .unwrap_or_else(|_| format!("{updated:?}")),
+                    );
+                }
+                Err(e) => {
+                    warn!(target: "jfc::tools", error = %e, "task_create: execution metadata patch failed");
                 }
             }
             debug!(target: "jfc::tools", task_id = %task.id, "task_create: success");
@@ -153,6 +152,7 @@ pub fn execute_task_update(
     let Some(store) = store else {
         return ExecutionResult::failure("Task store not available");
     };
+    let current = store.get(&task_id);
     let parsed_status = match status.as_deref() {
         Some("pending") => Some(TaskStatus::Pending),
         Some("queued") => Some(TaskStatus::Queued),
@@ -169,6 +169,31 @@ pub fn execute_task_update(
         }
         None => None,
     };
+    let parsed_risk = risk.as_deref().and_then(parse_risk);
+    let parsed_kind = kind.as_deref().and_then(parse_kind);
+    let metadata = current.as_ref().and_then(|task| {
+        let strategy_inputs_changed =
+            subject.is_some() || description.is_some() || parsed_risk.is_some() || !tags.is_empty();
+        if !strategy_inputs_changed {
+            return None;
+        }
+        let subject = subject.as_deref().unwrap_or(&task.subject);
+        let description = description.as_deref().unwrap_or(&task.description);
+        let risk = parsed_risk.or(task.risk);
+        let tags = if tags.is_empty() {
+            task.tags.clone()
+        } else {
+            tags.clone()
+        };
+        let execution = TaskExecutionMetadata::recommended_for_fields(
+            subject,
+            description,
+            risk,
+            &tags,
+            task.attempt_count,
+        );
+        Some(execution.to_task_metadata(task.metadata.as_ref()))
+    });
     let patch = TaskPatch {
         subject,
         description,
@@ -176,9 +201,9 @@ pub fn execute_task_update(
         owner,
         acceptance_criteria,
         verification_command,
-        risk: risk.as_deref().and_then(parse_risk),
+        risk: parsed_risk,
         parent_id: parent_id.map(jfc_session::TaskId::from),
-        kind: kind.as_deref().and_then(parse_kind),
+        kind: parsed_kind,
         blocked_by: if blocked_by.is_empty() {
             None
         } else {
@@ -188,6 +213,7 @@ pub fn execute_task_update(
         priority,
         effort,
         model,
+        metadata,
         ..Default::default()
     };
     match store.update(&task_id, patch) {
@@ -570,6 +596,67 @@ mod tests {
             .unwrap();
 
         assert!(blocked_by.is_empty());
+    }
+
+    #[test]
+    fn task_create_records_solo_execution_metadata_normal() {
+        let store = TaskStore::in_memory();
+
+        let result = execute_task_create(
+            Some(store.clone()),
+            TaskCreateRequest {
+                subject: "rename status label".to_owned(),
+                description: "small wording cleanup".to_owned(),
+                active_form: None,
+                blocked_by: Vec::new(),
+                acceptance_criteria: None,
+                verification_command: None,
+                risk: None,
+                parent_id: None,
+                kind: None,
+                tags: Vec::new(),
+                priority: None,
+                effort: None,
+                model: None,
+            },
+        );
+
+        assert!(!result.is_error(), "{}", result.output);
+        let mut tasks = store.list(DeletedFilter::Exclude);
+        let task = tasks.remove(0);
+        let execution = TaskExecutionMetadata::from_task(&task).expect("execution metadata");
+        assert_eq!(execution.mode, jfc_session::TaskExecutionMode::Solo);
+    }
+
+    #[test]
+    fn task_create_marks_high_risk_work_for_bounty_execution_normal() {
+        let store = TaskStore::in_memory();
+
+        let result = execute_task_create(
+            Some(store.clone()),
+            TaskCreateRequest {
+                subject: "audit unsafe parser".to_owned(),
+                description: "security-sensitive parser fix".to_owned(),
+                active_form: None,
+                blocked_by: Vec::new(),
+                acceptance_criteria: None,
+                verification_command: None,
+                risk: Some("high".to_owned()),
+                parent_id: None,
+                kind: None,
+                tags: vec!["security".to_owned()],
+                priority: None,
+                effort: None,
+                model: None,
+            },
+        );
+
+        assert!(!result.is_error(), "{}", result.output);
+        let mut tasks = store.list(DeletedFilter::Exclude);
+        let task = tasks.remove(0);
+        let execution = TaskExecutionMetadata::from_task(&task).expect("execution metadata");
+        assert_eq!(execution.mode, jfc_session::TaskExecutionMode::Bounty);
+        assert!(execution.bounty.is_none());
     }
 
     #[test]

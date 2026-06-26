@@ -67,6 +67,11 @@ pub fn record_accepted(original_intent: String, text: String, rationale: String)
 pub struct ProviderRewriteModel {
     provider: Arc<dyn Provider>,
     model: String,
+    /// When set, request visible thinking on each stage call and emit the
+    /// returned chain-of-thought to an ephemeral debug log so the refusal
+    /// "chain of adaptation" (screen → classify → rewrite → verify) can be
+    /// inspected. Off by default; gated by `Config::refusal_log_reasoning`.
+    log_reasoning: bool,
 }
 
 impl ProviderRewriteModel {
@@ -74,7 +79,16 @@ impl ProviderRewriteModel {
         Self {
             provider,
             model: model.into(),
+            log_reasoning: false,
         }
+    }
+
+    /// Enable per-stage chain-of-thought debug logging (and thinking on the
+    /// underlying request so the provider emits it). Ephemeral logs only — the
+    /// CoT is never persisted to the durable knowledge store.
+    pub fn with_reasoning_log(mut self, enabled: bool) -> Self {
+        self.log_reasoning = enabled;
+        self
     }
 }
 
@@ -85,15 +99,55 @@ impl RewriteModel for ProviderRewriteModel {
             role: ProviderRole::User,
             content: vec![ProviderContent::Text(user.to_string())],
         }];
-        let opts = StreamOptions::new(self.model.clone())
-            .system(system.to_string())
-            .max_tokens(1024);
+        // Thinking needs budget headroom under max_tokens; bump the cap only when
+        // CoT logging is on so the default path keeps its tight 1024-token budget.
+        let opts = if self.log_reasoning {
+            StreamOptions::new(self.model.clone())
+                .system(system.to_string())
+                .max_tokens(3072)
+                .thinking(2048)
+        } else {
+            StreamOptions::new(self.model.clone())
+                .system(system.to_string())
+                .max_tokens(1024)
+        };
         match self.provider.complete(messages, &opts).await {
-            Ok(resp) => Ok(resp.content),
+            Ok(resp) => {
+                if self.log_reasoning
+                    && let Some(cot) = resp
+                        .reasoning
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                {
+                    tracing::debug!(
+                        target: "jfc::prompt_rewrite",
+                        stage = rewrite_stage_label(system),
+                        reasoning = %cot,
+                        "rewrite/classifier chain-of-thought (refusal_log_reasoning=on; ephemeral, not persisted)"
+                    );
+                }
+                Ok(resp.content)
+            }
             Err(e) => Err(jfc_audit::AuditError::Internal {
                 message: format!("prompt-rewrite model error: {e}"),
             }),
         }
+    }
+}
+
+/// Label which pipeline stage a `complete()` call belongs to, by sniffing the
+/// system prompt prefix, so the CoT debug log is attributable to a step in the
+/// chain of adaptation. Purely for log readability.
+fn rewrite_stage_label(system: &str) -> &'static str {
+    if system.starts_with("You are a response refusal classifier") {
+        "response_refusal_classifier"
+    } else if system.starts_with("You are a safety intent classifier") {
+        "intent_classifier"
+    } else if system.starts_with("You rewrite") {
+        "rewriter"
+    } else {
+        "verifier"
     }
 }
 
@@ -230,7 +284,8 @@ pub async fn classify_response_refusal(
     let model_id = resolve_model(Some(cfg), advisor_model, active_model);
     let (rewrite_provider, rewrite_model) =
         resolve_rewrite_target(providers, provider, active_model, &model_id);
-    let model = ProviderRewriteModel::new(rewrite_provider, rewrite_model);
+    let model = ProviderRewriteModel::new(rewrite_provider, rewrite_model)
+        .with_reasoning_log(crate::config::load_arc().refusal_log_reasoning);
     match retry::classify_refusal(&model, original_prompt, response).await {
         Ok(assessment) => Some(assessment),
         Err(e) => {
@@ -268,7 +323,8 @@ pub async fn evaluate_with_feedback(
     // one) so a cross-provider advisor model doesn't 404 and fail the gate open.
     let (rewrite_provider, rewrite_model) =
         resolve_rewrite_target(providers, provider, active_model, &model_id);
-    let model = ProviderRewriteModel::new(rewrite_provider, rewrite_model);
+    let model = ProviderRewriteModel::new(rewrite_provider, rewrite_model)
+        .with_reasoning_log(crate::config::load_arc().refusal_log_reasoning);
 
     match pipeline
         .run_with_feedback(prompt, &model, history, prior_attempts, refusal_feedback)
@@ -370,6 +426,7 @@ mod tests {
                 content,
                 usage: TokenUsage::default(),
                 context_signals: None,
+                reasoning: None,
             })
         }
     }

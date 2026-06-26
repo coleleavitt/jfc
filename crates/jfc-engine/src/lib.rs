@@ -39,6 +39,7 @@ pub mod compact;
 pub mod compact_archive;
 pub mod config;
 pub mod context;
+pub mod context_accounting;
 pub mod cost;
 pub mod council;
 pub mod council_directives;
@@ -393,6 +394,7 @@ pub use engine::{Engine, channel};
 /// Mirror a session header into the `jfc-knowledge` session index.
 /// Best-effort and silent on error: failed indexing must never block a session
 /// compatibility save.
+// CLIPPY-ALLOW: public compatibility facade mirrors persisted session index fields.
 #[allow(clippy::too_many_arguments)]
 pub fn index_session(
     id: &str,

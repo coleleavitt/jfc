@@ -19,6 +19,7 @@ pub mod local;
 pub mod markdown;
 pub mod mcp;
 pub mod session;
+pub mod source_todo;
 pub mod support;
 pub mod task;
 pub mod worktree;
@@ -47,6 +48,7 @@ use delegating::*;
 use inbox::*;
 use info::*;
 use session::*;
+use source_todo::*;
 use task::*;
 
 /// What [`run_command`] did with the line.
@@ -151,6 +153,7 @@ engine_commands! {
         "/agents" [] "list available DB-backed agent definitions" => cmd_agents,
         "/market" [] "show the agent-economy snapshot" => cmd_market,
         "/task-list" ["/tasks"] "list todo/task items" => cmd_task_list,
+        "/todo-tree" ["/source-todos"] "show source TODO/FIXME markers grouped by file" => cmd_todo_tree,
         "/task-add" [] "create a new task" => cmd_task_add,
         "/task-done" [] "mark a task completed (`all` completes every open task)" => cmd_task_done,
         "/task-rm" ["/task-delete"] "delete a task" => cmd_task_rm,
@@ -637,6 +640,8 @@ mod plugin_refresh_tests {
     impl EnvGuard {
         fn set(key: &'static str, value: &str) -> Self {
             let prev = std::env::var(key).ok();
+            // SAFETY: these tests serialize environment mutation with
+            // `serial_test`, and the guard restores the previous value.
             unsafe { std::env::set_var(key, value) };
             Self { key, prev }
         }
@@ -644,6 +649,9 @@ mod plugin_refresh_tests {
 
     impl Drop for EnvGuard {
         fn drop(&mut self) {
+            // SAFETY: paired restoration for `EnvGuard::set`; the tests using
+            // this guard are serialized so no parallel env readers observe an
+            // intentionally transient value from another test.
             unsafe {
                 match &self.prev {
                     Some(value) => std::env::set_var(self.key, value),
@@ -657,6 +665,8 @@ mod plugin_refresh_tests {
     #[serial_test::serial]
     fn plugin_refresh_gate_accepts_background_refresh_alias_normal() {
         let _jfc = EnvGuard::set("JFC_PLUGIN_REFRESH_ON_MISS", "0");
+        // SAFETY: this serial test owns the process env for the duration of
+        // the assertion and restores the primary variable through `_jfc`.
         unsafe { std::env::remove_var("JFC_PLUGIN_REFRESH_ON_MISS") };
         let _alias = EnvGuard::set("CLAUDE_CODE_ENABLE_BACKGROUND_PLUGIN_REFRESH", "true");
         assert!(plugin_refresh_on_miss_enabled());

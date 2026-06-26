@@ -1128,11 +1128,17 @@ impl StreamOptions {
 }
 
 /// Non-streaming response for use by compaction and other single-shot API calls.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CompletionResponse {
     pub content: String,
     pub usage: TokenUsage,
     pub context_signals: Option<jfc_core::context_management::ContextSignals>,
+    /// Model chain-of-thought / thinking surfaced on the non-streaming path, when
+    /// the provider returned it (e.g. Anthropic `thinking` content blocks). `None`
+    /// when the model emitted no thinking or the provider can't expose it. This is
+    /// the visible reasoning only; opaque `redacted_thinking` blobs are not decoded
+    /// here. Consumers that log it must treat it as private and ephemeral.
+    pub reasoning: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]

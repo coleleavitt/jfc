@@ -693,6 +693,32 @@ impl KnowledgeStore {
         Ok(())
     }
 
+    pub async fn list_session_retrieval_events(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<SessionRetrievalEvent>> {
+        let rows = sqlx::query(
+            "SELECT id, session_id, query, source, result_count, payload, created_at_ms \
+             FROM session_retrieval_events WHERE session_id = ?1 ORDER BY created_at_ms ASC",
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(SessionRetrievalEvent {
+                    id: r.try_get(0)?,
+                    session_id: r.try_get(1)?,
+                    query: r.try_get(2)?,
+                    source: r.try_get(3)?,
+                    result_count: r.try_get(4)?,
+                    payload: r.try_get(5)?,
+                    created_at_ms: r.try_get(6)?,
+                })
+            })
+            .collect()
+    }
+
     pub async fn record_compaction(&self, compaction: &SessionCompactionRow) -> Result<()> {
         sqlx::query(
             "INSERT INTO session_compactions \
@@ -2559,7 +2585,14 @@ mod tests {
 
         assert_eq!(
             store.get_agent_session("agent_advisor_1").await.unwrap(),
-            Some(agent)
+            Some(agent.clone())
+        );
+        assert_eq!(
+            store
+                .list_agent_sessions_by_team("team_alpha", 10)
+                .await
+                .unwrap(),
+            vec![agent]
         );
         assert_eq!(
             store.list_agent_events("ses_parent", 10).await.unwrap(),

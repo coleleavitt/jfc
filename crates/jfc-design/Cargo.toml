@@ -22,9 +22,9 @@ default = []
 server-api = ["dep:async-stream", "dep:axum", "dep:futures-util", "dep:tokio"]
 
 [dependencies]
-async-stream = { version = "0.3", optional = true }
-axum = { version = "0.7", optional = true }
-futures-util = { version = "0.3", optional = true }
+async-stream = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -32,7 +32,7 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"], optional = true }
 tracing = { workspace = true }
-regex = "1"
+regex = { workspace = true }
 base64 = "0.21"
 walkdir = "2"
 mime_guess = "2"

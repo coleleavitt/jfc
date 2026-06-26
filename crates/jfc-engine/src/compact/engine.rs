@@ -403,6 +403,7 @@ pub async fn complete_or_stream(
                 content: collected,
                 usage: Default::default(),
                 context_signals: None,
+                reasoning: None,
             })
         }
         Err(e) => Err(e),
@@ -1541,6 +1542,7 @@ mod level_tests {
                 content: "<summary>short summary</summary>".to_owned(),
                 usage: Default::default(),
                 context_signals: None,
+                reasoning: None,
             })
         }
     }

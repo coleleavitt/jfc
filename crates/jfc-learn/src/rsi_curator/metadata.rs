@@ -85,6 +85,9 @@ fn thinking_metadata(thinking: super::candidate::ThinkingProvenance) -> serde_js
         "private_blocks_seen": thinking.private_blocks_seen,
         "thinking_tokens": thinking.thinking_tokens,
         "raw_stored": thinking.raw_stored,
+        "support": thinking.support.slug(),
+        "self_consistency": thinking.self_consistency.slug(),
+        "observable_support_count": thinking.observable_support_count,
     })
 }
 

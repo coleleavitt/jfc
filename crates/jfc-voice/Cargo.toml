@@ -12,7 +12,7 @@ tokio = { workspace = true, features = ["process", "fs", "sync", "time", "io-uti
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
 tracing = { workspace = true }
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "stream", "rustls", "multipart", "http2"] }
-futures-util = "0.3"
+futures-util = { workspace = true }
 
 # Optional neural VAD backend (Silero VAD v5 via ONNX Runtime). Compiling the
 # feature only makes the backend available; runtime construction is still

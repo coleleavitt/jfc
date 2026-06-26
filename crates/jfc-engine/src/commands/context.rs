@@ -35,7 +35,7 @@ pub(super) async fn cmd_compact(
     _text: &str,
     tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    let est = state.tool_ctx.approx_tokens;
+    let est = crate::context_accounting::model_visible_tokens_for_display(state);
     let level = crate::compact::compact_level_with_output(
         est,
         state.max_context_tokens,
@@ -1387,7 +1387,7 @@ pub(super) async fn cmd_goal(
         state.messages.push(ChatMessage::assistant(msg));
     } else if crate::goal::is_clear_arg(arg) {
         let prev = state.goal.take();
-        state.goal_evaluator_in_flight = false;
+        crate::runtime::cancel_goal_evaluator(state);
         // Drop the sidecar so a future /continue doesn't
         // revive a goal the user just cancelled.
         if let Some(sid) = state.current_session_id.as_ref() {
@@ -1410,6 +1410,7 @@ pub(super) async fn cmd_goal(
             Ok(condition) => {
                 let goal = crate::goal::ActiveGoal::new(condition.clone());
                 state.goal = Some(goal);
+                crate::runtime::cancel_goal_evaluator(state);
                 // Persist the new goal so /continue picks it
                 // up if the user exits before the next turn.
                 if let Some(sid) = state.current_session_id.as_ref() {
@@ -1837,7 +1838,7 @@ pub(super) async fn cmd_interaction_mode(
                 InteractionMode::Brainstorm => {
                     "ask clarifying questions before starting large new work"
                 }
-                InteractionMode::Code => unreachable!(),
+                InteractionMode::Code => "implement, full edits expected",
             };
             state.messages.push(ChatMessage::assistant(format!(
                 "Interaction mode set to {} — {desc}.",
@@ -1976,14 +1977,28 @@ pub(super) async fn cmd_permissions(
     } else if let Some(rule) = arg.strip_prefix("add ") {
         // Add a new allow rule
         let rule = rule.trim();
-        let perms = settings
-            .as_object_mut()
-            .unwrap()
+        if !settings.is_object() {
+            settings = serde_json::json!({});
+        }
+        let Some(root) = settings.as_object_mut() else {
+            state.messages.push(ChatMessage::assistant(
+                "Could not update permissions: settings root is not an object.".to_owned(),
+            ));
+            return;
+        };
+        let perms = root
             .entry("permissions")
             .or_insert_with(|| serde_json::json!({}));
-        let allow = perms
-            .as_object_mut()
-            .unwrap()
+        if !perms.is_object() {
+            *perms = serde_json::json!({});
+        }
+        let Some(perms_obj) = perms.as_object_mut() else {
+            state.messages.push(ChatMessage::assistant(
+                "Could not update permissions: permissions root is not an object.".to_owned(),
+            ));
+            return;
+        };
+        let allow = perms_obj
             .entry("allow")
             .or_insert_with(|| serde_json::json!([]));
         if let Some(arr) = allow.as_array_mut() {
@@ -1991,10 +2006,9 @@ pub(super) async fn cmd_permissions(
         }
         // Write back
         let _ = std::fs::create_dir_all(".jfc");
-        let _ = std::fs::write(
-            settings_path,
-            serde_json::to_string_pretty(&settings).unwrap(),
-        );
+        let serialized =
+            serde_json::to_string_pretty(&settings).unwrap_or_else(|_| "{}".to_owned());
+        let _ = std::fs::write(settings_path, serialized);
         state.messages.push(ChatMessage::assistant(format!(
             "Added permission allow rule: `{rule}`"
         )));
@@ -2072,7 +2086,8 @@ pub(super) async fn cmd_stuck(
     // Token usage
     report.push_str(&format!(
         "• Context tokens: {} / {}\n",
-        state.tool_ctx.approx_tokens, state.max_context_tokens
+        crate::context_accounting::model_visible_tokens_for_display(state),
+        state.max_context_tokens
     ));
 
     // Session info
@@ -2124,7 +2139,17 @@ pub(super) async fn cmd_teleport_export(
         "exported_at": chrono::Utc::now().to_rfc3339(),
     });
 
-    match std::fs::write(&path, serde_json::to_string_pretty(&export).unwrap()) {
+    let serialized = match serde_json::to_string_pretty(&export) {
+        Ok(serialized) => serialized,
+        Err(err) => {
+            state.messages.push(ChatMessage::assistant(format!(
+                "Failed to serialize context export: {err}"
+            )));
+            return;
+        }
+    };
+
+    match std::fs::write(&path, serialized) {
         Ok(_) => {
             state.messages.push(ChatMessage::assistant(format!(
                 "Context exported to `{}`\n\nAnother session can import with: \
@@ -2705,9 +2730,8 @@ pub(super) async fn cmd_morning_checkin(
 
 /// `/queue` — show pending queued messages, or `/queue clear` to discard them.
 ///
-/// When `message_queue_mode = true` in config, every prompt submitted while a
-/// turn is streaming queues behind it rather than interrupting. This command
-/// surfaces the queue contents and lets the user discard pending messages.
+/// Bare Enter queues behind active work. When `message_queue_mode = true`, even
+/// explicit Alt+Enter steering is disabled.
 pub(super) async fn cmd_queue(
     state: &mut EngineState,
     parts: &[&str],
@@ -2739,9 +2763,9 @@ pub(super) async fn cmd_queue(
     let queue_mode = config::load_arc().message_queue_mode;
     let depth = state.queued_prompts.len();
     let mode_label = if queue_mode {
-        "`message_queue_mode` **on** — interrupts disabled, all new messages queue."
+        "`message_queue_mode` **on** — explicit submit interrupts disabled; messages queue."
     } else {
-        "`message_queue_mode` **off** — interrupts enabled (default)."
+        "`message_queue_mode` **off** — Enter queues; Alt+Enter can interrupt safe streams."
     };
 
     if depth == 0 {

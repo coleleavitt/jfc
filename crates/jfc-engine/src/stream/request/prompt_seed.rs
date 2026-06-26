@@ -135,7 +135,16 @@ pub(super) async fn build_prompt_seed() -> PromptSeed {
              as lowercase names such as `taskcreate`, `taskdone`, `taskupdate`, \
              and `tasklist`; use the exact callable name shown in the tool list. \
              This is the primary way users track your progress, so use it \
-             consistently on all non-trivial work.\n\n\
+             consistently on all non-trivial work. Treat larger prompts as \
+             missions: decompose them into durable TaskCreate records first, then \
+             execute. Task rows are the durable work graph; bounty/market metadata \
+             is the execution mode for solver/validator competition and audit, not \
+             a separate slash-command island. Mark security, RSI/self-improvement, \
+             prompt/tool/skill/memory, retry, migration, and high-correctness-risk \
+             steps with risk=\"high\" or tags such as `bounty` and `market` so the \
+             task factory can dispatch them through the bounty path. Store distilled \
+             evidence, decisions, prompt/skill/tool/memory changes, and outcomes; \
+             do not store private chain-of-thought.\n\n\
              ## Available skills\n\n\
              {skills_listing}\n\n\
              {dispatch_section}\n\n\

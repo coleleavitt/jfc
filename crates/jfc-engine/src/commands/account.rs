@@ -1,6 +1,7 @@
 //! Slash handlers: account, auth & external actions.
 
 use crate::commands::prelude::*;
+use std::io::IsTerminal;
 
 pub(super) async fn cmd_workflow(
     state: &mut EngineState,
@@ -309,12 +310,6 @@ pub(super) async fn cmd_login(
     text: &str,
     _tx: Option<&mpsc::Sender<EngineEvent>>,
 ) {
-    // v132 `/login` flow. With no arg, prints the chooser. With
-    // a sub-target, the dispatcher returns a body string +
-    // some side effects need a browser open. We always shell
-    // out to xdg-open / open / start to launch the browser
-    // (cheap, async-safe; failures are silent on systems
-    // without one of those binaries).
     state.messages.push(ChatMessage::user(text.to_owned()));
     let arg = parts
         .get(1)
@@ -338,28 +333,10 @@ pub(super) async fn cmd_login(
         }
         _ => None,
     };
-    if let Some(_url) = url {
-        // TODO: re-enable browser launch when in interactive mode (not in tests).
-        // Best-effort: shell out to the platform browser opener.
-        // Don't await — the browser launch is fire-and-forget.
-        // #[cfg(target_os = "linux")]
-        // let _ = std::process::Command::new("xdg-open").arg(url).spawn();
-        // #[cfg(target_os = "macos")]
-        // let _ = std::process::Command::new("open").arg(url).spawn();
-        // #[cfg(target_os = "windows")]
-        // let _ = std::process::Command::new("cmd")
-        //     .args(["/C", "start", url])
-        //     .spawn();
-        // tracing::info!(target: "jfc::login", %url, "opened browser for /login");
-    }
-    state.messages.push(ChatMessage::assistant(format!(
-        "{dispatch}{}",
-        if url.is_some() {
-            "\n\n_(opened the browser for you)_"
-        } else {
-            ""
-        }
-    )));
+    let browser_note = url.map(browser_note).unwrap_or_default();
+    state
+        .messages
+        .push(ChatMessage::assistant(format!("{dispatch}{browser_note}")));
 }
 
 pub(super) async fn cmd_logout(
@@ -464,21 +441,59 @@ pub(super) async fn cmd_feedback(
         state.model.as_str(),
         std::env::consts::OS,
     );
-    let _url = super::support::bug_report_url("", &body);
-    // TODO: re-enable browser launch when in interactive mode (not in tests).
-    // #[cfg(target_os = "linux")]
-    // let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-    // #[cfg(target_os = "macos")]
-    // let _ = std::process::Command::new("open").arg(&url).spawn();
-    // #[cfg(target_os = "windows")]
-    // let _ = std::process::Command::new("cmd")
-    //     .args(["/C", "start", &url])
-    //     .spawn();
+    let url = super::support::bug_report_url("", &body);
+    let opened = try_open_url(&url);
+    let action = if opened {
+        "Opened a pre-filled bug report in your browser."
+    } else {
+        "Browser launch is unavailable from this process; open this pre-filled bug report URL:"
+    };
     state.messages.push(ChatMessage::assistant(format!(
-        "Opened a pre-filled bug report at {}/issues/new in your browser \
-         (version, model, OS, and session id `{session_id}` are already attached).",
-        super::support::repo_url(),
+        "{action}\n\n{url}\n\nVersion, model, OS, and session id `{session_id}` are already attached."
     )));
+}
+
+fn browser_note(url: &str) -> String {
+    if try_open_url(url) {
+        tracing::info!(target: "jfc::login", %url, "opened browser for account command");
+        "\n\n_(opened the browser for you)_".to_owned()
+    } else {
+        format!("\n\nOpen this URL: {url}")
+    }
+}
+
+fn try_open_url(url: &str) -> bool {
+    if std::env::var_os("JFC_DISABLE_BROWSER_OPEN").is_some() || !std::io::stdout().is_terminal() {
+        return false;
+    }
+
+    browser_command(url).spawn().is_ok()
+}
+
+#[cfg(target_os = "linux")]
+fn browser_command(url: &str) -> std::process::Command {
+    let mut command = std::process::Command::new("xdg-open");
+    command.arg(url);
+    command
+}
+
+#[cfg(target_os = "macos")]
+fn browser_command(url: &str) -> std::process::Command {
+    let mut command = std::process::Command::new("open");
+    command.arg(url);
+    command
+}
+
+#[cfg(target_os = "windows")]
+fn browser_command(url: &str) -> std::process::Command {
+    let mut command = std::process::Command::new("cmd");
+    command.args(["/C", "start", url]);
+    command
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn browser_command(_url: &str) -> std::process::Command {
+    std::process::Command::new("false")
 }
 
 pub(super) async fn cmd_upgrade(

@@ -79,33 +79,36 @@ pub fn coalesce_consecutive_same_role(messages: &[ChatMessage]) -> Vec<ChatMessa
                      stripped between them; their text will be concatenated"
                 );
             }
-            let prev = out.last_mut().expect("can_merge guarantees a tail");
-            // Extend parts in order — preserves the per-sub-stream
-            // interleaving (text from sub-stream 1, tool from sub-stream
-            // 1, text from sub-stream 2, tool from sub-stream 2, ...)
-            // so the renderer can still walk through the conversation
-            // chronologically.
-            prev.parts.extend(msg.parts.iter().cloned());
-            // Merge consecutive Text parts created by the extend so we don't
-            // produce the 156-fragment-per-message bug seen in long sessions.
-            crate::types::merge_consecutive_text_parts(&mut prev.parts);
-            prev.attachments.extend(msg.attachments.iter().cloned());
-            // Scalar fields: prefer the LAST non-None — the latest
-            // sub-stream's view is the cumulative-correct one.
-            if msg.agent_name.is_some() {
-                prev.agent_name = msg.agent_name.clone();
-            }
-            if msg.model_name.is_some() {
-                prev.model_name = msg.model_name.clone();
-            }
-            if msg.cost_tier.is_some() {
-                prev.cost_tier = msg.cost_tier.clone();
-            }
-            if msg.elapsed.is_some() {
-                prev.elapsed = msg.elapsed.clone();
-            }
-            if msg.usage.is_some() {
-                prev.usage = msg.usage.clone();
+            if let Some(prev) = out.last_mut() {
+                // Extend parts in order — preserves the per-sub-stream
+                // interleaving (text from sub-stream 1, tool from sub-stream
+                // 1, text from sub-stream 2, tool from sub-stream 2, ...)
+                // so the renderer can still walk through the conversation
+                // chronologically.
+                prev.parts.extend(msg.parts.iter().cloned());
+                // Merge consecutive Text parts created by the extend so we don't
+                // produce the 156-fragment-per-message bug seen in long sessions.
+                crate::types::merge_consecutive_text_parts(&mut prev.parts);
+                prev.attachments.extend(msg.attachments.iter().cloned());
+                // Scalar fields: prefer the LAST non-None — the latest
+                // sub-stream's view is the cumulative-correct one.
+                if msg.agent_name.is_some() {
+                    prev.agent_name = msg.agent_name.clone();
+                }
+                if msg.model_name.is_some() {
+                    prev.model_name = msg.model_name.clone();
+                }
+                if msg.cost_tier.is_some() {
+                    prev.cost_tier = msg.cost_tier.clone();
+                }
+                if msg.elapsed.is_some() {
+                    prev.elapsed = msg.elapsed.clone();
+                }
+                if msg.usage.is_some() {
+                    prev.usage = msg.usage.clone();
+                }
+            } else {
+                out.push(msg.clone());
             }
         } else {
             out.push(msg.clone());
@@ -157,11 +160,40 @@ fn part_has_meaningful_content(part: &MessagePart) -> bool {
     }
 }
 
+fn sanitize_user_reminders(mut msg: ChatMessage) -> Option<ChatMessage> {
+    if msg.role != Role::User || msg.is_compact_boundary() {
+        return Some(msg);
+    }
+
+    msg.parts = msg
+        .parts
+        .into_iter()
+        .filter_map(|part| match part {
+            MessagePart::Text(text) => {
+                let text = jfc_core::strip_system_reminders(&text);
+                if text.trim().is_empty() {
+                    None
+                } else {
+                    Some(MessagePart::Text(text))
+                }
+            }
+            other => Some(other),
+        })
+        .collect();
+
+    if msg.attachments.is_empty() && !msg.parts.iter().any(part_has_meaningful_content) {
+        None
+    } else {
+        Some(msg)
+    }
+}
+
 pub fn persistent_session_messages(messages: &[ChatMessage]) -> Vec<ChatMessage> {
     let mut filtered: Vec<ChatMessage> = messages
         .iter()
         .filter(|m| !m.queued && !is_empty_assistant_placeholder(m))
         .cloned()
+        .filter_map(sanitize_user_reminders)
         .collect();
     terminalize_stranded_tools(&mut filtered, TerminalizeTail::Preserve);
     coalesce_consecutive_same_role(&filtered)
@@ -251,6 +283,7 @@ pub fn repair_loaded_messages(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
     let mut stripped: Vec<ChatMessage> = messages
         .into_iter()
         .filter(|m| !is_empty_assistant_placeholder(m))
+        .filter_map(sanitize_user_reminders)
         .collect();
     strip_orphan_user_tool_parts(&mut stripped);
     let mut repaired = coalesce_consecutive_same_role(&stripped);
@@ -500,7 +533,9 @@ mod placeholder_tests {
     //! the `stop_reason=refusal` artefact reproduced in
     //! `ses_20260528_200646.json` (message index 77): a usage-stamped,
     //! content-empty assistant that broke `validate_turn_invariants`.
-    use super::{is_empty_assistant_placeholder, persistent_session_messages};
+    use super::{
+        is_empty_assistant_placeholder, persistent_session_messages, repair_loaded_messages,
+    };
     use crate::types::{ChatMessage, MessagePart, ModelUsage, Role, validate_turn_invariants};
 
     fn user_text(s: &str) -> ChatMessage {
@@ -609,6 +644,120 @@ mod placeholder_tests {
         assert!(text.contains("second continuation reminder"));
         validate_turn_invariants(&out)
             .expect("post-save transcript must satisfy alternating-role invariants");
+    }
+
+    #[test]
+    fn reminder_only_user_turns_are_not_persisted_robust() {
+        let input = vec![
+            user_text("real prompt"),
+            ChatMessage::assistant("working".into()),
+            user_text("<system-reminder>\nkeep going\n</system-reminder>"),
+            ChatMessage::assistant("done".into()),
+        ];
+
+        let out = persistent_session_messages(&input);
+        let rendered: String = out
+            .iter()
+            .flat_map(|m| &m.parts)
+            .filter_map(|p| match p {
+                MessagePart::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            !rendered.contains("system-reminder"),
+            "internal reminder tags must not survive session persistence"
+        );
+        assert!(
+            !rendered.contains("keep going"),
+            "reminder payload must not survive session persistence"
+        );
+        assert_eq!(
+            out.iter().filter(|m| m.role == Role::User).count(),
+            1,
+            "the reminder-only user turn should be dropped"
+        );
+        validate_turn_invariants(&out).expect("post-save transcript must remain valid");
+    }
+
+    #[test]
+    fn appended_user_reminders_are_stripped_before_persist_robust() {
+        let input = vec![
+            user_text("fix the bug\n<system-reminder>\nslop guard\n</system-reminder>"),
+            ChatMessage::assistant("fixed".into()),
+        ];
+
+        let out = persistent_session_messages(&input);
+        let first_user = out
+            .iter()
+            .find(|m| m.role == Role::User)
+            .expect("real user prompt survives");
+        let text: String = first_user
+            .parts
+            .iter()
+            .filter_map(|p| match p {
+                MessagePart::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(text.trim(), "fix the bug");
+        assert!(!text.contains("system-reminder"));
+        assert!(!text.contains("slop guard"));
+        validate_turn_invariants(&out).expect("post-save transcript must remain valid");
+    }
+
+    #[test]
+    fn reminder_only_user_turns_are_repaired_on_load_robust() {
+        let input = vec![
+            user_text("real prompt"),
+            ChatMessage::assistant("working".into()),
+            user_text("<system-reminder>\nold goal reminder\n</system-reminder>"),
+            ChatMessage::assistant("done".into()),
+        ];
+
+        let out = repair_loaded_messages(input);
+        let rendered: String = out
+            .iter()
+            .flat_map(|m| &m.parts)
+            .filter_map(|p| match p {
+                MessagePart::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert!(!rendered.contains("system-reminder"));
+        assert!(!rendered.contains("old goal reminder"));
+        assert_eq!(out.iter().filter(|m| m.role == Role::User).count(), 1);
+        validate_turn_invariants(&out).expect("loaded transcript repair must remain valid");
+    }
+
+    #[test]
+    fn appended_user_reminders_are_stripped_on_load_robust() {
+        let input = vec![
+            user_text("continue work\n<system-reminder>\nstale guard\n</system-reminder>"),
+            ChatMessage::assistant("ok".into()),
+        ];
+
+        let out = repair_loaded_messages(input);
+        let first_user = out
+            .iter()
+            .find(|m| m.role == Role::User)
+            .expect("real user prompt survives");
+        let text: String = first_user
+            .parts
+            .iter()
+            .filter_map(|p| match p {
+                MessagePart::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(text.trim(), "continue work");
+        assert!(!text.contains("system-reminder"));
+        assert!(!text.contains("stale guard"));
+        validate_turn_invariants(&out).expect("loaded transcript repair must remain valid");
     }
 
     // Robust: a queued user message is never mistaken for a placeholder

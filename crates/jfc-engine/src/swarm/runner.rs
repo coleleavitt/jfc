@@ -190,8 +190,9 @@ pub enum TeammateEvent {
         agent_id: String,
         error: String,
     },
-    /// Teammate wants to send a message (goes through SendMessage tool).
     MessageSent {
+        task_id: String,
+        agent_id: String,
         from: String,
         to: String,
         text: String,

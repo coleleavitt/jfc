@@ -476,6 +476,32 @@ fn market_test_lock() -> &'static tokio::sync::Mutex<()> {
     LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
+struct KnowledgeDbEnvGuard {
+    prior: Option<std::ffi::OsString>,
+}
+
+impl KnowledgeDbEnvGuard {
+    fn set(path: &Path) -> Self {
+        let prior = std::env::var_os("JFC_KNOWLEDGE_DB");
+        // SAFETY: callers use #[serial_test::serial], so no sibling test mutates
+        // this process-wide environment variable concurrently.
+        unsafe { std::env::set_var("JFC_KNOWLEDGE_DB", path) };
+        Self { prior }
+    }
+}
+
+impl Drop for KnowledgeDbEnvGuard {
+    fn drop(&mut self) {
+        // SAFETY: see KnowledgeDbEnvGuard::set.
+        unsafe {
+            match self.prior.take() {
+                Some(value) => std::env::set_var("JFC_KNOWLEDGE_DB", value),
+                None => std::env::remove_var("JFC_KNOWLEDGE_DB"),
+            }
+        }
+    }
+}
+
 // Normal: the two market tools appear in the canonical-tool list
 // (already covered by the broader catalogue test, but call it out
 // explicitly so a regression on either name fails clearly).
@@ -503,6 +529,24 @@ async fn market_report_string_has_expected_sections_normal() {
     assert!(body.contains("Health"));
 }
 
+#[tokio::test]
+async fn market_status_dispatch_renders_global_report_normal() {
+    let _g = market_test_lock().lock().await;
+    let result = execute_tool(
+        ToolKind::MarketStatus,
+        ToolInput::MarketStatus { bounty_id: None },
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    assert!(result.output.contains("Agent economy snapshot"));
+    assert!(result.output.contains("Bounties:"));
+}
+
 // Normal: posting a bounty via the tool dispatcher actually
 // increments the orchestrator's bounty count. End-to-end smoke
 // test that the wiring (ToolKind → ToolInput → execute_tool →
@@ -523,6 +567,7 @@ async fn post_bounty_dispatch_increments_market_normal() {
             acceptance_criteria: "cargo test".into(),
             max_solvers: Some(2),
             auto_dispatch: false,
+            parent_task_id: None,
         },
         cwd,
         None,
@@ -611,6 +656,7 @@ async fn post_bounty_default_returns_actionable_message_normal() {
             acceptance_criteria: "cargo test".into(),
             max_solvers: None,
             auto_dispatch: false,
+            parent_task_id: None,
         },
         cwd,
         None,
@@ -630,6 +676,168 @@ async fn post_bounty_default_returns_actionable_message_normal() {
     assert!(
         res.output.contains("run_bounty"),
         "must point at run_bounty as next step: {}",
+        res.output
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
+async fn post_bounty_persists_lifecycle_artifact_normal() {
+    let _g = market_test_lock().lock().await;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let _env = KnowledgeDbEnvGuard::set(&dir.path().join("knowledge.db"));
+    let res = execute_tool(
+        crate::types::ToolKind::PostBounty,
+        crate::types::ToolInput::PostBounty {
+            description: "persist this bounty".into(),
+            budget: 123,
+            acceptance_criteria: "market ledger row exists".into(),
+            max_solvers: Some(1),
+            auto_dispatch: false,
+            parent_task_id: None,
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+    assert!(!res.is_error(), "post should succeed: {}", res.output);
+    let project_session_id = format!("project:{}", jfc_knowledge::project_key(dir.path()));
+    let store = jfc_knowledge::KnowledgeStore::open_default()
+        .await
+        .expect("open temp knowledge db");
+    let artifacts = store
+        .list_session_artifacts(&project_session_id, "bounty", 10)
+        .await
+        .expect("list bounty artifacts");
+    assert_eq!(artifacts.len(), 1, "one bounty artifact is persisted");
+    assert!(
+        artifacts[0].value_json.contains("\"kind\":\"posted\""),
+        "{}",
+        artifacts[0].value_json
+    );
+    let events = store
+        .list_agent_events(&project_session_id, 10)
+        .await
+        .expect("list bounty events");
+    assert!(
+        events.iter().any(|event| event.kind == "bounty.posted"),
+        "bounty.posted event missing: {events:?}"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn post_bounty_creates_visible_task_normal() {
+    let _g = market_test_lock().lock().await;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let store = TaskStore::in_memory();
+    let res = execute_tool(
+        crate::types::ToolKind::PostBounty,
+        crate::types::ToolInput::PostBounty {
+            description: "fix market task wiring".into(),
+            budget: 321,
+            acceptance_criteria: "task panel shows the bounty".into(),
+            max_solvers: Some(2),
+            auto_dispatch: false,
+            parent_task_id: None,
+        },
+        dir.path().to_path_buf(),
+        None,
+        Some(store.clone()),
+        None,
+    )
+    .await;
+    assert!(!res.is_error(), "post should succeed: {}", res.output);
+    let tasks = store.list(DeletedFilter::Exclude);
+    assert_eq!(tasks.len(), 1, "post_bounty should create one task");
+    let task = &tasks[0];
+    assert_eq!(task.status, jfc_session::TaskStatus::Pending);
+    assert!(task.subject.starts_with("Bounty "), "{}", task.subject);
+    assert!(task.tags.iter().any(|tag| tag == "bounty"), "{task:?}");
+    assert!(task.tags.iter().any(|tag| tag == "market"), "{task:?}");
+    assert_eq!(task.risk, Some(jfc_session::TaskRisk::High));
+    assert_eq!(task.kind, Some(jfc_session::TaskKind::Task));
+    let execution = jfc_session::TaskExecutionMetadata::from_task(task)
+        .expect("bounty task should have execution metadata");
+    assert_eq!(execution.mode, jfc_session::TaskExecutionMode::Bounty);
+    let bounty_id = task
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("market"))
+        .and_then(|market| market.get("bounty_id"))
+        .and_then(serde_json::Value::as_str);
+    assert_eq!(
+        execution
+            .bounty
+            .as_ref()
+            .map(|bounty| bounty.bounty_id.as_str()),
+        bounty_id
+    );
+    assert!(
+        bounty_id.is_some_and(|id| res.output.contains(id)),
+        "task metadata should link to the posted bounty: task={task:?} output={}",
+        res.output
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn post_bounty_annotates_parent_task_when_provided_normal() {
+    let _g = market_test_lock().lock().await;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let store = TaskStore::in_memory();
+    store
+        .create(
+            "audit task routing".into(),
+            "verify bounty execution reuses the queued task".into(),
+            None,
+            Vec::<String>::new(),
+        )
+        .expect("create parent task");
+
+    let res = execute_tool(
+        crate::types::ToolKind::PostBounty,
+        crate::types::ToolInput::PostBounty {
+            description: "audit task routing".into(),
+            budget: 777,
+            acceptance_criteria: "parent task has bounty metadata".into(),
+            max_solvers: Some(2),
+            auto_dispatch: false,
+            parent_task_id: Some("t1".into()),
+        },
+        dir.path().to_path_buf(),
+        None,
+        Some(store.clone()),
+        None,
+    )
+    .await;
+
+    assert!(!res.is_error(), "post should succeed: {}", res.output);
+    let tasks = store.list(DeletedFilter::Exclude);
+    assert_eq!(
+        tasks.len(),
+        1,
+        "linked bounty should not duplicate the task"
+    );
+    let task = &tasks[0];
+    assert_eq!(task.id.as_str(), "t1");
+    assert_eq!(task.subject, "audit task routing");
+    assert!(task.tags.iter().any(|tag| tag == "bounty"), "{task:?}");
+    assert!(task.tags.iter().any(|tag| tag == "market"), "{task:?}");
+    assert_eq!(task.risk, Some(jfc_session::TaskRisk::High));
+    let execution =
+        jfc_session::TaskExecutionMetadata::from_task(task).expect("execution metadata");
+    assert_eq!(execution.mode, jfc_session::TaskExecutionMode::Bounty);
+    assert_eq!(
+        execution.bounty.as_ref().map(|bounty| bounty.budget),
+        Some(777)
+    );
+    assert!(
+        execution
+            .bounty
+            .as_ref()
+            .is_some_and(|bounty| res.output.contains(&bounty.bounty_id)),
+        "output should mention linked bounty id: {}",
         res.output
     );
 }
@@ -748,6 +956,10 @@ async fn run_bounty_cycle_end_to_end_normal() {
         outcome.winning_solution.is_some(),
         "winning_solution must be exposed for patch application"
     );
+    assert_eq!(outcome.evidence.solver_count, 2);
+    assert_eq!(outcome.evidence.solution_count, 2);
+    assert_eq!(outcome.evidence.validator_count, 2);
+    assert_eq!(outcome.evidence.no_flaw_found, 2);
 }
 
 // Robust: even when the invoker errors on a solver, the cycle

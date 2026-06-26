@@ -255,8 +255,8 @@ pub async fn handle_engine_event(
         }
 
         // ── Goal evaluation ─────────────────────────────────────
-        EngineEvent::Goal(GoalEvent::Verdict { ok, reason }) => {
-            crate::runtime::handle_goal_verdict(state, &tx, ok, reason).await;
+        EngineEvent::Goal(GoalEvent::Verdict { epoch, ok, reason }) => {
+            crate::runtime::handle_goal_verdict(state, &tx, epoch, ok, reason).await;
         }
 
         // ── Voice events (routed to TUI via FrontendEvent) ───────

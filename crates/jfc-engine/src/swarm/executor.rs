@@ -460,6 +460,24 @@ pub async fn run_single_turn(
                 res = &mut tool_future => res,
             };
 
+            if !result.is_error()
+                && let ToolKind::SendMessage = kind
+                && let ToolInput::SendMessage {
+                    to,
+                    message,
+                    summary,
+                } = input.clone()
+            {
+                let _ = event_tx.send(TeammateEvent::MessageSent {
+                    task_id: task_id.to_owned(),
+                    agent_id: identity.agent_id.clone(),
+                    from: identity.agent_name.clone(),
+                    to,
+                    text: message,
+                    summary,
+                });
+            }
+
             tool_results.push(ProviderContent::ToolResult {
                 tool_use_id: id.clone(),
                 content: crate::stream::cap_tool_result(&result.output),

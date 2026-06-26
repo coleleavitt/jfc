@@ -38,8 +38,8 @@ use std::sync::{
 use serde::{Deserialize, Serialize};
 
 pub use jfc_core::{
-    FactoryMetrics, Task, TaskCounts, TaskError, TaskKind, TaskPatch, TaskRisk, TaskStatus,
-    TaskValidation, TodoTaskId as TaskId,
+    FactoryMetrics, Task, TaskCounts, TaskError, TaskExecutionMetadata, TaskKind, TaskPatch,
+    TaskRisk, TaskStatus, TaskValidation, TodoTaskId as TaskId,
 };
 
 pub fn task_stores_dir() -> PathBuf {
@@ -1466,6 +1466,7 @@ impl TaskStore {
         if transient && attempts < max_attempts {
             task.status = TaskStatus::Pending;
             task.owner = None;
+            task.metadata = Some(task_execution_after_attempt(task, attempts));
             // Exponential backoff: don't let the claim paths re-dispatch this
             // task until the deadline passes, so a flaky task can't hot-loop.
             let backoff_ms = retry_backoff_ms(attempts);
@@ -1486,6 +1487,7 @@ impl TaskStore {
 
         // Hard-fail path: mark the task Failed.
         task.status = TaskStatus::Failed;
+        task.metadata = Some(task_execution_after_attempt(task, attempts));
         let subject = task.subject.clone();
         let description = task.description.clone();
         let failed_tid = task.id.clone();
@@ -1531,14 +1533,20 @@ impl TaskStore {
             owner: None,
             blocks: dependents.iter().cloned().collect(),
             blocked_by: BTreeSet::new(),
-            metadata: None,
+            metadata: Some(
+                TaskExecutionMetadata::bounty(
+                    "hard-failed task needs solver/validator replan",
+                    None,
+                )
+                .to_task_metadata(None),
+            ),
             created_at_ms: now_ms(),
             acceptance_criteria: None,
             verification_command: None,
-            risk: None,
+            risk: Some(TaskRisk::High),
             parent_id: Some(failed_tid.clone()),
             kind: Some(TaskKind::Decision),
-            tags: vec!["replan".to_string()],
+            tags: vec!["replan".to_string(), "bounty_candidate".to_string()],
             priority: None,
             effort: None,
             model: None,
@@ -1781,6 +1789,22 @@ fn set_retry_after(task: &mut Task, deadline_ms: u64) {
     } else {
         *obj = serde_json::json!({ RETRY_AFTER_KEY: deadline_ms });
     }
+}
+
+fn task_execution_after_attempt(task: &Task, attempts: u32) -> serde_json::Value {
+    if let Some(existing) = TaskExecutionMetadata::from_task(task)
+        && existing.bounty.is_some()
+    {
+        return existing.to_task_metadata(task.metadata.as_ref());
+    }
+    TaskExecutionMetadata::recommended_for_fields(
+        &task.subject,
+        &task.description,
+        task.risk,
+        &task.tags,
+        attempts,
+    )
+    .to_task_metadata(task.metadata.as_ref())
 }
 
 /// Clear a task's retry deadline — the `Forget` half of the contract, called
@@ -2821,6 +2845,8 @@ mod tests {
         let after = store.get(t.id.as_str()).unwrap();
         assert_eq!(after.status, TaskStatus::Pending);
         assert_eq!(after.attempt_count, 1);
+        let execution = TaskExecutionMetadata::from_task(&after).expect("execution metadata");
+        assert_eq!(execution.mode, jfc_core::TaskExecutionMode::Bounty);
     }
 
     #[test]
@@ -2840,6 +2866,8 @@ mod tests {
         let after = store.get(t.id.as_str()).unwrap();
         assert_eq!(after.status, TaskStatus::Failed);
         assert_eq!(after.attempt_count, 3);
+        let execution = TaskExecutionMetadata::from_task(&after).expect("execution metadata");
+        assert_eq!(execution.mode, jfc_core::TaskExecutionMode::Bounty);
     }
 
     #[test]
@@ -2882,6 +2910,9 @@ mod tests {
         let replan = store.get(replan_id.as_str()).unwrap();
         assert_eq!(replan.status, TaskStatus::Pending);
         assert_eq!(replan.kind, Some(TaskKind::Decision));
+        assert_eq!(replan.risk, Some(TaskRisk::High));
+        let execution = TaskExecutionMetadata::from_task(&replan).expect("execution metadata");
+        assert_eq!(execution.mode, jfc_core::TaskExecutionMode::Bounty);
     }
 
     #[test]

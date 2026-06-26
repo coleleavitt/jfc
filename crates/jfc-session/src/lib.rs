@@ -36,6 +36,7 @@ pub use inbox::{
     SessionInboxMessage, clear_inbox as clear_inbox_for_session,
     read_messages as read_inbox_for_session, write_message as write_inbox_message,
 };
+pub use jfc_core::{TaskBountyRef, TaskExecutionMetadata, TaskExecutionMode};
 pub use search::{
     SessionBrief, SessionHit, SessionMessage, browse as browse_sessions,
     discover as search_sessions, discover_excluding as search_sessions_excluding,

@@ -37,6 +37,14 @@ pub fn economy_tool_defs() -> Vec<ToolDef> {
                     "max_solvers": {
                         "type": "number",
                         "description": "Optional cap on competing solvers (default from charter, typically 3). Range 1-5."
+                    },
+                    "auto_dispatch": {
+                        "type": "boolean",
+                        "description": "When true, register the bounty and immediately run the solver/validator/settlement cycle in one tool call."
+                    },
+                    "parent_task_id": {
+                        "type": "string",
+                        "description": "Optional queued task id (for example `t3`) this bounty should execute. When provided, the existing task is annotated with the bounty instead of creating a duplicate bounty task."
                     }
                 },
                 "required": ["description", "budget", "acceptance_criteria"]

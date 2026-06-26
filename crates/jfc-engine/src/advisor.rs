@@ -891,6 +891,7 @@ mod tests {
                         cache_creation_tokens: 0,
                     },
                     context_signals: None,
+                    reasoning: None,
                 }))),
             }
         }
@@ -1241,6 +1242,7 @@ mod tests {
                     cache_creation_tokens: 0,
                 },
                 context_signals: None,
+                reasoning: None,
             }),
         ));
         let targets = vec![
@@ -1351,6 +1353,7 @@ mod tests {
                     content: "x".repeat(400), // 400 chars → ~100 tokens
                     usage: Default::default(),
                     context_signals: None,
+                    reasoning: None,
                 })
             }
         }

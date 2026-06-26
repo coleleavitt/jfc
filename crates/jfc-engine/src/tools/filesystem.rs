@@ -158,6 +158,12 @@ pub fn edit_error_needs_stale_recovery_hint(error: &str) -> bool {
     error.contains("old_string not found")
 }
 
+pub fn stale_edit_requires_read_message(file_path: &str) -> String {
+    format!(
+        "edit: {file_path} has a stale-edit marker from an earlier `old_string not found` failure. Run Read on this file first, then retry with `old_string` copied from the current file contents."
+    )
+}
+
 pub async fn execute_read(
     file_path: &str,
     offset: Option<u64>,
@@ -273,7 +279,8 @@ pub async fn execute_read(
         let is_full_read = offset.is_none() && limit.is_none();
         if is_full_read && let Some(cache) = dedup {
             let guard = cache.lock().await;
-            if guard.is_unchanged(&path) {
+            let stale_refresh_required = guard.requires_stale_edit_refresh(&path);
+            if !stale_refresh_required && guard.is_unchanged(&path) {
                 trace!(target: "jfc::tools", file_path, "read: dedup cache hit on full re-read");
                 return ExecutionResult::success(
                     "File unchanged since last full read. The content from \
@@ -636,7 +643,10 @@ fn locate_ws_core(haystack: &str, needle: &str) -> WsMatch {
 
     match matches.len() {
         0 => WsMatch::None,
-        1 => WsMatch::Unique(matches.into_iter().next().unwrap()),
+        1 => match matches.into_iter().next() {
+            Some(range) => WsMatch::Unique(range),
+            None => WsMatch::None,
+        },
         n => WsMatch::Ambiguous(n),
     }
 }

@@ -17,6 +17,7 @@
 
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::types::{ChatMessage, MessagePart, Role};
 use jfc_provider::{
@@ -42,6 +43,11 @@ const MAX_SNAPSHOT_CHARS: usize = 40_000;
 /// Active goal state. Persisted on `App` while the condition is live.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActiveGoal {
+    /// Monotonic identity for this goal instance. Evaluator tasks are detached,
+    /// so verdicts must be tied to the goal that spawned them; otherwise a
+    /// slow verdict from goal A can clear or continue goal B.
+    #[serde(default = "next_goal_epoch")]
+    pub epoch: u64,
     /// The natural-language condition the user set.
     pub condition: String,
     /// Number of "not yet met" verdicts the evaluator has returned this
@@ -57,13 +63,12 @@ pub struct ActiveGoal {
 
 impl ActiveGoal {
     pub fn new(condition: String) -> Self {
+        let set_at_ms = now_ms();
         Self {
+            epoch: next_goal_epoch(),
             condition,
             iterations: 0,
-            set_at_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0),
+            set_at_ms,
             last_unmet_reason: None,
         }
     }
@@ -76,11 +81,31 @@ impl ActiveGoal {
 
     /// Elapsed wall-clock time since the goal was set.
     pub fn elapsed(&self) -> std::time::Duration {
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(self.set_at_ms);
+        let now_ms = now_ms();
         std::time::Duration::from_millis(now_ms.saturating_sub(self.set_at_ms))
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn next_goal_epoch() -> u64 {
+    static NEXT_GOAL_EPOCH: AtomicU64 = AtomicU64::new(1);
+    let wall_clock_epoch = now_ms().max(1);
+    loop {
+        let current = NEXT_GOAL_EPOCH.load(Ordering::Relaxed);
+        let epoch = wall_clock_epoch.max(current);
+        let next = epoch.saturating_add(1);
+        if NEXT_GOAL_EPOCH
+            .compare_exchange(current, next, Ordering::SeqCst, Ordering::Relaxed)
+            .is_ok()
+        {
+            return epoch;
+        }
     }
 }
 
@@ -781,6 +806,7 @@ mod tests {
                 content: self.reply.clone(),
                 usage: jfc_provider::TokenUsage::default(),
                 context_signals: None,
+                reasoning: None,
             })
         }
     }

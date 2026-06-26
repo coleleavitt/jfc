@@ -13,8 +13,10 @@ pub async fn handle_team_event(state: &mut EngineState, tx: &EventSender, ev: Te
         TeamEvent::Inbox {
             from,
             text,
+            formatted,
+            color,
             summary,
-        } => handle_inbox(state, tx, from, text, summary).await,
+        } => handle_inbox(state, tx, from, text, formatted, color, summary).await,
         TeamEvent::Spawned {
             name,
             team_name,
@@ -266,42 +268,46 @@ async fn handle_runner(
             }
         }
         TeammateEvent::MessageSent {
+            task_id,
+            agent_id,
             from,
             to,
             text,
             summary,
         } => {
             tracing::info!("[Swarm] Message from {from} → {to}");
-            // Route the outbound message to the recipient's
-            // mailbox so its polling loop picks it up. Mirrors
-            // v126's `sendMessageToTeammate` (cli.js around
-            // 396870) — the producing teammate writes; the
-            // recipient consumes via `read_mailbox`. Without
-            // this, the SendMessage tool was a no-op past
-            // logging.
-            let team_name = state.team_context.team_name.clone().unwrap_or_default();
-            if team_name.is_empty() {
-                tracing::warn!("[Swarm] MessageSent dropped — no active team_context");
+            if let Some(bt) = state.background_tasks.get_mut(&task_id) {
+                record_teammate_sent_message(bt, &from, &to, &text, summary.as_deref());
             } else {
-                let recipient = to.clone();
-                let msg = crate::swarm::types::MailboxMessage {
-                    from: from.clone(),
-                    text,
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                    color: None,
-                    summary,
-                    read: false,
-                };
-                tokio::spawn(async move {
-                    if let Err(e) =
-                        crate::swarm::mailbox::write_to_mailbox(&recipient, msg, &team_name).await
-                    {
-                        tracing::warn!("[Swarm] Failed to deliver message {from} → {to}: {e}");
-                    }
-                });
+                tracing::debug!(
+                    target: "jfc::swarm",
+                    task_id = %task_id,
+                    agent_id = %agent_id,
+                    from = %from,
+                    to = %to,
+                    "teammate sent message but no background task transcript was found"
+                );
             }
         }
     }
+}
+
+fn record_teammate_sent_message(
+    bt: &mut crate::app::BackgroundTask,
+    from: &str,
+    to: &str,
+    text: &str,
+    summary: Option<&str>,
+) {
+    bt.last_activity_at = std::time::Instant::now();
+    let body = match summary.filter(|s| !s.is_empty()) {
+        Some(summary) => format!("Message to @{to}: {summary}\n\n{text}"),
+        None => format!("Message to @{to}:\n\n{text}"),
+    };
+    bt.push_log(body.clone());
+    let mut msg = ChatMessage::assistant(body);
+    msg.agent_name = Some(from.to_owned());
+    bt.push_chat(msg);
 }
 
 fn mark_runtime_teammate_inactive(state: &mut EngineState, agent_id: &str) {
@@ -315,20 +321,20 @@ async fn handle_inbox(
     tx: &EventSender,
     from: String,
     text: String,
+    formatted: String,
+    color: Option<String>,
     summary: Option<String>,
 ) {
-    // Append the teammate's message to the transcript as a
-    // user-role turn tagged with the teammate's name so it
-    // survives session save/load and the model sees it on
-    // its next request. v126 wraps these in a
-    // `<teammate-message from="…">…</teammate-message>` XML
-    // block; we use the same shape so the leader's system
-    // prompt rules for parsing teammate messages still
-    // apply.
-    let body = format!(
-        "<teammate-message from=\"{}\">\n{}\n</teammate-message>",
-        from, text
+    tracing::info!(
+        target: "jfc::swarm",
+        from = %from,
+        has_color = color.is_some(),
+        has_summary = summary.as_deref().is_some_and(|s| !s.is_empty()),
+        text_chars = text.chars().count(),
+        formatted_chars = formatted.chars().count(),
+        "leader inbox received teammate message"
     );
+    let body = formatted;
     let mut msg = ChatMessage::user(body);
     msg.agent_name = Some(from.clone());
     state.messages.push(msg);
@@ -362,10 +368,7 @@ async fn handle_inbox(
     // on its next request — and the `is_streaming` gate means concurrent
     // arrivals don't each spawn a duplicate stream. Treat this as a fresh
     // turn (reset the agentic-turn counter) since it's a new external input.
-    let leader_idle = !state.is_streaming
-        && state.pending_approval.is_none()
-        && state.pending_tool_calls.is_empty()
-        && state.approval_queue.is_empty();
+    let leader_idle = leader_ready_for_inbox_wake(state);
     if leader_idle {
         tracing::info!(
             target: "jfc::swarm",
@@ -374,7 +377,34 @@ async fn handle_inbox(
         );
         state.agentic_turn_count = 0;
         crate::stream::continue_agentic_loop(state, tx).await;
+    } else {
+        tracing::debug!(
+            target: "jfc::swarm",
+            from = %from,
+            is_streaming = state.is_streaming,
+            pending_approval = state.pending_approval.is_some(),
+            approval_queue = state.approval_queue.len(),
+            pending_tool_calls = state.pending_tool_calls.len(),
+            pending_classifications = state.pending_classifications,
+            in_flight_eager_dispatches = state.in_flight_eager_dispatches,
+            in_flight_tool_batches = state.in_flight_tool_batches,
+            compacting = state.compacting_started_at.is_some(),
+            pending_elicitations = state.pending_elicitations.len(),
+            "leader busy — inbound teammate message queued in transcript"
+        );
     }
+}
+
+fn leader_ready_for_inbox_wake(state: &EngineState) -> bool {
+    !state.is_streaming
+        && state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty()
+        && state.pending_classifications == 0
+        && state.in_flight_eager_dispatches == 0
+        && state.in_flight_tool_batches == 0
+        && state.compacting_started_at.is_none()
+        && state.pending_elicitations.is_empty()
 }
 
 fn handle_spawned(
@@ -429,4 +459,69 @@ fn handle_spawned(
             abort_tx,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn background_task(id: &str) -> crate::app::BackgroundTask {
+        crate::app::BackgroundTask {
+            task_id: crate::ids::TaskId::from(id.to_owned()),
+            description: "import-fix teammate".to_owned(),
+            status: crate::types::TaskLifecycle::Running,
+            started_at: std::time::Instant::now(),
+            completed_at: None,
+            summary: None,
+            error: None,
+            last_tool: None,
+            last_tool_info: None,
+            recent_activities: Vec::new(),
+            messages: Vec::new(),
+            chat_messages: Vec::new(),
+            tool_use_count: 0,
+            latest_input_tokens: 0,
+            latest_cache_read_tokens: 0,
+            latest_cache_write_tokens: 0,
+            cumulative_output_tokens: 0,
+            model_used: None,
+            agent_messages: Vec::new(),
+            max_input_tokens: None,
+            budget_killed: false,
+            parent_task_id: None,
+            workflow_progress: None,
+            last_activity_at: std::time::Instant::now(),
+        }
+    }
+
+    #[test]
+    fn teammate_sent_message_records_task_transcript_normal() {
+        let mut bt = background_task("teammate-import-fix@hiddify");
+
+        record_teammate_sent_message(
+            &mut bt,
+            "import-fix",
+            "team-lead",
+            "fixed the Dart cluster",
+            Some("Dart cluster complete"),
+        );
+
+        assert_eq!(bt.messages.len(), 1);
+        assert!(bt.messages[0].contains("Message to @team-lead: Dart cluster complete"));
+        assert!(bt.messages[0].contains("fixed the Dart cluster"));
+        assert_eq!(bt.chat_messages.len(), 1);
+        assert_eq!(
+            bt.chat_messages[0].agent_name.as_deref(),
+            Some("import-fix")
+        );
+        let text = bt.chat_messages[0]
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                crate::types::MessagePart::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(text.contains("fixed the Dart cluster"));
+    }
 }

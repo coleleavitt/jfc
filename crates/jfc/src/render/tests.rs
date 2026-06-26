@@ -1280,6 +1280,7 @@ mod subagent_counter_tests {
             error: None,
             last_tool: None,
             last_tool_info: None,
+            recent_activities: Vec::new(),
             messages: Vec::new(),
             chat_messages: Vec::new(),
             tool_use_count: tools,
@@ -1430,6 +1431,7 @@ mod render_snapshot_tests {
             error: None,
             last_tool: None,
             last_tool_info: None,
+            recent_activities: Vec::new(),
             messages: Vec::new(),
             chat_messages: Vec::new(),
             tool_use_count: 0,
@@ -1570,6 +1572,29 @@ mod render_snapshot_tests {
 
         let text = buffer_text(&term);
         assert!(text.contains("1 shell"), "shell badge missing:\n{text}");
+    }
+
+    #[test]
+    fn status_row_counts_request_overhead_for_no_usage_resume_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.engine.max_context_tokens = 200_000;
+        app.engine.tool_ctx.approx_tokens = 120_000;
+        app.engine.last_system_prompt_len = Some(30_000);
+        app.engine.messages.push(jfc_core::ChatMessage::user(
+            "legacy resumed prompt".to_owned(),
+        ));
+
+        let backend = TestBackend::new(80, 1);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::status::status(f, &app, area);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        assert!(text.contains("ctx 75%"), "context badge missing:\n{text}");
     }
 
     #[test]
@@ -1768,6 +1793,205 @@ mod render_snapshot_tests {
     }
 
     #[test]
+    fn spinner_row_prefers_running_bash_command_over_responding_phase_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        let now = std::time::Instant::now();
+        app.engine.turn_started_at = Some(now - std::time::Duration::from_secs(4));
+        app.engine.is_streaming = true;
+        app.engine.streaming_response_bytes = 192;
+        app.spinner_state.phase = crate::spinner::SpinnerPhase::Responding;
+
+        let tool_id = "bash-while-streaming";
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.parts.clear();
+        let mut tool = ToolCall::new_pending(
+            tool_id.into(),
+            ToolKind::Bash,
+            ToolInput::Bash {
+                command: "cargo test -p jfc\ncargo clippy -p jfc".into(),
+                timeout: None,
+                workdir: None,
+                run_in_background: None,
+                suppress_output: None,
+            },
+        );
+        tool.status = ToolStatus::Running;
+        msg.parts.push(MessagePart::tool(tool));
+        app.engine.in_progress_tool_use_ids.insert(tool_id.into());
+        app.engine.messages.push(msg);
+
+        let backend = TestBackend::new(100, 2);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::messages::spinner_row(f, &app, area);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        if let Ok(path) = std::env::var("JFC_SPINNER_RUNNING_CAPTURE") {
+            std::fs::write(path, &text).expect("write spinner running capture");
+        }
+        assert!(
+            text.contains("Running cargo test -p jfc"),
+            "running command should own the spinner verb slot:\n{text}"
+        );
+        assert!(
+            !text.contains("Responding"),
+            "responding label should not hide active shell commands:\n{text}"
+        );
+        assert!(
+            !text.contains("cargo clippy"),
+            "multi-line commands should use the first command line in the spinner:\n{text}"
+        );
+    }
+
+    #[test]
+    fn spinner_row_uses_active_tool_snapshot_after_batch_drain_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.engine.turn_started_at =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        app.engine.in_flight_tool_batches = 1;
+        app.spinner_state.phase = crate::spinner::SpinnerPhase::ToolUse;
+
+        let tool_id = "glob-running";
+        let mut tool = ToolCall::new_pending(
+            tool_id.into(),
+            ToolKind::Glob,
+            ToolInput::Glob {
+                pattern: "Cargo.toml".into(),
+                path: Some("crates".into()),
+            },
+        );
+        tool.status = ToolStatus::Running;
+        app.engine.active_tool_calls.push(tool);
+        app.engine.in_progress_tool_use_ids.insert(tool_id.into());
+
+        let backend = TestBackend::new(100, 2);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::messages::spinner_row(f, &app, area);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        if let Ok(path) = std::env::var("JFC_SPINNER_DRAINED_CAPTURE") {
+            std::fs::write(path, &text).expect("write spinner drained capture");
+        }
+        assert!(
+            text.contains("Searching Cargo.toml in crates"),
+            "active drained tool batch should keep concrete tool subject:\n{text}"
+        );
+        assert!(!text.contains("Working"), "generic label leaked:\n{text}");
+    }
+
+    #[test]
+    fn spinner_row_renders_read_path_subject_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.engine.turn_started_at =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        app.spinner_state.phase = crate::spinner::SpinnerPhase::Working;
+
+        let tool_id = "read-running";
+        let mut tool = ToolCall::new_pending(
+            tool_id.into(),
+            ToolKind::Read,
+            ToolInput::Read {
+                file_path: "/home/cole/RustProjects/active/jfc/crates/jfc/src/main.rs".into(),
+                offset: None,
+                limit: None,
+            },
+        );
+        tool.status = ToolStatus::Running;
+        app.engine.active_tool_calls.push(tool);
+        app.engine.in_progress_tool_use_ids.insert(tool_id.into());
+
+        let backend = TestBackend::new(90, 2);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::messages::spinner_row(f, &app, area);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        assert!(
+            text.contains("Reading main.rs"),
+            "read path should appear in spinner verb slot:\n{text}"
+        );
+        assert!(
+            !text.contains("Reading…"),
+            "anonymous read label leaked:\n{text}"
+        );
+    }
+
+    #[test]
+    fn spinner_row_recovers_bash_output_command_from_origin_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.engine.turn_started_at =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        app.spinner_state.phase = crate::spinner::SpinnerPhase::Working;
+
+        let mut origin_msg = ChatMessage::assistant(String::new());
+        origin_msg.parts.clear();
+        let mut origin = ToolCall::new_pending(
+            "bash-origin".into(),
+            ToolKind::Bash,
+            ToolInput::Bash {
+                command: "cargo test -p jfc\ncargo clippy -p jfc".into(),
+                timeout: None,
+                workdir: None,
+                run_in_background: Some(true),
+                suppress_output: None,
+            },
+        );
+        origin.status = ToolStatus::Completed;
+        origin.output = ToolOutput::Text("task_id: bash_origin123\nstatus: running".into());
+        origin_msg.parts.push(MessagePart::tool(origin));
+        app.engine.messages.push(origin_msg);
+
+        let tool_id = "bash-output-running";
+        let mut tool = ToolCall::new_pending(
+            tool_id.into(),
+            ToolKind::BashOutput,
+            ToolInput::BashOutput {
+                task_id: "bash_origin123".into(),
+                offset: None,
+                limit: None,
+                block: Some(true),
+                timeout: None,
+                wait_up_to: None,
+            },
+        );
+        tool.status = ToolStatus::Running;
+        app.engine.active_tool_calls.push(tool);
+        app.engine.in_progress_tool_use_ids.insert(tool_id.into());
+
+        let backend = TestBackend::new(100, 2);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::messages::spinner_row(f, &app, area);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        assert!(
+            text.contains("Running cargo test -p jfc"),
+            "BashOutput should reuse the originating command:\n{text}"
+        );
+        assert!(
+            !text.contains("bash_origin123"),
+            "task id should not replace known command text:\n{text}"
+        );
+    }
+
+    #[test]
     fn frame_keeps_spinner_row_for_in_flight_tool_pipeline_regression() {
         let mut app = App::new(Arc::new(TestProvider), "test-model");
         app.engine.task_store = jfc_session::TaskStore::in_memory();
@@ -1792,8 +2016,35 @@ mod render_snapshot_tests {
             std::fs::write(path, &text).expect("write spinner frame capture");
         }
         assert!(
-            text.contains("Working"),
-            "spinner row should stay visible while tool batch is executing:\n{text}"
+            text.contains("Working running 1 tool batch"),
+            "spinner row should explain in-flight tool work:\n{text}"
+        );
+    }
+
+    #[test]
+    fn spinner_row_explains_working_without_tool_snapshot_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.engine.turn_started_at =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(71));
+        app.spinner_state.phase = crate::spinner::SpinnerPhase::Working;
+
+        let backend = TestBackend::new(100, 2);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::messages::spinner_row(f, &app, area);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        assert!(
+            text.contains("Working between model/tool steps"),
+            "fallback working state should explain what is being waited on:\n{text}"
+        );
+        assert!(
+            !text.contains("Working…"),
+            "bare Working label should not leak for active turns without tool snapshots:\n{text}"
         );
     }
 
@@ -1837,6 +2088,32 @@ mod render_snapshot_tests {
         assert!(text.contains("research the bug"), "desc missing:\n{text}");
         assert!(text.contains('●'), "running glyph missing:\n{text}");
         assert!(text.contains("running"), "status label missing:\n{text}");
+    }
+
+    #[test]
+    fn subagent_fan_renders_active_tool_summary_regression() {
+        let mut app = app_with_task(TaskLifecycle::Running, "audit parser");
+        let bt = app.engine.background_tasks.get_mut("tx").expect("task");
+        bt.last_tool = Some("Read".into());
+        bt.last_tool_info = Some("Read(crates/jfc/src/main.rs)".into());
+        bt.tool_use_count = 1;
+
+        let backend = TestBackend::new(100, 5);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::agents::render_subagent_tree(f, &app, area);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        if let Ok(path) = std::env::var("JFC_SUBAGENT_ACTIVITY_CAPTURE") {
+            std::fs::write(path, &text).expect("write subagent activity capture");
+        }
+        assert!(
+            text.contains("active  audit parser: Read(crates/jfc/src/main.rs)"),
+            "subagent activity summary missing concrete tool info:\n{text}"
+        );
     }
 
     // A completed agent shows the success glyph and the "completed" label.
@@ -2358,9 +2635,21 @@ mod render_snapshot_tests {
     fn task_view_drillin_shows_last_tool_info_normal() {
         let mut app = app_with_task(TaskLifecycle::Running, "drill in agent");
         {
+            use jfc_engine::app::BackgroundTaskActivity;
+
             let bt = app.engine.background_tasks.get_mut("tx").unwrap();
             bt.last_tool = Some("Read".into());
             bt.last_tool_info = Some("Read(crates/jfc/src/render/roster.rs)".into());
+            bt.push_activity(BackgroundTaskActivity::new(
+                "Read".to_owned(),
+                "Read(crates/jfc/src/render/roster.rs)".to_owned(),
+                7_000,
+            ));
+            bt.push_activity(BackgroundTaskActivity::new(
+                "Grep".to_owned(),
+                "Grep(pattern=BackgroundTaskActivity)".to_owned(),
+                9_000,
+            ));
             bt.chat_messages.clear();
         }
         app.viewing_task_id = Some("tx".to_string());
@@ -2379,6 +2668,18 @@ mod render_snapshot_tests {
         assert!(
             text.contains("Read(crates/jfc/src/render/roster.rs)"),
             "task view should show the tool input summary:\n{text}"
+        );
+        assert!(
+            text.contains("Recent tools"),
+            "task view should show structured recent activities:\n{text}"
+        );
+        assert!(
+            text.contains("[7s] Reading Read(crates/jfc/src/render/roster.rs)"),
+            "task view should render typed read activity:\n{text}"
+        );
+        assert!(
+            text.contains("[9s] Searching Grep(pattern=BackgroundTaskActivity)"),
+            "task view should render typed search activity:\n{text}"
         );
     }
 
@@ -2559,6 +2860,65 @@ mod render_snapshot_tests {
         assert!(
             text.contains("found three unwraps") || text.contains("scan lib.rs"),
             "agent transcript text missing:\n{text}"
+        );
+    }
+
+    #[test]
+    fn task_detail_renders_terminal_result_as_metadata_regression() {
+        use jfc_core::ChatMessage;
+        use jfc_session::{DeletedFilter, TaskPatch, TaskStatus};
+
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        let task = app
+            .engine
+            .task_store
+            .create(
+                "audit the parser".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .expect("create task");
+        app.engine
+            .task_store
+            .update(
+                task.id.as_str(),
+                TaskPatch {
+                    status: Some(TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .expect("complete task");
+
+        let mut bt = app_with_task(TaskLifecycle::Completed, "audit the parser")
+            .engine
+            .background_tasks
+            .shift_remove("tx")
+            .unwrap();
+        bt.task_id = task.id.as_str().into();
+        bt.summary = Some("final answer".to_owned());
+        bt.chat_messages = vec![ChatMessage::assistant("real agent transcript".into())];
+        app.engine
+            .background_tasks
+            .insert(task.id.as_str().to_string(), bt);
+
+        app.task_panel_detail = true;
+        app.task_panel_selected = 0;
+        let _ = app.engine.task_store.list(DeletedFilter::Exclude);
+
+        let backend = TestBackend::new(100, 30);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| super::super::task_panel::task_panel(f, &mut app))
+            .expect("draw");
+        let text = buffer_text(&term);
+        assert!(
+            text.contains("Result:") && text.contains("final answer"),
+            "terminal result should be shown as task metadata:\n{text}"
+        );
+        assert!(
+            !text.contains("✓ done — final answer"),
+            "completion result must not be replayed as a transcript activity:\n{text}"
         );
     }
 }

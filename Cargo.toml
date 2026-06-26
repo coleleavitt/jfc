@@ -16,23 +16,47 @@ categories = ["command-line-utilities", "development-tools"]
 
 [workspace.dependencies]
 anyhow = "1.0.86"
+async-stream = "0.3"
 async-trait = "0.1"
+axum = "0.7"
+base64 = "0.22"
 boa_engine = "0.20"
+criterion = { version = "4.7.0", features = ["html_reports"], package = "codspeed-criterion-compat" }
+fs2 = "0.4"
+futures-util = "0.3"
 num_cpus = "1.16"
 parking_lot = "0.12"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3.32"
 hmac = "0.13.0"
 hex = "0.4"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+indexmap = "2"
+itertools = "0.14"
+libc = "0.2"
+notify = "8"
+proptest = "1"
+pulldown-cmark = "0.12"
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "stream", "rustls", "query", "http2", "form", "gzip", "brotli"] }
+regex = "1"
 serde = { version = "1.0.221", features = ["derive", "rc"] }
 serde_json = { version = "1.0.144", features = ["preserve_order", "raw_value"] }
+serde_urlencoded = "0.7"
+serde_yaml = { package = "serde_norway", version = "0.9" }
+serial_test = "3"
 sqlx = { path = "/home/cole/RustProjects/forks/sqlx", default-features = false, features = ["runtime-tokio", "sqlite", "chrono"] }
 sha2 = "0.11.0"
+tempfile = "3.27.0"
 thiserror = "2.0.12"
 tokio = { version = "1" }
+tokio-util = { version = "0.7", features = ["rt"] }
+toml = "0.8"
 tracing = "0.1.40"
+two-face = "0.5"
 unicode-segmentation = "1.10"
+unicode-width = "0.2"
+url = "2"
+urlencoding = "2"
 uuid = { version = "1.1.2", features = ["v4", "v5", "v7", "serde"] }
 
 [profile.dev]

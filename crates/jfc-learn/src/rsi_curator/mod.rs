@@ -29,8 +29,8 @@ pub use activation::{
 pub use analysis::{ThinkingAnalysis, ThinkingPatternKind, analyze_thinking};
 pub use budget::{BudgetRecommendation, ToolVisibilityAction, ToolVisibilityRecommendation};
 pub use candidate::{
-    CandidateChange, CandidateKind, CandidateTarget, ThinkingProvenance, ThinkingSource,
-    generate_candidates,
+    CandidateChange, CandidateKind, CandidateTarget, ThinkingProvenance, ThinkingSelfConsistency,
+    ThinkingSource, ThinkingSupport, generate_candidates,
 };
 pub use control::{ControlAssessment, ControlCapability, ControlTrust, assess_control};
 pub use eval::evaluate_candidate;
@@ -68,7 +68,10 @@ pub use sandbox_enforcement::{
     RsiSandboxEnforcement, RsiSandboxEnforcementStatus, RsiSandboxExecutionMode,
 };
 pub use store::StoreApplyReport;
-pub use trace::{RsiOutcome, RsiToolStep, RsiTrace, RsiTraceScore, RsiVerification, score_trace};
+pub use trace::{
+    RsiAgentFanout, RsiOutcome, RsiRetrievalStep, RsiSelectionEvent, RsiToolStep, RsiTrace,
+    RsiTraceScore, RsiVerification, score_trace,
+};
 pub use worker::{
     RsiCuratorWorkerConfig, RsiWorkerInput, RsiWorkerOutput, run_rsi_worker_file,
     run_rsi_worker_job,

@@ -106,6 +106,7 @@ pub struct BackgroundTask {
     pub error: Option<String>,
     pub last_tool: Option<String>,
     pub last_tool_info: Option<String>,
+    pub recent_activities: Vec<BackgroundTaskActivity>,
     /// Raw string log (kept for daemon log compat and the collapse/expand UI).
     pub messages: Vec<String>,
     /// Structured message history mirroring the main chat's Vec<ChatMessage>.
@@ -164,6 +165,63 @@ pub struct BackgroundTask {
     pub last_activity_at: std::time::Instant,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackgroundTaskActivityKind {
+    Shell,
+    Read,
+    Search,
+    Edit,
+    Write,
+    Task,
+    Other,
+}
+
+impl BackgroundTaskActivityKind {
+    pub fn for_tool(tool_name: &str) -> Self {
+        match tool_name {
+            "Bash" | "BashOutput" => Self::Shell,
+            "Read" | "NotebookRead" => Self::Read,
+            "Glob" | "Grep" | "Search" | "WebSearch" => Self::Search,
+            "Edit" | "MultiEdit" | "NotebookEdit" => Self::Edit,
+            "Write" => Self::Write,
+            "Task" => Self::Task,
+            _ => Self::Other,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Shell => "Running",
+            Self::Read => "Reading",
+            Self::Search => "Searching",
+            Self::Edit => "Editing",
+            Self::Write => "Writing",
+            Self::Task => "Delegating",
+            Self::Other => "Using",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackgroundTaskActivity {
+    pub tool_name: String,
+    pub display: String,
+    pub elapsed_ms: u64,
+    pub kind: BackgroundTaskActivityKind,
+}
+
+impl BackgroundTaskActivity {
+    pub fn new(tool_name: String, display: String, elapsed_ms: u64) -> Self {
+        let kind = BackgroundTaskActivityKind::for_tool(&tool_name);
+        Self {
+            tool_name,
+            display,
+            elapsed_ms,
+            kind,
+        }
+    }
+}
+
 impl BackgroundTask {
     /// Upper bound on retained per-agent log entries (`messages`) and
     /// structured transcript entries (`chat_messages`). Long agent runs
@@ -174,6 +232,7 @@ impl BackgroundTask {
     /// collapse/expand UI and task-view rendering, which only ever show
     /// the tail.
     pub const LOG_CAP: usize = 500;
+    pub const RECENT_ACTIVITY_CAP: usize = 5;
 
     /// Total tokens attributed to this agent across all four usage buckets
     /// (input + cache-read + cache-write + cumulative output). The roster
@@ -193,6 +252,14 @@ impl BackgroundTask {
         if self.messages.len() > Self::LOG_CAP {
             let excess = self.messages.len() - Self::LOG_CAP;
             self.messages.drain(..excess);
+        }
+    }
+
+    pub fn push_activity(&mut self, activity: BackgroundTaskActivity) {
+        self.recent_activities.push(activity);
+        if self.recent_activities.len() > Self::RECENT_ACTIVITY_CAP {
+            let excess = self.recent_activities.len() - Self::RECENT_ACTIVITY_CAP;
+            self.recent_activities.drain(..excess);
         }
     }
 
@@ -544,6 +611,7 @@ pub struct EngineState {
     /// `set_in_progress_tool_use_ids` bridge events so remote/headless clients
     /// can distinguish "waiting for a result" from "idle".
     pub in_progress_tool_use_ids: HashSet<String>,
+    pub active_tool_calls: Vec<ToolCall>,
     /// Short labels for completed tool batches, exposed to remote clients as
     /// `tool_use_summary` events and retained for diagnostics.
     pub tool_use_summaries: VecDeque<ToolUseSummary>,
@@ -963,6 +1031,9 @@ pub struct EngineState {
     /// agentic loop from racing two evaluators against the same
     /// EndTurn (which would double-charge tokens and could disagree).
     pub goal_evaluator_in_flight: bool,
+    /// Epoch of the goal evaluator currently allowed to report a verdict.
+    pub goal_evaluator_epoch_in_flight: Option<u64>,
+    pub goal_evaluator_cancel: Option<tokio_util::sync::CancellationToken>,
     /// Files pinned into the system prompt (survive compaction).
     /// Auto-populated from files that are re-read after every compaction.
     pub pinned_files: Vec<std::path::PathBuf>,
@@ -1135,6 +1206,7 @@ impl EngineState {
             pending_elicitations: std::collections::VecDeque::new(),
             deferred_tool_uses: VecDeque::with_capacity(DEFERRED_TOOL_USES_CAP),
             in_progress_tool_use_ids: HashSet::new(),
+            active_tool_calls: Vec::new(),
             tool_use_summaries: VecDeque::with_capacity(TOOL_USE_SUMMARIES_CAP),
             queued_prompts: MessageQueue::new(),
             worktree_count: 0,
@@ -1247,6 +1319,8 @@ impl EngineState {
             prompt_rewrite: Some(jfc_config::PromptRewriteConfig::default()),
             goal: None,
             goal_evaluator_in_flight: false,
+            goal_evaluator_epoch_in_flight: None,
+            goal_evaluator_cancel: None,
             pinned_files: Vec::new(),
             post_compact_reads: std::collections::HashMap::new(),
             last_prefetch_at: std::time::Instant::now() - std::time::Duration::from_secs(10),
@@ -1465,6 +1539,8 @@ impl EngineState {
             "set" => {
                 self.in_progress_tool_use_ids.clear();
                 self.in_progress_tool_use_ids.extend(ids.iter().cloned());
+                self.active_tool_calls
+                    .retain(|tool| ids.iter().any(|id| id == tool.id.as_str()));
                 for id in ids {
                     self.clear_deferred_tool_use(id);
                 }
@@ -1480,6 +1556,7 @@ impl EngineState {
                     self.in_progress_tool_use_ids.remove(id);
                     self.clear_deferred_tool_use(id);
                 }
+                self.clear_active_tool_calls(ids);
             }
             other => {
                 tracing::warn!(
@@ -1490,6 +1567,30 @@ impl EngineState {
                 );
             }
         }
+    }
+
+    pub fn register_active_tool_calls(&mut self, calls: &[ToolCall]) {
+        for call in calls {
+            self.clear_deferred_tool_use(call.id.as_str());
+            let mut snapshot = call.clone();
+            if !snapshot.status.is_terminal() {
+                let _ = snapshot.mark_running();
+            }
+            if let Some(existing) = self
+                .active_tool_calls
+                .iter_mut()
+                .find(|tool| tool.id == snapshot.id)
+            {
+                *existing = snapshot;
+            } else {
+                self.active_tool_calls.push(snapshot);
+            }
+        }
+    }
+
+    pub fn clear_active_tool_calls(&mut self, ids: &[String]) {
+        self.active_tool_calls
+            .retain(|tool| !ids.iter().any(|id| id == tool.id.as_str()));
     }
 
     pub fn record_tool_use_summary(
@@ -1568,7 +1669,9 @@ impl EngineState {
         }
 
         if can_retry {
-            let idx = streaming_assistant_idx.expect("can_retry checked is_some");
+            let Some(idx) = streaming_assistant_idx else {
+                return;
+            };
             let turn_started_at = self.turn_started_at;
             tracing::warn!(
                 target: "jfc::app",
@@ -1586,6 +1689,7 @@ impl EngineState {
             self.pre_dispatched_tool_ids.clear();
             self.deferred_tool_uses.clear();
             self.in_progress_tool_use_ids.clear();
+            self.active_tool_calls.clear();
             self.in_flight_eager_dispatches = 0;
             self.in_flight_tool_batches = 0;
             // Drive the recovery banner + attempt counter through the same
@@ -1639,6 +1743,7 @@ impl EngineState {
         self.pre_dispatched_tool_ids.clear();
         self.deferred_tool_uses.clear();
         self.in_progress_tool_use_ids.clear();
+        self.active_tool_calls.clear();
         self.in_flight_eager_dispatches = 0;
         self.in_flight_tool_batches = 0;
         let mut removed_placeholder = false;
@@ -2039,6 +2144,7 @@ mod watchdog_tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn watchdog_leaves_recently_active_stream_alone_normal() {
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
@@ -2058,6 +2164,7 @@ mod watchdog_tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn watchdog_default_window_tolerates_two_minute_quiet_regression() {
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
@@ -2080,6 +2187,7 @@ mod watchdog_tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn watchdog_thinking_phase_uses_lenient_tier_robust() {
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
             std::env::remove_var("JFC_STREAM_WATCHDOG_THINKING_TIMEOUT_SECS");
@@ -2105,6 +2213,7 @@ mod watchdog_tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn watchdog_responding_phase_uses_aggressive_tier_robust() {
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
             std::env::remove_var("JFC_STREAM_WATCHDOG_THINKING_TIMEOUT_SECS");
@@ -2133,6 +2242,7 @@ mod watchdog_tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn watchdog_keepalive_resets_idle_clock_robust() {
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::set_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS", "60");
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
@@ -2143,6 +2253,7 @@ mod watchdog_tests {
         state.record_stream_activity();
         let (tx, _rx) = mpsc::channel(8);
         state.check_stream_watchdog(&tx);
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
         }
@@ -2160,6 +2271,7 @@ mod watchdog_tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn watchdog_auto_retries_idle_stream_in_place_robust() {
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY");
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
@@ -2171,6 +2283,7 @@ mod watchdog_tests {
         let (tx, _rx) = mpsc::channel(8);
 
         state.check_stream_watchdog(&tx);
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
         }
@@ -2198,6 +2311,7 @@ mod watchdog_tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn watchdog_gives_up_after_max_attempts_robust() {
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY");
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
@@ -2209,6 +2323,7 @@ mod watchdog_tests {
         let (tx, _rx) = mpsc::channel(8);
 
         state.check_stream_watchdog(&tx);
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
         }
@@ -2240,6 +2355,7 @@ mod watchdog_tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn watchdog_retry_opt_out_tears_down_robust() {
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::set_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY", "1");
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG");
@@ -2251,6 +2367,7 @@ mod watchdog_tests {
 
         state.check_stream_watchdog(&tx);
 
+        // SAFETY: serial watchdog tests own these process-env keys for their duration.
         unsafe {
             std::env::remove_var("JFC_DISABLE_STREAM_WATCHDOG_RETRY");
             std::env::remove_var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS");
@@ -2275,7 +2392,7 @@ mod watchdog_tests {
 
 #[cfg(test)]
 mod background_task_cap_tests {
-    use super::BackgroundTask;
+    use super::{BackgroundTask, BackgroundTaskActivity, BackgroundTaskActivityKind};
 
     fn bg() -> BackgroundTask {
         BackgroundTask {
@@ -2288,6 +2405,7 @@ mod background_task_cap_tests {
             error: None,
             last_tool: None,
             last_tool_info: None,
+            recent_activities: Vec::new(),
             messages: Vec::new(),
             chat_messages: Vec::new(),
             tool_use_count: 0,
@@ -2336,6 +2454,29 @@ mod background_task_cap_tests {
         // Newest entries are the ones retained.
         let last = BackgroundTask::LOG_CAP * 3 - 1;
         assert_eq!(bt.messages.last().unwrap(), &format!("entry {last}\n"));
+    }
+
+    #[test]
+    fn push_activity_keeps_newest_bounded_tail_regression() {
+        let mut bt = bg();
+        for i in 0..8 {
+            bt.push_activity(BackgroundTaskActivity::new(
+                "Read".to_owned(),
+                format!("Read(file-{i}.rs)"),
+                i * 1000,
+            ));
+        }
+
+        assert_eq!(
+            bt.recent_activities.len(),
+            BackgroundTask::RECENT_ACTIVITY_CAP
+        );
+        assert_eq!(bt.recent_activities[0].display, "Read(file-3.rs)");
+        assert_eq!(bt.recent_activities[4].display, "Read(file-7.rs)");
+        assert_eq!(
+            bt.recent_activities[4].kind,
+            BackgroundTaskActivityKind::Read
+        );
     }
 
     #[test]

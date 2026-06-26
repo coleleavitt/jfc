@@ -318,8 +318,6 @@ mod cross_project_tests {
         KnowledgeRecord::new(Kind::Finding, Scope::Global, None, title, body)
     }
 
-    // TODO 9: recalled rows render under the reference-data header and never as
-    // raw instructions; tool/role markers and code fences are neutralized.
     #[test]
     fn cross_project_block_is_screened_as_reference_data_normal() {
         let hits = vec![rec(

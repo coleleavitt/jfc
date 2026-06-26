@@ -327,7 +327,7 @@ macro_rules! for_each_regular_tool_input {
             LearnRsiRollback => { kind: req_str @ "kind", name: req_str @ "name" }
             LearnKeyFilesList => {}
             LearnUserProfileShow => {}
-            PostBounty => { description: req_str @ "description", budget: u64_or_0 @ "budget", acceptance_criteria: req_str @ "acceptance_criteria", max_solvers: opt_u64_as_u8 @ "max_solvers", auto_dispatch: bool_field @ "auto_dispatch" }
+            PostBounty => { description: req_str @ "description", budget: u64_or_0 @ "budget", acceptance_criteria: req_str @ "acceptance_criteria", max_solvers: opt_u64_as_u8 @ "max_solvers", auto_dispatch: bool_field @ "auto_dispatch", parent_task_id: opt_str @ "parent_task_id" }
             MarketStatus => { bounty_id: opt_str @ "bounty_id" }
             RunBounty => { bounty_id: req_str @ "bounty_id", max_solvers: opt_u64_as_u8 @ "max_solvers" }
             ExitPlanMode => { plan: req_str @ "plan" }
@@ -711,6 +711,8 @@ pub enum ToolInput {
         max_solvers: Option<u8>,
         #[serde(default)]
         auto_dispatch: bool,
+        #[serde(default)]
+        parent_task_id: Option<String>,
     },
     MarketStatus {
         #[serde(default)]
@@ -2309,7 +2311,7 @@ mod macro_equivalence_tests {
             ),
             (
                 "post_bounty",
-                json!({"description":"d","budget":100,"acceptance_criteria":"ac","max_solvers":3,"auto_dispatch":true}),
+                json!({"description":"d","budget":100,"acceptance_criteria":"ac","max_solvers":3,"auto_dispatch":true,"parent_task_id":"t1"}),
             ),
             ("market_status", json!({"bounty_id":"b1"})),
             ("run_bounty", json!({"bounty_id":"b1","max_solvers":2})),

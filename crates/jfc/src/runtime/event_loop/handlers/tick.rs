@@ -688,6 +688,8 @@ pub(crate) async fn handle_tick(
                     .send(EngineEvent::Team(TeamEvent::Inbox {
                         from: msg.from,
                         text: msg.text,
+                        formatted: msg.formatted,
+                        color: msg.color,
                         summary: msg.summary,
                     }))
                     .await;

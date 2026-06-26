@@ -511,6 +511,7 @@ mod tests {
             content: r#"{"input":{"should_block":true,"reason":"r","thinking":"t"}}"#.into(),
             usage: Default::default(),
             context_signals: None,
+            reasoning: None,
         };
         let r = parse_classification(&resp).expect("parsed");
         assert!(r.should_block());
@@ -523,6 +524,7 @@ mod tests {
             content: r#"{"should_block":false,"reason":"safe","thinking":""}"#.into(),
             usage: Default::default(),
             context_signals: None,
+            reasoning: None,
         };
         let r = parse_classification(&resp).expect("parsed");
         assert!(!r.should_block());
@@ -535,6 +537,7 @@ mod tests {
             content: "not json".into(),
             usage: Default::default(),
             context_signals: None,
+            reasoning: None,
         };
         assert!(parse_classification(&resp).is_none());
     }
@@ -546,6 +549,7 @@ mod tests {
             content: r#"{"reason":"no decision"}"#.into(),
             usage: Default::default(),
             context_signals: None,
+            reasoning: None,
         };
         assert!(parse_classification(&resp).is_none());
     }
@@ -559,6 +563,7 @@ mod tests {
                 .into(),
             usage: Default::default(),
             context_signals: None,
+            reasoning: None,
         };
         let r = parse_classification(&resp).expect("parsed embedded JSON");
         assert!(r.should_block());
@@ -572,6 +577,7 @@ mod tests {
             content: r#"{"arguments":{"should_block":false,"reason":"ok"}}"#.into(),
             usage: Default::default(),
             context_signals: None,
+            reasoning: None,
         };
         let r = parse_classification(&resp).expect("parsed");
         assert!(!r.should_block());
@@ -637,6 +643,7 @@ mod tests {
                     content: r#"{"should_block":false,"reason":"safe","thinking":""}"#.into(),
                     usage: Default::default(),
                     context_signals: None,
+                    reasoning: None,
                 }))),
             }
         }
@@ -646,6 +653,7 @@ mod tests {
                     content: r#"{"should_block":true,"reason":"dangerous","thinking":""}"#.into(),
                     usage: Default::default(),
                     context_signals: None,
+                    reasoning: None,
                 }))),
             }
         }
@@ -660,6 +668,7 @@ mod tests {
                     content: "garbage non-json".into(),
                     usage: Default::default(),
                     context_signals: None,
+                    reasoning: None,
                 }))),
             }
         }

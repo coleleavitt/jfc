@@ -1653,6 +1653,7 @@ mod tests {
             content: r#"{"should_review": false, "reason": "doc only"}"#.to_owned(),
             usage: jfc_provider::TokenUsage::default(),
             context_signals: None,
+            reasoning: None,
         };
         let g = parse_gate(&bare).unwrap();
         assert!(!g.should_review);
@@ -1662,6 +1663,7 @@ mod tests {
                 .to_owned(),
             usage: jfc_provider::TokenUsage::default(),
             context_signals: None,
+            reasoning: None,
         };
         let g = parse_gate(&wrapped).unwrap();
         assert!(g.should_review);

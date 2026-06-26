@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-toml = "0.8"
+toml = { workspace = true }
 dirs = "5"
 tracing = { workspace = true }
 jfc-knowledge = { path = "../jfc-knowledge" }
@@ -20,8 +20,8 @@ intent-gate = []
 background-agents = []
 
 [dev-dependencies]
-tempfile = "3.27.0"
-serial_test = "3"
+tempfile = { workspace = true }
+serial_test = { workspace = true }
 
 [lints]
 workspace = true

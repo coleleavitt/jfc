@@ -121,6 +121,7 @@ fn dispatch_tool_batch(
         }
     }
     state.in_flight_tool_batches += 1;
+    state.register_active_tool_calls(&calls);
     emit_in_progress(tx, "add", tool_ids(&calls));
     crate::runtime::update_task_activities(state, &calls);
     crate::stream::dispatch_tools_batched(
@@ -811,6 +812,8 @@ mod tests {
         assert_eq!(state.in_flight_tool_batches, 1);
         assert!(state.pre_dispatched_tool_ids.contains("g1"));
         assert!(state.pre_dispatched_tool_ids.contains("g2"));
+        assert_eq!(state.active_tool_calls.len(), 2);
+        assert_eq!(state.active_tool_calls[0].id.as_str(), "g1");
     }
 
     #[tokio::test(flavor = "current_thread")]

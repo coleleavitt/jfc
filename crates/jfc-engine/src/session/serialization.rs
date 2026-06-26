@@ -378,6 +378,8 @@ pub enum SerializedToolInput {
         max_solvers: Option<u8>,
         #[serde(default)]
         auto_dispatch: bool,
+        #[serde(default)]
+        parent_task_id: Option<String>,
     },
     MarketStatus {
         #[serde(default)]

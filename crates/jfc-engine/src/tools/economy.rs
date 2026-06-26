@@ -1,4 +1,4 @@
-use std::process::Stdio;
+use std::{path::Path, process::Stdio};
 
 use jfc_agent::{AgentRegistry, AgentResult, AgentRole, AgentState};
 
@@ -7,26 +7,207 @@ use super::registry::{
 };
 use crate::runtime::send_critical;
 
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or(0)
+}
+
+fn bounty_id_for_role(role: &AgentRole) -> Option<&str> {
+    match role {
+        AgentRole::Solver { bounty_id, .. } | AgentRole::Validator { bounty_id } => {
+            Some(bounty_id.as_str())
+        }
+        _ => None,
+    }
+}
+
+fn role_label(role: &AgentRole) -> &'static str {
+    match role {
+        AgentRole::Solver { .. } => "solver",
+        AgentRole::Validator { .. } => "validator",
+        AgentRole::Solo => "solo",
+        AgentRole::Teammate { .. } => "teammate",
+        AgentRole::Council { .. } => "council",
+    }
+}
+
+async fn persist_economy_agent_session(
+    id: &jfc_agent::AgentId,
+    role: &AgentRole,
+    task_id: &str,
+    model: Option<&str>,
+    status: &str,
+) {
+    let Some(bounty_id) = bounty_id_for_role(role).map(str::to_owned) else {
+        return;
+    };
+    let now = now_ms();
+    let row = jfc_knowledge::AgentSessionRow {
+        id: id.label().to_owned(),
+        parent_session_id: Some(format!("bounty:{bounty_id}")),
+        role: role_label(role).to_owned(),
+        model: model.map(str::to_owned),
+        status: status.to_owned(),
+        budget_tokens: None,
+        task_id: Some(task_id.to_owned()),
+        team_id: Some(bounty_id),
+        created_at_ms: now,
+        updated_at_ms: now,
+    };
+    let result = async {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+        store.upsert_agent_session(&row).await
+    }
+    .await;
+    if let Err(error) = result {
+        tracing::warn!(
+            target: "jfc::economy::db",
+            agent = %id.label(),
+            status,
+            error = %error,
+            "failed to persist economy agent session"
+        );
+    }
+}
+
+async fn persist_economy_agent_event(
+    id: &jfc_agent::AgentId,
+    bounty_id: &str,
+    kind: &str,
+    content: serde_json::Value,
+) {
+    let row = jfc_knowledge::AgentEventRow {
+        id: format!("evt_{}", uuid::Uuid::new_v4().as_simple()),
+        session_id: format!("bounty:{bounty_id}"),
+        from_agent: Some(id.label().to_owned()),
+        to_agent: None,
+        kind: kind.to_owned(),
+        content: content.to_string(),
+        turn_id: None,
+        causal_parent_id: None,
+        created_at_ms: now_ms(),
+    };
+    let result = async {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+        store.record_agent_event(&row).await
+    }
+    .await;
+    if let Err(error) = result {
+        tracing::warn!(
+            target: "jfc::economy::db",
+            agent = %id.label(),
+            bounty_id,
+            kind,
+            error = %error,
+            "failed to persist economy agent event"
+        );
+    }
+}
+
+pub(crate) async fn persist_bounty_event(
+    cwd: &std::path::Path,
+    bounty_id: &str,
+    kind: &str,
+    payload: serde_json::Value,
+) {
+    let project_session_id = format!("project:{}", jfc_knowledge::project_key(cwd));
+    let artifact_key = bounty_id.to_owned();
+    let value = serde_json::json!({
+        "bounty_id": bounty_id,
+        "kind": kind,
+        "cwd": cwd,
+        "payload": payload,
+        "updated_at_ms": now_ms(),
+    });
+    let event = jfc_knowledge::AgentEventRow {
+        id: format!("evt_{}", uuid::Uuid::new_v4().as_simple()),
+        session_id: project_session_id.clone(),
+        from_agent: None,
+        to_agent: None,
+        kind: format!("bounty.{kind}"),
+        content: value.to_string(),
+        turn_id: None,
+        causal_parent_id: None,
+        created_at_ms: now_ms(),
+    };
+    let result = async {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+        let value_json = value.to_string();
+        store
+            .upsert_session_artifact(&project_session_id, "bounty", &artifact_key, &value_json)
+            .await?;
+        store
+            .append_session_artifact_event(
+                &project_session_id,
+                "bounty",
+                &artifact_key,
+                &value_json,
+            )
+            .await?;
+        store.record_agent_event(&event).await
+    }
+    .await;
+    if let Err(error) = result {
+        tracing::warn!(
+            target: "jfc::economy::db",
+            bounty_id,
+            kind,
+            error = %error,
+            "failed to persist bounty lifecycle event"
+        );
+    }
+}
+
 /// Register an economy agent (solver/validator) in the unified registry and
 /// mark it `Running`, so it appears in the same roster as every other agent.
 ///
 /// Idempotent across a cycle: `register` overwrites any prior entry for the
 /// same stable id, which is what we want when a stable solver/validator id is
 /// reused across bounties.
-async fn register_economy_agent(id: &jfc_agent::AgentId, role: AgentRole, description: &str) {
+async fn register_economy_agent(
+    id: &jfc_agent::AgentId,
+    role: AgentRole,
+    description: &str,
+    task_id: &str,
+    model: Option<&str>,
+) {
     let registry = agent_registry();
     registry
-        .register(AgentState::new(id.clone(), role, description.to_string()))
+        .register(AgentState::new(
+            id.clone(),
+            role.clone(),
+            description.to_string(),
+        ))
         .await;
     registry
         .update_status(id, jfc_agent::AgentStatus::Running)
         .await;
+    persist_economy_agent_session(id, &role, task_id, model, "running").await;
+    if let Some(bounty_id) = bounty_id_for_role(&role) {
+        persist_economy_agent_event(
+            id,
+            bounty_id,
+            "agent.started",
+            serde_json::json!({
+                "description": description,
+                "role": role_label(&role),
+                "task_id": task_id,
+                "model": model,
+            }),
+        )
+        .await;
+    }
 }
 
 /// Mark an economy agent completed in the unified registry, recording the
 /// token spend and a short summary.
 async fn complete_economy_agent(
     id: &jfc_agent::AgentId,
+    bounty_id: &str,
+    role: &AgentRole,
+    task_id: &str,
     summary: &str,
     tokens: u64,
     elapsed_ms: u64,
@@ -43,6 +224,42 @@ async fn complete_economy_agent(
             },
         )
         .await;
+    persist_economy_agent_session(id, role, task_id, None, "completed").await;
+    persist_economy_agent_event(
+        id,
+        bounty_id,
+        "agent.completed",
+        serde_json::json!({
+            "summary": summary,
+            "tokens": tokens,
+            "elapsed_ms": elapsed_ms,
+            "role": role_label(role),
+            "task_id": task_id,
+        }),
+    )
+    .await;
+}
+
+async fn fail_economy_agent(
+    id: &jfc_agent::AgentId,
+    bounty_id: &str,
+    role: &AgentRole,
+    task_id: &str,
+    error: &str,
+) {
+    agent_registry().fail(id, error.to_owned()).await;
+    persist_economy_agent_session(id, role, task_id, None, "failed").await;
+    persist_economy_agent_event(
+        id,
+        bounty_id,
+        "agent.failed",
+        serde_json::json!({
+            "error": error,
+            "role": role_label(role),
+            "task_id": task_id,
+        }),
+    )
+    .await;
 }
 
 /// SwarmProvider impl for jfc — delegates to the existing
@@ -354,6 +571,8 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
                 worktree: prompt.worktree.clone(),
             },
             &desc,
+            &task_id,
+            Some(self.model.as_str()),
         )
         .await;
         let started_at = std::time::Instant::now();
@@ -392,6 +611,16 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
                 "Bash".to_string(),
                 "Grep".to_string(),
                 "Glob".to_string(),
+                "codegraph_explore".to_string(),
+                "codegraph_search".to_string(),
+                "codegraph_node".to_string(),
+                "codegraph_files".to_string(),
+                "codegraph_arch".to_string(),
+                "codegraph_callers".to_string(),
+                "codegraph_callees".to_string(),
+                "codegraph_impact".to_string(),
+                "codegraph_paths".to_string(),
+                "codegraph_xref".to_string(),
             ],
             disallowed_tools: Vec::new(),
             cwd: None,
@@ -422,9 +651,18 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
 
         if result.is_error() {
             self.emit_failed(&task_id, &result.output);
-            agent_registry()
-                .fail(&prompt.agent_id, result.output.clone())
-                .await;
+            let role = jfc_agent::AgentRole::Solver {
+                bounty_id: prompt.bounty_id.clone(),
+                worktree: prompt.worktree.clone(),
+            };
+            fail_economy_agent(
+                &prompt.agent_id,
+                &prompt.bounty_id,
+                &role,
+                &task_id,
+                &result.output,
+            )
+            .await;
             return Err(format!("Solver execution failed: {}", result.output));
         }
 
@@ -475,7 +713,20 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
 
         let summary = format!("{} bytes patch", patch.len());
         self.emit_completed(&task_id, &summary, elapsed_ms);
-        complete_economy_agent(&solution.agent_id, &summary, tokens_estimate, elapsed_ms).await;
+        let role = jfc_agent::AgentRole::Solver {
+            bounty_id: prompt.bounty_id.clone(),
+            worktree: prompt.worktree.clone(),
+        };
+        complete_economy_agent(
+            &solution.agent_id,
+            &prompt.bounty_id,
+            &role,
+            &task_id,
+            &summary,
+            tokens_estimate,
+            elapsed_ms,
+        )
+        .await;
         Ok(solution)
     }
 
@@ -502,6 +753,8 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
                 bounty_id: prompt.bounty_id.clone(),
             },
             &desc,
+            &task_id,
+            Some(self.model.as_str()),
         )
         .await;
         let started_at = std::time::Instant::now();
@@ -561,7 +814,19 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
                 };
                 let elapsed_ms = started_at.elapsed().as_millis() as u64;
                 self.emit_completed(&task_id, &summary, elapsed_ms);
-                complete_economy_agent(&prompt.validator_id, &summary, tokens, elapsed_ms).await;
+                let role = jfc_agent::AgentRole::Validator {
+                    bounty_id: prompt.bounty_id.clone(),
+                };
+                complete_economy_agent(
+                    &prompt.validator_id,
+                    &prompt.bounty_id,
+                    &role,
+                    &task_id,
+                    &summary,
+                    tokens,
+                    elapsed_ms,
+                )
+                .await;
                 Ok(jfc_economy::reporting::ValidatorOutcome {
                     flaw,
                     test_code,
@@ -571,7 +836,11 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
             }
             Err(e) => {
                 self.emit_failed(&task_id, &e);
-                agent_registry().fail(&prompt.validator_id, e.clone()).await;
+                let role = jfc_agent::AgentRole::Validator {
+                    bounty_id: prompt.bounty_id.clone(),
+                };
+                fail_economy_agent(&prompt.validator_id, &prompt.bounty_id, &role, &task_id, &e)
+                    .await;
                 Err(e)
             }
         }
@@ -1169,6 +1438,417 @@ pub fn parse_validator_output(text: &str) -> (Option<String>, f32, Option<String
     (flaw, confidence, test_code)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DurableBountyActivity {
+    bounty_id: String,
+    phase: String,
+    task_id: Option<String>,
+    winner: Option<String>,
+    total_cost: Option<u64>,
+    error: Option<String>,
+    updated_at_ms: i64,
+    agents: Vec<jfc_knowledge::AgentSessionRow>,
+    lifecycle: Vec<DurableBountyEvent>,
+    agent_events: Vec<DurableAgentEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DurableBountyEvent {
+    kind: String,
+    created_at_ms: i64,
+    winner: Option<String>,
+    total_cost: Option<u64>,
+    solver_count: Option<u64>,
+    validator_count: Option<u64>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DurableAgentEvent {
+    agent_id: Option<String>,
+    kind: String,
+    summary: Option<String>,
+    tokens: Option<u64>,
+    elapsed_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct DurableLearningActivity {
+    id: String,
+    status: String,
+    candidate_kind: Option<String>,
+    title: String,
+    recurrence_count: i64,
+    score: Option<f64>,
+    fixtures_run: Option<u64>,
+    fixtures_passed: Option<u64>,
+    updated_at_ms: i64,
+}
+
+fn payload_string(
+    payload: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Option<String> {
+    payload
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+}
+
+fn payload_u64(payload: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<u64> {
+    payload.get(key).and_then(serde_json::Value::as_u64)
+}
+
+fn bounty_payload(value: &serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    value
+        .get("payload")
+        .and_then(serde_json::Value::as_object)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn bounty_kind(value: &serde_json::Value) -> String {
+    value
+        .get("kind")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            value
+                .get("event_kind")
+                .and_then(serde_json::Value::as_str)
+                .map(|kind| kind.strip_prefix("bounty.").unwrap_or(kind))
+        })
+        .unwrap_or("unknown")
+        .to_owned()
+}
+
+fn durable_bounty_event_from_row(
+    row: &jfc_knowledge::SessionArtifactEventRow,
+) -> DurableBountyEvent {
+    let value = serde_json::from_str::<serde_json::Value>(&row.value_json)
+        .unwrap_or(serde_json::Value::Null);
+    let payload = bounty_payload(&value);
+    DurableBountyEvent {
+        kind: bounty_kind(&value),
+        created_at_ms: row.created_at_ms,
+        winner: payload_string(&payload, "winner"),
+        total_cost: payload_u64(&payload, "total_cost"),
+        solver_count: payload_u64(&payload, "n_solvers"),
+        validator_count: payload_u64(&payload, "n_validators"),
+        error: payload_string(&payload, "error"),
+    }
+}
+
+fn durable_agent_event_from_row(row: &jfc_knowledge::AgentEventRow) -> DurableAgentEvent {
+    let value =
+        serde_json::from_str::<serde_json::Value>(&row.content).unwrap_or(serde_json::Value::Null);
+    DurableAgentEvent {
+        agent_id: row.from_agent.clone(),
+        kind: row
+            .kind
+            .strip_prefix("agent.")
+            .unwrap_or(row.kind.as_str())
+            .to_owned(),
+        summary: value
+            .get("summary")
+            .or_else(|| value.get("error"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+        tokens: value.get("tokens").and_then(serde_json::Value::as_u64),
+        elapsed_ms: value.get("elapsed_ms").and_then(serde_json::Value::as_u64),
+    }
+}
+
+fn durable_bounty_activity_from_artifact(
+    artifact: &jfc_knowledge::SessionArtifactRow,
+    agents: Vec<jfc_knowledge::AgentSessionRow>,
+    lifecycle: Vec<DurableBountyEvent>,
+    agent_events: Vec<DurableAgentEvent>,
+) -> DurableBountyActivity {
+    let value = serde_json::from_str::<serde_json::Value>(&artifact.value_json)
+        .unwrap_or(serde_json::Value::Null);
+    let payload = bounty_payload(&value);
+    let phase = bounty_kind(&value);
+    let bounty_id = value
+        .get("bounty_id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(&artifact.key)
+        .to_owned();
+    DurableBountyActivity {
+        bounty_id,
+        phase,
+        task_id: payload_string(&payload, "task_id"),
+        winner: payload_string(&payload, "winner"),
+        total_cost: payload_u64(&payload, "total_cost"),
+        error: payload_string(&payload, "error"),
+        updated_at_ms: artifact.updated_at_ms,
+        agents,
+        lifecycle,
+        agent_events,
+    }
+}
+
+fn learning_activity_from_row(
+    row: &jfc_knowledge::LearningEventRow,
+    project_key: &str,
+) -> Option<DurableLearningActivity> {
+    let evidence = serde_json::from_str::<serde_json::Value>(&row.verifier_evidence).ok()?;
+    if evidence
+        .get("project_key")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|key| key != project_key)
+    {
+        return None;
+    }
+    let eval = evidence.get("eval").unwrap_or(&serde_json::Value::Null);
+    let title = row
+        .candidate_rule
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or(&row.id)
+        .chars()
+        .take(96)
+        .collect();
+    Some(DurableLearningActivity {
+        id: row.id.clone(),
+        status: row.status.clone(),
+        candidate_kind: evidence
+            .get("candidate_kind")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+        title,
+        recurrence_count: row.recurrence_count,
+        score: eval.get("score").and_then(serde_json::Value::as_f64),
+        fixtures_run: eval.get("fixtures_run").and_then(serde_json::Value::as_u64),
+        fixtures_passed: eval
+            .get("fixtures_passed")
+            .and_then(serde_json::Value::as_u64),
+        updated_at_ms: row.updated_at_ms,
+    })
+}
+
+fn format_ms_timestamp(ms: i64) -> String {
+    if ms <= 0 {
+        return "unknown time".to_owned();
+    }
+    if let Some(dt) = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms) {
+        return dt.format("%Y-%m-%d %H:%M UTC").to_string();
+    }
+    format!("{ms}ms")
+}
+
+fn status_counts(agents: &[jfc_knowledge::AgentSessionRow]) -> Vec<String> {
+    let mut counts = std::collections::BTreeMap::<(String, String), usize>::new();
+    for agent in agents {
+        *counts
+            .entry((agent.role.clone(), agent.status.clone()))
+            .or_default() += 1;
+    }
+    counts
+        .into_iter()
+        .map(|((role, status), count)| format!("{count} {role} {status}"))
+        .collect()
+}
+
+fn lifecycle_label(event: &DurableBountyEvent) -> String {
+    let mut label = event.kind.clone();
+    if let Some(count) = event.solver_count {
+        label.push_str(&format!(
+            " · {count} solver{}",
+            if count == 1 { "" } else { "s" }
+        ));
+    }
+    if let Some(count) = event.validator_count {
+        label.push_str(&format!(
+            " · {count} validator{}",
+            if count == 1 { "" } else { "s" }
+        ));
+    }
+    if let Some(winner) = &event.winner {
+        label.push_str(&format!(" · winner `{winner}`"));
+    }
+    if let Some(cost) = event.total_cost {
+        label.push_str(&format!(" · cost {cost} tok"));
+    }
+    if let Some(error) = &event.error {
+        let preview: String = error.chars().take(96).collect();
+        label.push_str(&format!(" · error: {preview}"));
+    }
+    label
+}
+
+fn format_durable_market_activity(
+    entries: &[DurableBountyActivity],
+    learning: &[DurableLearningActivity],
+) -> String {
+    if entries.is_empty() && learning.is_empty() {
+        return String::new();
+    }
+    let mut body = String::from("\n\n**Durable market activity**");
+    for entry in entries {
+        body.push_str(&format!(
+            "\n- bounty `{}` · {} · updated {}",
+            entry.bounty_id,
+            entry.phase,
+            format_ms_timestamp(entry.updated_at_ms)
+        ));
+        if let Some(task_id) = &entry.task_id {
+            body.push_str(&format!(" · task `{task_id}`"));
+        }
+        if let Some(winner) = &entry.winner {
+            body.push_str(&format!(" · winner `{winner}`"));
+        }
+        if let Some(total_cost) = entry.total_cost {
+            body.push_str(&format!(" · cost {total_cost} tok"));
+        }
+        if let Some(error) = &entry.error {
+            let preview: String = error.chars().take(120).collect();
+            body.push_str(&format!(" · error: {preview}"));
+        }
+        if !entry.lifecycle.is_empty() {
+            let lifecycle = entry
+                .lifecycle
+                .iter()
+                .take(5)
+                .map(lifecycle_label)
+                .collect::<Vec<_>>()
+                .join(" -> ");
+            body.push_str(&format!("\n  lifecycle: {lifecycle}"));
+        }
+        let counts = status_counts(&entry.agents);
+        if !counts.is_empty() {
+            body.push_str(&format!("\n  agents: {}", counts.join(" · ")));
+        }
+        if !entry.agents.is_empty() {
+            for agent in entry.agents.iter().take(6) {
+                body.push_str(&format!(
+                    "\n  - {} `{}` {}{}",
+                    agent.role,
+                    agent.id,
+                    agent.status,
+                    agent
+                        .model
+                        .as_deref()
+                        .map(|model| format!(" · {model}"))
+                        .unwrap_or_default()
+                ));
+            }
+        }
+        let completed_events: Vec<_> = entry
+            .agent_events
+            .iter()
+            .filter(|event| event.kind == "completed" || event.kind == "failed")
+            .take(4)
+            .collect();
+        if !completed_events.is_empty() {
+            body.push_str("\n  settlement rows:");
+            for event in completed_events {
+                let mut line = format!(
+                    "\n  - {} {}",
+                    event.agent_id.as_deref().unwrap_or("agent"),
+                    event.kind
+                );
+                if let Some(tokens) = event.tokens {
+                    line.push_str(&format!(" · {tokens} tok"));
+                }
+                if let Some(elapsed_ms) = event.elapsed_ms {
+                    line.push_str(&format!(" · {:.1}s", elapsed_ms as f64 / 1000.0));
+                }
+                if let Some(summary) = &event.summary {
+                    let preview: String = summary.chars().take(96).collect();
+                    line.push_str(&format!(" · {preview}"));
+                }
+                body.push_str(&line);
+            }
+        }
+    }
+    if !learning.is_empty() {
+        body.push_str(&format!("\n- learning rows · {} recent", learning.len()));
+        for row in learning.iter().take(6) {
+            body.push_str(&format!(
+                "\n  - {} `{}` · {} · recur {} · updated {}",
+                row.candidate_kind.as_deref().unwrap_or("candidate"),
+                row.id,
+                row.status,
+                row.recurrence_count,
+                format_ms_timestamp(row.updated_at_ms)
+            ));
+            if let Some(score) = row.score {
+                body.push_str(&format!(" · score {score:.2}"));
+            }
+            if let (Some(passed), Some(run)) = (row.fixtures_passed, row.fixtures_run) {
+                body.push_str(&format!(" · fixtures {passed}/{run}"));
+            }
+            body.push_str(&format!("\n    {}", row.title));
+        }
+    }
+    body
+}
+
+async fn durable_market_activity_from_store(
+    store: &jfc_knowledge::KnowledgeStore,
+    cwd: &Path,
+    limit: usize,
+) -> Result<String, String> {
+    let session_id = format!("project:{}", jfc_knowledge::project_key(cwd));
+    let project_key = jfc_knowledge::project_key(cwd);
+    let artifacts = store
+        .list_session_artifacts(&session_id, "bounty", limit)
+        .await
+        .map_err(|error| error.to_string())?;
+    let mut entries = Vec::new();
+    for artifact in artifacts {
+        let bounty_id = serde_json::from_str::<serde_json::Value>(&artifact.value_json)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("bounty_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+            .unwrap_or_else(|| artifact.key.clone());
+        let agents = store
+            .list_agent_sessions_by_team(&bounty_id, 12)
+            .await
+            .map_err(|error| error.to_string())?;
+        let lifecycle = store
+            .list_session_artifact_events(&session_id, "bounty", Some(&artifact.key), 30)
+            .await
+            .map_err(|error| error.to_string())?
+            .iter()
+            .map(durable_bounty_event_from_row)
+            .collect();
+        let agent_events = store
+            .list_agent_events(&format!("bounty:{bounty_id}"), 30)
+            .await
+            .map_err(|error| error.to_string())?
+            .iter()
+            .map(durable_agent_event_from_row)
+            .collect();
+        entries.push(durable_bounty_activity_from_artifact(
+            &artifact,
+            agents,
+            lifecycle,
+            agent_events,
+        ));
+    }
+    let learning = store
+        .list_learning_events(None, 12)
+        .await
+        .map_err(|error| error.to_string())?
+        .iter()
+        .filter_map(|row| learning_activity_from_row(row, &project_key))
+        .collect::<Vec<_>>();
+    Ok(format_durable_market_activity(&entries, &learning))
+}
+
+async fn durable_market_activity(cwd: &Path) -> Result<String, String> {
+    let store = jfc_knowledge::KnowledgeStore::open_default()
+        .await
+        .map_err(|error| error.to_string())?;
+    durable_market_activity_from_store(&store, cwd, 10).await
+}
+
 pub async fn market_report_string() -> Result<String, String> {
     // Try-lock instead of blocking: when a bounty cycle is running it
     // holds the orchestrator mutex for its full multi-minute duration
@@ -1217,4 +1897,154 @@ pub async fn market_report_string() -> Result<String, String> {
         }
     }
     Ok(body)
+}
+
+pub async fn market_report_string_for_cwd(cwd: &Path) -> Result<String, String> {
+    let mut body = market_report_string().await?;
+    match durable_market_activity(cwd).await {
+        Ok(activity) => body.push_str(&activity),
+        Err(error) => {
+            body.push_str(&format!(
+                "\n\n**Durable bounty activity**\n- unavailable: {error}"
+            ));
+        }
+    }
+    Ok(body)
+}
+
+#[cfg(test)]
+mod durable_market_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn durable_market_activity_groups_bounty_agents_normal() {
+        let store = jfc_knowledge::KnowledgeStore::open_in_memory()
+            .await
+            .unwrap();
+        let cwd = Path::new("/tmp/jfc-market-test");
+        let session_id = format!("project:{}", jfc_knowledge::project_key(cwd));
+        let value = serde_json::json!({
+            "bounty_id": "bounty_1",
+            "kind": "settled",
+            "payload": {
+                "task_id": "t3",
+                "winner": "solver-0",
+                "total_cost": 321
+            }
+        })
+        .to_string();
+        store
+            .upsert_session_artifact(&session_id, "bounty", "bounty_1", &value)
+            .await
+            .unwrap();
+        let posted = serde_json::json!({
+            "bounty_id": "bounty_1",
+            "kind": "posted",
+            "payload": {
+                "task_id": "t3"
+            }
+        })
+        .to_string();
+        store
+            .append_session_artifact_event(&session_id, "bounty", "bounty_1", &posted)
+            .await
+            .unwrap();
+        let started = serde_json::json!({
+            "bounty_id": "bounty_1",
+            "kind": "dispatch_started",
+            "payload": {
+                "n_solvers": 2,
+                "n_validators": 1
+            }
+        })
+        .to_string();
+        store
+            .append_session_artifact_event(&session_id, "bounty", "bounty_1", &started)
+            .await
+            .unwrap();
+        store
+            .append_session_artifact_event(&session_id, "bounty", "bounty_1", &value)
+            .await
+            .unwrap();
+        let now = now_ms();
+        store
+            .upsert_agent_session(&jfc_knowledge::AgentSessionRow {
+                id: "solver-0".into(),
+                parent_session_id: Some("bounty:bounty_1".into()),
+                role: "solver".into(),
+                model: Some("haiku".into()),
+                status: "completed".into(),
+                budget_tokens: None,
+                task_id: Some("economy-solver-0".into()),
+                team_id: Some("bounty_1".into()),
+                created_at_ms: now,
+                updated_at_ms: now,
+            })
+            .await
+            .unwrap();
+        store
+            .record_agent_event(&jfc_knowledge::AgentEventRow {
+                id: "evt_solver_done".into(),
+                session_id: "bounty:bounty_1".into(),
+                from_agent: Some("solver-0".into()),
+                to_agent: None,
+                kind: "agent.completed".into(),
+                content: serde_json::json!({
+                    "summary": "12 bytes patch",
+                    "tokens": 144,
+                    "elapsed_ms": 2300
+                })
+                .to_string(),
+                turn_id: None,
+                causal_parent_id: None,
+                created_at_ms: now,
+            })
+            .await
+            .unwrap();
+        store
+            .record_learning_event(&jfc_knowledge::LearningEventRow {
+                id: "rsi:candidate-1".into(),
+                source_session_id: Some("session-1".into()),
+                source_turn_id: None,
+                source_tool_run_id: None,
+                candidate_rule:
+                    "Context Playbook: use bounty fanout when validators can check the result."
+                        .into(),
+                status: "candidate".into(),
+                verifier_evidence: serde_json::json!({
+                    "project_key": jfc_knowledge::project_key(cwd),
+                    "candidate_kind": "context_playbook",
+                    "eval": {
+                        "score": 0.82,
+                        "fixtures_run": 3,
+                        "fixtures_passed": 3
+                    }
+                })
+                .to_string(),
+                recurrence_count: 2,
+                created_at_ms: now,
+                updated_at_ms: now,
+            })
+            .await
+            .unwrap();
+
+        let rendered = durable_market_activity_from_store(&store, cwd, 10)
+            .await
+            .unwrap();
+
+        assert!(rendered.contains("**Durable market activity**"));
+        assert!(rendered.contains("bounty `bounty_1` · settled"));
+        assert!(rendered.contains("task `t3`"));
+        assert!(rendered.contains("winner `solver-0`"));
+        assert!(rendered.contains("cost 321 tok"));
+        assert!(rendered.contains("lifecycle: posted -> dispatch_started"));
+        assert!(rendered.contains("2 solvers"));
+        assert!(rendered.contains("agents: 1 solver completed"));
+        assert!(rendered.contains("solver `solver-0` completed · haiku"));
+        assert!(rendered.contains("settlement rows:"));
+        assert!(rendered.contains("solver-0 completed · 144 tok · 2.3s · 12 bytes patch"));
+        assert!(rendered.contains("learning rows · 1 recent"));
+        assert!(rendered.contains("context_playbook `rsi:candidate-1` · candidate"));
+        assert!(rendered.contains("fixtures 3/3"));
+    }
 }

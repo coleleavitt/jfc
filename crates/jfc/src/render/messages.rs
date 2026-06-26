@@ -1081,6 +1081,7 @@ struct FileActivity {
 struct ActivityDetails {
     label: ActivityLabel,
     file: Option<FileActivity>,
+    subject: Option<String>,
 }
 
 fn changed_line_count(text: &str) -> usize {
@@ -1157,6 +1158,84 @@ fn activity_display_path(path: &str) -> String {
     truncate_str(name, 48)
 }
 
+fn first_activity_line(text: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(|line| truncate_str(line, 64))
+}
+
+fn background_task_id_from_output(output: &ToolOutput) -> Option<String> {
+    let text = match output {
+        ToolOutput::Text(text) => text.as_str(),
+        ToolOutput::LargeText(text) => text.content.as_str(),
+        _ => return None,
+    };
+    text.lines()
+        .find_map(|line| line.strip_prefix("task_id: "))
+        .map(str::trim)
+        .filter(|task_id| task_id.starts_with("bash_"))
+        .map(ToOwned::to_owned)
+}
+
+fn bash_command_for_task(app: &App, task_id: &str) -> Option<String> {
+    if let Some(command) = jfc_engine::tools::bash_task_command(task_id)
+        && let Some(line) = first_activity_line(&command)
+    {
+        return Some(line);
+    }
+    for message in app.engine.messages.iter().rev() {
+        for part in message.parts.iter().rev() {
+            let MessagePart::Tool(tool) = part else {
+                continue;
+            };
+            let ToolInput::Bash { command, .. } = &tool.input else {
+                continue;
+            };
+            if background_task_id_from_output(&tool.output).as_deref() == Some(task_id) {
+                return first_activity_line(command);
+            }
+        }
+    }
+    None
+}
+
+fn activity_subject_for_tool(app: &App, tool: &jfc_core::ToolCall) -> Option<String> {
+    let subject = match &tool.input {
+        ToolInput::Bash { command, .. } => return first_activity_line(command),
+        ToolInput::BashOutput { task_id, .. } => {
+            return bash_command_for_task(app, task_id)
+                .or_else(|| Some(format!("output {task_id}")));
+        }
+        ToolInput::Read { file_path, .. } => activity_display_path(file_path),
+        ToolInput::Glob { pattern, path } => match path {
+            Some(path) => format!("{pattern} in {path}"),
+            None => pattern.clone(),
+        },
+        ToolInput::Grep { pattern, path, .. } => match path {
+            Some(path) => format!("{pattern} in {path}"),
+            None => pattern.clone(),
+        },
+        ToolInput::Search { query, path } => match path {
+            Some(path) => format!("{query} in {path}"),
+            None => query.clone(),
+        },
+        ToolInput::WebFetch { url, .. } => url.clone(),
+        ToolInput::WebSearch { query, .. } | ToolInput::ToolSearch { query, .. } => query.clone(),
+        ToolInput::Lsp {
+            kind, file, line, ..
+        } => format!("{kind} {file}:{line}"),
+        ToolInput::HcomRun { .. } | ToolInput::HcomTerm { .. } => tool.input.summary(),
+        _ => return None,
+    };
+    let trimmed = subject.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(truncate_str(trimmed, 64))
+    }
+}
+
 fn active_tool_activity(app: &App) -> Option<ActivityDetails> {
     let mut best: Option<ActivityDetails> = None;
     let mut consider = |tool: &jfc_core::ToolCall| {
@@ -1167,9 +1246,12 @@ fn active_tool_activity(app: &App) -> Option<ActivityDetails> {
         let details = ActivityDetails {
             label,
             file: file_activity_for_tool(tool),
+            subject: activity_subject_for_tool(app, tool),
         };
         let replace = best.as_ref().is_none_or(|current| {
-            label > current.label || current.file.is_none() && details.file.is_some()
+            label > current.label
+                || current.file.is_none() && details.file.is_some()
+                || current.file.is_none() && current.subject.is_none() && details.subject.is_some()
         });
         if replace {
             best = Some(details);
@@ -1177,6 +1259,10 @@ fn active_tool_activity(app: &App) -> Option<ActivityDetails> {
     };
 
     for tool in &app.engine.pending_tool_calls {
+        consider(tool);
+    }
+
+    for tool in &app.engine.active_tool_calls {
         consider(tool);
     }
 
@@ -1197,6 +1283,66 @@ fn active_tool_activity(app: &App) -> Option<ActivityDetails> {
     }
 
     best
+}
+
+fn plural_suffix(count: usize) -> &'static str {
+    if count == 1 { "" } else { "s" }
+}
+
+fn working_activity_subject(app: &App) -> String {
+    if !app.engine.pending_tool_calls.is_empty() {
+        let count = app.engine.pending_tool_calls.len();
+        return format!("dispatching {count} tool call{}", plural_suffix(count));
+    }
+    if app.engine.in_flight_tool_batches > 0 {
+        let count = app.engine.in_flight_tool_batches as usize;
+        return format!("running {count} tool batch{}", plural_suffix(count));
+    }
+    if !app.engine.in_progress_tool_use_ids.is_empty() {
+        let count = app.engine.in_progress_tool_use_ids.len();
+        return format!("waiting on {count} tool result{}", plural_suffix(count));
+    }
+    if app.engine.in_flight_eager_dispatches > 0 {
+        let count = app.engine.in_flight_eager_dispatches as usize;
+        return format!("dispatching {count} eager tool{}", plural_suffix(count));
+    }
+    let alive_agents = app
+        .engine
+        .background_tasks
+        .values()
+        .filter(|task| task.status.is_alive())
+        .count();
+    if alive_agents > 0 {
+        return format!(
+            "tracking {alive_agents} background agent{}",
+            plural_suffix(alive_agents)
+        );
+    }
+    if app.engine.queued_prompts.len() > 0 {
+        let count = app.engine.queued_prompts.len();
+        return format!(
+            "waiting to drain {count} queued prompt{}",
+            plural_suffix(count)
+        );
+    }
+    if app.engine.is_streaming && app.engine.streaming_response_bytes == 0 {
+        return "waiting for first model event".to_owned();
+    }
+    if app.engine.is_streaming {
+        return "waiting for model stream".to_owned();
+    }
+    if app.engine.turn_started_at.is_some() {
+        return "between model/tool steps".to_owned();
+    }
+    "active turn".to_owned()
+}
+
+fn working_activity(app: &App) -> ActivityDetails {
+    ActivityDetails {
+        label: ActivityLabel::Working,
+        file: None,
+        subject: Some(working_activity_subject(app)),
+    }
 }
 
 fn push_swept_text(
@@ -1249,6 +1395,19 @@ fn push_activity_spans(
         spans.push(Span::styled(
             format!("-{}", file.deletions),
             Style::default().fg(ui_tokens.diff_removed),
+        ));
+    } else if let Some(subject) = &details.subject {
+        push_swept_text(
+            spans,
+            details.label.as_str(),
+            tick,
+            t.text_secondary,
+            t.warning,
+        );
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            subject.clone(),
+            Style::default().fg(t.accent_secondary),
         ));
     } else {
         let label = format!("{}…", details.label.as_str());
@@ -1401,9 +1560,10 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         head_glyph = segs.glyph;
         dim = segs.dim;
         let activity = match app.spinner_state.phase {
-            crate::spinner::SpinnerPhase::Responding
-            | crate::spinner::SpinnerPhase::ToolUse
-            | crate::spinner::SpinnerPhase::Working => active_tool_activity(app),
+            crate::spinner::SpinnerPhase::Responding => active_tool_activity(app),
+            crate::spinner::SpinnerPhase::ToolUse | crate::spinner::SpinnerPhase::Working => {
+                active_tool_activity(app).or_else(|| Some(working_activity(app)))
+            }
             _ => None,
         };
         let label: std::borrow::Cow<'_, str> = {

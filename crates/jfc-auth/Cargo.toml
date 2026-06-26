@@ -6,8 +6,8 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 chrono = { workspace = true }
-urlencoding = "2"
-base64 = "0.22"
+urlencoding = { workspace = true }
+base64 = { workspace = true }
 dirs = "5"
 rand = "0.10.1"
 reqwest = { workspace = true }
@@ -16,11 +16,11 @@ serde_json = { workspace = true }
 sha2 = "0.10"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt"] }
-toml = "0.8"
+toml = { workspace = true }
 
 [dev-dependencies]
-serial_test = "3"
-tempfile = "3.27.0"
+serial_test = { workspace = true }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

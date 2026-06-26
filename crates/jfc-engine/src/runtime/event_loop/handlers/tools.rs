@@ -511,6 +511,9 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
     // Decrement the dispatch counters if there are outstanding ones.
     state.in_flight_eager_dispatches = state.in_flight_eager_dispatches.saturating_sub(1);
     state.in_flight_tool_batches = state.in_flight_tool_batches.saturating_sub(1);
+    if state.in_flight_tool_batches == 0 && state.in_progress_tool_use_ids.is_empty() {
+        state.active_tool_calls.clear();
+    }
     tracing::info!(
         target: "jfc::stream",
         message_count = state.messages.len(),

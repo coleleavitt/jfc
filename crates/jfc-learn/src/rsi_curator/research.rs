@@ -1,4 +1,4 @@
-use super::candidate::{CandidateChange, CandidateKind};
+use super::candidate::{CandidateChange, CandidateKind, ThinkingSource};
 use super::fixtures::RsiRegressionFixture;
 use super::gate::{RsiEvalProfile, RsiResearchCheck, RsiResearchRef};
 use super::trace::RsiTrace;
@@ -45,6 +45,10 @@ pub(super) fn assess_research_gate(
         "kind_specific_improvement_contract",
         kind_contract_holds(candidate),
     ));
+    checks.push(RsiResearchCheck::new(
+        "private_reasoning_requires_observable_support",
+        private_reasoning_has_observable_support(candidate),
+    ));
 
     ResearchGateReport {
         profile: profile_for(candidate.kind.clone()),
@@ -61,6 +65,11 @@ fn keeps_private_cot_private(candidate: &CandidateChange, trace: &RsiTrace) -> b
             .thinking_blocks
             .iter()
             .all(|block| block.is_empty() || !candidate.body.contains(block))
+}
+
+fn private_reasoning_has_observable_support(candidate: &CandidateChange) -> bool {
+    candidate.thinking.source != ThinkingSource::PrivateReasoningDerived
+        || candidate.thinking.has_observable_support()
 }
 
 fn has_durable_target(candidate: &CandidateChange) -> bool {
@@ -95,6 +104,8 @@ fn kind_contract_holds(candidate: &CandidateChange) -> bool {
             body.contains("reasoning")
                 && body.contains("observable verification")
                 && body.contains("never copy private reasoning")
+                && body.contains("self-consistency")
+                && body.contains("distill")
         }
     }
 }
@@ -170,6 +181,8 @@ fn lineage_for(kind: CandidateKind) -> Vec<RsiResearchRef> {
             paper("2606.12797", "containment_gap"),
         ]),
         CandidateKind::ReasoningPolicy => refs.extend([
+            paper("2505.05410", "private_reasoning_unfaithfulness_guard"),
+            paper("2304.11657", "self_consistency_prompting"),
             paper("2603.20667", "revere_reasoning_revision"),
             paper("2604.25256", "long_horizon_research_eval"),
             paper("2606.07591", "research_claw_bench"),

@@ -1000,28 +1000,26 @@ fn cmd_handle_escape(
 /// Decide whether a fresh submit should *interrupt* the in-flight stream
 /// (cancel + start the new turn now) or be *queued* behind it.
 ///
-/// Interrupt-on-submit gives real-time steering: it's right once the model
-/// is actually producing output and the user wants to redirect it. But it
-/// is **wrong before the connection has even opened** — cancelling a stream
-/// still inside `open_stream_with_cancel_and_timeout` makes it bail with
-/// "Stream cancelled before connection opened", and (pre-fix) that landed as
-/// a hard error on the brand-new turn. Even with that error now suppressed,
-/// interrupting a not-yet-started stream is pointless: there's no partial
-/// output to steer away from, and the user's first message hasn't been
-/// answered at all. Queueing is strictly better there — both messages are
-/// preserved and answered in order.
+/// Plain Enter is queue-first: it should acknowledge the prompt and let the
+/// active turn finish, not unexpectedly steer the conversation. Real-time
+/// steering is still useful, but it must be explicit (`Alt+Enter`) and only
+/// after the model has actually begun producing output.
 ///
 /// `streaming_response_bytes` is the precise "output has begun" signal: it's
 /// reset to 0 at every turn start and incremented on the first text/thinking/
 /// tool-input delta (see `stream_chunk.rs`). `> 0` therefore means the
 /// connection opened and the model started responding — the only state where
-/// interrupting is the right call.
+/// explicit interrupting is a coherent action.
 ///
-/// When `message_queue_mode = true` in config, interrupts are always
-/// suppressed — every new prompt queues behind the current turn instead.
-pub(crate) fn can_interrupt_on_submit(app: &App, compacting: bool) -> bool {
-    // message_queue_mode: never interrupt, always queue.
-    if jfc_engine::config::load_arc().message_queue_mode {
+/// When `message_queue_mode = true` in config, even explicit submit interrupts
+/// are suppressed — every new prompt queues behind the current turn instead.
+pub(crate) fn can_interrupt_on_submit(
+    app: &App,
+    compacting: bool,
+    explicit_interrupt: bool,
+    queue_mode: bool,
+) -> bool {
+    if queue_mode || !explicit_interrupt {
         return false;
     }
     app.engine.is_streaming
@@ -1135,10 +1133,12 @@ async fn handle_enter_submit(
             let pipeline_busy = app.engine.pipeline_busy_for_submit();
             let compacting = app.engine.compacting_started_at.is_some();
             if app.engine.is_streaming || pipeline_busy || compacting {
-                // Check if we can interrupt: if streaming with only
-                // safe/interruptible tools, abort and inject instead
-                // of queuing. This gives real-time steering.
-                let can_interrupt = can_interrupt_on_submit(app, compacting);
+                // Bare Enter queues. Alt+Enter is the explicit "interrupt and
+                // steer now" path when the active turn is safe to cancel.
+                let explicit_interrupt = key.modifiers.contains(KeyModifiers::ALT);
+                let queue_mode = jfc_engine::config::load_arc().message_queue_mode;
+                let can_interrupt =
+                    can_interrupt_on_submit(app, compacting, explicit_interrupt, queue_mode);
                 if can_interrupt {
                     tracing::info!(
                         target: "jfc::input::interrupt",

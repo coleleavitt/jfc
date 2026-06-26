@@ -381,10 +381,9 @@ impl Transport {
             .client
             .peer()
             .peer_info()
-            .and_then(|info| info.instructions.as_deref())
-            .map(str::trim)
+            .and_then(|info| info.instructions.clone())
+            .map(|instructions| instructions.trim().to_owned())
             .filter(|instructions| !instructions.is_empty())
-            .map(str::to_owned)
     }
 
     /// Spawn the transport selected by `cfg.kind` and run the `rmcp`

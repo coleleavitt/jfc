@@ -37,6 +37,61 @@ impl RsiVerification {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RsiRetrievalStep {
+    pub query: String,
+    pub source: String,
+    pub result_count: i64,
+}
+
+impl RsiRetrievalStep {
+    pub fn new(query: impl Into<String>, source: impl Into<String>, result_count: i64) -> Self {
+        Self {
+            query: query.into(),
+            source: source.into(),
+            result_count,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RsiAgentFanout {
+    pub source: String,
+    pub count: u64,
+    pub succeeded: bool,
+}
+
+impl RsiAgentFanout {
+    pub fn new(source: impl Into<String>, count: u64, succeeded: bool) -> Self {
+        Self {
+            source: source.into(),
+            count,
+            succeeded,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RsiSelectionEvent {
+    pub source: String,
+    pub winner: Option<String>,
+    pub selected_from: Option<u64>,
+}
+
+impl RsiSelectionEvent {
+    pub fn new(
+        source: impl Into<String>,
+        winner: Option<String>,
+        selected_from: Option<u64>,
+    ) -> Self {
+        Self {
+            source: source.into(),
+            winner,
+            selected_from,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RsiTrace {
     pub session_id: String,
@@ -49,6 +104,9 @@ pub struct RsiTrace {
     pub outcome: Option<RsiOutcome>,
     pub user_correction: Option<String>,
     pub verifications: Vec<RsiVerification>,
+    pub retrieval_steps: Vec<RsiRetrievalStep>,
+    pub agent_fanouts: Vec<RsiAgentFanout>,
+    pub selections: Vec<RsiSelectionEvent>,
 }
 
 impl RsiTrace {
@@ -67,6 +125,8 @@ pub struct RsiTraceScore {
     pub tool_success_rate: f64,
     pub verification_pass_rate: f64,
     pub thinking_efficiency: f64,
+    pub context_grounding: f64,
+    pub selection_quality: f64,
 }
 
 pub fn score_trace(trace: &RsiTrace) -> RsiTraceScore {
@@ -83,16 +143,22 @@ pub fn score_trace(trace: &RsiTrace) -> RsiTraceScore {
             .map(|verification| verification.passed),
     );
     let thinking_efficiency = thinking_efficiency(trace.thinking_tokens, outcome);
+    let context_grounding = context_grounding_score(trace);
+    let selection_quality = selection_quality_score(trace, outcome);
     let overall = (outcome * 0.35)
-        + (tool_success_rate * 0.25)
-        + (verification_pass_rate * 0.25)
-        + (thinking_efficiency * 0.15);
+        + (tool_success_rate * 0.2)
+        + (verification_pass_rate * 0.2)
+        + (thinking_efficiency * 0.1)
+        + (context_grounding * 0.075)
+        + (selection_quality * 0.075);
     RsiTraceScore {
         overall: overall.clamp(0.0, 1.0),
         outcome,
         tool_success_rate,
         verification_pass_rate,
         thinking_efficiency,
+        context_grounding,
+        selection_quality,
     }
 }
 
@@ -128,6 +194,45 @@ fn thinking_efficiency(tokens: u64, outcome: f64) -> f64 {
     }
 }
 
+fn context_grounding_score(trace: &RsiTrace) -> f64 {
+    if trace.retrieval_steps.is_empty() {
+        return 0.0;
+    }
+    let useful = trace
+        .retrieval_steps
+        .iter()
+        .filter(|step| step.result_count > 0)
+        .count();
+    if useful == 0 {
+        0.25
+    } else {
+        (useful as f64 / trace.retrieval_steps.len() as f64).clamp(0.0, 1.0)
+    }
+}
+
+fn selection_quality_score(trace: &RsiTrace, outcome: f64) -> f64 {
+    if trace.selections.is_empty() && trace.agent_fanouts.is_empty() {
+        return 0.0;
+    }
+    let fanout_signal = trace
+        .agent_fanouts
+        .iter()
+        .filter(|fanout| fanout.count > 1 && fanout.succeeded)
+        .count();
+    let selection_signal = trace
+        .selections
+        .iter()
+        .filter(|selection| selection.winner.is_some())
+        .count();
+    if selection_signal > 0 && outcome >= 0.9 {
+        1.0
+    } else if fanout_signal > 0 {
+        0.65
+    } else {
+        0.25
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,6 +247,7 @@ mod tests {
             RsiToolStep::new("Edit", false),
         ];
         trace.verifications = vec![RsiVerification::new("cargo test", true)];
+        trace.retrieval_steps = vec![RsiRetrievalStep::new("rust test failure", "codegraph", 4)];
 
         let score = score_trace(&trace);
 
@@ -149,6 +255,7 @@ mod tests {
         assert_eq!(score.tool_success_rate, 0.5);
         assert_eq!(score.verification_pass_rate, 1.0);
         assert_eq!(score.thinking_efficiency, 1.0);
+        assert_eq!(score.context_grounding, 1.0);
         assert!(score.overall > 0.8);
     }
 }

@@ -20,8 +20,8 @@ uuid = { workspace = true }
 [dev-dependencies]
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-tempfile = "3"
-serial_test = "3"
+tempfile = { workspace = true }
+serial_test = { workspace = true }
 
 [lints]
 workspace = true

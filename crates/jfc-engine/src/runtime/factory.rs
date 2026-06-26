@@ -1,6 +1,6 @@
 use crate::app::EngineState;
 use crate::runtime::{ControlEvent, EngineEvent, EventSender};
-use jfc_session::{Task, TaskRisk, TaskStatus};
+use jfc_session::{Task, TaskExecutionMetadata, TaskExecutionMode, TaskRisk, TaskStatus};
 
 const FACTORY_FANOUT_LIMIT: usize = 4;
 
@@ -62,6 +62,37 @@ fn build_single_task_prompt(task: &Task) -> String {
     prompt
 }
 
+fn execution_metadata(task: &Task) -> TaskExecutionMetadata {
+    TaskExecutionMetadata::from_task(task).unwrap_or_else(|| {
+        TaskExecutionMetadata::recommended_for_fields(
+            &task.subject,
+            &task.description,
+            task.risk,
+            &task.tags,
+            task.attempt_count,
+        )
+    })
+}
+
+fn build_assisted_task_prompt(task: &Task) -> String {
+    let mut prompt = format!(
+        "Continue the task queue by delegating task `{}` via the Task tool.\n\n\
+         Subject: {}\n\
+         Description: {}\n\n\
+         Launch exactly one Task tool call in this assistant response. \
+         Pass `parent_task_id: \"{}\"` so the runtime wires the subagent result \
+         back into the task store. Do not solve this task directly in the leader \
+         unless the subagent returns blocked.",
+        task.id, task.subject, task.description, task.id
+    );
+    append_task_overrides(&mut prompt, task);
+    prompt.push_str(
+        "\n\nAfter the subagent finishes, synthesize its observable result and continue \
+         with any newly unblocked task wave.",
+    );
+    prompt
+}
+
 fn build_fanout_task_spec(task: &Task) -> String {
     let mut spec = format!(
         "- parent_task_id: \"{}\"\n  description: {}\n  prompt: {}",
@@ -86,6 +117,52 @@ fn build_fanout_prompt(tasks: &[Task]) -> String {
          unblocked task wave.",
         tasks.len()
     )
+}
+
+fn build_bounty_task_prompt(task: &Task) -> String {
+    let metadata = execution_metadata(task);
+    let budget = metadata
+        .bounty
+        .as_ref()
+        .map_or(60_000, |bounty| bounty.budget.max(1));
+    let max_solvers = metadata
+        .bounty
+        .as_ref()
+        .and_then(|bounty| bounty.max_solvers)
+        .unwrap_or(3);
+    let acceptance = task
+        .acceptance_criteria
+        .as_deref()
+        .or(task.verification_command.as_deref())
+        .unwrap_or(
+            "Produce a source-backed result and list the commands or checks that validate it.",
+        );
+    let mut prompt = format!(
+        "Task `{}` is routed to bounty execution. Do not solve it solo.\n\n\
+         Subject: {}\n\
+         Description: {}\n\
+         Routing reason: {}\n\n\
+         Call `post_bounty` with:\n\
+         - `description`: include the task subject and description\n\
+         - `budget`: {}\n\
+         - `acceptance_criteria`: {}\n\
+         - `max_solvers`: {}\n\
+         - `auto_dispatch`: true\n\n\
+         - `parent_task_id`: \"{}\"\n\n\
+         When the bounty settles, summarize the observable solver/validator outcome and \
+         mark parent task `{}` complete, or update it with the blocker if validation fails.",
+        task.id,
+        task.subject,
+        task.description,
+        metadata.reason,
+        budget,
+        acceptance,
+        max_solvers,
+        task.id,
+        task.id
+    );
+    append_task_overrides(&mut prompt, task);
+    prompt
 }
 
 fn build_high_risk_prompt(task: &Task) -> String {
@@ -254,6 +331,21 @@ pub async fn maybe_continue_task_factory(state: &mut EngineState, tx: &EventSend
         return;
     }
 
+    if let Some(task) = state
+        .task_store
+        .ready_frontier()
+        .into_iter()
+        .find(|task| execution_metadata(task).mode == TaskExecutionMode::Bounty)
+    {
+        tracing::info!(
+            target: "jfc::tasks::factory",
+            task_id = %task.id,
+            "routing ready task to bounty execution"
+        );
+        commit_factory_turn(state, tx, build_bounty_task_prompt(&task)).await;
+        return;
+    }
+
     let claimed = state
         .task_store
         .claim_ready_frontier("jfc-factory", FACTORY_FANOUT_LIMIT, false);
@@ -275,7 +367,11 @@ pub async fn maybe_continue_task_factory(state: &mut EngineState, tx: &EventSend
     }
 
     let prompt = if claimed.len() == 1 {
-        build_single_task_prompt(&claimed[0])
+        match execution_metadata(&claimed[0]).mode {
+            TaskExecutionMode::Solo => build_single_task_prompt(&claimed[0]),
+            TaskExecutionMode::Assisted => build_assisted_task_prompt(&claimed[0]),
+            TaskExecutionMode::Bounty => build_bounty_task_prompt(&claimed[0]),
+        }
     } else {
         build_fanout_prompt(&claimed)
     };
@@ -375,6 +471,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn assisted_single_task_prompts_task_tool_delegation_normal() {
+        let mut state = factory_app();
+        state
+            .task_store
+            .create(
+                "review architecture".into(),
+                "map the module boundary before editing".into(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        state
+            .task_store
+            .update(
+                "t1",
+                jfc_session::TaskPatch {
+                    metadata: Some(
+                        TaskExecutionMetadata::assisted("needs a second focused reader")
+                            .to_task_metadata(None),
+                    ),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(16);
+
+        maybe_continue_task_factory(&mut state, &tx).await;
+
+        let prompts = submit_prompts(&mut rx);
+        assert_eq!(prompts.len(), 1);
+        let prompt = &prompts[0];
+        assert!(prompt.contains("Launch exactly one Task tool call"));
+        assert!(prompt.contains("parent_task_id: \"t1\""));
+        assert!(prompt.contains("Do not solve this task directly in the leader"));
+        let claimed = state.task_store.get("t1").unwrap();
+        assert_eq!(claimed.status, jfc_session::TaskStatus::InProgress);
+        assert_eq!(claimed.owner.as_deref(), Some("jfc-factory"));
+    }
+
+    #[tokio::test]
+    async fn bounty_ready_task_prompts_market_dispatch_normal() {
+        let mut state = factory_app();
+        state
+            .task_store
+            .create(
+                "audit unsafe parser".into(),
+                "prove the parser cannot over-read malformed packets".into(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        state
+            .task_store
+            .update(
+                "t1",
+                jfc_session::TaskPatch {
+                    metadata: Some(
+                        TaskExecutionMetadata::bounty("security-critical validation", None)
+                            .to_task_metadata(None),
+                    ),
+                    acceptance_criteria: Some("cargo test -p parser malformed_packets".into()),
+                    risk: Some(jfc_session::TaskRisk::High),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(16);
+
+        maybe_continue_task_factory(&mut state, &tx).await;
+
+        let prompts = submit_prompts(&mut rx);
+        assert_eq!(prompts.len(), 1);
+        let prompt = &prompts[0];
+        assert!(prompt.contains("routed to bounty execution"));
+        assert!(prompt.contains("Do not solve it solo"));
+        assert!(prompt.contains("Call `post_bounty`"));
+        assert!(prompt.contains("`auto_dispatch`: true"));
+        assert!(prompt.contains("`parent_task_id`: \"t1\""));
+        let task = state.task_store.get("t1").unwrap();
+        assert_eq!(task.status, jfc_session::TaskStatus::Pending);
+        assert_eq!(task.owner, None);
+    }
+
+    #[tokio::test]
     async fn same_burst_reentry_is_noop_no_double_submit() {
         let mut state = factory_app();
         state
@@ -412,8 +592,8 @@ mod tests {
         state
             .task_store
             .create(
-                "audit auth".into(),
-                "inspect authentication".into(),
+                "format auth docs".into(),
+                "apply small documentation formatting changes".into(),
                 None,
                 Vec::<String>::new(),
             )
@@ -421,8 +601,8 @@ mod tests {
         state
             .task_store
             .create(
-                "audit billing".into(),
-                "inspect billing".into(),
+                "format billing docs".into(),
+                "apply small documentation formatting changes".into(),
                 None,
                 Vec::<String>::new(),
             )

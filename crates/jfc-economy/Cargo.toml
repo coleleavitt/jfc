@@ -11,11 +11,11 @@ jfc-core = { path = "../jfc-core" }
 jfc-agent = { path = "../jfc-agent" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { package = "serde_norway", version = "0.9" }
+serde_yaml = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
-async-trait = "0.1"
+async-trait = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

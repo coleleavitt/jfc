@@ -3,6 +3,8 @@ use super::trace::{RsiOutcome, RsiTrace, RsiTraceScore};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThinkingPatternKind {
     VerifiedEfficient,
+    GroundedSearch,
+    ParallelSelection,
     OverthoughtFailure,
     ToolRecovery,
     CorrectionRecovery,
@@ -13,6 +15,8 @@ impl ThinkingPatternKind {
     pub const fn slug(self) -> &'static str {
         match self {
             Self::VerifiedEfficient => "verified_efficient",
+            Self::GroundedSearch => "grounded_search",
+            Self::ParallelSelection => "parallel_selection",
             Self::OverthoughtFailure => "overthought_failure",
             Self::ToolRecovery => "tool_recovery",
             Self::CorrectionRecovery => "correction_recovery",
@@ -50,6 +54,28 @@ pub fn analyze_thinking(trace: &RsiTrace, score: &RsiTraceScore) -> ThinkingAnal
                 .to_owned(),
         };
     }
+    if score.outcome > 0.9
+        && !trace.selections.is_empty()
+        && trace.agent_fanouts.iter().any(|fanout| fanout.count > 1)
+    {
+        return ThinkingAnalysis {
+            pattern: ThinkingPatternKind::ParallelSelection,
+            lesson: "Parallel attempts plus an explicit winner selection helped; reuse fanout only when independent solutions can be verified and selected from observable evidence."
+                .to_owned(),
+        };
+    }
+    if score.outcome > 0.9
+        && trace
+            .retrieval_steps
+            .iter()
+            .any(|step| step.result_count > 0)
+    {
+        return ThinkingAnalysis {
+            pattern: ThinkingPatternKind::GroundedSearch,
+            lesson: "A pre-work retrieval grounded the run; future similar tasks should search or read current context before acting."
+                .to_owned(),
+        };
+    }
     if recovered_tool {
         return ThinkingAnalysis {
             pattern: ThinkingPatternKind::ToolRecovery,
@@ -74,7 +100,10 @@ pub fn analyze_thinking(trace: &RsiTrace, score: &RsiTraceScore) -> ThinkingAnal
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rsi_curator::{RsiToolStep, RsiVerification, score_trace};
+    use crate::rsi_curator::{
+        RsiAgentFanout, RsiRetrievalStep, RsiSelectionEvent, RsiToolStep, RsiVerification,
+        score_trace,
+    };
 
     #[test]
     fn analyzer_summarizes_pattern_without_raw_thinking_normal() {
@@ -89,5 +118,32 @@ mod tests {
 
         assert_eq!(analysis.pattern, ThinkingPatternKind::VerifiedEfficient);
         assert!(!analysis.lesson.contains("private reasoning details"));
+    }
+
+    #[test]
+    fn analyzer_prefers_parallel_selection_over_generic_success_normal() {
+        let mut trace = RsiTrace::new("s1");
+        trace.outcome = Some(RsiOutcome::Succeeded);
+        trace.agent_fanouts = vec![RsiAgentFanout::new("bounty", 3, true)];
+        trace.selections = vec![RsiSelectionEvent::new(
+            "bounty",
+            Some("solver_a".to_owned()),
+            Some(3),
+        )];
+
+        let analysis = analyze_thinking(&trace, &score_trace(&trace));
+
+        assert_eq!(analysis.pattern, ThinkingPatternKind::ParallelSelection);
+    }
+
+    #[test]
+    fn analyzer_marks_successful_retrieval_as_grounded_search_normal() {
+        let mut trace = RsiTrace::new("s1");
+        trace.outcome = Some(RsiOutcome::Succeeded);
+        trace.retrieval_steps = vec![RsiRetrievalStep::new("current docs", "codegraph", 2)];
+
+        let analysis = analyze_thinking(&trace, &score_trace(&trace));
+
+        assert_eq!(analysis.pattern, ThinkingPatternKind::GroundedSearch);
     }
 }

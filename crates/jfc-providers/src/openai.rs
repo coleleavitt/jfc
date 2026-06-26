@@ -355,6 +355,7 @@ impl Provider for OpenAIProvider {
                 content: response_output_text(&body),
                 usage: response_usage(&body).unwrap_or_default(),
                 context_signals: None,
+                reasoning: None,
             });
         }
 
@@ -394,6 +395,7 @@ impl Provider for OpenAIProvider {
                 .unwrap_or_default(),
             usage: body.usage.unwrap_or_default().into(),
             context_signals: None,
+            reasoning: None,
         })
     }
 }

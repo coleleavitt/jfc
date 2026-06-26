@@ -377,17 +377,14 @@ pub(super) async fn cmd_voice(
         return;
     }
 
-    if !crate::voice::is_initialized() {
-        // Initialize with current config + user-supplied mode override
-        let mut val = jfc_engine::config::load_arc()
-            .claude
-            .voice
-            .clone()
-            .unwrap_or(serde_json::json!({}));
-        apply_voice_mode_override(&mut val, &arg);
-        if let Some(tx_inner) = tx {
-            crate::voice::init(Some(&val), tx_inner.clone());
-        }
+    let mut val = jfc_engine::config::load_arc()
+        .claude
+        .voice
+        .clone()
+        .unwrap_or(serde_json::json!({}));
+    apply_voice_mode_override(&mut val, &arg);
+    if let Some(tx_inner) = tx {
+        crate::voice::configure(Some(&val), tx_inner.clone()).await;
     }
     app.voice_enabled = true;
 

@@ -25,7 +25,8 @@ use super::design::{
 use super::dispatch_heavy;
 use super::economy::strip_html_tags;
 use super::filesystem::{
-    build_edit_diff_view, execute_apply_patch, execute_edit, execute_read, execute_write,
+    build_edit_diff_view, edit_error_needs_stale_recovery_hint, execute_apply_patch, execute_edit,
+    execute_read, execute_write, stale_edit_requires_read_message,
 };
 use super::hcom::{
     execute_hcom_bundle, execute_hcom_events, execute_hcom_fork, execute_hcom_kill,
@@ -316,6 +317,12 @@ pub async fn execute_tool_with_runtime_id(
                 replacement,
             },
         ) => {
+            if let Some(cache) = &dedup {
+                let guard = cache.lock().await;
+                if guard.requires_stale_edit_refresh(Path::new(&file_path)) {
+                    return ExecutionResult::failure(stale_edit_requires_read_message(&file_path));
+                }
+            }
             let old_content = tokio::fs::read_to_string(&file_path).await.ok();
             checkpoint_before_mutation(Path::new(&file_path), "Edit");
             let result = execute_edit(&file_path, &old_string, &new_string, replacement).await;
@@ -335,6 +342,14 @@ pub async fn execute_tool_with_runtime_id(
                     &cwd,
                 )
                 .await;
+            }
+            if edit_error_needs_stale_recovery_hint(&result.output)
+                && let Some(cache) = &dedup
+            {
+                cache
+                    .lock()
+                    .await
+                    .mark_stale_edit_miss(PathBuf::from(&file_path));
             }
             result
         }
@@ -722,14 +737,19 @@ pub async fn execute_tool_with_runtime_id(
                 acceptance_criteria,
                 max_solvers,
                 auto_dispatch,
+                parent_task_id,
             },
         ) => {
             dispatch_heavy::execute_post_bounty(
-                description,
-                budget,
-                acceptance_criteria,
-                max_solvers,
-                auto_dispatch,
+                dispatch_heavy::PostBountyExecution {
+                    description,
+                    budget,
+                    acceptance_criteria,
+                    max_solvers,
+                    auto_dispatch,
+                    parent_task_id,
+                    task_store: task_store.clone(),
+                },
                 &cwd,
             )
             .await
@@ -740,8 +760,26 @@ pub async fn execute_tool_with_runtime_id(
                 bounty_id,
                 max_solvers,
             },
-        ) => dispatch_heavy::execute_run_bounty(bounty_id, max_solvers, &cwd).await,
+        ) => {
+            dispatch_heavy::execute_run_bounty(
+                dispatch_heavy::RunBountyExecution {
+                    bounty_id,
+                    max_solvers,
+                    task_store: task_store.clone(),
+                },
+                &cwd,
+            )
+            .await
+        }
         (ToolKind::MarketStatus, ToolInput::MarketStatus { bounty_id }) => {
+            if bounty_id.is_none() {
+                return match crate::tools::market_report_string_for_cwd(&cwd).await {
+                    Ok(report) => ExecutionResult::success(report),
+                    Err(error) => {
+                        ExecutionResult::failure(format!("market_status failed: {error}"))
+                    }
+                };
+            }
             // Try-lock: a bounty cycle in flight holds this mutex for
             // minutes. Returning a "busy" message lets the model
             // continue and retry instead of stalling its turn on the
@@ -796,6 +834,12 @@ pub async fn execute_tool_with_runtime_id(
             ExecutionResult::success(body)
         }
         (ToolKind::MultiEdit, ToolInput::MultiEdit { file_path, edits }) => {
+            if let Some(cache) = &dedup {
+                let guard = cache.lock().await;
+                if guard.requires_stale_edit_refresh(Path::new(&file_path)) {
+                    return ExecutionResult::failure(stale_edit_requires_read_message(&file_path));
+                }
+            }
             // Serialize on the same per-file lock used by Edit/Write so
             // MultiEdit and parallel Edit calls don't race on the same file.
             let _guard_lock = crate::tools::filesystem::acquire_file_lock(&file_path).await;
@@ -857,10 +901,16 @@ pub async fn execute_tool_with_runtime_id(
                 ) {
                     Ok(updated) => content = updated,
                     Err(e) => {
-                        if crate::tools::filesystem::edit_error_needs_stale_recovery_hint(&e) {
+                        if edit_error_needs_stale_recovery_hint(&e) {
                             let hint = crate::tools::filesystem::stale_read_recovery_hint(
                                 &file_path, &content,
                             );
+                            if let Some(cache) = &dedup {
+                                cache
+                                    .lock()
+                                    .await
+                                    .mark_stale_edit_miss(PathBuf::from(&file_path));
+                            }
                             return ExecutionResult::failure(format!("{e}\n{hint}"));
                         }
                         return ExecutionResult::failure(e);

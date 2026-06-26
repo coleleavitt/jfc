@@ -68,11 +68,50 @@ impl ThinkingSource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThinkingSupport {
+    None,
+    PrivateOnly,
+    ObservableSignals,
+}
+
+impl ThinkingSupport {
+    pub const fn slug(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::PrivateOnly => "private_only",
+            Self::ObservableSignals => "observable_signals",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThinkingSelfConsistency {
+    Untested,
+    SingleSignal,
+    CrossChecked,
+    ConflictObserved,
+}
+
+impl ThinkingSelfConsistency {
+    pub const fn slug(self) -> &'static str {
+        match self {
+            Self::Untested => "untested",
+            Self::SingleSignal => "single_signal",
+            Self::CrossChecked => "cross_checked",
+            Self::ConflictObserved => "conflict_observed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThinkingProvenance {
     pub source: ThinkingSource,
     pub private_blocks_seen: usize,
     pub thinking_tokens: u64,
     pub raw_stored: bool,
+    pub support: ThinkingSupport,
+    pub self_consistency: ThinkingSelfConsistency,
+    pub observable_support_count: u8,
 }
 
 impl ThinkingProvenance {
@@ -82,12 +121,41 @@ impl ThinkingProvenance {
         } else {
             ThinkingSource::PrivateReasoningDerived
         };
+        let observable_support_count = observable_support_count(trace);
+        let support = match (source, observable_support_count) {
+            (ThinkingSource::None, _) => ThinkingSupport::None,
+            (ThinkingSource::PrivateReasoningDerived, 0) => ThinkingSupport::PrivateOnly,
+            (ThinkingSource::PrivateReasoningDerived, _) => ThinkingSupport::ObservableSignals,
+        };
+        let self_consistency = if trace
+            .verifications
+            .iter()
+            .any(|verification| !verification.passed)
+            || matches!(
+                trace.outcome,
+                Some(RsiOutcome::Failed | RsiOutcome::UserCorrected)
+            ) {
+            ThinkingSelfConsistency::ConflictObserved
+        } else if observable_support_count >= 2 {
+            ThinkingSelfConsistency::CrossChecked
+        } else if observable_support_count == 1 {
+            ThinkingSelfConsistency::SingleSignal
+        } else {
+            ThinkingSelfConsistency::Untested
+        };
         Self {
             source,
             private_blocks_seen: trace.thinking_blocks.len(),
             thinking_tokens: trace.thinking_tokens,
             raw_stored: false,
+            support,
+            self_consistency,
+            observable_support_count,
         }
+    }
+
+    pub const fn has_observable_support(self) -> bool {
+        self.observable_support_count > 0
     }
 }
 
@@ -192,6 +260,9 @@ pub fn generate_candidates(
 fn should_emit_playbook(trace: &RsiTrace) -> bool {
     trace.user_correction.is_some()
         || !trace.verifications.is_empty()
+        || !trace.retrieval_steps.is_empty()
+        || !trace.selections.is_empty()
+        || trace.agent_fanouts.iter().any(|fanout| fanout.count > 1)
         || trace.tool_steps.iter().any(|step| !step.success)
 }
 
@@ -226,16 +297,56 @@ pub(super) fn candidate(
 }
 
 fn trace_evidence(trace: &RsiTrace) -> String {
+    let thinking = ThinkingProvenance::from_trace(trace);
     format!(
-        "session={} turn={} thinking_blocks={} thinking_tokens={} tools={} verifications={} correction={}",
+        "session={} turn={} thinking_blocks={} thinking_tokens={} thinking_support={} self_consistency={} observable_support={} tools={} verifications={} retrievals={} fanouts={} selections={} correction={}",
         trace.session_id,
         trace.turn_id.as_deref().unwrap_or(""),
         trace.thinking_blocks.len(),
         trace.thinking_tokens,
+        thinking.support.slug(),
+        thinking.self_consistency.slug(),
+        thinking.observable_support_count,
         trace.tool_steps.len(),
         trace.verifications.len(),
+        trace.retrieval_steps.len(),
+        trace.agent_fanouts.len(),
+        trace.selections.len(),
         trace.user_correction.is_some()
     )
+}
+
+fn observable_support_count(trace: &RsiTrace) -> u8 {
+    let mut count = 0u8;
+    if trace
+        .verifications
+        .iter()
+        .any(|verification| verification.passed)
+    {
+        count += 1;
+    }
+    if trace.tool_steps.iter().any(|step| step.success) {
+        count += 1;
+    }
+    if trace
+        .retrieval_steps
+        .iter()
+        .any(|step| step.result_count > 0)
+    {
+        count += 1;
+    }
+    if trace.agent_fanouts.iter().any(|fanout| fanout.count > 1)
+        && trace
+            .selections
+            .iter()
+            .any(|selection| selection.winner.is_some())
+    {
+        count += 1;
+    }
+    if trace.user_correction.is_some() || matches!(trace.outcome, Some(RsiOutcome::UserCorrected)) {
+        count += 1;
+    }
+    count
 }
 
 #[cfg(test)]

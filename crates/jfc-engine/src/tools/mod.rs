@@ -1,4 +1,6 @@
 mod bash;
+mod bounty_learning;
+mod bounty_tasks;
 mod catalog;
 mod code_navigation;
 mod daemon;
@@ -43,8 +45,8 @@ pub use crate::runtime::{ExecutionResult, ToolProvenance, ToolSource};
 pub use bash::execute_bash_inner;
 // background-shell roster API (list/cancel/detach), surfaced in the TUI.
 pub use bash::{
-    BashTaskSnapshot, CancelOutcome, background_running_foreground_bash, cancel_bash_task,
-    list_bash_tasks,
+    BashTaskSnapshot, CancelOutcome, background_running_foreground_bash, bash_task_command,
+    bash_task_is_running, cancel_bash_task, list_bash_tasks,
 };
 pub use dispatch::{execute_tool, execute_tool_with_runtime_id};
 
@@ -83,7 +85,7 @@ pub fn apply_send_user_message_policy(
 }
 
 // economy
-pub use economy::market_report_string;
+pub use economy::{market_report_string, market_report_string_for_cwd};
 // Used by the test suite (tools/tests.rs is #[path]-included into the test
 // module below), not by the non-test build — hence the cfg guard.
 

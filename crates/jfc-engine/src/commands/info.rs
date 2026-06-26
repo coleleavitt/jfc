@@ -867,7 +867,8 @@ pub(super) async fn cmd_market(
     // Surface the agent-economy snapshot — same data the
     // `market_status` tool returns, but framed for the user
     // rather than the model. No bounty_id filter for now.
-    let report_str = match crate::tools::market_report_string().await {
+    let cwd = active_cwd(&state.cwd);
+    let report_str = match crate::tools::market_report_string_for_cwd(&cwd).await {
         Ok(s) => s,
         Err(e) => format!("Market unavailable: {e}"),
     };
@@ -1217,6 +1218,7 @@ mod bashes_tests {
                 content: String::new(),
                 usage: TokenUsage::default(),
                 context_signals: None,
+                reasoning: None,
             })
         }
     }

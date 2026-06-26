@@ -128,7 +128,7 @@ symbol_edit
   to_value={"handle":"fn:x","new_content":"...","validate":true,"dispatch_cascade":true}
   summary=edit: fn:x
 post_bounty
-  to_value={"description":"d","budget":100,"acceptance_criteria":"ac","max_solvers":3,"auto_dispatch":true}
+  to_value={"description":"d","budget":100,"acceptance_criteria":"ac","max_solvers":3,"auto_dispatch":true,"parent_task_id":"t1"}
   summary=bounty (100 tok): d
 market_status
   to_value={"bounty_id":"b1"}

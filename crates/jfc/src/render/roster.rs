@@ -309,6 +309,11 @@ pub(crate) fn agent_detail_lines(
         ]));
     }
 
+    if let Some(result) = terminal_result_line(bt, t, width) {
+        lines.push(result);
+    }
+
+    lines.extend(recent_activity_lines(bt, t, width));
     lines.extend(transcript_lines(bt, t, width));
 
     lines
@@ -324,6 +329,64 @@ fn tool_activity_count_label(bt: &crate::app::BackgroundTask) -> String {
         bt.tool_use_count,
         if bt.tool_use_count == 1 { "" } else { "s" }
     )
+}
+
+fn terminal_result_line(
+    bt: &crate::app::BackgroundTask,
+    t: &Theme,
+    width: u16,
+) -> Option<Line<'static>> {
+    let (label, body, style) = match bt.status {
+        jfc_core::TaskLifecycle::Completed => (
+            "Result",
+            bt.summary.as_deref()?,
+            Style::default().fg(t.success),
+        ),
+        jfc_core::TaskLifecycle::Failed | jfc_core::TaskLifecycle::Cancelled => {
+            ("Error", bt.error.as_deref()?, Style::default().fg(t.error))
+        }
+        _ => return None,
+    };
+    let prefix = format!("  {label}: ");
+    let body_width = width.saturating_sub(prefix.len() as u16).max(8) as usize;
+    let preview = super::truncate_str(&body.replace('\n', " "), body_width);
+    Some(Line::from(vec![
+        Span::styled(prefix, Style::default().fg(t.text_muted)),
+        Span::styled(preview, style),
+    ]))
+}
+
+fn recent_activity_lines(
+    bt: &crate::app::BackgroundTask,
+    t: &Theme,
+    width: u16,
+) -> Vec<Line<'static>> {
+    if bt.recent_activities.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Recent tools",
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::BOLD),
+        )),
+    ];
+    for activity in &bt.recent_activities {
+        let elapsed_secs = activity.elapsed_ms / 1000;
+        let elapsed = super::visual::format_elapsed_secs(elapsed_secs);
+        let label = activity.kind.label();
+        let subject = activity.display.replace('\n', " ");
+        let subject = super::truncate_str(&subject, width.saturating_sub(18) as usize);
+        lines.push(Line::from(vec![
+            Span::styled("  › ", Style::default().fg(t.accent)),
+            Span::styled(format!("[{elapsed}] "), Style::default().fg(t.text_muted)),
+            Span::styled(format!("{label} "), Style::default().fg(t.text_secondary)),
+            Span::styled(subject, Style::default().fg(t.text_primary)),
+        ]));
+    }
+    lines
 }
 
 /// The "Recent activity" transcript tail. The detached-agent sync

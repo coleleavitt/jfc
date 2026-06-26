@@ -113,6 +113,37 @@ enum Cmd {
     Close,
 }
 
+#[derive(Default)]
+struct BatchTranscript {
+    last_final: String,
+    last_interim: String,
+}
+
+impl BatchTranscript {
+    fn push(&mut self, text: String, is_final: bool) {
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        if is_final {
+            self.last_final = text.to_owned();
+            self.last_interim.clear();
+        } else {
+            self.last_interim = text.to_owned();
+        }
+    }
+
+    fn finish(self) -> Option<String> {
+        if !self.last_final.is_empty() {
+            Some(self.last_final)
+        } else if !self.last_interim.is_empty() {
+            Some(self.last_interim)
+        } else {
+            None
+        }
+    }
+}
+
 /// Handle to a live voice-stream session. Cloning is intentionally not derived:
 /// a session has a single owner that drives `send`/`finalize`/`close`.
 pub struct VoiceStream {
@@ -498,42 +529,35 @@ async fn batch_session(
     let finalize = stream.finalize();
     tokio::pin!(finalize);
 
-    let mut last_final = String::new();
+    let mut transcript = BatchTranscript::default();
     loop {
         tokio::select! {
             _ = &mut finalize => {
-                // Drain any final transcript still queued before returning.
+                // Drain any transcript still queued before returning. VAD batch
+                // sessions can resolve after receiving text but before an
+                // endpoint frame promotes it to final.
                 while let Ok(msg) = rx.try_recv() {
-                    if let StreamMsg::Transcript { text, is_final: true } = msg {
-                        if !text.trim().is_empty() {
-                            last_final = text;
-                        }
+                    if let StreamMsg::Transcript { text, is_final } = msg {
+                        transcript.push(text, is_final);
                     }
                 }
                 break;
             }
             msg = rx.recv() => match msg {
                 None | Some(StreamMsg::Closed) => break,
-                Some(StreamMsg::Transcript { text, is_final: true }) => {
-                    if !text.trim().is_empty() {
-                        last_final = text;
-                    }
+                Some(StreamMsg::Transcript { text, is_final }) => {
+                    transcript.push(text, is_final);
                 }
                 Some(StreamMsg::Error { msg, .. }) => {
                     stream.close();
                     return Err(anyhow::anyhow!("voice_stream error: {msg}"));
                 }
-                Some(_) => {} // Ready / interim — batch keeps only the final
+                Some(_) => {}
             }
         }
     }
     stream.close();
-    let trimmed = last_final.trim().to_owned();
-    Ok(if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
-    })
+    Ok(transcript.finish())
 }
 
 #[cfg(test)]
@@ -577,6 +601,15 @@ mod tests {
             parse_server_frame(r#"{"type":"TranscriptText","data":""}"#),
             ServerFrame::Interim(String::new())
         );
+    }
+
+    #[test]
+    fn batch_transcript_uses_last_interim_when_endpoint_final_missing_regression() {
+        let mut transcript = BatchTranscript::default();
+
+        transcript.push("hello from vad".to_owned(), false);
+
+        assert_eq!(transcript.finish(), Some("hello from vad".to_owned()));
     }
 
     #[test]

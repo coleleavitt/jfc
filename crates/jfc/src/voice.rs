@@ -24,6 +24,10 @@ static RECORDER: OnceLock<Mutex<VoiceRecorder>> = OnceLock::new();
 /// Returns immediately without initializing when voice is disabled or config is absent.
 pub fn init(voice_value: Option<&serde_json::Value>, engine_tx: jfc_engine::runtime::EventSender) {
     let cfg = VoiceConfig::from_settings(voice_value);
+    init_with_config(cfg, engine_tx);
+}
+
+fn init_with_config(cfg: VoiceConfig, engine_tx: jfc_engine::runtime::EventSender) {
     if !cfg.enabled {
         tracing::debug!(target: "jfc::voice", "voice mode disabled (voice.enabled=false)");
         return;
@@ -66,6 +70,18 @@ pub fn init(voice_value: Option<&serde_json::Value>, engine_tx: jfc_engine::runt
             }
         }
     });
+}
+
+pub async fn configure(
+    voice_value: Option<&serde_json::Value>,
+    engine_tx: jfc_engine::runtime::EventSender,
+) {
+    let cfg = VoiceConfig::from_settings(voice_value);
+    if let Some(rec) = RECORDER.get() {
+        rec.lock().await.reconfigure(cfg);
+    } else {
+        init_with_config(cfg, engine_tx);
+    }
 }
 
 /// Activate/deactivate push-to-talk.

@@ -55,6 +55,32 @@ pub(crate) fn model_fqn(raw: &str) -> String {
     raw.to_owned()
 }
 
+fn subagent_activity_line(
+    shown: &[&crate::app::BackgroundTask],
+    app: &App,
+    width: usize,
+) -> Option<Line<'static>> {
+    let t = app.theme;
+    let items: Vec<String> = shown
+        .iter()
+        .filter(|bt| bt.status.is_alive())
+        .filter_map(|bt| {
+            let tool = bt.last_tool_info.as_deref().or(bt.last_tool.as_deref())?;
+            Some(format!("{}: {tool}", bt.description))
+        })
+        .take(3)
+        .collect();
+    if items.is_empty() {
+        return None;
+    }
+    let mut text = format!("active  {}", items.join(" · "));
+    text = super::visual::truncate_cells(&text, width);
+    Some(Line::from(Span::styled(
+        text,
+        Style::default().fg(t.text_secondary),
+    )))
+}
+
 /// Background-task ids in fleet display order — the same ordering the
 /// agent fan renders (active → running → fresh-failed → idle → done →
 /// stale-failed, then a stable id tie-break). The tab strip and the
@@ -193,6 +219,11 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
         chips.push(Span::styled(hint, Style::default().fg(t.text_muted)));
     }
     lines.push(Line::from(chips));
+    let activity_line = subagent_activity_line(&shown, app, width);
+    let has_activity_line = activity_line.is_some();
+    if let Some(line) = activity_line {
+        lines.push(line);
+    }
 
     // ── Agent rows. Two fixed gutter columns up front:
     //   col 0 (accent): selection pointer ▶ / blank  — the ONE accent use
@@ -203,7 +234,9 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     // Window: the summary owns 1 row; the rest go to agent rows. If the
     // fleet overflows, drop a "+N more" footer. Sorting already floated
     // the rows that matter (running/fresh failures) to the top of the window.
-    let body_rows = (area.height as usize).saturating_sub(1).max(1);
+    let body_rows = (area.height as usize)
+        .saturating_sub(1 + usize::from(has_activity_line))
+        .max(1);
     let overflow = shown.len() > body_rows;
     let visible_rows = if overflow {
         body_rows.saturating_sub(1)

@@ -94,6 +94,38 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_tool_input_post_bounty_preserves_parent_task_normal() {
+        let input = ToolInput::PostBounty {
+            description: "audit task routing".into(),
+            budget: 777,
+            acceptance_criteria: "parent task has bounty metadata".into(),
+            max_solvers: Some(2),
+            auto_dispatch: true,
+            parent_task_id: Some("t1".into()),
+        };
+
+        let serialized = serialize_tool_input(&input);
+        let deserialized = deserialize_tool_input(serialized);
+        let ToolInput::PostBounty {
+            description,
+            budget,
+            acceptance_criteria,
+            max_solvers,
+            auto_dispatch,
+            parent_task_id,
+        } = deserialized
+        else {
+            panic!("expected PostBounty input");
+        };
+        assert_eq!(description, "audit task routing");
+        assert_eq!(budget, 777);
+        assert_eq!(acceptance_criteria, "parent task has bounty metadata");
+        assert_eq!(max_solvers, Some(2));
+        assert!(auto_dispatch);
+        assert_eq!(parent_task_id.as_deref(), Some("t1"));
+    }
+
+    #[test]
     fn roundtrip_tool_output_diff() {
         let output = ToolOutput::Diff(DiffView {
             file_path: "test.rs".into(),

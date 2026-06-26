@@ -804,28 +804,52 @@ fn format_message_timestamp(secs: u64) -> String {
     }
 }
 
-/// Remove every `<system-reminder>…</system-reminder>` block from `s`. Used to
-/// tell whether a user turn has any real (user-authored) content left.
 fn strip_system_reminders(s: &str) -> String {
-    const OPEN: &str = "<system-reminder>";
-    const CLOSE: &str = "</system-reminder>";
-    let mut out = String::new();
-    let mut rest = s;
-    while let Some(start) = rest.find(OPEN) {
-        out.push_str(&rest[..start]);
-        if let Some(end) = rest[start..].find(CLOSE) {
-            rest = &rest[start + end + CLOSE.len()..];
-        } else {
-            // Unterminated tag — drop the opener AND everything after it.
-            // A reminder block that never closes is a system nudge whose
-            // payload is still reminder content, not something the user
-            // typed; keeping the tail would leak it as a fake "you" bubble.
-            rest = "";
-            break;
-        }
+    jfc_core::strip_system_reminders(s)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TeammateTranscriptMessage {
+    from: String,
+    summary: Option<String>,
+    content: String,
+}
+
+fn parse_teammate_transcript_message(text: &str) -> Option<TeammateTranscriptMessage> {
+    let trimmed = text.trim();
+    if !trimmed.starts_with("<teammate-message ") {
+        return None;
     }
-    out.push_str(rest);
-    out
+    let open_end = trimmed.find('>')?;
+    let open = &trimmed[..open_end + 1];
+    let body = &trimmed[open_end + 1..];
+    let close_start = body.rfind("</teammate-message>")?;
+    let from = attr_value(open, "teammate_id").or_else(|| attr_value(open, "from"))?;
+    let summary = attr_value(open, "summary")
+        .map(|value| decode_xml_entities(&value))
+        .filter(|value| !value.trim().is_empty());
+    let content = decode_xml_entities(body[..close_start].trim());
+    Some(TeammateTranscriptMessage {
+        from: decode_xml_entities(&from),
+        summary,
+        content,
+    })
+}
+
+fn attr_value(open_tag: &str, name: &str) -> Option<String> {
+    let needle = format!("{name}=\"");
+    let start = open_tag.find(&needle)? + needle.len();
+    let rest = &open_tag[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_owned())
+}
+
+fn decode_xml_entities(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&")
 }
 
 /// True when a user message would render as a bare empty "you" bubble — its
@@ -864,6 +888,30 @@ fn message_has_visible_transcript_content(ctx: &RenderCtx<'_>, msg: &ChatMessage
         MessagePart::Advisor(text) => !text.is_empty(),
         MessagePart::RedactedThinking(_) => true,
     })
+}
+
+fn push_teammate_message_lines(
+    items: &mut Vec<RenderItem<'_>>,
+    parsed: &TeammateTranscriptMessage,
+    queued: bool,
+    t: &Theme,
+    width: usize,
+) {
+    let mut spans = vec![Span::styled(
+        format!("@ {}", parsed.from),
+        Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+    )];
+    if let Some(summary) = parsed.summary.as_deref() {
+        spans.push(Span::styled("  ", Style::default().fg(t.text_muted)));
+        spans.push(Span::styled(
+            summary.to_owned(),
+            Style::default().fg(t.text_muted),
+        ));
+    }
+    items.push(RenderItem::TextLine(Line::from(spans)));
+    if !parsed.content.trim().is_empty() {
+        push_user_prompt_lines(items, &parsed.content, queued, t, width);
+    }
 }
 
 fn push_user_prompt_lines(
@@ -1159,7 +1207,22 @@ pub(crate) fn build_message_items<'a>(
                         continue;
                     }
                     if msg.role == Role::User {
-                        push_user_prompt_lines(items, text, msg.queued, &t, inner_w);
+                        let visible_text = strip_system_reminders(text);
+                        if !visible_text.trim().is_empty() {
+                            if let Some(parsed) = parse_teammate_transcript_message(&visible_text) {
+                                push_teammate_message_lines(
+                                    items, &parsed, msg.queued, &t, inner_w,
+                                );
+                            } else {
+                                push_user_prompt_lines(
+                                    items,
+                                    &visible_text,
+                                    msg.queued,
+                                    &t,
+                                    inner_w,
+                                );
+                            }
+                        }
                         p += 1;
                         continue;
                     }
@@ -1346,7 +1409,7 @@ mod invisible_tool_tests {
 
 #[cfg(test)]
 mod reminder_skip_tests {
-    use super::strip_system_reminders;
+    use super::{parse_teammate_transcript_message, strip_system_reminders};
 
     #[test]
     fn reminder_only_strips_to_empty_normal() {
@@ -1368,6 +1431,32 @@ mod reminder_skip_tests {
                 .is_empty()
         );
         assert_eq!(strip_system_reminders("hi <system-reminder>x").trim(), "hi");
+    }
+
+    #[test]
+    fn teammate_message_parser_accepts_canonical_wrapper_normal() {
+        let parsed = parse_teammate_transcript_message(
+            "<teammate-message teammate_id=\"import-fix\" summary=\"done &amp; checked\">\n\
+             fixed &lt;things&gt;\n\
+             </teammate-message>",
+        )
+        .expect("canonical teammate wrapper should parse");
+
+        assert_eq!(parsed.from, "import-fix");
+        assert_eq!(parsed.summary.as_deref(), Some("done & checked"));
+        assert_eq!(parsed.content, "fixed <things>");
+    }
+
+    #[test]
+    fn teammate_message_parser_accepts_legacy_from_wrapper_robust() {
+        let parsed = parse_teammate_transcript_message(
+            "<teammate-message from=\"validator\">\nlooks good\n</teammate-message>",
+        )
+        .expect("legacy teammate wrapper should parse");
+
+        assert_eq!(parsed.from, "validator");
+        assert_eq!(parsed.summary, None);
+        assert_eq!(parsed.content, "looks good");
     }
 }
 

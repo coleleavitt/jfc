@@ -11,14 +11,14 @@ jfc-provider = { path = "../jfc-provider" }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 dirs = "6"
-libc = "0.2"
+libc = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["fs", "sync", "time", "rt", "process", "signal", "macros"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 
 [lints]

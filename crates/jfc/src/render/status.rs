@@ -180,7 +180,7 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         });
     }
 
-    let used = app.engine.tool_ctx.approx_tokens;
+    let used = jfc_engine::context_accounting::model_visible_tokens_for_display(&app.engine);
     let max = app.engine.max_context_tokens.max(1);
     let ctx_pct = ((used as f64 / max as f64).clamp(0.0, 1.0) * 100.0).round() as u32;
     if ctx_pct >= 70 {
@@ -335,8 +335,10 @@ fn shell_activity_count(messages: &[ChatMessage]) -> usize {
                     if let Some(task_id) = background_task_id_from_output(&tool.output) {
                         if bash_output_finished_task(&tool.output) {
                             finished.insert(task_id);
-                        } else {
+                        } else if jfc_engine::tools::bash_task_is_running(&task_id) {
                             backgrounded.insert(task_id);
+                        } else {
+                            finished.insert(task_id);
                         }
                     }
                 }
@@ -376,7 +378,14 @@ fn bash_output_finished_task(output: &ToolOutput) -> bool {
         _ => return false,
     };
     text.lines()
-        .any(|line| line == "retrieval_status: success" || line.starts_with("status: completed"))
+        .any(|line| line == "retrieval_status: success" || bash_status_line_is_terminal(line))
+}
+
+fn bash_status_line_is_terminal(line: &str) -> bool {
+    let Some(status) = line.strip_prefix("status: ") else {
+        return false;
+    };
+    !status.trim().starts_with("running")
 }
 
 /// Build the rate-limit quota badge from the OAuth account snapshot, or `None`
@@ -583,7 +592,7 @@ mod tests {
     }
 
     #[test]
-    fn shell_activity_badge_keeps_unretrieved_background_task_regression() {
+    fn shell_activity_badge_ignores_stale_background_task_without_live_metadata_regression() {
         let mut msg = ChatMessage::assistant(String::new());
         msg.parts.clear();
         msg.parts.push(tool(
@@ -600,7 +609,29 @@ mod tests {
             ),
         ));
 
-        assert_eq!(shell_activity_badge(&[msg]).as_deref(), Some(" 1 shell "));
+        assert_eq!(shell_activity_badge(&[msg]), None);
+    }
+
+    #[test]
+    fn shell_activity_badge_clears_terminal_background_status_regression() {
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.parts.clear();
+        msg.parts.push(tool(
+            ToolInput::Bash {
+                command: "sleep 60".into(),
+                timeout: Some(120_000),
+                workdir: None,
+                run_in_background: Some(true),
+                suppress_output: None,
+            },
+            ToolStatus::Completed,
+            ToolOutput::Text(
+                "Command running in background.\ntask_id: bash_done\nstatus: timed_out after 120000ms"
+                    .into(),
+            ),
+        ));
+
+        assert_eq!(shell_activity_badge(&[msg]), None);
     }
 
     #[test]

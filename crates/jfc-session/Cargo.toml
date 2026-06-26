@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 chrono = { workspace = true }
 dirs = "5"
-fs2 = "0.4"
+fs2 = { workspace = true }
 futures = { workspace = true }
 jfc-core = { path = "../jfc-core" }
 jfc-knowledge = { path = "../jfc-knowledge" }
@@ -16,7 +16,7 @@ tokio = { workspace = true, features = ["fs", "io-util", "rt-multi-thread", "mac
 tracing = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.27.0"
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

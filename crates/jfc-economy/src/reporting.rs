@@ -218,6 +218,22 @@ pub struct ValidatorOutcome {
 pub struct CycleOutcome {
     pub settlement: crate::types::Settlement,
     pub winning_solution: Option<crate::types::Solution>,
+    pub evidence: CycleEvidence,
+}
+
+/// Public, distilled evidence from a bounty cycle.
+///
+/// This deliberately stores only observable market facts. Solver patches,
+/// explanations, and provider reasoning remain outside the learning substrate.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CycleEvidence {
+    pub solver_count: u64,
+    pub solution_count: u64,
+    pub validator_count: u64,
+    pub flaws_upheld: u64,
+    pub flaws_dismissed: u64,
+    pub no_flaw_found: u64,
+    pub early_terminations: u64,
 }
 
 /// Trait that turns a solver / validator prompt into a real LLM call.

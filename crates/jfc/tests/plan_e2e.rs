@@ -101,6 +101,7 @@ impl Provider for MockProvider {
             content: next,
             usage: TokenUsage::default(),
             context_signals: None,
+            reasoning: None,
         })
     }
 }

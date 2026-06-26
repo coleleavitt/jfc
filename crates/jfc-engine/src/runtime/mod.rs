@@ -9,6 +9,7 @@ mod events;
 mod execution;
 mod factory;
 mod goal_loop;
+mod mission;
 mod network;
 pub mod ops;
 pub mod prompt_rewrite_gate;
@@ -31,7 +32,9 @@ pub use events::{
 };
 pub use execution::{ExecutionResult, ToolErrorCategory, ToolProvenance, ToolSource};
 pub use factory::{factory_mode_enabled, maybe_continue_task_factory};
-pub use goal_loop::{dispatch_goal_evaluator_if_active, handle_goal_verdict};
+pub use goal_loop::{
+    cancel_goal_evaluator, dispatch_goal_evaluator_if_active, handle_goal_verdict,
+};
 pub use jfc_core::{
     DEFERRED_TOOL_USES_CAP, DeferredToolUse, MessageQueue, QueuePriority, QueuedPrompt,
     TOOL_USE_SUMMARIES_CAP, ToolUseSummary, push_bounded_drop_oldest,

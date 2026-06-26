@@ -441,17 +441,7 @@ impl HookHandler {
                 HookAction::Continue
             }
             Self::CommentChecker => {
-                let slop_patterns = [
-                    "// This function",
-                    "// This method",
-                    "// TODO: implement",
-                    "",
-                    "/* eslint-disable */",
-                ];
-                let has_slop = slop_patterns
-                    .iter()
-                    .any(|pattern| ctx.tool_input.contains(pattern));
-                if has_slop {
+                if contains_comment_slop(&ctx.tool_input) {
                     tracing::warn!(
                         target: "jfc::hooks::comment_check",
                         tool = %ctx.tool_name,
@@ -568,6 +558,19 @@ impl HookHandler {
             Self::Custom { action, .. } => action.clone(),
         }
     }
+}
+
+const COMMENT_SLOP_PATTERNS: &[&str] = &[
+    "// This function",
+    "// This method",
+    "// TODO: implement",
+    "/* eslint-disable */",
+];
+
+fn contains_comment_slop(tool_input: &str) -> bool {
+    COMMENT_SLOP_PATTERNS
+        .iter()
+        .any(|pattern| tool_input.contains(pattern))
 }
 
 /// Registry of hooks, fired in registration order (FIFO).
@@ -1605,6 +1608,14 @@ mod tests {
             "s1",
         );
         assert_continue(HookHandler::CommentChecker.execute(HookPoint::AfterToolDispatch, &ctx));
+        assert!(contains_comment_slop(&ctx.tool_input));
+    }
+
+    #[test]
+    fn comment_checker_does_not_match_every_tool_output_regression() {
+        let ctx = HookContext::for_tool("write", "fn update() {}\n", "s1");
+        assert_continue(HookHandler::CommentChecker.execute(HookPoint::AfterToolDispatch, &ctx));
+        assert!(!contains_comment_slop(&ctx.tool_input));
     }
 
     #[test]

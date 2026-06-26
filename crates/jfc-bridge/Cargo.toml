@@ -7,10 +7,10 @@ publish.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-async-stream = "0.3"
-axum = "0.7"
-base64 = "0.22"
-futures-util = "0.3"
+async-stream = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+futures-util = { workspace = true }
 hmac = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -22,7 +22,7 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 
 [lints]

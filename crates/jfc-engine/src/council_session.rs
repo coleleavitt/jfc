@@ -466,6 +466,7 @@ pub(crate) mod test_support {
                     cache_creation_tokens: 0,
                 },
                 context_signals: None,
+                reasoning: None,
             })
         }
     }

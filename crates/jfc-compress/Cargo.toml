@@ -12,7 +12,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 # Hunk-header parsing + priority-pattern matching in the compressors.
-regex = "1"
+regex = { workspace = true }
 # Tier-3 KeywordDetector — single DFA scan finds every keyword in a line.
 aho-corasick = "1"
 # CCR cache_key (MD5[:24], parity with the Python compression_store).
@@ -23,5 +23,5 @@ flate2 = "1"
 dashmap = "6"
 
 [dev-dependencies]
-tempfile = "3"
-proptest = "1"
+tempfile = { workspace = true }
+proptest = { workspace = true }

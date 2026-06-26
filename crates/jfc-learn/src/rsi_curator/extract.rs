@@ -1,8 +1,8 @@
 use serde_json::Value;
 
 use super::{
-    RsiCuratorConfig, RsiCuratorJob, RsiOutcome, RsiPromotionPolicy, RsiToolStep, RsiTrace,
-    RsiVerification,
+    RsiAgentFanout, RsiCuratorConfig, RsiCuratorJob, RsiOutcome, RsiPromotionPolicy,
+    RsiRetrievalStep, RsiSelectionEvent, RsiToolStep, RsiTrace, RsiVerification,
 };
 use crate::error::LearnError;
 
@@ -57,7 +57,10 @@ pub async fn load_trace_from_store(
     session_id: &str,
 ) -> Result<RsiTrace, LearnError> {
     let messages = store.load_transcript(session_id).await?;
-    Ok(trace_from_messages(session_id, &messages))
+    let mut trace = trace_from_messages(session_id, &messages);
+    augment_trace_from_store(store, session_id, &mut trace).await?;
+    trace.outcome = Some(infer_outcome(&trace));
+    Ok(trace)
 }
 
 pub async fn load_recent_traces_from_store(
@@ -71,6 +74,9 @@ pub async fn load_recent_traces_from_store(
         let trace = load_trace_from_store(store, &session.id).await?;
         if !trace.tool_steps.is_empty()
             || !trace.thinking_blocks.is_empty()
+            || !trace.retrieval_steps.is_empty()
+            || !trace.agent_fanouts.is_empty()
+            || !trace.selections.is_empty()
             || trace.user_correction.is_some()
         {
             traces.push(trace);
@@ -95,7 +101,12 @@ pub async fn build_recent_rsi_job(
             return Ok(None);
         }
     }
-    let traces = load_recent_traces_from_store(store, cwd, limit).await?;
+    let mut traces = load_recent_traces_from_store(store, cwd, limit).await?;
+    if let Some(project_key) = &project_key
+        && let Some(trace) = load_project_activity_trace_from_store(store, project_key).await?
+    {
+        traces.push(trace);
+    }
     if traces.is_empty() {
         return Ok(None);
     }
@@ -107,6 +118,60 @@ pub async fn build_recent_rsi_job(
         sandbox_enforcement: None,
         worker: None,
     }))
+}
+
+async fn load_project_activity_trace_from_store(
+    store: &jfc_knowledge::KnowledgeStore,
+    project_key: &str,
+) -> Result<Option<RsiTrace>, LearnError> {
+    let session_id = format!("project:{project_key}");
+    let mut trace = RsiTrace::new(session_id.clone());
+    for event in store.list_agent_events(&session_id, 500).await? {
+        inspect_agent_event(&event.kind, &event.content, &mut trace);
+    }
+    for artifact in store
+        .list_session_artifacts(&session_id, "bounty", 100)
+        .await?
+    {
+        inspect_bounty_value(&artifact.value_json, &mut trace);
+    }
+    if trace.agent_fanouts.is_empty()
+        && trace.selections.is_empty()
+        && trace.retrieval_steps.is_empty()
+        && trace.tool_steps.is_empty()
+    {
+        return Ok(None);
+    }
+    trace.outcome = Some(infer_outcome(&trace));
+    Ok(Some(trace))
+}
+
+async fn augment_trace_from_store(
+    store: &jfc_knowledge::KnowledgeStore,
+    session_id: &str,
+    trace: &mut RsiTrace,
+) -> Result<(), LearnError> {
+    let tool_runs = store.list_session_tool_runs(session_id).await?;
+    for row in tool_runs.iter().skip(trace.tool_steps.len()) {
+        let (step, verification) = trace_from_tool_run(row);
+        trace.tool_steps.push(step);
+        if let Some(verification) = verification {
+            trace.verifications.push(verification);
+        }
+    }
+
+    for event in store.list_session_retrieval_events(session_id).await? {
+        trace.retrieval_steps.push(RsiRetrievalStep::new(
+            event.query,
+            event.source,
+            event.result_count,
+        ));
+    }
+
+    for event in store.list_agent_events(session_id, 500).await? {
+        inspect_agent_event(&event.kind, &event.content, trace);
+    }
+    Ok(())
 }
 
 fn inspect_plain_message(message: &jfc_knowledge::SessionMessage, trace: &mut RsiTrace) {
@@ -152,7 +217,7 @@ fn inspect_tool_part(part: &Value, trace: &mut RsiTrace) {
         .and_then(Value::as_str)
         .unwrap_or_default();
     let success = status_success(status);
-    if let Some(command) = bash_command(part)
+    if let Some(command) = command_from_value(part)
         && is_verification_command(&command)
     {
         trace
@@ -160,6 +225,81 @@ fn inspect_tool_part(part: &Value, trace: &mut RsiTrace) {
             .push(RsiVerification::new(command, success));
     }
     trace.tool_steps.push(RsiToolStep::new(name, success));
+}
+
+fn trace_from_tool_run(
+    row: &jfc_knowledge::SessionToolRunRow,
+) -> (RsiToolStep, Option<RsiVerification>) {
+    let success = status_success(&row.status);
+    let verification = row
+        .input_json
+        .as_deref()
+        .and_then(command_from_input_json)
+        .filter(|command| is_verification_command(command))
+        .map(|command| RsiVerification::new(command, success));
+    (RsiToolStep::new(row.kind.clone(), success), verification)
+}
+
+fn inspect_agent_event(kind: &str, content: &str, trace: &mut RsiTrace) {
+    if kind.starts_with("bounty.") {
+        inspect_bounty_value(content, trace);
+        return;
+    }
+    let success = match kind {
+        "agent.completed" => Some(true),
+        "agent.failed" => Some(false),
+        _ => None,
+    };
+    if let Some(succeeded) = success {
+        trace
+            .agent_fanouts
+            .push(RsiAgentFanout::new("agent", 1, succeeded));
+    }
+}
+
+fn inspect_bounty_value(raw: &str, trace: &mut RsiTrace) {
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return;
+    };
+    let kind = value
+        .get("kind")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            value
+                .get("event_kind")
+                .and_then(Value::as_str)
+                .map(|kind| kind.strip_prefix("bounty.").unwrap_or(kind))
+        })
+        .unwrap_or_default();
+    let payload = value.get("payload").unwrap_or(&value);
+    match kind {
+        "dispatch_started" => {
+            let count = payload
+                .get("n_solvers")
+                .and_then(Value::as_u64)
+                .unwrap_or(1)
+                .max(1);
+            trace
+                .agent_fanouts
+                .push(RsiAgentFanout::new("bounty", count, true));
+        }
+        "settled" => {
+            let winner = payload
+                .get("winner")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let selected_from = payload.get("payouts").and_then(Value::as_u64);
+            trace
+                .selections
+                .push(RsiSelectionEvent::new("bounty", winner, selected_from));
+        }
+        "failed" => {
+            trace
+                .agent_fanouts
+                .push(RsiAgentFanout::new("bounty", 1, false));
+        }
+        _ => {}
+    }
 }
 
 fn infer_outcome(trace: &RsiTrace) -> RsiOutcome {
@@ -180,6 +320,16 @@ fn infer_outcome(trace: &RsiTrace) -> RsiOutcome {
     {
         return RsiOutcome::Succeeded;
     }
+    if trace
+        .selections
+        .iter()
+        .any(|selection| selection.winner.is_some())
+    {
+        return RsiOutcome::Succeeded;
+    }
+    if trace.agent_fanouts.iter().any(|fanout| !fanout.succeeded) {
+        return RsiOutcome::Failed;
+    }
     if !trace.tool_steps.is_empty() && trace.tool_steps.iter().all(|step| step.success) {
         return RsiOutcome::Succeeded;
     }
@@ -194,11 +344,30 @@ fn status_success(status: &str) -> bool {
     )
 }
 
-fn bash_command(part: &Value) -> Option<String> {
-    part.get("input")
-        .and_then(|input| input.get("command"))
-        .and_then(Value::as_str)
-        .map(str::to_owned)
+fn command_from_input_json(raw: &str) -> Option<String> {
+    serde_json::from_str::<Value>(raw)
+        .ok()
+        .and_then(|value| command_from_value(&value))
+}
+
+fn command_from_value(value: &Value) -> Option<String> {
+    if let Some(command) = value.get("command").and_then(Value::as_str) {
+        return Some(command.to_owned());
+    }
+    if let Some(command) = value.get("cmd").and_then(Value::as_str) {
+        return Some(command.to_owned());
+    }
+    if let Some(input) = value.get("input")
+        && let Some(command) = command_from_value(input)
+    {
+        return Some(command);
+    }
+    if let Some(args) = value.get("args")
+        && let Some(command) = command_from_value(args)
+    {
+        return Some(command);
+    }
+    None
 }
 
 fn is_verification_command(command: &str) -> bool {

@@ -166,11 +166,19 @@ pub struct Config {
         alias = "refusalRewriteRetryMax"
     )]
     pub refusal_rewrite_retry_max: Option<u32>,
-    /// Queue user messages during active streaming turns instead of
-    /// interrupting. When `true`, submitting a new prompt while a turn is
-    /// streaming always queues it behind the current turn rather than
-    /// cancelling. The `/queue` command shows pending queued messages and
-    /// `/queue clear` discards them. Default `false`.
+    /// When the model refuses (or a turn is reclassified as a refusal), write the
+    /// model's chain-of-thought / thinking to ephemeral tracing debug logs so the
+    /// refusal and the rewrite "chain of adaptation" can be inspected locally.
+    /// Default OFF: with it off, private reasoning is never logged and the durable
+    /// refusal diagnostic keeps only counts. This is a local-debug switch — the CoT
+    /// is logged, never persisted to the durable knowledge store.
+    #[serde(default, alias = "refusalLogReasoning")]
+    pub refusal_log_reasoning: bool,
+    /// Queue user messages during active streaming turns and disable explicit
+    /// Alt+Enter steering. Bare Enter always queues behind active work; when
+    /// this is `false`, Alt+Enter may still interrupt a safe in-flight stream.
+    /// The `/queue` command shows pending queued messages and `/queue clear`
+    /// discards them. Default `false`.
     #[serde(default)]
     pub message_queue_mode: bool,
     /// Seed subagent contexts with the parent's CLAUDE.md summary when spawning
@@ -656,6 +664,7 @@ impl Default for Config {
             refusal_fallback_model: None,
             refusal_rewrite_retry_enabled: true,
             refusal_rewrite_retry_max: None,
+            refusal_log_reasoning: false,
             message_queue_mode: false,
             subagent_context_inheritance: true,
             show_startup_banner: default_true(),
@@ -743,6 +752,7 @@ impl Config {
             collapse_large_pastes: local_wins!(collapse_large_pastes),
             refusal_fallback_enabled: local_wins!(refusal_fallback_enabled),
             refusal_rewrite_retry_enabled: local_wins!(refusal_rewrite_retry_enabled),
+            refusal_log_reasoning: local_wins!(refusal_log_reasoning),
             message_queue_mode: local_wins!(message_queue_mode),
             subagent_context_inheritance: local_wins!(subagent_context_inheritance),
             show_startup_banner: local_wins!(show_startup_banner),
@@ -2129,6 +2139,24 @@ model = "x"
         assert!(PromptRewriteConfig::default().enabled);
         assert!(Config::default().refusal_rewrite_retry_enabled);
         assert!(Config::default().subagent_context_inheritance);
+        // Privacy default: refusal CoT logging is OFF unless explicitly enabled.
+        assert!(!Config::default().refusal_log_reasoning);
+    }
+
+    #[test]
+    fn refusal_log_reasoning_opt_in_parses() {
+        let cfg = parse(
+            r#"
+refusal_log_reasoning = true
+
+[default]
+model = "x"
+"#,
+        );
+        assert!(
+            cfg.refusal_log_reasoning,
+            "explicit opt-in should enable refusal CoT logging"
+        );
     }
 
     #[test]

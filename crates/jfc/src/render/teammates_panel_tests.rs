@@ -45,6 +45,7 @@ fn background_task(
         error: None,
         last_tool: None,
         last_tool_info: None,
+        recent_activities: Vec::new(),
         messages: Vec::new(),
         chat_messages: Vec::new(),
         tool_use_count: 0,
@@ -102,9 +103,11 @@ fn team_section_uses_background_lifecycle_over_abort_handle_regression() {
     );
 
     let backend = TestBackend::new(90, 24);
+    // SAFE-EXPECT: render test setup should fail loudly if ratatui backend construction fails.
     let mut term = Terminal::new(backend).expect("terminal");
-    term.draw(|f| super::teammates_panel::teammates_panel(f, &mut app))
-        .expect("draw");
+    let draw_result = term.draw(|f| super::teammates_panel::teammates_panel(f, &mut app));
+    // SAFE-EXPECT: render test should fail loudly if drawing the panel fails.
+    draw_result.expect("draw");
 
     let text = buffer_text(&term);
     assert!(

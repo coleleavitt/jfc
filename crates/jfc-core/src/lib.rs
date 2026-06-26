@@ -24,6 +24,7 @@ pub mod information_bottleneck;
 pub mod kv_cache;
 pub mod mcp_elicitation;
 mod message;
+mod mission_routing;
 mod paging;
 mod plan_cache;
 pub mod position_encoding;
@@ -33,6 +34,7 @@ pub mod semantic_hash;
 mod server_tool;
 mod status;
 mod task;
+mod task_execution;
 mod task_store;
 mod tool;
 pub mod tool_call;
@@ -62,6 +64,7 @@ pub use execution_result::{
 pub use fanout::{FanoutDecision, FanoutPlan, FanoutPredictor, PlannedAgent};
 pub use ids::{AgentId, SessionId, TaskId, ToolId};
 pub use message::*;
+pub use mission_routing::{MissionRoute, MissionRouteKind, MissionRouter};
 pub use paging::{PageStore, Pressure, estimate_tokens};
 pub use plan_cache::{CachedPlan, PlanCache, normalize_signature};
 pub use prompt_queue::{
@@ -73,6 +76,10 @@ pub use routing::{cascade_pick, knapsack_select};
 pub use server_tool::ServerToolResultKind;
 pub use status::*;
 pub use task::{TaskInput, TaskStatusPart};
+pub use task_execution::{
+    LEGACY_MARKET_METADATA_KEY, TASK_EXECUTION_METADATA_KEY, TaskBountyRef, TaskExecutionMetadata,
+    TaskExecutionMode,
+};
 pub use task_store::{
     FactoryMetrics, Task, TaskCounts, TaskError, TaskKind, TaskPatch, TaskRisk, TaskStatus,
     TaskValidation, TodoTaskId,

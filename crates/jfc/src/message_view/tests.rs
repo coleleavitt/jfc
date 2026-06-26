@@ -1477,7 +1477,7 @@ mod helper_tests {
     }
 
     #[test]
-    fn rendered_edit_diff_reaches_terminal_buffer_with_counts_and_body_normal() {
+    fn rendered_edit_diff_reaches_terminal_buffer_with_summary_and_body_normal() {
         let app = stub_app();
         let diff = DiffView {
             file_path: "/tmp/src/lib.rs".into(),
@@ -1519,9 +1519,10 @@ mod helper_tests {
             rendered.contains("Edit("),
             "missing edit header:\n{rendered}"
         );
+        let header = rendered.lines().next().unwrap_or_default();
         assert!(
-            rendered.contains("+1") && rendered.contains("-1"),
-            "missing compact diff counts:\n{rendered}"
+            !header.contains("+1") && !header.contains("-1"),
+            "diff counts belong in the summary, not the edit header:\n{rendered}"
         );
         assert!(
             rendered.contains("Added 1 line, removed 1 line"),
@@ -3688,11 +3689,8 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
         );
     }
 
-    /// TaskStatus completed with multi-line markdown body — original
-    /// 148-line drift bug. Predictor must mirror the same
-    /// `markdown::to_lines` + 120-line cap as `push_task_status_lines`.
     #[test]
-    fn predictor_matches_renderer_task_status_completed_block() {
+    fn task_status_completed_block_stays_one_line_in_main_view() {
         let mut app = stub_app();
         let mut msg = ChatMessage::assistant(String::new());
         msg.parts.clear();
@@ -3710,10 +3708,73 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
         }));
         app.engine.messages.push(msg);
         let w = 60usize;
+        let ctx = RenderCtx::from_app(&app);
+        let rendered = build_render_items_ctx(&ctx, w)
+            .iter()
+            .filter_map(|item| match item {
+                super::core::RenderItem::TextLine(line) => Some(
+                    line.spans
+                        .iter()
+                        .map(|span| span.content.as_ref())
+                        .collect::<String>(),
+                ),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
         assert_eq!(
             message_view_total_lines(&app, w),
             renderer_total_height(&app, w),
             "task-status (completed multi-line): predictor must match renderer at width {w}",
+        );
+        assert!(rendered.contains("● task Do the work"), "{rendered}");
+        assert!(
+            !rendered.contains("Step 1") && !rendered.contains("fn main"),
+            "subagent completion body leaked into the main transcript:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn user_prompt_render_strips_system_reminder_blocks_from_mixed_text() {
+        let mut app = stub_app();
+        app.engine.messages.push(ChatMessage::user(
+            "/goal do all gaps 100$ I want all literally 100% done\n\
+             <system-reminder>\n\
+             Slop Guard detected quality issues in your recent edits.\n\
+             </system-reminder>"
+                .to_owned(),
+        ));
+
+        let w = 100usize;
+        let ctx = RenderCtx::from_app(&app);
+        let rendered = build_render_items_ctx(&ctx, w)
+            .iter()
+            .filter_map(|item| match item {
+                super::core::RenderItem::TextLine(line) => Some(
+                    line.spans
+                        .iter()
+                        .map(|span| span.content.as_ref())
+                        .collect::<String>(),
+                ),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(
+            message_view_total_lines(&app, w),
+            renderer_total_height(&app, w),
+            "mixed user reminder: predictor must match renderer at width {w}",
+        );
+        assert!(
+            rendered.contains("/goal do all gaps 100$ I want all literally 100% done"),
+            "{rendered}"
+        );
+        assert!(
+            !rendered.contains("system-reminder")
+                && !rendered.contains("Slop Guard detected quality issues"),
+            "system reminder leaked into the user transcript:\n{rendered}"
         );
     }
 

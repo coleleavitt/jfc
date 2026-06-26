@@ -10,12 +10,12 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 tracing = { workspace = true }
 # context.rs: CLAUDE.md frontmatter parsing + config-dir discovery.
-serde_yaml = { package = "serde_norway", version = "0.9" }
+serde_yaml = { workspace = true }
 dirs = "5"
 
 [dev-dependencies]
 serde_json = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

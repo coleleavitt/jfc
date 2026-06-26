@@ -570,12 +570,14 @@ pub fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             acceptance_criteria,
             max_solvers,
             auto_dispatch,
+            parent_task_id,
         } => ToolInput::PostBounty {
             description,
             budget,
             acceptance_criteria,
             max_solvers,
             auto_dispatch,
+            parent_task_id,
         },
         SerializedToolInput::MarketStatus { bounty_id } => ToolInput::MarketStatus { bounty_id },
         SerializedToolInput::RunBounty {

@@ -155,6 +155,7 @@ fn make_background_task(
         error: None,
         last_tool: None,
         last_tool_info: None,
+        recent_activities: Vec::new(),
         messages: Vec::new(),
         chat_messages: Vec::new(),
         tool_use_count: 0,
@@ -2238,16 +2239,31 @@ async fn enter_queues_meta_for_slash_when_streaming_robust() {
 }
 
 #[tokio::test]
-async fn enter_interrupts_and_submits_when_streaming_without_blockers() {
+async fn enter_queues_by_default_when_streaming_after_output_regression() {
     let mut app = test_app_with_input("ask", 80);
     app.engine.is_streaming = true;
     app.engine.streaming_started_at = Some(std::time::Instant::now());
-    // Output has begun — interrupt-on-submit is the right call here (real-time
-    // steering). `streaming_response_bytes > 0` is the gate the fix added.
     app.engine.streaming_response_bytes = 128;
     let (tx, _rx) = channel();
 
     handle_key(&mut app, key(KeyCode::Enter), &tx)
+        .await
+        .unwrap();
+
+    assert_eq!(app.engine.queued_prompts.len(), 1);
+    assert_eq!(app.engine.queued_prompts[0].text, "ask");
+    assert!(app.engine.is_streaming);
+}
+
+#[tokio::test]
+async fn alt_enter_interrupts_and_submits_when_streaming_without_blockers() {
+    let mut app = test_app_with_input("ask", 80);
+    app.engine.is_streaming = true;
+    app.engine.streaming_started_at = Some(std::time::Instant::now());
+    app.engine.streaming_response_bytes = 128;
+    let (tx, _rx) = channel();
+
+    handle_key(&mut app, key_mod(KeyCode::Enter, KeyModifiers::ALT), &tx)
         .await
         .unwrap();
 
@@ -3226,13 +3242,30 @@ fn streaming_app_with_bytes(bytes: usize) -> App {
     app
 }
 
-// Normal: once output has begun (bytes > 0) and nothing is gating, a fresh
-// submit may interrupt for real-time steering.
 #[test]
-fn can_interrupt_when_output_has_started_normal() {
+fn cannot_interrupt_bare_enter_when_output_has_started_normal() {
+    let app = streaming_app_with_bytes(42);
+    assert!(!key_dispatch::can_interrupt_on_submit(
+        &app, /* compacting = */ false, /* explicit_interrupt = */ false,
+        /* queue_mode = */ false,
+    ));
+}
+
+#[test]
+fn explicit_interrupt_when_output_has_started_normal() {
     let app = streaming_app_with_bytes(42);
     assert!(key_dispatch::can_interrupt_on_submit(
-        &app, /* compacting = */ false
+        &app, /* compacting = */ false, /* explicit_interrupt = */ true,
+        /* queue_mode = */ false,
+    ));
+}
+
+#[test]
+fn queue_mode_blocks_explicit_interrupt_robust() {
+    let app = streaming_app_with_bytes(42);
+    assert!(!key_dispatch::can_interrupt_on_submit(
+        &app, /* compacting = */ false, /* explicit_interrupt = */ true,
+        /* queue_mode = */ true,
     ));
 }
 
@@ -3244,7 +3277,7 @@ fn can_interrupt_when_output_has_started_normal() {
 fn cannot_interrupt_before_first_byte_normal_regression() {
     let app = streaming_app_with_bytes(0);
     assert!(
-        !key_dispatch::can_interrupt_on_submit(&app, false),
+        !key_dispatch::can_interrupt_on_submit(&app, false, true, false),
         "a not-yet-connected stream must be queued behind, not interrupted"
     );
 }
@@ -3254,7 +3287,8 @@ fn cannot_interrupt_before_first_byte_normal_regression() {
 fn cannot_interrupt_while_compacting_robust() {
     let app = streaming_app_with_bytes(999);
     assert!(!key_dispatch::can_interrupt_on_submit(
-        &app, /* compacting = */ true
+        &app, /* compacting = */ true, /* explicit_interrupt = */ true,
+        /* queue_mode = */ false,
     ));
 }
 
@@ -3264,7 +3298,9 @@ fn cannot_interrupt_while_compacting_robust() {
 fn cannot_interrupt_when_not_streaming_robust() {
     let mut app = streaming_app_with_bytes(100);
     app.engine.is_streaming = false;
-    assert!(!key_dispatch::can_interrupt_on_submit(&app, false));
+    assert!(!key_dispatch::can_interrupt_on_submit(
+        &app, false, true, false
+    ));
 }
 
 // Robust: a pending approval modal blocks interrupt even mid-output — the
@@ -3274,7 +3310,7 @@ fn cannot_interrupt_with_pending_approval_robust() {
     let mut app = streaming_app_with_bytes(100);
     arm_approval(&mut app, ToolKind::Bash);
     assert!(
-        !key_dispatch::can_interrupt_on_submit(&app, false),
+        !key_dispatch::can_interrupt_on_submit(&app, false, true, false),
         "pending approval must force the queue path"
     );
 }
@@ -3284,7 +3320,7 @@ fn cannot_interrupt_with_in_flight_tool_batch_robust() {
     let mut app = streaming_app_with_bytes(100);
     app.engine.in_flight_tool_batches = 1;
     assert!(
-        !key_dispatch::can_interrupt_on_submit(&app, false),
+        !key_dispatch::can_interrupt_on_submit(&app, false, true, false),
         "in-flight tool batches must finish or cancel through the tool pipeline"
     );
 }

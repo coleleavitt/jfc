@@ -57,9 +57,9 @@ pub const STREAM_WATCHDOG_TIMEOUT_SECS: u64 = 180;
 pub const STREAM_WATCHDOG_THINKING_TIMEOUT_SECS: u64 = 600;
 
 pub use engine_state::{
-    BackgroundAgentCompletion, BackgroundTask, EngineEffect, EngineState,
-    MAX_NETWORK_RECOVERY_ATTEMPTS, NetworkRecoveryProvider, NetworkRecoveryReason,
-    NetworkRecoveryStatus,
+    BackgroundAgentCompletion, BackgroundTask, BackgroundTaskActivity, BackgroundTaskActivityKind,
+    EngineEffect, EngineState, MAX_NETWORK_RECOVERY_ATTEMPTS, NetworkRecoveryProvider,
+    NetworkRecoveryReason, NetworkRecoveryStatus,
 };
 pub use events::EngineEvent;
 pub use permissions::{

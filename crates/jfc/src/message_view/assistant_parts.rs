@@ -277,28 +277,7 @@ pub(super) fn push_task_status_lines<'a>(
         .map(|ms| format!(" [{:.1}s]", ms as f64 / 1000.0))
         .unwrap_or_default();
 
-    // TaskCompleted stuffs the entire subagent response (often
-    // thousands of chars of markdown — headings, tables, fenced code)
-    // into `summary`. Packing that into a single styled Span garbles
-    // the output and trashes scroll math, since one logical Line gets
-    // word-wrapped as plain text and `RenderItem::TextLine::height`
-    // has to walk a multi-KB string per frame. Multi-line summaries
-    // get split off into their own markdown-rendered TextLines,
-    // matching what the dedicated task view does.
-    let summary = ts.summary.as_deref().unwrap_or("");
-    let summary_is_block = summary.contains('\n');
-
-    // A single-line summary can still be multi-KB — the whole completion
-    // text with its newlines stripped. Showing it as the header word-wraps
-    // into a giant run-on blob that duplicates the agent's final message
-    // (already rendered just above in the transcript). Cap it to the first
-    // line at panel width; the full text lives in the transcript.
-    let header_label: String = if summary.is_empty() || summary_is_block {
-        ts.description.clone()
-    } else {
-        let first = summary.lines().next().unwrap_or(summary);
-        truncate_str(first, inner_w.saturating_sub(12).max(24))
-    };
+    let header_label = truncate_str(&ts.description, inner_w.saturating_sub(12).max(24));
     let mut spans = vec![
         Span::styled(format!("{icon} task "), style),
         Span::styled(header_label, Style::default().fg(t.text_secondary)),
@@ -312,28 +291,6 @@ pub(super) fn push_task_status_lines<'a>(
         ));
     }
     items.push(RenderItem::TextLine(Line::from(spans)));
-
-    if summary_is_block {
-        const MAX_LINES: usize = 120;
-        let width = inner_w.max(1);
-        let mut lines = markdown::to_lines(summary, t, width);
-        if lines.len() > MAX_LINES {
-            let total = lines.len();
-            lines.truncate(MAX_LINES);
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "… {} more lines · open task view to see full result",
-                    total.saturating_sub(MAX_LINES)
-                ),
-                Style::default()
-                    .fg(t.text_muted)
-                    .add_modifier(Modifier::ITALIC),
-            )));
-        }
-        for line in lines {
-            items.push(RenderItem::TextLine(line));
-        }
-    }
 
     if let Some(err) = &ts.error {
         items.push(RenderItem::TextLine(Line::from(vec![

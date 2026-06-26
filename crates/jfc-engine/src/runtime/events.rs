@@ -609,6 +609,8 @@ pub enum TeamEvent {
     Inbox {
         from: String,
         text: String,
+        formatted: String,
+        color: Option<String>,
         summary: Option<String>,
     },
     /// A teammate has been spawned (Task tool with name+team_name set). Carries
@@ -640,7 +642,11 @@ pub enum GoalEvent {
     /// background task spawned at EndTurn when `app.engine.goal.is_some()`.
     /// The event_loop handler decides whether to inject a continuation
     /// reminder (`ok=false`) or stamp a success banner (`ok=true`).
-    Verdict { ok: bool, reason: String },
+    Verdict {
+        epoch: u64,
+        ok: bool,
+        reason: String,
+    },
 }
 
 /// Voice mode events from the jfc-voice STT pipeline.

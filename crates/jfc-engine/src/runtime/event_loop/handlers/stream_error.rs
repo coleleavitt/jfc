@@ -313,6 +313,7 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     state.pre_dispatched_tool_ids.clear();
     state.deferred_tool_uses.clear();
     state.in_progress_tool_use_ids.clear();
+    state.active_tool_calls.clear();
     state.in_flight_eager_dispatches = 0;
     state.in_flight_tool_batches = 0;
     // Reset the interrupt flag so background tasks or the

@@ -916,6 +916,8 @@ fn teammate_event_variants_serialize_through_debug_normal() {
             error: "e".into(),
         },
         TeammateEvent::MessageSent {
+            task_id: "t".into(),
+            agent_id: "a".into(),
             from: "alice".into(),
             to: "team-lead".into(),
             text: "ok".into(),

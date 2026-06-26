@@ -10,6 +10,103 @@ use crate::{stream, types};
 
 use super::super::guards::streaming_assistant_mut;
 
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or(0)
+}
+
+fn agent_session_group(parent_task_id: Option<&str>, task_id: &crate::ids::TaskId) -> String {
+    parent_task_id.map_or_else(
+        || format!("agent:{}", task_id.as_str()),
+        |id| format!("task:{id}"),
+    )
+}
+
+fn task_agent_session_row(
+    task_id: &crate::ids::TaskId,
+    parent_task_id: Option<&str>,
+    model: Option<&str>,
+    status: &str,
+) -> jfc_knowledge::AgentSessionRow {
+    let now = now_ms();
+    jfc_knowledge::AgentSessionRow {
+        id: task_id.as_str().to_owned(),
+        parent_session_id: Some(agent_session_group(parent_task_id, task_id)),
+        role: "subagent".to_owned(),
+        model: model.map(str::to_owned),
+        status: status.to_owned(),
+        budget_tokens: None,
+        task_id: parent_task_id.map(str::to_owned),
+        team_id: None,
+        created_at_ms: now,
+        updated_at_ms: now,
+    }
+}
+
+async fn persist_task_agent_session(
+    task_id: crate::ids::TaskId,
+    parent_task_id: Option<String>,
+    model: Option<String>,
+    status: &'static str,
+) {
+    let row = task_agent_session_row(
+        &task_id,
+        parent_task_id.as_deref(),
+        model.as_deref(),
+        status,
+    );
+    let result = async {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+        store.upsert_agent_session(&row).await
+    }
+    .await;
+    if let Err(error) = result {
+        tracing::warn!(
+            target: "jfc::task::db",
+            task_id = %task_id,
+            status,
+            error = %error,
+            "failed to persist task-agent session"
+        );
+    }
+}
+
+async fn persist_task_agent_event(
+    task_id: crate::ids::TaskId,
+    parent_task_id: Option<String>,
+    kind: &'static str,
+    content: serde_json::Value,
+) {
+    let session_id = agent_session_group(parent_task_id.as_deref(), &task_id);
+    let row = jfc_knowledge::AgentEventRow {
+        id: format!("evt_{}", uuid::Uuid::new_v4().as_simple()),
+        session_id,
+        from_agent: Some(task_id.as_str().to_owned()),
+        to_agent: None,
+        kind: format!("task_agent.{kind}"),
+        content: content.to_string(),
+        turn_id: None,
+        causal_parent_id: None,
+        created_at_ms: now_ms(),
+    };
+    let result = async {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+        store.record_agent_event(&row).await
+    }
+    .await;
+    if let Err(error) = result {
+        tracing::warn!(
+            target: "jfc::task::db",
+            task_id = %task_id,
+            kind,
+            error = %error,
+            "failed to persist task-agent event"
+        );
+    }
+}
+
 /// Handle `TaskEvent::AgentChunk { task_id, text }`.
 pub fn handle_agent_chunk(state: &mut EngineState, task_id: crate::ids::TaskId, text: String) {
     // Subagent emitted a streaming text chunk — append to its
@@ -94,6 +191,34 @@ pub fn handle_task_started(
                 .await;
         });
     }
+    {
+        let persist_task_id = task_id.clone();
+        let persist_parent_task_id = parent_task_id.clone();
+        let persist_model = model_used
+            .clone()
+            .or_else(|| Some(state.model.as_str().to_owned()));
+        let persist_description = description.clone();
+        tokio::spawn(async move {
+            persist_task_agent_session(
+                persist_task_id.clone(),
+                persist_parent_task_id.clone(),
+                persist_model.clone(),
+                "running",
+            )
+            .await;
+            persist_task_agent_event(
+                persist_task_id,
+                persist_parent_task_id,
+                "started",
+                serde_json::json!({
+                    "description": persist_description,
+                    "model": persist_model,
+                    "status": "running",
+                }),
+            )
+            .await;
+        });
+    }
     state.background_tasks.insert(
         task_id.as_str().to_owned(),
         app::BackgroundTask {
@@ -106,6 +231,7 @@ pub fn handle_task_started(
             error: None,
             last_tool: None,
             last_tool_info: None,
+            recent_activities: Vec::new(),
             messages: Vec::new(),
             chat_messages: Vec::new(),
             tool_use_count: 0,
@@ -185,6 +311,11 @@ pub fn handle_task_progress(
             let display = last_tool_info.clone().unwrap_or_else(|| tool.clone());
             let entry = format!("[{elapsed_s}s] {display}");
             bt.push_log(entry);
+            bt.push_activity(app::BackgroundTaskActivity::new(
+                tool.clone(),
+                display.clone(),
+                elapsed_ms,
+            ));
             bt.last_tool_info = Some(display);
         }
         bt.last_tool = last_tool.clone();
@@ -252,6 +383,30 @@ pub fn handle_task_progress(
 }
 
 /// Handle `TaskEvent::Completed { task_id, summary, elapsed_ms }`.
+fn mark_background_task_completed(
+    state: &mut EngineState,
+    task_id: &crate::ids::TaskId,
+    summary: &str,
+    elapsed_ms: u64,
+) -> (Option<String>, Option<String>) {
+    use types::TaskLifecycle;
+    let mut linked_task_id: Option<String> = None;
+    let mut model_used: Option<String> = None;
+    if let Some(bt) = state.background_tasks.get_mut(task_id.as_str()) {
+        // A real terminal transition observed in this process — unblocks the
+        // Case-2 auto-wake (restored prior-session agents never reach here).
+        state.observed_bg_terminal_transition_this_process = true;
+        bt.status = TaskLifecycle::Completed;
+        bt.completed_at = Some(std::time::Instant::now());
+        bt.summary = Some(summary.to_owned());
+        let elapsed_s = elapsed_ms / 1000;
+        bt.push_log(format!("[{elapsed_s}s] ✓ done — {summary}"));
+        linked_task_id = bt.parent_task_id.clone();
+        model_used = bt.model_used.clone();
+    }
+    (linked_task_id, model_used)
+}
+
 pub async fn handle_task_completed(
     state: &mut EngineState,
     tx: &EventSender,
@@ -283,20 +438,27 @@ pub async fn handle_task_completed(
             )
             .await;
     }
-    let mut linked_task_id: Option<String> = None;
-    if let Some(bt) = state.background_tasks.get_mut(task_id.as_str()) {
-        // A real terminal transition observed in this process — unblocks the
-        // Case-2 auto-wake (restored prior-session agents never reach here).
-        state.observed_bg_terminal_transition_this_process = true;
-        bt.status = TaskLifecycle::Completed;
-        bt.completed_at = Some(std::time::Instant::now());
-        bt.summary = Some(summary.clone());
-        let elapsed_s = elapsed_ms / 1000;
-        let entry = format!("[{elapsed_s}s] ✓ done — {summary}");
-        bt.push_log(entry.clone());
-        bt.push_chat(types::ChatMessage::assistant(entry));
-        linked_task_id = bt.parent_task_id.clone();
-    }
+    let (linked_task_id, model_used) =
+        mark_background_task_completed(state, &task_id, &summary, elapsed_ms);
+    persist_task_agent_session(
+        task_id.clone(),
+        linked_task_id.clone(),
+        model_used.clone(),
+        "completed",
+    )
+    .await;
+    persist_task_agent_event(
+        task_id.clone(),
+        linked_task_id.clone(),
+        "completed",
+        serde_json::json!({
+            "elapsed_ms": elapsed_ms,
+            "model": model_used,
+            "status": "completed",
+            "summary": summary.clone(),
+        }),
+    )
+    .await;
     // If the model linked this delegation to a queued todo
     // via `parent_task_id`, mark that todo Completed in the
     // TaskStore. Without this, a foreground subagent could
@@ -377,6 +539,7 @@ pub async fn handle_task_failed(
         }
     }
     let mut linked_task_id: Option<String> = None;
+    let mut model_used: Option<String> = None;
     if let Some(bt) = state.background_tasks.get_mut(task_id.as_str()) {
         state.observed_bg_terminal_transition_this_process = true;
         bt.status = if was_cancelled {
@@ -391,7 +554,27 @@ pub async fn handle_task_failed(
         bt.push_log(entry.clone());
         bt.push_chat(types::ChatMessage::assistant(entry));
         linked_task_id = bt.parent_task_id.clone();
+        model_used = bt.model_used.clone();
     }
+    let status = if was_cancelled { "cancelled" } else { "failed" };
+    persist_task_agent_session(
+        task_id.clone(),
+        linked_task_id.clone(),
+        model_used.clone(),
+        status,
+    )
+    .await;
+    persist_task_agent_event(
+        task_id.clone(),
+        linked_task_id.clone(),
+        status,
+        serde_json::json!({
+            "error": error.clone(),
+            "model": model_used,
+            "status": status,
+        }),
+    )
+    .await;
     // Propagate the failure to the linked queued todo. A
     // cancelled agent leaves the task Pending (so the queue
     // can retry it); a genuine failure marks it Failed so
@@ -682,35 +865,103 @@ mod autowake_tests {
         EngineState::new(Arc::new(TestProvider), "test-model")
     }
 
+    fn running_bg(id: &str) -> crate::app::BackgroundTask {
+        crate::app::BackgroundTask {
+            task_id: id.into(),
+            description: format!("desc-{id}"),
+            status: TaskLifecycle::Running,
+            started_at: std::time::Instant::now(),
+            completed_at: None,
+            summary: None,
+            error: None,
+            last_tool: None,
+            last_tool_info: None,
+            recent_activities: Vec::new(),
+            messages: Vec::new(),
+            chat_messages: Vec::new(),
+            tool_use_count: 0,
+            latest_input_tokens: 0,
+            latest_cache_read_tokens: 0,
+            latest_cache_write_tokens: 0,
+            cumulative_output_tokens: 0,
+            model_used: None,
+            agent_messages: Vec::new(),
+            max_input_tokens: None,
+            budget_killed: false,
+            parent_task_id: None,
+            workflow_progress: None,
+            last_activity_at: std::time::Instant::now(),
+        }
+    }
+
+    #[test]
+    fn task_agent_session_row_groups_linked_parent_task_normal() {
+        let task_id = crate::ids::TaskId::from("toolu_123");
+
+        let row = task_agent_session_row(&task_id, Some("t7"), Some("claude-haiku-4-5"), "running");
+
+        assert_eq!(row.id, "toolu_123");
+        assert_eq!(row.parent_session_id.as_deref(), Some("task:t7"));
+        assert_eq!(row.role, "subagent");
+        assert_eq!(row.model.as_deref(), Some("claude-haiku-4-5"));
+        assert_eq!(row.status, "running");
+        assert_eq!(row.task_id.as_deref(), Some("t7"));
+    }
+
+    #[test]
+    fn task_agent_session_row_groups_adhoc_agent_by_agent_id_normal() {
+        let task_id = crate::ids::TaskId::from("toolu_adhoc");
+
+        let row = task_agent_session_row(&task_id, None, None, "completed");
+
+        assert_eq!(row.id, "toolu_adhoc");
+        assert_eq!(row.parent_session_id.as_deref(), Some("agent:toolu_adhoc"));
+        assert_eq!(row.status, "completed");
+        assert_eq!(row.task_id, None);
+    }
+
+    #[tokio::test]
+    async fn task_agent_rows_persist_to_knowledge_store_normal() {
+        let store = jfc_knowledge::KnowledgeStore::open_in_memory()
+            .await
+            .unwrap();
+        let task_id = crate::ids::TaskId::from("toolu_db");
+        let row = task_agent_session_row(&task_id, Some("t9"), Some("sonnet"), "running");
+        store.upsert_agent_session(&row).await.unwrap();
+        let event = jfc_knowledge::AgentEventRow {
+            id: "evt_task_agent_test".into(),
+            session_id: agent_session_group(Some("t9"), &task_id),
+            from_agent: Some(task_id.as_str().to_owned()),
+            to_agent: None,
+            kind: "task_agent.started".into(),
+            content: serde_json::json!({"status": "running"}).to_string(),
+            turn_id: None,
+            causal_parent_id: None,
+            created_at_ms: now_ms(),
+        };
+        store.record_agent_event(&event).await.unwrap();
+
+        let stored = store
+            .get_agent_session(task_id.as_str())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.parent_session_id.as_deref(), Some("task:t9"));
+        assert_eq!(stored.task_id.as_deref(), Some("t9"));
+        let events = store.list_agent_events("task:t9", 10).await.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, "task_agent.started");
+    }
+
     #[test]
     fn task_progress_updates_activity_without_chat_ping_normal() {
         let mut state = test_app();
         state.background_tasks.insert(
             "agent-1".into(),
             crate::app::BackgroundTask {
-                task_id: "agent-1".into(),
                 description: "audit".into(),
-                status: TaskLifecycle::Running,
-                started_at: std::time::Instant::now(),
-                completed_at: None,
-                summary: None,
-                error: None,
-                last_tool: None,
-                last_tool_info: None,
-                messages: Vec::new(),
-                chat_messages: Vec::new(),
-                tool_use_count: 0,
-                latest_input_tokens: 0,
-                latest_cache_read_tokens: 0,
-                latest_cache_write_tokens: 0,
-                cumulative_output_tokens: 0,
                 model_used: Some("haiku".into()),
-                agent_messages: Vec::new(),
-                max_input_tokens: None,
-                budget_killed: false,
-                parent_task_id: None,
-                workflow_progress: None,
-                last_activity_at: std::time::Instant::now(),
+                ..running_bg("agent-1")
             },
         );
 
@@ -731,6 +982,13 @@ mod autowake_tests {
         assert_eq!(bt.last_tool.as_deref(), Some("Read"));
         assert_eq!(bt.last_tool_info.as_deref(), Some("Read(src/lib.rs)"));
         assert_eq!(bt.tool_use_count, 3);
+        assert_eq!(bt.recent_activities.len(), 1);
+        assert_eq!(bt.recent_activities[0].tool_name, "Read");
+        assert_eq!(bt.recent_activities[0].display, "Read(src/lib.rs)");
+        assert_eq!(
+            bt.recent_activities[0].kind,
+            app::BackgroundTaskActivityKind::Read
+        );
         assert!(
             bt.messages
                 .iter()
@@ -743,31 +1001,54 @@ mod autowake_tests {
         );
     }
 
+    #[test]
+    fn task_completion_stays_metadata_not_chat_transcript_regression() {
+        let mut state = test_app();
+        let task_id = crate::ids::TaskId::from("agent-1");
+        let mut bg = running_bg(task_id.as_str());
+        bg.chat_messages.push(crate::types::ChatMessage::assistant(
+            "real agent transcript".into(),
+        ));
+        state
+            .background_tasks
+            .insert(task_id.as_str().to_owned(), bg);
+
+        let (linked_task_id, model_used) =
+            mark_background_task_completed(&mut state, &task_id, "final answer", 42_000);
+
+        assert_eq!(linked_task_id, None);
+        assert_eq!(model_used, None);
+        let bt = state.background_tasks.get(task_id.as_str()).unwrap();
+        assert_eq!(bt.status, TaskLifecycle::Completed);
+        assert_eq!(bt.summary.as_deref(), Some("final answer"));
+        assert!(
+            bt.messages
+                .iter()
+                .any(|line| line == "[42s] ✓ done — final answer"),
+            "raw activity log should retain the terminal event"
+        );
+        let chat_text = bt
+            .chat_messages
+            .iter()
+            .flat_map(|msg| msg.parts.iter().map(|part| part.text_only()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            chat_text.contains("real agent transcript"),
+            "real subagent transcript should be preserved"
+        );
+        assert!(
+            !chat_text.contains("final answer") && !chat_text.contains("✓ done"),
+            "successful completion metadata must not render as assistant chat:\n{chat_text}"
+        );
+    }
+
     fn terminal_bg(id: &str, summary: &str) -> crate::app::BackgroundTask {
         crate::app::BackgroundTask {
-            task_id: id.into(),
-            description: format!("desc-{id}"),
             status: TaskLifecycle::Completed,
-            started_at: std::time::Instant::now(),
             completed_at: Some(std::time::Instant::now()),
             summary: Some(summary.to_owned()),
-            error: None,
-            last_tool: None,
-            last_tool_info: None,
-            messages: Vec::new(),
-            chat_messages: Vec::new(),
-            tool_use_count: 0,
-            latest_input_tokens: 0,
-            latest_cache_read_tokens: 0,
-            latest_cache_write_tokens: 0,
-            cumulative_output_tokens: 0,
-            model_used: None,
-            agent_messages: Vec::new(),
-            max_input_tokens: None,
-            budget_killed: false,
-            parent_task_id: None,
-            workflow_progress: None,
-            last_activity_at: std::time::Instant::now(),
+            ..running_bg(id)
         }
     }
 
