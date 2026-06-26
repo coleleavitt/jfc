@@ -1,0 +1,1114 @@
+                  ARTICLE
+                  DOI: 10.1038/s41467-018-06560-z                OPEN
+
+                  Cortical population activity within a preserved
+                  neural manifold underlies multiple motor behaviors
+                  Juan A. Gallego 1,2, Matthew G. Perich                      3, Stephanie N. Naufel3, Christian Ethier                4,
+
+                  Sara A. Solla1,5 & Lee E. Miller 1,3,6
+
+
+
+                  Populations of cortical neurons ﬂexibly perform different functions; for the primary motor
+
+1234567890():,;
+                  cortex (M1) this means a rich repertoire of motor behaviors. We investigate the ﬂexibility of
+                  M1 movement control by analyzing neural population activity during a variety of skilled wrist
+                  and reach-to-grasp tasks. We compare across tasks the neural modes that capture dominant
+                  neural covariance patterns during each task. While each task requires different patterns of
+                  muscle and single unit activity, we ﬁnd unexpected similarities at the neural population level:
+                  the structure and activity of the neural modes is largely preserved across tasks. Furthermore,
+                  we ﬁnd two sets of neural modes with task-independent activity that capture, respectively,
+                  generic temporal features of the set of tasks and a task-independent mapping onto muscle
+                  activity. This system of ﬂexibly combined, well-preserved neural modes may underlie the
+                  ability of M1 to learn and generate a wide-ranging behavioral repertoire.
+
+
+
+
+                  1 Department of Physiology, Feinberg School of Medicine, Northwestern University, 303 E. Chicago Avenue, Chicago, IL 60611, USA. 2 Neural and Cognitive
+
+                  Engineering Group, Centre for Automation and Robotics CSIC-UPM, Ctra. Campo Real km 0.2 - La Poveda, 28500 Arganda del Rey, Spain. 3 Department of
+                  Biomedical Engineering, Northwestern University, 2145 Sheridan Road, Evanston, IL 60208, USA. 4 Département de Psychiatrie et Neurosciences, Université
+                  Laval, CERVO Research Center, 2601 Ch. de la Canardière, Québec, QC G1J 2G3, Canada. 5 Department of Physics and Astronomy, Northwestern University,
+                  Evanston, IL 60208, USA. 6 Department of Physical Medicine and Rehabilitation, Northwestern University, Chicago, IL 60611, USA. Correspondence and
+                  requests for materials should be addressed to J.A.G. (email: gallego.juanalvaro@gmail.com) or to L.E.M. (email: lm@northwestern.edu)
+
+                  NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications                                         1
+ARTICLE                                                                           NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z
+
+
+
+
+T
+        he generation of movement is crucial for survival. Whether
+        seeking food, escaping a predator, or using tools to con-             a                      N1                 b
+                                                                                                                                         N2
+        struct a shelter, motor behavior is arguably the ultimate                                                                              Neural
+purpose of the nervous system1. Primates, especially humans,                                                    N2                            manifold
+have evolved an advanced cerebral cortex that allows for a rich                                                          u2
+repertoire of arm and hand movements. The activity patterns of
+neurons in the primary motor cortex (M1) during such move-                                                               u1
+                                                                                                                N3
+ments are highly complex, and the mechanisms by which a given
+population of neurons controls varied behaviors remain unclear.                                                             N1                    N3
+   Historically, researchers have ascribed independent encoding
+                                                                                                                        d                N2
+functions to the activity of single neurons2–4 or groups of neu-                  Excitatory    Neural mode 1 (u1)
+rons5–8, and looked for correlations between neural activity and                  Inhibitory    Neural mode 2 (u2)
+speciﬁc movement parameters. The hope was that neural activity               c                  L1               L2
+would encode particular parameters in a largely invariant man-
+                                                                                         u11              u12
+ner. However, considerable variability in the activity patterns
+across neurons9,10 and instability of movement parameter                             =   u21          + u22
+encoding by single neurons across different conditions4,11–18 have                       u31              u32
+                                                                                                                            N1                    N3
+obscured the identiﬁcation of simple underlying principles. An
+intriguing alternative is that the computations involved in gen-           Fig. 1 Hypothesis: varied motor behaviors are caused by the ﬂexible
+erating movement are not based on the independent modulation               activation of combinations of neural modes. a The connectivity of the
+of single neurons, but rather performed at the population level by         cortical network results in neural modes whose combined activity explains
+networks of interconnected neurons10,19–21 whose coordinated               the speciﬁc activity of individual neurons. b The neural space for the three
+activity commands the muscles that cause the behavior19,21–24. In          neurons recorded in a. The time-dependent population activity is
+this view, correlates between single neuron activity and behavior          represented by a trajectory (in black, arrow indicates time direction) mostly
+are epiphenomenal10,25–27 and yield only a limited and distorted           conﬁned to a two-dimensional neural manifold (gray plane) spanned by two
+view of the causal relation between M1 activity and behavior.              neural modes (green u1 and blue u2 basis vectors). c The time-dependent
+   To study neural function at the population level, we describe           activity of each recorded neuron is a weighted combination of the latent
+neural activity in a high-dimensional neural space in which each           activities L1 and L2, each the time-dependent activation of the
+axis represents the activity of one recorded neuron21,28–30. The           corresponding neural mode. d Do neural manifolds for different tasks
+dimensionality of this neural space is determined by the number            (shown in gray and light purple) have similar orientation? Are the latent
+of neurons that can be recorded simultaneously, until recently in          activities for the two tasks (shown in black and purple) similar? These are
+the order of hundreds. This number is increasing rapidly31,                the two critical questions to test our hypothesis
+reaching 105 and beyond32. This high dimensionality imposes
+practical and theoretical challenges, thus many recent studies
+have applied dimensionality reduction methods28 to neural                  combinations of neural modes that are not fully task-speciﬁc. To
+spaces for numerous brain areas. During typical laboratory tasks,          examine this hypothesis, we recorded neural population activity
+neural activity has been found to explore only a limited, low-             from M1 during several skilled arm and hand tasks—deﬁned
+dimensional portion of the full neural space21,33. This sub-               here as those that require independent control of individual
+dimensional region, the neural manifold21,29,30,34, reﬂects cov-           joints43—and identiﬁed the corresponding neural modes. Despite
+ariance patterns across the neural population activity (Fig. 1b).          widespread differences in both neural activity and motor output,
+The neural manifold is spanned by a set of basis vectors, the              the orientation of the corresponding manifolds within the neural
+neural modes21 (Fig. 1b), patterns of neural covariance thought to         space was unexpectedly well-preserved across tasks. We then
+arise from the network connectivity35 (Fig. 1a, c). Evidence for           studied the time-dependent activation of the neural modes, the
+the relation of the neural manifold to the underlying connectivity         latent activity21,28,34,44 that characterizes the neural population
+also arises from recent results on the difﬁculty of altering the           dynamics within the manifold. We found signiﬁcant similarities
+orientation of the manifold voluntarily on a short learning                for the different tasks, with the activity of one set of preserved
+timescale of only hours29.                                                 neural modes being strongly predictive of muscle activity patterns
+   In the manifold view, the population activity captured by               (EMG) across tasks. Our observations stand in contrast to pre-
+neural modes is the fundamental computational unit, while the              vious studies that tried to identify stable behavioral correlates of
+activity of each single neuron is simply a one-dimensional (1-D)           single neuron activity and found instead that these relationships
+projection of this population activity21,36,37 (Fig. 1c). Neurons          were quite labile10,11,13,15,18,45–47. The presence of neural modes
+thus likely provide only randomly oriented, low-dimensional                in other brain areas, like frontal, prefrontal, parietal, visual,
+glimpses36 of the overall neural picture, the neural analog of blind       auditory, and olfactory cortices (see refs. 21,28 for recent reviews)
+men examining an elephant. Recent experimental and theoretical             suggests that the activation of ﬂexible combinations of neural
+evidence is consistent with the view that neural function may be           modes may be the general mechanism underlying the population
+built upon the coordinated activation of these neural modes19–             dynamics associated with neural computation.
+21,38. Almost all of these experiments have focused on a single
+task or behavior19,24,34,38–41, which makes it difﬁcult to deter-
+mine the extent to which the identiﬁed manifold truly captures             Results
+fundamental building blocks of neural activity (an exception is            Hypothesis. We hypothesized that skilled motor behaviors are
+ref. 42, a comparison of rodent reaching and walking). The open            generated by the ﬂexible activation of different combinations of
+question is that of potential similarities among manifolds iden-           well-preserved neural modes, rather than the independent mod-
+tiﬁed in the same neural population during a variety of skilled            ulation of single neurons. Consider a simple three-neuron
+motor tasks.                                                               example (Fig. 1b). The population activity during movement
+   Here, we hypothesize that the motor cortex generates varied             traces a trajectory that could in principle explore all regions of the
+skilled behaviors through the ﬂexible activation of different              neural space. In practice, correlations (covariations) between
+
+2                        NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications
+NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z                                                                             ARTICLE
+
+neurons constrain the possible population patterns29 and thus the             Neural modes and their activity were robust against the particular
+region of neural space actually explored by the population                    choice of randomly sampled units: both were remarkably well
+dynamics. We use a dimensionality reduction technique, such as                preserved even if computed from only 60% of the recorded units
+principal component analysis (PCA)28,30,34 to identify two                    (Supplementary Fig. 3e, f). The low dimensionality of these
+dominant neural modes for this trajectory (u1 and u2 in Fig. 1b).             manifolds and their robustness against eliminated units indicate
+These two modes span a two-dimensional (2-D) neural                           that they can be reliably estimated from the activity of ~100
+manifold21,29,30, the plane where the trajectory is largely conﬁned           recorded units, even though these are only a very small fraction of
+(Fig. 1b).                                                                    the participating population. These observations support the view
+   Based on the presumed relationship between network con-                    that the orientation of the neural manifold and the activity within
+nectivity and the neural manifold21,29,35, we hypothesized that               it do not depend on speciﬁc recorded units57 and are not an
+varied skilled arm and hand tasks would involve similar neural                artifact of their currently inevitable undersampling33,37.
+modes. If correct, this hypothesis would have two implications.
+First, neural manifolds for different tasks should be relatively well
+aligned, a prediction we can test using principal angles48. As an             Comparison of neural modes across motor tasks. If M1 does
+example, consider the 2-D manifolds in Fig. 1d. Since they                    indeed generate movement through ﬂexible combinations of well-
+intersect, the smallest principal angle is actually zero. The second          preserved neural modes, the neural manifolds corresponding to
+principal angle is the small angle between the two manifolds.                 different tasks should be similarly oriented. To test this con-
+These small principal angles quantify similar orientation and                 jecture, we computed the 12 principal angles48 between the 12-D
+indicate that much of the neural covariance structure is preserved            manifolds for all pairs of tasks during each session (Methods).
+across these two tasks. Second, we would expect similarities in the           Our hypothesis predicts that these angles will be small. In con-
+dynamic activation of these neural modes49, the latent activity;              trast, if M1 recruited neurons in arbitrary combinations rather
+these similarities would arise from generic activity patterns                 than as part of stable neural modes, the covariance structure
+intrinsic to the network26,50 and/or from similarities in motor               would change across tasks and the corresponding manifolds
+output across tasks. Demixed PCA (dPCA)51 and canonical                       would not be similarly oriented. To provide an intuition for the
+correlation analysis (CCA)22,52 are useful tools for comparing                value of the 12 principal angles between two 12-D manifolds
+latent activities.                                                            within a high-dimensional neural space, we computed the dis-
+                                                                              tribution of principal angles obtained from a null hypothesis
+                                                                              generated with the tensor maximum entropy method27. For each
+Behavioral tasks and neural recordings. To study M1 activity,                 comparison to experimental results, we generated surrogate
+we recorded data using 96-channel microelectrode arrays                       neural activity patterns that preserved the covariance of the ori-
+chronically implanted in the hand area of M1 of three rhesus                  ginal data over time and across targets, but not across neurons,
+macaque monkeys (Monkeys C, T, and J). In each session, the                   since this was the variable whose stability we tested. We com-
+monkeys performed one of two sets of motor tasks (Methods).                   puted the distributions of the 12 principal angles between the 12-
+The ﬁrst set comprised several wrist tasks used to dissociate                 D manifolds for the surrogate data (Methods, Supplementary
+kinematics and forces needed to acquire a given target, a strategy            Fig. 4a,b), and used them to set a conservative threshold (P <
+used in many prior single neurons studies2–5,16,53. This set of               0.001) below which the principal angles between manifolds for
+tasks included 1-D isometric, unloaded, and elastic-loaded                    different tasks were considered signiﬁcantly small.
+movements (Monkeys C and J); Monkey J also performed a 2-                        Representative individual sessions in Fig. 3a show the leading
+D version of the isometric task12. The other set (Monkeys T and               principal angles between pairs of task-speciﬁc manifolds; these
+C) included a power grip task54,55, and a task that required a ball           were far smaller than the surrogate threshold (dashed lines in the
+to be grasped, transported, and dropped55. One task of each set is            ﬁgure), with only the ﬁnal non-leading two angles comparable to
+illustrated in Fig. 2. In the 1-D isometric wrist task (Fig. 2a), the         the surrogate. When pooling across all monkeys, sessions, and
+monkeys controlled cursor movements to speciﬁc targets through                task comparisons, most principal angles were well below this
+the torque exerted at the wrist (Fig. 2b; see Fig. 2c for the torque          threshold (Fig. 3b; all datasets in Supplementary Fig. 4c). As an
+trajectories during the 2-D isometric task, and Fig. 2d for the               example, the three leading principal angles averaged 8.4 ± 2.3°,
+torques and velocities for all wrist tasks). In the power grip task           11.3 ± 2.9°, and 15.1 ± 4.6°, while the corresponding surrogate
+(Fig. 2f), the monkeys reached for and grasped a pneumatic tube,              thresholds were 31.0 ± 7.4°, 38.9 ± 6.9°, and 44.6 ± 6.4°. This result
+squeezing it to achieve a target force (Fig. 2g). During each task,           held for a broad range of manifold dimensionalities (Supplemen-
+we identiﬁed neural units through threshold crossings on each                 tary Fig. 5a shows from 8 to 15), and when using single units
+electrode. Across all tasks, sessions, and monkeys, we detected               instead of multi-units to compute the manifolds (Supplementary
+65.9 ± 16.9 (mean ± s.d.; range, 45–91) units with waveforms that             Fig. 4e).
+were stable throughout a given session. Each task was associated                 To better interpret this degree of similarity across manifolds
+with distinct patterns of muscle (Supplementary Fig. 1) and                   corresponding to different tasks, we projected the data from one
+neural activity (Fig. 2e, h, Supplementary Fig. 2). Complex                   task onto the manifold of another task, computed the neural
+changes in the activity of individual units across tasks resulted in          variance accounted for (VAF) by this 12-D manifold (across-task
+relatively low correlations in the activity of individual units across        VAF), and compared it to the VAF when the same data were
+tasks (Fig. 2i).                                                              projected onto its original 12-D manifold (within-task VAF)58.
+   For each task, we used PCA to identify leading neural modes                The across-task VAF was as large as 83.0 ± 6.6% of the within-
+spanning a 12-dimensional (12-D) manifold21,28,30,34 (Methods).               task VAF (Fig. 3c), a signiﬁcantly large result when compared to
+Activity conﬁned to these 12-D manifolds accounted for 73.4 ±                 the VAF ratios obtained by projecting data on a randomly
+6.5% of the variance for all tasks, across all datasets (Supplemen-           oriented manifold with maximal VAF (P~0, two-sided Wilcoxon
+tary Fig. 3a, c). This dimensionality is comparable to that                   rank sum test; see Methods).
+reported for populations of neurons in the arm area of M1 during                 The strong similarity in the orientation of manifolds
+reaching29,38 and reach-to-grasp tasks40,56. Notably, most units              corresponding to different skilled arm and hand tasks indicates
+contributed to all neural modes; each mode captured a                         that the structure of neural modes activated by these tasks is well
+population-wide activity pattern (Supplementary Fig. 3b, d).                  preserved, as predicted by our hypothesis. The structure of the
+
+NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications                                      3
+ARTICLE                                                                                                   NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z
+
+
+
+           a                                         d         Isometric                   Movement                        Elastic                                             Isometric 2D
+
+
+
+                                                     Torque                    Velocity                      Velocity                                        Torquey Torquex
+
+
+                                                     e
+                                                      J248
+           b             Flex.-ext. torque
+
+
+                                                      J255
+           c
+
+                                                      J259
+
+               Torquey
+                                                                n                            n                             n                                                      n       200 ms
+                                                               ov
+                                                              to                      to  M                         to  M                                                 to   M
+                    Torquex                                        M                        ov                            ov                                                     ov
+                                                         Tg                     Tg                             Tg                                                Tg
+
+
+           f                                         h                 Grip                    Ball                            i
+                                                                                                                                                  20                                               Reach
+                                                       C309
+                                                                                                                                                                                                   Wrist
+                                                                                                                                                  16
+
+
+
+
+                                                                                                                               Neural units (%)
+                                                                                                                                                  12
+                                                       C333
+                                                                                                                                                   8
+
+           g                                                                                                                                       4
+
+                         Grip force
+                                                       C312
+                                                                                                                                                   0
+                                                               n          500 ms           n                                                           –1          –0.5               0     0.5      1
+                                                              to                          to
+                                        500 ms           Tg                          Tg
+                                                                                                                                                            Correlation across tasks
+Fig. 2 Tasks and recordings. a The wrist isometric center-out task. Torque trajectories to acquire each target (colored squares) during the 1-D isometric (b)
+and 2-D isometric (c) tasks. d Exerted wrist torque or movement to acquire each target. e Three neural units illustrate the variety of activity patterns across
+units, and how these patterns change across tasks. Right inset: overlaid action potential waveform for each unit across tasks; each task in a different color.
+Note the excellent overlap. Data for b–e are from Monkey J, averaged over all trials in one session, and colored according to target location (b, c; see also
+Supplementary Fig. 2). f The power grip task. g Grasp force trajectories to acquire each target (black or gray squares). h Three neural units illustrate the
+variety of activity patterns across units for the grip task, and how these patterns change in a complex manner for the ball task. Right inset: overlaid action
+potential waveform for each unit across both tasks; each task in a different color. Note the excellent overlap. Data for g and h are from Monkey C, averaged
+over all trials in one session, and colored according to target (g). i Correlations r between the activity pattern of each neural unit across each pair of tasks,
+pooled over all units, task comparisons, sessions, and monkeys for the wrist and reach-to-grasp datasets separately; top error bar: correlation mean ± s.d.;
+for the wrist datasets, r = 0.15 ± 0.19, n = 1476; for the reach-to-grasp datasets, r = 0.11 ± 0.13, n = 376
+
+population covariance patterns was thus strongly conserved                                            the activity of time-related modes depended only on time (i.e.,
+despite the complex changes in the activity of individual units                                       progression through a trial) and was unrelated to speciﬁc details
+across tasks.                                                                                         of the motor output, and the activity of target-related modes
+                                                                                                      depended on the exerted movement or torque, as determined by
+Task-speciﬁc and task-independent latent activity. Given the                                          the location of the target. The activity of two types of modes was
+signiﬁcant degree of task-independence in the orientation of the                                      task-dependent: the activity of task-related modes depended only
+neural manifold, we ask: how do M1 populations generate motor                                         on the task being performed, and the activity of task/target modes
+output appropriate to distinct tasks in the face of this largely                                      related to both task and the direction of the exerted movement or
+preserved neural covariance? One intriguing possibility is that the                                   torque. We chose these covariates to dissociate latent activity
+brain exploits the ﬂexible activation of a fairly stable set of neural                                features intrinsic to the neural dynamics from those related to
+modes to generate task-speciﬁc motor commands.                                                        potential commonalities in motor output imposed by task and
+   To investigate this possibility, we used dPCA51 to ﬁnd a single                                    target similarities. We conﬁned this analysis to the wrist datasets
+neural manifold for all tasks in a given session. We relied on                                        (1-D isometric, movement, and elastic-loaded movement tasks
+dPCA’s ability to identify neural modes whose activity covaries                                       for Monkeys J and C, and also 2-D isometric for Monkey J;
+with speciﬁc behavioral parameters to assess the task-speciﬁcity of                                   Methods), to analyze both task and target dependence of the
+the corresponding latent activity (Methods; Supplementary                                             latent activity. CCA22,52, an alternative approach that we could
+Fig. 6a). Speciﬁcally, we looked for four different types of neural                                   also apply to the reach-to-grasp datasets, yielded similar results
+modes. The activity of two types of modes was task-independent:                                       (Methods; Supplementary Fig. 7).
+
+4                                     NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications
+NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z                                                                                                                                                             ARTICLE
+
+    a                                                          Iso vs mov         Mov vs iso2D        b                                 Ball vs grip            c
+                                      Ball vs grip             Iso vs spr         Spr vs iso2D                                          Iso vs mov                                              Pooled data
+                                      Signif. (P<0.001)        Iso vs iso2D       Signif. (P<0.001)                                     Iso vs spr                                              Control
+                                                               Mov vs spr                                                               Iso vs iso2D                                                          ***
+                            90                                                                                                          Mov vs spr
+
+
+
+
+                                                                                                      Task comparisons (%)                                      Task comparisons (%)
+                                                                                                                                                                                            n = 58
+
+
+
+
+    Principal angle (deg)
+                                                                                                                                        Mov vs iso2D
+                                                                                                                             40                                                        40
+                                                                                                                                        Spr vs iso2D
+
+                                                                                                                             30                                                        30
+                            45                                                                                                                                                         20
+                                                                                                                             20
+
+                                                                                                                             10                                                        10
+                                                                                                                                      n = 29
+                             0                                                                                                0                                                         0
+                                 0   3      6        9    12     0     3      6       9    12                                     0      3     6       9   12                               0    20     40    60     80   100
+                                     Neural mode                     Neural mode                                                  Number of similar modes                                       Neural VAF ratio (%)
+
+Fig. 3 Comparison between neural manifolds for two different tasks. a Principal angles for one session of reaching and grasping tasks from Monkey T (left)
+and for one session of wrist tasks from Monkey J (right). Each pairwise comparison is shown as one colored trace (see legend). Leading principal angles
+were far below the P < 0.001 signiﬁcance level (dashed gray line), indicating signiﬁcant similarities in the structure of the neural modes across tasks. For
+simplicity, only the most stringent signiﬁcance threshold is shown for all pairwise comparisons across wrist tasks (right panel). b Number of neural modes
+for which all principal angles were signiﬁcantly small across all monkeys, sessions, and task pairs (P < 0.001; surrogate threshold obtained with the tensor
+maximum entropy method). c Ratio of the variance accounted for (VAF) when projecting the neural data from one task onto the neural manifold from
+another task, to the VAF when projecting the same data onto its corresponding manifold (purple); data pooled over all monkeys, sessions, and task pairs.
+We compared this distribution to a control based on the 99.9th percentile of the distribution of VAF ratios when projecting neural data onto randomly
+generated manifolds (gray); the *** denote P~0 (two-sided Wilcoxon rank sum test)
+
+   Given the small principal angles between manifolds corre-                                                                       activation of different combinations of a well-preserved set of
+sponding to different tasks (Fig. 3), dPCA unsurprisingly found a                                                                  neural modes, rather than through the modulation of the activity
+single 12-D neural manifold that captured most of the population                                                                   of individual neurons (Supplementary Fig. 7g).
+variance across all tasks (95.5 ± 0.5% of the VAF by 12-D regular
+PCA; Supplementary Fig. 6b, f). Each of the dPCA neural modes
+that spanned this manifold covaried almost exclusively with one                                                                    Do motor output similarities explain manifold similarities?.
+of the chosen behavioral parameters (Fig. 4a; additional example                                                                   We investigated whether the observed similarities in neural mode
+in Supplementary Fig. 6c). Although the activity of individual                                                                     structure and activity might be expected based simply on simi-
+neural units was strongly task-dependent, as evidenced by their                                                                    larities in the associated motor output, characterized here by
+low correlations across pairs of tasks (Fig. 2i), neural modes that                                                                muscle activity (EMG). We ﬁrst tested whether the covariance of
+shared task-independent activity captured more than half of the                                                                    the EMG patterns was as well-preserved across tasks as the
+total neural variance (65.5% for Monkey C, 59.0% for Monkey J;                                                                     covariance of the neural activity. We used PCA to identify the
+see Fig. 4c). As was the case for the principal angle analysis, these                                                              EMG manifold associated with each task. These manifolds are
+results held for a broad range of manifold dimensionalities                                                                        spanned by leading muscle covariance patterns, the EMG modes
+(Supplementary Fig. 5b).                                                                                                           (analogous to muscle synergies59,60). We then computed the
+   Figure 4b shows the latent activity corresponding to the eight                                                                  principal angles between EMG manifolds for different tasks. The
+leading dPCs for each of the 24 task-target combinations (four                                                                     EMG manifolds were much less well aligned across tasks than the
+tasks × six targets; see Fig. 4d for target organization) for one                                                                  corresponding neural manifolds (Fig. 5a). Therefore, the observed
+representative session (Supplementary Fig. 6d, e show one                                                                          across-task similarities in the orientation of neural manifolds are
+example session from another monkey). The top row in Fig. 4b                                                                       not simply a reﬂection of a similarly well-preserved orientation in
+shows neural modes whose activity was virtually identical for all                                                                  the EMG manifolds associated with the motor output.
+targets and tasks; a striking similarity given the different time                                                                     Next, we compared the similarity in latent activity to the
+courses of the corresponding motor outputs (Fig. 2d, Supple-                                                                       similarities in EMGs. We used CCA52, a method for comparing
+mentary Fig. 1). The second row in Fig. 4b shows additional task-                                                                  multi-dimensional time series22 (Methods). This analysis yields as
+independent activity for target-related modes that capture the                                                                     many canonical correlations (CC) as variables being compared;
+direction of action, indicated by the sign of the corresponding                                                                    each CC ranges from 0 to 1, with 1 indicating perfect correlation.
+velocity or torque. This activity separated targets requiring wrist                                                                The leading CCs between latent activities across tasks were
+extension from those requiring wrist ﬂexion, regardless of the                                                                     considerably higher than those between EMGs (Fig. 5b, c); the
+speciﬁcs of the task.                                                                                                              substantial similarities in latent activity cannot be trivially
+   The third row in Fig. 4b shows neural modes with task-speciﬁc                                                                   explained by comparable similarities in muscle activity. This
+activity. For example, mode 3 displays a task-related offset that                                                                  observation is further supported by the contrasting result
+distinguishes the 1-D tasks from the 2-D task. This offset, present                                                                obtained with a computational model that simulates M1 activity
+well before the movement is initiated, presumably represents                                                                       corresponding to observed EMGs (Methods; Fig. 5d). We
+some aspect of movement preparation22,24,38,41,58 that is task but                                                                 simulated neural activity from the EMGs for each pair of tasks,
+not target speciﬁc. Activity of the modes in the fourth row in                                                                     and observed that for any given number of neural modes, the
+Fig. 4b covaried jointly with task and target, following complex                                                                   simulated activity captured a larger fraction of neural variance
+patterns. Analysis of these dPCs shows that not only was the                                                                       than the actual data (Fig. 5e). For the simulated data, the CCs
+structure of the neural modes preserved across different tasks, but                                                                across tasks were over two times lower than those for the actual
+that the activity of a subset of them, which explained as much as                                                                  neural data (2.3 ± 3.9; see Fig. 5f for a comparison of the across-
+~60% of the total neural variance (Fig. 4c), was also stable. Thus,                                                                task latent activity CCs from the real and simulated neural data;
+M1 may generate different behaviors through the ﬂexible                                                                            P~0, two-sided Wilcoxon rank sum test). Together, these two
+
+NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications                                                                                                                    5
+ARTICLE                                                                                                                    NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z
+
+
+
+            a                                                         Task-target       b                     2                                   6
+                                                        Task 25%         21%
+
+
+
+
+             Neural VAF (%)
+                              20
+                                                                           Time 26%         Time
+                                                       Target 28%
+                              10
+
+
+                               0
+                                   0          3         6       9              12                             1                                   11
+                                                    Neural mode
+
+                                                                                            Target
+            c                      Task-independent
+                                                                                 J
+                                                                                 C
+
+
+
+             Neural VAF (%)
+                              40
+
+
+                              20
+                                                                                                              3                                   7
+
+                               0
+
+                                                                                            Task
+                                   Ti m       Ta          Ta         targ
+                                       e        rget        sk           et
+                                                               Ta
+                                                                 sk
+                                                                   -
+
+            d
+                                                  Target organization
+                                                                                                              4                                   5
+                                        Isometric
+
+
+
+                                                                                            Task/targ. int.
+                                                                    Isometric 2D
+
+                                       Movement
+
+
+
+                                       Elastic mov.              Extens.      Flexion
+                                                                                                              n   ov                              n    ov
+                                                                                                          to      M                            to      M              100 ms
+                                                                                             Tg                                              Tg
+
+
+Fig. 4 Task-speciﬁc and task-independent activity of dPCA modes. a Neural variance accounted for (VAF) by each neural mode, and its relation to
+behavioral parameters for one example session from Monkey J. Inset: amount of VAF associated with each behavioral parameter across all 12 modes.
+b Activity of eight dPCA neural modes, grouped in four sets based on the behavioral parameter they are most strongly associated with. The number on the
+top left of each panel indicates the ranking of that neural mode in terms of VAF, as in a. Each row corresponds to one behavioral parameter (vertical labels
+on the left). Each panel has 24 traces, corresponding to each of 24 task/target combinations; color code shown in d. c Total VAF for each behavioral
+parameter, averaged over sessions for Monkeys J and C. Bars: mean + s.d.; gray circles: individual sessions. d Target locations for each wrist task, color-
+coded for each task/target combination in b. Tasks are color-coded; extension targets are shown in dark colors and ﬂexion targets in light colors
+
+results indicate that neural activity synthesized from EMGs is                                                        comparisons). Finally, the ability to predict EMGs from the
+both lower dimensional and less dynamically correlated across                                                         target-related neural modes cannot be attributed simply to the
+tasks than the actual neural activity.                                                                                amount of neural variance of these modes explained (Fig. 6c);
+                                                                                                                      time-related neural modes explained more variance than the
+From neural modes to muscle commands. For any given task,                                                             target-related neural modes, yet their EMG predictions were
+EMGs can be reasonably well predicted based on the activity of                                                        worse by a factor of ~2.5. The target-related neural modes were
+either a group of neurons23,61 or the neural modes19,22,24,26.                                                        good predictors of the EMGs because a large fraction of the EMG
+Using dPCA, we identiﬁed a set of target-related neural modes                                                         variance was target-related and task-independent (Supplementary
+whose largely task-independent activity was related to the motor                                                      Fig. 8). Thus, the target-related neural modes identiﬁed directions
+output. Their latent activity separated wrist ﬂexion from wrist                                                       within the manifold that captured a task-independent contribu-
+extension (Fig. 4b, modes 1 and 11; Supplementary Fig. 8e, modes                                                      tion of neural activity onto muscle activity.
+1 and 7), which suggests that these neural modes may relate to a
+target-dependent but task-independent component of EMG                                                                Discussion
+activity. To test for this possibility, we built a standard Wiener                                                    Motor cortical population activity during a variety of skilled
+cascade decoder55,61 for all wrist tasks in a given session, using                                                    motor tasks is well described by a small number of neural modes,
+only the two leading target-related dPCs as EMGs predictors                                                           a set of population activity patterns19–21,24,38,40,41,56,62 that span
+(Methods). If the task-independent aspect of these modes’ activity                                                    the neural manifold. These neural modes are putatively related to
+is relevant to the EMGs, these decoders should yield good                                                             the connectivity of the network29,35,49, and their activity is a good
+predictions.                                                                                                          predictor of behavior19,24,39–42,62,63. Here we reported the ﬁrst
+   As exempliﬁed in Fig. 6a, these decoders made EMG                                                                  comparison of neural manifolds associated with a variety of
+predictions that were >50% as accurate as those made with                                                             skilled arm and hand tasks. Our results suggest that different
+decoders based on all 12 neural modes as inputs (normalized R2                                                        behaviors may be generated by the activation of ﬂexible combi-
+across all muscles, tasks, and monkeys: 0.52 ± 0.32; see Methods).                                                    nations of a set of well-preserved neural modes20,21, since: (1)
+Moreover, these decoders far outperformed all other decoders                                                          despite the distinct patterns of muscle and neural unit activity
+based on two neural modes related to any of the other three                                                           associated with these tasks, the structure of the neural modes was
+behavioral parameters: time, task, and task/target (Fig. 6b; by                                                       largely preserved; (2) based on their activity, we could divide
+paired two-sided Wilcoxon rank sum test, P~0 for all three                                                            these modes into task-speciﬁc and task-independent sets, with the
+
+6                                             NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications
+NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z                                                                                                                                                                                           ARTICLE
+
+                      a                                                Neural modes   b                                                                       Neural modes         c
+                                             50    n = 29              EMG modes                                                          1                   EMGs                                             24                     n = 204
+
+
+
+
+                      Task comparisons (%)                                            CC latent activity or EMGs                                                                        Mode comparisons (%)
+                                             40                                                                                                                                                                20
+
+                                                                                                                                                                                                               16
+                                             30
+                                                                                                                               0.5                                                                             12
+                                             20
+                                                                                                                                                                                                                 8
+                                             10                                                                                                                                                                  4
+
+                                              0                                                                                           0                                                                      0
+                                                    0       25    50       75   100                                                           0        3     6    9      12                                          0        4      8      12
+                                                  Number of similar modes (%)                                                                      Neural or EMG mode                                                Neural mode CC / EMG CC
+
+                      d                                 Recorded EMGs                 e                                                                                            f                            1
+                                                                                                                                          100
+
+
+
+
+                                                                                                              Cumulative neural VAF (%)
+                                                                                                                                                                                                                                    Actual data
+                                                                                                                                              80                                                                                    Model data
+
+
+
+
+                                                                                                                                                                                   CC latent activity
+                                                             Model
+                                                                                                                                              60
+                                                                                                                                                                                                               0.5
+                                                                                                                                              40
+                                                        Simulated spikes
+                                                                                                                                              20                  Actual data
+                                                                 PCA                                                                                              Model data
+                                                                                                                                               0                                                                0
+                                                  Simulated latent activity                                                                        0       5   10   15        20                                     0    3       6    9    12
+                                                                                                                                                           Neural mode                                                        Neural mode
+
+Fig. 5 Similarities in latent neural activity are not accounted for by similarities in motor output. a Comparison between the percentage of neural modes and
+EMG modes that are preserved across tasks using principal angles; histogram shows the percentage of principal angles smaller than the P <
+0.001 signiﬁcance threshold. Neural manifold: 12-D, EMG manifold: 4-D; data pooled over all tasks, sessions, and monkeys. b Example comparison of
+canonical correlations (CCs) for latent neural activity (black) and EMGs (gray); all pairwise comparisons across wrist tasks for one session from Monkey J.
+Each of the six pairwise comparisons for four wrist tasks is shown as a separate trace. c Histogram of the ratio of the pairwise CCs for latent neural
+activities to the pairwise CCs for EMGs across tasks (as shown in b). Data pooled over all tasks, wrist sessions, and monkeys. Most ratios are quite above
+one (dashed vertical line). d Neural activity was simulated as weighted linear combinations of the recorded EMGs; the neural manifold and latent activity
+were then computed for the simulated data. e Variance accounted for (VAF) as function of the number of neural modes for the simulated and the actual
+neural data. Data pooled over all monkeys, wrist sessions, and tasks; thick trace and colored strip: mean ± s.d.; colored traces: individual task comparisons.
+f The pairwise CCs were signiﬁcantly smaller for the simulated than for the actual neural data (same data as in e)
+
+
+latter able to explain ~60% of the total variance across different                                                                                          only alternative latent activity but also an alternative mapping
+wrist tasks; and (3) the set of neural modes with task-independent                                                                                          onto muscle activity.
+activity included some that mapped consistently onto EMGs.                                                                                                     Our ﬁnding of a task-independent mapping of M1 activity onto
+These results provide new insight into how movement is gener-                                                                                               EMGs might be due to the similarity in motor action for similarly
+ated by the motor cortex.                                                                                                                                   arranged targets in the wrist tasks considered here (Fig. 4d).
+   Neural population activity, and thus latent activity, potentially                                                                                        Although the EMGs for a given target were quite different across
+includes intrinsic dynamics and response to inputs in addition to                                                                                           the wrist tasks (Supplementary Fig. 1), the similarity in target
+outputs16,21,22,26. Our dPCA analysis identiﬁed time-related                                                                                                arrangements resulted in a target-related but task-independent
+neural modes whose activity was virtually the same regardless                                                                                               EMG mode that separated wrist ﬂexion and extension (Supple-
+of the task and even the action required (top row in Fig. 4b).                                                                                              mentary Fig. 8). This preserved M1 to EMG mapping was found
+These modes are thus unlikely to reﬂect inputs or outputs;                                                                                                  across isometric and movement tasks that require quite different
+instead, they probably capture generic temporal features19,22,26, a                                                                                         muscle (Supplementary Fig. 1) and neural unit activity patterns
+common temporal evolution of the network during the set of                                                                                                  (Fig. 2, Supplementary Fig. 2).
+tasks used here. Their activity may reﬂect the transition from a                                                                                               This task-independent M1 to EMG mapping is in contrast
+planning state to a movement state; the activity of the leading                                                                                             to the behavior-speciﬁc mapping found in mice when
+time-related mode has been found to predict the reaction time of                                                                                            forelimb population activity during reaching was compared to
+reaching movements with great accuracy50. Time-related neural                                                                                               that during treadmill walking42. The corresponding manifolds
+modes may also support the generation of robust motor com-                                                                                                  of these two tasks were orthogonal42, with none of the simila-
+mands26, or the state-dependent switching from active postural                                                                                              rities in orientation and activity found here. This lack of simi-
+control to movement control11,64.                                                                                                                           larity is perhaps not surprising, as M1 is less directly involved
+   However, similarities in latent activity across tasks are not fully                                                                                      in the control of treadmill walking than of reaching42,65. In
+explained by time-related modes. We also found target-related                                                                                               contrast, we expect M1 neurons to be directly involved in the
+modes that had a task-independent mapping to muscle activity                                                                                                full range of skilled reach-to-grasp and wrist/hand motor
+(Figs. 4 and 6), a mechanism that might help simplify limb                                                                                                  behaviors13,53,54,66,67 of the type studied here. We were unable
+control as well as motor adaptation41. For example, adaptation to                                                                                           to compare the reach-to-grasp tasks to the wrist tasks because
+a force ﬁeld may be accomplished using alternative latent activity                                                                                          they were studied in different monkeys or using different
+within the same manifold that controls the unperturbed move-                                                                                                microelectrode arrays (Methods), but we conjecture that when
+ment41. This adaptation mechanism would be simpler than using                                                                                               compared, the neural modes for these tasks would exhibit many
+a force-ﬁeld-speciﬁc mapping to muscle commands, requiring not                                                                                              of the similarities reported here.
+
+NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications                                                                                                                                            7
+ARTICLE                                                                                                                NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z
+
+
+
+                             a                      Pred.                Actual
+                                                                                                                                                 R 2 = 0.43
+                             EDC
+
+
+
+                                                                                                                                                 R 2 = 0.57
+
+                             ECU
+                                                                                                                                                    2s
+
+                             b                      1                                        c                1                                        J
+                                                                                                                                                       C
+                                                   0.8                                                       0.8
+
+
+
+                                   Norm. R 2 EMG                                             Norm. R 2 EMG
+                                                   0.6                                                       0.6
+
+                                                   0.4
+                                                                             *** ***                         0.4
+
+                                                   0.2        ***                                            0.2
+
+                                                    0                                                         0
+                                                          sk         et
+                                                                    rg      m
+                                                                             e
+                                                                                     rg
+                                                                                        et                         0        10      20      30        40
+                                                         Ta               Ti
+                                                               Ta                 /ta                                         Neural VAF (%)
+                                                                                sk
+                                                                            Ta
+
+Fig. 6 Neural modes with task-independent activity as predictors to muscle activity. a Example EMG predictions for two muscles during 24 trials of the 1-D
+isometric task for one of the sessions from Monkey J. Predictions were based on the two leading target-related neural modes. b Normalized R2 of the EMG
+predictions for four different decoders, each based on the two leading neural modes most strongly related to the corresponding dPCA behavioral
+parameter. Performance was averaged across all muscles, wrist tasks, and monkeys. Boxplots show median: center line; interquartile range: box; and data
+range (0.5 × interquartile range): whiskers. The *** denote P~0 (two-sided Wilcoxon rank sum test). As reference, the R2 of the decoders based on all 12
+dPCA modes was 0.53 ± 0.21. c Normalized R2 of the EMG predictions vs. the neural variance accounted for (VAF) by each of the four sets of neural modes
+identiﬁed with dPCA. Data averaged across all sessions and muscles for each monkey separately (legend). Squares: median ± s.d.; color code as in b. Same
+data as in b and Fig. 4c
+
+
+   Increasing evidence, primarily from sensory systems21,35,                                                 neurons hints at the challenge of this approach9,10,13,53. Indeed,
+suggests that the neural covariation patterns captured by the                                                few individual neurons have simple, invariant tuning to a single
+neural modes may arise from the underlying network con-                                                      behavioral parameter4,10,11,14–16,25. Instead, they typically corre-
+nectivity. In M1, the most compelling evidence for this view                                                 late with a variety of behavioral parameters, including hand
+comes from a brain–computer interface study in which monkeys                                                 position, joint kinematics, end point force, and muscle activity,
+trained to produce accurate cursor movements were subjected to                                               among others (for reviews, see refs.10,15). These observations have
+decoder perturbations29. Perturbations outside the existing                                                  led to varied interpretations, for example, that different para-
+manifold proved to be considerably more challenging to learn                                                 meters are encoded by distinct subclasses of neurons4,14,15, or
+than perturbations within the manifold, which simply required                                                that single neurons simultaneously encode multiple
+activating the existing neural modes in novel combinations29. In                                             parameters18,45,46,68.
+view of this reported difference between within-manifold and                                                    Many experiments, beginning with the studies of Evarts2,
+outside-manifold learning, our results on the similar orientation                                            Humphrey5, and Thach3, have attempted to dissociate
+of manifolds associated with different skilled motor tasks suggest                                           these confounded behavioral parameters by using different
+that learning one of those tasks would signiﬁcantly facilitate the                                           limb postures, workspaces, or external loads4,12–14,16–18,53,54.
+acquisition of any of the others, a facilitation not expected                                                The ultimate goal was to identify fundamental representations
+between tasks with orthogonal manifolds.                                                                     that are stable against such manipulations. Cheney and
+   Although our experiments did not directly probe the presumed                                              Fetz found that the relationship between the activity of cortico-
+relationship between neural modes and network connectivity,                                                  motoneuronal cells and the exerted torque changes during
+they do provide additional indirect evidence. First, if the covar-                                           isometric and elastic-loaded movement wrist tasks53. Others
+iance patterns captured by the neural modes were mere by-                                                    investigated the stability of single neuron representations
+products of task constrains, it is unlikely that they would be so                                            across different postures during isometric and movement wrist
+well-preserved across tasks (Fig. 3). Second, the activity of two                                            tasks, and found that only a limited fraction of M1 neurons
+subsets of these well-preserved neural modes was largely corre-                                              change their activity in a way that parallels the changes in
+lated across wrist tasks (Fig. 4); a qualitatively similar observation                                       task kinematics or EMGs4,12. Similar manipulations have
+held for the reach-to-grasp tasks (Supplementary Fig. 7). These                                              been used during reach-to-grasp tasks, to ﬁnd that the relation-
+structural and dynamic similarities seem unlikely if the neural                                              ship between the activity of corticomotoneuronal cells and
+modes did not reﬂect a stable property of the underlying neural                                              the EMGs of their target muscles changed between power grip
+network.                                                                                                     and precision grip tasks54. The relationship between the activity
+   Prior studies have tried to explain how M1 controls movement                                              of single M1 cells and the exerted torque was also found to
+by looking for a ﬁxed relationship between single neuron activity                                            change across task conditions13. These studies highlight that
+and behavioral parameters, to elucidate what single neurons                                                  single neuron representations of movement parameters are
+encode or represent. The differences in activity across M1                                                   quite labile.
+
+8                           NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications
+NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z                                                                                                 ARTICLE
+
+   In contrast with this representational view, other groups have                      (0.25%) in combination with remifentanil (0.4 µg kg−1 min−1 continuous infu-
+adopted the view that the dominant function of M1 is that of a                         sion). Monkeys were administered antibiotics, anti-inﬂammatories, and bupre-
+                                                                                       norphine for several days after surgery.
+controller that causes movement; in this view, the neural repre-
+sentations described above are merely a by-product of this
+role15,20,21,25,26. Among these studies, those that have adopted the                   Tasks and recordings. In each session, monkeys performed either a set of reach-
+                                                                                       to-grasp tasks or a set of wrist tasks (Fig. 2). Within a session, the tasks were
+population approach of the neural manifold have so far focused                         performed in consecutive blocks; the order of the tasks varied randomly across
+on single skilled motor tasks. Our experiments and analyses were                       sessions. For each set of tasks, we collected data from two monkeys during two or
+designed to test whether the neural manifolds for different tasks                      three sessions. This shows reproducibility in the standard manner for this type of
+have similar orientations and activity. The observed commonal-                         research; no blinding was necessary. All monkeys had been trained prior to their
+                                                                                       implant surgeries, and were proﬁcient at the tasks at the time of the recordings.
+ities provide strong evidence that the neural manifolds capture                        Monkeys C and T performed the set of reach-to-grasp tasks, which comprised the
+fundamental principles of the cortical control of movement.                            “ball” task and a power grip (“grip”) task (monkey C, three sessions; monkey T,
+   Neural modes are not restricted to the motor cortices (for                          two sessions). In the ball task, monkeys had to reach to a ball (diameter 24, 35, or
+reviews, see refs. 21,28). This observation raises an intriguing                       40 mm), grasp it, and then transport it and drop it in an open cylindrical con-
+question: do populations of neurons in other cortical areas also                       tainer55. In the power grip task, monkeys reached to and grasped a pneumatic tube
+                                                                                       that then had to be squeezed to control the movement of a cursor used to acquire
+use ﬂexibly activated neural modes to perform their varied                             one of two or three 1-D force targets55. Monkeys initiated both tasks by resting
+functions? The application of dPCA to neural recordings during                         their hand on a touch pad, and waited for a target—or go signal for the ball task—
+sensory discrimination has revealed manifolds with stimulus-                           to be presented. Monkeys C and J performed the wrist tasks, which comprised
+related, decision-related, and time-related modes, in both monkey                      three 1-D tasks2,4,53: an isometric task, a movement task, and an elastic loaded
+                                                                                       movement task (both monkeys, three sessions); monkey J also performed a 2-D
+prefrontal and rat olfactory cortex51. Similarly, during a working                     isometric center-out task12 in two of three sessions (see Fig. 2a, b). Throughout the
+memory task, population activity in prefrontal cortex was asso-                        paper, we abbreviate these tasks as “iso,” “mov,” “spr,” and “iso2D,” respectively.
+ciated with a manifold spanned by modes linearly related to                            As for the reach-to-grasp tasks, monkeys could initiate movement after the target
+memory storage and stimulus response69. Thus, population                               was presented. Note that we recorded the wrist and reach-to-grasp datasets from
+                                                                                       monkey C in different years, using microelectrode arrays implanted in different
+activity in multiple cortical areas is associated with neural                          cortical hemispheres. During the experiments, we recorded neural and EMG data,
+manifolds whose modes relate strongly to task-relevant para-                           as well as kinematics or force, depending on the task. All data were saved to disk
+meters. The similarity between these results and the ones reported                     and analyzed in Matlab (The Mathworks Inc., Natick, MA).
+here for M1 suggests a general mechanism by which the brain                                To characterize neural population activity, we identiﬁed threshold crossings
+                                                                                       from each electrode; these included well-discriminated single-unit as well as multi-
+could ﬂexibly perform varied functions.                                                unit activity. Throughout this paper we refer to these as neural units, without
+   In summary, we have shown that manifolds associated with                            distinction. For each session, data included all units whose average waveform,
+different skilled motor tasks have similar orientation. It is the                      triggered by the threshold crossing, remained stable across all tasks (examples in
+covariance among units that is well-preserved across tasks, as                         Fig. 2, Supplementary Fig. 2). We did not choose neurons based on tuning,
+opposed to the activity of independently modulated M1 neurons.                         modulation depth, or any other property. To obtain a smooth discharge rate as
+                                                                                       function of time, we applied a Gaussian kernel (s.d.: 50 ms) to the binned square-
+Moreover, in contrast with the highly varied patterns of muscle                        root-transformed ﬁrings (bin size: 20 ms) of each unit34. For each task, this
+and neural unit activity, the activity of two sets of neural modes                     produced a neural data matrix X of dimensions n by T, where n is the number of
+was stable across behaviors. One of these sets captured generic                        recorded units and T is time duration of all concatenated trials. It must be noted
+temporal features of the tasks, unrelated to the details of the                        that although our analyses were based on threshold crossings, a recent simulation
+                                                                                       and experimental study57 indicates that the properties of the manifold and the
+motor output, and the other provided inputs to a stable task-                          activity within it would not have been different if we had used well-isolated single
+independent mapping onto muscle activity. These results support                        units instead.
+the view that motor cortex may control different motor behaviors                           The EMG envelopes, a proxy for the neural commands to muscles, were
+through the ﬂexible activation of different combinations of neural                     computed by a sequence of high-pass ﬁltering (fourth-order zero-phase
+                                                                                       Butterworth ﬁlter, fc: 10 Hz), rectiﬁcation, and low-pass ﬁltering (fourth-order
+modes, which themselves may arise from network connectivity.                           zero-phase Butterworth ﬁlter, fc: 50 Hz) of the raw EMG signals. We subsequently
+We further suggest that a similar mechanism may underlie the                           normalized these EMG envelopes by the 99th percentile of their distribution across
+ability of other cortical areas to perform varied non-motor                            all tasks for each session.
+functions.                                                                                 We used single-trial data for all the analyses except for dPCA, a method that
+                                                                                       requires trial-averaged data51 (see details below). A trial was deﬁned from target
+                                                                                       presentation (or go signal for the ball task) until the monkey received a reward; the
+                                                                                       very few unsuccessful trials were discarded. For trial averaging, we computed the
+Methods                                                                                mean ﬁring rate (peristimulus time histogram) from target presentation until an
+Experimental subjects. We recorded data from three 9–10 kg male Macaca                 end time determined by the shortest time to reward. We used both the reach-to-
+mulatta monkeys (J, C, T; age: 6, 14, and 11 years when the experiments started)       grasp and wrist datasets for all the analyses except for dPCA; the latter requires
+while they performed one of two sets of wrist or reach-to-grasp motor tasks over       target equalization across tasks, which can only be achieved for the wrist tasks (see
+several sessions (see Tasks, below). All surgical and behavioral procedures were       main text and dPCA section below). In every session, we made all possible
+approved by the Animal Care and Use Committee at Northwestern University. The          comparisons between pairs of tasks.
+monkeys were implanted with a 96-channel microelectrode silicon array (Utah
+electrode arrays, Blackrock Microsystems, Salt Lake City, UT) in the hand area of
+M1, which we identiﬁed intraoperatively through microstimulation of the cortical       Task-speciﬁc neural manifolds and latent activity. The activity of n recorded
+surface. For monkey C, we recorded neural activity for each of the two sets of tasks   units was represented in a neural space, an n-dimensional sampling of the state of
+using different microelectrode arrays sequentially implanted in different brain        M1. In this space, each point represents the state of the population of recorded
+hemispheres. The monkeys were also implanted with intramuscular EMG elec-              units, and the coordinate of this point along each axis represents the ﬁring rate of
+trodes in a variety of wrist and hand muscles. We report data from the following       the corresponding unit (Fig. 1b). Within this space, we computed the low-
+muscles: Monkey J: ﬂexor carpi radialis (FCR), ﬂexor carpi ulnaris (FCU), extensor     dimensional neural manifold associated with each task by applying PCA to the
+carpi radialis (ECR), extensor carpi ulnaris (ECU), ﬂexor digitorum profundus          corresponding smoothed ﬁring rates of all n units. In an n-dimensional space, PCA
+(FDP), ﬂexor digitorum superﬁcialis (FDS), extensor digitorum communis (EDC;           ﬁnds n principal components (PCs), each a linear combination of the ﬁring rates of
+radial and ulnar aspects), brachioradialis, and supinator; Monkey C: FCR, FCU,         the recorded units, designed to sequentially maximize the amount of shared var-
+ECR, ECU, FDP (radial and ulnar aspects), FDS (radial and ulnar aspects), EDC          iance (covariance). The PCs are ranked according to their contribution to
+(radial and ulnar aspects), ﬂexor pollicis brevis (FPB), opponens pollicis, and        explaining the total amount of variance in the original data. We deﬁned m-
+extensor pollicis longus; Monkey T: ECR, ECU, FCR, FCU, FDP (radial and ulnar          dimensional task-speciﬁc manifolds that accounted for most of the neural popu-
+aspects), FDS (radial and ulnar aspects), EDC, FPB, ﬁrst dorsal interosseous (FDI).    lation variance by keeping only the leading m PCs (Fig. 1b). We chose m = 12, to
+For the wrist tasks of monkey C, we recorded EMGs using pairs of gelled surface        account for at least 60% of the total neural variance across all tasks and monkeys
+electrodes placed over FCR, FCU, ECR, ECU, FDS, and EDC. We report EMG                 (Supplementary Fig. 3). Importantly, and in agreement with previous
+results for 5–12 muscles (mean ± s.d., 8.2 ± 2.8), depending on the session. All       reports29,38,58, the results reported here were not sensitive to the somewhat arbi-
+surgeries were performed under isoﬂurane gas anesthesia (1–2%) except during           trary choice of manifold dimensionality (see Supplementary Fig. 5a for results for
+cortical stimulation, for which the monkeys were transitioned to reduced isoﬂurane     m = 8, 15). Each PC is a neural mode associated with a speciﬁc direction within the
+
+NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications                                                              9
+ARTICLE                                                                                        NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z
+
+
+neural space; together, the neural modes provide a basis that spans the low-            whose activity is a linear readout of the activities associated with speciﬁcally chosen
+dimensional neural manifold. We computed the latent activity, the dynamic acti-         behavioral parameters51. The ability to ﬁnd a single neural manifold for all the
+vation of the neural modes, by projecting the n-dimensional, time-varying neural        tasks in one session is due to the strong similarity in the orientation of the cor-
+population activity onto each of the m neural modes (PCs) that span the neural          responding task-speciﬁc manifolds (Fig. 3).
+manifold.                                                                                   Mathematically, dPCA starts by representing the mean-subtracted, trial-
+                                                                                        averaged activity of all units, concatenated over all tasks and targets within a
+                                                                                        session, as a neural data matrix X  of dimensions n by (α × γ × τ). Here n is, as
+Comparison of task-speciﬁc neural manifolds. Principal angles provide a mea-
+                                                                                        before, the number of recorded units, α is the number of tasks performed in that
+sure of the relative alignment of two m-dimensional manifolds embedded in an n-
+                                                                                        session, γ is the number of targets equalized across tasks, and τ is the trial time
+dimensional space; their alignment is quantiﬁed in terms of the m angles between
+                                                                                        duration, equalized across tasks and targets by truncation to the shortest trial. Since
+sequentially aligned pairs of basis vectors, each within one of the respective
+                                                                                        trial durations were overall very similar, the deleted portions were short. This data
+manifolds48. These vectors, selected in each manifold so as to systematically                     is decomposed as a sum of matrices X      ; , each describing the neural
+minimize the angle between them, provide a new basis for each of the two                matrix X
+                                                                                        activity associated with a speciﬁc behavioral parameter ;, and the measurement
+manifolds being compared. Note that manifold directions chosen to minimize the
+                                                                                        noise Xnoise:
+angles between manifolds are not necessarily those that maximize variance within
+each of the two manifolds; it is thus not the angles between the PC neural modes                                               X
+                                                                                                                         ¼
+                                                                                                                         X          ; þ Xnoise
+                                                                                                                                   X
+that determine the principal angles. Our hypothesis that the task-speciﬁc manifolds                                                                                          ð3Þ
+                                                                                                                               ;
+compared here are similarly oriented implies that the leading principal angles will
+be small.
+   To compute the principal angles between two m-dimensional manifolds A and                                                     ; are uncorrelated: the n by n covariance
+B embedded in an n-dimensional neural space, we follow the method by Björck and            The decomposition ensures that the X
+                                                                                        matrix C ¼ XX T is thus the sum of covariance matrices, one associated with each
+Golub48 : consider the corresponding m-dimensional bases WA and WB provided
+by the m leading PC neural modes, construct their m by m inner product matrix,          behavioral parameter:
+and perform a singular value decomposition to obtain                                                                        X
+                                                                                                                        C¼      C; þ Cnoise                             ð4Þ
+                                                                                                                               ;
+                                  WTA WB ¼PA CPTB                                ð1Þ
+
+Here Wi, i = A, B are the n by m PC matrices that span the task-speciﬁc manifolds
+                                                                                           Dimensionality reduction in dPCA is based on the minimization of a
+A and B; the corresponding PC neural modes are their column vectors. The
+                                                                                        reconstruction error
+matrices PA and PB, both of dimension m by m, deﬁne the new manifold directions
+                                                                                                                              X
+that successively minimize the principal angles. Note that these new projections are                                    EX ¼    EX ;
+speciﬁc to the pair of tasks being compared. The matrix C is a diagonal matrix                                                                                              ð5Þ
+                                                                                                                                    ;
+whose elements are the ranked cosines of the principal angles θi, i = 1,…, m:
+
+                      C ¼ diagðcosðθ1 Þ; cosðθ2 Þ; ¼ cosðθm ÞÞ                   ð2Þ    with
+                                                                                                                                            
+                                                                                                                        EX ; ¼ X          2
+                                                                                                                                   ;  A; X                                ð6Þ
+    Note that, by construction, the principal angles are ordered form smallest to
+largest.
+    To assess whether the experimentally obtained principal angles between pairs of        The minimization of the reconstruction error becomes equivalent to a classical
+task-speciﬁc manifolds were signiﬁcantly small, we compared them to the principal       regression problem with a least-squares solution:51
+angles between manifolds associated to surrogate datasets that were randomly
+                                                                                                                               T   T 1                                 ð7Þ
+generated but preserved key statistics of the actual data. These surrogate datasets                                      ; ¼ X ; X ðX X Þ
+                                                                                                                        ALS
+were generated using the Tensor Maximum Entropy (TME) method27, to preserve
+the structure of the covariance of the original neural data both over time and across
+targets. We generated and compared 10,000 surrogate pairs for each pair of tasks.           In dPCA, the rank m of the n by n matrix A is chosen as the desired
+For each pair of surrogate datasets, we computed their associated neural manifolds      dimensionality of the manifold. The least-square problem thus becomes a reduced-
+and the principal angles between them, using the same methods as for the original       rank regression problem that is solved using singular value decomposition51. A
+neural data. We used the 0.1th percentile of the distributions of principal angles      detailed description of dPCA for neural population data has been given by Kobak
+between surrogate datasets to deﬁne a threshold below which angles can be               et al.51; notably, this implementation of dPCA has an analytic as opposed to a
+considered signiﬁcantly small (with a probability P < 0.001). We note that even         numerical solution.
+though the TME method is designed for trial-averaged data27, we were able to                The behavioral parameters ; used here are: time along the trial, task, target
+apply it to assess the signiﬁcance of the neural manifolds identiﬁed using              location, and the combination task/target location. We performed the dPCA
+concatenated single-trial data because the orientation of each task-speciﬁc neural      analysis on the wrist tasks, as these datasets included three or four tasks (α = 3 or
+manifold showed only small differences when computed using either type of data.         α = 4) for which six targets (γ = 6) were similarly located in space (see target
+    An additional analysis to compare the orientation of manifolds from two             organization in Fig. 4d, Supplementary Fig. 1 and 2), thus easily achieving target
+different tasks was based on measuring how much of the neural variance associated       equalization. As before, the chosen manifold dimensionality was m = 12, although
+with a given task was accounted for when the data was projected onto the manifold       the results held for m = 8, 15 (see Supplementary Fig. 5b). In spite of the constraint
+of a different task58. We computed the variance accounted for (VAF) when                that the activity of each dPC has to covary with one or a few of the chosen
+projecting the data from task A onto the manifold of task B (across-task VAF) and       behavioral parameters, the neural variance gradually explained by the neural modes
+compared it to the VAF obtained when the data from task A were projected onto           identiﬁed with dPCA was very similar to that explained by the PCA modes (see
+the original manifold of task A (within-task VAF). If the two manifolds A and B         Supplementary Fig. 6b).
+had similar orientations within the high-dimensional neural space, we would
+expect these across-task to within-task VAF ratios to be quite close to one. To
+                                                                                        Comparison of latent activity across tasks. To investigate potential similarities
+verify that the computed VAF ratios were signiﬁcantly large, we compared them to
+                                                                                        in latent activity across tasks, we compared the corresponding task-speciﬁc
+the largest ratios that could be obtained by chance. For each task comparison, we       manifold activity using CCA52. The method systematically ﬁnds new directions
+projected the original data for task A onto 10,000 randomly generated and thus
+                                                                                        within each manifold such that the corresponding one-dimensional projected
+randomly oriented m-dimensional manifolds, obtaining a distribution of surrogate
+                                                                                        activities are maximally correlated. As is the case with the manifold directions used
+across-task VAFs. We used the 0.1th percentile of this distribution as the
+                                                                                        to compute principal angles, these directions are not necessarily those of the PC
+maximum across-task VAF that could be expected by chance, and computed the
+                                                                                        neural modes selected to maximize projected variance.
+corresponding ratio to the within-task VAF. We assessed the signiﬁcance of the
+                                                                                            Consider again the two manifolds A, B to be compared. We start by projecting
+actual across-task to within-task VAF ratios by comparing them to these surrogate
+                                                                                        the neural activity for each task onto the m PC neural modes that span the
+VAF ratios. We used a two-sided Wilcoxon rank sum test, because the data did not
+                                                                                        respective manifolds, to obtain two m by T latent activity matrices LA and LB; here
+conform to normality (Lilliefors test, P < 0.01 to reject). Note that the comparison    T is time duration of all concatenated trials for each task within a session. CCA
+was performed twice for each pair of tasks, considering either A or B as the within-
+                                                                                        ﬁnds two linear transformation matrices, one for each of the two matrices Li, i = A, B,
+task manifold.
+                                                                                        to obtain new manifold directions so that the activities projected onto these new
+                                                                                        directions are maximally correlated across the two manifolds52.
+Task-speciﬁc and task-independent latent activity. To understand the role of                CCA starts with a QR decomposition of the transposed latent activity matrices
+the latent activity in movement generation, we used another linear dimensionality       LA and LB, LTA ¼ QA RA , LTB ¼ QB RB . The ﬁrst m column vectors of Qi ; i ¼ A; B
+reduction method, dPCA51. This approach identiﬁes a single neural manifold for          provide an orthonormal basis for the column vectors of LTi ; i ¼ A; B. We then
+all the data (here, pooled across all tasks in one session), spanned by neural modes    construct the m by m inner product matrix of QA and QB and perform a singular
+
+10                              NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications
+NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z                                                                                                      ARTICLE
+
+value decomposition to obtain                                                             decoding matrix
+                                                                                                          is not
+                                                                                                              1 just simply the transpose
+                                                                                                                                           of the encoding matrix, but
+                                                                                                                                                 1
+                                                                                          Dh ¼ WMh MTh Mh : The extra factor of MTh Mh corrects for the non-
+                                   QTA QB ¼ USVT                                   ð8Þ    orthogonality of the M matrix.
+                                                                                             The amount of explained variance for dPCA is similarly computed through the
+                                                                                                                                                                  
+                                                                                          reconstruction error of the mean-subtracted trial-averaged data matrix X;
+   The elements of the diagonal matrix S are the canonical correlations (CCs),
+sorted from largest to smallest. The new manifold directions that CCA ﬁnds so as                                                  k2  kX
+                                                                                                                                kX                  k2
+                                                                                                                                           Dh Eh X
+                                                                                                                    VAFh ¼                                                  ð11Þ
+to maximize the pairwise correlations between latent activities across the two tasks                                                      
+                                                                                                                                         kX k
+                                                                                                                                              2
+are the corresponding m by m matrices
+                             MA ¼ R1         1
+                                   A U; MB ¼ RB V                                  ð9Þ
+                                                                                             The encoding and decoding matrices Eh and Dh are computed as described by
+                                                                                          Kobak, Brendel and colleagues51. When computing the dPCA manifold for a
+                                                                                                                    included only the trial-averaged neural activity for the
+                                                                                          speciﬁc task, the matrix X
+    To implement this method, the matrices Li, i = A, B included all the
+concatenated trials for each of the two tasks being compared. To assemble these           task being considered, concatenated over all corresponding targets. In contrast with
+data matrices, we ﬁrst equalized the number of trials across all tasks and targets        principal angles and CCA, dimensionality reduction is directly effected by dPCA
+within the corresponding session; we took the ﬁrst k trials for each task and target,     and does not require PCA as a preliminary step. In addition, the analysis is task
+with k being the minimum number of successful trials across all targets and tasks         speciﬁc and does not involve a comparison between two tasks. Note that since the
+within the session. When comparing tasks with different number of targets, the            manifold directions found by dPCA are not necessarily orthogonal, the decoding
+number of trials per target was adjusted so as to equalize the number of trials per       matrix Dh is not the transpose of the encoding matrix Eh.
+task. For each trial, we used either a 700 ms long (wrist tasks) or a 1000 ms long
+(reach-to-grasp tasks) window of neural data, starting around target onset or go          Relationship between latent activity and EMGs. To understand the role of the
+signal. We then concatenated these k individual trials according to the common            neural modes in movement generation, we investigated how their activity related to
+sequence of visual targets. When comparing two 1-D wrists tasks, we matched the           the ongoing muscle commands (EMGs) by building standard neural decoders as
+trials by target location; when comparing the 2-D isometric task to any of the 1-D        previously used by our group61. We were particularly interested in the role of the
+wrist tasks, we labeled targets according to their projection onto the horizontal axis.   target-related but task-independent neural modes identiﬁed with dPCA. To assess
+No target matching was done for the reach-to-grasp tasks, as the ball task had no         whether these target-related modes captured task-independent EMG components,
+targets. We did not exclude trials based on their execution time, or based on the         we compared the predictions of decoders based on target-related but task-
+EMG, kinematics, or force patterns; only the few failed trials were excluded.             independent modes as inputs to the predictions of decoders that used as inputs the
+    We used an analysis of within-task variability across trials to obtain an upper       activity of the other three sets of modes (time-related, task-related, and task-target-
+bound for the across-task CCs. We computed within-task CCs by dividing all the            related).
+trials for a given task into two random target-matched subgroups (100 repetitions)            The neural to EMG decoders were multiple-input single-output linear ﬁlters
+across which we calculated the corresponding CCs. We used the 99.9th percentile           followed by a static non-linearity:
+of each within-task CC distribution as the upper bound CC value; for a given pair
+of tasks, the across-task upper bound was taken to be the maximum of the two                                                    X X
+                                                                                                                                K M1
+
+corresponding within-task upper bounds. To more clearly visualize how the across-                                    y ðt Þ ¼             hk ðτÞLk ðt  τÞ                  ð12Þ
+                                                                                                                                k¼1 τ¼0
+task CCs relate to this upper bound, we computed the ratio between them
+(Supplementary Fig. 7e). We also used bootstrapping to assess the signiﬁcance of
+the across-task comparisons of latent activities. The latent activity for one of the
+                                                                                                                      z ðt Þ ¼ a þ b  yðt Þ þ c  y2 ðt Þ                  ð13Þ
+tasks was randomized over time (for all modes simultaneously), and smoothed with
+a Gaussian kernel designed to match the spectral content of the actual data (s.d.: 50
+ms). We then used CCA to ﬁnd maximal correlations between these surrogate ﬁrst            where z(t) is the predicted EMG, obtained by applying a static non-linearity to the
+task data and the data from the second task. We repeated this procedure 5000 times        output y(t) of the linear model, which estimated the EMG as a linear combination
+for each task comparison, and took the 99.9th percentile of the resultant                 of the current and past values of the latent activities, Lk . In this case two inputs,
+distribution of CCs as a signiﬁcance threshold (P < 0.001).                               k=1, 2, were weighted by coefﬁcients hk(τ), where τ represents a time lag into the
+                                                                                          past. The coefﬁcients hk(τ) followed from the lagged auto-correlations and cross-
+                                                                                          correlations of the decoder inputs and outputs61. The coefﬁcients a, b, and c of the
+Neural variance explained. We used a series of analyses (principal angles, CCA,
+                                                                                          second-order polynomial in the static non-linearity resulted from least-squares
+dPCA) to compare the structure of the neural modes and their activity across
+                                                                                          error minimization.
+different tasks. Each one of these approaches involves projecting the original n-
+                                                                                              We built a single decoder for each behavioral parameter ; using data from all
+dimensional data onto manifold directions that differ from those found by PCA. In
+                                                                                          the tasks that the monkeys performed during one session. We assessed the quality
+order to assess the cumulative neural variance associated with incremental subsets
+                                                                                          of ﬁt on single trial data in terms of the normalized coefﬁcient of determination,
+of these new directions 1 ≤ h ≤ m, we express the fractional variance accounted for
+                                                                                          which is the ratio of the R2 of the EMG predictions based only on the neural modes
+(VAF) in terms of the corresponding reconstruction error,
+                                                                                          related to the speciﬁc behavioral parameter ;, to the R2 of the EMG predictions
+                                    kXk2 kX  Dh Eh Xk2                                  based on all 12 neural modes. Fits were cross-validated (leave-one-out multifold
+                          VAFh ¼                                                  ð10Þ    cross-validation using 30 s folds) in all cases. We compared EMG predictions for
+                                           kX k2                                          different behavioral parameters ; using a paired two-sided Wilcoxon rank sum test
+                                                                                          including each fold.
+                                                                                              To interpret our decoding results, we decomposed the EMGs from all the tasks
+    For principal angles and CCA, the n by T data matrix X is task-speciﬁc and            within a session into EMG modes using dPCA. We kept m = 4 modes, obtained
+represents concatenated trials for a given task during one session, pooled across all     using the same method as for the dPCA of neural data. Four dPCs sufﬁced since
+targets. The PCA leading to the m-dimensional manifold
+                                                  P        requires that the data be      across all datasets, 3.2 ± 0.8 EMG modes (mean ± s.d.) explained ≥95% of the total
+mean-subtracted, Σjxij=0 for all i. Thus kXk2 ¼ ij xij2 is the total variance. The        EMG variance for each wrist task separately (Supplementary Fig. 1d). When
+matrices Eh and Dh are encoding and decoding matrices, respectively. The h by n           predicting subsets of EMG modes, we used decoders with the same structure as
+matrix Eh projects the original data onto the leading h new manifold directions,          described above, and followed the same cross-validation procedure.
+and the n by h matrix Dh optimally reconstructs the data from this h-dimensional
+projection. For both principal angles and CCA, encoding starts by projecting the
+original data onto the manifold spanned by the m leading PCs: WTi Xi for i = A, B.        Computational model. Given that M1 has extensive projections to upper limb
+    For principal angles, the data is then projected into new manifold directions         muscles, and that M1 spiking is strongly predictive of EMGs, we asked whether the
+given by the columns of the corresponding matrix Pi, i = A, B. The encoding               observed similarities in latent neural activity could be readily explained by simi-
+matrix for this speciﬁc A,B comparison thus is Eh ¼ PTh WT , where PTh is the             larities in the EMGs. To analyze this possibility, we constructed a model that
+transpose of the ﬁrst h columns of the projection matrix P. Because both the matrix       assumes a ﬁxed relationship between M1 activity and muscle activities. We used
+W and the matrix P are orthogonal, the optimal decoding matrix—in the sense of            actual EMG data for a given pair of tasks to obtain the corresponding simulated
+minimizing the squared    reconstruction error—is the transpose of the encoding           neural activity. We then used the same methods as described for the actual neural
+                             T                                                          data to obtain the task-speciﬁc neural manifolds and their associated latent activity,
+matrix. Thus Dh ¼ PTh WT ¼ WPh . To represent the variance explained across
+the two tasks A and B as a single number, we took the mean of the two values.             and to compare these across tasks for the simulated neural data. Finally, these
+    For CCA, once the data has been projected onto the m leading principal                across-task similarities in latent activities for the simulated data were compared to
+components using the corresponding task-speciﬁc PC matrix Wi, i = A, B, it is then        those obtained for the actual data.
+projected into new manifold directions given by the columns of the corresponding              Our model, largely based on that in ref. 70, is as follows. Each neural unit j was
+matrix Mi, i = A, B. The encoding matrix for this speciﬁc A, B comparison thus is         simulated as a Poisson process with a time-dependent mean λj ðt Þ given by
+Eh ¼ MTh WT , where MTh is the transpose of the ﬁrst h columns of the projection                                                    X
+matrix M. Because the matrix W is orthogonal but the matrix M is not, the optimal                                    λj ðt Þ ¼ aj þ      b ε ð t Þ þ ηj ð t Þ
+                                                                                                                                        i ji i
+                                                                                                                                                                            ð14Þ
+
+
+NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications                                                                  11
+ARTICLE                                                                                        NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z
+
+
+with 0 ≤ aj ≤ 0.1 and −1 ≤ bji ≤ 1. Here, εi(t) is the time-dependent EMG of the ith    5.    Humphrey, D. R., Schmidt, E. M. & Thompson, W. D. Predicting measures of
+recorded muscle, and ηj(t) is additive Gaussian noise with zero mean and a                    motor performance from multiple cortical spike trains. Science 170, 758–762
+variance of 0.05. For each task, we used all the recorded EMGs to simulate as many            (1970).
+units as we had recorded experimentally. The {λj} were scaled so as to match the        6.    Georgopoulos, A. P., Kalaska, J. F., Caminiti, R. & Massey, J. T. On the
+mean ﬁring rates of the actual neural data. In addition, we checked that second-              relations between the direction of two-dimensional arm movements and cell
+order statistics of the simulated ﬁring as measured by the VAF followed a similar             discharge in primate motor cortex. J. Neurosci. 2, 1527–1537 (1982).
+trend to that of the real data (Fig. 5e) across a fairly broad range of model           7.    Fetz, E. E., Cheney, P. D., Mewes, K. & Palmer, S. Control of forelimb muscle
+parameters {kj, gij}. Finally, we used CCA to compare the activities of these
+                                                                                              activity by populations of corticomotoneuronal and rubromotoneuronal cells.
+simulated neural modes across every pair of wrist tasks that monkeys performed in
+                                                                                              Prog. Brain Res. 80, 437–449 (1989).
+each session (Fig. 5f).
+                                                                                        8.    Morrow, M. M. & Miller, L. E. Prediction of muscle activity by populations of
+                                                                                              sequentially recorded primary motor cortex neurons. J. Neurophysiol. 89,
+Control analyses. To probe the dependence of manifold geometry and activity on                2279–2288 (2003).
+the dimensionality of the embedding neural space, we performed unit-dropping            9.    Churchland, M. M. & Shenoy, K. V. Temporal complexity and heterogeneity
+numerical experiments. To check for orientation robustness, we selected from all              of single-neuron activity in premotor and motor cortex. J. Neurophysiol. 97,
+recorded units two random subsets with the same number of units each. We                      4235–4257 (2007).
+created two sets of population activity; in each of them, the activity of the units     10.   Fetz, E. E. Are movement parameters recognizable coded in the activity of
+chosen for dropping was correspondingly set to zero. In each set, we used PCA to              single neurons? Behav. Brain Sci. 15, 679–690 (1992).
+obtain the 12-D manifolds spanned by the 12 leading PCs; both manifolds were            11.   Kurtzer, I., Herter, T. M. & Scott, S. H. Random change in cortical load
+embedded within the original neural space. We computed the principal angles                   representation suggests distinct control of posture and movement.
+between them; small principal angles would signal orientation robustness against              Nat. Neurosci. 8, 498–504 (2005).
+the particular choice of units. We repeated this procedure dropping 10%, 20%,           12.   Oby, E. R., Ethier, C. & Miller, L. E. Movement representation in the primary
+30%, and 40% of all recorded units (100 random pairs in each case), to also check             motor cortex and its contribution to generalizable EMG predictions.
+for robustness against the number of recorded units (Supplementary Fig. 3e). In all
+                                                                                              J. Neurophysiol. 109, 666–678 (2013).
+cases, the dimensionality of the data was preserved as that of the original neural
+                                                                                        13.   Hepp-Reymond, M. C., Kirkpatrick-Tanner, M., Gabernet, L., Qi, H. X. &
+space, thus allowing us to compare manifold orientations using principal angles.
+                                                                                              Weber, B. Context-dependent force coding in motor and promotor cortical
+    To check for latent activity robustness, we again selected a random subset of all
+                                                                                              areas. Exp. Brain Res. 128, 123–133 (1999).
+recorded units, set their activities to zero, performed PCA on the resulting neural
+ensemble, obtained the 12-D manifold spanned by the 12 leading PCs, and                 14.   Morrow, M. M., Jordan, L. R. & Miller, L. E. Direct comparison of the task-
+projected the population activity onto these neural modes to obtain their activity.           dependent discharge of M1 in hand space and muscle space. J. Neurophysiol.
+We then used CCA to compare the activities of these modes to the activities of the            97, 1786–1798 (2007).
+12 leading modes computed from all recorded units. We repeated this operation           15.   Scott, S. H. Inconvenient truths about neural processing in primary motor
+dropping 10, 20, 30, and 40% of all recorded units (100 random pairs in each case).           cortex. J. Physiol. 586, 1217–1224 (2008).
+We expected leading CCs close to 1, indicating latent activities that were robust       16.   Sergio, L. E., Hamel-Pâquet, C. & Kalaska, J. F. Motor cortex neural correlates
+against speciﬁc choice of units and, to some extent, their number (Supplementary              of output kinematics and kinetics during isometric-force and arm-reaching
+Fig. 3f).                                                                                     tasks. J. Neurophysiol. 94, 2353–2378 (2005).
+    We also evaluated whether our results depended on the choice of manifold            17.   Kalaska, J., Cohen, D., Hyde, M. & Prud’homme, M. A comparison of
+dimensionality, by replicating the main analyses for neural manifold                          movement direction-related versus load direction-related activity in primate
+dimensionalities m = 8 and 15. No qualitative changes in the results were observed            motor cortex, using a two-dimensional reaching task. J. Neurosci. 9,
+as m was changed (Supplementary Fig. 5).                                                      2080–2102 (1989).
+    To assess EMG stability across tasks, we computed the principal angles between      18.   Scott, S. H. & Kalaska, J. F. Reaching movements with similar hand paths
+the EMG manifolds for two different tasks, to establish whether they were as well             but different arm orientations. I. Activity of individual cells in motor cortex.
+aligned as the corresponding neural manifolds. To quantify the across-task stability          J. Neurophysiol. 77, 826–852 (1997).
+of latent activity we applied CCA to the EMG activity associated with different         19.   Churchland, M. M. et al. Neural population dynamics during reaching. Nature
+tasks, and computed the ratio of the across-task CCs in latent neural activities to           487, 51–56 (2012).
+the across-task CCs in EMGs for as many dimensions as EMGs we had available             20.   Shenoy, K. V., Sahani, M. & Churchland, M. M. Cortical control of arm
+(typically less than 12 well-recorded muscles in any given session). Task-speciﬁc             movements: a dynamical systems perspective. Annu. Rev. Neurosci. 36,
+EMG manifolds, pairwise principal angles between them, and across-task                        337–359 (2013).
+comparisons for latent muscle activities were computed using the same methods as        21.   Gallego, J. A., Perich, M. G., Miller, L. E. & Solla, S. A. Neural manifolds for
+for neural activity.                                                                          the control of movement. Neuron 94, 978–984 (2017).
+                                                                                        22.   Sussillo, D., Churchland, M. M., Kaufman, M. T. & Shenoy, K. V. A neural
+Code availability. Code packages for comparing manifold orientation, comparing                network that ﬁnds a naturalistic solution for the production of muscle activity.
+latent activity, simulating neural activity, and EMG decoding are available upon              Nat. Neurosci. 18, 1025–1033 (2015).
+request to the authors. For dPCA, we used the publicly available toolbox from the       23.   Lillicrap, T. P. & Scott, S. H. Preference distributions of primary motor
+Machens lab51 (https://github.com/machenslab/dPCA). For TME, we used the                      cortex neurons reﬂect control solutions optimized for limb biomechanics.
+publicly available toolbox from the Cunningham lab27 (https://github.com/                     Neuron 77, 168–179 (2013).
+gamaleldin/TME).                                                                        24.   Kaufman, M. T., Churchland, M. M., Ryu, S. I. & Shenoy, K. V. Cortical
+                                                                                              activity in the null space: permitting preparation without movement.
+                                                                                              Nat. Neurosci. 17, 440–448 (2014).
+Data availability                                                                       25.   Todorov, E. Direct cortical control of muscle activation in voluntary arm
+All relevant data are available from the authors upon request.                                movements: a model. Nat. Neurosci. 3, 391–398 (2000).
+                                                                                        26.   Russo, A. A. et al. Motor cortex embeds muscle-like commands in an
+                                                                                              untangled population response. Neuron 97, 953–966 (2018).
+Received: 16 September 2017 Accepted: 12 September 2018                                 27.   Elsayed, G. & Cunningham, J. P. Structure in neural population recordings:
+                                                                                              signiﬁcant or epiphenomenal? Nat. Neurosci. 25, 1–14 (2017).
+                                                                                        28.   Cunningham, J. P. & Yu, B. M. Dimensionality reduction for large-scale
+                                                                                              neural recordings. Nat. Neurosci. 17, 1500–1509 (2014).
+                                                                                        29.   Sadtler, P. T. et al. Neural constraints on learning. Nature 512, 423–426
+                                                                                              (2014).
+References                                                                              30.   Stopfer, M., Jayaraman, V. & Laurent, G. Intensity versus identity coding in an
+1.   Wolpert, D. M., Ghahramani, Z. & Flanagan, J. R. Perspectives and problems               olfactory system. Neuron 39, 991–1004 (2003).
+     in motor learning. Trends Cogn. Sci. 5, 487–494 (2001).                            31.   Stevenson, I. H. & Kording, K. P. How advances in neural recording affect
+2.   Evarts, E. V. Relation of pyramidal tract activity to force exerted during               data analysis. Nat. Neurosci. 14, 139–142 (2011).
+     voluntary movement. J. Neurophysiol. 31, 14–27 (1968).                             32.   Pachitariu, M. et al. Suite2p: beyond 10,000 neurons with standard two-
+3.   Thach, W. T. Correlation of neural discharge with pattern and force of                   photon microscopy. Preprint at bioRxiv https://doi.org/10.1101/061507
+     muscular activity, joint position, and direction of intended next movement in            (2016).
+     motor cortex and cerebellum. J. Neurophysiol. 41, 654–676 (1978).                  33.   Gao, P. & Ganguli, S. On simplicity and complexity in the brave new
+4.   Kakei, S., Hoffman, D. S. & Strick, P. L. Muscle and movement representations            world of large-scale neuroscience. Curr. Opin. Neurobiol. 32, 148–155
+     in the primary motor cortex. Science 285, 2136–2139 (1999).                              (2015).
+
+
+
+12                               NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications
+NATURE COMMUNICATIONS | DOI: 10.1038/s41467-018-06560-z                                                                                                       ARTICLE
+
+34. Yu, B. M. et al. Gaussian-process factor analysis for low-dimensional single-       62. Vyas, S. et al. Neural population dynamics underlying motor learning transfer.
+    trial analysis of neural population activity. J. Neurophysiol. 102, 614–635             Neuron 97, 1177–1186 (2018).
+    (2009).                                                                             63. Wang, J., Narain, D., Hosseini, E. A. & Jazayeri, M. Flexible timing by
+35. Okun, M. et al. Diverse coupling of neurons to populations in sensory cortex.           temporal scaling of cortical responses. Nat. Neurosci. 21, 102–110
+    Nature 521, 511–515 (2015).                                                             (2017).
+36. Ganguli, S. & Sompolinsky, H. Compressed Sensing, Sparsity and neural data.         64. Humphrey, D. R. & Reed, D. J. Separate cortical systems for control of joint
+    Annu. Rev. Neurosci. 35, 463–483 (2012).                                                movement and joint stiffness: reciprocal activation and coactivation of
+37. Gao, P. et al. A theory of multineuronal dimensionality, dynamics and                   antagonist muscles. Adv. Neurol. 39, 347–372 (1983).
+    measurement. Preprint at bioRxiv https://doi.org/10.1101/214262 (2017).             65. DiGiovanna, J. et al. Engagement of the rat hindlimb motor cortex
+38. Churchland, M. M., Cunningham, J. P., Kaufman, M. T., Ryu, S. I. & Shenoy,              across natural locomotor behaviors. J. Neurosci. 36, 10440–10455
+    K. V. Cortical preparatory activity: representation of movement or ﬁrst cog in          (2016).
+    a dynamical machine? Neuron 68, 387–400 (2010).                                     66. Rathelot, J.-A. & Strick, P. L. Muscle representation in the macaque motor
+39. Stavisky, S. D., Kao, J. C., Ryu, S. I. & Shenoy, K. V. Motor cortical visuomotor       cortex: an anatomical perspective. Proc. Natl Acad. Sci. USA 103, 8257–8262
+    feedback activity is initially isolated from downstream targets in output-null          (2006).
+    neural state space dimensions. Neuron 95, 195–208.e9 (2017).                        67. Lemon, R. N. Descending pathways in motor control. Annu. Rev. Neurosci. 31,
+40. Michaels, J. A., Dann, B., Intveld, R. W. & Scherberger, H. Neural dynamics of          195–218 (2008).
+    variable grasp movement preparation in the macaque fronto-parietal network.         68. Hatsopoulos, N. G., Xu, Q. & Amit, Y. Encoding of movement fragments in
+    J. Neurosci. 38, 5759–5773 (2018).                                                      the motor cortex. J. Neurosci. 27, 5105–5114 (2007).
+41. Perich, M. G., Gallego, J. A. & Miller, L. E. A neural population mechanism for     69. Markowitz, D. A., Curtis, C. E. & Pesaran, B. Multiple component networks
+    rapid learning. Preprint at bioRxiv https://doi.org/10.1101/138743 (2017).              support working memory in prefrontal cortex. Proc. Natl Acad. Sci. USA 112,
+42. Miri, A. et al. Behaviorally selective engagement of short-latency effector             11084–11089 (2015).
+    pathways by motor cortex. Neuron 95, 683–691 (2017).                                70. Perich, M. G. & Miller, L. E. Altered tuning in primary motor cortex does not
+43. Lawrence, D. G. & Kuypers, H. G. The functional organization of the motor               account for behavioral adaptation during force ﬁeld learning. Exp. Brain Res.
+    system in the monkey. I. The effects of bilateral pyramidal lesions. Brain 91,          235, 2689–2704 (2017).
+    1–14 (1968).
+44. Roweis, S. & Ghahramani, Z. A unifying review of linear Gaussian Models.
+    Neural Comput. 11, 305–345 (1999).                                                  Acknowledgements
+45. Crammond, D. J. & Kalaska, J. F. Differential relation of discharge in primary      This work was supported in part by Grant FP7-PEOPLE-2013-IOF-627384 from the
+    motor cortex and premotor cortex to movements versus actively maintained            Commission of the European Union (J.A.G.), by Grant F31-NS092356 from the National
+    postures during a reaching task. Exp. Brain Res. 108, 45–61 (1996).                 Institute of Neurological Disorder and Stroke and Grant T32-HD07418 from the
+46. Fu, Q. G., Flament, D., Coltz, J. D. & Ebner, T. J. Temporal encoding of            National Center for Medical Rehabilitation Research (M.G.P.), by Grant DGE-1324585
+    movement kinematics in the discharge of primate primary motor and                   from the National Science Foundation (S.N.N.), by Grant 22343 from the Fonds de
+    premotor neurons. J. Neurophysiol. 73, 836–854 (1995).                              Recherche du Québec–Santé (C.E.), and by Grant NS053603 from the National Institute
+47. Rokni, U., Richardson, A. G., Bizzi, E. & Seung, H. S. Motor learning with          of Neurological Disorder and Stroke (S.A.S. and L.E.M.).
+    unstable neural representations. Neuron 54, 653–666 (2007).
+48. Björck, A. & Golub, G. H. Numerical methods for computing angles between            Author contributions
+    linear subspaces. Math. Comput. 27, 579–579 (1973).                                 J.A.G., S.A.S., and L.E.M. devised the project. S.N.N. and C.E. performed the experi-
+49. Hennequin, G., Vogels, T. P. & Gerstner, W. Optimal control of transient            ments. J.A.G. analyzed the data. J.A.G., M.G.P., S.A.S., and L.E.M. interpreted data and
+    dynamics in balanced networks supports generation of complex movements.             wrote the manuscript.
+    Neuron 82, 1394–1406 (2014).
+50. Kaufman, M. T. et al. The Largest response component in the motor cortex
+    reﬂects movement timing but not movement type. eNeuro 3, ENEURO.0085-               Additional information
+    16.2016 (2016).                                                                     Supplementary Information accompanies this paper at https://doi.org/10.1038/s41467-
+51. Kobak, D. et al. Demixed principal component analysis of neural population          018-06560-z.
+    data. eLife 5, 1–37 (2016).
+52. Bach, F. R. & Jordan, M. I. Kernel independent component analysis. J. Mach.         Competing interests: The authors declare no competing interests.
+    Learn. Res. 3, 1–48 (2002).
+53. Cheney, P. D. & Fetz, E. E. Functional classes of primate corticomotoneuronal       Reprints and permission information is available online at http://npg.nature.com/
+    cells and their relation to active force. J. Neurophysiol. 44, 773–791 (1980).      reprintsandpermissions/
+54. Muir, R. B. & Lemon, R. N. Corticospinal neurons with a special role in
+    precision grip. Brain Res. 261, 312–316 (1983).                                     Publisher's note: Springer Nature remains neutral with regard to jurisdictional claims in
+55. Ethier, C., Oby, E. R., Bauman, M. J. & Miller, L. E. Restoration of grasp          published maps and institutional afﬁliations.
+    following paralysis through brain-controlled stimulation of muscles. Nature
+    485, 368–371 (2012).
+56. Vaidya, M., Kording, K., Saleh, M., Takahashi, K. & Hatsopoulos, N. G. Neural
+    coordination during reach-to-grasp. J. Neurophysiol. 114, 1827–1836 (2015).                           Open Access This article is licensed under a Creative Commons
+57. Trautmann, E. M. et al. Accurate estimation of neural population dynamics                             Attribution 4.0 International License, which permits use, sharing,
+    without spike sorting. Preprint at bioRxiv 1–42 https://doi.org/10.1101/            adaptation, distribution and reproduction in any medium or format, as long as you give
+    229252 (2017).                                                                      appropriate credit to the original author(s) and the source, provide a link to the Creative
+58. Elsayed, G. F., Lara, A. H., Kaufman, M. T., Churchland, M. M. &                    Commons license, and indicate if changes were made. The images or other third party
+    Cunningham, J. P. Reorganization between preparatory and movement                   material in this article are included in the article’s Creative Commons license, unless
+    population responses in motor cortex. Nat. Commun. 7, 13239 (2016).                 indicated otherwise in a credit line to the material. If material is not included in the
+59. Tresch, M. C. & Jarc, A. The case for and against muscle synergies. Curr. Opin.     article’s Creative Commons license and your intended use is not permitted by statutory
+    Neurobiol. 19, 601–607 (2009).                                                      regulation or exceeds the permitted use, you will need to obtain permission directly from
+60. d’Avella, A. & Bizzi, E. Shared and speciﬁc muscle synergies in natural motor       the copyright holder. To view a copy of this license, visit http://creativecommons.org/
+    behaviors. Proc. Natl Acad. Sci. USA 102, 3076–3081 (2005).                         licenses/by/4.0/.
+61. Pohlmeyer, E. A., Solla, S. A., Perreault, E. J. & Miller, L. E. Prediction of
+    upper limb muscle activity from motor cortical discharge during reaching.
+    J. Neural Eng. 4, 369–379 (2007).                                                   © The Author(s) 2018
+
+
+
+
+NATURE COMMUNICATIONS | (2018)9:4233 | DOI: 10.1038/s41467-018-06560-z | www.nature.com/naturecommunications                                                                   13
+

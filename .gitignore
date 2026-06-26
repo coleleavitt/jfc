@@ -5,7 +5,7 @@ apps/*/node_modules/
 apps/*/dist/
 apps/*/.vite/
 *.tsbuildinfo
-/research/
+/.research/
 .env
 .env.*
 !.env.example

@@ -1,0 +1,1891 @@
+                                              Self-orthogonalizing attractor neural networks
+                                                  emerging from the free energy principle
+
+
+                                                                                         Tamas Spisak1
+                                             Center for Translational Neuro- and Behavioral Sciences (C-TNBS), University Medicine Essen, Germany
+
+
+
+
+arXiv:2505.22749v2 [q-bio.NC] 21 May 2026
+                                                                                            Karl Friston
+                                                          Queen Square Institute of Neurology, University College London, WC1N 3AR, UK
+                                                                              VERSES, Los Angeles, CA 90067, USA
+
+                                                                                        Sunday 8th March, 2026
+
+                                                                                                Abstract
+                                                      Attractor dynamics are a hallmark of many complex systems, including the brain. Un-
+                                                      derstanding how such self-organizing dynamics emerge from first principles is crucial for
+                                                      advancing our understanding of neuronal computations and the design of artificial intelligence
+                                                      systems. Here we formalize how attractor networks emerge from the free energy principle
+                                                      applied to a universal partitioning of random dynamical systems. Our approach obviates the
+                                                      need for explicitly imposed learning and inference rules and identifies emergent, but efficient
+                                                      and biologically plausible inference and learning dynamics for such self-organizing systems.
+                                                      These result in a collective, multi-level Bayesian active inference process. Attractors on the
+                                                      free energy landscape encode prior beliefs; inference integrates sensory data into posterior
+                                                      beliefs; and learning fine-tunes couplings to minimize long-term surprise. Analytically and
+                                                      via simulations, we establish that the proposed networks favor approximately orthogonalized
+                                                      attractor representations, a consequence of simultaneously optimizing predictive accuracy
+                                                      and model complexity. These attractors efficiently span the input subspace, enhancing
+                                                      generalization and the mutual information between hidden causes and observable effects.
+                                                      Furthermore, while random data presentation leads to symmetric and sparse couplings,
+                                                      sequential data fosters asymmetric couplings and non-equilibrium steady-state dynamics,
+                                                      offering a natural generalization of conventional Boltzmann Machines. Our findings offer
+                                                      a unifying theory of self-organizing attractor networks, providing novel insights for AI and
+                                                      neuroscience.
+
+                                            Keywords attractor networks, free energy principle, active inference, orthogonal representations,
+                                            self-organization
+
+                                                   • Attractor networks are derived from the Free Energy Principle (FEP) applied to a universal parti-
+                                                     tioning of random dynamical systems.
+                                                   • This approach yields emergent, biologically plausible inference and learning dynamics, forming a
+                                                     multi-level Bayesian active inference process.
+                                                   • The networks favor approximately orthogonalized attractor representations, optimizing predictive
+                                                     accuracy and model complexity.
+                                                   • Sequential data presentation leads to asymmetric couplings and non-equilibrium steady-state dynamics,
+                                                     generalizing conventional Boltzmann Machines.
+                                                   • Simulations demonstrate orthogonal basis formation, generalization, sequence learning, scalability
+                                                     and resistance to catastrophic forgetting.
+                                              1
+                                                  Correspondence to: tamas.spisak@uk-essen.de
+Graphical Abstract
+
+
+
+
+1    Introduction
+
+From whirlpools and bird flocks to neuronal and social networks, countless natural systems can be characterized
+by dynamics organized around attractor states [Haken, 1978]. Such systems can be decomposed into a collection
+of - less or more complex - building blocks or “particles” (e.g. water molecules, birds, neurons, or people),
+which are coupled through local interactions. Attractors are an emergent consequence of the collective
+dynamics of the system, arising from these local interactions, without any individual particles exerting global
+control.
+Attractors are a key concept in dynamical systems theory, defined as a set of states in the state space of
+the system to which nearby trajectories converge [Guckenheimer et al., 1984]. Geometrically, the simplest
+attractors are fixed points and limit cycles (representing periodic oscillations). However, the concept extends
+to more complex structures like strange attractors associated with chaotic behavior, as well as phenomena
+arising in stochastic or non-equilibrium settings, such as probability distributions over states (stochastic
+attractors), transient states reflecting past dynamics (ghost attractors or attractor ruins), and trajectories that
+cycle through sequences of unstable states (sequential attractors or heteroclinic cycles). Artificial attractor
+neural networks [Amit, 1989] represent a class of recurrent neural networks specifically designed to leverage
+attractor dynamics. While the specific forms and behaviors of these networks are heavily influenced by the
+chosen inference and learning rules, self-organization is a key feature of all variants, as the stable states
+emerge from the interactions between network elements without explicit external coordination. This property
+makes them particularly relevant as models for self-organizing biological systems, including the brain. It
+is clear that the brain is also a complex attractor network. Attractor dynamics have long been proposed
+to play a significant role in information integration at the circuit level [Freeman, 1987, Amit, 1989, Deco
+and Rolls, 2003, Nartallo-Kaluarachchi et al., 2025] (Tsodyks [1999]) and have become established models
+for canonical brain circuits involved in motor control, sensory amplification, motion integration, evidence
+integration, memory, decision-making, and spatial navigation (see Khona and Fiete [2022] for a review).
+For instance, the activity of head direction cells - neurons that fire in a direction-dependent manner - are
+known to arise from a circular attractor state, produced by a so-called ring attractor network [Zhang, 1996].
+Multi- and metastable attractor dynamics have also been proposed to extend to the meso- and macro-scales
+[Rolls, 2009], “accommodating the coordination of heterogeneous elements” [Kelso, 2012], rendering attractor
+dynamics an overarching computational mechanism across different scales of brain function. The brain, as an
+instance of complex attractor networks, showcases not only the computational capabilities of this network
+architecture but also its ability to emerge and evolve through self-organization.
+When discussing self-organization in attractor networks, we will differentiate two distinct levels. First, we
+can talk about operational self-organization: the capacity of a pre-formed network to settle into attractor
+states during its operation. This however does not encompass the network’s ability to “build itself” – to
+emerge from simple, local interactions without explicit programming or global control, and to adaptively
+evolve its structure and function through learning. This latter level of self-organization is what we will refer
+to as adaptive self-organization. Architectures capable of adaptive self-organization would mirror the nervous
+system’s capacity to not just function as an attractor network, but to become - and remain - one through a
+self-directed process of development and learning. Further, adaptive self-organization would also be a highly
+desirable property for robotics and artificial intelligence systems, not only boosting their robustness and
+
+
+                                                        2
+adaptability by means of continuous learning, but potentially leading to systems that can increase their
+complexity and capabilities organically over time (e.g. developmental robotics). Therefore, characterizing
+adaptive self-organization in attractor networks is vital for advancing our understanding of the brain and for
+creating more autonomous, adaptive, brain-inspired AI systems.
+The Free Energy Principle (FEP) offers a general framework to study self-organization to non-equilibrium
+steady states as Bayesian inference (a.k.a., active inference). The FEP has been pivotal in connecting the
+dynamics of complex self-organizing systems with computational and inferential processes, especially within
+the realms of brain function [Friston et al., 2023, Friston and Ao, 2012, Palacios et al., 2020]. The FEP posits
+that any ‘thing’ - in order to exist for an extended period of time - must maintain conditional independence
+from its environment. This entails a specific sparsely coupled structure of the system, referred to as a
+particular partition, that divides the system into internal, external, and boundary (sensory and active) states
+(see Figure 2A). It can be shown that maintaining this sparse coupling is equivalent to executing an inference
+process, where internal states deduce the causes of sensory inputs by minimizing variational free energy (see
+Friston et al. [2023] or [Friston et al., 2023] for a formal treatment).
+Here, we describe the specific class of adaptive self-organizing attractor networks that emerge directly from
+the FEP, without the need for explicitly imposed learning or inference rules (Figure 1). First, we show that
+a hierarchical formulation of particular partitions - a concept that is applicable to any complex dynamical
+system - can give rise to systems that have the same functional form as well-known artificial attractor network
+architectures. Second, we show that minimizing variational free energy (VFE) with regard to the internal
+states of such systems yields a Boltzmann Machine-like stochastic update mechanism, with continuous-state
+stochastic Hopfield networks being a special case. Third, we show that minimizing VFE with regard to
+the internal blanket or boundary states of the system (couplings) induces a generalized predictive coding-
+based learning process. Crucially, this adaptive process extends beyond simply reinforcing concrete sensory
+patterns; it learns to span the entire subspace of key patterns by establishing approximately-orthogonalized
+attractor representations, which the system can then combine during inference. We use simulations to identify
+the requirements for the emergence of quasi-orthogonal attractors and to illustrate the derived attractor
+networks’ ability to generalize to unseen data. Finally, we highlight that the derived attractor network
+can naturally produce sequence-attractors (if the input data is presented in a clear sequential order) and
+exemplifies its potential to perform continual learning and to overcome catastrophic forgetting by means of
+spontaneous activity. We conclude by discussing testable predictions of our framework, and exploring the
+broader implications of these findings for both natural and artificial intelligence systems.
+
+
+
+
+Figure 1: Overview of the framework. Starting from universal and parsimonious structural assumptions
+(deep particular partition), variational free energy minimization under the Free Energy Principle (FEP)
+gives rise to emergent dynamics at multiple scales: local stochastic inference and learning rules that guide
+the update of internal states and the couplings between them, self-organizing attractor dynamics at the
+macroscale, and — at the computational level — Bayesian inference, approximately orthogonal attractor
+representations of latent external causes, and sequence learning capabilities.
+
+
+2     Main Results
+2.1   Background: particular partitions and the free energy principle
+Our effort to characterize self-organizing attractor networks calls for an individuation of ‘self’ from nonself.
+Particular partitions, a concept that is at the core of the Free Energy Principle (FEP) [Friston et al., 2022,
+2023, Friston and Ao, 2012, Palacios et al., 2020], is a natural way to formalize this individuation. As a toy
+intuition, one can think of a recurrent neural assembly (internal states) interacting with incoming sensory
+drives and outgoing action channels (blanket states), while latent external causes remain hidden. The blanket
+states mediate all interactions, which is exactly the structure needed for inference to be well-defined. A
+particular partition is a partition that divides the states of a system x into a particle or ‘thing’ (s, a, µ) ⊂ x
+and its external states η ⊂ x, based on their sparse coupling:
+
+
+                                                        3
+                                        η̇(τ )      fη (η, s, a)     ωη (τ )
+                                                                        
+                                       ṡ(τ )   fs (η, s, a)   ωs (τ ) 
+                                       ȧ(τ )  = f (s, a, µ) + ω (τ )
+                                                     a                a
+                                       µ̇(τ )       fµ (s, a, µ)    ωµ (τ )
+
+where η, µ, s, and a are the external, internal, sensory, and active states of the particle, respectively. The
+fluctuations ωi , i ∈ (µ, s, a, η) are assumed to be mutually independent. The particular states µ, s, and a are
+coupled to each other with particular flow dependencies; namely, external states can only influence themselves
+and sensory states, while internal states can only influence themselves and active states (see Figure 2A). It can
+be shown that these coupling constraints mean that external and internal paths are statistically independent,
+when conditioned on s and a, often referred to as the Markov blanket [Friston et al., 2022]:
+
+                                                      η ⊥ µ | s, a.                                            (1)
+
+At an intuitive level, considering particular partitioning as a “universal partitioning” means that any persistent
+random dynamical system can be described with (possibly nested) interfaces that separate what is inferred
+from what is inferred about. In this view, Markov blankets are not ad hoc modeling devices, but the minimal
+bookkeeping needed to explain how local interactions can support stable, self-organizing inference across
+scales.
+As shown by Friston et al. [2023], such a particle, in order to persist for an extended period of time, will
+necessarily have to maintain this conditional independence structure, a behavior that is equivalent to an
+inference process in which internal states infer external states through the blanket states (i.e., sensory and
+active states) by minimizing free energy [Friston et al., 2009, Friston, 2010, Friston et al., 2023]:
+
+                                     η ⊥ µ | s, a      ⇒     µ̇ = −∇µ F (s, a, µ)                              (2)
+
+where F (s, a, µ) is the variational free energy (VFE):
+
+                                   F (s, a, µ) = Eqµ (η) [ln qµ (η) − ln p(s, a, η)]                           (3)
+
+with qµ (η) being a variational density over the external states that is parameterized by the internal states
+and p(s, a, η) being the joint probability distribution of the sensory, active and external states, a.k.a. the
+generative model [Friston et al., 2016].
+
+2.2   Deep particular partitions and subparticles
+Particular partitions provide a universal description of complex systems, in the sense that the internal states
+µ behave as if they are inferring the external states under a generative model; i.e., a ‘black box’ inference
+process (or computation), which can be arbitrarily complex. At the same time, the concept of particular
+partitions speaks to a recursive composition of ensembles (of things) at increasingly higher spatiotemporal
+scales [Friston, 2019, Palacios et al., 2020, Clark, 2017], which yields a natural way to resolve the internal
+complexity of µ. Partitioning the “macro-scale” particle µ into multiple, overlapping “micro-scale” subparticles
+{πi }ni=1 - that themselves are particular partitions - we can unfold the complexity of the macro-scale particle
+to an arbitrary degree. As subparticles can be nested arbitrarily deep - yielding a hierarchical generative
+model - we refer to such a partitioning as a deep particular partition.
+As illustrated in Figure 2B, each subparticle πi has internal states σi , and the coupling between any two
+subparticles i and j is mediated by micro-scale boundary states: sensory states sij (representing the sensory
+information in i coming from j) and active states aij (representing the action of i on j). The boundary states
+of subparticles naturally overlap; the sensory state of a subparticle σi is the active state of σj and vice versa,
+i.e. aji = sij and sji = aij . This also means that, at the micro-scale, the internal state of a subparticle
+σi ⊂ µ is part of the external states for another subparticle in σj ⊂ µ. Accordingly, the internal state of a
+subparticle σi is conditionally independent of any other internal states σj with j ̸= i, given the blanket states
+of the subparticles:
+
+                                                    σi ⊥ σj | aij , sij                                        (4)
+
+
+                                                            4
+Figure 2: Deep Particular Partitions.
+A Schematic illustration of a particular partition of a system into internal (µ) and external states (η),
+separated by a Markov blanket consisting of sensory states (s) and active states (a). The tuple (µ, s, a)
+is called a particle. A particle, in order to persist for an extended period of time, will necessarily have to
+maintain its Markov blanket, a behavior that is equivalent to an inference process in which internal states infer
+external states through the blanket states. The resulting self-organization of internal states corresponds to
+perception, while actions link the internal states back to the external states. B The internal states µ ⊂ x can
+be arbitrarily complex. Without loss of generality, we can consider that the macro-scale µ can be decomposed
+into set of overlapping micro-scale subparticles (σi , si , ai , sij , aij ), so that the internal state of subparticle
+σi ⊂ µ can be an external state from the perspective of another subparticle σj ⊂ µ. Some, or all subparticles
+can be connected to the macro-scale external state η, through the macro-scale Markov blanket, giving a
+decomposition of the original boundary states into si ⊂ s and ai ⊂ a. The subparticles are connected to each
+other by the micro-scale boundary states sij and aij . Note that this notation considers the point-of-view of
+the i-th subparticle. Taking the perspective of the j-th subparticle, we can see that sji = aij and aji = sij .
+While the figure depicts the simplest case of two nested partitions, the same scheme can be applied recursively
+to any number of (possibly nested) subparticles and any coupling structure amongst them.
+
+
+Note that this definition embraces sparse couplings across subparticles, as aij and sij may be empty for
+a given j (no direct connection
+                        Sn      between the two subparticles), but we require the subparticles to yield a
+complete coverage of µ: i=1 πi = µ.
+
+2.3   The emergence of attractor neural networks from deep particular partitions
+Next, we establish a prototypical mathematical parametrization for an arbitrary deep particular partition,
+shown on Figure 3, with the aim of demonstrating that such complex, sparsely coupled random dynamical
+systems can give rise to artificial attractor neural networks.
+In our example parametrization, we assume that the internal states of subparticles in a complex particular
+partition are continuous Bernoulli states (also known as a truncated exponential distribution, see Appendix 1
+for details), denoted by σi ∼ CB bi :
+
+                                                    p(σi ) ∝ ebσi                                                  (5)
+
+Here, σi ∈ [−1, +1] ⊂ R, and bi ∈ R represents an a priori bias (e.g. the level of prior log-odds evidence for
+an event) in σi Figure 3. Zero bias represents a flat prior (uniform distribution over [-1,1]), while positive or
+negative biases represent evidence for or against an event, respectively. The above probability is defined up
+to a normalization constant, bi /(2 sinh(bi )). See Appendix 2 for details.
+Note that the assumption of continuous Bernoulli distribution is very parsimonious; it emerges directly from
+FEP through as the constrained maximum entropy solution to a single constraint on mean, plus finite support
+[Ramstead et al., 2023].
+Next, we define the conditional probabilities of the sensory and active states, creating the boundary between
+two subparticles σi and σj : sij |σj ∼ δJij σj and aij |σi ∼ δJji σi , where δ is the Dirac delta function and J is a
+weight matrix. The elements Jij contains the weights of the coupling matrix (see Appendix 3).
+
+
+                                                          5
+Figure 3: Parametrization of subparticles in a deep particular partition.
+The internal state σi of subparticle πi follows a continuous Bernoulli distribution, (a.k.a. a truncated
+exponential distribution supported on the interval [−1, +1] ⊂ R, see Appendix-1, with a prior “bias” bi that
+can be interpreted as a priori log-odds evidence for an event (stemming from a macro-scale sensory input
+si —not shown, or from the internal dynamics of σi itself, e.g. internal sequence dynamics). The state σi is
+coupled to the internal state of another subparticle σj through the micro-scale boundary states sij and aij .
+The boundary states simply apply a deterministic scaling to their respective σ state, with a weight (Jij )
+implemented by a Dirac delta function shifted by Jij . The state σi is influenced by its sensory input si in a
+way that si gets integrated into its internal bias, updating the level of evidence for the represented event.
+
+
+Expressed as PDFs:
+
+                                           p(sij |σj ) = δ(sij − Jij σj )                                    (6)
+                                           p(aij |σi ) = δ(aij − Jji σi )                                    (7)
+
+The choice of this deterministic parametrization means that we introduce the assumption of the subparticles
+being conservative particles, as defined in Friston et al. [2023].
+To close the loop, we define how the internal state σi depends on its sensory input sij . We assume the sensory
+input simply adds to the prior bias σi |sij ∼ CB bi +sij :
+
+                                             p(σi |sij ) ∝ e(bi +sij )σi                                     (8)
+
+With the continuous Bernoulli distribution, this simply means that the sensory evidence sij adds to (or
+subtracts from) the prior belief bi .
+We now write up the direct conditional probability describing σi given σj , marginalizing out the sensory and
+active states:
+
+                                                 Z
+                                  p(σi |σj ) =       p(σi |sij )p(sij |σj ) dsij                             (9)
+                                                 Z
+                                           ∝         e(sij +bi )σi δ(sij − Jij σj )dsij                    (10)
+
+                                           ∝ e(bi +Jij σj )σi                                              (11)
+
+  Note
+  The expected value of p(σi |σj ) is a sigmoid function of σj Appendix 4, specifically the Langevin function.
+  This property allows it to function as an activation function in neural networks, enabling the network to
+  model more complex patterns and decision boundaries.
+
+
+More generally, when sub-particle i receives sensory input from all n − 1 other sub-particles, the combined
+evidence at node i is:
+                                                              X
+                                                 θi = bi +           Jij σj                                (12)
+                                                              j̸=i
+
+
+                                                            6
+The local conditional p(σi |σ\i ) ∝ exp(θi σi ) is a continuous Bernoulli with parameter θi , and its expected
+value is E[σi ] = L(θi ), the Langevin function. This local evidence form is the basis for the inference and
+learning rules derived in the following sections: they follow from VFE minimization at each node using only
+θi , and depend on the full (potentially asymmetric) coupling matrix J . The global consequences of the
+coupling structure — including the stationary distribution and non-equilibrium steady-state dynamics — are
+discussed in section 2.8.
+
+2.4   Inference
+
+So far our derivation relied only on the sparsely coupled structure of the system (deep particular partition),
+but did not utilize the free energy principle itself. We now invoke the FEP to derive how each node updates
+its state. From the perspective of node σi , the local variational free energy is (see eq. (3)):
+
+                                       Fi [qi ] = Eqi [− log p(σi | θi )] − H[qi ]                             (13)
+                                                                               P
+where qi is the variational density over σi , H[qi ] its entropy, and θi = bi + j̸=i Jij σj is the total evidence at
+node i (eq. (12)). For the continuous Bernoulli likelihood, − log p(σi | θi ) = ψ(θi ) − θi σi (up to a constant,
+                        θ
+where ψ(θ) = log 2 sinh
+                     θ    is the log-partition function), giving:
+
+                                        Fi [qi ] = ψ(θi ) − θi Eqi [σi ] − H[qi ]                              (14)
+
+Minimizing Fi over all normalized densities qi supported on [−1, 1] yields (see Appendix 6 for the full
+derivation via accuracy–complexity decomposition):
+
+                                    qi∗ (σi ) ∝ exp(θi σi ) 1[−1,1] (σi ) = p(σi | θi )                        (15)
+
+That is, the optimal variational density is the continuous Bernoulli with parameter θi , recovering the local
+posterior family that can be derived from the constrained maximum entropy construction [Ramstead et al.,
+2023]. The expected value under this optimal posterior gives the inference rule:
+
+                                                                                       
+                                                                           
+                                                               X           
+                                   Eq [σi ] = L(θi ) = L  bi +      Jij σj                                   (16)
+                                                                           
+                                                         |{z}              
+                                                          bias j̸=i        
+                                                                | {z }
+                                                                       weighted input
+                                                        |              {z               }
+                                                                sigmoid (Langevin)
+
+
+This derivation is purely local: it uses only the conditional p(σi | θi ) at each node and does not require
+the global joint distribution (eq. (25)). In the case of symmetric couplings, it reduces to the familiar
+Boltzmann-style update rule of a continuous-state stochastic Hopfield network. The Langevin sigmoid arises
+naturally from the continuous Bernoulli parameterization, extending the standard deterministic gradient
+descent on the energy landscape to a full probabilistic framework (see Appendix 6). The resulting stochastic
+dynamics represents a local approximateP Bayesian inference, where each node balances prior information (bi )
+with evidence from neighboring nodes ( Jij σj ). As we show below, this inherent stochasticity allows the
+network to escape local energy minima — consistent with MCMC methods — thereby enabling macro-scale
+Bayesian inference.
+
+2.5   Learning
+
+At optimum, q would match p, causing the VFE’s derivative to vanish. Learning happens, when there is a
+systematic change in the prior bias bi that counteracts the update process. This can correspond, for instance,
+to an external input (e.g. sensory signal representing increased evidence for an external event), but also as
+the result of the possibly complex internal dynamics of a subparticle (e.g. internal sequence dynamics or
+memory retrieval). In this case, a subparticle can take use of another (slower) process, to decrease local VFE:
+it can change the way its action states are generated; and rely on its vicarious effects on sensory signals.
+
+
+                                                            7
+In our parametrization, this can be achieved by changing the coupling strength Jji corresponding to the
+action states. Of note, while changing Jji corresponds to a change in action-generation at the local level
+of the subparticle (micro-scale), at the macro-scale, it can be considered as a change in the whole system’s
+generative model.
+Using the local VFE from eq. (13) with a point-mass (sample-based) estimate for σi , the reduced objective
+for the coupling gradient is:
+
+                                              Fi (θi ; σi ) = ψ(θi ) − θi σi                                 (17)
+                 P
+where θi = bi + j̸=i Jij σj is the total evidence at node i. A perturbation δJij produces δθi = σj δJij , and
+by the chain rule:
+
+                                        dFi    ∂Fi ∂θi              
+                                             =          = L(θi ) − σi σj                                     (18)
+                                        dJij   ∂θi ∂Jij
+Gradient descent on Fi yields:
+
+                                                                                   X
+                      ∆Jij ∝               σ i σj               −         L(bi +          Jik σk )σj         (19)
+                                           |{z}                                    k̸=i
+                               observed correlation (Hebbian)             |          {z            }
+                                                                    predicted correlation (anti-Hebbian)
+
+
+This learning resembles the family of “Hebbian / anti-Hebbian” or “contrastive” learning rules and it explicitly
+implements predictive coding (akin to prospective configuration [Song et al., 2024, Millidge et al., 2022a]).
+However, as opposed to e.g. contrastive divergence (a common method for training certain types of Boltzmann
+machines, Hinton [2002]), it does not require to contrast longer averages of separate “clamped” (fixed inputs)
+and “free” (free running) phases, but rather uses the instantaneous correlation between presynaptic and
+postsynaptic activation to update the weight, lending a high degree of scalability for this architecture. As
+we demonstrate below with Simulation 1-4, this learning rule converges to symmetric weights (akin to a
+classical stochastic continuous-state Hopfield network), if input data is presented in random order and long
+epochs. At the same time, if data is presented in rapidly changing fixed sequences (Simulation 3), the learning
+rule results in temporal predictive coding and learns asymmetric weights, akin to [Millidge et al., 2024]. As
+discussed above, in this case the symmetric component of J encodes fixed-point attractors and the probability
+flux induced by the antisymmetric component results in sequence dynamics (conservative solenoidal flow),
+without altering the steady state of the system.
+Other key features of this rule are: (i) its resemblance to Sanger’s rule [Sanger, 1989] - an online algorithm for
+principal component analysis - and (ii) the analogy of its anti-Hebbian component to unlearning (“remotion”)
+processes in “dreaming attractor networks” [Hopfield et al., 1983, Plakhov, 1994, Dotsenko and Tirozzi, 1991,
+Fachechi et al., 2019], which serve to eliminate spurious system attractors. Such networks can effectively
+approximate Kanter-Sompolinsky projector neural networks [Personnaz et al., 1985, Kanter and Sompolinsky,
+1987], characterized by orthogonal attractor states and maximal memory capacity. These parallels suggest that
+the derived free energy minimizing learning rule will promote the development of approximately orthogonal
+attractor states. We motivate this theoretically and demonstrate it with simulations in the subsequent
+sections. In biological terms, the first term of eq. (19) corresponds to correlation-dependent potentiation,
+while the second term implements a decorrelating, predictive-error-like correction that counterbalances runaway
+reinforcement. This places the rule in the algorithmic family of Hebbian/anti-Hebbian and homeostatically
+stabilized plasticity motifs, while we do not claim a one-to-one mapping to any single microcircuit mechanism.
+In other words, the derivation is normative (from free-energy minimization), and biological plausibility is
+asserted at the level of local computable updates and observed qualitative motifs.
+
+2.6   Emergence of approximately orthogonal attractors
+Under the FEP, learning not only aims to maximize accuracy but also minimizes complexity (13), leading
+to parsimonious internal generative models (encoded in the weights J and biases b) that offer efficient
+representations of environmental regularities. A generative model is considered more complex (and less
+efficient) if its internal representations, specifically its attractor states σ (µ) - which loosely correspond to
+the modes of p(σ) - are highly correlated or statistically dependent. Such correlations imply redundancy, as
+
+
+                                                            8
+distinct attractors would not be encoding unique, independent features of the input space. Our learning rule
+(eq. (19)) - by minimizing micro-scale VFE - inherently also minimizes the complexity term DKL [q(σi )||p(σi )],
+which regularizes the inferred state q(σi ) to be close to the node’s current prior p(σi ). This not only
+induces sparsity in the coupling matrix, but - as we motivate below - also penalizes overlapping attractor
+representations and favours orthogonal representations. Hebbian learning - in itself - can not implement such
+a behavior; as it simply aims to store the current pattern by strengthening connections between co-active
+nodes. This has to be counter-balanced by the anti-Hebbian term, that subtracts the variance that is already
+explained out by the network’s predictions.
+To illustrate how this dynamic gives rise to efficient, (approximately) orthogonal representations of the
+external states, suppose the network has already learned a pattern s(1) , whose neural representation is the
+attractor σ (1) and associated weights J(1) . When a new pattern s(2) is presented that is correlated with s(1) ,
+                                 (2)                                (1)
+the network’s prediction for σi will be σ̂i = L(bi + k̸=i Jik σk ). Because inference with J(1) converges to
+                                                           P
+
+σ (1) and σ (2) is correlated with σ (1) , the prediction σ̂ will capture variance in σ (2) that is ‘explained’ by σ (1) .
+The learning rule updates the weights based only on the unexplained (residual) component of the variance, the
+prediction error. In other words, σ̂ approximates the projection of σ (2) onto the subspace already spanned by
+σ (1) . Therefore, the weight update primarily strengthens weights corresponding to the component of σ (2) that
+                                                                                 (2)
+is orthogonal to σ (1) . Thus, the learning effectively encodes this residual, σ ⊥ , ensuring that the new attractor
+components being formed tend to be orthogonal to those already established. As we demonstrate in the next
+section with Simulation 1-2, repeated application of this rule during learning progressively decorrelates the
+neural activities associated with different patterns, leading to approximately orthogonal attractor states.
+This process is analogous to online orthogonalization procedures (e.g., Sanger’s rule for PCA [Sanger, 1989]),
+as well as the converge of Plakhov [1994]’s unlearning rule to the projector (or pseudo-inverse) matrix of
+stored patterns [Fachechi et al., 2019]. As a result, free energy minimizing attractor networks yield a powerful
+stochastic approximation of the “projector networks” of Personnaz et al. [1985], Kanter and Sompolinsky
+[1987], which offer maximal memory capacity and retrieval without errors.
+While orthogonality enhances representational efficiency, it raises the question of how the network retrieves the
+original patterns from these (approximately) orthogonalized representations - a key requirement to function as
+associative memory. As discussed next, stochastic dynamics enable the network to address this by sampling
+from a posterior that combines these orthogonal bases.
+
+
+2.7   Stochastic retrieval as macro-scale Bayesian inference
+
+As a consequence of the FEP, the inference process described P above - where each subparticle σi updates
+its state based on local information (its bias bi and input j Jij σj ) - can be seen as a form of micro-scale
+inference, in which the prior - defined by the node’s internal bias, gets updated by the evidence collected
+from the neighboring subparticles to form the posterior. However, as the whole network itself is also a
+particular partition (specifically, a deep one), it must also perform Bayesian inference, at the macro-scale.
+While the above argumentation provides a simple, self-contained proof, the nature of macro-scale inference
+can be elucidated by using the equivalence of the derived attractor network - in the special case of symmetric
+couplings - to Boltzmann machines (without hidden units). Namely, the ability of Boltzmann machines to
+perform macro-scale approximate Bayesian inference through Markov Chain Monte Carlo (MCMC) sampling
+has been well established in the literature [ACKLEY et al., 1985, Hinton, 2002].
+Let us consider the network’s learned weights J (and potentially its baseline biases bbase ) as defining a prior
+distribution over the collective states σ:
+                                            (                               )
+                                              X
+                                                   base    1X
+                                  p(σ) ∝ exp      bi σi +         Jij σi σj                                 (20)
+                                                i
+                                                           2 ij
+
+
+Now, suppose the network receives external input (evidence) s, which manifests as persistent modulations δbi
+to the biases, such that the total bias is bi = bbase
+                                                 i    + δbi . This evidence can be associated with a likelihood
+function:
+                                                                       !
+                                                             X
+                                            p(s|σ) ∝ exp        δbi σi                                      (21)
+                                                                i
+
+
+                                                            9
+According to Bayes’ theorem, the posterior distribution over the network states given the evidence is
+p(σ|s) ∝ p(s|σ)p(σ):
+                                            (                          )
+                                              X         1X
+                                p(σ|s) ∝ exp    bi σi +      Jij σi σj                           (22)
+                                              i
+                                                        2 ij
+
+As expected, this posterior distribution has the same functional form as the network’s equilibrium distribution
+under the influence of the total biases bi . Thus, the stochastic update rule derived from minimizing local VFE
+(eq. (13)) effectively performs Markov Chain Monte Carlo (MCMC) sampling - specifically Gibbs sampling
+- from the joint posterior distribution defined by the current VFE landscape. In the presence of evidence
+s, the network dynamics therefore sample from the posterior distribution p(σ|s). The significance of the
+stochasticity becomes apparent when considering the network’s behavior over time. The time-averaged state
+⟨σ⟩ converges to the expected value under the posterior distribution:
+
+                                                        Z T
+                                                    1
+                                     ⟨σ⟩ = lim                  σ(t)dt ≈ Ep(σ|s) [σ]                           (23)
+                                               T →∞ T       0
+
+
+Noise or stochasticity allows the system to explore the posterior landscape, escaping local minima inherited
+from the prior if they conflict with the evidence, and potentially mixing between multiple attractors that are
+compatible with the evidence. The resulting average activity ⟨σ⟩ thus represents a Bayesian integration of the
+prior knowledge encoded in the weights and the current evidence encoded in the biases. This contrasts sharply
+with deterministic dynamics, which would merely settle into a single (potentially suboptimal) attractor within
+the posterior landscape.
+Furthermore, if the learning process shapes the prior p(σ) to have less redundant (e.g., more orthogonal)
+attractors, this parsimonious structure of the prior naturally contributes to a less redundant posterior
+distribution p(σ|s). When the prior belief structure is efficient and its modes are distinct, the posterior
+modes formed by integrating evidence s are also less likely to be ambiguous or highly overlapping. This leads
+to more robust and interpretable inference, as the network can more clearly distinguish between different
+explanations for the sensory data.
+With this, the loop is closed. The stochastic attractor network emerging from the FEP framework (summarized
+on Figure 4A) naturally implements macro-scale Bayesian inference through its collective sampling dynamics,
+providing a robust mechanism for integrating prior beliefs with incoming sensory evidence — as demonstrated
+concretely on the face recognition task (Figure 7F), where the network recovers face identity from heavily
+corrupted input by combining sensory evidence with attractor-based priors. This reveals the potential for a
+deep recursive application of the Free Energy Principle: the emergent collective behavior of the entire network,
+formed by interacting subparticles each minimizing their local free energy, recapitulates the inferential
+dynamics of a single, macro-scale particle. This recursion could extend to arbitrary depths, giving rise to a
+hierarchy of nested particular partitions and multiple emergent levels of description, each level performing
+Bayesian active inference according to the same fundamental principles.
+
+2.8   Non-equilibrium steady state
+
+We now turn from the local update rules to the global steady-state behaviour of the network. The coupling
+matrix can always be decomposed as J = J † + J − , where J † = 12 (J + J ⊺ ) is symmetric and J − = 12 (J − J ⊺ )
+is antisymmetric. We consider these two components in turn.
+Symmetric couplings and the Boltzmann-like stationary distribution. When the learning rule
+(eq. (19)) is driven by randomly ordered input patterns, it converges to approximately         symmetric weights
+(J ≈ J † ). In this case the pairwise conditionals p(σi |σj ) ∝ exp (bi + Jij σj )σi are symmetric in their coupling
+                                                                                    
+
+terms (Jij = Jji ), and the conditional independence structureQof the Markov blanket states sij , aij [Hipólito
+et al., 2021] allows us to factorise the global joint as p(σ) ∝ i,j p(σi , σj ). Since σi σj = σj σi , one obtains:
+
+                                       X                    X                
+                                              Jij σi σj =            Jij + Jji σi σj                           (24)
+                                       i̸=j                 i<j
+
+
+which, for symmetric J , yields the Boltzmann form:
+
+
+                                                                10
+Figure 4: Free energy minimizing, adaptively self-organizing attractor network
+A Schematic of the network illustrating inference and learning processes. Inference and learning are two
+faces of the same process: minimizing local variational free energy (VFE), leading to dissipative dynamics
+and approximately orthogonal attractors. B A demonstrative simulated example (Simulation 1) of the
+network’s attractors forming an orthogonal basis of the input data. Training can be performed by introducing
+the training data (top left) through the biases of the network. In this example, the input data consists
+of two correlated patterns (Pearson’s r = 0.77). During repeated updates, micro-scale (local, node-level)
+VFE minimization implements a simultaneous learning and inference process, which leads to approximate
+macro-scale (network-level) free energy minimization (bottom graph). The resulting network does not simply
+store the input data as attractors, but it stores approximately orthogonalized varieties of it (top right,
+Pearson’s r = -0.19). C When the trained network is introduced a noisy version of one of the training
+patterns (left), it is internally handled as the Likelihood function, and the network performs irreversible
+Markov-Chain Monte-Carlo (MCMC) sampling of the posterior distribution, given the priors defined by the
+network’s attractors (top right), which can be understood as a retrieval process. D Thanks to its orthogonal
+attractor representation, the network is able to generalize to new patterns - as long as they are sampled from
+the sub-space spanned by the attractors - by combining the quasi-orthogonal attractor states (bottom right)
+by multistable stochastic dynamics during the MCMC sampling.
+
+
+
+
+                                                     11
+                                                (                                      )
+                                                                            †
+                                                    X                X
+                                   p(σ) ∝ exp            bi σ i +          Jij σi σj                        (25)
+                                                     i                ij
+                                                    | {z }           |     {z     }
+                                                 bias term          interaction term
+                                                 |                  {z                 }
+                                                               -ve energy
+
+
+
+with J † = 12 (J + J ⊺ ) (and Jii† = 0). This is the functional form of a stochastic continuous-state Hopfield
+network (a specific type of Boltzmann machine), with regions of high probability density constituting stochastic
+attractors.
+Asymmetric couplings and self-solenoidization. When data arrives in fixed sequences, the learning
+rule additionally develops an antisymmetric component J − . The simple factorisation argument above no
+longer applies, because directed couplings break the symmetry Jij ̸= Jji . Nevertheless, we argue that the
+Boltzmann-like stationary distribution (eq. (25)) is approximately preserved, with solenoidal flows on top.
+The key intuition is that self-orthogonalization provides the missing link. Because VFE-driven learning
+pushes attractor representations toward approximate orthogonality, the antisymmetric coupling component
+J − — which encodes directed transitions between attractors — acts predominantly along the iso-energy
+contours of the landscape defined by J † . Any component of the antisymmetric flow that were to act across
+iso-energy contours would imply shared information between attractors; but precisely this shared information
+is progressively absorbed into the symmetric part J † by the residual (anti-Hebbian) learning rule. In other
+words, the same mechanism that orthogonalizes attractors also ensures that the inter-attractor transition
+flows are approximately tangential to the energy landscape — i.e., approximately solenoidal.
+Under this condition, the network dynamics decompose into two complementary components: (i) Dissipative
+(gradient) flow, driven by J † : descends the free energy landscape, pulling states toward attractor basins.
+Responsible for pattern storage and retrieval, and (ii) Solenoidal (rotational) flow, driven by J − : generates
+probability currents along iso-energy contours — analogous to a ball circling within a bowl rather than simply
+rolling to the bottom.
+Thus the dynamics induced by J † and J − will approximately map to the generalized Helmholtz-Ao decompo-
+sition of the network dynamics (see also Appendix 5 and [Friston et al., 2023, Ao, 2004, Xing, 2010]). Because
+the solenoidal term transports probability mass along iso-energy surfaces without altering the potential,
+the stationary distribution retains the Boltzmann-like form of eq. (25), while detailed balance is broken by
+persistent probability currents.
+The practical consequences are twofold. First, directed sequence dynamics (heteroclinic chains) emerge
+naturally from the solenoidal component, enabling the network to traverse stored patterns in a learned
+temporal order — as demonstrated in Simulation 3. Second, the non-reversible currents can transport
+probability mass between attractor basins without climbing energy barriers, potentially accelerating mixing
+relative to the reversible (symmetric-coupling) case [Ao, 2004, Xing, 2010]. A rigorous characterization of
+the relationship between attractor orthogonality and the divergence-free condition — and of the resulting
+mixing-time improvements — is an important direction for future work. As a first step, in the present work
+we perform simulations (Simulation 3) to confirm that the key phenomenology — stable attractors with
+directed inter-attractor transitions — is robustly observed.
+
+
+3    In silico demonstrations
+
+We illustrate key features of the proposed framework with computer simulations. All simulations are based
+on python implementations of the network, available at https://github.com/tspisak/fep-attractor-networks.
+Simulations 1-4 are based on an implementation that favors clarity over efficiency - it implements both σ and
+boundary states as separate classes, and is not optimized for performance. Simulations 5 and 6 are based on
+a more efficient vectorized implementation, to allow scaling up to more complex data. In all simulations,
+we train an attractor network with the derived rules in a continuous-learning fashion (i.e simultaneously
+performing inference and learning). To be able to control the precision during inference and the speed of
+learning, we introduce two coefficients for eq.-s (16) and (19), the inverse temperature parameter iT and a
+learning-rate α.
+
+
+                                                          12
+3.1   Simulation 1: demonstration of orthogonal basis formation, macro-scale free energy
+      minimization and Bayesian inference
+
+In Simulation 1, we construct a network with 25 subparticles (representing 5x5 images) and train it with 2
+different, but correlated images (Pearson’s r = 0.77, see Figure 4B), with a precision of 0.1 and a learning
+rate of 0.01 (see next simulation for parameter-dependence). The training phase consisted of 500 epochs, each
+showing a randomly selected pattern from the training set through 10 time steps of simultaneous inference
+and learning. As shown on Figure 4B, local, micro-scale VFE minimization performed by the simultaneous
+inference and learning process leads to a macro-scale free energy minimization. Next, we obtained the attractor
+states corresponding to the input patterns by means of deterministic inference (updating with the expected
+value, instead of sampling from the CB distribution, akin to a vanilla Hopfield network). As predicted by
+theory, the attractor states were not simple replicas of the input patterns, but approximately orthogonalized
+versions of them, displaying a correlation coefficient of r=-0.19. Next, we demonstrated that the network
+(with stochastic inference) is not only able to retrieve the input patterns from noisy variations of them
+(fig. Figure 4C), but also generalizes well to reconstruct a third pattern, by combining its quasi-orthogonal
+attractor states (fig. Figure 4D). Note that this simulation only aimed to demonstrate some of the key
+features of the proposed architecture, and a comprehensive evaluation of the network’s performance, and its
+dependency on the parameters is presented in the next simulation.
+
+3.2   Simulation 2: systematic evaluation of learning regimes
+
+In Simulation 2, we trained the network on 10 images of handwritten digits (a single example of each of
+the 10 digits from 0 to 9, 8x8 pixels each, as distributed with scikit-learn, see Figure 5C, upper row). The
+remaining 1787 images were unseen in the training phase and only used as a test set, in a one-shot learning
+fashion. The network was trained with a fixed learning rate of 0.01, through 5000 epochs, each consisting of
+10 time steps with the same, randomly selected pattern from the training set of 10 images, while performing
+simultaneous inference and learning. We evaluated the effect of the inverse temperature parameter iT (i.e.
+precision) and the strength of evidence during training, i.e. the magnitude of the bias changes δbi . The
+precision parameter iT was varied with 19 values between 0.01 and 1, and the strength of evidence during
+training varied by changing the magnitude of the biases from 1 to 20, with increments of 1. The training
+patterns were first preprocessed by squaring the pixel values (to enhance contrast) and normalizing each
+image to have zero mean and unit variance. We performed a total of 380 runs, varying these parameters in a
+grid-search fashion. All cases were evaluated in terms of (i) stochastic (Bayesian) pattern retrieval from noisy
+variations of the training images; and (ii) one-shot generalization to reconstruct unseen handwritten digit
+examples. In both types of evaluation, the network was presented a noisy variant of a randomly selected
+(training or test) image through its biases. The noisy patterns were generated by adding Gaussian noise with
+a standard deviation of 1 to the pixel values of the training images (see “Examples” in Figure 5B C and D).
+The network’s response was obtained by averaging 100 time steps of stochastic inference. The performance
+was quantified as the improvement in the proportion of variance in the original target pattern (without
+noise) explained by the network’s response, compared to that explained by the noisy input pattern. Both for
+retrieval and generalization, this approach was repeated 100 times, with a randomly sampled image from
+the training (10 images) and test set (1787 images), respectively. The median improvement across these 100
+repetition was used as the primary performance metric. The retrieval and 1-shot generalization performance
+of models trained with different iT and α parameters is shown on Figure 5A, top row). We found that, while
+retrieval of a noisy training pattern was best with precision values between 0.1 and 0.5, generalization to
+new data preferred lower precision during learning (iT <0.1), i.e. more stochastic dynamics. Furthermore, in
+all simulation cases, we seeded the networks with the original test patterns and obtained the corresponding
+attractor states, by means of deterministic inference. We then computed the pairwise correlation and dot
+product between the attractor states. The dot product was converted to degrees. Orthogonality was finally
+quantified by the mean correlation among attractors and the mean squared deviation from orthogonality (in
+degrees). To establish a reference value, the same procedure was also repeated for the original patterns (after
+preprocessing), which displayed a mean correlation a 29.94 degree mean squared deviation from orthogonality.
+Attractor orthogonality and the number of attractors for each simulation case is shown on Figure 5A, bottom
+row. We found that depending on the temperature of the network during the learning phase, the network
+can be in characteristic regimes of high, low and balanced complexity (Figure 5B). With low temperature
+(high precision), high model complexity is allowed (“accuracy pumping”) and attractors will tend to exactly
+match the training data Figure 5C. On the contrary, high temperatures (low precision) result in a single
+fixed point attractor and reduced recognition performance Figure 5E. However, such networks were found to
+be able to generalize to new data, suggesting the existence of “soft attractors” (e.g. saddle-like structures)
+
+
+                                                      13
+that are not local minima on the free energy landscape, yet affect the steady-state posterior distribution
+in a non-negligible way (especially with longer mixing-times). A balanced regime Figure 5D can be found
+with intermediate training precision, where both recognition and 1-shot generalization performance are high
+(similarly to the “standard regime” of prospective configuration [Millidge et al., 2022a]). This is exactly
+the regime that promotes attractor orthogonalization, crucial for efficient representation and generalization.
+The complexity restrictions on these models cause them to re-use the same attractors to represent different
+patterns (see e.g. the single attractor belonging to the digits 5 and 7 in the example on panel D), which
+eventually leads to less attractors, with each having more explanatory power, and being approximately
+orthogonal to each other. Panels C-E on Figure 5 provide examples of network behavior on a handwritten
+digit task across different regimes, including (i) training data (same in all cases); (ii) fixed-point attractors
+(obtained with deterministic update); (iii) attractor-orthogonality (polar histogram of the pairwise angles
+between attractors); (iv) retrieval and 1-shot generalization performance (R2 between the noisy input pattern
+and the network output after 100 time steps, for 100 randomly sampled patterns) and (v) illustrative example
+cases from the recognition and 1-shot generalization tests (noisy input, network output and true pattern).
+
+3.3   Simulation 3: demonstration of sequence learning capabilities
+In Simulation 3, we demonstrate the sequence learning capabilities of the proposed architecture. We
+trained the network on a sequence of 3 handwritten digits (1,2,3), with a fixed order of presentation
+(1 → 2 → 3 → 1 → 2 → 3 → ...), for 2000 epochs, each epoch consisting of a single step (Figure 6A). This
+rapid presentation of the input sequence forced the network to model the current attractor from the network’s
+response to the previous pattern, i.e. to establish sequence attractors. The inverse temperature was set to 1
+and the learning rate to 0.001 (in a supplementary analysis, we saw a considerable robustness of our results
+to the choice of these parameters). As shown on Figure 6B, this training approach led to an asymmetric
+coupling matrix (it was very close to symmetric in all previous simulations). Based on eq.-s (24) and (25), we
+decomposed the coupling matrix into a symmetric and antisymmetric part (Figure 6C and D). Retrieving the
+fixed-point attractors for the symmetric component of the coupling matrix, we obtained three attractors,
+corresponding to the three digits (Figure 6C and E). The antisymmetric component of the coupling matrix, on
+the other hand, was encoding the sequence dynamics. Indeed, letting the network freely run (with zero bias)
+resulted in a spontaneously emerging sequence of variations of the digits 1 → 2 → 3 → 1 → 2 → 3 → 1 → ...,
+reflecting the original training order (Figure 6F). This illustrates that the proposed framework is capable of
+producing and handling asymmetric couplings, and thereby learn sequences.
+
+3.4   Simulation 4: demonstration of resistance to catastrophic forgetting
+In Simulation 4, we took a network trained in Simulation 2 with inverse temperature 0.17 and evidence
+level 11 (the same network that is illustrated on Figure 5D) and let it run for 50000 epochs (the same
+number of epochs as the training phase), with unchanged learning rate, but zero bias. We expected that,
+as the network spontaneously traverses around its attractors, it reinforces them and prevents them from
+being fully “forgotten”. Indeed, as shown on Figure 8, the network’s coupling matrix (panel A), retrieval
+performance (panel B) and one-shot generalization performance (panel C) were all very similar to the original
+network’s performance. However, the network’s attractor states were not exactly the same as the original
+ones, indicating that some of the original attractors become “soft attractors” (or “ghost attractors”), which
+do not represent explicit local minima on the free energy landscape anymore, but their influence on the
+network’s dynamics is still significant (see Simulation 4).
+
+3.5   Simulation 5: scalability profile and memory capacity
+In addition to the reference Python implementation used for Simulations 1–4, we provide a vectorized
+JAX implementation that applies the same inference and learning rules (eq. (16), (19)) in a parallelized,
+full-network update schedule (Simulation 5). This parallel schedule is computationally more efficient but
+not strictly equivalent to the sequential node-by-node updates of the reference implementation; we validate
+that both implementations produce qualitatively similar coupling matrices and retention behavior on shared
+test cases. The JAX implementation is used exclusively for runtime profiling (this simulation) and for the
+larger-scale face recognition experiment (Simulation 6).
+We profile the computational scaling of the JAX implementation across network sizes ranging from N = 64
+to N = 50000 nodes, i.e. up to 2.5 billion total parameters (Simulation 5; see also Appendix 9 for detailed
+benchmarks). Training and inference runtimes scale as expected from the analytical O(N 2 ) per-step complexity
+(Figure 7A). Throughput remains high for moderate network sizes and drops off as expected for very large
+
+
+                                                       14
+Figure 5: Adaptive self-organization and generalization in a free-energy minimizing attractor
+network.
+Simulation results from training the network on a single, handwritten example for each of the 10 digits (0-9),
+with variations in training precision and evidence strength to explore different learning regimes (Simulation 2).
+A: Performance landscapes as a function of inference temperature (inverse precision) and training evidence
+strength (bias magnitude). Retrieval performance (reconstructing noisy variants of the 10 training patterns,
+top left), one-shot generalization (reconstructing a noisy variants of unseen handwritten digits, top right),
+attractor orthogonality (mean squared angular difference from 90° indicating higher orthogonality for lower
+values, bottom left), and the number of attractors (when initialized with the 10 training patterns, bottom
+right) are shown. Optimal regions (contoured) highlight parameter settings that yield good generalization
+and highly orthogonal attractors. Contours in the top left and top right highlight the most efficient parameter
+settings for retrieval and generalization, respectively. Both contours are overlaid on the two bottom plots. B:
+Conceptual illustration of training regimes. With low temperature (high precision) high model complexity is
+allowed (“accuracy pumping”) and attractors will tend to exactly match the training data. On the contrary,
+high temperatures (low precision) result in a single fixed point attractor and reduced recognition performance.
+However, such networks will be able to generalize to new data, suggesting the existence of “soft attractors”
+(e.g. saddle-like structures) that are not local minima on the free energy landscape, yet affect the steady-state
+posterior distribution in a non-negligible way (especially with longer mixing-times).
+
+                                                       15
+Figure 5: (continued) A balanced regime can be found with intermediate precision during training, where
+both recognition and generalization performance are high. This is exactly the regime that promotes attractor
+orthogonalization, crucial for efficient representation and generalization. The complexity restrictions on
+these models cause them to re-use the same attractors to represent different patterns (see e.g. the single
+attractor belonging to the digits 5 and 7 in the example on panel D), which eventually leads to approximate
+orthogonality. Panels C-E provide examples of network behavior on a handwritten digit task across different
+regimes, including (i) training data (same in all cases); (ii) fixed-point attractors (obtained with deterministic
+update); (iii) attractor-orthogonality (polar histogram of the pairwise angles between attractors); (iv) retrieval
+and 1-shot generalization performance (R2 between the noisy input pattern and the network output after
+100 time steps, for 100 randomly sampled patterns) and (v) illustrative example cases from the recognition
+and 1-shot generalization tests (noisy input, network output and true pattern). C: High complexity:
+Attractors are sharp and similar to training data; good recognition, limited generalization. D: Balanced
+complexity (orthogonalization): Attractors are distinct and quasi-orthogonal, enabling strong recognition
+and generalization from noisy inputs. The balanced regime clearly demonstrates the network’s ability to
+form an orthogonal basis, facilitating effective generalization as predicted by the free-energy minimization
+framework. E: Low complexity: There is only a single fixed-point attractor. Recognition performance is
+lower, but generalization remains considerable.
+
+
+
+
+Figure 6: Sequential Dynamics in Free-Energy Minimizing Attractor Networks.
+
+Simulation results (Simulation 3) demonstrate the framework’s ability to learn temporal sequences. Ordered
+training data leads to asymmetric coupling matrices, where the symmetric component establishes fixed-point
+attractors for individual patterns, and the antisymmetric component encodes the transitional dynamics,
+enabling spontaneous sequence recall. A: Ordered training data (digits 1, 2, 3) presented sequentially to the
+network. B: The emergent coupling matrix, displaying asymmetry as a consequence of sequential training. C:
+The symmetric component of the coupling matrix. This part is responsible for creating stable, fixed-point
+attractors for each pattern in the sequence. D: The antisymmetric component of the coupling matrix. This
+part drives the directional transitions between the attractors, encoding the learned order. E: The sequence
+attractors themselves – fixed-point attractors (digits 1, 2, 3) derived from the symmetric coupling component.
+F: Example of spontaneous network activity with zero external bias, showcasing the autonomous recall of the
+learned sequence (1 → 2 → 3 → ...) driven by the interplay of symmetric and antisymmetric couplings.
+
+
+
+
+                                                       16
+N (Figure 7B). We further probe memory capacity by varying the number of stored patterns K at fixed
+network size, measuring both retention (deterministic attractor recovery, Figure 7C) and noisy reconstruction
+quality (Figure 7D). Consistent with the analytical prediction that emergent orthogonalization approaches
+the projector-network capacity limit, the network maintains high-fidelity attractors and effective Bayesian
+retrieval for pattern counts substantially exceeding the classical Hopfield bound of ∼ 0.14N .
+
+3.6    Simulation 6: face recognition with the Olivetti faces dataset
+To move beyond the small-scale handwritten digit experiments, we test the framework on the Olivetti faces
+dataset — a benchmark originally created at AT&T Laboratories Cambridge, consisting of 400 grayscale face
+images (40 subjects, 10 images each) at full resolution 64 × 64 pixels (N = 4096 nodes, i.e. more than 16
+million parameters to optimize), using the full set of 400 patterns (Simulation 6). Training confirms that
+the key phenomena observed on handwritten digits — emergent orthogonalization and attractor formation
+— transfer to this substantially higher-dimensional and more naturalistic stimulus domain (Figure 7E). We
+further evaluate stochastic reconstruction from heavily corrupted input. As shown on Figure 7F, the network
+performs Bayesian inference by integrating the noisy sensory evidence (likelihood) with its learned prior beliefs
+(attractors), with the balance controlled by the precision (inverse temperature) parameter. Notably, the input
+noise level used here is severe enough that the corrupted faces approach the limit of human recognizability, yet
+the network reliably recovers the identity of the original face, illustrating the power of Bayesian reconstruction
+via attractor-based priors.
+
+4     Discussion
+The crucial role of attractor dynamics in elucidating brain function mandates a foundational question: what
+types of attractor networks arise naturally from the first principles of self-organization, as articulated by
+the Free Energy Principle [Friston et al., 2023, Friston, 2010]? Here we aimed to address this question. We
+demonstrated mathematically, by recourse to a prototypical parametrization, that the ensuing networks
+generally manifest as non-equilibrium steady-state (NESS) systems [Xing, 2010, Ao, 2004] that have a
+stationary state probability distribution governed by the symmetric component of their synaptic efficacies,
+conforming to a Boltzmann-like form [Amit, 1989, Hochreiter and Schmidhuber, 1997]. This renders the
+resulting self-organizing attractor networks a generalization of canonical, single-layer Boltzmann machines
+or stochastic Hopfield networks [Hinton, 2002, Hopfield, 1982], but distinguished by their capacity for
+asymmetric coupling and continuous-valued neuronal states (see Appendix 8 for a detailed comparison).
+The main assumptions underpinning this derivation - namely, the existence of a (deep) particular partition
+and the ensuing imperative to minimize variational free energy - are not merely parsimonious, but arguably
+fundamental for any random dynamical system that maintains its integrity despite a changing environment
+[Friston et al., 2023].
+Our formulation reveals that the minimization of variational free energy at the micro-scale, i.e., by individual
+network nodes (“subparticles”), gives rise to a dual dynamic within the active inference framework [Friston
+et al., 2009]. Firstly, it prescribes Bayesian update dynamics for the individual network nodes, homologous to
+the stochastic relaxation observed in Boltzmann architectures (e.g. stochastic Hopfield networks), with high
+neuroscientific relevance, especially for coarse-grained brain networks, where activity across brain regions have
+been reported to “flow” following a similar rule [Cole et al., 2016, Sanchez-Romero et al., 2023, Cole, 2024].
+Secondly, it engenders a distinctive coupling plasticity - a local, incremental learning rule - that continuously
+adjusts coupling weights to preserve low free energy in anticipation of future sensory encounters, effectively
+implementing action selection in the active inference sense [Friston et al., 2016].
+The learning rule itself displays a high neurobiological plausibility, as it resembles both generalized Hebbian-
+anti-Hebbian learning [Földiák, 1990, Sanger, 1989] and predictive coding [Rao and Ballard, 1999, Millidge et al.,
+2022b, 2024]. The neurobiological mechanisms of synaptic plasticity are best understood and experimentally
+most thoroughly studied at the level of single neurons, although efforts exist to scale up these findings to the
+level of populations of neurons (e.g., Robinson [2011], Huang and Lin [2023]). We believe that our framework
+holds promise for a better understanding of plasticity mechanisms independent of scale, as it mathematically
+survives arbitrary coarse-graining under the deep particular partition formalism. At the single-neuron limit,
+the rule reduces to a discrete-time binary Hebbian/anti-Hebbian update (formally recovered when precision
+→ ∞), closely resembling spike-timing–dependent plasticity (STDP) [Roberts and Leen, 2010, Vignoud et al.,
+2024], where correlated activity produces long-term potentiation (LTP ~ Hebbian term) and predicted activity
+leads to long-term depression (LTD ~ anti-Hebbian term; see e.g. Caporale and Dan [2008]). Thereby, our
+framework connects STDP to predictive coding [Saponati and Vinck, 2023], in a sense that presynaptic
+
+
+                                                        17
+Figure 7: Scaling, memory capacity, and face recognition.
+
+A–B: Runtime (A) and throughput (B) of the JAX implementation as a function of network size N , confirming
+the expected O(N 2 ) per-step scaling (Simulation 5). C: Deterministic retrieval quality (retention correlation,
+blue) as a function of the number of stored patterns K, compared with the maximum inter-pattern self-
+correlation baseline (red). The network maintains high-fidelity attractors well beyond the classical Hopfield
+capacity bound. D: Stochastic (Bayesian) reconstruction: correlation of the reconstructed output with the
+original pattern (blue) versus correlation of the noisy input with the original (red), as a function of K. The
+network consistently improves upon the noisy input, demonstrating effective Bayesian retrieval. E: Training
+the network on the Olivetti faces dataset (64 × 64, N = 4096, 400 patterns; Simulation 6). Random examples
+of training faces (left) and the corresponding learned attractors (right), confirming attractor formation and
+orthogonalization in this naturalistic domain. F: Bayesian face reconstruction from noisy input. Columns
+show reconstructions at increasing likelihood precision (left to right, top row) and increasing prior precision
+(top to bottom). Even when the input is degraded to a level approaching the limit of human face recognition,
+the network recovers the original identity by combining sensory evidence with its learned attractor-based
+priors.
+
+
+
+
+activity that is reliably predicted by postsynaptic firing is eventually depressed.
+Moreover, the subtractive predictive error term, together with the bounded nature of the continuous Bernoulli
+distribution, prevent runaway potentiation, functioning analogously to homeostatic and metaplasticity
+mechanisms [Turrigiano, 2011, Zenke et al., 2017]. Also similarly to biologically inspired models of plasticity,
+the FEP-based learning rule efficiently implements sequence learning, by contrasting the current correlations
+of inputs with that predicted by the network’s generative model in the previous time step. In sum, rather
+than fitting neuron-level data post hoc, our framework predicts that Hebbian/anti-Hebbian-style updates
+should appear at all descriptive scales, with differences only in implementation, not mathematical structure.
+The biological literature at synaptic, circuit, and network levels is largely consistent with this multiscale
+interpretation.
+Furthermore, by capitalizing on its natural tendency to spontaneously (stochastically) revisit its attractors,
+the network is able to mitigate catastrophic forgetting [Aleixo et al., 2023] - the tendency of current deep
+learning architectures to lose old representations when learning new ones. This phenomenon may serve
+as a model for the spontaneous fluctuations observed during resting state brain activity (also related to
+“day-dreaming”) and shows promise for leveraging similar mechanisms in artificial systems.
+
+
+                                                      18
+Figure 8: Demonstration of resistance to catastrophic forgetting via spontaneous activity.
+
+Simulation results (Simulation 4) illustrate the network’s ability to mitigate catastrophic forgetting. When
+allowing the network to “free-run” (e.g. with zero external bias) while performing continuous weight
+adjustment, spontaneous activity reinforces existing attractors, largely preserving learned knowledge even in
+the absence of the repeated presentation of previous training patterns. A: Coupling matrices. The top panel
+displays the coupling matrix immediately after training on digit patterns (50000 steps with bias corresponding
+to digits, the same simulation case as on Figure 5D). The bottom panel shows the coupling matrix after
+an additional 50000 steps of free-running (zero bias, but active weight adjustment), indicating that the
+learned structure is largely maintained. B: Recognition performance. This panel compares the R2 values for
+reconstructing noisy versions of the trained digit patterns. It shows the similarity between the noisy input
+and the true pattern (left boxplots in each sub-panel) versus the similarity between the network’s output and
+the true pattern (right boxplots in each sub-panel). Performance is robustly maintained after the free-running
+phase (bottom) compared to immediately after training (top). C: One-shot generalization performance. This
+panel shows the R2 values for reconstructing noisy versions of unseen handwritten digit patterns (after seeing
+only a single example per digit). Similar to recognition, the network’s ability to generalize to novel inputs is
+well-preserved after the free-running phase (bottom) compared to immediately after training (top).
+
+
+
+Importantly, we show that in our adaptive self-organizing network architecture, micro-scale free energy
+minimization manifests in (approximate) macro-scale free energy minimization - as expected from the fact
+that the macro-scale network itself is also a particular partition. This entails that the network performs
+Bayesian inference not only locally in its nodes, but also on the macro-scale - a result well known from
+the literature on Boltzmann machines and also spiking neural networks [ACKLEY et al., 1985, Hinton,
+2002, Buesing et al., 2011]. Our work extends these previous results with a holistic view: the free energy
+landscape, sculpted by the coupling efficacies and manifested as the repertoire of (soft-) attractors, encodes
+the system’s prior beliefs. Sensory inputs or internal computations, presented as perturbations to the internal
+biases of network nodes, constitute the likelihood, while the network’s inherent stochastic dynamics explore
+the posterior landscape via a process akin to irreversible Markov Chain Monte Carlo sampling [Gelman
+and Rubin, 1992]. The stochastic nature of these dynamics is not a mere epiphenomenon; it empowers the
+network to engage in active inference by dynamically traversing trajectories in its state space that blend
+the contributions of disparate attractor basins [Friston et al., 2009]. Consequently, for inputs that, while
+novel, reside within the subspace spanned by the learned attractors, the network generalizes by engaging
+in oscillatory activity - a characteristic signature of neural computations in the brain. While the notion
+of oscillations being generated by multistable stochastic dynamics has been previously proposed by e.g.
+[Liu et al., 2022], the quasi-orthogonal basis spanned by the attractors of the system could render such a
+mechanism especially effective.
+The FEP formalisation via deep particular partitions intrinsically accommodates multiple, hierarchically
+nested levels of description. One may arbitrarily coarse-grain the system by combining subparticles, ultimately
+arriving at a simple particular partition. Drawing upon concepts such as the center manifold theorem [Wagner,
+1989], it is posited that rapid, fine-grained dynamics at lower descriptive levels converge to lower-dimensional
+manifolds, upon which the system evolves via slower processes at coarser scales. This inherent separation
+
+
+                                                      19
+of temporal scales offers a compelling paradigm for understanding large-scale brain dynamics, where fast
+neuronal activity underwrites slower cognitive processes through hierarchical active inference [Man et al.,
+2018]. Indeed, empirical investigations have provided manifold evidence for attractor dynamics in large-scale
+brain activity [Rolls, 2009, Kelso, 2012, Haken, 1978, Breakspear, 2017, Deco and Jirsa, 2012, Kelso, 2012,
+Gosti et al., 2024, Chen et al., 2025].
+A pivotal outcome of the FEP-driven simultaneous learning and inference process is the propensity of the
+network to establish approximately orthogonal attractor states. We argue that this remarkable property is not
+simply a side effect; it is an unavoidable result of minimizing the variational free energy of conservative particles
+[Friston et al., 2023]; which entails minimizing model complexity and maximizing accuracy simultaneously
+or - equivalently - minimize redundancy via a maximization of mutual information. This key characteristic
+makes free energy minimizing attractor networks naturally approximate one of the most efficient attractor
+network architectures, the projector neural networks articulated by Kanter and Sompolinsky [Kanter and
+Sompolinsky, 1987, Personnaz et al., 1985]. We propose the approximate orthogonality of attractor states
+as a signature of free energy minimizing attractor networks, potentially detectable in natural systems (e.g.
+neural data). Moreover, self-orthogonalization plays a structural role beyond efficient representation: by
+ensuring that attractors are approximately independent, it guarantees that the antisymmetric coupling
+component — which encodes sequence dynamics and solenoidal flows — acts approximately tangentially to
+the energy landscape defined by the symmetric part. This clean separation may point to a deeper formal
+correspondence between the two components of the coupling matrix and the two complementary objectives
+of the FEP: variational free energy minimization (perception, encoded in the symmetric component) and
+expected free energy minimization (action and planning, encoded in the antisymmetric component) — an
+important direction for future theoretical work. There is initial evidence from large-scale brain network data
+pointing into this direction. Using an attractor network model very similar to the herein presented - a recent
+paper has demonstrated that standard resting-state networks (RSNs) are manifestations of brain attractors
+that can be reconstructed from fMRI brain connectivity data [Englert et al., 2026]. Most importantly, these
+empirically reconstructed large-scale brain attractors were found to be largely orthogonal - the key feature
+of the self-organizing attractor networks described here. Future research needs to carefully check if these
+large-scale brain attractors, and the computing abilities that come with them, are truly a direct signature
+of an underlying FEP-based attractor network and how they are connected with related frameworks of
+“dreaming neural networks” [Hopfield et al., 1983, Plakhov, 1994, Dotsenko and Tirozzi, 1991, Fachechi et al.,
+2019], implementing similar mechanisms.
+Besides neuroscientific relevance, our work has also manifold implications for artificial intelligence research.
+Relative to classical single-layer Hopfield/Boltzmann formulations, the present framework preserves attractor-
+based inference while extending the model class along several dimensions that emerge from the FEP derivation
+rather than being imposed by design. These extensions — and their analytical consequences — are elaborated
+in Appendix 8. Two points deserve emphasis here. First, the learning rule (eq. (19)) eliminates the costly
+free-running phase of contrastive divergence, reducing per-step learning complexity from O(N 2 k) to O(N 2 )
+(Appendix 8). Second, in the presence of asymmetric couplings the solenoidal component of the dynamics
+induces non-reversible probability currents that accelerate mixing relative to symmetric Boltzmann machines
+— a mechanism formally analogous to continuous normalizing flows [Tong et al., 2023] and known to reduce
+mixing times [Ao, 2004, Xing, 2010] (Appendix 8). The relationship to hierarchical predictive coding —
+which minimizes the same objective in a bidirectional hierarchy rather than a fully recurrent topology — is
+discussed in Appendix 8 and constitutes a promising direction for future work. In general, there is growing
+interest in predictive coding-based neural network architectures - akin to the architecture presented herein.
+Recent studies have demonstrated that such approaches can not only reproduce backpropagation as an edge
+case [Millidge et al., 2022b], but scale efficiently - even for cyclic graphs - and can outperform traditional
+backpropagation approaches in several scenarios [Salvatori et al., 2023, 2021]. Furthermore, in our framework
+- in line with recent formulations of predictive coding for deep learning [Millidge et al., 2022b] - learning
+and inference are not disparate processes but rather two complementary facets of variational free energy
+minimization through active inference. As we demonstrated with simulations, this unification naturally
+endows the proposed architecture with characteristics of continual or lifelong learning - the ability for machines
+to gather data and fine-tune its internal representation continuously during functioning [Wang et al., 2023a].
+A natural question is whether the structural properties of FEP-based self-orthogonalizing attractor networks
+confer robustness to adversarial perturbations, noise corruption, or data poisoning — topics of growing
+importance in secure and trustworthy AI [Goodfellow et al., 2014]. Within the Bayesian framing of the
+network (eq. (22)), adversarial perturbations and data poisoning correspond to attacks at two distinct levels:
+sensory perturbations (including adversarial examples) enter as erroneous bias shifts δs during inference
+
+
+
+                                                         20
+(corrupted likelihood), whereas data poisoning distorts the learned prior p(σ), i.e. the attractor landscape
+itself. The inverse-temperature parameter iT mediates the balance between these levels: high precision
+deepens attractor basins relative to any bias perturbation, so the magnitude of δs becomes small compared
+to the basin depth; low precision, conversely, flattens the prior landscape and lets the actual sensory evidence
+dominate, mitigating the effect of distorted or poisoned attractors. This precision-mediated trade-off is a
+direct consequence of the Bayesian posterior structure and has no counterpart in deterministic Hopfield-
+type retrieval (see Appendix 7 for formal analysis). Furthermore, our framework naturally distinguishes
+between two types of redundancy. Self-orthogonalization minimizes representational redundancy (attractor
+overlap) which maximizes inter-attractor distances and thereby the “adversarial budget”, i.e. the minimum
+perturbation energy needed to push the network across a basin boundary (Appendix 7). On the other hand,
+the network maintains high structural redundancy: the M < N attractors are supported by O(N 2 ) distributed
+weights, so bounded weight corruption or node failure has limited impact on the energy landscape.
+Stochasticity - a key property of our network - is also very relevant from the perspective of artificial intelligence
+research. In our framework, noise is not an enemy; it implements the precision of inference, allowing it to
+strike a balance between stability and flexibility. This inherent stochasticity yields an exceptional fit with
+energy-efficient neuromorphic architectures [Schuman et al., 2022], particularly within the emerging field of
+thermodynamic computing [Melanson et al., 2025] and memristive technologies, where attractor networks
+— including memristive Hopfield networks, multi-wing and multi-butterfly hyperchaotic constructions, and
+memristive cellular-neural-network-like circuits [Lin et al., 2023, Wang et al., 2023b, Lin et al., 2024, Deng
+et al., 2025, Diao et al., 2024] have recently been studied. A promising direction is to ask whether local
+VFE-minimizing updates can be instantiated in thermodynamic and memristive substrates, combining
+the principled inferential interpretation of the FEP framework with the hardware efficiency and rich non-
+equilibrium dynamics in these emerging paradigms.
+As inference in the proposed network involves spontaneously “replaying” its own attractors (or sequences
+thereof), even if no external input is introduced (zero bias), the proposed architecture may naturally overcome
+catastrophic forgetting, a highly problematic phenomenon in artificial neural networks where a model abruptly
+loses previously acquired knowledge when learning new information, especially during sequential training on
+multiple tasks. To examine how these properties of FEP-based attractor networks scale to more complex,
+diverse, and extended learning scenarios is a promising direction for further studies.
+Finally, the recursive nature of our FEP-based formal framework provides a principled way to build hierarchical,
+multi-scale attractor networks which may be exploited for boosting the efficiency, robustness and explainability
+of large-scale AI systems. To realize its full potential in artificial intelligence research, the proposed architecture
+must be scalable to large real-world datasets. The per-step computational cost of the FEP-based attractor
+network is O(N 2 ) for a full-network update — dominated by one matrix-vector product for inference and one
+outer-product update for learning — with no free-running phase required (unlike contrastive divergence in
+Boltzmann machines; see Appendix 8). This complexity is confirmed empirically: runtime scales quadratically
+with N across network sizes from 64 to 4096 nodes (Simulation 5, Appendix 9). Memory capacity benefits
+from emergent orthogonalization, which progressively approaches the projector-network limit of Kmax = N ,
+substantially exceeding the classical Hopfield bound of ∼ 0.14N (Simulation 5). We further validated the
+framework on the Olivetti faces dataset at full resolution (N = 4096, 400 patterns; Simulation 6), confirming
+that orthogonalization, Bayesian retrieval, and generalization transfer to more naturalistic stimuli.
+In general, the proposed architecture inherently embodies all the previously discussed advantages of active
+inference and predictive coding [Millidge et al., 2022b, Salvatori et al., 2023]. At every level of description
+the network dynamically balances accuracy and complexity and may naturally exhibit “information-seeking”
+behaviors (curiosity) [Friston et al., 2017]. Furthermore, the architecture may offer a foundation for exploring
+long-term philosophical implications of the qualities of active inference associated with sentience [Pezzulo
+et al., 2024].
+Despite the promise, several limitations in terms of scalability warrant explicit acknowledgment. First, the
+O(N 2 ) memory footprint for the full weight matrix becomes prohibitive for very large N ; sparse or factored
+weight parametrizations and multi-scale training approaches are a natural extension to boost scalability,
+but remain unexplored in the present work. Second, while solenoidal flows from asymmetric couplings are
+expected to accelerate mixing (Appendix 8), a rigorous characterization of mixing times as a function of
+network size, pattern count, and coupling asymmetry is needed. Third, the current demonstrations use
+stationary or slowly varying input statistics; performance under strongly non-stationary, streaming real-world
+data — where the input distribution shifts faster than the learning rate can track — remains an open question.
+Fourth, all simulations use a single-layer architecture; scaling to hierarchical (multi-layer) deep particular
+
+
+
+                                                          21
+partitions, which could support richer generative models and more efficient scaling, is an important theoretical
+and practical frontier. Finally, a key computational bottleneck is the sequential dependency of the Gibbs-like
+node-by-node inference and learning: each node’s new state depends on the current states of all others,
+preventing straightforward parallelization. Our synchronous (full-network) JAX implementation sidesteps
+this by applying all updates simultaneously, yielding favorable empirical scaling up to N = 4096 (Simulation
+5); however, this parallel schedule is an approximation whose fidelity at very large N warrants further study.
+To efficiently scale the framework towards billions of neurons two complementary directions appear most
+promising: (i) dedicated hardware — in particular thermodynamic computers [Melanson et al., 2025] and
+memristive substrates [Lin et al., 2023, 2024] — which can natively implement the local, stochastic update
+rules without the sequential bottleneck; and (ii) structured weight sparsity, which would reduce the per-step
+cost from O(N 2 ) to O(N s) (where s ≪ N is the average number of non-zero connections per node) and
+simultaneously lower the memory footprint.
+In conclusion, by deriving the emergence of adaptive, self-organizing - and self-orthogonalizing - attractor
+networks from the FEP, this work offers a principled synthesis of self-organization, Bayesian inference, and
+neural computation. The intrinsic tendency towards attractor orthogonalization, the multi-scale dynamics,
+and the continuous learning capabilities present a compelling, theoretically grounded outlook for better
+understanding natural intelligence and inspiring artificial counterparts through the lens of active inference.
+
+
+5     Manuscript Information
+
+5.1     Data availability
+
+Simulation 1 and 5 is based on simulated data. Simulation 2-4 is based on the ‘handwritten digits’ dataset avail-
+able in scikit-learn (https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_digits.html),
+and      originally    published       as    part    of    the     thesis     of   C.     Kaynak.,         1995:
+https://archive.ics.uci.edu/dataset/80/optical+recognition+of+handwritten+digits.            Simulation 6 is
+based on the Olivetti faces dataset, originally created at AT&T Laboratories Cambridge and obtained
+via scikit-learn: https://scikit-learn.org/0.19/datasets/olivetti_faces.html. The code for all simulations is
+available at https://github.com/pni-lab/fep-attractor-network. The repository contains a reference Python
+implementation of FEP-based self-orthogonalizing attractor networks (optimized for conceptual clarity); a
+separate scaling benchmark notebook uses a parallelized JAX update for runtime profiling only.
+
+5.1.1    Interactive manuscript
+https://pni-lab.github.io/fep-attractor-network/
+
+5.1.2    Simulation source code
+      • Simulation 1: https://pni-lab.github.io/fep-attractor-network/simulation-demo
+      • Simulation 2: https://pni-lab.github.io/fep-attractor-network/simulation-digits
+      • Simulation 3: https://pni-lab.github.io/fep-attractor-network/simulation-digits-continuous-sequence
+      • Simulation    4:     https://pni-lab.github.io/fep-attractor-network/simulation-digits-catastrophic-
+        forgetting
+      • Simulation 5: https://pni-lab.github.io/fep-attractor-network/simulation-scaling-jax
+      • Simulation 6: https://pni-lab.github.io/fep-attractor-network/simulation-faces-jax
+
+
+
+
+Acknowledgments
+
+TS was supported by funding from the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation)
+— Project-ID 422744262 - TRR 289; and Project-ID 316803389 – SFB 1280 “Extinction Learning”. KF is
+supported by funding from the Wellcome Trust (Ref: 226793/Z/22/Z).
+
+
+                                                       22
+References
+Hermann Haken. Synergetics: An Introduction Nonequilibrium Phase Transitions and Self-Organization in
+  Physics, Chemistry and Biology. Springer Berlin Heidelberg, 1978. ISBN 9783642964695. doi:10.1007/978-
+  3-642-96469-5. URL http://dx.doi.org/10.1007/978-3-642-96469-5.
+John Guckenheimer, Philip Holmes, and M. Slemrod. Nonlinear Oscillations Dynamical Systems, and
+  Bifurcations of Vector Fields. Journal of Applied Mechanics, 51(4):947–947, 12 1984. ISSN 1528-9036.
+  doi:10.1115/1.3167759. URL http://dx.doi.org/10.1115/1.3167759.
+Daniel J. Amit. Modeling Brain Function: The World of Attractor Neural Networks. Cambridge University
+  Press, 9 1989. ISBN 9780511623257. doi:10.1017/cbo9780511623257. URL http://dx.doi.org/10.1017/
+  CBO9780511623257.
+W. J. Freeman. Simulation of chaotic EEG patterns with a dynamic model of the olfactory system.
+  Biological Cybernetics, 56(2–3):139–150, 5 1987. ISSN 1432-0770. doi:10.1007/bf00317988. URL http:
+  //dx.doi.org/10.1007/BF00317988.
+Gustavo Deco and Edmund T. Rolls. Attention and working memory: a dynamical model of neuronal activity
+  in the prefrontal cortex. European Journal of Neuroscience, 18(8):2374–2390, 10 2003. ISSN 1460-9568.
+  doi:10.1046/j.1460-9568.2003.02956.x. URL http://dx.doi.org/10.1046/j.1460-9568.2003.02956.x.
+Ramón Nartallo-Kaluarachchi, Morten L. Kringelbach, Gustavo Deco, Renaud Lambiotte, and Alain Goriely.
+  Nonequilibrium physics of brain dynamics, 2025. URL https://arxiv.org/abs/2504.12188.
+Misha Tsodyks. Attractor neural network models of spatial maps in hippocampus. Hippocampus, 9(4):
+  481–489, 1999. ISSN 1098-1063. doi:10.1002/(sici)1098-1063(1999)9:4<481::aid-hipo14>3.0.co;2-s. URL
+  http://dx.doi.org/10.1002/(SICI)1098-1063(1999)9:4%3C481::AID-HIPO14%3E3.0.CO;2-S.
+Mikail Khona and Ila R. Fiete. Attractor and integrator networks in the brain. Nature Reviews Neuroscience,
+  23(12):744–766, 11 2022. ISSN 1471-0048. doi:10.1038/s41583-022-00642-0. URL http://dx.doi.org/10.
+  1038/s41583-022-00642-0.
+K Zhang. Representation of spatial orientation by the intrinsic dynamics of the head-direction cell ensemble:
+  a theory. The Journal of Neuroscience, 16(6):2112–2126, 3 1996. ISSN 1529-2401. doi:10.1523/jneurosci.16-
+  06-02112.1996. URL http://dx.doi.org/10.1523/JNEUROSCI.16-06-02112.1996.
+Edmund T. Rolls. Attractor networks. WIREs Cognitive Science, 1(1):119–134, 12 2009. ISSN 1939-5086.
+  doi:10.1002/wcs.1. URL http://dx.doi.org/10.1002/wcs.1.
+J. A. Scott Kelso. Multistability and metastability: understanding dynamic coordination in the brain.
+  Philosophical Transactions of the Royal Society B: Biological Sciences, 367(1591):906–918, 4 2012. ISSN
+  1471-2970. doi:10.1098/rstb.2011.0351. URL http://dx.doi.org/10.1098/rstb.2011.0351.
+Karl Friston, Lancelot Da Costa, Noor Sajid, Conor Heins, Kai Ueltzhöffer, Grigorios A. Pavliotis, and
+  Thomas Parr. The free energy principle made simpler but not too simple. Physics Reports, 1024:1–29, 6
+  2023. ISSN 0370-1573. doi:10.1016/j.physrep.2023.07.001. URL http://dx.doi.org/10.1016/j.physrep.
+  2023.07.001.
+Karl Friston and Ping Ao. Free Energy, Value, and Attractors. Computational and Mathematical Methods
+  in Medicine, 2012:1–27, 2012. ISSN 1748-6718. doi:10.1155/2012/937860. URL http://dx.doi.org/10.
+  1155/2012/937860.
+Ensor Rafael Palacios, Adeel Razi, Thomas Parr, Michael Kirchhoff, and Karl Friston. On Markov blankets
+  and hierarchical self-organisation. Journal of Theoretical Biology, 486:110089, 2 2020. ISSN 0022-5193.
+  doi:10.1016/j.jtbi.2019.110089. URL http://dx.doi.org/10.1016/j.jtbi.2019.110089.
+Karl Friston, Lancelot Da Costa, Dalton A. R. Sakthivadivel, Conor Heins, Grigorios A. Pavliotis, Maxwell
+  Ramstead, and Thomas Parr. Path integrals, particular kinds, and strange things. arXiv, 2022.
+  doi:10.48550/ARXIV.2210.12761. URL https://arxiv.org/abs/2210.12761.
+Karl J. Friston, Jean Daunizeau, and Stefan J. Kiebel. Reinforcement Learning or Active Inference? PLoS
+  ONE, 4(7):e6421, 7 2009. ISSN 1932-6203. doi:10.1371/journal.pone.0006421. URL http://dx.doi.org/
+  10.1371/journal.pone.0006421.
+Karl Friston. The free-energy principle: a unified brain theory? Nature Reviews Neuroscience, 11(2):127–138,
+  1 2010. ISSN 1471-0048. doi:10.1038/nrn2787. URL http://dx.doi.org/10.1038/nrn2787.
+Karl Friston, Thomas FitzGerald, Francesco Rigoli, Philipp Schwartenbeck, John ODoherty, and Giovanni
+  Pezzulo. Active inference and learning. Neuroscience &amp; Biobehavioral Reviews, 68:862–879, 9 2016.
+  ISSN 0149-7634. doi:10.1016/j.neubiorev.2016.06.022. URL http://dx.doi.org/10.1016/j.neubiorev.
+  2016.06.022.
+
+
+                                                    23
+Karl Friston. A free energy principle for a particular physics, 2019. URL https://arxiv.org/abs/1906.
+ 10184.
+Andy Clark. How to Knit Your Own Markov Blanket:. Philosophy and Predictive Processing, 2017.
+ doi:10.15502/9783958573031. URL http://www.predictive-mind.net/DOI?isbn=9783958573031.
+Maxwell J. D. Ramstead, Dalton A. R. Sakthivadivel, Conor Heins, Magnus Koudahl, Beren Millidge,
+ Lancelot Da Costa, Brennan Klein, and Karl J. Friston. On Bayesian mechanics: a physics of and
+ by beliefs. Interface Focus, 13(3), 4 2023. ISSN 2042-8901. doi:10.1098/rsfs.2022.0029. URL http:
+ //dx.doi.org/10.1098/rsfs.2022.0029.
+Yuhang Song, Beren Millidge, Tommaso Salvatori, Thomas Lukasiewicz, Zhenghua Xu, and Rafal Bogacz.
+  Inferring neural activity before plasticity as a foundation for learning beyond backpropagation. Nature
+ Neuroscience, 27(2):348–358, 1 2024. ISSN 1546-1726. doi:10.1038/s41593-023-01514-1. URL http:
+ //dx.doi.org/10.1038/s41593-023-01514-1.
+Beren Millidge, Yuhang Song, Tommaso Salvatori, Thomas Lukasiewicz, and Rafal Bogacz. A Theoretical
+  Framework for Inference and Learning in Predictive Coding Networks, 2022a. URL https://arxiv.org/
+  abs/2207.12316.
+Geoffrey E. Hinton. Training Products of Experts by Minimizing Contrastive Divergence. Neural Computation,
+ 14(8):1771–1800, 8 2002. ISSN 1530-888X. doi:10.1162/089976602760128018. URL http://dx.doi.org/
+ 10.1162/089976602760128018.
+Beren Millidge, Mufeng Tang, Mahyar Osanlouy, Nicol S. Harper, and Rafal Bogacz. Predictive coding
+  networks for temporal prediction. PLOS Computational Biology, 20(4):e1011183, 4 2024. ISSN 1553-7358.
+  doi:10.1371/journal.pcbi.1011183. URL http://dx.doi.org/10.1371/journal.pcbi.1011183.
+Terence D. Sanger. Optimal unsupervised learning in a single-layer linear feedforward neural network.
+  Neural Networks, 2(6):459–473, 1 1989. ISSN 0893-6080. doi:10.1016/0893-6080(89)90044-0. URL http:
+  //dx.doi.org/10.1016/0893-6080(89)90044-0.
+J. J. Hopfield, D. I. Feinstein, and R. G. Palmer. ‘Unlearning’ has a stabilizing effect in collective memories.
+  Nature, 304(5922):158–159, 7 1983. ISSN 1476-4687. doi:10.1038/304158a0. URL http://dx.doi.org/10.
+   1038/304158a0.
+A.Yu. Plakhov. The converging unlearning algorithm for the Hopfield neural network: optimal strategy. In
+  Proceedings of the 12th IAPR International Conference on Pattern Recognition (Cat. No.94CH3440-5),
+  volume 2 of ICPR-94, pages 104–106. IEEE Comput. Soc. Press, 1994. doi:10.1109/icpr.1994.576884. URL
+  http://dx.doi.org/10.1109/ICPR.1994.576884.
+V S Dotsenko and B Tirozzi. Replica symmetry breaking in neural networks with modified pseudo-inverse
+  interactions. Journal of Physics A: Mathematical and General, 24(21):5163–5180, 11 1991. ISSN 1361-6447.
+  doi:10.1088/0305-4470/24/21/026. URL http://dx.doi.org/10.1088/0305-4470/24/21/026.
+Alberto Fachechi, Elena Agliari, and Adriano Barra. Dreaming neural networks: Forgetting spuri-
+  ous memories and reinforcing pure ones. Neural Networks, 112:24–40, 4 2019. ISSN 0893-6080.
+  doi:10.1016/j.neunet.2019.01.006. URL http://dx.doi.org/10.1016/j.neunet.2019.01.006.
+L. Personnaz, I. Guyon, and G. Dreyfus. Information storage and retrieval in spin-glass like neural networks.
+  Journal de Physique Lettres, 46(8):359–365, 1985. ISSN 0302-072X. doi:10.1051/jphyslet:01985004608035900.
+  URL http://dx.doi.org/10.1051/jphyslet:01985004608035900.
+I. Kanter and H. Sompolinsky. Associative recall of memory without errors. Physical Review A, 35(1):380–392,
+   1 1987. ISSN 0556-2791. doi:10.1103/physreva.35.380. URL http://dx.doi.org/10.1103/physreva.35.
+   380.
+D ACKLEY, G HINTON, and T SEJNOWSKI. A learning algorithm for boltzmann machines. Cognitive
+  Science, 9(1):147–169, 3 1985. ISSN 0364-0213. doi:10.1016/s0364-0213(85)80012-4. URL http://dx.doi.
+  org/10.1016/S0364-0213(85)80012-4.
+Inês Hipólito, Maxwell J.D. Ramstead, Laura Convertino, Anjali Bhat, Karl Friston, and Thomas Parr. Markov
+  blankets in the brain. Neuroscience &amp; Biobehavioral Reviews, 125:88–97, 6 2021. ISSN 0149-7634.
+  doi:10.1016/j.neubiorev.2021.02.003. URL http://dx.doi.org/10.1016/j.neubiorev.2021.02.003.
+P Ao. Potential in stochastic differential equations: novel construction. Journal of Physics A: Mathematical
+  and General, 37(3):L25–L30, 1 2004. ISSN 1361-6447. doi:10.1088/0305-4470/37/3/l01. URL http:
+  //dx.doi.org/10.1088/0305-4470/37/3/L01.
+
+
+                                                      24
+Jianhua Xing. Mapping between dissipative and Hamiltonian systems. Journal of Physics A: Mathematical
+  and Theoretical, 43(37):375003, 7 2010. ISSN 1751-8121. doi:10.1088/1751-8113/43/37/375003. URL
+  http://dx.doi.org/10.1088/1751-8113/43/37/375003.
+Sepp Hochreiter and Jürgen Schmidhuber. Long Short-Term Memory. Neural Computation, 9(8):1735–1780,
+  11 1997. ISSN 1530-888X. doi:10.1162/neco.1997.9.8.1735. URL http://dx.doi.org/10.1162/neco.
+  1997.9.8.1735.
+J J Hopfield. Neural networks and physical systems with emergent collective computational abili-
+  ties. Proceedings of the National Academy of Sciences, 79(8):2554–2558, 4 1982. ISSN 1091-6490.
+  doi:10.1073/pnas.79.8.2554. URL http://dx.doi.org/10.1073/pnas.79.8.2554.
+Michael W Cole, Takuya Ito, Danielle S Bassett, and Douglas H Schultz. Activity flow over resting-state
+ networks shapes cognitive task activations. Nature Neuroscience, 19(12):1718–1726, 10 2016. ISSN
+ 1546-1726. doi:10.1038/nn.4406. URL http://dx.doi.org/10.1038/nn.4406.
+Ruben Sanchez-Romero, Takuya Ito, Ravi D. Mill, Stephen José Hanson, and Michael W. Cole. Causally
+ informed activity flow models provide mechanistic insight into network-generated cognitive activations.
+ NeuroImage, 278:120300, 9 2023. ISSN 1053-8119. doi:10.1016/j.neuroimage.2023.120300. URL http:
+ //dx.doi.org/10.1016/j.neuroimage.2023.120300.
+Michael W. Cole. The explanatory power of activity flow models of brain function, 2024. URL https:
+ //arxiv.org/abs/2402.02191.
+P. Földiák. Forming sparse representations by local anti-Hebbian learning. Biological Cybernetics, 64(2):165–
+  170, 12 1990. ISSN 1432-0770. doi:10.1007/bf02331346. URL http://dx.doi.org/10.1007/BF02331346.
+Rajesh P. N. Rao and Dana H. Ballard. Predictive coding in the visual cortex: a functional interpretation
+ of some extra-classical receptive-field effects. Nature Neuroscience, 2(1):79–87, 1 1999. ISSN 1546-1726.
+ doi:10.1038/4580. URL http://dx.doi.org/10.1038/4580.
+Beren Millidge, Tommaso Salvatori, Yuhang Song, Rafal Bogacz, and Thomas Lukasiewicz. Predictive Coding:
+  Towards a Future of Deep Learning beyond Backpropagation?, 2022b. URL https://arxiv.org/abs/
+  2202.09467.
+P.A. Robinson. Neural field theory of synaptic plasticity. Journal of Theoretical Biology, 285(1):156–163, 9 2011.
+  ISSN 0022-5193. doi:10.1016/j.jtbi.2011.06.023. URL http://dx.doi.org/10.1016/j.jtbi.2011.06.023.
+Chih-Hsu Huang and Chou-Ching K. Lin. New biophysical rate-based modeling of long-term plasticity in
+ mean-field neuronal population models. Computers in Biology and Medicine, 163:107213, 9 2023. ISSN
+ 0010-4825. doi:10.1016/j.compbiomed.2023.107213. URL http://dx.doi.org/10.1016/j.compbiomed.
+ 2023.107213.
+Patrick D. Roberts and Todd K. Leen. Anti-Hebbian Spike-Timing-Dependent Plasticity and Adap-
+  tive Sensory Processing. Frontiers in Computational Neuroscience, 4, 2010. ISSN 1662-5188.
+  doi:10.3389/fncom.2010.00156. URL http://dx.doi.org/10.3389/fncom.2010.00156.
+Gaëtan Vignoud, Laurent Venance, and Jonathan D. Touboul. Anti-Hebbian plasticity drives sequence learning
+ in striatum. Communications Biology, 7(1), 5 2024. ISSN 2399-3642. doi:10.1038/s42003-024-06203-8. URL
+ http://dx.doi.org/10.1038/s42003-024-06203-8.
+Natalia Caporale and Yang Dan. Spike Timing–Dependent Plasticity: A Hebbian Learning Rule. Annual
+ Review of Neuroscience, 31(1):25–46, 7 2008. ISSN 1545-4126. doi:10.1146/annurev.neuro.31.060407.125639.
+ URL http://dx.doi.org/10.1146/annurev.neuro.31.060407.125639.
+Matteo Saponati and Martin Vinck. Sequence anticipation and spike-timing-dependent plasticity emerge from
+ a predictive learning rule. Nature Communications, 14(1), 8 2023. ISSN 2041-1723. doi:10.1038/s41467-
+ 023-40651-w. URL http://dx.doi.org/10.1038/s41467-023-40651-w.
+G. Turrigiano. Homeostatic Synaptic Plasticity: Local and Global Mechanisms for Stabilizing Neuronal
+  Function. Cold Spring Harbor Perspectives in Biology, 4(1):a005736–a005736, 11 2011. ISSN 1943-0264.
+  doi:10.1101/cshperspect.a005736. URL http://dx.doi.org/10.1101/cshperspect.a005736.
+Friedemann Zenke, Wulfram Gerstner, and Surya Ganguli. The temporal paradox of Hebbian learning
+  and homeostatic plasticity. Current Opinion in Neurobiology, 43:166–176, 4 2017. ISSN 0959-4388.
+  doi:10.1016/j.conb.2017.03.015. URL http://dx.doi.org/10.1016/j.conb.2017.03.015.
+Everton L. Aleixo, Juan G. Colonna, Marco Cristo, and Everlandio Fernandes. Catastrophic Forgetting in
+  Deep Learning: A Comprehensive Taxonomy, 2023. URL https://arxiv.org/abs/2312.10549.
+
+
+                                                       25
+Lars Buesing, Johannes Bill, Bernhard Nessler, and Wolfgang Maass. Neural Dynamics as Sampling: A Model
+  for Stochastic Computation in Recurrent Networks of Spiking Neurons. PLoS Computational Biology, 7
+  (11):e1002211, 11 2011. ISSN 1553-7358. doi:10.1371/journal.pcbi.1002211. URL http://dx.doi.org/10.
+  1371/journal.pcbi.1002211.
+Andrew Gelman and Donald B. Rubin. Inference from Iterative Simulation Using Multiple Sequences.
+ Statistical Science, 7(4), 11 1992. ISSN 0883-4237. doi:10.1214/ss/1177011136. URL http://dx.doi.org/
+ 10.1214/ss/1177011136.
+Zilu Liu, Fang Han, and Qingyun Wang. A review of computational models for gamma oscillation dynamics:
+  from spiking neurons to neural masses. Nonlinear Dynamics, 108(3):1849–1866, 3 2022. ISSN 1573-269X.
+  doi:10.1007/s11071-022-07298-6. URL http://dx.doi.org/10.1007/s11071-022-07298-6.
+David H. Wagner. The Existence and Behavior of Viscous Structure for Plane Detonation Waves. SIAM
+ Journal on Mathematical Analysis, 20(5):1035–1054, 9 1989. ISSN 1095-7154. doi:10.1137/0520069. URL
+ http://dx.doi.org/10.1137/0520069.
+Kenneth K.C. Man, Esther W. Chan, Patrick Ip, David Coghill, Emily Simonoff, Phyllis K.L. Chan,
+ Wallis C.Y. Lau, Martijn J. Schuemie, Miriam C.J.M. Sturkenboom, and Ian C.K. Wong. Prenatal
+ antidepressant exposure and the risk of attention-deficit hyperactivity disorder in children: A systematic
+ review and meta-analysis. Neuroscience &amp; Biobehavioral Reviews, 86:1–11, 3 2018. ISSN 0149-7634.
+ doi:10.1016/j.neubiorev.2017.12.007. URL http://dx.doi.org/10.1016/j.neubiorev.2017.12.007.
+Michael Breakspear. Dynamic models of large-scale brain activity. Nature Neuroscience, 20(3):340–352, 2
+ 2017. ISSN 1546-1726. doi:10.1038/nn.4497. URL http://dx.doi.org/10.1038/nn.4497.
+Gustavo Deco and Viktor K. Jirsa. Ongoing Cortical Activity at Rest: Criticality, Multistability,
+ and Ghost Attractors. The Journal of Neuroscience, 32(10):3366–3375, 3 2012. ISSN 1529-2401.
+ doi:10.1523/jneurosci.2523-11.2012. URL http://dx.doi.org/10.1523/JNEUROSCI.2523-11.2012.
+Giorgio Gosti, Edoardo Milanetti, Viola Folli, Francesco de Pasquale, Marco Leonetti, Maurizio Corbetta, Gian-
+  carlo Ruocco, and Stefania Della Penna. A recurrent Hopfield network for estimating meso-scale effective con-
+  nectivity in MEG. Neural Networks, 170:72–93, 2 2024. ISSN 0893-6080. doi:10.1016/j.neunet.2023.11.027.
+  URL http://dx.doi.org/10.1016/j.neunet.2023.11.027.
+Ruiqi Chen, Matthew Singh, Todd S. Braver, and ShiNung Ching. Dynamical models reveal anatomically
+ reliable attractor landscapes embedded in resting-state brain networks. Imaging Neuroscience, 3, 2025.
+ ISSN 2837-6056. doi:10.1162/imag_a_00442. URL http://dx.doi.org/10.1162/imag_a_00442.
+Robert Englert, Balint Kincses, Raviteja Kotikalapudi, Giuseppe Gallitto, Jialin Li, Kevin Hoff-
+ schlag, Choong-Wan Woo, Tor D Wager, Dagmar Timmann, Ulrike Bingel, and Tamas Spisak.
+ Functional Connectivity-based Attractor Dynamics in Rest, Task, and Disease. eLife, 3 2026.
+ doi:https://doi.org/10.7554/eLife.98725.3. URL https://elifesciences.org/articles/98725.
+Alexander Tong, Kilian Fatras, Nikolay Malkin, Guillaume Huguet, Yanlei Zhang, Jarrid Rector-Brooks,
+  Guy Wolf, and Yoshua Bengio. Improving and generalizing flow-based generative models with minibatch
+  optimal transport, 2023. URL https://arxiv.org/abs/2302.00482.
+Tommaso Salvatori, Ankur Mali, Christopher L. Buckley, Thomas Lukasiewicz, Rajesh P. N. Rao, Karl
+  Friston, and Alexander Ororbia. A Survey on Brain-Inspired Deep Learning via Predictive Coding, 2023.
+  URL https://arxiv.org/abs/2308.07870.
+Tommaso Salvatori, Yuhang Song, Yujian Hong, Simon Frieder, Lei Sha, Zhenghua Xu, Rafal Bogacz, and
+  Thomas Lukasiewicz. Associative Memories via Predictive Coding, 2021. URL https://arxiv.org/abs/
+  2109.08063.
+Liyuan Wang, Xingxing Zhang, Hang Su, and Jun Zhu. A Comprehensive Survey of Continual Learning:
+  Theory, Method and Application, 2023a. URL https://arxiv.org/abs/2302.00487.
+Ian J. Goodfellow, Jonathon Shlens, and Christian Szegedy. Explaining and Harnessing Adversarial Examples,
+  2014. URL https://arxiv.org/abs/1412.6572.
+Catherine D. Schuman, Shruti R. Kulkarni, Maryam Parsa, J. Parker Mitchell, Prasanna Date, and Bill Kay.
+  Opportunities for neuromorphic computing algorithms and applications. Nature Computational Science, 2
+ (1):10–19, 1 2022. ISSN 2662-8457. doi:10.1038/s43588-021-00184-y. URL http://dx.doi.org/10.1038/
+  s43588-021-00184-y.
+Denis Melanson, Mohammad Abu Khater, Maxwell Aifer, Kaelan Donatella, Max Hunter Gordon, Thomas
+ Ahle, Gavin Crooks, Antonio J. Martinez, Faris Sbahi, and Patrick J. Coles. Thermodynamic computing
+
+
+                                                      26
+  system for AI applications. Nature Communications, 16(1), 4 2025. ISSN 2041-1723. doi:10.1038/s41467-
+  025-59011-x. URL http://dx.doi.org/10.1038/s41467-025-59011-x.
+Hairong Lin, Chunhua Wang, Fei Yu, Jingru Sun, Sichun Du, Zekun Deng, and Quanli Deng. A Review of
+  Chaotic Systems Based on Memristive Hopfield Neural Networks. Mathematics, 11(6):1369, 3 2023. ISSN
+  2227-7390. doi:10.3390/math11061369. URL http://dx.doi.org/10.3390/math11061369.
+Miao Wang, Jun Mou, Lei Qin, and Hadi Jahanshahi. A memristor-coupled heterogeneous discrete neural
+  networks with infinite multi-structure hyperchaotic attractors. The European Physical Journal Plus, 138
+  (12), 12 2023b. ISSN 2190-5444. doi:10.1140/epjp/s13360-023-04772-x. URL http://dx.doi.org/10.
+  1140/epjp/s13360-023-04772-x.
+Hairong Lin, Xiaoheng Deng, Fei Yu, and Yichuang Sun. Grid Multibutterfly Memristive Neural Network
+  With Three Memristive Systems: Modeling, Dynamic Analysis, and Application in Police IoT. IEEE
+  Internet of Things Journal, 11(18):29878–29889, 9 2024. ISSN 2372-2541. doi:10.1109/jiot.2024.3409373.
+  URL http://dx.doi.org/10.1109/JIOT.2024.3409373.
+Quanli Deng, Chunhua Wang, Yichuang Sun, and Gang Yang. Memristive multi-wing chaotic hopfield neural
+  network for LiDAR data security. Nonlinear Dynamics, 113(13):17161–17176, 2 2025. ISSN 1573-269X.
+  doi:10.1007/s11071-025-10982-y. URL http://dx.doi.org/10.1007/s11071-025-10982-y.
+Yifeng Diao, Shufeng Huang, Linqing Huang, Xiaoming Xiong, Jian Yang, and Shuting Cai. Generating any
+  number of multi-butterfly chaotic attractors via a novel memristor with only one internal function. Chaos,
+  Solitons &amp; Fractals, 188:115526, 11 2024. ISSN 0960-0779. doi:10.1016/j.chaos.2024.115526. URL
+  http://dx.doi.org/10.1016/j.chaos.2024.115526.
+Karl J. Friston, Marco Lin, Christopher D. Frith, Giovanni Pezzulo, J. Allan Hobson, and Sasha Ondobaka.
+  Active Inference, Curiosity and Insight. Neural Computation, 29(10):2633–2683, 10 2017. ISSN 1530-888X.
+  doi:10.1162/neco_a_00999. URL http://dx.doi.org/10.1162/neco_a_00999.
+Giovanni Pezzulo, Thomas Parr, and Karl Friston. Active inference as a theory of sentient behavior.
+  Biological Psychology, 186:108741, 2 2024. ISSN 0301-0511. doi:10.1016/j.biopsycho.2023.108741. URL
+  http://dx.doi.org/10.1016/j.biopsycho.2023.108741.
+
+
+
+
+                                                    27
+Appendix
+Library imports for inline code.
+
+import numpy as np
+import seaborn as sns
+from matplotlib import pyplot as plt
+import scipy.integrate as integrate
+
+sns.set(style="white")
+
+Appendix 1
+Continuous Bernoulli distribution
+
+x ∼ CB(L) ⇐⇒ P (x) ∝ eLx ,         x ∈ [−1, 1] ⊂ R
+
+Below we provide a Python implementation of the continuous Bernoulli distributions: CB(L), parametrized
+by the log odds L and adjusted to the [-1,1] interval.
+
+def CB(x, b, logodds=True):
+    if not logodds:
+        b=np.log(b/(1 -b))
+    if np.isclose(b, 0):
+        return np.ones_like(x)/2
+    else:
+        return b * np.exp(b*x) / (2*np.sinh(b))
+
+# Plot some examples
+delta = 100
+sigma = np.linspace( -1, 1, delta)
+for b in np.linspace( -2, 2, 5):
+    p_sigma = CB(sigma, b)
+    sns.lineplot(x=sigma, y=p_sigma, label=b)
+
+
+
+
+  1
+      Correspondence to: tamas.spisak@uk-essen.de
+
+
+                                                     28
+Appendix 2
+
+Continuous Bernoulli distribution full derivation
+Derivation of the exponential form of the continuous Bernoulli distribution, parametrized by the log odds L
+and adjusted to the [-1,1] interval.
+                  Lx         Lx          Lx
+P (x; L) = R 1e         = eLe−e−L = L 2sinh(L)
+                                         e
+                  eLx        L
+             −1
+
+
+
+
+Appendix 3
+
+Visualization of the likelihood function with various parameters, in python.
+
+
+delta = 100
+s_i = np.linspace( -1, 1, delta)
+
+fig, axes = plt.subplots(1, 3, figsize=(12, 3), sharey=True)
+for idx, mu in enumerate([0.1, 0.5, 1]):
+    for w_i in np.linspace( -2, 2, 5):
+            p_mu = CB(s_i, w_i*mu)
+            sns.lineplot(x=s_i, y=p_mu, ax=axes[idx], label=w_i).set(title=f"$\\mu={mu}$")
+
+
+
+
+Appendix 4
+
+Expected value of the CB
+
+
+
+                                                                ebσ
+                                                         Z
+                                          ECB(b) [σ] =     σ          dσ                               (26)
+                                                             2sinh(b)
+                                                                             −
+                                                                 b
+                                                                                 
+                                                                               b
+                                                         b (b−1)e
+                                                              b2    + (b+1)e
+                                                                         b2
+                                                    =                                                  (27)
+                                                             2sinh(b)
+                                                                1
+                                                    = coth(b) −                                        (28)
+                                                                b
+
+bs = np.linspace( -10, 10, 100)
+plt.figure(figsize=(4, 1))
+sns.lineplot(x=bs, y=1/np.tanh(bs) - 1/bs) # coth(b) - 1/b == 1/2 sech^2(b)
+plt.show()
+
+
+                                                             29
+Appendix 5
+Conservative dynamics
+Let x ∈ Rn denote the system’s states (internal, blanket, and external states). The drift can be decomposed
+into a gradient part, from a potential U , and a solenoidal part R:
+                                            ẋ = −∇U (x) + R(x).
+              T
+Here R = −R is antisymmetric in state space.
+The probability density p(x, t) over states evolves according to the Fokker–Planck equation:
+                        ∂t p(x, t) = −∇ · [(−∇U (x) + R(x)) p(x, t)] + diffusion terms.
+
+To determine the stationary distribution ps (x), we set ∂t p(x, t) = 0. The Fokker–Planck equation then implies
+that the net probability current
+                                 Js (x) = (−∇U (x) + R(x)) ps (x) − D∇ps (x)
+assuming isotropic diffusion D, must be divergence-free:
+                                                ∇ · Js (x) = 0.
+                         −1
+If we propose ps (x) = Z exp(−U (x)/D), where Z is a normalization constant, then the diffusive current
+−D∇ps (x) becomes ps (x)∇U (x).
+Substituting this into Js (x), we get:
+                        Js (x) = (−∇U (x) + R(x)) ps (x) + ps (x)∇U (x) = R(x)ps (x).
+
+Thus, ps (x) ∝ exp(−U (x)/D) is the stationary distribution if and only if the solenoidal component of the
+probability current, JR (x) = R(x)ps (x), is itself divergence-free:
+                                             ∇ · (R(x)ps (x)) = 0.
+
+It is a key result from the study of non-equilibrium systems under the Free Energy Principle, particularly
+those possessing a Markov blanket and involving conservative particles, that this condition ∇ · (R(x)ps (x)) = 0
+holds (see [Friston et al., 2023]; but also related: Ao [2004]; Xing [2010]). The conditional independence
+structure imposed by the Markov blanket, along with other FEP-specific assumptions, such as conservative
+particles, constrains the system’s dynamics such that solenoidal forces R(x) do not alter the Boltzmann form.
+In most NESS systems, antisymmetric flows do alter the stationary measure. Under particular-partition
+(Markov-blanket) constraints, however, the internal–external factorization ensures that solenoidal (antisym-
+metric) flows remain divergence-free, leaving the Boltzmann-like steady distribution intact. This is why,
+in these Markov-blanketed systems, one can have persistent solenoidal currents (nonequilibrium flows) yet
+preserve a stationary distribution that depends only on the symmetric part of the couplings.
+
+Appendix 6
+                                                                                     ∂F
+Detailed inference derivation: accuracy–complexity decomposition and
+                                                                                     ∂bq
+
+
+                                                      30
+The main text derives the inference rule (eq. (16)) via a compact local VFE argument. Here we
+provide the equivalent — but more detailed — derivation via the accuracy–complexity decomposition of
+VFE, confirming the same result.
+
+1. Subsitute our parametrization into F
+
+Let’s start with substituting our parametrization into eq. .
+
+1a. Accuracy term
+
+From the RBM marginalization (eq. ):
+                          X                     X                1 X
+E(σ) = −bi σi −                   Jij σi σj −          bj σj −             Jjk σj σk
+                                                                 2
+                           j̸=i                 j̸=i                j,k̸=i
+           |               {z            }|                      {z                }
+                   Terms with σi                        Terms without σi
+Here, −bi σi becomes constant, since σi is fixed. So we get:
+                   P                                                
+                                               1
+                                                 P
+P (σ\i |σi ) ∝ exp   j̸=i (bj + J ij σ i )σj + 2  j,k̸=i J jk σ j σk
+
+Taking expectation of ln P (σ\i |σi ) under q(σi ):
+
+Eq[ln P (σ\i |σi )] = const + j̸=i bj σj + S(bq ) j̸=i Jij σj + 12 j,k̸=i Jjk σj σk
+                             P                   P                P
+
+Where S(bq ) = Eq [σi ] = coth bq − 1/bq is the expected value of the CB, a sigmoid function of the
+bias (#supplementary-information-4)).
+
+1b. Complexity term
+
+The complexity term in eq.                             is simply the KL-divergence term between two CB distributions. For
+CB distributions:
+            q  b   bq x                       b     bx
+q(x) = 2 sinh bq e      ,          p(x) = 2 sinh be
+
+· KL divergence definition:
+        R1        q(x)
+DKL = −1 q(x) ln p(x)  dx = Eq [ln q(x) − ln p(x)]
+
+· Expand log terms:
+
+ln q(x) = ln bq − ln(2 sinh bq ) + bq x
+
+ln p(x) = ln b − ln(2 sinh b) + bx
+
+· Subtract log terms:
+   q(x)            b  sinh b
+ln p(x) = ln bq + ln sinh bq + (bq − b)x
+
+· Take expectation under q(x):
+               b  sinh b
+DKL = ln bq + ln sinh bq + (bq − b)Eq [x]
+
+· Compute expectation Eq [x]:
+                                                                            i1
+                       b eb q x
+           R1                                          h bx
+                                  1                     e q
+Eq [x] =      x q
+            −1 2 sinh bq
+                         dx = 2 sinh bq                  b2q   (bq x − 1)
+                                                                             −1
+
+· Evaluate at bounds:
+
+
+
+
+                                                                                  31
+                     (bq −1)−e−bq (−bq −1)
+               bq                           
+      1        e
+= 2 sinh bq                  b2q
+
+· Simplify using hyperbolic identities:
+    (bq cosh bq −sinh bq )
+=         b2q sinh bq      = coth bq − b1q
+
+· Final substitution for the complexity term:
+                                           
+           b sinh b
+DKL = ln bqsinh bq + (bq − b) coth bq − b1q
+
+1c. Combining the two terms
+
+Combining the two terms, we get the following expression for the free energy:
+       
+       b
+                
+                  sinh(b)
+                                             P                            1P P
+F = ln bq + ln sinh(b       + (bq − b)S(bq ) − j̸=i (bj + S(bq )Jij ) σj −             Jjk σj σk + C
+                       q)                                                  2 j̸=i k̸=i
+where C denotes all constants in the equation that are independent of σorbq .
+
+2. Free Energy partial derivative calculation
+
+· First, we differentiate the log terms:
+    h                    i
+  ∂      bq       sinh b   1
+∂bq  ln   b + ln sinh bq = bq − coth bq
+
+· Then, the KL core term:
+ ∂                                       dS
+∂bq [(bq − b)S(bq )] = S(bq ) + (bq − b) dbq
+
+· The linear terms:
+    h P                        i
+  ∂                                             dS
+                                   P
+∂bq  −        (b
+          j̸=i j + S(b )J
+                      q ij )σ j =−  j̸=i Jij σj dbq
+
+· The constants vanish.
+
+· Now, combining all terms:
+                                             P
+ ∂F     1                                   dS                dS
+∂bq =   bq − coth bq  +  S(bq ) + (b q − b) dbq − j̸=i Jij σj dbq
+
+· Substituting S(bq ) = coth bq − 1/bq :
+                                              P
+                                           dS                  dS
+= b1q − coth bq + coth bq − b1q + (bq − b) db q
+                                                 − j̸=i Jij σj db q
+
+
+· Cancel terms:
+ 1                      1            dS                      dS
+                                                 P
+b −
+    coth
+       bq + 
+              coth
+                 bq − 
+                         + (bq − b) db   −      j̸=i Jij σj dbq
+q                  bq                q
+
+
+Gives us the final derivative:
+                             
+∂F                              dS
+                P
+∂bq = bq − b −     j̸=i Jij σj dbq
+
+      dS
+Where db q
+           = −csch2 bq + b12 .
+                                   q
+                                                                       P
+Setting the derivative to zero and solving for bq , we get: bq = b +   j̸=i Jij σj
+
+Now we remember that the expected value of the CB is the Langevin function of its bias -, E(x) = coth(b)−1/b
+(). For simplicity, we                as L(x). Now we can write:
+                      willPdenote it 
+Eq [σi ] = L(bq ) = L b + j̸=i Jij σj
+
+
+                                                             32
+Q.E.D.
+
+
+Appendix 7
+
+Basin geometry and adversarial robustness
+
+We provide a geometric analysis of how attractor orthogonality and the precision parameter jointly
+affect adversarial robustness in the proposed framework.
+
+Setup. Consider a network with N nodes, inverse temperature iT , and K stored attractors {σ (µ) }K
+                                                                                                 µ=1 with
+   (µ) 2                                           †    1
+                                                           P (µ) (µ) ⊤
+∥σ ∥ = N . Under the projector weight matrix J ≈ N µ σ σ               (zero diagonal), which the learning
+                                                                 (µ)
+rule approximates, the energy at a stored attractor satisfies E(σ ) ≈ −N .
+
+Adversarial budget and representational redundancy. An adversarial perturbation δs applied to the
+bias vector shifts the energy difference between two attractors σ (µ) and σ (ν) by ∆E ≈ −δs⊤ (σ (µ) − σ (ν) ).
+The most efficient attack aligns δs with the difference vector, yielding a minimum perturbation norm
+∥δs∥min ∝ 1/∥σ (µ) − σ (ν) ∥. For orthogonal attractors (σ (µ)⊤ σ (ν) = 0): ∥σ (µ) − σ (ν) ∥2 = 2N . For attractors
+with normalized overlap m = N1 σ (µ)⊤ σ (ν) : ∥σ (µ) − σ (ν) ∥2 = 2N (1 − m). Since 0 ≤ m < 1, orthogonal
+attractors (m = 0) maximize the adversarial budget. Self-orthogonalization thus reduces representational
+redundancy (overlap between attractor states) while increasing robustness to targeted perturbations.
+
+Structural redundancy. Although representational redundancy is minimized, structural redun-
+dancy is fully preserved: each attractor is encoded across all O(N 2 ) synaptic weights, with each weight
+contributing O(1/N ) to the basin depth. Corrupting or removing a bounded fraction of weights therefore has
+a limited effect on the energy landscape, regardless of attractor orthogonality.
+
+Prior   precision as a P       defense.  Under finite temperature, the posterior is p(σ | s) ∝
+                             1
+    P
+exp iT    i (b i + δsi )σi + 2   ij Jij σi σj . The effective basin depth scales as iT · N , while the per-
+turbation contributes iT · δs⊤ σ. The ratio of basin depth to perturbation magnitude grows with iT : high
+precision makes prior-encoded attractors robust to sensory-level attacks. The converse also holds: low iT
+down-weights the prior, limiting the influence of poisoned attractors on the posterior.
+
+Stochastic averaging. Beyond the geometric analysis, stochastic MCMC inference provides an
+additional defense layer. The time-averaged network response converges to the posterior mean Ep(σ|s) [σ],
+with variance decreasing as O(1/Teff ) where Teff is the effective number of independent samples. This
+averaging smooths out the effect of perturbations that shift individual samples but do not move the posterior
+mode across a basin boundary.
+
+Implicit regularization against data poisoning. During learning, the anti-Hebbian term in
+the learning rule subtracts the network’s current prediction from the observed correlation. For a corrupted
+training pattern, the prediction — dominated by the clean attractor subspace — absorbs most of the
+pattern’s variance, leaving only a small residual update. For a poisoning fraction ϵ ≪ 1, the cumulative effect
+of poisoned updates remains bounded relative to the clean learning signal, analogous to the outlier-robustness
+of Bayesian posteriors under informative priors.
+
+
+Appendix 8
+
+Detailed comparison with classical models
+
+We compare the proposed FEP-based attractor network (FEP-ANN) with the canonical formula-
+tions of classical Hopfield networks, Boltzmann machines, projector (pseudo-inverse) networks, and
+hierarchical predictive coding. Each of these model families encompasses many variants; the comparison
+targets the canonical baseline in each case.
+
+Learning rule and computational complexity
+
+
+                                                        33
+     • Boltzmann machines (contrastive divergence). The exact gradient of the Boltzmann log-
+       likelihood with respect to weights Jij is
+
+                                         ∂ ln p(v)
+                                                   = ⟨σi σj ⟩data − ⟨σi σj ⟩model                         (29)
+                                            ∂Jij
+        where ⟨·⟩model requires sampling from the model’s equilibrium distribution — computationally
+        intractable for large networks. Contrastive divergence (CD-k) approximates ⟨·⟩model by running k
+        steps of Gibbs sampling from the data-initialized state. Each Gibbs sweep visits all N nodes, and
+        computing the input to each node requires O(N ) multiplications, yielding a per-step cost of O(N 2 )
+        per Gibbs sweep and O(N 2 k) per weight update.
+     • FEP-ANN.P      The learning rule for node i uses the network’s instantaneous predicted state σ̂i =
+       L(bi + k Jik σk ) — a single forward pass through the current weights — rather than a sample
+       average over model-generated states. Computing σ̂i for all nodes requires one matrix-vector product
+       Jσ at O(N 2 ); the outer-product updates for all weights then cost O(N 2 ). The total per-step learning
+       cost is therefore O(N 2 ) — a factor of k cheaper than CD-k. The free-running phase is eliminated
+       entirely.
+     • Solenoidal flows and mixing times In a symmetric Boltzmann machine, inference proceeds
+       via reversible Gibbs sampling; reversibility implies that probability mass can only move between
+       attractor basins by climbing over energy barriers, leading to mixing times that scale exponentially
+       with barrier height.
+
+        In the FEP-ANN with asymmetric couplings J ̸= J⊤ , the dynamics decompose into a gra-
+        dient (dissipative) component driven by J† = 12 (J + J⊤ ) and a solenoidal (conservative) component
+        driven by J− = 12 (J − J⊤ ). The solenoidal term does not alter the stationary distribution but induces
+        persistent probability currents along iso-energy contours. These non-reversible currents transport
+        probability mass between attractor basins without climbing energy barriers — they traverse along
+        the iso-energy surface instead, accelerating mixing. The resulting dynamics are formally analogous
+        to continuous normalizing flows and Markovian flow matching.
+     • Orthogonalization and memory capacity Classical Hopfield networks with Hebbian (outer-
+       product) weights store K patterns; cross-talk limits capacity to Kmax ≈ 0.14N . Projector (pseudo-
+       inverse) networks achieve optimal capacity Kmax = N with error-free retrieval but require batch access
+       and O(N 3 ) computation. In the FEP-ANN, the Hebbian/anti-Hebbian learning rule incrementally
+       approximates the projector matrix through online learning: the Hebbian term accumulates pattern
+       correlations while the anti-Hebbian term subtracts the model’s current prediction, progressively
+       decorrelating the stored representations. Memory capacity thus approaches the projector limit
+       without batch computation or matrix inversion.
+     • Relationship to hierarchical predictive coding Both the FEP-ANN and hierarchical predictive
+       coding (PC) networks minimize variational free energy via local, prediction-error-driven updates. The
+       structural difference is topology: PC operates on a bidirectional hierarchy with directed inter-layer
+       connections (feedforward predictions, feedback prediction errors), while the FEP-ANN uses a fully
+       recurrent, single-layer topology with arbitrary lateral couplings. Within the deep particular partition
+       formalism, both are instances of the same FEP-based inference architecture applied to different
+       coupling topologies. Exploring the formal equivalences between these topologies is a promising
+       direction for future work.
+
+
+Appendix 9
+Scaling benchmarks
+
+We report runtime and memory capacity benchmarks for the JAX implementation across network
+sizes from N = 64 to N = 4096 and pattern counts from K = 10 to K = N . Training and inference wall-clock
+time as a function of network size N , confirming the expected O(N 2 ) per-step scaling. Panel to be finalized
+with benchmark data from 07-simulation-scaling-jax.ipynb.
+
+Table: Runtime benchmarks (JAX implementation, 10 updates)
+
+
+                                                      34
+           Table 1: Comparison of the FEP-ANN with canonical formulations of classical models.
+Feature             Hopfield            Boltzmann      ma-         Projector network     Predictive coding      FEP-ANN (ours)
+                                        chine
+Derivation          Energy-based        Statistical mechan-        Optimal storage       Hierarchical           First    principles
+                                        ics                                              Bayesian               (FEP)
+State space         Binary {−1, +1}     Binary {0, 1}              Binary                Continuous (Gaus-      Continuous
+                                                                                         sian)                  [−1, +1] (CB)
+Activation          Sign                Logistic sigmoid           Sign                  Linear / nonlinear     Langevin     (emer-
+                                                                                                                gent)
+Learning            Hebbian (batch)     Contrastive diver-         Pseudo-inverse        Prediction-error       Hebbian/anti-
+                                        gence                      (batch)               min.                   Hebbian (online)
+Learning phases     One-shot            Clamped + free             One-shot              Layerwise              Single phase
+Coupling            Symmetric           Symmetric                  Symmetric             Directed   (hierar-    Symmetric or asym-
+                                                                                         chy)                   metric
+Sequence dynam-     No                  No                         No                    Temporal hierarchy     NESS     solenoidal
+ics                                                                                                             flow
+Orthogonalization   No                  No                         By construction       No                     Emergent (VFE)
+Memory capac-       ∼ 0.14N             ∼ 0.14N                    N (optimal)           N/A (generative)       Approaches N
+ity
+Inference           Deterministic       Gibbs MCMC                 Deterministic         Message passing        MCMC              +
+                                                                                                                solenoidal flow
+Precision control   None                Temperature                None                  Precision-             iT (Bayesian)
+                                        (fixed)                                          weighting
+Continual learn-    Catastrophic for-   Catastrophic for-          Catastrophic for-     Possible (with re-     Built-in   (sponta-
+ing                 getting             getting                    getting               play)                  neous replay)
+Learning   com-     O(KN 2 ) one-shot   O(N 2 k) per step          O(KN 2 + N 3 ) one-   O(Nl ) per layer per   O(N 2 ) per step
+plexity                                                            shot                  step
+FEP / active in-    No formal link      Variational   (post        No formal link        Compatible             Derived from FEP
+ference                                 hoc)
+
+
+
+
+N (nodes)                               Training time (s)                                Throughput (steps/s)
+100                                     0.004                                            2455
+1 000                                   0.007                                            1390
+5 000                                   0.26                                             39.1
+10 000                                  0.39                                             25.5
+20 000                                  1.49                                             6.69
+50 000                                  59.8                                             0.167
+
+
+
+
+                                                              35
+

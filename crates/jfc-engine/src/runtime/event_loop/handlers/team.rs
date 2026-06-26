@@ -405,6 +405,9 @@ fn leader_ready_for_inbox_wake(state: &EngineState) -> bool {
         && state.in_flight_tool_batches == 0
         && state.compacting_started_at.is_none()
         && state.pending_elicitations.is_empty()
+        // An open AskUserQuestion modal keeps the leader paused: a teammate
+        // inbox wake must not continue the loop until the user has answered.
+        && state.pending_question.is_none()
 }
 
 fn handle_spawned(

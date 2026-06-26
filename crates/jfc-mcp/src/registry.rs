@@ -475,8 +475,9 @@ impl McpRegistry {
     /// Resolve a provider-facing advertised name back to the original MCP
     /// server/tool names. New sanitized names are resolved by recomputing the
     /// advertised names from the cached tool list; legacy exact names still
-    /// fall back to the split `(server, tool)` pair so older transcripts and
-    /// calls to uncached dynamic tools remain compatible.
+    /// fall back to the split `(server, tool)` pair only when the tool is in the
+    /// server's advertised catalog (or `JFC_ALLOW_UNADVERTISED_MCP_TOOLS` opts
+    /// back into the legacy, uncached-tool behavior).
     async fn resolve_advertised_tool(
         &self,
         advertised_name: &str,
@@ -501,10 +502,29 @@ impl McpRegistry {
         }
 
         if let Some(server) = guard.get(server_key) {
-            return Ok((Arc::clone(server), tool_key.to_owned()));
+            // CS-JFC-008: only fall back to the raw server/tool split when the
+            // tool is actually present in the server's advertised catalog (a
+            // legacy/sanitized-name case). A name that was never advertised is
+            // rejected so a configured server can't expose a hidden, schema-less
+            // tool to the model. An explicit opt-in restores the old behavior
+            // for transcript-compat with previously-advertised dynamic tools.
+            let in_catalog = server.tools.iter().any(|tool| tool.name == tool_key);
+            if in_catalog || raw_mcp_dispatch_allowed() {
+                return Ok((Arc::clone(server), tool_key.to_owned()));
+            }
+            return Err(DispatchError::UnknownTool(advertised_name.to_owned()));
         }
         Err(DispatchError::UnknownServer(server_key.to_owned()))
     }
+}
+
+/// Whether to permit dispatching an MCP tool name that is not in the connected
+/// server's advertised catalog (CS-JFC-008). Off by default; opt back in with
+/// `JFC_ALLOW_UNADVERTISED_MCP_TOOLS` for legacy uncached-dynamic-tool compat.
+fn raw_mcp_dispatch_allowed() -> bool {
+    std::env::var("JFC_ALLOW_UNADVERTISED_MCP_TOOLS")
+        .ok()
+        .is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
 }
 
 #[derive(Debug)]
@@ -527,6 +547,10 @@ pub enum DispatchError {
     /// only happen under an extreme hash collision, but failing closed is better
     /// than dispatching to the wrong server tool.
     AmbiguousToolName(String),
+    /// The server exists but the tool name was never advertised in its catalog
+    /// (CS-JFC-008). Dispatching an unadvertised, schema-less name would let a
+    /// configured server expose a hidden tool the model was never offered.
+    UnknownTool(String),
     /// Lower-layer transport error.
     Request(RequestError),
 }
@@ -544,6 +568,9 @@ impl std::fmt::Display for DispatchError {
             } => write!(f, "MCP tool {server}/{tool} is disabled: {reason}"),
             Self::AmbiguousToolName(name) => {
                 write!(f, "ambiguous MCP advertised tool name: {name}")
+            }
+            Self::UnknownTool(name) => {
+                write!(f, "MCP tool was not advertised: {name}")
             }
             Self::Request(e) => write!(f, "MCP dispatch error: {e}"),
         }
@@ -1018,6 +1045,43 @@ mod tests {
         assert_eq!(got.name, "fs");
         assert_eq!(got.tools.len(), 1);
         assert_eq!(got.instructions.as_deref(), Some("Use fs carefully."));
+    }
+
+    // CS-JFC-008: an advertised tool resolves; an unadvertised tool name on a
+    // connected server is rejected instead of being forwarded to the transport.
+    #[tokio::test]
+    async fn resolve_advertised_tool_rejects_unadvertised_name_regression() {
+        if raw_mcp_dispatch_allowed() {
+            return; // explicit opt-in disables this guard
+        }
+        let reg = McpRegistry::new();
+        reg.insert(fake_server(
+            "fs",
+            McpServerStatus::Connected,
+            vec![McpTool {
+                name: "read".into(),
+                description: "Read".into(),
+                input_schema: json!({"type":"object"}),
+                ..McpTool::default()
+            }],
+        ))
+        .await;
+
+        // Advertised tool resolves to its raw server/tool pair.
+        let advertised = protocol::advertise_tool_name("fs", "read");
+        let (server, tool) = reg.resolve_advertised_tool(&advertised).await.unwrap();
+        assert_eq!(server.name, "fs");
+        assert_eq!(tool, "read");
+
+        // A hidden, never-advertised tool on the same connected server is denied.
+        let err = reg
+            .resolve_advertised_tool("mcp__fs__hidden_delete")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, DispatchError::UnknownTool(_)),
+            "expected UnknownTool, got {err:?}"
+        );
     }
 
     #[tokio::test]

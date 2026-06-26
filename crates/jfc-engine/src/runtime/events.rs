@@ -206,6 +206,10 @@ pub enum StreamToolChoice {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StreamRequestOverrides {
     pub tool_choice: StreamToolChoice,
+    /// Current session id, for attributing per-turn knowledge-recall events to a
+    /// session (`session_retrieval_events`). `None` outside a session → the
+    /// recall path logs no event and behaves identically.
+    pub session_id: Option<String>,
     /// System reminders queued by background events (file watcher,
     /// MCP refresh, …) and drained into `prepare_stream_request` so
     /// they land in the next outbound request's system prompt exactly
@@ -662,6 +666,20 @@ pub enum VoiceEvent {
     Level(f32),
     /// Error from the voice pipeline.
     Error(String),
+    AssistantMessageStarted,
+    AssistantResponseCompleted,
+    ReadAloudStarted {
+        chars: usize,
+    },
+    ReadAloudCompleted {
+        audio_bytes: usize,
+        chunks_sent: usize,
+    },
+    ReadAloudError(String),
+    TtsWord {
+        text: String,
+        pts_ms: u64,
+    },
 }
 
 /// A progress update from a running workflow, routed to the matching

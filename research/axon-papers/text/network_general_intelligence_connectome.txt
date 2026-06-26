@@ -1,0 +1,1023 @@
+                                    Article                                                                                                         https://doi.org/10.1038/s41467-026-68698-5
+
+
+                                    The network architecture of general
+                                    intelligence in the human connectome
+
+                                    Received: 4 March 2025                                 Ramsey R. Wilcox1,2,3, Babak Hemmatian4, Lav R. Varshney4,5 &
+                                                                                           Aron K. Barbey 1,2,3,6,7,8,9
+                                    Accepted: 18 December 2025
+
+
+                                                                                           Advances in network neuroscience challenge the view that general intelligence
+                                        Check for updates                                  (g) emerges from a primary brain region or network. Network Neuroscience
+                                                                                           Theory (NNT) proposes that g arises from coordinated activity across the
+
+
+1234567890():,;   1234567890():,;
+                                                                                           brain’s global network architecture. We tested predictions from NNT in 831
+                                                                                           healthy young adults from the Human Connectome Project. We jointly mod-
+                                                                                           eled the brain’s structural topology and intrinsic functional covariation pat-
+                                                                                           terns to capture its global topological organization. Our investigation
+                                                                                           provided evidence that g (1) engages multiple networks, supporting the
+                                                                                           principle of distributed processing; (2) relies on weak, long-range connections,
+                                                                                           emphasizing an efﬁcient and globally coordinated network; (3) recruits
+                                                                                           regions that orchestrate network interactions, supporting the role of modal
+                                                                                           control in driving global activity; and (4) depends on a small-world archi-
+                                                                                           tecture for system-wide communication. These results support a shift in per-
+                                                                                           spective from prevailing localist models to a theory that grounds intelligence
+                                                                                           in the global topology of the human connectome.
+
+
+
+                                    General intelligence (g) captures the remarkable human capacity to                 by the Network Neuroscience Theory4 (NNT). According to this fra-
+                                    ﬁnd solutions for the diverse problems faced in life, accounting for               mework, general intelligence reﬂects individual differences in system-
+                                    performance across a wide range of academic, professional, social, and             wide mechanisms for efﬁcient and ﬂexible information processing.
+                                    health contexts1. The pervasive predictive power of g motivates the                     Network Neuroscience Theory predicts that intelligence emerges
+                                    study of its cognitive and neurobiological foundations, an inter-                  from four key properties of the human connectome. First, it relies on
+                                    disciplinary endeavor that addresses one of the most fundamental and               distributed processing across diverse brain networks, reﬂecting NNT’s
+                                    enduring questions in modern science: How does the human brain                     core principle that g does not originate from a primary cortical region
+                                    create general intelligence? Prevailing theories argue that intelligence           or network. Accumulating evidence in network neuroscience supports
+                                    arises from individual differences in the function of a speciﬁc cortical           this view, demonstrating that whole-brain functional connectivity
+                                    region2 or network3. For example, proponents of the Parieto-frontal                models more accurately predict intelligence than models based on any
+                                    integration theory (P-FIT) posit that a discrete parieto-frontal network           single network5,6. Recent evidence further suggests that the superior
+                                    underlies human intelligence, emphasizing the role of this network in              performance of whole-brain models reﬂects the engagement of
+                                    the generation and testing of hypotheses for problem solving3. Despite             between-network connections that enable system-wide communica-
+                                    the success of functionally localized models, recent advances in net-              tion and dynamics7. New methods to jointly model the structural and
+                                    work neuroscience motivate an alternative perspective, highlighting                functional connectome capture such communications more effec-
+                                    the importance of the brain’s global network architecture as proposed              tively by allowing structural and functional information to inform each
+
+
+                                    1
+                                    Decision Neuroscience Laboratory, University of Notre Dame, Notre Dame, IN, USA. 2Notre Dame Human Neuroimaging Center, University of Notre Dame,
+                                    Notre Dame, IN, USA. 3Department of Psychology, University of Notre Dame, Notre Dame, IN, USA. 4AI Innovation Institute, Stony Brook University, Stony
+                                    Brook, NY, USA. 5Department of Electrical & Computer Engineering, University of Illinois, Urbana, IL, USA. 6Department of Psychology, University of Illinois,
+                                    Urbana, IL, USA. 7Department of Bioengineering, University of Illinois, Urbana, IL, USA. 8Beckman Institute, University of Illinois, Urbana, IL, USA. 9Institute for
+                                    Defense Analyses, Alexandria, VA, USA.     e-mail: abarbey@nd.edu
+
+
+                                    Nature Communications | (2026)17:2027                                                                                                                             1
+Article                                                                                             https://doi.org/10.1038/s41467-026-68698-5
+
+
+other in the estimation of the brain’s global topology8. This enables a    of network integration24 and segregation25, the predicted role of a
+more comprehensive analysis of the relationship between the brain’s        small-world topology in intelligence remains to be examined.
+global network organization and human intelligence.                             The present study investigates the core predictions of NNT in a
+     Second, NNT predicts that global network communication                sample of healthy young adults (N = 831) from the Human Connectome
+depends on the engagement of weak, long-range connections (i.e.,           Project, examining whether general intelligence: (1) engages multiple
+weak ties). Prior research demonstrates that weak ties support the         brain networks, supporting the theory’s principle of distributed pro-
+efﬁcient transfer of information between networks, enabling system-        cessing; (2) relies on weak, long-range connections, reﬂecting the
+wide communication and dynamics9. This adaptability is essential for       theory’s emphasis on a globally coordinated network architecture; (3)
+intelligence, which often involves solving novel problems or               recruits regions that orchestrate network interactions, supporting the
+responding to unexpected challenges. Weak connections are more             predicted role of modal control regions that drive global activity; and
+readily modulated by ongoing neural activity and therefore allow for       (4) has a small-world topology, central to the efﬁciency and ﬂexibility
+dynamic reconﬁguration of brain networks to adapt to changing task         of global information processing, and the predicted architecture for
+demands. Indeed, prior research suggests that weak ties predict indi-      system-wide network communication and dynamics. We employed a
+vidual differences in general intelligence10, providing a globally efﬁ-    comprehensive battery of cognitive tests to derive a latent g factor and
+cient architecture for the ﬂexible recruitment of brain networks11–14.     assess its relationship with resting-state functional magnetic reso-
+According to NNT, weak, long-range connections serve as the neural         nance imaging (rs-fMRI) and diffusion-weighted magnetic resonance
+infrastructure for system-wide network communication and ﬂexibility,       imaging (dw-MRI) to investigate the network architecture of
+enabling the capacity for intelligent thought and action. While the role   intelligence.
+of weak ties in general intelligence has been examined with respect to          To this end, we applied methodological advances in network
+functional connectivity, research using modern joint structure-            modeling to integrate structural connectivity data, derived from
+function modeling techniques, which provide a more comprehensive           diffusion-weighted tractography, with functional co-activation pat-
+characterization of the brain’s global topology, has yet to be             terns, derived from resting-state independent component analysis
+conducted.                                                                 (ICA), in a data-driven manner. The result is a whole-brain, multi-modal
+     Third, NNT proposes that global network communication relies          connectome that describes the capacity of structural connections to
+on specialized modal control regions that orchestrate system-wide          transfer functional information8. This approach reﬂects the following
+function15–17. These regions are located such that they enable access to   methodological innovations that enable a rigorous investigation of
+diverse functional states, including those not readily accessible          NNT’s core predictions.
+through typical network interactions (i.e., difﬁcult-to-reach states).          First, ICA measures the dynamics of the brain’s functional orga-
+According to this view, modal control regions act as network drivers,      nization by extracting distinct neuronal co-activation patterns across
+dynamically steering the conﬁguration of brain networks towards            the cortex. Each pattern contains strong functional contributions from
+states that enable goal-directed behavior and adaptive decision            a set of brain regions that represent an intrinsic connectivity network
+making18–20. Recent evidence demonstrates a positive correlation           (ICN). Additionally, each component may also contain weaker func-
+between the ﬂexibility afforded by modal control regions and               tional contributions from regions outside its core ICN. These weak
+performance in complex problem-solving tasks19,20. The capacity of         contributions reﬂect the integrative nature of the brain’s topology and
+modal control regions to drive the conﬁguration of brain networks is       the ability of regions belonging to separate networks to transiently
+known to facilitate problem-solving by enabling the integration of         communicate with each other. Thus, the employed ICA method not
+information from diverse and potentially distant brain regions.            only captures within-network communication patterns but also
+This integration is critical for tasks requiring the coordination of       between-network communications where cortical regions ﬂexibly alter
+multiple cognitive processes, a hallmark of general intelligence.          their network afﬁliation.
+Therefore, the capacity of modal control regions to ﬂexibly navigate a          Second, the integrative nature of the model is designed to correct
+broad repertoire of brain states is theorized to be an essential factor    for well-known issues in the underestimation of white-matter tracts
+underlying general intelligence according to NNT4. The link between        that traverse cross-ﬁber areas26. By jointly modeling structure and
+modal control and intelligence, however, remains unexplored in             function, this approach ensures that connections between regions are
+prior work.                                                                strong enough to support their observed patterns of co-activation.
+     Finally, the proposed network properties of intelligence, which       Thus, the weak, long-range connections that are central to testing
+emphasize a locally efﬁcient and globally coordinated system, are          NNT’s predictions may be recovered that structural data alone
+predicted to emerge from a small-world topology. This unique topol-        might miss.
+ogy incorporates both high local clustering and global communication            Finally, a multi-modal approach enables a more comprehensive
+via short topological path lengths. Thus, small-world networks enable      investigation of the NNT framework. A growing body of evidence
+both local and global efﬁciency by balancing two opposing system-          demonstrates that the brain’s structural topology shapes the efﬁciency
+wide principles. The ﬁrst principle is segregation, a fundamental          of communication between brain regions19,27,28, ultimately inﬂuencing
+organizing principle that promotes specialization of function while        the functional dynamics of intelligence. Integrating structural and
+minimizing wiring costs. This is achieved by dividing the cortex into      functional connections in a data-driven manner offers a deeper
+distinct anatomical modules constructed from densely clustered             understanding of the neural mechanisms underlying intelligence by
+nodes. This modular organization allows for independent processing         more accurately estimating the brain’s global topology (e.g., to capture
+of speciﬁc cognitive tasks and reduces the average length of axonal        such features as weak ties).
+connections, ultimately enhancing signal transmission speed21. The              In summary, the NNT framework challenges the prevailing view of
+second principle is integration, which enables system-wide network         intelligence as localized within a primary brain region2 or network3,
+communication. This is achieved through long-range connections.            emphasizing instead the importance of system-wide communication
+These connections come at a cost, requiring more resources (i.e.,          and dynamics. The present study investigated the novel predictions of
+higher wiring cost), but they create shorter topological pathways for      the NNT framework within an integrated analysis approach that (1)
+efﬁcient information exchange across the entire system. A small-world      jointly models the brain’s structural connectome with intrinsic sources
+topology provides a balance between efﬁcient local processing and          of functional covariation, (2) derives modal control metrics, and (3)
+ﬂexible integration of information across the connectome22,23. While       examines small-worldness in the prediction of general intelligence. To
+prior research has examined the relationship between g and measures        further validate the NNT framework, we conducted a conceptual
+
+
+Nature Communications | (2026)17:2027                                                                                                            2
+Article                                                                                                               https://doi.org/10.1038/s41467-026-68698-5
+
+
+                                                                                       (b)                        (b)
+
+                                                                                                                                              0.65
+
+
+       (a)                                                                                                     0.57                           0.51
+
+
+                                                                                                               0.61
+                                                                                                                                              0.66
+                                                                                                               0.38
+
+                                                                                                                                              0.63
+                                                                                                               0.28
+                                                                                                                                              0.47
+                                                                                                               0.25
+
+                                                                                                               0.37
+                                                                                                                                             0.63
+                                                                                                               0.44
+                                                                                                                                             0.27
+                                                                                                               0.27
+                                                                                                                                             0.21
+                                                                                                               0.60
+
+
+                                                                                                               0.62                          0.31
+
+
+                                                                                                                                             0.23
+
+
+
+Fig. 1 | Results of the factor analysis used to generate subject-level g scores.     factor model. The rectangles identify the tests included. Loading values are overlaid
+a Plot of Horn’s parallel analysis describing the eigenvalues for each component     on straight links. Latent factors are contained in ellipses (g: a latent, common factor
+calculated from the observed data against the eigenvalues calculated from random     among the group factors; cry: a latent crystallized ability factor; spd: a latent pro-
+data. The orange line represents eigenvalues from the actual dataset. The red line   cessing speed factor; mem: a latent memory factor; vis: a latent visuo-spatial ability
+represents average eigenvalues from the random datasets. b A schematic of the bi-    factor).
+
+
+
+
+replication to assess the generalizability of our ﬁndings in an inde-                General intelligence is constructed from multiple brain net-
+pendent sample of 145 participants (see Supplemental Materials).                     works and their interactions
+Results from two independent studies with a combined sample of 976                   Consistent with the predictions of NNT, inclusion analyses demon-
+participants validate the predictions of NNT and call for a shift in                 strated that the independent predictive power of each ICN was lower
+perspective from prevailing localist models towards a framework that                 than the whole-brain model (Fig. 3a). Nonetheless, the results revealed
+grounds intelligence in the global topology and dynamics of the                      different relationships with g across the 12 ICNs. As might be expected,
+human connectome.                                                                    the fronto-parietal network (FPN) exhibited the highest independent
+                                                                                     predictive power (R2 = 0.056). The auditory network (AUD) followed
+Results                                                                              and exceeded all other networks (R2 = 0.054). The default mode
+Estimating general intelligence from psychometric g                                  (DMN), somatomotor (SMN), and dorsal attention (DAN) networks all
+Horn’s parallel analysis found the eigenvalue of four latent factors to              exhibited similar predictive power (R2 = [0.043–0.047]). The cingulo-
+be signiﬁcantly higher than the eigenvalues of their random dataset                  opercular (CON) and language (LAN) networks were also similar to
+counterparts (Fig. 1a). Thus, we included four group factors in our bi-              each other (R2 = 0.031, R2 = 0.025), while the primary (V1) and sec-
+factor model (Fig. 1b), interpreted as crystallized ability (PicVocab,               ondary (V2) visual networks exhibited the lowest predictive power
+ReadEng), processing speed (CardSort, Flanker, ProcSpeed), visuo-                    (R2 = 0.008, R2 = 0.006). The orbito-affective (OA), posterior multi-
+spatial ability (VSPLOT_TC, PMAT24_A_CR), and memory (PicSeq,                        modal (PMM), and ventral multi-modal (VMM) networks did not con-
+ListSort, IWRD_TOT). These group labels are intuitive and coincide                   tain enough connections that survived the feature selection step
+with prior studies that adopted the same approach6. The model                        across all ﬁve folds for an elastic net model to be ﬁt. Thus, they did not
+exhibited indices of good ﬁt with a high comparative ﬁt index (CFI =                 have any resulting performance metric. Despite the differences in
+ 0.99) and low root mean square error of approximation (RMSEA =                      predictive power across ICNs, the exclusion analyses showed that
+ 0.03). Statistical practices identify CFI values above 0.95, and RMSEA              when each network is removed from the whole-brain model, the
+values lower than 0.05 as indicating good ﬁt29. The g factor accounted               change in performance is negligent (Fig. 3b). This suggests that
+for 58.72% of the total variance.                                                    between-network interactions primarily drive the prediction of g
+                                                                                     scores.
+General intelligence depends on a global network architecture                             To conﬁrm that predictive performance relies primarily on
+Consistent with the predictions of NNT, a whole-brain, connectome-                   between-network connections, we plotted on glass brains only those
+based predictive model (CPM) reliably predicted out-of-sample g                      connections that were predictive (i.e., survived feature selection) and
+scores (Fig. 2a), explaining a signiﬁcant proportion of the variance                 highly stable across participants (i.e., survived across all 5 folds; Fig. 4).
+(R2 = 0.12; p1000 = 0.001; Fig. 2c) and yielding a signiﬁcant correlation            When examining these graphs, a globally distributed and interactive
+between predicted and observed g scores (r = 0.35; P1000 = 0.001;                    picture emerges. Large networks, like CON, FPN, and DMN, exhibit
+Fig. 2b). The observed nRMSD was signiﬁcantly lower than the                         many between-network connections, with graphs so dense and dis-
+value obtained from a null distribution (nRMSD = 0.94;                               tributed as to obfuscate any coherent local pattern. We see similarly
+P1000 = 0.001; Fig. 2d).                                                             distributed and interactive, albeit less dense, graphs for smaller
+
+
+Nature Communications | (2026)17:2027                                                                                                                                     3
+Article                                                                                                           https://doi.org/10.1038/s41467-026-68698-5
+
+
+
+
+Fig. 2 | Joint structure-function brain connections across the entire cortex         regression line approaches the identity line. b–d The permutation tests of perfor-
+reliably predict general intelligence. a Scatterplot of predicted g scores com-      mance metrics with 1000 randomly shufﬂed datasets used to establish signiﬁcance
+pared to observed g scores. (r = 0.35, p1000 = 0.001; R2 = 0.12, p1000 = 0.001;      with respect to an empirically derived null distribution. Red lines represent statis-
+nRMSD = 0.94, p1000 = 0.001). The red line denotes the regression line. The dashed   tical values from the whole-brain model, while bars collectively represent the dis-
+black line denotes an identity line. As expected with a model of good ﬁt, the        tribution of values across the random permutations.
+
+
+
+
+Fig. 3 | Lesion analyses examining the predictive performance of the                 V2 Secondary Visual Network, SMN Somatomotor Network, CON Cingulo-
+individual ICNs. The red dotted line in graphs a, b represents the whole-brain       opercular Network, DAN Dorsal Attention Network, LAN Language Network,
+model performance. a Results from the inclusion analysis, where predictive per-      FPN Fronto-parietal network, AUD Auditory Network, DMN Default Mode Network,
+formance was evaluated for connections originating from each ICN. b Results from     PMM Posterior Multi-modal Network, VMM Ventral Multi-modal Network,
+the exclusion analysis, where predictive performance was evaluated for the whole-    OA Orbito-affective Network.
+brain model with each ICN removed, respectively. V1 Primary Visual Network,
+
+
+
+
+Nature Communications | (2026)17:2027                                                                                                                                   4
+Article                                                                                                         https://doi.org/10.1038/s41467-026-68698-5
+
+
+                                              V1                                                                   V2
+
+
+
+
+                                            SMN                                                                  CON
+
+
+
+
+                                            DAN                                                                  LAN
+
+
+
+
+                                             FPN                                                                 AUD
+
+
+
+
+                                            DMN                                                                  PMM
+
+
+
+
+                                           VMM                                                                    OA
+
+
+
+
+Fig. 4 | Predictive connections that survived feature selection for all ﬁve folds     Primary Visual Network, V2 = Secondary Visual Network, SMN = Somatomotor
+plotted on glass brains. Graphs are organized according to the ICN origin of          Network, CON = Cingulo-opercular Network, DAN = Dorsal Attention Network, LAN
+connections, where connections reside within a given ICN and between that ICN         = Language Network, FPN = Fronto-parietal Network, AUD = Auditory Network,
+and the remaining eleven networks. Nodes within the ICN of interest are colored for   DMN = Default Mode Network, PMM = Posterior Multi-modal Network, VMM =
+each graph, while nodes outside the ICN of interest are black. Brighter edges         Ventral Multi-modal Network, OA = Orbito-affective Network.
+denote weaker connections, while darker edges denote stronger connections. V1 =
+
+
+
+
+Nature Communications | (2026)17:2027                                                                                                                            5
+Article                                                                                                   https://doi.org/10.1038/s41467-026-68698-5
+
+
+networks. For example, the V1, AUD, and OA all exhibited connections            trend is seen, where strong ties that are shorter in distance are more
+between networks and distributed across the whole cortex. The AUD               important for g compared to other strong ties. Correlation tests
+was particularly interactive, demonstrating many inter-hemispheric              between Haufe coefﬁcients and distance, independently carried out in
+connections, whereas the V1 and OA tended to only present a few inter-          positively and negatively related connections, conﬁrmed these ﬁnd-
+hemispheric connections. The VMM and PMM graphs also exhibited                  ings (rnegative = −0.449 [−0.527, −0.364], t(371) = −9.683, p < 0.0001***;
+distributed and interactive behavior, but to a lesser degree, demon-            rpositive = -0.145 [−0.190, −0.099], t(1786) = −6.179, p < 0.0001***). Thus,
+strating few connections with the frontal cortex. Medium-sized net-             higher g individuals tend to exhibit weaker connections longer in
+works, such as V2, DAN, SMN, and LAN, displayed patterns similar to             distance and stronger connections shorter in distance compared to
+large networks but also somewhat less dense.                                    lower g individuals. Taken together, these ﬁndings validate the pre-
+     It is noteworthy that networks that lacked signiﬁcant connections          dictions of NNT, demonstrating that general intelligence depends on
+within their own boundaries (OA, PMM, VMM) nonetheless exhibited                weak ties.
+predictive between-network connections. These ﬁndings collectively
+support a globally integrated network architecture for intelli-                 General intelligence depends on modal control regions
+gence, characterized by distributed information processing, with                We ﬁt an MDMR model to examine the relationship between g and
+between-network communication playing a critical role.                          cortical modal control proﬁles. We found that g signiﬁcantly related to
+                                                                                the modal control proﬁle of participants (Fobserved = 2.807,
+Feature set size bias                                                           F permutation = 1.003, SDpermutation = 0.27, p1000 = 0.001; Fig. 7a), sug-
+It is critical to verify that the predictive efﬁcacy of the whole-brain         gesting that g depends on the global orchestration of brain functions.
+model compared to smaller, localized models (i.e., inclusion models)            Modal control values were differentially distributed across all 12 net-
+was not an artifact of its larger feature set. To examine this issue, we        works (Fig. 7b). The DMN contained the most regions after excluding
+conducted a permutation-based control analysis within our previously            those in the bottom 25th percentile (22.963%). CON and V2 networks
+described predictive modeling framework. Speciﬁcally, we performed              displayed similar region proportions, higher than the remaining net-
+a grid search across feature sets of increasing size, each populated with       works (16.667% and 15.556, respectively). The FPN also displayed a
+randomly permuted connections to isolate the effect of feature                  somewhat larger proportion (11.481%) compared to most networks.
+dimensionality. Our results (Fig. 5) demonstrate that increasing the            The SMN, LAN, DAN, and AUD all displayed low proportions (8.519%,
+number of input features does not improve predictive accuracy as                7.407%, 6.296%, and 5.556%, respectively). Finally, the PMM, V1, OA,
+measured by a Pearson correlation (rPearson correlation vs. set size = −0.081   and VMM all displayed very low proportions (1.852%, 1.481%, 1.481%,
+[−0.232, 0.075], t(159) = −1.021, p = 0.309; Fig. 5a) and coefﬁcient of         and 0.741%, respectively). These proportions align with the overall size
+determination (rcoefﬁcient of determination vs. set size = −0.724 [−0.790,      of the ICNs apart from V2, whereby larger ICNs have greater repre-
+−0.641], t(159) = -13.22, p < 2.2e-16***; Fig. 5b). In fact, we show that       sentation in the set of nodes with the highest values of modal control.
+larger feature sets can lead to decreases in performance compared to            As Fig. 6c illustrates, regions with high modal control values (i.e.,
+smaller sets (Fig. 5b). This ﬁnding highlights an important methodo-            reddish regions) were distributed across the frontal, parietal, cingu-
+logical point: Pearson correlations between observed and predicted              late, and temporal cortices. The CON, FPN, DMN, AUD, V2, and OA all
+values in a cross-validation framework can provide misleading esti-             seemed to display high modal control values (see Fig. 7d for network
+mators of model performance. Thus, it is essential to include less              assignments). This pattern of ﬁndings supports the predictions of
+biased metrics, such as the coefﬁcient of determination (R2), for robust        NNT, demonstrating that general intelligence depends on the brain’s
+model assessment.                                                               capacity to engage modal control mechanisms that orchestrate net-
+                                                                                work activity.
+General intelligence depends on weak, long-range connections
+We examined whether signiﬁcant connections that tended to be                    General intelligence depends on a small-world topology
+weaker in higher g individuals, compared to lower g individuals, were           The Telesford metric of small-worldness was used to investigate the
+longer than those that tended to be stronger. Given connections were            relationship between this unique topology, one that balances high
+standardized (i.e., z-scored) before model ﬁtting, the sign of their            local clustering, with global integration via short path lengths, and g.
+associated beta coefﬁcients describes whether a connection is weaker            Values close to 0 denote greater small-worldness, values closer to 1
+in high g individuals (i.e., negatively related) or stronger in high g          indicate a deviation towards a more random network, and values clo-
+individuals (i.e., positively related). Given this standardization, we          ser to −1 indicate a deviation towards a more regular network. No
+expect weak ties to exhibit negative beta coefﬁcients, which were used          participants exhibited a deviation towards a locally integrated, globally
+to group features by direction of outcome association (i.e., negatively         segregated regular network. As predicted, individuals with higher g
+or positively related to g). The mean distance of predictive connec-            scores exhibited greater small-worldness than individuals with lower g
+tions was signiﬁcantly higher for connections negatively related to g           scores (r = -0.204 [−0.268, −0.137], t(829) = −5.986, p < 0.0001***;
+compared to those positively related to g (Mpos = 105.20 mm,                    Fig. 8a). Complementary analyses examining the topological proper-
+SEpos = 1.05 mm, Mneg = 151.20, SEneg = 2.04, W = 520005, p < 0.0001).          ties that underlie small-worldness (i.e., average shortest path length
+This demonstrates that predictive connections weak in strength tend             and average local clustering) provided additional insight into this
+to be longer in distance. As Fig. 6a illustrates, this is not due to outliers   relationship. Individuals with higher g scores exhibited higher local
+but reﬂects the general distribution of connection distance.                    clustering (r = 0.143 [0.076, 0.209], t(829) = 4.174, p < 0.0004***;
+     To further investigate the importance of weak, long-range con-             Fig. 8b.) and shorter average path lengths (r = −0.079 [-0.146, −0.011],
+nections with g, we examined whether Haufe coefﬁcients, measures of             t(829) = −2.274, p = 0.023*; Fig. 8c). This suggests highly integrated
+feature importance for an outcome, changed as a function of con-                local clusters combined with inter-cluster connections that allow for
+nection length, and if this is moderated by direction of outcome                the efﬁcient sharing of information are important for g. The observed
+association. That is, for a weak tie, is it the case that it is more            ﬁndings support the NNT framework, providing evidence that intelli-
+important for g when it is longer in distance than other weak ties? As          gence emerges from the brain’s small-world organization.
+our regression model reveals, this is indeed the case (Table 1). Fig-
+ure 6b provides an illustration of this moderated relationship between          Discussion
+the distance of positively and negatively related connections and their         The Network Neuroscience Theory4 (NNT) posits that general intelli-
+Haufe coefﬁcients. For positively related connections, the opposite             gence arises from individual differences in the global topology of the
+
+
+Nature Communications | (2026)17:2027                                                                                                                     6
+Article                                                                                                             https://doi.org/10.1038/s41467-026-68698-5
+
+
+
+
+Fig. 5 | Results from a permutation-based control analysis testing the effect of      set size. a Performance as measured by Pearson correlation (r) showed no rela-
+feature dimensionality on predictive modeling performance. A grid search was          tionship with feature set size (r = −0.081 [−0.232, 0.075]; t(159) = −1.021; p = 0.309).
+conducted across feature sets of increasing size using randomly permuted con-         b Performance as measured by coefﬁcient of determination (R2) showed a negative
+nections. These feature sets were used to train an elastic net model to predict g     relationship with feature set size (r = −0.724 [−0.790, -0.641]; t(159) = −13.220;
+scores on a held-out test sample using 5-fold cross-validation. Two-sided t-tests     p <0.0001***).
+were used to examine whether performance metrics signiﬁcantly related to feature
+
+
+
+
+Fig. 6 | Assessment of weak ties within the set of predictive connections.            the more important its associated connection is for g. Two-sided t-tests were car-
+a Comparison of distributions from connections negatively (orange) and positively     ried out to independently examine the correlation between the grouped Haufe
+(red) related to g using density estimation graphs with a Gaussian kernel and a       coefﬁcients and connection distance. Negative Haufe coefﬁcients were negatively
+Wilcoxon rank sum test. Distributions signiﬁcantly differed from each other           related to connection distance (r = −0.449 [−0.527, −0.364]; t(371) = −9.683;
+(W = 520005; p < 0.0001). b Scatter plot of the mean Haufe coefﬁcient for each        p < 0.0001***), and positive Haufe coefﬁcients were also negatively related to
+predictive connection against its distance, grouped by the direction of their asso-   connection distance (r = −0.145 [−0.190, −0.099]; t(1786) = −6.179; p < 0.0001***).
+ciation with g. The more a Haufe coefﬁcient deviates from zero in either direction,
+
+
+
+
+human connectome. We investigated the network architecture of                         orchestrate between-network interactions, supporting the predicted
+intelligence, examining core predictions of NNT. Our investigation                    role of modal control mechanisms that drive global activity; and (4)
+provided evidence that g: (1) engages multiple brain networks, sup-                   depends on a small-world topology, the predicted architecture for
+porting the theory’s principle of distributed processing; (2) relies on               system-wide communication and dynamics. Data from the Human
+weak, long-range connections, reﬂecting the theory’s emphasis on a                    Connectome Project30 (HCP) demonstrated these patterns, in addition
+globally coordinated network architecture; (3) recruits regions that                  to data from the INSIGHT study5,31,32 reported in the Supplemental
+
+
+Nature Communications | (2026)17:2027                                                                                                                                       7
+Article                                                                                                                        https://doi.org/10.1038/s41467-026-68698-5
+
+
+Table 1 | Results from a multiple regression model predicting                                         images rather than focusing solely on resting-state data38 (12% versus
+Haufe coefﬁcients from the distance of predictive connec-                                             <1–7%). These comparisons highlight the importance of jointly mod-
+tions, their association with g (binarization code: positively                                        eling structural and functional connectivity to capture their integrated
+related = 0, and negatively related = 1), and the interaction                                         contribution to brain organization, rather than relying on structure-
+between these independent variables                                                                   function coupling approaches that quantify coherence without mod-
+                                 Beta              SE              t              p                   eling their mutual inﬂuence. The beneﬁts of a joint structure-function
+ Distance                        −5.38E-05         8.57E-06        −6.27          <0.0001***
+                                                                                                      modeling framework are exempliﬁed by its capacity to recover weak,
+                                                                                                      long-range connections and to functionally constrain estimates of
+ Association                     −1.25E-01         3.46E-03        −36.05         <0.0001***
+                                                                                                      information ﬂow bandwidth along structural pathways that diffusion-
+ Distance*Association            −1.37E-04         2.29E-05        −5.98          <0.0001***
+                                                                                                      based tractography can only hypothesize.
+Haufe coefﬁcients that deviate from zero in either direction indicate greater importance for g.            Several other effective network modeling approaches have been
+The sign merely indicates when weaker or stronger connections are found in higher g individuals
+(e.g., negative = weaker in higher g; positive = stronger in higher g). Two-sided t-tests were used
+                                                                                                      developed to jointly model structural and functional information. For
+to test the signiﬁcance of beta coefﬁcients. df = 829.                                                example, one framework maps higher-order relationships between
+                                                                                                      structural and functional networks39, enabling the recovery of missing
+                                                                                                      or underestimated edges, elucidating inter-network relationships, and
+                                                                                                      capturing the topology of the high-dimensional space in which indi-
+Materials (see Supplementary Figs. 1–14 and Supplemental Table 1).                                    vidual nodes are embedded. Other methods seek to improve the
+The reported ﬁndings, observed in a population of 976 partici-                                        estimation of intrinsic connectivity networks (ICNs) through multi-
+pants, further establish and validate the predictions of the NNT fra-                                 modal independent component analyses40,41. These methods can
+mework and align with emerging evidence in network neuroscience, as                                   produce multi-modal, data-driven parcellation schemes, link structural
+we review in the following sections.                                                                  and functional connectivity information, enhance structure-function
+     Prevailing theories of intelligence (see ref. 3 for an example) were                             coupling between ICNs, and reﬁne network boundaries. Collectively,
+formulated before the advent of network neuroscience and relied on                                    these approaches offer a more comprehensive assessment of how
+brain imaging methods that were limited in their ability to capture                                   structure-function relationships support high-level cognition42.
+global topological properties. For example, the classic P-FIT model was                                    To investigate the NNT prediction that intelligence engages
+developed from a review of human neuroimaging studies aimed at                                        multiple brain networks, we examined the relative contributions of
+identifying speciﬁc brain regions supporting complex problem                                          separate ICNs to the prediction of g scores. Rather than engaging a
+solving33,34. However, how these regions communicated with one                                        single network, g was associated with individual differences in a wide
+another to support higher cognition remained unclear. More recent                                     range of networks centered around cognitive control (FPN, CON),
+research has acknowledged this limitation, emphasizing that structural                                attention (DMN, DAN), language (LAN), and perceptual (V1, V2, AUD)
+connections play a critical role in shaping the brain’s global functional                             processes. Prior research has emphasized the involvement of networks
+topology11,18,27,28,35. Yet the few existing studies that have examined                               that support each of these functions in general intelligence43–46. How-
+white-matter pathways associated with intelligence have relied on                                     ever, despite their individual predictive power, exclusion analyses
+modeling techniques that are known to overlook weak, long-range                                       demonstrated that none of the networks are crucial for predicting
+connections, particularly those spanning multiple ﬁber bundles26.                                     individual differences in g within a whole-brain context. Between-
+Thus, prior research has been largely insensitive to features that the                                network links appear in large part to drive this pattern, as demon-
+NNT posits as central to the brain’s global information processing                                    strated by the visualization of predictive connections (Fig. 4). Between-
+architecture4. As a consequence of this limitation, prevailing theories                               network connections with predictive power included network inter-
+of intelligence have continued to emphasize the central role of speciﬁc                               actions involving all twelve ICNs, including those whose within-
+brain networks (e.g., the fronto-parietal network in the P-FIT model)3.                               network connections were not predictive (OA, PMM, VMM), thereby
+To address this gap and more comprehensively characterize the neural                                  supporting the NNT’s principle of distributed processing for general
+foundations of intelligence, we employed a joint structure-function                                   intelligence (for converging evidence, see refs. 5–7,47,48). Together,
+modeling approach that more accurately captures the global topology                                   these ﬁndings align with the NNT framework and necessitate a shift in
+of the human connectome.                                                                              perspective from a localizationist perspective to examining the
+     In our analysis, we recognized potential concerns about over-                                    emergence of g from system-wide network communication and
+ﬁtting in the univariate feature selection step of a CPM framework36. To                              dynamics.
+mitigate this issue and improve the generalizability of our results, we                                    According to the NNT framework, intelligence depends on the
+implemented an elastic net model within a stratiﬁed 5-fold cross-vali-                                engagement of weak, long-range connections (i.e., weak ties) that
+dation framework. The elastic net imposes regularization to prevent                                   enable efﬁcient system-wide communication and dynamics9,11. These
+overﬁtting, while 5-fold cross-validation ensures training samples do                                 connections are hypothesized to allow the ﬂexible reconﬁguration of
+not signiﬁcantly overlap to increase generalizability. The large sample                               brain networks in response to changing task demands11–13. To investi-
+size of the HCP dataset (N = 831) further strengthens the reliability and                             gate the role of weak ties in g, we examined how a connection’s
+reproducibility of our predictive ﬁndings.                                                            importance for g varied as a function of its length and strength. The
+     Our main connectome-based predictive model, which integrated                                     joint structure-function model and the tractography method we
+structure-function connections across the whole-brain, accounted for                                  employed provide distinct advantages in detecting weak, long-range
+a signiﬁcant proportion of variance in g (12% in the HCP sample, and                                  connections compared with traditional approaches8,49.
+15% in the INSIGHT study; Fig. 1a). These ﬁndings illustrate the con-                                      Our ﬁndings revealed that, in individuals with higher g, weaker
+tribution of the whole-brain connectome to individual differences in                                  connections tended to span longer distances than stronger connec-
+intelligence and align with recent studies in network neuroscience5–7.                                tions in the same individuals (Fig. 6a). Furthermore, the importance of
+Notably, our HCP whole-brain model outperformed a recent study that                                   weak connections for g increased with connection length, whereas the
+predicted intelligence scores in held-out HCP participants from                                       relevance of strong connections increased with shorter distances. In
+resting-state and diffusion-weighted data analyzed with structure-                                    other words, among weak ties, those extending over longer distances
+function coupling methods37 (12% versus 6%). Moreover, our HCP                                        were more strongly associated with g, while among strong ties, those
+whole-brain model similarly outperformed another coupling model                                       spanning shorter distances were more closely linked to g (Fig. 6b).
+applied to the HCP dataset that incorporated task-based functional                                    These ﬁndings align with prior research investigating measures of
+
+
+Nature Communications | (2026)17:2027                                                                                                                                        8
+Article                                                                                                             https://doi.org/10.1038/s41467-026-68698-5
+
+
+
+
+Fig. 7 | Assessment of the relationship between g scores and cortical modal            values are closer to red. d Network assignments of regions plotted on the cortical
+control proﬁles calculated from regions in after excluding the bottom 25th             surface. The color palette is consistent with Fig. 4. V1 Primary Visual Network, V2
+percentile. a Empirically derived null distribution of F-statistics from permutation   Secondary Visual Network, SMN Somatomotor Network, CON Cingulo-opercular
+testing with 1000 randomly shufﬂed distance matrices. The red line represents the      Network, DAN Dorsal Attention Network, LAN Language Network, FPN Fronto-
+statistical value from the MDMR model. b Bar graph displaying the percentage of        parietal Network, AUD Auditory Network, DMN Default Mode Network, PMM
+the top 75th percentile regions coming from a given ICN. c Modal control value of      Posterior Multi-modal Network, VMM Ventral Multi-modal Network, OA Orbito-
+regions in the top 75th percentile averaged across participants, by region, and        affective Network.
+plotted on the cortical surface. Lower values are closer to yellow, while higher
+
+
+
+
+Nature Communications | (2026)17:2027                                                                                                                                   9
+Article                                                                                                          https://doi.org/10.1038/s41467-026-68698-5
+
+
+
+
+Fig. 8 | Correlation models assessing the relationship between small-world-         scores against average local clustering (log transformed) showing a positive
+ness, its underlying topological properties (i.e., local clustering and path        correlation (r = 0.143 [0.076, 0.209]; t(829) = 4.174; p = 0.0004***). Higher values
+length), and g. Two-sided t-tests were carried out to assess the statistical sig-   denote greater clustering. c Scatter plot of g scores against characteristic path
+niﬁcance of each Pearson correlation value. a Scatter plot of g scores against      length (i.e., shortest average path length) showing a negative correlation
+small-world propensity values showing a negative correlation (r = 0.204 [−0.268,    (r = −0.079 [−0.146, −0.012]; t(829) = −2.274; p = 0.023*). Lower values denote
+−0.137]; t(829) = −5.986; p < 0.0001***). Values deviating towards zero denote a    shorter average path lengths. P-values were corrected for multiple comparisons
+more small-world, rather than random, network architecture. b Scatter plot of g     using the false discovery rate.
+
+
+
+
+functional connectivity, where weak functional associations were                    longer, weaker connections appears to be conducive to higher cog-
+found to predict general10 and ﬂuid intelligence7,12. Our results con-              nitive functioning. This pattern of results supports the notion that a
+tribute to this prior work by providing structural evidence, demon-                 globally organized, economically efﬁcient information processing
+strating that the physical length of direct connections between                     architecture, proposed by the NNT framework, is crucial for
+spatially distributed regions plays a critical role in supporting general           intelligence.
+intelligence. Furthermore, our ﬁndings motivate new insights into how                    A central question in the study of human intelligence concerns the
+connection strength and length interact to support g. Speciﬁcally, a                nature of the top-down mechanisms that govern the selection and
+topology characterized by shorter, stronger connections coupled with                control of representations underlying goal-directed behavior. The
+
+
+Nature Communications | (2026)17:2027                                                                                                                               10
+Article                                                                                              https://doi.org/10.1038/s41467-026-68698-5
+
+
+NNT framework proposes that brain network dynamics are shaped by            under changing task demands. While previous studies have primarily
+the topology of the human connectome. That is, where speciﬁc brain          examined network integration24 or segregation25, the present study
+regions are located, and where they can act as network controllers to       investigates whether the balance between these two proper-
+effectively drive the system into speciﬁc functional states16,18. The       ties, captured by small-worldness, constitutes a critical organizational
+hierarchical community structure of the brain may facilitate or con-        principle underlying general intelligence.
+strain the transition from one state to another. Regions exhibiting               Consistent with NNT’s prediction, we found that individuals
+greater modal control can drive the system towards difﬁcult-to-reach        with higher g scores exhibited global topologies more closely
+states by using their connections to enable a sequence of less fre-         resembling a small-world architecture compared to those with lower g
+quently engaged state transitions. Such transitions reﬂect the capacity     scores (Fig. 8a). Further analyses revealed that this relationship was
+to respond ﬂexibly to novel situations by engaging mechanisms that          driven by both greater local clustering (Fig. 8b) and shorter global
+support adaptive, goal-directed behavior18,19. Certain primary (e.g.,       path length (Fig. 8c). Previous studies have independently reported
+SMN and AUD) and higher order ICNs (e.g., CON and FPN) are known            shorter path length24,50 and greater local clustering in the functional
+to support adaptive responding through the control of mental                topology in intelligence50. However, our ﬁndings demonstrate that the
+operations, and are therefore expected to show higher modal control         balance between these two properties, captured by small-world-
+scores16. According to NNT, the efﬁciency of system-wide network            ness, predicts higher g scores, providing a framework for under-
+function depends on modal control regions that orchestrate global           standing the contributions of each topological attribute51 to general
+network communication, suggesting that individual differences in            intelligence.
+these properties should predict g.                                                Our analysis also clariﬁed the kinds of deviations from a small-
+      We found that participants’ modal control proﬁles signiﬁcantly        world topology that predict lower g scores. Speciﬁcally, we investi-
+predicted g (Fig. 7a), supporting the NNT framework. The proﬁles            gated whether individuals with lower g scores deviate towards more (1)
+associated with g most prominently involved regions within the DMN,         random networks, associated with short path lengths but low local
+CON, FPN, and V2 networks, each of which also demonstrated high             clustering, or (2) regular networks, associated with high local cluster-
+modal control values (Fig. 7b, c). Prior cortical mapping studies have      ing but long path lengths. We found that individuals with lower g
+shown that the CON, FPN, and V2 demonstrate high modal control              scores exhibit more randomness than regularity in their network
+values (see Fig. 2c in ref. 16). Beyond these networks, and consistent      organizations, suggesting a breakdown in local clustering (Fig. 8b).
+with prior research (Fig. 2c in ref. 16), the AUD and OA exhibited high     Yet, how do individuals with lower g scores exhibit deviations towards
+modal control values (Fig. 7c). Collectively, our ﬁndings align with        more random global topologies, as indicated by the small-world
+prior work indicating that hubs of modal controllability predominantly      metric, given that more random network structures typically reduce
+reside within cognitive control and primary sensory networks16.             path lengths? The answer may lie in optimal (i.e., less random)
+      Further, while modal control is not strictly a graph theoretic        between-network connections that reduce global path lengths52. Thus,
+property, at least not in the same way local clustering or characteristic   higher g individuals may achieve shorter path lengths through optimal
+path length are, it does correlate highly with graph theoretic proper-      placement of their neural connections rather than relying on more
+ties, namely weighted degree16. This suggests that certain topological      random placements.
+properties may be driving factors in the creation and maintenance of              In summary, Network neuroscience bridges the gap between
+structural control mechanisms. Thus, together with our ﬁndings, the         traditional, localist approaches to brain function and globalist per-
+prediction of general intelligence may also be informed by examining        spectives by leveraging network science to create a uniﬁed framework.
+sparsely connected brain regions. Future research investigating this        Rather than dismissing localist ﬁndings, it explains how local features
+relationship may provide a complementary perspective on the rela-           form essential building blocks within larger systems, where the
+tionship between modal control and g. In addition, other structural         mechanisms governing their interactions play a pivotal role in human
+control mechanisms may also provide complementary insights, spe-            cognition. This framework offers a common language and methodol-
+ciﬁcally average and boundary controllability. Within Network Control       ogy to analyze brain topologies across all scales, encompassing
+Theory, average controllability is hypothesized to enable easy-to-reach     molecules, synapses, networks, circuits, and entire systems.
+states16, which may reﬂect access to general knowledge structures4,               Building on this progress, the Network Neuroscience Theory4 of
+and boundary controllability is hypothesized to enable states reﬂect-       intelligence proposes that g arises from the brain’s global organization.
+ing network integration16.                                                  Our ﬁndings from the HCP dataset directly support this prediction. We
+      Consistent with NNT, prior neural communication models                observed that intelligence depends on a global architecture, with joint
+emphasize the importance of structural attributes in propagating            modeling of structural connections with intrinsic functional co-
+functional signals between cortical regions, thereby shaping commu-         activation patterns across the whole brain explaining 12% of the var-
+nication patterns that underlie high-level cognition27,28,35. These mod-    iance in g. No single ICN matched this predictive power. Our ﬁndings
+els often focus on topological properties, such as pathways through         validate the predictions of NNT, demonstrating that intelligence: (1)
+graph networks, that constrain the ﬂow of information. The joint            engages multiple networks; (2) relies on weak, long-range connections;
+structure-function model adopted here incorporates similar                  (3) employs regions high in modal controllability that can drive global
+constraints8. However, according to NNT, modal control adds further         activity; and (4) depends on a small-world topology that simulta-
+insight by demonstrating how structure not only constrains but also         neously ensures local and global processing efﬁciency. In addition, we
+drives functional activation patterns, providing evidence that intelli-     present analyses from an independent dataset that further support
+gence depends on regions that ﬂexibly orchestrate global network            these predictions in the Supplemental Materials. Thus, our research
+activity.                                                                   provides empirical evidence to support core principles of NNT across
+      According to NNT, a small-world topology is essential for the         multiple datasets and methodologies.
+network architecture of intelligence, as it simultaneously ensures local          In conclusion, NNT offers a powerful, unifying theory to integrate
+and global efﬁciency. Network segregation, characterized by densely         ﬁndings from the general intelligence literature, acknowledging the
+connected local modules, enhances local efﬁciency, while network            importance of speciﬁc regions and networks that have been the focus
+integration, mediated by long-range connections, facilitates efﬁcient       of prior research while also paving the way for future explorations of
+global communication. The balance between these opposing princi-            the global topology and dynamics of the human connectome. Central
+ples (minimizing wiring costs versus maximizing global efﬁciency)           questions that drive future research include: (1) how intelligence is
+allows for rapid functional reconﬁguration and optimal performance          constructed from the interaction(s) between multiple brain networks,
+
+
+Nature Communications | (2026)17:2027                                                                                                             11
+Article                                                                                                   https://doi.org/10.1038/s41467-026-68698-5
+
+
+(2) how weak connections inﬂuence information ﬂow, and (3) how                  24 s long, resulting in 1200 volumes per scan. Diffusion-weighted scans
+speciﬁc control regions orchestrate global network communication.               [TR = 5520 ms; TE = 89.5 ms; 1.25 mm isotropic resolution] were
+By addressing these questions, future research will achieve a deeper            obtained using a multi-shell protocol [b = 1000, 2000, 3000 s/mm2; 90
+understanding of the nature of g, uncovering its origins within the             directions/shell]. All data were downloaded in their minimally pre-
+global topology and dynamics of the human connectome.                           processed format.
+      We recognize several limitations in our analysis that motivate
+future research and advances in network neuroscience. First, although           Subset procedure
+CPM is a well-validated predictive modeling framework, it is not the            We included only those participants who had completed all neu-
+only approach taken in network neuroscience to elucidate the neuro-             ropsychological testing (N = 1188). To exclude those with cognitive
+biology of intelligence. We applied this linear modeling approach               impairment, a score of 27 or higher on the Mini-Mental Status Exam
+because it is well-suited to explain the macroscopic dynamics of                was required (N = 1155). We did not implement any data imputation.
+resting-state networks53. Artiﬁcial neural network alternatives may help        Therefore, participants with missing cognitive data were excluded
+identify non-linear relationships for more accurate predictions of              (N = 1151). This subset of participants was used for modeling a latent g
+intelligence54. Second, convergent evidence from other multi-modal              factor.
+modeling techniques would enhance the generalizability of our ﬁnd-                   A subset of the subjects used for factor analysis had completed all
+ings. However, such alternatives must be designed in a way that cap-            resting-state and diffusion-weighted MRI scans (N = 896). We further
+tures local and global topological attributes of nodes in a system39,42.        implemented a movement threshold such that participants with a
+Third, while modal control is not strictly a graph theoretic property           mean relative root-mean-squared movement parameter, as calculated
+(e.g., local clustering, characteristic path length, etc.), it does correlate   by the HCP team (Movement_RelativeRMS_mean.txt), above 0.20 mm
+highly with graph theoretic properties, namely weighted degree. Given           for any resting-state scan were excluded (N = 866). Finally, to ensure
+our ﬁndings, this suggests that the prediction of general intelligence          the quality of the ﬁnal connectomes, we calculated their level of
+may also be informed by examining sparsely connected brain regions.             sparsity (i.e., the number of zeroes in the matrix). Connectomes
+Future research examining this relationship may provide a com-                  comprised of an abnormally large number of zeroes were most likely
+plementary perspective on the matter.                                           generated from poor quality diffusion-weighted data. Thus, sparsity
+                                                                                values were z-scored, and participants with a z-score greater than 3.5
+Methods                                                                         were dropped (N = 831). This subset of participants was used for the
+Dataset                                                                         brain-behavior analyses.
+We obtained participant data (N = 1206) from the publicly available
+1200-subject, young adult release of the Human Connectome Project30             Factor analysis
+(HCP). Participants were aged 22–36 years (M = 28.632; SD = 3.670),             We adopted a hierarchical approach from prior work to derive a latent
+and 54% were female. While our dataset was well balanced between                g factor from the dataset6. Here, a bi-factor model estimated a com-
+males and females, our study focused on theoretical predictions with            mon factor, g, that loads onto all tests, and several group factors that
+respect to all humans. Thus, an investigation into sex differences was          load onto subsets of tests. This was done by running an exploratory
+deemed beyond the scope of this study, and no speciﬁc hypotheses                factor analysis to extract ﬁrst-order group factors from manifest-level
+were made. Informed consent was obtained for all participants prior to          variables and a second-order general factor from the ﬁrst-order
+study enrollment. The institutional review board of the University of           group factors. Then, an oblique rotation with a Schmid–Leiman
+Illinois, Urbana-Champaign, reviewed and approved this study. Finally,          transformation57 was used to generate a bi-factor model where all
+this dataset included comprehensive cognitive and neuropsychologi-              manifest-level variables load onto all orthogonalized latent factors (i.e.,
+cal tests, as well as magnetic resonance imaging (MRI) data.                    general and group). Horn’s parallel analysis was used to determine the
+      The cognitive test battery was comprised of several measures              number of latent factors underlying the data to be used in the
+from the NIH toolbox (nihtoolbox.org) including: (1) the Picture                exploratory analysis. This process compared eigenvalues (represent-
+Vocabulary Test (PicVocab), an assessment of vocabulary; (2) the Pic-           ing the amount of variance captured by a latent factor) derived from
+ture Sequence Memory Test (PicSeq), an assessment of episodic                   the observed data to those derived from random datasets of the same
+memory; (3) the Flanker Inhibitory and Attention Test (Flanker), an             size. Factors with eigenvalues more than their random counterparts
+assessment of executive function; (4) the Dimensional Change Card               were retained.
+Sort Test (CardSort), an assessment of cognitive ﬂexibility; (5) the                  While the bi-factor model guarantees that general and group
+Pattern Comparison Processing Speed Test (ProcSpeed), an assess-                factors will be extracted, the factor loadings, number of group factors,
+ment of processing speed; (6) the Oral Reading Recognition Test                 and ﬁt of the model are ultimately determined by the data’s structure.
+(ReadEng), an assessment of reading decoding skills and crystallized            If a hierarchical structure truly exists in the data, then the model will
+abilities; and (7) the List Sorting Working Memory Test (ListSort), an          produce good indices of ﬁt. We report two types of these indices,
+assessment of working memory. Other measures included55, but not                including the comparative ﬁt index (CFI) and root mean squared error
+belonging to the NIH toolbox, were: (1) the Penn Matrix Test (PMA-              approximation (RMSEA).
+T24_A_CR), a measure of non-verbal reasoning; (2) the Variable Short
+Penn Line Orientation Test (VSPLOT_TC), a measure of visuospatial               Resting-state independent component analysis and spatial
+processing; and (3) the Penn Word memory test (IWRD_TOT), a mea-                component classiﬁcation
+sure of verbal episodic memory.                                                 Resting-state images were smoothed using a 4 mm full-width-half-
+      MRI data consisted of structural, resting-state functional, and           maximum (FWHM) kernel at 75% brightness threshold using FSL’s
+diffusion-weighted scans. The acquisition parameters and the minimal            susan. Smoothed images were then high-pass ﬁltered at 0.01 Hz and
+preprocessing pipeline implemented by the HCP team for each mod-                linearly detrended using AFNI’s 3dTproject. FSL’s melodic-ica was then
+ality are extensively described in their original publication56. Resting-       applied to extract spatial co-activation patterns representative of sig-
+state data [TR = 720 milliseconds (ms); TE = 33.1 ms; 2 millimeter (mm)         nal (i.e., blood-oxygen-level-dependent neuronal activity) and noise
+isotropic resolution; multiband acceleration factor = 8] were com-              (i.e., physiological artifacts). These spatial patterns were thresholded
+prised of four separate scans, acquired on two separate days. Two               using probability maps supplied by the melodic-ica mixture model
+scans were acquired on each day using two separate phase-encoding               output. Voxels with less than a 50% probability of contributing to a
+directions (i.e., left-to-right, right-to-left). Each scan was 14 min and       spatial component were zeroed out.
+
+
+Nature Communications | (2026)17:2027                                                                                                                   12
+Article                                                                                                      https://doi.org/10.1038/s41467-026-68698-5
+
+
+     We used a component classiﬁcation approach similar to the              The SIFT2 algorithm works to combine streamlines with their asso-
+automatic-removal-of-motion-artifacts method58 (AROMA). First, the          ciated density information to generate a metric that more accurately
+frequency content of spatial components was calculated from the             reﬂects information-carrying capacity, referred to as ﬁber bundle
+Fourier-transformed mixture matrix supplied by the melodic-ica out-         capacity (see ref. 62 for an in-depth discussion). Finally, we applied the
+put. Components with a large amount of high-frequency content were          Glasser-360 parcellation to these ﬁltered tractograms to obtain a
+discarded. Second, spatial components were robustly correlated with         structural connectome. These served as the structural input for the
+resting-state motion parameters. Components with a moderate cor-            joint structure-function model.
+relation with in-scanner motion were discarded. Third, a Pearson’s
+skewness index was calculated from the distribution of activation           Joint structure-function network modeling
+values for each component. Noise components are assumed to exhibit          The joint structure-function model takes two primary inputs: (1) a
+a zero-mean Gaussian distribution59. Thus, components with a Pear-          functional activation matrix (Rm  i ) whose values describe the functional
+son’s skewness index close to 0 were discarded. Finally, spatial com-       activation of each region, i, contributing to some functional co-
+ponents whose contributing voxels were not substantially within the         activation pattern, m; and (2) a structural connectome (Dl ) whose
+grey matter were discarded.                                                 values describe the white-matter connectivity strength, l, between all
+     Spatial components classiﬁed as signal were masked with the            pairs of cortical regions. These inputs are used to estimate two
+Glasser-360 parcellation. The total voxel-wise activation value for each    unknowns, the ﬂow and the capacity adjustment variables.
+cortical region within each spatial component was calculated. These              The ﬂow variable ( f m l ) extracts function-related, structural brain
+values were then stacked into an activation matrix, such that columns       circuits that describe the capacity of a structural edge, l, to transmit
+represented spatial components, rows represented cortical regions of        functional information in support of a functional co-activation pattern,
+interest, and values described the total activation of a cortical region    m. This is termed information ﬂow capacity. This is related to the ﬁber
+for that spatial component. Matrices were then normalized to a range        bundle capacity measure within the structural connectomes in terms
+between 0 and 1. These matrices served as the functional input for the      of bandwidth (i.e., the capacity of a connection to transfer informa-
+joint structure-function network model.                                     tion). However, it differs in that it is functionally informed, rather than
+                                                                            a purely structural estimate that can only be hypothesized to align with
+Diffusion-weighted tractography                                             a given functional bandwidth. The capacity adjustment variable (P l )
+We adopted multi-shell, multi-tissue, constrained spherical deconvo-        works to ensure a node’s anatomical connections are sufﬁciently
+lution (MSMT-CSD)49, a state-of-the-art tractography algorithm to           strong for supporting an observed functional pattern by allowing the
+model the brain’s white matter pathways. This method works to pro-          model to correct for underestimated white-matter pathways.
+duce a high-quality estimation of a ﬁber orientation distribution                In solving for f ml and P l , several constraints are established to
+function (fODF) for each voxel in the brain. These functions describe       integrate structural and functional information, while a cost function is
+the likelihood and strength of water ﬂow in each direction within a         deﬁned to determine the optimal solution. The ﬁrst constraint is
+voxel. The values are used by probabilistic tractography algorithms to      known as the link capacity constraint (Eq. 1). This constraint puts an
+trace white-matter pathways (i.e., streamlines). Importantly, MSMT-         upper bound on the amount of information a given link, l, can transmit
+CSD can capture multiple directions of water ﬂow in a single voxel,         in the service of all functional patterns (m 2 M):
+making it an ideal approach to accurately model white matter path-
+ways in cross-ﬁber areas. All functions used for diffusion-weighted                                  X
+                                                                                                     M                  
+tractography were implemented by the mrtrix3 software60.                                                   flm ≤ Dl + P l , 8l = 1, 2, . . . , L:            ð1Þ
+                                                                                                     m=1
+     To prepare for MSMT-CSD tractography, preprocessed diffusion-
+weighted images were bias-corrected with the dwibiascorrect function.            The second constraint is known as the node demand constraint
+Multi-tissue response functions were calculated from bias-corrected         (Eq. 2). This constraint ensures that the
+                                                                                                                   amount     of information being
+images with the dwi2response function and the dhollander algorithm.         delivered to a given node by its links l 2 N i is sufﬁcient to support
+                                                                                                                                                 its
+Response functions were then averaged across all subjects. The group-       observed functional activation across all functional modes r 2 Ri :
+averaged response functions were used to estimate fODFs with the                          X
+dwi2fod function. fODFs were then normalized using the mtnormalise                                  flm ≥ r m
+                                                                                                            i , 8m = 1, 2, . . . , M, i = 1, 2, . . . , N:   ð2Þ
+function. Tractography was run using the tckgen function with                             l2N ðiÞ
+the iFOD2 algorithm, a selection of 50 million streamlines, a fODF
+amplitude cutoff of 0.06, a minimum tract length of 5 mm, a maximum               These two constraints establish the integrative framework for
+tract length of 275 mm, a step size of 1.25 mm, and an angle cut-           structural and functional connectivity that applies to the ﬂow variable.
+off of 45°.                                                                 The third constraint is known as the feasibility constraint (Eq. 3). This
+     We processed the resulting tractograms with the second iteration       constraint ensures that information carried between two regions, i and
+of the Spherical-deconvolution Informed Filtering of Tractograms61          j, cannot arbitrarily exceed the amount of information ﬂow necessary
+(SIFT2) algorithm. This method addresses the streamline connectivity        to support their observed neuronal activities:
+quantiﬁcation problem62 by generating a more biologically relevant                              n        o
+measure of white-matter connectivity strength. Intuitively, con-                       flm ≤ max Rm    m
+                                                                                                          where l = ði, j Þ, 8l = 1, 2, . . . , L:           ð3Þ
+                                                                                                  i , Rj
+nectivity strength can be conceptualized as the number of axons
+making up a ﬁber bundle (i.e., its density). The denser a ﬁber bundle is,        Finally, the cost function (Eq. 4) works to minimize the informa-
+the greater its information-carrying capacity. Because diffusion-           tion delivery cost while enhancing underestimated structural con-
+weighted imaging cannot capture individual axons, the strength of           nections, if necessary, to ensure anatomical pathways can feasibly
+water diffusion is used as a proxy and modeled with fODFs. While this       support observed functional co-activation patterns:
+information is used in tractography algorithms to trace pathways, it is                                                         !
+                                                                                                 XL                X m                 L 
+                                                                                                                                         X              
+not routinely integrated into a measure of connectivity strength.                                                1 M                                 1
+Instead, traditional structural connectomes simply reﬂect the total                   C flm , P l =                        f        +ρ          1+      P    ð4Þ
+                                                                                                           l=1
+                                                                                                                 Dl m = 1 = l            l=1
+                                                                                                                                                     Dl l
+number of streamlines (i.e., pathway traces) between cortical regions.
+This does not capture connectivity strength in a quantitative sense, as     Where ρ is a hyperparameter with the default value of 0.02 as set by
+streamlines are akin to lines on a page with no real associated volume.     Chu and colleagues8. The overall network optimization problem is
+
+
+Nature Communications | (2026)17:2027                                                                                                                        13
+Article                                                                                                     https://doi.org/10.1038/s41467-026-68698-5
+
+
+summarized as:                                                                     necessary to establish statistical signiﬁcance in cross-validation fra-
+                                                      !                            meworks because folds are not statistically independent from one
+                                  X                            L 
+                                                               X              
+                                  L
+                                        1 X M
+                                                  m                        1       another, precluding the use of standard parametric tests. Further, the
+          min   fm
+                 l ≥ 0, P l ≥ 0
+                                                f         +ρ          1+      P    use of regularization and a 5-fold cross-validation scheme results in
+                                  l=1
+                                        Dl m = 1 l             l=1
+                                                                           Dl l
+                                                                                   much less training set overlap, is less biased compared to a leave-one-
+      The solution is derived subject to constraints 1, 2, and 3 using             out scheme, prevents overﬁtting, and conﬁrms the generalizability of
+standard optimization techniques. This results in m × N × N multi-                 the test’s ﬁndings.
+modal connectomes, where m is the number of co-activation patterns
+recovered by the ICA, and N is the number of cortical regions indicated            Lesion analysis
+by the adopted parcellation scheme (Glasser-360). Each mi con-                     To assess the predictive power of each ICN compared to our whole-
+nectome represents a single function-informed, structural brain cir-               brain model, we adopted a lesion approach that predicts out-of-sample
+cuit. Values represent the capacity of a connection within this circuit to         g scores from subsets of connectivity features. This consisted of
+transmit functional information in association with some intrinsic                 inclusion and exclusion predictive models. Inclusion models incorpo-
+functional co-activation pattern. Given the integrated nature of the               rated features from only one of the ICNs at a time. This allowed us to
+brain’s intrinsic connectivity networks63,64 (ICNs), each brain circuit            test the independent predictive efﬁcacy of each ICN compared to the
+contains both within- and between-network connections. Here, we                    whole-brain model. Conversely, exclusion models iteratively removed
+deﬁne ICNs using the Cole-Anticevic Brain-wide Network Partition65                 each ICN from the whole-brain model while keeping all other features
+(CAB-NP) that was developed using the Human Connectome Project                     intact. This allowed us to see whether any ICN is crucial for the accurate
+dataset.                                                                           prediction of g scores in the whole-brain model. A common concern
+                                                                                   regarding the comparison of whole-brain models to more localized,
+Connectome-based predictive modeling                                               ICN-speciﬁc models is that performance is biased by the feature set
+We conducted a connectome-based predictive modeling (CPM) ana-                     size. Prior research has investigated this potential source of bias by
+lysis with stratiﬁed 5-fold cross-validation to predict out-of-sample g            performing grid searches across sets of varying sizes comprised of
+scores from the structure-function brain circuits across the whole                 randomly selected edges. These are then used to ﬁt predictive models
+brain. Within each subject and session, for all connections in Nl, we              in the same fashion as the originally described cross-validation pro-
+extracted their set of counterparts across the m structure-function                cedure. Results from these investigations have consistently shown that
+brain circuits. The maximum value within each connection’s set was                 the greater predictive performance of whole-brain models compared
+retained as empirical evidence for its observed information ﬂow                    to more localized models is not simply due to larger feature set
+capacity. This allowed us to create one whole brain N × N multi-modal              sizes5,7. We examined this issue as well, conducting a permutation-
+connectome per session per participant. These were averaged across                 based control analysis. Here, a grid search across feature sets of
+sessions within subjects and used in analyses. CPM using these ﬁnal                increasing size, each populated with randomly permuted connections,
+connectomes was conducted with the following steps: (1) g scores were              was used to ﬁt CPMs within the previously described framework.
+binned into quartiles and randomly sampled equally from each quar-
+tile into 5 separate folds; (2) a training set was constructed from 4              Topological characterization of g
+folds, while the remaining fold made up the test set; (3) connectivity             With respect to network topology, we examined whether weak ties
+features were standardized (i.e., z-scored), correlated with g scores,             (i.e., weak, long-range connections) were important for g. For these
+and features with a p-value above 0.1 were discarded; (4) the remaining            analyses, we retained only highly stable connections that survived the
+connections were used to ﬁt an elastic net model from the training set             feature selection step described above across all ﬁve folds. Addition-
+using stratiﬁed 3-fold cross-validation; and (5) connectivity features in          ally, we examined whether modal control, a structural control
+the test set were z-scored using parameters calculated from the                    mechanism that facilitates global, functional brain movement towards
+training set and used to make predictions for the held-out test set. This          difﬁcult-to-reach states16,17, signiﬁcantly related to g.
+process was then repeated until all 5 folds served as a test set.
+      We report multiple metrics to quantify the success of structure-             Assessment of weak ties. To assess whether signiﬁcant connections
+function connections to predict test set g scores in the CPM frame-                included weak ties, we examined whether connections weaker in
+work. This includes a Pearson correlation coefﬁcient (r), a coefﬁcient of          bandwidth within higher g individuals, compared to lower g indivi-
+determination (R2), and a normalized root mean square deviation                    duals, were longer than those that were stronger in higher g indivi-
+(nRMSD) between the observed and predicted g scores. We used the                   duals. It is important to note that connectivity features were
+cross-validation formula to generate the coefﬁcient of determination:              standardized (i.e., z-scored) before model ﬁtting. Given this standar-
+          P
+              ðy y Þ
+                             2
+                                                                                   dization, a negative association is the direction we would expect to ﬁnd
+R2 = 1  P obs pred 2 . Note that the observed mean comes from the
+            ðyobs yobs, train Þ
+                                                                                  concerning weak ties. That is, features with negative beta coefﬁcients
+training set and does not include observed values from the test set.               (i.e., negatively related) indicate features whose weakness is important
+Thus, R2 does not simply equal the correlation squared. This is                    for g (i.e., weaker in higher g individuals compared to lower g indivi-
+important to account for, because prediction outliers can artiﬁcially              duals). Here, we constructed distributions of connection length,
+inﬂate the observed vs. predicted correlation, thereby giving the                  averaged across all participants, and grouped by their direction of
+impression that the model performed well. The coefﬁcient of deter-                 outcome association (i.e., connections negatively or positively related
+mination formula used here is robust to such outliers and provides a               to g). Because these distributions are somewhat skewed, the non-
+more accurate measure of model performance. For example, R2 values                 parametric Wilcoxon ranked-sum test with continuity correction was
+are typically negative when highly positive performance correlations               used. The length of each connection, in millimeters, was determined
+are due solely to extreme outliers.                                                by the previously described tractography approach.
+                                                                                          Next, we examined whether the importance of connections for g
+     Finally, to assess the statistical signiﬁcance of CPM results, we             changed as a function of connection length and direction of outcome
+conducted a permutation test with 1000 random permutations, fol-                   association. Speciﬁcally, when examining weak ties, does their
+lowing established conventions66. This method creates a null dis-                  importance for g increase with their length? Here, feature importance
+tribution by randomly shufﬂing scores between subjects and running                 is deﬁned as the contribution a feature makes to the variance among
+the predictive model in the same manner. Permutation testing is                    connections that is structured in relation to g. While it may seem that
+
+
+Nature Communications | (2026)17:2027                                                                                                                     14
+Article                                                                                                https://doi.org/10.1038/s41467-026-68698-5
+
+
+beta coefﬁcients describe feature importance, they only describe how         function connectomes. This metric reﬂects the average shortest
+features are used to make predictions. Machine learning models that          number of connections that must be traversed between all pairwise
+incorporate regularization methods can artiﬁcially reduce beta coef-         nodes. The anatomical coordinates of cortical regions and their geo-
+ﬁcients of important features to, or close to, zero due to multi-            metric distances were not used. In addition, average local clustering
+collinearity, and to reduce overﬁtting. Thus, they do not accurately         was calculated using the Onnela function. This metric reﬂects the
+describe the relevance of a given feature for the outcome, but rather        average intensity of triangles around a node.72 These relationships
+how they contribute to making predictions. To correct for this, the          were examined using a correlation-based approach.
+Haufe transformation multiplies the beta coefﬁcient vector by the
+original covariance matrix, thereby reintroducing shared variance            Reporting summary
+among features to the model weights. As such, covariance-weighted            Further information on research design is available in the Nature
+model parameters no longer reﬂect their use for making predictions,          Portfolio Reporting Summary linked to this article.
+but rather reﬂect an interpretable relation with the outcome in terms
+of relevance (see ref. 67 for a detailed discussion). Here, each feature’s   Data availability
+Haufe coefﬁcient was averaged across all 5 folds. A multiple regression      The data that support the main ﬁndings of this study are available from
+model was then ﬁt to predict Haufe coefﬁcients from connection               the Human Connectome Project www.humanconnectome.org/study/
+length moderated by direction of outcome association.                        hcp-young-adult. The data that support ﬁndings in the supplemental
+                                                                             materials are not currently available to the public. This is due to the
+Assessment of modal controllability. To investigate whether g is             fact that the original informed consent protocol did not include pro-
+related to the orchestration of global network activity, we calculated       visions for data sharing, and therefore, ethical restrictions prevent the
+modal control metrics. Modal control is a structural control mechan-         distribution of participant data. Data for all ﬁgures are available in the
+ism that reﬂects the ability of a cortical region to move the brain          Source Data.zip ﬁle accompanying this manuscript. Source data are
+towards and between functional states underlying effortful cognition         provided with this paper.
+(i.e., difﬁcult-to-reach states). As modal control is a purely structural
+mechanism, the metric was generated from structural connectomes              Code availability
+(see refs. 16,17 for details). To remove regions particularly weak in        Code for data processing and analyses related to results presented in
+modal control, we averaged modal control values across subjects by           the main text are available at www.github.com/ramseywilcox/jsfm_
+region and identiﬁed those in the bottom 25th percentile. These were         hcp. Code for data processing and analyses related to results in the
+subsequently removed from analyses.                                          supplemental materials are available at www.github.com/
+       We adopted multivariate distance-based matrix regression68            ramseywilcox/jsfm_insight.
+(MDMR) to assess the relationship between modal control and g.
+MDMR is a useful non-parametric approach when analyzing the rela-            References
+tionship between many variables, where multiple comparisons cor-             1.  Jensen, A. R. The g Factor: The Science of Mental Ability. (Praeger,
+rection may be an issue, and/or the number of features to be analyzed            Westport, 1998).
+exceeds the number of observations. Here, a distance matrix is created       2. Barbey, A. K., Colom, R. & Grafman, J. Dorsolateral prefrontal con-
+describing how similar/dissimilar participants are in some high-                 tributions to human intelligence. Neuropsychologia 51,
+dimensional information space described by the features of interest.             1361–1369 (2013).
+The results can be interpreted as individual differences in the partici-     3. Jung, R. E. & Haier, R. J. The parieto-frontal integration theory (P-FIT)
+pants’ cortical modal control proﬁles. We used distance-correlation to           of intelligence: converging neuroimaging evidence. Behav. Brain
+calculate the matrices. The total variance in each matrix is partitioned         Sci. 30, 135–154 (2007).
+into pieces explained by a predictor or predictors of interest (e.g., g).    4. Barbey, A. K. Network neuroscience theory of human intelligence.
+For signiﬁcance testing, an F-statistic is generated. However, because           Trends Cogn. Sci. 22, 8–20 (2018).
+MDMR uses a non-parametric, distance-based approach, it does not             5. Anderson, E. D. & Barbey, A. K. Investigating cognitive neuroscience
+follow a normal F-distribution. Thus, a permutation test is carried out,         theories of human intelligence: a connectome-based predictive
+where the rows and columns of the distance matrix are randomly                   modeling approach. Hum. Brain Mapp. 44, 1647–1665 (2023).
+shufﬂed, the model is ﬁt again, and an F-statistic is extracted. This is     6. Dubois, J., Galdi, P., Paul, L. K. & Adolphs, R. A distributed brain
+repeated many times to generate an empirically derived null dis-                 network predicts general intelligence from resting-state human
+tribution that can be compared with the observed F-statistic. The                neuroimaging data. Philos. Trans. R. Soc. B Biol. Sci. 373,
+associated p-value reﬂects the number of F-statistics that equal or              20170284 (2018).
+exceed the observed F-statistic, divided by the total number of F-           7. Wilcox, R. R. & Barbey, A. K. Connectome-based predictive mod-
+statistics.                                                                      eling of ﬂuid intelligence: evidence for a global system of func-
+                                                                                 tionally integrated brain networks. Cereb. Cortex 33,
+Small-world characterization of g                                                10322–10331 (2023).
+We investigated whether g relies on the brain’s global, small-world          8. Chu, S.-H., Parhi, K. K. & Lenglet, C. Function-speciﬁc and enhanced
+topology. We employed Telesford and colleagues’69 improvements                   brain structural connectivity mapping via joint modeling of diffu-
+upon the approach proposed by Watts and Strogatz70,71 to extract a               sion and functional MRI. Sci. Rep. 8, 4741 (2018).
+measure of small-worldness. Values close to 0 indicate small-world           9. Gallos, L. K., Makse, H. A. & Sigman, M. A small world of weak ties
+topologies, values closer to −1 indicate a deviation towards a more              provides optimal global integration of self-similar modules in
+locally integrated, globally segregated, regular network, and values             functional brain networks. Proc. Natl. Acad. Sci. USA 109,
+closer to 1 indicate a deviation towards a more locally segregated,              2825–2830 (2012).
+globally integrated, random network. To further examine the rela-            10. Santarnecchi, E., Galli, G., Polizzotto, N. R., Rossi, A. & Rossi, S.
+tionship between g and speciﬁc elements of a small-world topology, we            Efﬁciency of weak brain connections support general cognitive
+also report average shortest path length (i.e., characteristic path              functioning. Hum. Brain Mapp. 35, 4566–4582 (2014).
+length) and average local clustering. For clarity, the average shortest      11. Park, H.-J. & Friston, K. Structural and functional brain networks:
+path length was calculated using the topology of the joint structure-            from connections to cognition. Science 342, 1238411 (2013).
+
+
+
+Nature Communications | (2026)17:2027                                                                                                                 15
+Article                                                                                                  https://doi.org/10.1038/s41467-026-68698-5
+
+
+12. Cole, M. W., Yarkoni, T., Repovš, G., Anticevic, A. & Braver, T. S.        36. O’Connor, D., Lake, E. M. R., Scheinost, D. & Constable, R. T.
+    Global connectivity of prefrontal cortex predicts cognitive control            Resample aggregating improves the generalizability of con-
+    and intelligence. J. Neurosci. 32, 8988–8999 (2012).                           nectome predictive modeling. NeuroImage 236, 118044 (2021).
+13. Miller, E. K. & Cohen, J. D. An integrative theory of prefrontal cortex    37. Popp, J. L. et al. Structural-functional brain network coupling pre-
+    function. Annu. Rev. Neurosci. 24, 167–202 (2001).                             dicts human cognitive ability. NeuroImage 290, 120563 (2024).
+14. Cole, M. W. et al. Multi-task connectivity reveals ﬂexible hubs for        38. Popp, J. L. et al. Structural-functional brain network coupling during
+    adaptive task control. Nat. Neurosci. 16, 1348–1355 (2013).                    cognitive demand reveals intelligence-relevant communication
+15. Simon, J. D. & Mitter, S. K. A theory of modal control. Inf. Control 13,       strategies. Commun. Biol. 8, 855 (2025).
+    316–353 (1968).                                                            39. Rosenthal, G. et al. Mapping higher-order relations between brain
+16. Gu, S. et al. Controllability of structural brain networks. Nat. Com-          structure and function with embedded vector representations of
+    mun. 6, 8414 (2015).                                                           connectomes. Nat. Commun. 9, 2178 (2018).
+17. Karrer, T. M. et al. A practical guide to methodological considera-        40. Wu, L. & Calhoun, V. Joint connectivity matrix independent com-
+    tions in the controllability of structural brain networks. J. Neural           ponent analysis: auto-linking of structural and functional con-
+    Eng. 17, 026031 (2020).                                                        nectivities. Hum. Brain Mapp. 44, 1533–1547 (2023).
+18. Betzel, R. F., Gu, S., Medaglia, J. D., Pasqualetti, F. & Bassett, D. S.   41. Fouladivanda, M. et al. A spatially constrained independent com-
+    Optimally controlling the human connectome: the role of network                ponent analysis jointly informed by structural and functional net-
+    topology. Sci. Rep. 6, 30770 (2016).                                           work connectivity. Netw. Neurosci. 8, 1212–1242 (2024).
+19. Beynel, L. et al. Structural controllability predicts functional pat-      42. Levakov, G., Faskowitz, J., Avidan, G. & Sporns, O. Mapping indivi-
+    terns and brain stimulation beneﬁts associated with working                    dual differences across brain network structure to function and
+    memory. J. Neurosci. 40, 6770–6778 (2020).                                     behavior with connectome embedding. NeuroImage 242,
+20. Tang, R. et al. Longitudinal association of executive function and             118469 (2021).
+    structural network controllability in the aging brain. GeroScience         43. Braver, T. S. The variable nature of cognitive control: a dual
+    45, 837–849 (2023).                                                            mechanisms framework. Trends Cogn. Sci. 16, 106–113 (2012).
+21. Bullmore, E. & Sporns, O. The economy of brain network organi-             44. Dohmatob, E., Dumas, G. & Bzdok, D. Dark control: the default mode
+    zation. Nat. Rev. Neurosci. 13, 336–349 (2012).                                network as a reinforcement learning agent. Hum. Brain Mapp. 41,
+22. Bassett, D. S. & Bullmore, E. Small-world brain networks. The Neu-             3318–3341 (2020).
+    roscientist 12, 512–523 (2006).                                            45. Colom, R., Karama, S., Jung, R. E. & Haier, R. J. Human intelligence
+23. Bassett, D. S. & Bullmore, E. T. Small-world brain networks revisited.         and brain networks. Dialogues Clin. Neurosci. 12, 489–501 (2010).
+    The Neuroscientist 23, 499–516 (2017).                                     46. Melnick, M. D., Harrison, B. R., Park, S., Bennetto, L. & Tadin, D. A
+24. Heuvel, M. P., van den, Stam, C. J., Kahn, R. S. & Pol, H. E. H. Efﬁ-          strong interactive link between sensory discriminations and intelli-
+    ciency of functional brain networks and intellectual performance. J.           gence. Curr. Biol. 23, 1013–1017 (2013).
+    Neurosci. 29, 7619–7624 (2009).                                            47. Dhamala, E., Jamison, K. W., Jaywant, A. & Kuceyeski, A. Shared
+25. Hilger, K., Ekman, M., Fiebach, C. J. & Basten, U. Intelligence is             functional connections within and between cortical networks pre-
+    associated with the modular structure of intrinsic brain networks.             dict cognitive abilities in adult males and females. Hum. Brain
+    Sci. Rep. 7, 16088 (2017).                                                     Mapp. 43, 1087–1102 (2022).
+26. Markov, N. T. et al. Weight consistency speciﬁes regularities of           48. Dhamala, E., Jamison, K. W., Jaywant, A., Dennis, S. & Kuceyeski, A.
+    macaque cortical networks. Cereb. Cortex 21, 1254–1272 (2011).                 Distinct functional and structural connections predict crystallised
+27. Avena-Koenigsberger, A., Misic, B. & Sporns, O. Communication                  and ﬂuid cognition in healthy adults. Hum. Brain Mapp. 42,
+    dynamics in complex brain networks. Nat. Rev. Neurosci. 19,                    3102–3118 (2021).
+    17–33 (2018).                                                              49. Tournier, J.-D., Calamante, F. & Connelly, A. Robust determination
+28. Hermundstad, A. M. et al. Structural foundations of resting-state              of the ﬁbre orientation distribution in diffusion MRI: non-negativity
+    and task-based functional connectivity in the human brain. Proc.               constrained super-resolved spherical deconvolution. NeuroImage
+    Natl. Acad. Sci. USA 110, 6169–6174 (2013).                                    35, 1459–1472 (2007).
+29. Hu, L. & Bentler, P. M. Cutoff criteria for ﬁt indexes in covariance       50. Langer, N. et al. Functional brain network efﬁciency predicts intel-
+    structure analysis: conventional criteria versus new alternatives.             ligence. Hum. Brain Mapp. 33, 1393–1406 (2012).
+    Struct. Equ. Model. Multidiscip. J. 6, 1–55 (1999).                        51. Kruschwitz, J. D., Waller, L., Daedelow, L. S., Walter, H. & Veer, I. M.
+30. Van Essen, D. C. et al. The WU-Minn human connectome project: an               General, crystallized and ﬂuid intelligence are not associated with
+    overview. NeuroImage 80, 62–79 (2013).                                         functional global network efﬁciency: a replication study with the
+31. Zwilling, C. E. et al. Enhanced decision-making through multimodal             human connectome project 1200 data set. NeuroImage 171,
+    training. Npj Sci. Learn. 4, 11 (2019).                                        323–331 (2018).
+32. Daugherty, A. M. et al. Individual differences in the neurobiology         52. Alizadeh Darbandi, S. S., Fornito, A. & Ghasemi, A. The impact of
+    of ﬂuid intelligence predict responsiveness to training: evidence              input node placement in the controllability of structural brain net-
+    from a comprehensive cognitive, mindfulness meditation, and                    works. Sci. Rep. 14, 6902 (2024).
+    aerobic exercise intervention. Trends Neurosci. Educ. 18,                  53. Nozari, E. et al. Macroscopic resting-state brain dynamics are best
+    100123 (2020).                                                                 described by linear models. Nat. Biomed. Eng. 8, 68–84 (2024).
+33. Prabhakaran, V., Smith, J. A. L., Desmond, J. E., Glover, G. H. &          54. Kulathunga, N. et al. Effects of nonlinearity and network archi-
+    Gabrieli, J. D. E. Neural substrates of ﬂuid reasoning: an fMRI study          tecture on the performance of supervised neural networks. Algo-
+    of neocortical activation during performance of the raven’s pro-               rithms 14, 51 (2021).
+    gressive matrices test. Cognit. Psychol. 33, 43–63 (1997).                 55. Moore, T. M., Reise, S. P., Gur, R. E., Hakonarson, H. & Gur, R. C.
+34. Kroger, J. K. et al. Recruitment of anterior dorsolateral prefrontal           Psychometric properties of the Penn computerized neurocognitive
+    cortex in human reasoning: a parametric study of relational com-               battery. Neuropsychology 29, 235–246 (2015).
+    plexity. Cereb. Cortex 12, 477–485 (2002).                                 56. Glasser, M. F. et al. The minimal preprocessing pipelines for the
+35. Bassett, D. S., Zurn, P. & Gold, J. I. On the nature and use of                Human Connectome Project. NeuroImage 80, 105–124 (2013).
+    models in network neuroscience. Nat. Rev. Neurosci. 19,                    57. Schmid, J. & Leiman, J. M. The development of hierarchical factor
+    566–578 (2018).                                                                solutions. Psychometrika 22, 53–61 (1957).
+
+
+Nature Communications | (2026)17:2027                                                                                                                   16
+Article                                                                                                    https://doi.org/10.1038/s41467-026-68698-5
+
+
+58. Pruim, R. H. R. et al. ICA-AROMA: a robust ICA-based strategy for            2019-HR00111990067 to the University of Illinois at Urbana-Champaign
+    removing motion artifacts from fMRI data. NeuroImage 112,                    (PI: Aron K. Barbey). The views and conclusions contained herein are
+    267–277 (2015).                                                              those of the authors and should not be interpreted as necessarily
+59. Beckmann, C. F. & Smith, S. M. Probabilistic independent compo-              representing the ofﬁcial policies or endorsements, either expressed or
+    nent analysis for functional magnetic resonance imaging. IEEE                implied, of the IARPA, DARPA, or US Government.
+    Trans. Med. Imaging 23, 137–152 (2004).
+60. Tournier, J.-D. et al. MRtrix3: A fast, ﬂexible and open software fra-       Author contributions
+    mework for medical image processing and visualisation. Neuro-                R.R.W.: data curation, formal analysis, methodology, software, valida-
+    Image 202, 116137 (2019).                                                    tion, visualization, writing—original draft, writing—review and editing.
+61. Smith, R. E., Tournier, J.-D., Calamante, F. & Connelly, A. SIFT2:           B.H.: methodology, writing—original draft, writing—review and editing.
+    enabling dense quantitative assessment of brain white matter                 L.L.V.: methodology, writing—original draft, writing—review and editing.
+    connectivity using streamlines tractography. NeuroImage 119,                 A.K.B.: funding acquisition, investigation, methodology, project admin-
+    338–351 (2015).                                                              istration, resources, supervision, writing—original draft, writing—review
+62. Smith, R. E., Raffelt, D., Tournier, J.-D. & Connelly, A. Quantitative       and editing.
+    streamlines tractography: methods and inter-subject normal-
+    isation. Aperture Neuro. 2, 1–25 (2022).                                     Competing interests
+63. Raichle, M. E. et al. A default mode of brain function. Proc. Natl.          The authors declare no competing interests.
+    Acad. Sci. USA 98, 676–682 (2001).
+64. Fox, M. D. & Raichle, M. E. Spontaneous ﬂuctuations in brain activity        Additional information
+    observed with functional magnetic resonance imaging. Nat. Rev.               Supplementary information The online version contains
+    Neurosci. 8, 700–711 (2007).                                                 supplementary material available at
+65. Ji, J. L. et al. Mapping the human brain’s cortical-subcortical func-        https://doi.org/10.1038/s41467-026-68698-5.
+    tional network organization. NeuroImage 185, 35–57 (2019).
+66. Shen, X. et al. Using connectome-based predictive modeling to                Correspondence and requests for materials should be addressed to
+    predict individual behavior from brain connectivity. Nat. Protoc. 12,        Aron K. Barbey.
+    506–518 (2017).
+67. Haufe, S. et al. On the interpretation of weight vectors of linear           Peer review information Nature Communications thanks Yaniv Assaf
+    models in multivariate neuroimaging. NeuroImage 87,                          and the other, anonymous, reviewer(s) for their contribution to the peer
+    96–110 (2014).                                                               review of this work. A peer review ﬁle is available.
+68. Anderson, M. J. A new method for non-parametric multivariate
+    analysis of variance. Austral. Ecol. 26, 32–46 (2001).                       Reprints and permissions information is available at
+69. Telesford, Q. K., Joyce, K. E., Hayasaka, S., Burdette, J. H. & Laurienti,   http://www.nature.com/reprints
+    P. J. The ubiquity of small-world networks. Brain Connect 1,
+    367–375 (2011).                                                              Publisher’s note Springer Nature remains neutral with regard to jur-
+70. Watts, D. J. & Strogatz, S. H. Collective dynamics of ‘small-world’          isdictional claims in published maps and institutional afﬁliations.
+    networks. Nature 393, 440–442 (1998).
+71. Humphries, M. D. & Gurney, K. Network ‘Small-World-Ness’: a                  Open Access This article is licensed under a Creative Commons
+    quantitative method for determining canonical network equiva-                Attribution-NonCommercial-NoDerivatives 4.0 International License,
+    lence. PLoS ONE 3, e0002051 (2008).                                          which permits any non-commercial use, sharing, distribution and
+72. Onnela, J.-P., Saramäki, J., Kertész, J. & Kaski, K. Intensity and           reproduction in any medium or format, as long as you give appropriate
+    coherence of motifs in weighted complex networks. Phys. Rev. E 71,           credit to the original author(s) and the source, provide a link to the
+    065103 (2005).                                                               Creative Commons licence, and indicate if you modiﬁed the licensed
+                                                                                 material. You do not have permission under this licence to share adapted
+Acknowledgements                                                                 material derived from this article or parts of it. The images or other third
+We gratefully acknowledge the Human Connectome Project, WU-Minn                  party material in this article are included in the article’s Creative
+Consortium (PIs: David Van Essen and Kamil Ugurbil) for collecting and           Commons licence, unless indicated otherwise in a credit line to the
+providing the data analyzed in the main text of this publication. We also        material. If material is not included in the article’s Creative Commons
+thank the INSIGHT investigators and project team for collecting the data         licence and your intended use is not permitted by statutory regulation or
+analyzed in the Supplemental Materials. This project would not have              exceeds the permitted use, you will need to obtain permission directly
+been possible without the hard work of the numerous fellows, students,           from the copyright holder. To view a copy of this licence, visit http://
+and staff that comprised such a fantastic research team. This research           creativecommons.org/licenses/by-nc-nd/4.0/.
+was funded by the Intelligence Advanced Research Projects Activity
+(IARPA), via Contract 2014-13121700004 to the University of Illinois at          © The Author(s) 2026
+Urbana-Champaign (PI: Aron K. Barbey) and the Department of Defense,
+Defense Advanced Research Projects Agency (DARPA), via Contract
+
+
+
+
+Nature Communications | (2026)17:2027                                                                                                                     17
+

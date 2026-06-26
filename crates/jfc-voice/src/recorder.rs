@@ -18,7 +18,7 @@ use tracing::{debug, info, warn};
 
 use crate::audio::{AudioCapture, CaptureBackend};
 use crate::backends;
-use crate::config::{VadEngine, VoiceConfig, VoiceMode};
+use crate::config::{SttBackendKind, VadEngine, VoiceConfig, VoiceMode};
 use crate::vad::{Vad, VadEvent};
 
 /// Runtime dispatch over the available VAD engines, so the listen loop is
@@ -106,7 +106,13 @@ impl VadDetector {
 /// or another person) are dropped instead of transcribed. No-ops cleanly when
 /// disabled or unenrolled — default behavior is unchanged.
 struct SpeakerGate {
-    profile: Option<crate::speaker::SpeakerProfile>,
+    /// Our speakers — admit an utterance matching ANY of these. Empty ⇒ admit
+    /// anything not in `reject` (self-rejection-only mode).
+    accept: Vec<crate::speaker::SpeakerProfile>,
+    /// Voices to drop even if a user is enrolled — the assistant's own TTS
+    /// voice(s). The reject-list always wins over the accept-list, so self-echo
+    /// leaking past the time-based echo guard is still suppressed acoustically.
+    reject: Vec<crate::speaker::SpeakerProfile>,
     /// Embedding backend used for scoring. The neural ONNX backend (feature
     /// `speaker-neural` + `JFC_VOICE_SPEAKER_MODEL`) when available, else the
     /// null embedder (classical Mahalanobis+pitch path).
@@ -114,84 +120,108 @@ struct SpeakerGate {
 }
 
 impl SpeakerGate {
-    /// Load the gate from config: returns an inert gate (no profile) unless the
-    /// gate is enabled AND a profile JSON loads successfully.
+    /// Load the gate from config: returns an inert gate unless the gate is
+    /// enabled AND at least one accept/reject profile loads. Accept profiles
+    /// come from the legacy single `speaker_profile.json` PLUS every profile in
+    /// the `speakers/` dir; reject profiles from the `reject/` dir.
     fn from_config(cfg: &VoiceConfig) -> Self {
+        let inert = || Self {
+            accept: Vec::new(),
+            reject: Vec::new(),
+            embedder: Box::new(crate::speaker::NullEmbedder),
+        };
         if !cfg.speaker_gate {
-            return Self {
-                profile: None,
-                embedder: Box::new(crate::speaker::NullEmbedder),
-            };
+            return inert();
         }
-        let embedder = crate::speaker::default_embedder();
-        let path = Self::profile_path(cfg);
-        match crate::speaker::SpeakerProfile::load(&path) {
-            Ok(mut profile) => {
-                if let Some(t) = cfg.speaker_threshold {
-                    profile = profile.with_threshold(t);
-                }
-                info!(
-                    target: "jfc::voice::speaker",
-                    path = %path.display(),
-                    threshold = profile.threshold,
-                    backend = embedder.name(),
-                    neural = profile.neural.is_some(),
-                    "target-speaker gate enabled"
-                );
-                Self {
-                    profile: Some(profile),
-                    embedder,
-                }
+        let speaker_model_path = cfg.speaker_model_path.as_ref().map(std::path::Path::new);
+        let embedder = crate::speaker::default_embedder(speaker_model_path);
+        let dir = Self::profile_dir(cfg);
+
+        // Accept-list: legacy single file (back-compat) + the speakers/ dir.
+        let mut accept = Vec::new();
+        if let Ok(profile) = crate::speaker::SpeakerProfile::load(&Self::profile_path(cfg)) {
+            accept.push(profile);
+        }
+        accept.extend(crate::speaker::load_profiles_dir(&dir.join("speakers")));
+        // Reject-list: the reject/ dir (the assistant's own TTS voiceprints).
+        let reject = crate::speaker::load_profiles_dir(&dir.join("reject"));
+
+        // Apply the optional threshold override to every accept profile.
+        if let Some(t) = cfg.speaker_threshold {
+            for p in &mut accept {
+                *p = p.clone().with_threshold(t);
             }
-            Err(err) => {
-                warn!(
-                    target: "jfc::voice::speaker",
-                    path = %path.display(),
-                    error = %err,
-                    "speaker gate enabled but no usable profile; gate disabled \
-                     (enroll one to filter background voices)"
-                );
-                Self {
-                    profile: None,
-                    embedder,
-                }
-            }
+        }
+
+        if accept.is_empty() && reject.is_empty() {
+            warn!(
+                target: "jfc::voice::speaker",
+                dir = %dir.display(),
+                "speaker gate enabled but no accept/reject profiles found; gate inert \
+                 (enroll a speaker to filter background voices)"
+            );
+            return inert();
+        }
+        info!(
+            target: "jfc::voice::speaker",
+            accept = accept.len(),
+            reject = reject.len(),
+            backend = embedder.name(),
+            "speaker gate enabled"
+        );
+        Self {
+            accept,
+            reject,
+            embedder,
         }
     }
 
-    /// Resolve the profile path: explicit config/env, else `<config>/voice/
-    /// speaker_profile.json` under the user config dir.
+    /// Resolve the legacy single-profile path: explicit config/env, else
+    /// `<config>/jfc/voice/speaker_profile.json` under the user config dir.
     fn profile_path(cfg: &VoiceConfig) -> std::path::PathBuf {
         if let Some(p) = &cfg.speaker_profile_path {
             return std::path::PathBuf::from(p);
         }
+        Self::profile_dir(cfg).join("speaker_profile.json")
+    }
+
+    /// The base directory holding `speakers/` (accept) and `reject/` profile
+    /// dirs: the parent of the configured single-profile path, else the default
+    /// `<config>/jfc/voice` dir.
+    fn profile_dir(cfg: &VoiceConfig) -> std::path::PathBuf {
+        if let Some(p) = &cfg.speaker_profile_path
+            && let Some(parent) = std::path::Path::new(p).parent()
+            && !parent.as_os_str().is_empty()
+        {
+            return parent.to_path_buf();
+        }
         let base = dirs_config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-        base.join("jfc").join("voice").join("speaker_profile.json")
+        base.join("jfc").join("voice")
+    }
+
+    /// Whether the gate will actually filter anything (has any profile loaded).
+    fn is_active(&self) -> bool {
+        !self.accept.is_empty() || !self.reject.is_empty()
+    }
+
+    /// Classify a captured utterance against the accept/reject sets.
+    fn decide(&self, pcm: &[u8]) -> crate::speaker::AdmitDecision {
+        crate::speaker::verify_admit(&self.accept, &self.reject, pcm, self.embedder.as_ref())
     }
 
     /// Decide whether a captured utterance should be transcribed. Returns `true`
-    /// (transcribe) when the gate is inert, or when the segment matches the
-    /// enrolled speaker; `false` to drop a non-matching (background) voice.
+    /// (transcribe) when the gate is inert or the utterance matches one of our
+    /// speakers; `false` to drop the assistant's own voice or a background voice.
     fn admits(&self, pcm: &[u8]) -> bool {
-        let Some(profile) = &self.profile else {
-            return true;
-        };
-        let score = profile.score_with(pcm, self.embedder.as_ref());
-        if score.voiced_frames == 0 {
-            // Couldn't measure — fail open so we never silently swallow speech.
-            return true;
-        }
-        if !score.accepted {
+        let decision = self.decide(pcm);
+        if !decision.admitted() {
             info!(
                 target: "jfc::voice::speaker",
-                mahalanobis = score.mahalanobis,
-                threshold = profile.threshold,
-                cosine = score.cosine,
-                pitch_ok = score.pitch_ok,
-                "dropped a non-primary-speaker utterance (background voice)"
+                ?decision,
+                "dropped an utterance (not one of our speakers / own TTS voice)"
             );
         }
-        score.accepted
+        decision.admitted()
     }
 }
 
@@ -213,23 +243,35 @@ pub fn default_speaker_profile_path(cfg: &VoiceConfig) -> std::path::PathBuf {
     SpeakerGate::profile_path(cfg)
 }
 
-/// Enroll the primary speaker by capturing ~`secs` seconds of microphone audio
-/// and writing a [`crate::speaker::SpeakerProfile`] to `cfg`'s profile path.
-///
-/// This is the one-off setup step that makes the target-speaker gate useful:
-/// the user speaks naturally for a few seconds; we build their voiceprint and
-/// persist it. Returns the path written. Speak only yourself during enrollment.
-pub async fn enroll_primary_speaker(
-    cfg: &VoiceConfig,
-    secs: f64,
-) -> Result<std::path::PathBuf, String> {
+/// Filesystem-safe profile stem: `"Alice 2"` → `"alice_2"`. Non-alphanumerics
+/// collapse to `_`; an empty result falls back to `"speaker"`.
+fn sanitize_profile_name(name: &str) -> String {
+    let mapped: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = mapped.trim_matches('_').to_owned();
+    if trimmed.is_empty() {
+        "speaker".to_owned()
+    } else {
+        trimmed
+    }
+}
+
+/// Capture ~`secs` seconds of microphone PCM (16 kHz mono S16LE).
+async fn capture_pcm(secs: f64) -> Result<Vec<u8>, String> {
     let backend = AudioCapture::detect_backend()
         .await
         .ok_or_else(|| "no audio capture backend available".to_owned())?;
     let mut capture = AudioCapture::start(backend)
         .await
         .map_err(|e| e.to_string())?;
-
     let target_bytes = (secs * 16_000.0 * 2.0) as usize;
     let mut pcm: Vec<u8> = Vec::with_capacity(target_bytes);
     let mut chunk = vec![0u8; 640];
@@ -241,26 +283,127 @@ pub async fn enroll_primary_speaker(
         }
     }
     pcm.extend_from_slice(&capture.stop().await);
+    Ok(pcm)
+}
 
-    let mut profile = crate::speaker::SpeakerProfile::enroll_from_pcm(&pcm).ok_or_else(|| {
+/// Build a [`crate::speaker::SpeakerProfile`] from `pcm` (attaching a neural
+/// embedding when a model is configured) and save it to `path`.
+fn build_and_save_profile(
+    cfg: &VoiceConfig,
+    pcm: &[u8],
+    path: &std::path::Path,
+) -> Result<crate::speaker::SpeakerProfile, String> {
+    let mut profile = crate::speaker::SpeakerProfile::enroll_from_pcm(pcm).ok_or_else(|| {
         "not enough voiced speech to enroll — speak continuously for a few seconds".to_owned()
     })?;
-    // Attach a learned neural embedding when a model is configured (no-op
-    // otherwise), so the gate scores with the SOTA backend.
-    let embedder = crate::speaker::default_embedder();
-    profile = profile.with_neural_embedding(embedder.as_ref(), &pcm);
+    let speaker_model_path = cfg.speaker_model_path.as_ref().map(std::path::Path::new);
+    let embedder = crate::speaker::default_embedder(speaker_model_path);
+    profile = profile.with_neural_embedding(embedder.as_ref(), pcm);
+    profile.save(path).map_err(|e| e.to_string())?;
+    Ok(profile)
+}
+
+/// Enroll the primary speaker by capturing ~`secs` seconds of microphone audio
+/// and writing a [`crate::speaker::SpeakerProfile`] to `cfg`'s legacy
+/// single-profile path. Returns the path written. Speak only yourself during
+/// enrollment.
+pub async fn enroll_primary_speaker(
+    cfg: &VoiceConfig,
+    secs: f64,
+) -> Result<std::path::PathBuf, String> {
+    let pcm = capture_pcm(secs).await?;
     let path = SpeakerGate::profile_path(cfg);
-    profile.save(&path).map_err(|e| e.to_string())?;
+    let profile = build_and_save_profile(cfg, &pcm, &path)?;
     info!(
         target: "jfc::voice::speaker",
         path = %path.display(),
         frames = profile.enrolled_frames,
         threshold = profile.threshold,
-        backend = embedder.name(),
         neural = profile.neural.is_some(),
         "enrolled primary speaker profile"
     );
     Ok(path)
+}
+
+/// Enroll an additional **named** speaker into the accept-list ("our speakers"),
+/// writing `<profile_dir>/speakers/<name>.json`. The gate admits an utterance
+/// matching ANY enrolled speaker, so this is how you add a teammate.
+pub async fn enroll_speaker(
+    cfg: &VoiceConfig,
+    name: &str,
+    secs: f64,
+) -> Result<std::path::PathBuf, String> {
+    let pcm = capture_pcm(secs).await?;
+    let path = SpeakerGate::profile_dir(cfg)
+        .join("speakers")
+        .join(format!("{}.json", sanitize_profile_name(name)));
+    let profile = build_and_save_profile(cfg, &pcm, &path)?;
+    info!(
+        target: "jfc::voice::speaker",
+        path = %path.display(),
+        name,
+        frames = profile.enrolled_frames,
+        "enrolled speaker into accept-list",
+    );
+    Ok(path)
+}
+
+/// The on-disk path of the reject-profile for `key` (a TTS voice name). Used to
+/// check whether self-voice enrollment has already happened before re-doing it.
+pub fn reject_profile_path(cfg: &VoiceConfig, key: &str) -> std::path::PathBuf {
+    SpeakerGate::profile_dir(cfg)
+        .join("reject")
+        .join(format!("{}.json", sanitize_profile_name(key)))
+}
+
+/// Save a **reject**-profile — the assistant's own TTS voice — from PCM we
+/// captured of read-aloud playback (we control the TTS audio). Stored under
+/// `<profile_dir>/reject/<key>.json`, keyed by the TTS voice name so each
+/// Anthropic voice gets its own reject voiceprint. The gate then drops any
+/// utterance matching it, acoustically — covering self-echo that leaks past the
+/// time-based echo guard or with `echo_suppression=false`.
+pub fn save_reject_profile_from_pcm(
+    cfg: &VoiceConfig,
+    key: &str,
+    pcm: &[u8],
+) -> Result<std::path::PathBuf, String> {
+    let path = reject_profile_path(cfg, key);
+    build_and_save_profile(cfg, pcm, &path)?;
+    info!(
+        target: "jfc::voice::speaker",
+        path = %path.display(),
+        key,
+        "saved self-voice reject profile",
+    );
+    Ok(path)
+}
+
+/// Enroll the assistant's OWN voice as a reject-profile by synthesizing a known
+/// phrase through the TTS backend and voiceprinting the resulting PCM. We
+/// control the TTS audio, so this is a clean reference signal. Forces 16 kHz PCM
+/// output (what the voiceprint expects) regardless of the configured playback
+/// format, and saves under `reject/<tts_voice>.json`. Requires an OAuth token.
+pub async fn enroll_self_voice(
+    cfg: &VoiceConfig,
+    token: &str,
+    user_agent: &str,
+) -> Result<std::path::PathBuf, String> {
+    // Two sentences → a few seconds of voiced audio (enroll needs ~0.5 s voiced).
+    const PHRASE: &str = "The quick brown fox jumps over the lazy dog. \
+        I am the assistant; this is the sound of my own voice, so I can recognize \
+        and ignore it when it echoes back into the microphone.";
+    // The voiceprint expects 16 kHz mono S16LE PCM; force it for enrollment even
+    // if read-aloud is configured to play a compressed format.
+    let mut pcm_cfg = cfg.clone();
+    pcm_cfg.tts_output_format = "pcm_16000".to_owned();
+    let mut pcm: Vec<u8> = Vec::new();
+    crate::tts::synthesize_to_writer(&pcm_cfg, token, user_agent, PHRASE, &mut pcm)
+        .await
+        .map_err(|e| e.to_string())?;
+    if pcm.is_empty() {
+        return Err("TTS returned no audio to enroll the self-voice profile".to_owned());
+    }
+    save_reject_profile_from_pcm(cfg, &cfg.tts_voice, &pcm)
 }
 
 /// Current voice state (exposed to the TUI for rendering).
@@ -299,6 +442,21 @@ pub enum VoiceTranscriptEvent {
     Error(String),
     /// State changed.
     StateChanged(VoiceState),
+    AssistantMessageStarted,
+    AssistantTextDelta(String),
+    AssistantMessageCompleted,
+    ReadAloudStarted {
+        chars: usize,
+    },
+    ReadAloudCompleted {
+        audio_bytes: usize,
+        chunks_sent: usize,
+    },
+    ReadAloudError(String),
+    TtsWord {
+        text: String,
+        pts_ms: u64,
+    },
 }
 
 /// Resolves the current Claude.ai OAuth access token on demand. Supplied by the
@@ -352,6 +510,12 @@ pub struct VoiceRecorder {
     /// user presses Enter to submit, then stops voice) still emitted a `Final`
     /// that auto-submitted a duplicate.
     cancel_flag: Arc<std::sync::atomic::AtomicBool>,
+    /// Discard the in-flight VAD utterance WITHOUT emitting a `Final`, while
+    /// leaving the listen loop running. Unlike `cancel_flag` (which ends the
+    /// whole loop), this drops just the current utterance — used when the user
+    /// presses Enter mid-utterance so a late server endpoint doesn't re-hydrate
+    /// the box or auto-submit a duplicate of what was just sent.
+    vad_discard: Arc<std::sync::atomic::AtomicBool>,
     /// Resolves the OAuth token for the live Anthropic voice stream. `None`
     /// disables the live path (batch backends still work).
     token_provider: Option<TokenProvider>,
@@ -368,6 +532,7 @@ impl VoiceRecorder {
             vad_stop_tx: None,
             vad_force_end_tx: None,
             cancel_flag: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            vad_discard: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             token_provider: None,
             events,
         }
@@ -391,18 +556,9 @@ impl VoiceRecorder {
             .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
-    /// Resolve the current OAuth token via the provider, falling back to the
-    /// legacy env vars so manual setups keep working.
     async fn resolve_token(&self) -> Option<String> {
-        if let Some(p) = &self.token_provider {
-            if let Some(tok) = p().await {
-                return Some(tok);
-            }
-        }
-        std::env::var("CLAUDE_ACCESS_TOKEN")
-            .or_else(|_| std::env::var("ANTHROPIC_ACCESS_TOKEN"))
-            .or_else(|_| std::env::var("JFC_ANTHROPIC_ACCESS_TOKEN"))
-            .ok()
+        let provider = self.token_provider.as_ref()?;
+        provider().await
     }
 
     /// Start the VAD listen loop (VAD mode only).
@@ -431,11 +587,14 @@ impl VoiceRecorder {
         self.vad_force_end_tx = Some(vad_force_end_tx);
         self.cancel_flag
             .store(false, std::sync::atomic::Ordering::SeqCst);
+        self.vad_discard
+            .store(false, std::sync::atomic::Ordering::SeqCst);
 
         let cfg = self.cfg.clone();
         let events = self.events.clone();
         let state = Arc::clone(&self.state);
         let cancel_flag = Arc::clone(&self.cancel_flag);
+        let vad_discard = Arc::clone(&self.vad_discard);
         let token_provider = self.token_provider.clone();
         tokio::spawn(async move {
             vad_listen_loop(
@@ -446,6 +605,7 @@ impl VoiceRecorder {
                 vad_stop_rx,
                 vad_force_end_rx,
                 cancel_flag,
+                vad_discard,
                 token_provider,
             )
             .await;
@@ -571,6 +731,22 @@ impl VoiceRecorder {
                 .store(true, std::sync::atomic::Ordering::SeqCst);
             let _ = tx.send(());
             self.set_state(VoiceState::Idle).await;
+            return;
+        }
+        // VAD mode has no per-key task, but an utterance may be mid-capture OR
+        // already finalizing (Processing). Drop just that utterance (no `Final`)
+        // and keep the loop listening, so a manual Enter doesn't later re-hydrate
+        // the box / auto-submit a duplicate. Covering Processing matters: when
+        // Enter lands AFTER speech end (server endpoint / SpeechEnd) but during
+        // transcription, the state is already Processing — a `Recording`-only
+        // check missed it and the in-flight Final still auto-submitted.
+        if self.cfg.mode == VoiceMode::Vad
+            && *self.state.lock().await != VoiceState::Idle
+        {
+            info!(target: "jfc::voice::vad", "discard_recording (manual submit, VAD utterance)");
+            self.vad_discard
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            self.force_end_vad_utterance();
         }
     }
 
@@ -683,11 +859,66 @@ fn max_utterance_cap_ms() -> u64 {
     }
 }
 
+/// Onset window (bytes of 16 kHz mono i16 PCM) captured un-streamed for the
+/// speaker pre-gate: long enough to hold a few voiced frames for a confident
+/// accept/reject decision, short enough that the added latency before live
+/// interims is barely perceptible. Default 600 ms; override via
+/// `JFC_VOICE_PREGATE_MS` (clamped to a sane 200 ms..=2000 ms range).
+fn pregate_window_bytes() -> usize {
+    const DEFAULT_PREGATE_MS: u64 = 600;
+    let ms = std::env::var("JFC_VOICE_PREGATE_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_PREGATE_MS)
+        .clamp(200, 2_000);
+    pregate_window_bytes_for_ms(ms)
+}
+
+/// Bytes of 16 kHz mono i16 PCM spanning `ms` milliseconds.
+fn pregate_window_bytes_for_ms(ms: u64) -> usize {
+    (ms as usize) * 16_000 * 2 / 1000
+}
+
+/// Half-duplex echo-guard decision for one captured frame while VAD is waiting
+/// for speech. Returns `true` to suppress the frame (don't let it start an
+/// utterance) while read-aloud is `playing`, and for `tail` afterwards so the
+/// speaker's acoustic decay doesn't trip the detector. `tail_until` is advanced
+/// while playing; pure given its inputs (no global reads) so it's unit-testable.
+fn echo_guard(
+    enabled: bool,
+    playing: bool,
+    now: std::time::Instant,
+    tail_until: &mut Option<std::time::Instant>,
+    tail: std::time::Duration,
+) -> bool {
+    if !enabled {
+        return false;
+    }
+    if playing {
+        *tail_until = Some(now + tail);
+        return true;
+    }
+    tail_until.is_some_and(|until| now < until)
+}
+
 /// VAD continuous-listen loop.
 ///
 /// Streams audio indefinitely, running it through the VAD energy detector.
 /// When speech is detected, buffers PCM until silence, then transcribes and
 /// emits the result. Loops back to listening after each utterance.
+/// The server's authoritative end-of-turn signal: a promoted/endpointed
+/// transcript (`TranscriptEndpoint` → an `is_final` fragment). This — Deepgram
+/// server-side endpointing, exactly what Claude Code relies on — is what ends a
+/// VAD turn, NOT the client energy/neural VAD (which only detects onset/level
+/// reliably and is kept solely as a batch-path fallback).
+fn server_endpointed_msg(msg: &crate::anthropic_ws::StreamMsg) -> bool {
+    matches!(
+        msg,
+        crate::anthropic_ws::StreamMsg::Transcript { is_final: true, .. }
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn vad_listen_loop(
     backend: CaptureBackend,
     cfg: VoiceConfig,
@@ -696,6 +927,7 @@ async fn vad_listen_loop(
     stop_rx: tokio::sync::oneshot::Receiver<()>,
     mut force_end_rx: mpsc::UnboundedReceiver<()>,
     cancel_flag: Arc<std::sync::atomic::AtomicBool>,
+    vad_discard: Arc<std::sync::atomic::AtomicBool>,
     token_provider: Option<TokenProvider>,
 ) {
     debug!(target: "jfc::voice::vad", "VAD loop starting");
@@ -730,6 +962,15 @@ async fn vad_listen_loop(
         let mut preroll: std::collections::VecDeque<Vec<u8>> =
             std::collections::VecDeque::with_capacity(PREROLL_FRAMES);
 
+        // Half-duplex echo guard: while read-aloud is playing (and for a short
+        // decay tail after), ignore the mic so the assistant's own spoken reply
+        // doesn't start an utterance. There's no acoustic echo cancellation, so
+        // this is the safe default; `voice.echo_suppression = false` (e.g. with
+        // headphones) restores full-duplex voice barge-in.
+        const ECHO_TAIL: std::time::Duration = std::time::Duration::from_millis(400);
+        let mut playback_tail_until: Option<std::time::Instant> = None;
+        let mut echo_muted = false;
+
         // Wait for speech start (or stop signal)
         let speech_started = loop {
             tokio::select! {
@@ -744,21 +985,49 @@ async fn vad_listen_loop(
                     Ok(0) | Err(_) => break false,
                     Ok(n) => {
                         let frame = &chunk[..n];
-                        let vad_events = detector.push(frame);
-                        if vad_events.contains(&VadEvent::SpeechStart) {
-                            // Prepend the buffered pre-onset audio so the first
-                            // phoneme isn't clipped, then the onset frame itself.
-                            for pf in preroll.drain(..) {
-                                utterance_buf.extend_from_slice(&pf);
+
+                        // Echo guard: suppress while read-aloud is playing (+tail).
+                        let suppress = echo_guard(
+                            cfg.echo_suppression,
+                            crate::streaming_tts::tts_playback_active(),
+                            std::time::Instant::now(),
+                            &mut playback_tail_until,
+                            ECHO_TAIL,
+                        );
+                        if suppress {
+                            if !echo_muted {
+                                debug!(target: "jfc::voice::vad", "read-aloud playing — mic suppressed (echo guard)");
+                                echo_muted = true;
                             }
-                            utterance_buf.extend_from_slice(frame);
-                            break true;
+                            // Don't let speaker bleed start an utterance; reset so
+                            // we begin clean once playback ends, but keep the
+                            // pre-roll rolling for a clean onset.
+                            detector.reset();
+                            if preroll.len() == PREROLL_FRAMES {
+                                preroll.pop_front();
+                            }
+                            preroll.push_back(frame.to_vec());
+                        } else {
+                            if echo_muted {
+                                debug!(target: "jfc::voice::vad", "echo guard lifted — listening");
+                                echo_muted = false;
+                            }
+                            let vad_events = detector.push(frame);
+                            if vad_events.contains(&VadEvent::SpeechStart) {
+                                // Prepend the buffered pre-onset audio so the first
+                                // phoneme isn't clipped, then the onset frame itself.
+                                for pf in preroll.drain(..) {
+                                    utterance_buf.extend_from_slice(&pf);
+                                }
+                                utterance_buf.extend_from_slice(frame);
+                                break true;
+                            }
+                            // Not speech yet — keep it in the rolling pre-roll.
+                            if preroll.len() == PREROLL_FRAMES {
+                                preroll.pop_front();
+                            }
+                            preroll.push_back(frame.to_vec());
                         }
-                        // Not speech yet — keep it in the rolling pre-roll.
-                        if preroll.len() == PREROLL_FRAMES {
-                            preroll.pop_front();
-                        }
-                        preroll.push_back(frame.to_vec());
                     }
                 }
             }
@@ -777,6 +1046,137 @@ async fn vad_listen_loop(
             VoiceTranscriptEvent::StateChanged(VoiceState::Recording),
         );
         info!(target: "jfc::voice::vad", "speech detected, recording utterance");
+
+        // Resolve the OAuth token up front — live streaming needs it at the
+        // START of the utterance, not after recording.
+        let token = match token_provider.as_ref() {
+            Some(provider) => provider().await,
+            None => None,
+        };
+
+        // Decide whether to STREAM this utterance to the live voice_stream WS as
+        // it is captured (transcript ready ~immediately at SpeechEnd, no replay
+        // latency), or fall back to capture-then-batch. Streaming needs the
+        // Anthropic backend + a token.
+        let mut want_stream = token.is_some()
+            && matches!(
+                cfg.effective_backend(),
+                SttBackendKind::Anthropic | SttBackendKind::Auto
+            );
+
+        // ── Speaker pre-gate ────────────────────────────────────────────────
+        // Before opening the WS / hydrating the input box, capture a short onset
+        // window WITHOUT streaming and decide whether this speaker is wanted. A
+        // rejected utterance (own TTS echo, another person, background TV/movie)
+        // then NEVER reaches the voice_stream WS and NEVER types interims into
+        // the box — it is dropped here. Only runs when the gate is active AND we
+        // were going to stream, so the default (gate-off) path adds no latency.
+        // The end-gate on the full `utterance_buf` (below) stays authoritative:
+        // if this onset is a false-reject but the whole utterance admits, the
+        // batch fallback still transcribes it (self-correcting), so a wrong
+        // onset decision never loses real speech — it only costs live interims.
+        if want_stream && speaker_gate.is_active() {
+            let pregate_target = utterance_buf.len() + pregate_window_bytes();
+            let pregated = loop {
+                if utterance_buf.len() >= pregate_target {
+                    break true;
+                }
+                tokio::select! {
+                    _ = &mut stop_rx => break false,
+                    Some(()) = force_end_rx.recv() => {
+                        detector.force_end();
+                        break true;
+                    }
+                    n = capture.read_chunk(&mut chunk) => match n {
+                        Ok(0) | Err(_) => break true,
+                        Ok(n) => {
+                            let frame = &chunk[..n];
+                            utterance_buf.extend_from_slice(frame);
+                            // Keep the recording-cursor animation alive while we
+                            // buffer (no interims are emitted during the pre-gate).
+                            send_or_debug(
+                                &events,
+                                VoiceTranscriptEvent::Level(normalize_level(
+                                    crate::vad::rms_energy(frame),
+                                )),
+                            );
+                            // A very short utterance can end inside the window;
+                            // stop accumulating and gate on what we have.
+                            if detector.push(frame).contains(&VadEvent::SpeechEnd) {
+                                break true;
+                            }
+                        }
+                    }
+                }
+            };
+            if !pregated {
+                // Stop signalled during the pre-gate window — exit cleanly.
+                capture.stop().await;
+                break;
+            }
+            if !speaker_gate.admits(&utterance_buf) {
+                // Rejected at the onset: do NOT open the WS. Streaming stays off,
+                // so no audio is sent and no interims hydrate the box. The
+                // recording loop below still captures the rest (silently) and the
+                // end-gate confirms the drop — emitting no Final.
+                want_stream = false;
+                info!(
+                    target: "jfc::voice::vad",
+                    onset_bytes = utterance_buf.len(),
+                    "speaker pre-gate rejected onset — not opening voice_stream WS (utterance will use batch if end-gate admits)"
+                );
+            }
+        }
+        let mut live: Option<(
+            crate::anthropic_ws::VoiceStream,
+            mpsc::UnboundedReceiver<crate::anthropic_ws::StreamMsg>,
+        )> = None;
+        if want_stream {
+            let base = crate::stream_record::resolve_ws_base(&cfg);
+            let user_agent = format!("jfc-voice/{}", env!("CARGO_PKG_VERSION"));
+            let opts = crate::anthropic_ws::StreamOpts {
+                language: cfg.language.clone(),
+                keyterms: Vec::new(),
+                forward_interims: cfg.forward_interims,
+                allow_custom_auth_endpoint: cfg.allow_custom_auth_endpoint,
+                allow_insecure_auth_endpoint: cfg.allow_insecure_auth_endpoint,
+            };
+            let (ev_tx, ev_rx) = mpsc::unbounded_channel::<crate::anthropic_ws::StreamMsg>();
+            match crate::anthropic_ws::connect_voice_stream(
+                &base,
+                token.as_deref().unwrap_or_default(),
+                &user_agent,
+                "claude_code_cli",
+                &opts,
+                ev_tx,
+            )
+            .await
+            {
+                Ok(stream) => {
+                    // Flush the preroll + onset already captured into utterance_buf.
+                    let _ = stream.send(&utterance_buf).await;
+                    debug!(
+                        target: "jfc::voice::vad",
+                        preroll_bytes = utterance_buf.len(),
+                        "streaming utterance live to voice_stream during capture"
+                    );
+                    live = Some((stream, ev_rx));
+                }
+                Err(err) => {
+                    warn!(
+                        target: "jfc::voice::vad",
+                        error = %err,
+                        "live voice_stream connect failed — using batch transcribe"
+                    );
+                }
+            }
+        }
+
+        // Live-transcript accumulators (used on the streaming path; harmlessly
+        // empty on the batch path).
+        let mut final_text = String::new();
+        let mut interim = String::new();
+        let mut got_transcript = false;
 
         // Safety cap: if the noise floor stays above the VAD threshold (loud
         // room / high mic gain), SpeechEnd may never fire. Force-end after
@@ -811,6 +1211,61 @@ async fn vad_listen_loop(
                     Ok(n) => {
                         let frame = &chunk[..n];
                         utterance_buf.extend_from_slice(frame);
+                        // Stream this frame live as captured — the mic's own
+                        // cadence IS the real-time pacing the server needs — then
+                        // drain any interim transcripts without blocking capture.
+                        let mut drop_live = false;
+                        // Server-side endpointing fired this frame (Deepgram
+                        // `TranscriptEndpoint` → an `is_final` transcript).
+                        let mut server_endpointed = false;
+                        if let Some((stream, ev_rx)) = live.as_mut() {
+                            if !stream.send(frame).await {
+                                drop_live = true;
+                            } else {
+                                while let Ok(msg) = ev_rx.try_recv() {
+                                    if server_endpointed_msg(&msg) {
+                                        server_endpointed = true;
+                                    }
+                                    match msg {
+                                        crate::anthropic_ws::StreamMsg::Transcript { text, is_final } => {
+                                            crate::stream_record::apply_transcript(
+                                                &events,
+                                                &mut final_text,
+                                                &mut interim,
+                                                &mut got_transcript,
+                                                text,
+                                                is_final,
+                                            );
+                                        }
+                                        crate::anthropic_ws::StreamMsg::Error { msg, .. } => {
+                                            warn!(target: "jfc::voice::vad", error = %msg, "live voice_stream error; batch-fallback");
+                                            drop_live = true;
+                                            break;
+                                        }
+                                        crate::anthropic_ws::StreamMsg::Closed => {
+                                            drop_live = true;
+                                            break;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                        if drop_live {
+                            live = None;
+                        }
+                        // PRIMARY turn-end: the server says you stopped talking.
+                        // This is Claude Code's model (server endpointing) and is
+                        // reliable where the client energy VAD's SpeechEnd (below)
+                        // is not — that's why VAD "recorded forever" without it.
+                        if server_endpointed {
+                            debug!(
+                                target: "jfc::voice::vad",
+                                frames = frames_seen,
+                                "server endpoint (is_final) — ending utterance"
+                            );
+                            break true;
+                        }
                         frames_seen += 1;
                         let rms = crate::vad::rms_energy(frame);
                         max_rms = max_rms.max(rms);
@@ -874,12 +1329,12 @@ async fn vad_listen_loop(
             VoiceTranscriptEvent::StateChanged(VoiceState::Processing),
         );
 
-        let pcm = std::mem::take(&mut utterance_buf);
-
-        // Discard on cancel (`/voice off` / Esc): if the loop was stopped via
-        // cancel rather than ending naturally, drop the utterance without
+        // Discard on cancel (`/voice off` / Esc): drop the utterance without
         // transcribing or emitting a Final.
         if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            if let Some((stream, _)) = live.take() {
+                stream.close();
+            }
             *state.lock().await = VoiceState::Idle;
             send_or_debug(
                 &events,
@@ -888,34 +1343,84 @@ async fn vad_listen_loop(
             break;
         }
 
-        // Target-speaker gate: drop a non-primary-speaker utterance (e.g. a
-        // background movie/TV voice) before spending an STT call on it. Inert
-        // when the gate is disabled or unenrolled.
-        if !speaker_gate.admits(&pcm) {
-            *state.lock().await = VoiceState::Idle;
-            send_or_debug(
-                &events,
-                VoiceTranscriptEvent::StateChanged(VoiceState::Idle),
+        // Speaker gate FIRST — uniform for the streaming and batch paths. Score
+        // the full captured `utterance_buf` (accumulated on both paths) against
+        // our speakers (accept) and the assistant's own TTS voice(s) (reject). A
+        // rejected utterance — own voice leaking past the echo guard, another
+        // person, or background TV/YouTube — is dropped: clear the live interim
+        // preview the streaming path may have typed, drop the stream, emit no
+        // Final (so it never auto-submits), and keep listening.
+        let admitted = !speaker_gate.is_active() || speaker_gate.admits(&utterance_buf);
+
+        // Resolve the transcript. Streaming path: finalize the live stream — the
+        // server already transcribed the audio as it arrived, so this resolves
+        // almost immediately (no replay latency). Batch path (no stream, connect
+        // failed, or the live stream returned nothing): transcribe the captured
+        // buffer through the backend chain.
+        let mut transcript: Option<String> = None;
+        if !admitted {
+            if let Some((stream, _)) = live.take() {
+                stream.close();
+            }
+            // Clear any interim text the streaming path already typed into the
+            // input box (an empty interim deletes it in place).
+            send_or_debug(&events, VoiceTranscriptEvent::Interim(String::new()));
+            debug!(
+                target: "jfc::voice::vad",
+                bytes = utterance_buf.len(),
+                speech_ended,
+                "utterance rejected by speaker gate (own TTS / another speaker / background) — \
+                 dropping without emitting a Final"
             );
-            if speech_ended {
-                detector.reset();
-                continue;
+        } else if let Some((stream, mut ev_rx)) = live.take() {
+            let reason = crate::stream_record::finalize_collecting(
+                &stream,
+                &mut ev_rx,
+                &events,
+                &mut final_text,
+                &mut interim,
+                &mut got_transcript,
+            )
+            .await;
+            stream.close();
+            let text = final_text.trim();
+            if text.is_empty() {
+                info!(target: "jfc::voice::vad", ?reason, "live stream returned empty — batch-fallback");
             } else {
-                break;
+                info!(
+                    target: "jfc::voice::vad",
+                    chars = text.len(),
+                    ?reason,
+                    "VAD utterance transcribed (live)"
+                );
+                transcript = Some(text.to_owned());
             }
         }
 
-        info!(
-            target: "jfc::voice::vad",
-            bytes = pcm.len(),
-            backend = ?cfg.effective_backend(),
-            "transcribing utterance"
-        );
-        let token = match token_provider.as_ref() {
-            Some(provider) => provider().await,
-            None => None,
-        };
-        let result = backends::transcribe_with_token(&pcm, &cfg, token.as_deref()).await;
+        if admitted && transcript.is_none() {
+            // Batch fallback. The speaker gate already ran above, so go straight
+            // to transcription here.
+            let pcm = std::mem::take(&mut utterance_buf);
+            info!(
+                target: "jfc::voice::vad",
+                bytes = pcm.len(),
+                backend = ?cfg.effective_backend(),
+                "transcribing utterance (batch)"
+            );
+            match backends::transcribe_with_token(&pcm, &cfg, token.as_deref()).await {
+                Ok(Some(text)) => {
+                    info!(target: "jfc::voice::vad", chars = text.len(), "VAD utterance transcribed (batch)");
+                    transcript = Some(text);
+                }
+                Ok(None) => {
+                    debug!(target: "jfc::voice::vad", "VAD utterance was empty after transcription");
+                }
+                Err(err) => {
+                    warn!(target: "jfc::voice::vad", error = %err, "VAD transcription failed");
+                    send_or_debug(&events, VoiceTranscriptEvent::Error(err.to_string()));
+                }
+            }
+        }
 
         *state.lock().await = VoiceState::Idle;
         send_or_debug(
@@ -923,26 +1428,31 @@ async fn vad_listen_loop(
             VoiceTranscriptEvent::StateChanged(VoiceState::Idle),
         );
 
-        match result {
-            Ok(Some(text)) => {
-                info!(target: "jfc::voice::vad", chars = text.len(), "VAD utterance transcribed");
+        // Suppress the Final for an utterance the user discarded (pressed Enter
+        // mid-utterance): emit nothing and keep listening, so the late server
+        // endpoint doesn't re-hydrate the box or auto-submit a duplicate. The
+        // swap clears the flag so only THIS utterance is dropped.
+        let discarded = vad_discard.swap(false, std::sync::atomic::Ordering::SeqCst);
+        if let Some(text) = transcript {
+            if discarded {
+                debug!(target: "jfc::voice::vad", "discarded utterance Final (manual submit)");
+            } else {
+                info!(
+                    target: "jfc::voice::vad",
+                    chars = text.chars().count(),
+                    speech_ended,
+                    "emitting Final for VAD utterance → TUI auto-submit path (acts as Enter)"
+                );
                 send_or_debug(&events, VoiceTranscriptEvent::Final(text));
-            }
-            Ok(None) => {
-                debug!(target: "jfc::voice::vad", "VAD utterance was empty after transcription");
-            }
-            Err(err) => {
-                warn!(target: "jfc::voice::vad", error = %err, "VAD transcription failed");
-                send_or_debug(&events, VoiceTranscriptEvent::Error(err.to_string()));
             }
         }
 
-        // If stop was signalled, exit the loop
+        // If stop was signalled, exit the loop.
         if !speech_ended {
             break;
         }
 
-        // Otherwise loop back and listen for the next utterance
+        // Otherwise loop back and listen for the next utterance.
         detector.reset();
     }
 
@@ -963,6 +1473,61 @@ mod tests {
         assert_eq!(VoiceState::Idle.label(), "idle");
         assert_eq!(VoiceState::Recording.label(), "●rec");
         assert_eq!(VoiceState::Processing.label(), "…stt");
+    }
+
+    #[test]
+    fn server_endpoint_is_final_ends_turn_regression() {
+        use crate::anthropic_ws::StreamMsg;
+        // The server's TranscriptEndpoint surfaces as an `is_final` transcript —
+        // THAT ends the VAD turn (server-side endpointing, like Claude Code),
+        // not the flaky client energy VAD. This is the fix for "VAD records
+        // forever and never auto-submits".
+        assert!(server_endpointed_msg(&StreamMsg::Transcript {
+            text: "hello".into(),
+            is_final: true,
+        }));
+        // Interims and control frames must NOT end the turn.
+        assert!(!server_endpointed_msg(&StreamMsg::Transcript {
+            text: "hel".into(),
+            is_final: false,
+        }));
+        assert!(!server_endpointed_msg(&StreamMsg::Ready));
+        assert!(!server_endpointed_msg(&StreamMsg::Closed));
+    }
+
+    #[test]
+    fn echo_guard_suppresses_during_playback_and_tail_regression() {
+        use std::time::{Duration, Instant};
+        let tail = Duration::from_millis(400);
+        let t0 = Instant::now();
+        let mut tail_until = None;
+
+        // Disabled → never suppress, even while playing.
+        assert!(!echo_guard(false, true, t0, &mut tail_until, tail));
+        assert_eq!(tail_until, None);
+
+        // Enabled + playing → suppress and arm the decay tail.
+        assert!(echo_guard(true, true, t0, &mut tail_until, tail));
+        assert_eq!(tail_until, Some(t0 + tail));
+
+        // Playback stopped but still within the tail → keep suppressing (covers
+        // speaker/room decay so the tail-end doesn't trip the detector).
+        assert!(echo_guard(
+            true,
+            false,
+            t0 + Duration::from_millis(200),
+            &mut tail_until,
+            tail
+        ));
+
+        // Past the tail → listen again (full barge-in once the echo is gone).
+        assert!(!echo_guard(
+            true,
+            false,
+            t0 + Duration::from_millis(500),
+            &mut tail_until,
+            tail
+        ));
     }
 
     // REGRESSION (recording cursor was always gray + min-bar): a linear
@@ -1205,6 +1770,15 @@ mod tests {
         );
     }
 
+    #[test]
+    fn pregate_window_bytes_match_sample_rate_normal() {
+        // 16 kHz * 2 bytes/sample * (ms / 1000). The pre-gate buffers this many
+        // un-streamed bytes at the onset before deciding whether to open the WS.
+        assert_eq!(pregate_window_bytes_for_ms(600), 19_200);
+        assert_eq!(pregate_window_bytes_for_ms(1_000), 32_000);
+        assert_eq!(pregate_window_bytes_for_ms(200), 6_400);
+    }
+
     // REGRESSION: cancel() must stop the VAD listen loop, not just a hold/tap
     // recording. Before the fix, cancel() only signalled stop_tx, so `/voice
     // off` left the VAD loop (and the mic) running. We simulate a running VAD
@@ -1308,7 +1882,7 @@ mod tests {
     fn speaker_gate_disabled_admits_everything_normal() {
         let cfg = VoiceConfig::default(); // speaker_gate = false
         let gate = SpeakerGate::from_config(&cfg);
-        assert!(gate.profile.is_none());
+        assert!(!gate.is_active());
         // Even random bytes are admitted when the gate is inert.
         assert!(gate.admits(&vec![0u8; 6400]));
         assert!(gate.admits(b"\x01\x02\x03\x04"));
@@ -1324,7 +1898,7 @@ mod tests {
             ..Default::default()
         };
         let gate = SpeakerGate::from_config(&cfg);
-        assert!(gate.profile.is_none(), "missing profile ⇒ inert gate");
+        assert!(!gate.is_active(), "missing profile ⇒ inert gate");
         assert!(gate.admits(&vec![0u8; 6400]));
     }
 
@@ -1338,9 +1912,11 @@ mod tests {
         let me = synth_pcm(130.0, 2.0, 1.0, 7);
         let profile = SpeakerProfile::enroll_from_pcm(&me).expect("enroll");
         let gate = SpeakerGate {
-            profile: Some(profile),
+            accept: vec![profile],
+            reject: Vec::new(),
             embedder: Box::new(crate::speaker::NullEmbedder),
         };
+        assert!(gate.is_active());
 
         // Same synthetic speaker → admitted.
         let me_again = synth_pcm(130.0, 1.0, 1.0, 21);
@@ -1355,6 +1931,47 @@ mod tests {
 
         // Unmeasurable audio (silence) fails open → admitted.
         assert!(gate.admits(&vec![0u8; 16_000 * 2]));
+    }
+
+    /// Saving a self-voice reject-profile writes to `reject/<voice>.json`, the
+    /// path matches `reject_profile_path`, and a gate built afterwards loads it.
+    #[test]
+    fn save_reject_profile_roundtrips_and_gate_loads_it_normal() {
+        let dir = std::env::temp_dir().join(format!("jfc_reject_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg = VoiceConfig {
+            // profile_dir() derives from the parent of speaker_profile_path.
+            speaker_profile_path: Some(
+                dir.join("speaker_profile.json")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            ..Default::default()
+        };
+
+        let tts = synth_pcm(150.0, 2.0, 1.3, 5);
+        let path = save_reject_profile_from_pcm(&cfg, "buttery", &tts).expect("save reject profile");
+        assert_eq!(path, reject_profile_path(&cfg, "buttery"));
+        assert!(path.exists(), "reject profile file must be written");
+
+        // A gate built with the gate enabled now carries the reject profile and
+        // is active (will filter), even with no accept-list enrolled.
+        let gate = SpeakerGate::from_config(&VoiceConfig {
+            speaker_gate: true,
+            ..cfg.clone()
+        });
+        assert!(gate.is_active(), "reject-only gate must be active");
+        assert_eq!(gate.reject.len(), 1);
+        assert!(gate.accept.is_empty());
+
+        // An utterance from the same TTS source is rejected (own voice).
+        let tts_again = synth_pcm(150.0, 1.5, 1.3, 77);
+        assert!(
+            !gate.admits(&tts_again),
+            "self-voice utterance must be dropped"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Mirror of speaker.rs's synth helper for the recorder-level gate test.

@@ -178,6 +178,10 @@ pub async fn drain_queued_prompts(state: &mut EngineState, tx: &EventSender) {
         state.claudemd_disallowed_tools = hierarchy.collect_disallowed_tools();
     }
     let overrides = StreamRequestOverrides {
+        session_id: state
+            .current_session_id
+            .as_ref()
+            .map(|s| s.as_str().to_owned()),
         background_reminders: state.take_background_reminders(),
         disallowed_tools: state.effective_disallowed_tools(),
         extra_dirs: state.extra_dirs.clone(),

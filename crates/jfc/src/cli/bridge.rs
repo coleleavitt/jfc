@@ -73,6 +73,9 @@ pub(super) async fn run_bridge_subcommand(sub: BridgeSubcommand) -> anyhow::Resu
 
             let mut config = jfc_bridge::BridgeConfig::new(api_base_url, secret.into_bytes());
             config.bootstrap_token = bootstrap_token;
+            // CS-JFC-010: running without a bootstrap token is fail-closed unless
+            // the operator explicitly asked for it via `--no-bootstrap-auth`.
+            config.allow_insecure_no_auth = no_bootstrap_auth;
             config.token_ttl = Duration::from_secs(token_ttl_secs);
             let state_file = state_file.or_else(|| {
                 std::env::var("JFC_BRIDGE_STATE_FILE")

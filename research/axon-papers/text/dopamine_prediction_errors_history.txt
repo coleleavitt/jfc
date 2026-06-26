@@ -1,0 +1,562 @@
+                                                                                                             TYPE Mini Review
+                                                                                                             PUBLISHED 07 May 2026
+                                                                                                             DOI 10.3389/fncom.2026.1825622
+
+
+
+
+                                           A brief history of dopamine
+OPEN ACCESS
+                                           prediction errors
+EDITED BY
+Ido Maor,                                  Biru B. Dudhabhate and Kauê M. Costa *
+National Institutes of Health (NIH),
+United States                              Department of Psychology, University of Alabama at Birmingham, Birmingham, AL, United States
+REVIEWED BY
+Ron Keiflin,
+University of California, Santa Barbara,
+                                           Dopamine signaling has become closely associated with reward prediction errors
+United States
+Ryunosuke Amo,                             (RPEs)–the difference between expected and experienced value. Although not
+Virginia Tech Carilion, United States      without controversy, the dopamine RPE hypothesis is one of the most influential
+*CORRESPONDENCE                            ideas in neuroscience. This review briefly summarizes its origins, empirical foun-
+Kauê M. Costa                              dations, and theoretical development. We begin with early psychological studies
+  kmcosta@uab.edu
+                                           which demonstrated that prediction errors, broadly defined, are central drivers
+RECEIVED 08 March 2026                     of learning. These experiments inspired mathematical models that formalized
+REVISED 13 April 2026
+ACCEPTED 21 April 2026                     associative learning rules and informed the development of reinforcement learn-
+PUBLISHED 07 May 2026                      ing algorithms for artificial learning, including the influential temporal difference
+CITATION                                   learning (TDRL) framework, where learning is guided by prediction errors in value
+Dudhabhate BB and Costa KM (2026) A        or reward. These theoretical proposals converged with neuroscience through the
+brief history of dopamine prediction
+errors.                                    landmark discovery that midbrain dopamine neurons show activity patterns that
+Front. Comput. Neurosci. 20:1825622.       are strikingly similar to the RPEs proposed in TDRL. The idea that this unique neu-
+doi: 10.3389/fncom.2026.1825622            ronal population, already implicated in several behavioral processes and brain dis-
+COPYRIGHT                                  orders, could encode a computational variable central to reinforcement learning
+© 2026 Dudhabhate and Costa. This is       algorithms was a major conceptual shift, and provided a strong framework that
+an open-access article distributed under
+the terms of the Creative Commons          allowed for rigorous hypothesis testing. Over the past three decades, increasingly
+Attribution License (CC BY). The use,      sophisticated experiments have both replicated the core dopamine RPE finding
+distribution or reproduction in other      across distinct experimental contexts and revealed important deviations from the
+forums is permitted, provided the
+original author(s) and the copyright       canonical model predictions. These exceptions have sparked ongoing debate
+owner(s) are credited and that the         about how the hypothesis should be enhanced, revised, or replaced. The history
+original publication in this journal is    of the dopamine RPE hypothesis is a quintessential example of how the integra-
+cited, in accordance with accepted
+academic practice. No use, distribution    tion of theory and experiments can drive progress in neuroscience and offers a
+or reproduction is permitted which does    template for theoretical–experimental synthesis.
+not comply with these terms.
+
+                                           KEYWORDS
+
+                                           associative learning, dopamine, learning theory, prediction error, reinforcement
+                                           learning, reward, temporal difference learning, value
+
+
+
+
+                                           1 Introduction
+                                               The stoic philosopher Epictetus pointed out that it is impossible for someone to learn what
+                                           they already know (Epictetus, 2022). While this was meant to highlight the importance of
+                                           intellectual humility, it captures the fundamental observation that learning requires the viola-
+                                           tion of preconceived expectations about the world. It is now well accepted that learning relies
+                                           on the ability to perceive and properly reconcile the differences between prediction and experi-
+                                           ence, or “prediction errors”. While there is much controversy about how the brain computes
+                                           prediction errors and what types of information are considered across different neural systems,
+                                           there is general agreement that they define the updates in knowledge that drive learning.
+                                               Different types of prediction errors are implicated in learning about external associations
+                                           (associative learning), understanding the effects of self-generated actions (reinforcement learn-
+                                           ing), shaping perception (predictive coding in sensory perception), and allowing for adaptive
+
+
+Frontiers in Computational Neuroscience                          01                                                             frontiersin.org
+Dudhabhate and Costa                                                                                                          10.3389/fncom.2026.1825622
+
+
+
+
+motor control (sensorimotor prediction errors) (Rescorla and Wagner,               negative or unpleasant outcomes (punishments) become less likely to
+1972; Sutton and Barto, 1998; Glimcher, 2011; Spratling, 2017; Popa and            be repeated (Thorndike, 1927). This basic rule became the foundation
+Ebner, 2019). This concept extends beyond the realm of neurobiology                of reinforcement learning, establishing the seed of the idea that animal
+and behavioral sciences and is also central to modern computer science             behavior is driven towards maximizing reward and minimizing punish-
+and artificial intelligence. These learning principles transcend the nature        ment (Skinner, 1938, 1963). For such learning, most of the information
+of the agent—whether it is biological or artificial—and can be generally           about the world could be condensed into the “pleasantness” or desir-
+applied to any system that acquires and organizes information to guide             ability of the learned outcome.
+future decisions.                                                                       These foundational studies relied on the motivational relevance of
+      Many learning models, especially those applied to artificial intelli-        unconditioned stimuli, i.e., rewards and punishments, to drive behav-
+gence, define learning as the update of a value function, or the estima-           iors based on the nature of these outcomes, like salivation in anticipa-
+tion of all current and future rewards (desired outcomes) and                      tion of food, which allows for the direct quantification of learning in
+punishments (undesired outcomes), discounted by factors like time                  trial-based tasks, as pairing of a cue or action with one outcome changes
+delay. This type of learning depends on the difference between expected            responding in the immediately following trial. This led many to define
+and experienced value, or reward prediction errors (RPEs). In the late             learning as the progressive change in observable behavior (Skinner,
+20th century, it was discovered that the activity of midbrain dopamine             1963). However, challenging the idea that reinforcement was the only
+neurons very closely mimicked the dynamics of these RPEs (Schultz et               driver of learning, work by Tolman, Brogden, Lubow, and others showed
+al., 1997). This discovery revolutionized the field, changing the relation-        that learning can occur in the absence of direct reinforcement (Brogden,
+ship between computational and experimental learning research                      1939; Tolman, 1948; Lubow, 1973). This included the demonstration
+(Schultz, 2007; Zhang et al., 2025).                                               that presentation of neutral stimuli and associations incidentally learned
+      Here, we briefly review the history of the dopamine RPE hypothe-             in free exploration could guide future behavior. In other words, learning
+sis, from the origins of the prediction error concept in early experimen-          can be latent, or behaviorally silent, and animals can form associations
+tal psychology and learning theory, the theoretical development of                 between non-reinforcing stimuli. These critical discoveries demon-
+learning mechanisms over the course of the 20th century, the experi-               strated that learning is not fully dependent on the direct reinforcement
+mental and computational advances that established this hypothesis, the            value, a topic to which we will return to later in this review.
+impact it had on neuroscience and associated fields, and the current                    Another feature that was unclear from initial experiments was
+challenges that may overturn this paradigm. This review aims to be an              whether learning was only dependent on temporal contiguity and order,
+accessible introduction to the history of this topic, and to invite readers        as was initially assumed. This would mean that associations would be
+to think about how the interaction between theory and experimentation              formed between cues or actions and an unconditioned stimulus, so long
+shaped the current neuroscience research landscape.                                as they were presented close together in time. However, the discovery
+                                                                                   of blocking ruled out this hypothesis. First demonstrated by Leon
+                                                                                   Kamin in rats, blocking is the phenomenon where, if an animal has
+                                                                                   already undergone asymptotic conditioning to a cue, then overlaying a
+2 The origins of prediction errors in                                              new cue does not lead to new learning (Kamin, 1968, 1969). In effect,
+learning theory                                                                    the previous learning to one cue “blocks” any additional conditioning
+                                                                                   to new cues. Later work further demonstrated that changing the proper-
+     While there were important preceding and parallel studies (James,             ties of the unconditioned stimulus, like by increasing or decreasing the
+1890; Twitmeyer, 1905), the rise of modern learning theory research is             amount of the reinforcer, or changing its sensory properties, can
+often dated to the late 19th and early 20th century, with, among other             unblock learning (Rescorla and Colwill, 1983; Holland, 1988; Holland
+foundational work, Ivan Pavlov’s description of classical conditioning             and Kenmuir, 2005). Therefore, if all properties of an unconditioned
+and Edward Thorndike’s law of effect. Pavlov demonstrated that a neu-              stimulus are entirely predicted by a cue, then that unconditioned stimu-
+tral stimulus (cue) paired with an unconditioned stimulus (outcome                 lus does not support additional learning to another cue, but if some-
+with motivational relevance, like food) can elicit a conditioned response          thing changes about the outcome, then the ability to drive learning is
+(learned behavior related to the unconditioned stimulus) (Pavlov, 1927).           restored. The discovery of blocking was an important mark in the devel-
+This established the concept of conditioning, i.e., the idea that animals          opment of learning theory, as it cemented the proposal that it is the
+learn to respond to stimuli in anticipation of the outcomes that they              predictive relationship between cue and outcome that defines learning,
+predict, and that this occurs according to a set of rules. For example,            and that the violation of predictions, or prediction error, is the major
+presenting a conditioned stimulus in the absence of its unconditioned              driver of learning.
+stimulus leads to extinction of the conditioned response, if two stimuli
+are presented simultaneously and followed by an unconditioned stimu-
+lus, the cue with the most salience becomes a larger driver of condi-
+tioned responses (overshadowing), and if another cue is paired with a              3 Formalization of prediction errors in
+previously conditioned cue it can also acquire the conditioned response            learning
+of that cue (second-order conditioning). This framework set the stage
+for the systematic exploration of the rules that govern the learning of                 Prediction errors can be expressed mathematically in a relatively
+associations between cues and outcomes.                                            straightforward manner, as the simple difference between prediction
+     Thorndike’s Law of Effect, inspired by experiments with cats solving          and experience, which inspired the development of new theoretical
+complex puzzles (i.e., operant learning), proposed that animals learn by           models of learning. This was very important, and several models were
+trial and error, where actions leading to positive or pleasant outcomes            proposed in the 1970s and 80s that incorporated prediction errors as
+(rewards) became more likely to be repeated, and actions leading to                drivers, or strong determinants of learning. By far the most influential
+
+
+Frontiers in Computational Neuroscience                                       02                                                              frontiersin.org
+Dudhabhate and Costa                                                                                                             10.3389/fncom.2026.1825622
+
+
+
+
+of those was the Rescorla-Wagner model (Rescorla and Wagner, 1972;                   bad) any current or predicted state is. Essentially, if an agent is in a
+Siegel and Allan, 1996; Holland and Schiffino, 2016; Soto et al., 2023).             given state, the value of that state is defined by the reinforcing proper-
+This model described the influence of prediction errors on learning by               ties of any potential experience within that state, like a reward (or
+asserting that they determine how much a reinforcer can drive learn-                 what would be an unconditioned stimulus in classical learning
+ing—the more unexpected the outcome, the more it can drive changes                   theory), in addition to the value of all subsequent states that can be
+in the strength of its association to predictive cues. This model was read-          predicted when in that state. Critically, this predicted value is dis-
+ily able to explain blocking, as it predicts that when one cue consistently          counted by how long the agent must wait for the outcome, with
+predicts the outcome, it lowers the prediction error available for learn-            higher values for states that are closer in time. The value of a state is
+ing about other cues, which limits their associative gain. It also explained         therefore defined as the discounted sum of all current and predicted
+why more salient cues and outcomes led to higher associative strength                rewards. This means that, in a task where every time point is set as a
+by postulating separate salience terms that multiplied the update                    state, the TDRL model is able to make real-time predictions and
+induced by the experience of a given prediction error, which could                   updates to the agent’s value function. Moreover, the TDRL algorithm
+explain phenomena like overshadowing (Pavlov, 1927).                                 compares value predictions not only with the current state value, but
+      The Rescorla-Wagner model profoundly influenced the study of                   also the value of all future predicted states—hence the term temporal
+associative learning by providing a formal, mathematically grounded                  difference. Prediction errors in this model are therefore reward pre-
+framework for understanding how prediction errors drive changes in                   diction errors (RPEs), because they are explicitly about value, and
+associative strength (Miller et al., 1995; McNally and Yau, 2023; Soto et            also temporal prediction errors, because they are defined by the
+al., 2023). Its introduction instigated a massive response from the field            timing of predictions.
+and ushered in a new era in learning research (Siegel and Allan, 1996;                     By moving away from the nebulous concept of associative strength,
+Soto et al., 2023). That said, despite its ability to explain key features of        collapsing learning into a scalar variable, and using real-time rules,
+learning, the Rescorla-Wagner model has significant limitations, which               TDRL was able to explain several phenomena that were not within the
+were apparent at the time of its proposal. These limitations included the            purview of the Rescorla-Wagner model, like second-order conditioning
+fact that there is no clear definition of what “associative strength” means          and how animals could learn to time their conditioned responses to best
+aside from the relationship between unconditioned and conditioned                    match the delivery of the unconditioned stimulus (Sutton and Barto,
+responses, that the model has no definition of time and therefore could              1998; Ludvig et al., 2012). Critically, this algorithm was highly successful
+only be applied to trial-based tasks, and that it fails to explain some basic        in unsupervised machine learning applications that went way beyond
+learning phenomena, like latent inhibition (where the presentation of a              the classical Pavlovian and operant tasks used to test learning in ani-
+cue with no reinforcement reduces subsequent learning) (Lubow, 1973).                mals. It was used to train algorithms to play complex games like back-
+Alternative models, like the Bush and Mosteller (Bush and Mosteller,                 gammon and chess at a master level (Tesauro, 1994; Baxter et al., 1998),
+1951), Mackintosh (Mackintosh, 1975) and Pearce-Hall (Pearce and                     and is a cornerstone of several modern machine learning and artificial
+Hall, 1980) models, provided key contributions and explained some                    intelligence algorithms (Mnih et al., 2015; Silver et al., 2018; Alkam et
+experimental observations that the Rescorla-Wagner model could not,                  al., 2025). TDRL is therefore a key example of how learning algorithms
+but were not as influential. Arguably, the success of the Rescorla-Wagner            inspired by psychological principles can be applied to self-learning in
+model was due to a combination of conceptual simplicity, historical                  artificial systems across multiple tasks.
+timing, and the fact that it explained several prediction error-based
+learning phenomena in a manner that could be easily applied across
+tasks and species (Costa and Schoenbaum, 2021; Soto et al., 2023).
+                                                                                     5 The dopamine revolution:
+                                                                                     neurobiological evidence for reward
+4 From animal learning to machine                                                    prediction errors
+learning
+                                                                                          In the mid-1990s, the prediction error-based learning rules that
+    The latter point of the previous section is one of the reasons why               were first derived from experimental psychology experiments, for-
+the Rescorla-Wagner became so influential outside the field of experi-               malized by learning theorists, and expanded and refined by computer
+mental psychology (Soto et al., 2023), including the (at the time)                   scientists, would return to biology and establish itself in neurosci-
+fledgling field of computer science and artificial intelligence. The dis-            ence. In a landmark paper, Schultz, Dayan, and Montague (Schultz et
+coveries and mathematical formalizations of learning theorists were                  al., 1997) provided compelling evidence that a large fraction of mid-
+the foundations for the development of artificial learning algorithms                brain dopamine neurons in behaving macaques had activity patterns
+(Neftci and Averbeck, 2019). One of the most successful of these algo-               that very closely mimicked the RPEs proposed in TDRL models of
+rithms was temporal difference reinforcement learning (TDRL),                        learning. Briefly, most recorded primate dopamine neurons (55 to
+introduced by Sutton and Barto in the 1980s (Sutton and Barto, 1981,                 80% in those experiments) increased their firing whenever an unex-
+1998; Sutton, 1988). TDRL can be conceptualized as an extension of                   pected reward or reward-predicting cue was presented, decreased
+the Rescorla-Wagner learning rule to real-time events. Instead of                    their firing when an expected reward was omitted, and did not
+relying on trial-based structures, the TDRL model can establish pre-                 change their firing whenever a fully expected reward was presented,
+dictions for any number of continuous “states,” including those rep-                 almost exactly as expected from a TDRL RPE representation. The
+resenting cues and outcomes. To do so, TDRL makes an important                       hypothesis put forth was that the brain executes a form of TDRL
+conceptual assumption—that learning involves the creation and                        computation to drive adaptive learning, and that dopamine was a key
+update of a value function, or the representation of how good (or                    RPE reinforcement signal. This bold proposal was built on more than
+
+
+Frontiers in Computational Neuroscience                                         03                                                                frontiersin.org
+Dudhabhate and Costa                                                                                                        10.3389/fncom.2026.1825622
+
+
+
+
+a decade of careful recording experiments (Schultz, 1986; Schultz et              6 Beyond the classical RPE: recent
+al., 1993; Mirenowicz and Schultz, 1994, 1996) and parallel theoreti-             developments, challenges, and new
+cal developments (Montague et al., 1996). Moreover, the sheer impact
+of how well the activity of the neurons appeared to match with the                directions
+proposed theory was remarkable, and still impresses newcomers to
+the field. Very few neural correlates have such a striking “first glance”              The dopamine RPE hypothesis is so strong, and its effects are so
+face validity as the dopamine RPE, and it’s effect is rivalled perhaps            widespread that it is nearly impossible to work in the field without
+only by the observation of hippocampal place cells (O’Keefe and                   addressing it in one way or another, and the finding that dopamine
+Dostrovsky, 1971).                                                                signals can be very similar to RPEs is likely one of the most replicated
+     The dopamine RPE hypothesis sparked a major conceptual revo-                 findings in all of neuroscience. However, there are also several find-
+lution in the field. Part of what made it so impactful was that the               ings about dopamine function that cannot be fully explained by the
+encoding of RPEs by dopamine neurons made sense from a mecha-                     standard TDRL framework (Costa and Schoenbaum, 2025; Zhang et
+nistic point of view. Dopamine, a catecholamine neuromodulator,                   al., 2025).
+was already implicated at the time in synaptic plasticity, reward and                  First among those is the finding that dopamine neurons are not
+learning (Robbins and Everitt, 1992; Costa and Schoenbaum, 2022).                 all the same. Over the course of the first two decades of this cen-
+Dysfunctions in dopamine signaling had also already been exten-                   tury, it was progressively demonstrated that dopamine neurons
+sively demonstrated in diseases characterized by pathological learn-              that project to different regions have different genetic profiles and
+ing, like drug addiction (Koob, 1992; Nestler, 1992) and schizophrenia            activity patterns, including many that do not look like RPEs
+(Carlsson, 1988). Indeed, dopamine dysfunction is observed in                     (Roeper, 2013; Lammel et al., 2014; Menegas et al., 2017; Farassat
+almost all neurological and psychiatric disorders (Costa and                      et al., 2019; Poulin et al., 2020; Azcorra et al., 2023; Knowlton and
+Schoenbaum, 2022), and the idea that there could be a computational               Canavier, 2023). This diversity was already foreshadowed in the
+principle that unified at least some component of these different dis-            first proposal of the TDRL hypothesis as, again, only a fraction of
+eases within a common theoretical framework was very attractive.                  dopamine neurons showed RPE-like activity patterns (Schultz et
+     Dopamine RPEs quickly became a centerpiece of computational                  al., 1997). Perhaps this should not have been much of a surprise,
+psychiatry, the field by which mental health diseases are explored as             as dopamine is a neurotransmitter like any other and it is natural
+disorders of particular computational processes. For example, dopa-               that it should have distinct functions in distinct systems. Such a
+mine’s role in addiction could be explained as unbounded RPEs                     simplistic heuristic would be unthinkable for most other neu-
+(Redish, 2004; Lehmann et al., 2025), and it’s role in schizophrenia as           rotransmitters, and perhaps only became popular because of the
+maladaptive prediction errors that create spurious associations                   influence of the RPE hypothesis. With the research of the last two
+(Millard et al., 2022). Of course, there is extensive debate about                decades, it seems now that the dopamine pathway where RPE-like
+whether any of these propositions are true, but the key point is that             patterns are most evident is the mesolimbic pathway, or dopamine
+these propositions can only exist, and potentially be falsified, in a             neurons in the ventral tegmental area that project to regions of the
+world where there is a clear computational hypothesis for the behav-              ventral striatum, especially the nucleus accumbens (Hart et al.,
+ioral role of dopamine.                                                           2014; Menegas et al., 2017; Mohebi et al., 2024; Costa et al., 2025a).
+     The main advantage of having a strong formal hypothesis is that                   But beyond pathway-specific differences, even in the same type
+experimenters can design experiments targeted towards falsifying                  of dopamine neurons that seem to show classical RPEs, there are
+specific predictions from that proposal, and test whether the assump-             still discrepancies from the classical TDRL model that were
+tions hold across experimental contexts (Costa and Schoenbaum,                    revealed by the progressive testing of the RPE hypothesis in differ-
+2021). In the years after the seminal dopamine RPE study, the finding             ent tasks. Indeed, if one records dopamine signals in tasks that can
+that most dopamine neurons, and dopamine release in certain target                be solved by a simple TDRL model, then the signals mostly con-
+regions, convey an RPE-like signal was indeed replicated across dif-              form to a simple TDRL model. It is only when animals engage in
+ferent tasks (Tobler et al., 2003; Bayer and Glimcher, 2005), species             behaviors that go beyond the purview of TDRL that the limits of
+(Cohen et al., 2012; Hart et al., 2014; Kishida et al., 2016), and record-        the model for explaining dopamine function become clear. This is
+ing methods of dopamine activity (Pessiglione et al., 2006; Day et al.,           because the initial version of the TDRL model has many assump-
+2007; Patriarchi et al., 2018), with critical exceptions that we will             tions which limit its capacity to explain complex behaviors, like
+address in the next section.                                                      that learning involves the update of a single value function, and
+     The development of genetic tools and optogenetic manipulation                that updates to this function only occur through directly experi-
+also allowed for the causal test of this hypothesis. In an “instant clas-         enced value changes (Schultz et al., 1997; Sutton and Barto, 1998;
+sic” study, Steinberg and colleagues demonstrated that optogenetic                Costa and Schoenbaum, 2025). Conditions that cannot be
+stimulation of dopamine neurons in rats was sufficient to unblock                 explained within these boundaries require at least extensions and
+learning (Steinberg et al., 2013). This unblocking effect was a striking          modifications to the classical TDRL framework.
+finding that experimentally confirmed a key prediction of the pro-                     For example, it was shown in 2013 that dopamine release in the
+posal that prediction errors drive learning, coming full circle to the            nucleus accumbens ramps up as animals approach a fully predicted
+classical Kamin blocking experiments discussed earlier in this review.            reward, which should not happen according to classical TDRL RPE
+Similarly, inhibition of dopamine neurons was shown to mimic nega-                definitions (Howe et al., 2013). This sparked heated debate, which
+tive prediction errors (Chang et al., 2016, 2018), and these tools also           still continues, about what exactly these ramps mean, as these per-
+provided insight into the cell type-specific circuitry that shapes the            sistent responses seemed to better reflect value or motivation
+computation of RPE-like signals (Cohen et al., 2012; Eshel et al.,                rather than RPEs (Hamid et al., 2015; Mohebi et al., 2019; Guru et
+2015, 2016).                                                                      al., 2020; Kim et al., 2020; Costa et al., 2025b; Floeder et al., 2025;
+
+
+Frontiers in Computational Neuroscience                                      04                                                             frontiersin.org
+Dudhabhate and Costa                                                                                                   10.3389/fncom.2026.1825622
+
+
+
+
+Priestley and Akam, 2026). However, from a theoretical viewpoint,             7 Conclusion
+a TDRL rule can explain these ramps by simply assuming a convex
+transformation of proximity to the goal—a straightforward tweak                    Prediction errors as a concept proved to be widely applicable
+to the classical model (Gershman, 2014). This is one example of               to psychology, machine learning and neuroscience, where the idea
+how the basic TDRL model can be modified or updated to recon-                 that a specific type of prediction error, a TDRL RPE, is instantiated
+cile with experimental findings, without changing the core rules of           by dopamine signaling has inspired decades of discovery. The field
+the TDRL RPE.                                                                 is currently ablaze with ardent debate on the topic, and we are
+     Other observations that cannot be explained by classical TDRL            likely in the transition period to a new paradigm in which the
+RPEs include the discovery that dopamine neurons can respond to               TDRL framework will be significantly improved or abandoned
+prediction errors in reward identity between rewards of similar               altogether. A detailed discussion of the evidence in favor of or
+magnitude (Lak et al., 2014; Takahashi et al., 2017; Stalnaker et al.,        against any of the updates or the alternative proposals to TDRL is
+2019), that dopamine signaling determines learning about reward               beyond the scope of this review, but what we want to impress on
+features (Chang et al., 2017; Keiflin et al., 2019), that different           the reader is the importance of the dopamine RPE hypothesis as
+dopamine neurons seem to track changes in different reward-                   the benchmark and inspiration for these recent developments.
+related variables, like movement kinematics and reinforcement                 Even if ultimately abandoned, the historical importance of the
+history, during more complex reward-based tasks (Engelhard et al.,            dopamine RPE hypothesis is unquestionable. It is the quintessen-
+2019), and that the devaluation of a specific reinforcer immediately          tial example of successful long-term synergy between theoretical
+reduces dopamine RPE responses to that stimulus (Papageorgiou                 and experimental neuroscience, and is an example to be followed
+et al., 2016). In recent developments, several groups have recon-             by other neuroscience fields where strong normative hypotheses
+ciled these observations by proposing the existence of several par-           are still lacking.
+allel value functions and state representations encoded by different
+dopamine neurons (Millidge et al., 2023; Takahashi et al., 2023; Lee
+et al., 2024). Therefore, the TDRL RPE hypothesis of dopamine
+signaling is not static, and this core proposal can, and has been,            Author contributions
+updated to account for new experimental observations (Costa and
+Schoenbaum, 2025; Zhang et al., 2025).                                           BD: Conceptualization, Writing – original draft. KC: Project
+     That said, there are cases where reconciliation seems impossi-           administration, Conceptualization, Supervision, Funding acquisition,
+ble. These findings require fundamentally different computational             Writing – review & editing.
+frameworks. The strongest challenges to the dopamine RPE
+hypothesis comes from studies that explicitly tested the fundamen-
+tal assumptions of TDRL in relation to value. These include discov-
+eries that dopamine mediates learning in the absence of any                   Funding
+reinforcement (Sharpe et al., 2017; Kutlu et al., 2022; Costa et al.,
+2025a) and that it can control the associability of stimuli (Morrens              The author(s) declared that financial support was received for this
+et al., 2020; Kutlu et al., 2021, 2022). These findings, among many           work and/or its publication. This paper was funded by NIDA/NIH
+others not listed here, fundamentally challenge the idea that dopa-           grants R01DA041705 and R00DA055641. Costa has received a BBRF
+mine signals only a value-based RPE. Alternative proposals there-             NARSAD Young Investigator Award and a Parkinson’s Foundation
+fore must go beyond the confines of TDRL. Current examples                    Impact Award.
+include proposals that dopamine encodes salience (Matsumoto
+and Hikosaka, 2009; Kutlu et al., 2021), causal inference (Jeong et
+al., 2022), or prediction errors about features beyond value
+(Takahashi et al., 2017; Gardner et al., 2018; Langdon et al., 2018;          Conflict of interest
+Corlett et al., 2022; Costa et al., 2025a).
+     The latter proposal harks back to the work by Tolman and                     The author(s) declared that this work was conducted in the
+others on learning that is independent of direct reinforcement                absence of any commercial or financial relationships that could be
+(Tolman, 1948), and also builds on developments in computational              construed as a potential conflict of interest.
+models where learning involves not just creating a value function,
+but building a model of the transition probabilities between
+observable and latent states, also known as “model-based learning”
+(Langdon et al., 2018; Akam and Walton, 2021; Costa and                       Generative AI statement
+Schoenbaum, 2025; Costa et al., 2025a). In this framework, dopa-
+mine would still signal prediction errors, but instead of just value,             The author(s) declared that Generative AI was not used in the
+these prediction errors would incorporate information that define             creation of this manuscript.
+the states that comprise the animal’s internal model. This is inter-              Any alternative text (alt text) provided alongside figures in this
+esting because it retains the idea of dopamine signaling prediction           article has been generated by Frontiers with the support of artificial
+errors, but errors that are richer than previously thought, and               intelligence and reasonable efforts have been made to ensure accuracy,
+inspires a search for what types of information may be used to                including review by the authors wherever possible. If you identify any
+compute these errors.                                                         issues, please contact us.
+
+
+
+Frontiers in Computational Neuroscience                                  05                                                            frontiersin.org
+Dudhabhate and Costa                                                                                                                                            10.3389/fncom.2026.1825622
+
+
+
+
+Publisher’s note                                                                                       organizations, or those of the publisher, the editors and the review-
+                                                                                                       ers. Any product that may be evaluated in this article, or claim that
+   All claims expressed in this article are solely those of the authors                                may be made by its manufacturer, is not guaranteed or endorsed by
+and do not necessarily represent those of their affiliated                                             the publisher.
+
+
+
+
+References
+Akam, T., and Walton, M. E. (2021). What is dopamine doing in model-based                              Eshel, N., Tian, J., Bukwich, M., and Uchida, N. (2016). Dopamine neurons share
+reinforcement learning? Curr. Opin. Behav. Sci. 38, 74–82. doi: 10.1016/j.                             common response function for reward prediction error. Nat Neurosci 19, 479–486. doi:
+cobeha.2020.10.010                                                                                     10.1038/nn.4239
+Alkam, T., Tarshizi, E., and Van Benschoten, A. H. (2025). Reinforcement learning at the               Farassat, N., Costa, K. M., Stojanovic, S., Albert, S., Kovacheva, L., Shin, J., et al. (2019).
+interface of artificial intelligence and cognitive science. Neuroscience 585, 289–312. doi:            In vivo functional diversity of midbrain dopamine neurons within identified axonal pro-
+10.1016/j.neuroscience.2025.09.004                                                                     jections. eLife 8:e48408. doi: 10.7554/eLife.48408
+Azcorra, M., Gaertner, Z., Davidson, C., He, Q., Kim, H., Nagappan, S., et al. (2023).                 Floeder, J. R., Jeong, H., Mohebi, A., and Namboodiri, V. M. K. (2025). Mesolimbic dopa-
+Unique functional responses differentially map onto genetic subtypes of dopamine neu-                  mine ramps reflect environmental timescales. eLife 13. doi: 10.7554/eLife.98666.2
+rons. Nat Neurosci 26, 1762–1774. doi: 10.1038/s41593-023-01401-9
+                                                                                                       Gardner, M. P. H., Schoenbaum, G., and Gershman, S. J. (2018). Rethinking dopamine as
+Baxter, J., Tridgell, A., and Weaver, L. (1998). KnightCap: a chess Programm that learns               generalized prediction error. Proceedings of the Royal Society B: Biological Sciences
+by combining TD(lambda) with game-tree search, in Proceedings of the Fifteenth                         285:20181645. doi: 10.1098/rspb.2018.1645
+International Conference on Machine Learning (ICML 1998), Madison, Wisconsin, USA,
+                                                                                                       Gershman, S. J. (2014). Dopamine ramps are a consequence of reward prediction errors.
+July 24–27, 1998, ed. J. W. Shavlik (Morgan Kaufmann), 28–36.
+                                                                                                       Neural Comput. 26, 467–471. doi: 10.1162/NECO_a_00559
+Bayer, H. M., and Glimcher, P. W. (2005). Midbrain dopamine neurons encode a
+                                                                                                       Glimcher, P. W. (2011). Understanding dopamine and reinforcement learning: the dopa-
+quantitative reward prediction error signal. Neuron 47, 129–141. doi: 10.1016/j.
+                                                                                                       mine reward prediction error hypothesis. Proceedings of the National Academy of Sciences
+neuron.2005.05.020
+                                                                                                       of the United States of America 108, 15647–15654. doi: 10.1073/pnas.1014269108
+Brogden, W. J. (1939). Sensory pre-conditioning. J. Exp. Psychol. 25, 323–332. doi: 10.1037/
+                                                                                                       Guru, A., Seo, C., Post, R. J., Kullakanda, D. S., Schaffer, J. A., and Warden, M. R. (2020).
+h0058944
+                                                                                                       Ramping activity in midbrain dopamine neurons signifies the use of a cognitive map.
+Bush, R. R., and Mosteller, F. (1951). A mathematical model for simple learning. Psychol.              bioRxiv, 2020.05.21.108886. doi: 10.1101/2020.05.21.108886
+Rev. 58, 313–323. doi: 10.1037/h0054388
+                                                                                                       Hamid, A. A., Pettibone, J. R., Mabrouk, O. S., Hetrick, V. L., Schmidt, R., Vander
+Carlsson, A. (1988). The current status of the dopamine hypothesis of schizophrenia.                   Weele, C. M., et al. (2015). Mesolimbic dopamine signals the value of work. Nat. Neurosci.
+Neuropsychopharmacology 1, 179–186. doi: 10.1016/0893-133X(88)90012-7                                  19, 117–126. doi: 10.1038/nn.4173
+Chang, C. Y., Esber, G. R., Marrero-Garcia, Y., Yau, H.-J., Bonci, A., and                             Hart, A. S., Rutledge, R. B., Glimcher, P. W., and Phillips, P. E. M. (2014). Phasic dopamine
+Schoenbaum, G. (2016). Brief optogenetic inhibition of dopamine neurons mimics                         release in the rat nucleus accumbens symmetrically encodes a reward prediction error
+endogenous negative reward prediction errors. Nat. Neurosci. 19, 111–116. doi:                         term. J. Neurosci. 34, 698–704. doi: 10.1523/JNEUROSCI.2489-13.2014
+10.1038/nn.4191
+                                                                                                       Holland, P. C. (1988). Excitation and inhibition in unblocking. Journal of Experimental
+Chang, C. Y., Gardner, M. P. H., Conroy, J. C., Whitaker, L. R., and Schoenbaum, G.                    Psychology: Animal Behavior Processes 14, 261–279. doi: 10.1037/0097-7403.14.3.261
+(2018). Brief, but not prolonged, pauses in the firing of midbrain dopamine neurons are
+                                                                                                       Holland, P. C., and Kenmuir, C. (2005). Variations in unconditioned stimulus processing in
+sufficient to produce a conditioned inhibitor. Journal of Neuroscience 38, 8822–8830. doi:
+                                                                                                       unblocking. J. Exp. Psychol. Anim. Behav. Process. 31, 155–171. doi: 10.1037/0097-7403.31.2.155
+10.1523/JNEUROSCI.0144-18.2018
+                                                                                                       Holland, P. C., and Schiffino, F. L. (2016). Mini-review: prediction errors, attention and
+Chang, C. Y., Gardner, M., Di Tillio, M. G., and Schoenbaum, G. (2017). Optogenetic
+                                                                                                       associative learning. Neurobiol Learn Mem 131, 207–215. doi: 10.1016/j.nlm.2016.02.014
+blockade of dopamine transients prevents learning induced by changes in reward features.
+Curr. Biol. 27, 3480–3486.e3. doi: 10.1016/j.cub.2017.09.049                                           Howe, M. W., Tierney, P. L., Sandberg, S. G., Phillips, P. E. M., and Graybiel, A. M. (2013).
+                                                                                                       Prolonged dopamine signalling in striatum signals proximity and value of distant
+Cohen, J. Y., Haesler, S., Vong, L., Lowell, B. B., and Uchida, N. (2012). Neuron-type-                rewards. Nature 500, 575–579. doi: 10.1038/nature12475
+specific signals for reward and punishment in the ventral tegmental area. Nature 482,
+85–88. doi: 10.1038/nature10754                                                                        James, W. (1890). The Principles of Psychology, vol. I New York, NY: Henry Holt and Co.
+Corlett, P. R., Mollick, J. A., and Kober, H. (2022). Meta-analysis of human prediction                Jeong, H., Taylor, A., Floeder, J. R., Lohmann, M., Mihalas, S., Wu, B., et al. (2022).
+error for incentives, perception, cognition, and action. Neuropsychopharmacology: official             Mesolimbic dopamine release conveys causal associations. Science 378:eabq6740. doi:
+publication of the American College of Neuropsychopharmacology 47, 1339–1349. doi:                     10.1126/SCIENCE.ABQ6740/SUPPL_FILE/SCIENCE.ABQ6740_SM.V1.PDF
+10.1038/S41386-021-01264-3                                                                             Kamin, L. J. (1968). “‘Attention-like’ processes in classical conditioning,” in Miami Symposium
+                                                                                                       on the Prediction of Behavior, 1967, ed, (M. R. Jones), Coral Gables, Florida Florida: University
+Costa, K. M., and Schoenbaum, G. (2021). Replication efforts have limited epistemic                    of Mami Press, 9–31.
+value. Nature 599, 201–201. doi: 10.1038/D41586-021-03068-3
+                                                                                                       Kamin, L. J. (1969). “Predictability, surprise, attention, and conditioning,” in Punishment
+Costa, K. M., and Schoenbaum, G. (2022). Dopamine. Curr. Biol. 32, R817–R824. doi:                     and Aversive Behavior, ed. Byron, A. C. (New York: Appleton-Century-Crofts), 279–296.
+10.1016/J.CUB.2022.06.060
+                                                                                                       Keiflin, R., Pribut, H. J., Shah, N. B., and Janak, P. H. (2019). Ventral tegmental dopamine
+Costa, K. M., and Schoenbaum, G. (2025). “Chapter 20 - dopamine beyond temporal-                       neurons participate in reward identity predictions. Current biology: CB 29, 93–103.e3. doi:
+difference reinforcement learning,” in Handbook of Behavioral Neuroscience, eds. S. J.                 10.1016/J.CUB.2018.11.050
+Cragg and M. E. Walton (London, UK: Elsevier), 251–261.
+                                                                                                       Kim, H. G. R., Malik, A. N., Mikhael, J. G., Bech, P., Tsutsui-Kimura, I., Sun, F., et al.
+Costa, K. M., Shimbo, A., Stalnaker, T., Raheja, N., Mirani, J., Sercander, C., et al. (2025a).        (2020). A unified framework for dopamine signals across timescales. Cell 183,
+Striatal dopamine signals errors in prediction across different informational domains.                 1600–1616.e25. doi: 10.1016/j.cell.2020.11.013
+Science. Advances 11:eadq9684. doi: 10.1126/sciadv.adq9684
+                                                                                                       Kishida, K. T., Saez, I., Lohrenz, T., Witcher, M. R., Laxton, A. W., Tatter, S. B., et al.
+Costa, K. M., Zhang, Z., Deutsch, D., Zhuo, Y., Li, G., Li, Y., et al. (2025b). Dopamine and           (2016). Subsecond dopamine fluctuations in human striatum encode superposed error
+acetylcholine correlations in the nucleus accumbens depend on behavioral task states.                  signals about actual and counterfactual reward. Proceedings of the National Academy of
+Curr. Biol. 35, 1400–1407.e3. doi: 10.1016/j.cub.2025.01.064                                           Sciences 113, 200–205. doi: 10.1073/pnas.1513619112
+Day, J. J., Roitman, M. F., Wightman, R. M., and Carelli, R. M. (2007). Associative learning           Knowlton, C., and Canavier, C. C. (2023). “Modeling Pacemaking, bursting, and depo-
+mediates dynamic shifts in dopamine signaling in the nucleus accumbens. Nat. Neurosci.                 larization block in midbrain dopamine neurons,” in Dopaminergic System Function and
+10, 1020–1028. doi: 10.1038/NN1923                                                                     Dysfunction: Experimental Approaches, eds. J. A. Fuentealba-Evans and P. Henny (New
+                                                                                                       York, NY: Springer US), 101–119.
+Engelhard, B., Finkelstein, J., Cox, J., Fleming, W., Jang, H. J., Ornelas, S., et al. (2019).
+Specialized coding of sensory, motor and cognitive variables in VTA dopamine neurons.                  Koob, G. F. (1992). Dopamine, addiction and reward. Semin. Neurosci. 4, 139–148. doi:
+Nature 570, 509–513. doi: 10.1038/s41586-019-1261-9                                                    10.1016/1044-5765(92)90012-Q
+Epictetus (2022). Epictetus, Vol. 2 of 2: The Discourses as Reported by Arrian, the Manual,            Kutlu, M. G., Zachry, J. E., Melugin, P. R., Cajigas, S. A., Chevee, M. F., Kelly, S. J., et al.
+and Fragments; Discourses, Books III and IV, the Manual, and Fragments S l. London, UK:                (2021). Dopamine release in the nucleus accumbens core signals perceived saliency. Curr.
+Forgotten Books.                                                                                       Biol. 31, 4748–4761.e8. doi: 10.1016/J.CUB.2021.08.052
+Eshel, N., Bukwich, M., Rao, V., Hemmelder, V., Tian, J., and Uchida, N. (2015).                       Kutlu, M. G., Zachry, J. E., Melugin, P. R., Tat, J., Cajigas, S., Isiktas, A. U., et al. (2022).
+Arithmetic and local circuitry underlying dopamine prediction errors. Nature 525,                      Dopamine signaling in the nucleus accumbens core mediates latent inhibition. Nature
+243–246. doi: 10.1038/nature14855                                                                      neuroscience 25, 1071–1081. doi: 10.1038/s41593-022-01126-1
+
+
+Frontiers in Computational Neuroscience                                                           06                                                                                 frontiersin.org
+Dudhabhate and Costa                                                                                                                                          10.3389/fncom.2026.1825622
+
+
+
+Lak, A., Stauffer, W. R., and Schultz, W. (2014). Dopamine prediction error responses                 Pearce, J. M., and Hall, G. (1980). A model for Pavlovian learning: variations in the effec-
+integrate subjective value from different reward dimensions. Proceedings of the National              tiveness of conditioned but not of unconditioned stimuli. Psychological Review 87,
+Academy of Sciences 111, 2343–2348. doi: 10.1073/pnas.1321596111                                      532–552. doi: 10.1037/0033-295X.87.6.532
+Lammel, S., Lim, B. K., and Malenka, R. C. (2014). Reward and aversion in a heteroge-                 Pessiglione, M., Seymour, B., Flandin, G., Dolan, R. J., and Frith, C. D. (2006). Dopamine-
+neous midbrain dopamine system. Neuropharmacology 76, 351–359. doi: 10.1016/j.                        dependent prediction errors underpin reward-seeking behaviour in humans. Nature 442,
+neuropharm.2013.03.019                                                                                1042–1045. doi: 10.1038/nature05051
+Langdon, A. J., Sharpe, M. J., Schoenbaum, G., and Niv, Y. (2018). Model-based predic-                Popa, L. S., and Ebner, T. J. (2019). Cerebellum, predictions and errors. Front Cell Neurosci
+tions for dopamine. Curr. Opin. Neurobiol. 49, 1–7. doi: 10.1016/J.CONB.2017.10.006                   12:524. doi: 10.3389/fncel.2018.00524
+Lee, R. S., Sagiv, Y., Engelhard, B., Witten, I. B., and Daw, N. D. (2024). A feature-specific        Poulin, J.-F., Gaertner, Z., Moreno-Ramos, O. A., and Awatramani, R. (2020).
+prediction error model explains dopaminergic heterogeneity. Nat. Neurosci. 27,                        Classification of midbrain dopamine neurons using single-cell gene expression profiling
+1574–1586. doi: 10.1038/s41593-024-01689-1                                                            approaches. Trends Neurosci. 43, 155–169. doi: 10.1016/j.tins.2020.01.004
+Lehmann, C. M., Miller, N. E., Nair, V. S., Costa, K. M., Schoenbaum, G., and Moussawi, K.            Priestley, L., and Akam, T. (2026). Dopamine ramps as a normative consequence of dual-
+(2025). Generalized cue reactivity in rat dopamine neurons after opioids. Nat. Commun.                process control. bioRxiv, 2026.02.18.706579. doi: 10.64898/2026.02.18.706579
+16:321. doi: 10.1038/s41467-024-55504-3                                                               Redish, A. D. (2004). Addiction as a computational process gone awry. Science 306,
+Lubow, R. E. (1973). Latent inhibition. Psychol. Bull. 79, 398–407. doi: 10.1037/h0034425             1944–1947. doi: 10.1126/science.1102384
+
+Ludvig, E. A., Sutton, R. S., and Kehoe, E. J. (2012). Evaluating the TD model of classical           Rescorla, R. A., and Colwill, R. M. (1983). Within-compound associations in unblocking.
+conditioning. Learn. Behav. 40, 305–319. doi: 10.3758/s13420-012-0082-6                               J. Exp. Psychol. Anim. Behav. Process. 9, 390–400. doi: 10.1037/0097-7403.9.4.390
+
+Mackintosh, N. J. (1975). A theory of attention: variations in the associability of stimuli           Rescorla, R. A., and Wagner, A. R. (1972). “A theory of Pavlovian conditioning: variations
+with reinforcement. Psychol. Rev. 82, 276–298. doi: 10.1037/h0076778                                  in the effectiveness of reinforcement and nonreinforcement,” in Classical Conditioning
+                                                                                                      II: Current Research and Theory, eds. A. H. Black and W. F. Prokasy (New York: Appleton-
+Matsumoto, M., and Hikosaka, O. (2009). Two types of dopamine neuron distinctly                       Century-Crofts), 64–99.
+convey positive and negative motivational signals. Nature 459, 837–841. doi: 10.1038/
+nature08028                                                                                           Robbins, T. W., and Everitt, B. J. (1992). Functions of dopamine in the dorsal and ventral
+                                                                                                      striatum. Semin. Neurosci. 4, 119–127. doi: 10.1016/1044-5765(92)90010-Y
+McNally, G. P., and Yau, J. O.-Y. (2023). The Rescorla-Wagner model, prediction error,
+                                                                                                      Roeper, J. (2013). Dissecting the diversity of midbrain dopamine neurons. Trends
+and fear learning. OSF, csj56_v1. doi: 10.31234/osf.io/csj56
+                                                                                                      Neurosci. 36, 336–342. doi: 10.1016/j.tins.2013.03.003
+Menegas, W., Babayan, B. M., Uchida, N., and Watabe-Uchida, M. (2017). Opposite ini-
+                                                                                                      Schultz, W. (1986). Responses of midbrain dopamine neurons to behavioral trigger
+tialization to novel cues in dopamine signaling in ventral and posterior striatum in mice.
+                                                                                                      stimuli in the monkey. Journal of neurophysiology 56, 1439–1461. doi: 10.1152/
+eLife 6, 751–767. doi: 10.7554/eLife.21886
+                                                                                                      jn.1986.56.5.1439
+Millard, S. J., Bearden, C. E., Karlsgodt, K. H., and Sharpe, M. J. (2022). The prediction-
+                                                                                                      Schultz, W. (2007). Behavioral dopamine signals. Trends Neurosci. 30, 203–210. doi:
+error hypothesis of schizophrenia: new data point to circuit-specific changes in dopamine
+                                                                                                      10.1016/j.tins.2007.03.007
+activity. Neuropsychopharmacol. 47, 628–640. doi: 10.1038/s41386-021-01188-y
+                                                                                                      Schultz, W., Apicella, P., and Ljungberg, T. (1993). Responses of monkey dopamine neu-
+Miller, R. R., Barnet, R. C., and Grahame, N. J. (1995). Assessment of the Rescorla-                  rons to reward and conditioned stimuli during successive steps of learning a delayed
+Wagner model. Psychol. Bull. 117, 363–386. doi: 10.1037/0033-2909.117.3.363                           response task. J. Neurosci. 13, 900–913. doi: 10.1523/JNEUROSCI.13-03-00900.1993
+Millidge, B., Song, Y., Lak, A., Walton, M. E., and Bogacz, R. (2023). Reward-bases: dopa-            Schultz, W., Dayan, P., and Montague, P. R. (1997). A neural substrate of prediction and
+minergic mechanisms for adaptive Acquisition of Multiple Reward Types. bioRxiv. doi:                  reward. Science 275, 1593–1599. doi: 10.1126/science.275.5306.1593
+10.1101/2023.05.09.540067
+                                                                                                      Sharpe, M. J., Chang, C. Y., Liu, M. A., Batchelor, H. M., Mueller, L. E., Jones, J. L., et al.
+Mirenowicz, J., and Schultz, W. (1994). Importance of unpredictability for reward                     (2017). Dopamine transients are sufficient and necessary for acquisition of model-based
+responses in primate dopamine neurons. J. Neurophysiol. 72, 1024–1027. doi: 10.1124/                  associations. Nat. Neurosci. 20, 735–742. doi: 10.1038/nn.4538
+jpet.104.068122
+                                                                                                      Siegel, S., and Allan, L. G. (1996). The widespread influence of the Rescorla-Wagner
+Mirenowicz, J., and Schultz, W. (1996). Preferential activation of midbrain dopamine                  model. Psychonomic Bulletin & Review 3, 314–321. doi: 10.3758/BF03210755
+neurons by appetitive rather than aversive stimuli. Nature 379, 449–451. doi:
+10.1038/379449a0                                                                                      Silver, D., Hubert, T., Schrittwieser, J., Antonoglou, I., Lai, M., Guez, A., et al. (2018). A
+                                                                                                      general reinforcement learning algorithm that masters chess, shogi, and go through self-
+Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A. A., Veness, J., Bellemare, M. G., et al.              play. Science 362, 1140–1144. doi: 10.1126/science.aar6404
+(2015). Human-level control through deep reinforcement learning. Nature 518, 529–533.
+doi: 10.1038/nature14236                                                                              Skinner, B. F. (1938). The Behavior of Organisms: an Experimental Analysis. New York:
+                                                                                                      Appleton-Century-Crofts.
+Mohebi, A., Pettibone, J. R., Hamid, A. A., Wong, J. M. T., Vinson, L. T., Patriarchi, T.,
+et al. (2019). Dissociable dopamine dynamics for learning and motivation. Nature 570,                 Skinner, B. F. (1963). Operant behavior. Am. Psychol. 18, 503–515. doi: 10.1037/h0045185
+65–70. doi: 10.1038/s41586-019-1235-y                                                                 Soto, F. A., Vogel, E. H., Uribe-Bahamonde, Y. E., and Perez, O. D. (2023). Why is the
+Mohebi, A., Wei, W., Pelattini, L., Kim, K., and Berke, J. D. (2024). Dopamine transients             Rescorla-Wagner model so influential? Neurobiol. Learn. Mem. 204:107794. doi:
+follow a striatal gradient of reward time horizons. Nat. Neurosci. 27, 737–746. doi:                  10.1016/j.nlm.2023.107794
+10.1038/s41593-023-01566-3                                                                            Spratling, M. W. (2017). A review of predictive coding algorithms. Brain Cogn. 112,
+Montague, P., Dayan, P., and Sejnowski, T. (1996). A framework for mesencephalic dopa-                92–97. doi: 10.1016/J.BANDC.2015.11.003
+mine systems based on predictive Hebbian learning. J. Neurosci. 16, 1936–1947. doi:                   Stalnaker, T. A., Howard, J. D., Takahashi, Y. K., Gershman, S. J., Kahnt, T., and
+10.1523/JNEUROSCI.16-05-01936.1996                                                                    Schoenbaum, G. (2019). Dopamine neuron ensembles signal the content of sensory pre-
+Morrens, J., Aydin, Ç., Janse van Rensburg, A., Esquivelzeta Rabell, J., and Haesler, S.              diction errors. eLife 8. doi: 10.7554/eLife.49315
+(2020). Cue-evoked dopamine promotes conditioned responding during learning. Neuron                   Steinberg, E. E., Keiflin, R., Boivin, J. R., Witten, I. B., Deisseroth, K., and Janak, P. H.
+106, 142–153.e7. doi: 10.1016/j.neuron.2020.01.012                                                    (2013). A causal link between prediction errors, dopamine neurons and learning. Nat.
+Neftci, E. O., and Averbeck, B. B. (2019). Reinforcement learning in artificial and biologi-          Neurosci. 16, 966–973. doi: 10.1038/nn.3413
+cal systems. Nat. Mach. Intell. 1, 133–143. doi: 10.1038/s42256-019-0025-4
+                                                                                                      Sutton, R. S. (1988). Learning to predict by the methods of temporal differences. Mach.
+Nestler, E. (1992). Molecular mechanisms of drug addiction. J Neurosci 12, 2439–2450.                 Learn. 3, 9–44. doi: 10.1007/BF00115009
+doi: 10.1523/JNEUROSCI.12-07-02439.1992
+                                                                                                      Sutton, R. S., and Barto, A. G. (1981). Toward a modern theory of adaptive networks:
+O’Keefe, J., and Dostrovsky, J. (1971). The hippocampus as a spatial map. Preliminary                 expectation and prediction. Psychological Review 88, 135–170. doi:
+evidence from unit activity in the freely-moving rat. Brain research 34, 171–175. doi:                10.1037/0033-295X.88.2.135
+10.1016/0006-8993(71)90358-1
+                                                                                                      Sutton, R. S., and Barto, A. G. (1998). Reinforcement Learning: An Introduction.
+Papageorgiou, G. K., Baudonnat, M., Cucca, F., and Walton, M. E. (2016). Mesolimbic                   Cambridge, Massachusetts: MIT Press. Available online at: https://mitpress.mit.edu/
+dopamine encodes prediction errors in a state-dependent manner. Cell Rep. 15, 221–228.                books/reinforcement-learning (Accessed May 4, 2017).
+doi: 10.1016/J.CELREP.2016.03.031
+                                                                                                      Takahashi, Y. K., Batchelor, H. M., Liu, B., Khanna, A., Morales, M., and Schoenbaum, G.
+Patriarchi, T., Cho, J. R., Merten, K., Howe, M. W., Marley, A., Xiong, W. H., et al. (2018).         (2017). Dopamine neurons respond to errors in the prediction of sensory features of
+Ultrafast neuronal imaging of dopamine dynamics with designed genetically encoded                     expected rewards. Neuron 95, 1395–1405.e3. doi: 10.1016/j.neuron.2017.08.025
+sensors. Science 360:eaat4422. doi: 10.1126/science.aat4422
+                                                                                                      Takahashi, Y. K., Stalnaker, T. A., Mueller, L. E., Harootonian, S. K., Langdon, A. J., and
+Pavlov, P. I. (1927). Conditioned Reflexes: An Investigation of the Physiological Activity            Schoenbaum, G. (2023). Dopaminergic prediction errors in the ventral tegmental area
+of the Cerebral Cortex. Oxford. Oxford University Press. Available online at: http://psyc-            reflect a multithreaded predictive model. Nat. Neurosci. 26, 830–839. doi: 10.1038/
+net.apa.org/psycinfo/1927-02531-000 (Accessed July 8, 2017).                                          s41593-023-01310-x
+
+
+
+
+Frontiers in Computational Neuroscience                                                          07                                                                               frontiersin.org
+Dudhabhate and Costa                                                                                                                                  10.3389/fncom.2026.1825622
+
+
+
+Tesauro, G. (1994). TD-gammon, a self-teaching backgammon program, achieves master-              Tolman, E. C. (1948). Cognitive maps in rats and men. Psychol. Rev. 55, 189–208. doi:
+level play. Neural Comput. 6, 215–219. doi: 10.1162/neco.1994.6.2.215                            10.1037/h0061626
+Thorndike, E. L. (1927). The law of effect. Am. J. Psychol. 39, 212–222. doi:                    Twitmeyer, E. (1905). Knee-jerks without stimulation of the patellar tendon. Psychol. Bull.
+10.2307/1415413                                                                                  2, 43–44.
+Tobler, P. N., Dickinson, A., and Schultz, W. (2003). Coding of predicted reward omission        Zhang, Z., Costa, K. M., Langdon, A. J., and Schoenbaum, G. (2025). The devilish details
+by dopamine neurons in a conditioned inhibition paradigm. J. Neurosci. 23, 10402–10410.          affecting TDRL models in dopamine research. Trends Cogn. Sci. 29, 434–447. doi:
+doi: 10.1523/jneurosci.23-32-10402.2003                                                          10.1016/j.tics.2025.02.001
+
+
+
+
+Frontiers in Computational Neuroscience                                                     08                                                                            frontiersin.org
+

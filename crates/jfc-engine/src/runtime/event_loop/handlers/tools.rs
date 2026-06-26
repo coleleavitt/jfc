@@ -503,6 +503,10 @@ pub fn should_recheck_completion_after_tool_result(state: &EngineState) -> bool 
         && state.in_flight_eager_dispatches == 0
         && state.in_flight_tool_batches == 0
         && state.compacting_started_at.is_none()
+        // A sibling tool's result must not re-drive continuation while an
+        // AskUserQuestion modal is still open; only the answer/decline path
+        // (which clears `pending_question` first) resumes the turn.
+        && state.pending_question.is_none()
         && stream::should_continue_loop(&state.messages)
 }
 
@@ -566,7 +570,10 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
         && state.pending_tool_calls.is_empty()
         && state.pending_classifications == 0
         && state.in_flight_eager_dispatches == 0
-        && state.in_flight_tool_batches == 0;
+        && state.in_flight_tool_batches == 0
+        // An open AskUserQuestion modal keeps the turn paused: only the
+        // answer/decline path (submit_question/decline_question) may resume it.
+        && state.pending_question.is_none();
     if !turn_truly_complete {
         tracing::debug!(
             target: "jfc::stream",
@@ -938,6 +945,7 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
     } else if state.pending_approval.is_none()
         && state.approval_queue.is_empty()
         && state.compacting_started_at.is_none()
+        && state.pending_question.is_none()
         && stream::should_continue_loop(&state.messages)
     {
         // Fan-out consolidation: if multiple parallel agent
@@ -1031,6 +1039,7 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
         && state.pending_approval.is_none()
         && state.approval_queue.is_empty()
         && state.pending_tool_calls.is_empty()
+        && state.pending_question.is_none()
     {
         tracing::debug!(
             target: "jfc::stream",
@@ -1119,6 +1128,57 @@ mod tests {
         state.turn_started_at = Some(Instant::now());
         state.is_streaming = false;
         (state, tool_id)
+    }
+
+    fn pending_question(tool_id: &str) -> crate::app::PendingQuestion {
+        use crate::app::{PendingQuestion, QuestionItem, QuestionOption};
+        PendingQuestion {
+            tool_id: crate::ids::ToolId::from(tool_id),
+            items: vec![QuestionItem {
+                question: "Pick one?".to_owned(),
+                header: "Pick".to_owned(),
+                options: vec![QuestionOption {
+                    label: "A".to_owned(),
+                    description: String::new(),
+                    preview: None,
+                }],
+                multi_select: false,
+                selected: 0,
+                chosen: std::collections::BTreeSet::new(),
+                other_text: String::new(),
+                answer: None,
+            }],
+            current: 0,
+            editing_other: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn all_complete_blocks_while_question_pending_regression() {
+        // A completed sibling tool's AllComplete must NOT continue the turn or
+        // drain queued prompts while an AskUserQuestion modal is open — only the
+        // answer/decline path may resume it. Without the pending_question guard
+        // the continuation gate (should_continue_loop is true here because the
+        // sibling tool is terminal) drains the queued prompt mid-question.
+        let (mut state, _tool_id) = test_app_with_tool(ToolStatus::Completed);
+        state.pending_question = Some(pending_question("q1"));
+        state
+            .queued_prompts
+            .push_later("next prompt".to_owned(), false, Vec::new());
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_all_complete(&mut state, &tx).await;
+
+        assert_eq!(
+            state.queued_prompts.len(),
+            1,
+            "queued prompt must not drain while a question is open"
+        );
+        assert!(!state.is_streaming, "turn must stay paused, not re-stream");
+        assert!(
+            state.pending_question.is_some(),
+            "question must remain pending until answered/declined"
+        );
     }
 
     #[test]

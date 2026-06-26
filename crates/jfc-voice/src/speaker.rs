@@ -354,7 +354,7 @@ impl SpeakerProfile {
 
         // Pitch distribution (median + IQR).
         let mut pitches: Vec<f64> = frames.iter().map(|f| f.pitch_hz).collect();
-        pitches.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        pitches.sort_by(|a, b| a.total_cmp(b));
         let pitch_median_hz = percentile(&pitches, 0.5);
         let pitch_iqr_hz = (percentile(&pitches, 0.75) - percentile(&pitches, 0.25)).max(1.0);
 
@@ -450,7 +450,7 @@ impl SpeakerProfile {
 
         // Median pitch + range check.
         let mut pitches: Vec<f64> = frames.iter().map(|f| f.pitch_hz).collect();
-        pitches.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        pitches.sort_by(|a, b| a.total_cmp(b));
         let pitch_med = percentile(&pitches, 0.5);
         // Accept pitch within median ± (2·IQR + 25% margin) of the enrolled range.
         let tol = 2.0 * self.pitch_iqr_hz + 0.25 * self.pitch_median_hz;
@@ -514,6 +514,122 @@ impl SpeakerProfile {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         std::fs::write(path, s)
     }
+}
+
+/// Decision from verifying a captured utterance against the accept/reject sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdmitDecision {
+    /// Matches an enrolled speaker (or only self-rejection is configured and this
+    /// utterance is not the assistant's own voice) → transcribe it.
+    Admit,
+    /// Matches a reject profile (the assistant's own TTS voice) → drop it.
+    RejectSelf,
+    /// Measurable speech that matches none of our enrolled speakers (another
+    /// person, background TV/YouTube) → drop it.
+    RejectUnknown,
+}
+
+impl AdmitDecision {
+    /// Whether the utterance should be transcribed.
+    pub fn admitted(self) -> bool {
+        matches!(self, Self::Admit)
+    }
+}
+
+/// Verify a captured utterance against the accept-list (our speakers) and the
+/// reject-list (the assistant's own TTS voice(s)).
+///
+/// Order:
+/// 1. **accept-list first** — a positive match to an enrolled speaker is the
+///    strongest, most specific signal that a *wanted* speaker is talking, so it
+///    wins outright. The reject-list exists to drop audio that ISN'T one of us
+///    (the assistant's own TTS, other people, background media); it must never
+///    override a real enrolled-speaker match. The assistant's TTS voice is
+///    acoustically distinct from an enrolled human, so a correctly-scored reject
+///    never fires on a real user utterance. Only a *degenerate* reject profile —
+///    e.g. the self-voice auto-captured from many clean TTS frames, which on the
+///    classical (null-embedder) path develops a broad-variance acceptance region
+///    that "matches" almost any voice — would also match the user, and it must
+///    not be allowed to silently swallow real enrolled speech. (Checking reject
+///    first was the cause of "VAD clears the box but never submits": the user's
+///    own voice was scored `RejectSelf` against the broad self profile.)
+/// 2. **reject-list** — for an utterance that did NOT match any enrolled speaker,
+///    drop the assistant's own voice / explicit rejects (covers self-echo
+///    leaking past the time-based echo guard or with `echo_suppression=false`).
+/// 3. An empty accept-list means "admit anything that isn't a known reject".
+/// 4. Audio we can't measure (no voiced frames) fails **open** — we never
+///    silently swallow real speech on a measurement failure.
+pub fn verify_admit(
+    accept: &[SpeakerProfile],
+    reject: &[SpeakerProfile],
+    pcm: &[u8],
+    embedder: &dyn SpeakerEmbedder,
+) -> AdmitDecision {
+    // 1. A positive enrolled-speaker match wins outright — the user is clearly
+    //    talking. Checked BEFORE the reject-list so a broad/degenerate reject
+    //    profile (the self/TTS print scored on the weak classical backend) can't
+    //    false-reject the user's real voice.
+    let mut accept_measurable = false;
+    for a in accept {
+        let s = a.score_with(pcm, embedder);
+        if s.voiced_frames == 0 {
+            continue;
+        }
+        accept_measurable = true;
+        if s.accepted {
+            return AdmitDecision::Admit;
+        }
+    }
+    // 2. Not a known speaker — now the reject-list wins: drop the assistant's own
+    //    TTS voice / explicit rejects.
+    for r in reject {
+        let s = r.score_with(pcm, embedder);
+        if s.voiced_frames == 0 {
+            continue; // unmeasurable — can't be a confident reject
+        }
+        if s.accepted {
+            return AdmitDecision::RejectSelf;
+        }
+    }
+    // 3. No accept-list → admit anything not rejected above.
+    if accept.is_empty() {
+        return AdmitDecision::Admit;
+    }
+    // 4. Had an accept-list and could measure the utterance against it, but it
+    //    matched nobody and wasn't rejected → an unknown speaker.
+    if accept_measurable {
+        return AdmitDecision::RejectUnknown;
+    }
+    // 5. Couldn't measure against any accept profile → fail open.
+    AdmitDecision::Admit
+}
+
+/// Load every `*.json` speaker profile in `dir` (sorted by file name for
+/// determinism). A missing/unreadable directory yields an empty vec; an
+/// individually unreadable file is skipped with a warning, not fatal.
+pub fn load_profiles_dir(dir: &std::path::Path) -> Vec<SpeakerProfile> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return out;
+    };
+    let mut paths: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .collect();
+    paths.sort();
+    for p in paths {
+        match SpeakerProfile::load(&p) {
+            Ok(profile) => out.push(profile),
+            Err(err) => tracing::warn!(
+                target: "jfc::voice::speaker",
+                path = %p.display(),
+                error = %err,
+                "skipping unreadable speaker profile"
+            ),
+        }
+    }
+    out
 }
 
 /// Average squared z-score (diagonal-Gaussian Mahalanobis distance) of a sample
@@ -800,15 +916,12 @@ mod onnx_backend {
             })
         }
 
-        /// Try to construct from `JFC_VOICE_SPEAKER_MODEL`; `None` if unset or
-        /// the model fails to load (logged).
-        pub fn from_env() -> Option<Self> {
-            let path = std::env::var("JFC_VOICE_SPEAKER_MODEL").ok()?;
-            match Self::from_path(std::path::Path::new(&path)) {
+        pub fn from_config_path(path: &std::path::Path) -> Option<Self> {
+            match Self::from_path(path) {
                 Ok(e) => {
                     tracing::info!(
                         target: "jfc::voice::speaker",
-                        model = %path,
+                        model = %path.display(),
                         n_mels = e.n_mels,
                         mels_first = e.mels_first,
                         "loaded neural speaker-embedding model"
@@ -818,7 +931,7 @@ mod onnx_backend {
                 Err(err) => {
                     tracing::warn!(
                         target: "jfc::voice::speaker",
-                        model = %path,
+                        model = %path.display(),
                         error = %err,
                         "failed to load speaker model; falling back to classical gate"
                     );
@@ -884,15 +997,16 @@ mod onnx_backend {
     }
 }
 
-/// Construct the best available speaker embedder for the current build/config:
-/// the ONNX backend when the `speaker-neural` feature is on AND
-/// `JFC_VOICE_SPEAKER_MODEL` loads, otherwise the [`NullEmbedder`] (classical
-/// gate). Returned boxed so callers don't depend on the feature.
-pub fn default_embedder() -> Box<dyn SpeakerEmbedder> {
+pub fn default_embedder(model_path: Option<&std::path::Path>) -> Box<dyn SpeakerEmbedder> {
+    #[cfg(not(feature = "speaker-neural"))]
+    let _ = model_path;
+
     #[cfg(feature = "speaker-neural")]
     {
-        if let Some(e) = onnx_backend::OnnxEmbedder::from_env() {
-            return Box::new(e);
+        if let Some(path) = model_path {
+            if let Some(e) = onnx_backend::OnnxEmbedder::from_config_path(path) {
+                return Box::new(e);
+            }
         }
     }
     Box::new(NullEmbedder)
@@ -1025,6 +1139,142 @@ mod tests {
         // A tiny clip has too few voiced frames to enroll.
         let tiny = synth_voice(140.0, 0.05, 1.0, 1);
         assert!(SpeakerProfile::enroll_from_pcm(&tiny).is_none());
+    }
+
+    // ── verify_admit: accept-list (our speakers) + reject-list (own TTS) ──────
+
+    #[test]
+    fn verify_admit_accepts_enrolled_speaker_normal() {
+        let me = SpeakerProfile::enroll_from_pcm(&synth_voice(130.0, 2.0, 1.0, 7)).expect("enroll");
+        let me_again = synth_voice(130.0, 1.5, 1.0, 21);
+        assert_eq!(
+            verify_admit(std::slice::from_ref(&me), &[], &me_again, &NullEmbedder),
+            AdmitDecision::Admit
+        );
+    }
+
+    #[test]
+    fn verify_admit_multi_speaker_accepts_any_enrolled_normal() {
+        // Two enrolled "speakers"; a fresh recording of the second is admitted by
+        // the accept-list (our speakers, not just one).
+        let a = SpeakerProfile::enroll_from_pcm(&synth_voice(120.0, 2.0, 1.0, 1)).expect("a");
+        let b = SpeakerProfile::enroll_from_pcm(&synth_voice(210.0, 2.0, 1.3, 2)).expect("b");
+        let accept = vec![a, b];
+        let b_again = synth_voice(210.0, 1.5, 1.3, 99);
+        assert_eq!(
+            verify_admit(&accept, &[], &b_again, &NullEmbedder),
+            AdmitDecision::Admit
+        );
+    }
+
+    #[test]
+    fn verify_admit_rejects_unknown_speaker_robust() {
+        // Measurable speech from a non-enrolled source (another person / TV).
+        let me = SpeakerProfile::enroll_from_pcm(&synth_voice(110.0, 2.0, 1.0, 7)).expect("enroll");
+        let other = synth_voice(330.0, 1.5, 1.6, 8);
+        assert_eq!(
+            verify_admit(std::slice::from_ref(&me), &[], &other, &NullEmbedder),
+            AdmitDecision::RejectUnknown
+        );
+    }
+
+    #[test]
+    fn verify_admit_reject_profile_drops_self_voice_robust() {
+        // A reject profile stands in for the assistant's own TTS voice. An
+        // utterance from that source is dropped even though the user is enrolled;
+        // the enrolled user is still admitted.
+        let tts = SpeakerProfile::enroll_from_pcm(&synth_voice(330.0, 2.0, 1.6, 8)).expect("tts");
+        let me = SpeakerProfile::enroll_from_pcm(&synth_voice(110.0, 2.0, 1.0, 7)).expect("me");
+        let tts_again = synth_voice(330.0, 1.5, 1.6, 42);
+        assert_eq!(
+            verify_admit(
+                std::slice::from_ref(&me),
+                std::slice::from_ref(&tts),
+                &tts_again,
+                &NullEmbedder
+            ),
+            AdmitDecision::RejectSelf
+        );
+        let me_again = synth_voice(110.0, 1.5, 1.0, 43);
+        assert_eq!(
+            verify_admit(
+                std::slice::from_ref(&me),
+                std::slice::from_ref(&tts),
+                &me_again,
+                &NullEmbedder
+            ),
+            AdmitDecision::Admit
+        );
+    }
+
+    #[test]
+    fn verify_admit_accept_match_wins_over_overbroad_reject_regression() {
+        // The reported bug ("VAD clears the input box but never submits"): the
+        // self/TTS reject profile, auto-captured from many clean frames, develops
+        // a broad classical acceptance region that ALSO matches the user's real
+        // voice. With the reject-list checked first this silently dropped the
+        // user's enrolled speech (RejectSelf) — the box cleared, no turn fired.
+        // A positive accept match must win.
+        let me = SpeakerProfile::enroll_from_pcm(&synth_voice(110.0, 2.0, 1.0, 7)).expect("me");
+        // Stand-in for the degenerate reject: enrolled from the SAME source, so it
+        // is guaranteed to "accept" the user's utterance on the classical path.
+        let overbroad_reject =
+            SpeakerProfile::enroll_from_pcm(&synth_voice(110.0, 2.0, 1.0, 7)).expect("reject");
+        let me_again = synth_voice(110.0, 1.5, 1.0, 43);
+        // Precondition: the reject profile really does match the user's voice —
+        // otherwise this test wouldn't exercise the accept-vs-reject collision.
+        assert!(
+            overbroad_reject.accepts(&me_again),
+            "precondition: the over-broad reject must match the user's voice"
+        );
+        assert_eq!(
+            verify_admit(
+                std::slice::from_ref(&me),
+                std::slice::from_ref(&overbroad_reject),
+                &me_again,
+                &NullEmbedder
+            ),
+            AdmitDecision::Admit,
+            "an enrolled speaker must be admitted even when an over-broad reject also matches"
+        );
+    }
+
+    #[test]
+    fn verify_admit_empty_sets_are_inert_normal() {
+        // No accept-list and no reject-list → inert gate, admit anything.
+        let any = synth_voice(200.0, 1.0, 1.0, 3);
+        assert_eq!(
+            verify_admit(&[], &[], &any, &NullEmbedder),
+            AdmitDecision::Admit
+        );
+    }
+
+    #[test]
+    fn verify_admit_unmeasurable_audio_fails_open_robust() {
+        // Silence has no voiced frames → never silently swallow it.
+        let me = SpeakerProfile::enroll_from_pcm(&synth_voice(110.0, 2.0, 1.0, 7)).expect("enroll");
+        let silence = vec![0u8; 16_000 * 2];
+        assert_eq!(
+            verify_admit(std::slice::from_ref(&me), &[], &silence, &NullEmbedder),
+            AdmitDecision::Admit
+        );
+    }
+
+    #[test]
+    fn load_profiles_dir_reads_all_json_and_skips_others_normal() {
+        let dir = std::env::temp_dir().join(format!("jfc_spk_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = SpeakerProfile::enroll_from_pcm(&synth_voice(120.0, 2.0, 1.0, 1)).expect("a");
+        let b = SpeakerProfile::enroll_from_pcm(&synth_voice(210.0, 2.0, 1.3, 2)).expect("b");
+        a.save(&dir.join("alice.json")).unwrap();
+        b.save(&dir.join("bob.json")).unwrap();
+        std::fs::write(dir.join("notes.txt"), "ignore me").unwrap();
+        let loaded = load_profiles_dir(&dir);
+        assert_eq!(loaded.len(), 2, "should load both json profiles, skip the txt");
+        // Missing dir → empty, not a panic.
+        assert!(load_profiles_dir(&dir.join("nope")).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

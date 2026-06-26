@@ -1,0 +1,1018 @@
+Review
+
+Cognitive Stimulation and Activity-Dependent Myelination:
+Oligodendroglial Mechanisms Linking Neural Activity and
+Brain Plasticity
+Jordana Mariane Neyra Chauca 1, * , Maclovia Vázquez VanDyck 1, *, Ana Lilia Guerrero Oseguera 1 ,
+Catalina Meneses Ramírez 2 , Alexis Didier Gutiérrez Escobar 3 , Iván Peña Orozco 4
+and Maria Belen Ramirez Sanchez 5
+
+                                         1   Facultad de Medicina, Universidad Autónoma de Guadalajara, Guadalajara 45129, Jalisco, Mexico
+                                         2   Facultad de Medicina, Universidad Villa Rica, Boca del Rio 94299, Veracruz, Mexico
+                                         3   Facultad de Medicina, Instituto de Estudios Superiores de Chiapas, Tuxtla Gutiérrez 29049, Chiapas, Mexico
+                                         4   Facultad de Medicina, Universidad Autónoma del Estado de Hidalgo, Pachuca 42000, Hidalgo, Mexico;
+                                             pe304679@uaeh.edu.mx
+                                         5   Facultad de Estudios Superiores Iztacala, Universidad Nacional Autónoma de Mexico,
+                                             Tlalnepantla de Baz 54090, Estado de Mexico, Mexico
+                                         *   Correspondence: neyrajordana@gmail.com (J.M.N.C.); mavi.vazquez@edu.uag.mx (M.V.V.);
+                                             Tel.: +52-3312098516 (J.M.N.C.); +52-3313666399 (M.V.V.)
+
+
+                                         Abstract
+                                         The capacity of the brain to adapt to experience has long been associated with synaptic
+                                         plasticity; however, recent evidence demonstrates that experience-driven neural activity also
+                                         modulates white matter organization through dynamic regulation of oligodendrocyte lineage
+                                         cells and myelination. Activity-dependent myelination has emerged as a complementary form
+                                         of neuroplasticity that contributes to circuit efficiency, temporal coordination, and cognitive
+                                         function. This review aims to examine the neurobiological mechanisms linking cognitive
+                                         stimulation and activity-dependent neuronal signaling with oligodendroglial dynamics and
+                                         adaptive myelination. A narrative review of experimental and translational studies was
+                                         conducted, focusing on evidence from animal models and human research exploring neuron–
+                                         oligodendroglia interactions, neurotransmitter-mediated signaling, learning paradigms, phys-
+                                         ical exercise, and neuromodulatory interventions relevant to myelination and brain plasticity.
+                                         Accumulating evidence indicates that cognitive stimulation, learning, and physical activity
+                                         modulate neuronal firing patterns and neurotransmitter release, influencing oligodendrocyte
+                                         precursor cell proliferation, differentiation, and myelin remodeling. Neurotransmitters such
+                                         as glutamate, GABA, dopamine, and acetylcholine play key roles in neuron–oligodendroglia
+                                         communication, largely through calcium-dependent intracellular signaling pathways. These
+                                         mechanisms have been associated with experience-dependent circuit refinement across motor,
+                                         cognitive, and stress-related paradigms. Rather than implying direct clinical effects, this
+                                         review highlights oligodendroglial plasticity as a biologically plausible substrate through
+Academic Editor: Rolf Heumann            which cognitive and behavioral experiences may influence adaptive myelination and white
+Received: 12 January 2026                matter integrity. Understanding these mechanisms provides a conceptual framework for
+Revised: 9 February 2026                 future research exploring non-pharmacological approaches to modulate brain plasticity at the
+Accepted: 11 February 2026               level of myelin.
+Published: 18 April 2026
+Copyright: © 2026 by the authors.        Keywords: activity-dependent myelination; oligodendrocyte lineage cells; white
+Licensee MDPI, Basel, Switzerland.       matter plasticity; neuron–glia communication; cognitive stimulation; neuroplasticity;
+This article is an open access article
+                                         experience-dependent brain remodeling
+distributed under the terms and
+conditions of the Creative Commons
+Attribution (CC BY) license.
+
+
+
+
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                            2 of 18
+
+
+
+                                   1. Introduction
+                                         The capacity of the central nervous system to adapt to experience is a fundamental
+                                   property underlying learning, memory, and behavioral flexibility. For decades, this adaptive
+                                   potential has been primarily attributed to synaptic plasticity, including changes in synaptic
+                                   strength, dendritic spine remodeling, and activity-dependent modulation of neuronal
+                                   networks. While these mechanisms remain central to our understanding of brain plasticity,
+                                   growing evidence suggests that experience-driven neural activity also induces structural
+                                   and functional changes beyond the synapse, particularly within white matter circuits [1].
+                                         In recent years, oligodendrocytes and myelin have emerged as dynamic contributors
+                                   to neural plasticity rather than passive structural elements [2]. Oligodendrocyte lineage
+                                   cells respond to neuronal activity through multiple signaling pathways, enabling adaptive
+                                   regulation of myelination in response to experience. This process, commonly referred to as
+                                   activity-dependent myelination, has been shown to influence axonal conduction velocity,
+                                   temporal synchronization of neural circuits, and network efficiency—features that are
+                                   critical for cognitive processing and learning [3].
+                                         Experimental studies have demonstrated that learning paradigms, environmental
+                                   enrichment, and physical exercise can modulate oligodendrocyte precursor cell prolifer-
+                                   ation, differentiation, and myelin remodeling across multiple brain regions [4]. These
+                                   findings challenge the traditional view of myelin as a static structure formed predomi-
+                                   nantly during early development and instead position oligodendroglial plasticity as an
+                                   experience-sensitive mechanism that persists throughout life. Importantly, these adap-
+                                   tive myelin changes appear to be tightly coupled to neuronal firing patterns and neuro-
+                                   transmitter release, underscoring the bidirectional communication between neurons and
+                                   oligodendroglia [5].
+                                         At the molecular level, neuron–oligodendroglia interactions are mediated by a range
+                                   of neurotransmitters and neuromodulators, including glutamate, GABA, dopamine, and
+                                   acetylcholine [6]. Oligodendrocyte lineage cells express functional receptors for these
+                                   signaling molecules, allowing them to sense neuronal activity and translate it into intra-
+                                   cellular calcium-dependent signaling cascades that regulate differentiation and myelin
+                                   formation [7]. Through these mechanisms, cognitive and behavioral experiences have
+                                   the potential to influence white matter organization in a manner that complements
+                                   synaptic plasticity.
+                                         Despite the increasing recognition of activity-dependent myelination as a key com-
+                                   ponent of brain plasticity, the integration of oligodendroglial mechanisms into models
+                                   of cognitive stimulation and learning remains incomplete. Most frameworks addressing
+                                   cognitive plasticity continue to emphasize neuronal and synaptic adaptations, often over-
+                                   looking the contribution of white matter dynamics [8]. A comprehensive understanding
+                                   of how cognitive stimulation influences brain function, therefore, requires consideration
+                                   of oligodendrocyte biology and myelin remodeling as integral components of experience-
+                                   dependent neural adaptation.
+                                         The present narrative review aims to synthesize current experimental and translational
+                                   evidence linking cognitive stimulation, neuronal activity, and oligodendroglial dynamics.
+                                   By focusing on mechanisms of activity-dependent myelination and neuron–glia commu-
+                                   nication, this review seeks to provide a conceptual framework for understanding how
+                                   cognitive and behavioral experiences may shape white matter plasticity and contribute to
+                                   functional circuit optimization.
+
+                                   2. Methods
+                                       This manuscript was developed as a narrative review aimed at synthesizing current
+                                   experimental and translational evidence on the relationship between cognitive stimulation,
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                            3 of 18
+
+
+
+                                   neuronal activity, and activity-dependent myelination mediated by oligodendrocyte lineage
+                                   cells. Given the mechanistic and conceptual nature of the topic, a narrative approach was
+                                   selected to allow integrative discussion of heterogeneous findings across cellular, systems-
+                                   level, and behavioral studies.
+                                         A comprehensive literature search was conducted using major scientific databases,
+                                   including PubMed, Scopus, and Web of Science, covering the period from January 2000
+                                   to December 2025. Searches were performed using combinations of keywords related to
+                                   oligodendrocyte biology and myelin plasticity, such as oligodendrocytes, oligodendrocyte
+                                   precursor cells, activity-dependent myelination, white matter plasticity, neuron–glia in-
+                                   teraction, cognitive stimulation, learning, environmental enrichment, stress, and physical
+                                   exercise. Reference lists of relevant review articles and primary studies were also screened
+                                   to identify additional pertinent publications.
+                                         The review primarily prioritized in vivo mammalian experimental studies that directly
+                                   examined neuron–oligodendroglia communication, neurotransmitter- and neuromodulator-
+                                   mediated signaling, and experience-dependent changes in myelination. In vitro studies
+                                   (OPC/oligodendrocyte cultures) and non-mammalian models (e.g., zebrafish) were in-
+                                   cluded selectively when they provided mechanistic insights directly relevant to activity-
+                                   dependent myelination in mammalian systems. Human studies, including neuroimaging
+                                   and translational research, were included when they provided complementary evidence
+                                   linking cognitive or behavioral experiences to white matter adaptations.
+                                         Studies were selected based on their relevance to the central themes of the review:
+                                   (i) mechanisms of activity-dependent myelination, (ii) neurotransmitter and neuromodula-
+                                   tory control of oligodendrocyte lineage dynamics, (iii) effects of cognitive stimulation and
+                                   learning paradigms on myelin remodeling, and (iv) modulation of myelination by stress,
+                                   physical exercise, and environmental context. Due to the narrative nature of the review, no
+                                   quantitative synthesis or meta-analysis was performed.
+                                         The selected literature was analyzed qualitatively to identify convergent mechanisms,
+                                   recurring patterns, and conceptual frameworks linking neuronal activity to oligoden-
+                                   droglial plasticity. When conflicting or controversial findings were identified, priority was
+                                   given to convergent evidence from independent laboratories, methodological differences
+                                   across studies (experimental models, species, age, stimulation paradigms, and analytical
+                                   approaches) were considered, and relevant discrepancies were explicitly discussed in the
+                                   Discussion section rather than excluding such studies. Findings were integrated across
+                                   studies to construct a cohesive model of experience-dependent myelination, while also
+                                   highlighting methodological limitations and gaps in current knowledge. This approach
+                                   was chosen to facilitate critical interpretation and to support a mechanistic discussion of
+                                   oligodendrocyte-mediated plasticity within broader models of brain function.
+
+                                   3. Oligodendrocytes and Myelin as Dynamic Elements of Brain Plasticity
+                                        Traditionally, oligodendrocytes and myelin were regarded as static structural com-
+                                   ponents of the central nervous system, primarily responsible for insulating axons and
+                                   ensuring efficient saltatory conduction. Myelination was long considered a developmen-
+                                   tal process that reached completion early in life, with limited capacity for remodeling in
+                                   adulthood [9,10]. However, accumulating experimental evidence has challenged this view,
+                                   demonstrating that oligodendrocyte lineage cells retain a remarkable degree of plasticity
+                                   and responsiveness to neuronal activity across the lifespan [11,12].
+                                        Oligodendrocyte precursor cells (OPCs) persist in the adult brain and continuously
+                                   survey the neural environment. These cells are capable of proliferating, migrating, and
+                                   differentiating into mature myelinating oligodendrocytes in response to changes in neu-
+                                   ronal activity [13,14]. Importantly, OPCs form synapse-like contacts with neurons and
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                            4 of 18
+
+
+
+                                   express functional receptors for a variety of neurotransmitters, positioning them as active
+                                   participants in neural circuit dynamics rather than passive support cells [15,16].
+                                         Activity-dependent myelination has emerged as a key mechanism through which
+                                   experience influences white matter architecture. Experimental studies have shown that
+                                   increases in neuronal firing, whether induced by learning paradigms, motor training, or
+                                   environmental enrichment, are associated with region-specific changes in myelin thickness,
+                                   internode length, and oligodendrocyte number [17–19]. These structural modifications have
+                                   functional consequences, as they can fine-tune axonal conduction velocity and improve
+                                   temporal coordination within neural networks [20].
+                                         Beyond structural insulation, myelin plasticity contributes to information process-
+                                   ing by regulating the timing and synchronization of action potential propagation. Small
+                                   changes in myelin properties can significantly alter signal transmission delays, thereby
+                                   influencing network oscillations and the precise temporal relationships required for cogni-
+                                   tive functions such as learning and memory [21]. In this context, myelination represents a
+                                   form of long-term plasticity that complements synaptic modifications and supports stable
+                                   circuit optimization.
+                                         At the cellular level, the dynamic behavior of oligodendrocytes is tightly coupled to
+                                   neuronal activity patterns. Neuronal firing influences oligodendroglial behavior not only
+                                   through direct synaptic-like signaling but also via activity-dependent release of neurotrans-
+                                   mitters and neuromodulators into the extracellular space [22].
+                                         Importantly, oligodendroglial plasticity appears to be highly context-dependent, vary-
+                                   ing across brain regions and functional circuits. White matter tracts associated with learn-
+                                   ing, motor coordination, and higher cognitive processing show particularly pronounced
+                                   activity-dependent myelin adaptations.
+                                         Together, these findings support a reconceptualization of oligodendrocytes and myelin
+                                   as dynamic and experience-sensitive elements of brain plasticity. Rather than serving solely
+                                   as structural support, oligodendroglial lineage cells actively contribute to the adaptive
+                                   refinement of neural circuits, providing a biological substrate through which experience
+                                   and cognitive stimulation can shape white matter organization.
+
+                                   4. Neuron–Oligodendroglia Communication and Activity-Dependent
+                                   Signaling
+                                         The interaction between neurons and oligodendrocyte lineage cells constitutes a critical
+                                   interface through which neural activity is translated into adaptive structural modifications
+                                   of white matter. Rather than acting as passive support cells, oligodendrocyte precursor
+                                   cells (OPCs) actively sense neuronal firing through multiple signaling modalities, enabling
+                                   tight coupling between circuit activity and myelin remodeling [23,24].
+                                         OPCs establish specialized contacts with axons that share structural and functional
+                                   features with synapses. Through these neuron–OPC junctions, neuronal activity directly
+                                   modulates oligodendroglial behavior. Electrophysiological and imaging studies have
+                                   shown that action potential firing elicits rapid OPC responses, including membrane de-
+                                   polarization and intracellular calcium transients, underscoring their capacity to decode
+                                   activity patterns within local neural circuits [25–27].
+                                         Neurotransmitter-mediated signaling plays a central role in neuron–oligodendroglia
+                                   communication. Both OPCs and mature oligodendrocytes express functional receptors
+                                   for excitatory and inhibitory neurotransmitters, allowing them to respond to synaptic
+                                   and extrasynaptic neurotransmitter release [28,29]. Glutamatergic signaling, in particu-
+                                   lar, has been shown to regulate OPC proliferation and differentiation through activation
+                                   of ionotropic and metabotropic glutamate receptors. Activity-dependent glutamate re-
+
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                            5 of 18
+
+
+
+                                   lease from axons, therefore, acts as a key instructive signal linking neuronal firing to
+                                   myelination [30,31].
+                                         In parallel, GABAergic signaling contributes to the fine-tuning of oligodendroglial
+                                   responses. GABA receptors expressed on OPCs modulate membrane potential and calcium
+                                   dynamics, influencing the timing of differentiation and myelin formation. The balance
+                                   between excitatory and inhibitory inputs appears to be a critical determinant of oligodendro-
+                                   cyte lineage progression, suggesting that circuit-level activity patterns shape myelination
+                                   in a context-dependent manner [32].
+                                         Beyond classical neurotransmitters, neuromodulatory systems exert broader control
+                                   over oligodendroglial dynamics. Dopamine and acetylcholine—closely associated with
+                                   attention, learning, and behavioral state—have been implicated in the regulation of OPC
+                                   behavior and myelin plasticity. Unlike fast synaptic transmission, these neuromodulators
+                                   operate over wider spatial and temporal scales, providing a mechanism through which
+                                   global brain states such as arousal, motivation, and cognitive engagement may influence
+                                   white matter remodeling [33,34].
+                                         A unifying feature of these signaling pathways is the involvement of intracellular
+                                   calcium signaling. Calcium transients within oligodendrocyte lineage cells serve as inte-
+                                   grative signals linking receptor activation to downstream transcriptional programs and
+                                   cytoskeletal remodeling required for differentiation and myelin production. The frequency,
+                                   amplitude, and spatial distribution of calcium signals appear to encode information about
+                                   neuronal activity patterns, enabling oligodendrocytes to respond selectively to functionally
+                                   relevant circuit dynamics [26,28,32,33,35].
+                                         Collectively, these mechanisms position neuron–oligodendroglia communication as a
+                                   central mediator of activity-dependent myelination. By integrating local synaptic inputs
+                                   and global neuromodulatory cues, oligodendrocyte lineage cells translate cognitive and
+                                   behavioral experiences into adaptive changes in white matter structure. This bidirectional
+                                   interaction highlights the importance of incorporating glial signaling pathways into con-
+                                   temporary models of neural plasticity [36]. These multilevel signaling interactions are
+                                   integrated into a conceptual model of activity-dependent myelination, illustrating how
+                                   neuronal activity is translated into oligodendroglial differentiation, myelin remodeling,
+                                   and network optimization (Figure 1).
+
+                                   Synaptic and Extrasynaptic Signaling to OPCs and Oligodendrocytes: Implications for
+                                   Myelin Plasticity
+                                         OPCs receive classical synaptic inputs, predominantly mediated by glutamate and
+                                   GABA, enabling them to directly sense patterned neuronal activity and local circuit
+                                   dynamics [7–9,11,12]. These neuron–OPC synapses provide temporally precise information
+                                   about axonal firing, positioning OPCs as active sensors of activity patterns within neural
+                                   networks. In contrast, mature oligodendrocytes exhibit limited synaptic connectivity and
+                                   primarily respond to extrasynaptic and neuromodulatory signals within the extracellular
+                                   milieu [8,23].
+                                         Neurotransmitters and neuromodulators—including glutamate, GABA, dopamine,
+                                   acetylcholine, norepinephrine, serotonin, and ATP/adenosine—modulate distinct aspects
+                                   of oligodendrocyte lineage behavior. These signals regulate OPC proliferation, migration,
+                                   and differentiation, as well as the stabilization and remodeling of myelin sheaths along
+                                   active axons [6,7,23,24,37,38]. The integration of fast synaptic transmission with slower neu-
+                                   romodulatory cues provides a multiscale regulatory framework through which neuronal
+                                   activity shapes myelin plasticity in a context-dependent manner [26,39,40].
+
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                                 6 of 18
+
+
+
+
+                                   Figure 1. Activity-dependent myelination mediated by oligodendrocyte lineage cells. Neurotrans-
+                                   mitter release from active neurons (glutamate, GABA, dopamine, and acetylcholine) engages oligo-
+                                   dendrocyte precursor cells (OPCs), triggering intracellular signaling cascades including local Ca2+
+                                   signaling, CREB, MAPK, and CRK pathways, as well as cytoskeletal remodeling. These processes
+                                   promote OPC differentiation and the formation of myelin internodes, contributing to enhanced
+                                   neural function. Background shaded areas delineate functional domains or biological processes,
+                                   while arrows indicate the directionality of activity-dependent signaling and modulatory interactions.
+                                   Bidirectional arrows represent reciprocal feedback between myelin remodeling and neural function.
+
+                                        Differential responsiveness between OPCs and mature oligodendrocytes suggests com-
+                                   plementary roles in activity-dependent myelin plasticity. OPCs are particularly sensitive to
+                                   synaptic activity patterns that instruct lineage progression and spatial targeting of myeli-
+                                   nation, whereas mature oligodendrocytes integrate neuromodulatory signals to adjust
+                                   sheath formation, internode length, and myelin thickness along functionally engaged
+                                   axons [24,41–43]. These cellular distinctions translate into distinct functional out-
+                                   puts of myelin plasticity, including de novo myelin sheath formation, remodeling of
+                                   pre-existing internodes, and fine-tuning of axonal conduction velocity and network
+                                   synchronization [43–45].
+                                        Collectively, these mechanisms highlight that activity-dependent myelination emerges
+                                   from the coordinated action of synaptic and extrasynaptic communication pathways rather
+                                   than a single signaling modality [23,26,40].
+                                        All glial cells depicted correspond to oligodendrocyte lineage cells, including oligoden-
+                                   drocyte precursor cells (OPCs), differentiating oligodendrocytes, and mature myelinating
+                                   oligodendrocytes. Neuronal activity promotes the release of neurotransmitters and neu-
+                                   romodulators (e.g., glutamate, GABA, dopamine, acetylcholine), which are sensed by
+                                   OPCs and oligodendrocytes. This signaling induces localized intracellular Ca2+ transients
+                                   and activates downstream pathways (e.g., CREB, MAPK), leading to oligodendrocyte
+                                   differentiation and activity-dependent myelin internode formation, encompassing both
+                                   de novo myelin sheath generation and remodeling of pre-existing internodes along active
+                                   axons. The schematic represents a dynamic, bidirectional process with activity-dependent
+                                   feedback loops rather than a strictly linear sequence of events, contributing to optimized
+                                   conduction velocity, temporal coordination of neural signaling, and network function.
+
+
+
+
+                                                                                                    https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                            7 of 18
+
+
+
+                                   5. Role of Neurotransmitters and Neuromodulators in
+                                   Activity-Dependent Myelination
+                                         Neurotransmitters and neuromodulators constitute key molecular signals through
+                                   which neuronal activity influences oligodendrocyte lineage dynamics and adaptive myeli-
+                                   nation. Oligodendrocyte precursor cells (OPCs) and mature oligodendrocytes express
+                                   a diverse repertoire of receptors for classical neurotransmitters, neuromodulators, and
+                                   purinergic signals, enabling them to detect and integrate activity-dependent cues beyond
+                                   direct synaptic transmission [37,46].
+                                         Glutamate represents one of the primary neurotransmitters mediating neuron–
+                                   oligodendroglia communication. OPCs express functional AMPA, NMDA, and
+                                   metabotropic glutamate receptors, through which glutamatergic signaling regulates OPC
+                                   proliferation, differentiation, and survival [47,48]. Activity-dependent glutamate release
+                                   from axons has been shown to promote myelin formation and remodeling, supporting the
+                                   notion that excitatory neurotransmission provides instructive signals that couple neuronal
+                                   firing patterns to adaptive myelination [49,50].
+                                         Inhibitory signaling also plays a critical modulatory role. GABA receptors expressed
+                                   on OPCs influence membrane potential and intracellular calcium dynamics, thereby
+                                   regulating the timing of differentiation and myelin production [41]. Rather than act-
+                                   ing as a simple inhibitory constraint, GABAergic signaling appears to contribute to the
+                                   fine-tuning of oligodendrocyte lineage progression, helping to balance excitatory-driven
+                                   myelination and prevent aberrant or excessive myelin formation [42]. This excitatory–
+                                   inhibitory interplay highlights the importance of circuit-level activity patterns in shaping
+                                   myelination outcomes.
+                                         Beyond fast synaptic transmission, neuromodulatory systems exert broader and more
+                                   sustained effects on oligodendroglial behavior. Dopamine, acetylcholine, norepinephrine,
+                                   and serotonin—neurotransmitters closely linked to attention, motivation, learning, and be-
+                                   havioral state—have been implicated in the regulation of OPC proliferation, differentiation,
+                                   and myelin plasticity [38,51]. These neuromodulators typically operate over extended spa-
+                                   tial and temporal scales, providing a mechanism by which global brain states can influence
+                                   white matter remodeling in a context-dependent manner.
+                                         Dopaminergic signaling, in particular, has been associated with region-specific effects
+                                   on oligodendrocyte lineage cells, especially within circuits involved in reward, motivation,
+                                   and motor control [52]. Acetylcholine has similarly been linked to experience-dependent
+                                   myelination, potentially coupling attentional demands and cognitive engagement to adap-
+                                   tive changes in white matter structure [53]. Together, these systems suggest that myelination
+                                   is sensitive not only to local neuronal firing but also to broader neuromodulatory contexts
+                                   that reflect behavioral relevance.
+                                         A common downstream feature of neurotransmitter and neuromodulator signaling in
+                                   oligodendrocyte lineage cells is the activation of intracellular calcium pathways. Calcium
+                                   signaling serves as a central integrative mechanism through which diverse extracellular
+                                   cues converge to regulate cytoskeletal dynamics, gene expression, and myelin sheath
+                                   formation. Differences in calcium signal amplitude, frequency, and spatial distribution
+                                   are thought to encode distinct aspects of neuronal activity, enabling oligodendrocytes to
+                                   respond selectively to specific functional demands within neural circuits [39].
+                                         Collectively, neurotransmitters and neuromodulators provide a multilayered signaling
+                                   framework that links neuronal activity to oligodendroglial plasticity. Through the integra-
+                                   tion of fast synaptic signals and slower, state-dependent neuromodulatory inputs, oligoden-
+                                   drocyte lineage cells are able to translate complex patterns of neural activity into adaptive
+                                   myelination. This mechanism reinforces the concept of myelin as a dynamic and experience-
+                                   sensitive component of neural plasticity rather than a static structural feature [54]. The
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                                     8 of 18
+
+
+
+                                         major neurotransmitters and neuromodulators involved in neuron–oligodendroglia com-
+                                         munication, together with their principal receptors, intracellular signaling pathways, and
+                                         functional effects on oligodendrocyte lineage cells, are summarized in Table 1.
+
+                                         Table 1. Neurotransmitter and neuromodulator regulation of oligodendroglial plasticity.
+
+                                   Receptors Expressed                                  Functional Effects on         Representative
+  Neurotransmitter/                                            Main Intracellular
+                                      in OPCs and                                        Oligodendroglial              Experimental
+  Neuromodulator                                              Signaling Pathways
+                                    Oligodendrocytes                                          Lineage                    Evidence
+                                                                                        Promotes OPC
+                                                                                        proliferation and          In vivo
+                                                              Ca2+ influx,
+                                   AMPA, NMDA,                                          differentiation;           rodent models;
+ Glutamate                                                    MAPK/ERK,
+                                   mGluR5                                               activity-dependent         two-photon
+                                                              CREB activation
+                                                                                        myelin formation and       imaging
+                                                                                        sheath elongation
+                                                                                        Regulates timing of
+                                                                                        OPC differentiation
+                                                              Membrane                                             Slice
+                                                                                        and maturation;
+ GABA                              GABA-A, GABA-B             hyperpolarization;                                   electrophysiology;
+                                                                                        balances
+                                                              Ca2+ modulation                                      in vivo imaging
+                                                                                        excitatory-driven
+                                                                                        myelination
+                                                                                        Region-specific
+                                                                                        modulation of
+                                                              cAMP/PKA                                             Behavioral
+                                                                                        oligodendrogenesis
+                                   D1-like and                signaling;                                           paradigms;
+ Dopamine                                                                               and adaptive
+                                   D2-like receptors          transcriptional                                      pharmacological
+                                                                                        myelination in
+                                                              modulation                                           studies
+                                                                                        learning- and
+                                                                                        reward-related circuits
+                                                                                        Enhances OPC
+                                                                                        differentiation and        In vivo models;
+                                   Muscarinic receptors       PLC/IP3-mediated
+ Acetylcholine                                                                          myelin remodeling          optogenetic
+                                   (M1–M5)                    Ca2+ signaling
+                                                                                        during attentional and     modulation
+                                                                                        cognitive engagement
+                                                                                        Modulates OPC
+                                                                                        differentiation and
+                                                                                                                   In vivo
+                                                              cAMP/PKA;                 activity-dependent
+ Norepinephrine                    Adrenergic receptors                                                            rodent models;
+                                                              Ca2+ -dependent           myelin plasticity in
+ (Noradrenaline)                   (α1, α2, β)                                                                     pharmacological
+                                                              signaling                 arousal- and
+                                                                                                                   neuromodulation
+                                                                                        learning-related
+                                                                                        circuits
+                                                                                        Regulates OPC
+                                                                                        proliferative state and    In vivo and
+                                   5-HT receptor
+                                                              GPCR signaling;           maturation;                in vitro studies;
+ Serotonin (5-HT)                  subtypes (e.g., 5-HT1,
+                                                              Ca2+ modulation           context-dependent          pharmacological
+                                   5-HT2 families)
+                                                                                        modulation of myelin       modulation
+                                                                                        plasticity
+                                                                                        Regulates OPC
+                                                                                        migration,
+                                                              Purinergic signaling;     proliferation, and         Cell culture and
+ ATP/Adenosine                     P2Y, A1/A2 receptors
+                                                              Ca2+ oscillations         differentiation in         in vivo studies
+                                                                                        response to
+                                                                                        neuronal activity
+
+
+
+
+                                                                                                        https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                            9 of 18
+
+
+
+                                   6. Cognitive Stimulation and Experience-Dependent Myelination: Main
+                                   Experimental Paradigms
+                                         Cognitive stimulation encompasses a broad range of experiences engaging learn-
+                                   ing, attention, memory, executive function, and sensorimotor integration, all of which
+                                   are characterized by sustained and patterned neuronal activity across distributed brain
+                                   networks [55,56]. Beyond synaptic modifications, experience-driven neuronal activity
+                                   shapes neural circuits through complementary mechanisms involving oligodendrocyte
+                                   lineage dynamics and adaptive myelin remodeling [57]. To provide a more focused
+                                   framework, we discuss three main experimental paradigms that have been most consis-
+                                   tently linked to activity-dependent myelination: (i) skill learning and training paradigms,
+                                   (ii) multimodal stimulation and environmental enrichment, and (iii) sensory and stress-
+                                   related modulation of experience-dependent myelination.
+
+                                   6.1. Skill Learning and Training Paradigms
+                                         Motor skill learning, spatial navigation, and associative learning paradigms provide
+                                   robust evidence that repeated, task-specific neuronal activity drives oligodendroglial plas-
+                                   ticity in functionally relevant circuits. Experimental studies demonstrate that learning
+                                   is accompanied by increased OPC proliferation, accelerated differentiation into mature
+                                   oligodendrocytes, and region-specific remodeling of myelin sheaths within task-engaged
+                                   networks [40,58–60]. These oligodendroglial changes correlate with improvements in be-
+                                   havioral performance and learning consolidation, supporting a functional contribution of
+                                   adaptive myelination to experience-dependent circuit optimization [61].
+
+                                   6.2. Multimodal Stimulation and Environmental Enrichment
+                                        Environmental enrichment paradigms, which integrate cognitive, social, sensory,
+                                   and motor stimulation, induce sustained increases in neuronal activity and network en-
+                                   gagement. Such multimodal experiences promote oligodendrocyte lineage dynamics,
+                                   including enhanced OPC differentiation and myelin remodeling in cortical and limbic
+                                   regions involved in cognition and memory [40,58,59]. These structural adaptations parallel
+                                   improvements in cognitive flexibility, learning efficiency, and resilience to environmental
+                                   challenges, indicating that enriched environments potentiate experience-dependent myelin
+                                   plasticity through coordinated circuit activation.
+
+                                   6.3. Sensory Experience and Stress-Related Modulation of Myelination
+                                        Manipulations of sensory input and exposure to chronic stress provide additional
+                                   insight into the context dependence of experience-driven myelination. Sensory deprivation
+                                   or enhanced stimulation modulates OPC maturation and region-specific myelin forma-
+                                   tion within sensory pathways, highlighting the sensitivity of oligodendroglial dynamics
+                                   to patterned neuronal activity [60,61]. In contrast, chronic stress exposure is associated
+                                   with altered oligodendrocyte morphology, dysregulated myelin integrity, and transcrip-
+                                   tional changes within prefrontal and limbic circuits, which parallel behavioral vulnerabil-
+                                   ity and impaired cognitive-emotional regulation. Together, these findings indicate that
+                                   experience-dependent myelination is bidirectionally modulated by the quality and valence
+                                   of environmental inputs.
+                                        Representative experimental paradigms linking experience to activity-dependent
+                                   myelination, including affected brain regions, methodological approaches, and functional
+                                   relevance, are summarized in Table 2.
+
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                                10 of 18
+
+
+
+                                       Table 2. Experimental paradigms linking experience to activity-dependent myelination and white
+                                       matter plasticity.
+
+                                                         Observed Myelin or
+ Experimental                      Brain Regions                                       Methodological            Functional
+                                                         Oligodendroglial
+ Paradigm                          Primarily Involved                                  Approach                  Relevance
+                                                         Adaptation
+                                                         Increased
+                                   Primary motor         oligodendrogenesis,           Two-photon
+                                                                                                                 Motor learning
+ Motor skill learning              cortex, corpus        enhanced myelin               microscopy, genetic
+                                                                                                                 consolidation
+                                   callosum              thickness and internode       lineage tracing
+                                                         remodeling
+                                                         Increased OPC
+                                                                                       Histology,                Cognitive
+ Environmental                     Hippocampus,          differentiation and
+                                                                                       BrdU labeling,            flexibility and
+ enrichment                        prefrontal cortex     region-specific
+                                                                                       transcriptomics           memory
+                                                         myelin remodeling
+                                                         Structural remodeling of
+                                                                                                                 Neuroplasticity
+ Aerobic physical                  Distributed white     myelinated pathways           MRI-DTI, immuno-
+                                                                                                                 and cognitive
+ exercise                          matter tracts         and increased                 histochemistry
+                                                                                                                 resilience
+                                                         oligodendrocyte activity
+                                                         Reduced myelin integrity,                               Vulnerability to
+ Chronic stress                    Prefrontal cortex,    altered oligodendrocyte       Electron microscopy,      cognitive and
+ exposure                          limbic circuits       morphology and                molecular profiling       emotional
+                                                         gene expression                                         dysregulation
+                                                                                                                 Performance
+ Cognitive training                Association           Experience-dependent          Longitudinal
+                                                                                                                 optimization and
+ (human studies)                   networks              white matter plasticity       neuroimaging
+                                                                                                                 learning
+
+
+                                             Experience-driven myelination is mediated in part by activity-dependent modulation
+                                       of neuronal firing patterns and neurotransmitter release. Coordinated neuronal activity pro-
+                                       vides instructive signals that promote oligodendrocyte differentiation and myelin formation
+                                       along active axons, thereby fine-tuning conduction velocity, enhancing temporal precision,
+                                       and stabilizing functionally relevant circuits that support learning and memory [44,62].
+                                             Importantly, experience-dependent oligodendroglial responses occur within defined
+                                       temporal windows. Evidence from animal models indicates that OPC proliferation and
+                                       early oligodendrogenesis are rapidly induced during initial phases of learning, whereas
+                                       subsequent myelin remodeling contributes to longer-term stabilization of circuit changes
+                                       and behavioral retention [40,44,60,63,64]. This temporal dissociation supports a model in
+                                       which adaptive myelination complements faster synaptic plasticity processes to consolidate
+                                       experience-dependent network reorganization.
+                                             Rather than implying direct therapeutic effects, these observations support the con-
+                                       cept of cognitive stimulation as a biologically plausible driver of oligodendroglial plas-
+                                       ticity. By engaging specific neural circuits in a sustained and behaviorally relevant man-
+                                       ner, experience-dependent neuronal activity biases myelination toward functionally en-
+                                       gaged pathways, positioning adaptive myelination as an integral component of cognitive
+                                       neuroplasticity [45,65].
+
+                                       7. Stress, Exercise, and Environmental Modulation of Myelination
+                                             Environmental and behavioral factors exert a significant influence on activity-
+                                       dependent myelination by shaping neuronal activity patterns and neuromodulatory states.
+                                       Among these factors, stress and physical exercise represent particularly relevant modula-
+                                       tors, as both can induce widespread and sustained changes in neural circuit function. The
+
+
+
+
+                                                                                                    https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                           11 of 18
+
+
+
+                                   impact of these experiences on oligodendrocyte lineage cells highlights the sensitivity of
+                                   myelination processes to the broader physiological and environmental context [66].
+                                         Exposure to stress, especially during early developmental periods, has been shown
+                                   to alter oligodendrocyte maturation and myelin organization across multiple brain
+                                   regions [67]. Animal models of social isolation and early-life adversity demonstrate re-
+                                   ductions in myelin thickness, altered oligodendrocyte morphology, and changes in the
+                                   expression of myelin-related genes within prefrontal and limbic circuits [68]. These al-
+                                   terations appear to reflect disruptions in experience-dependent myelination rather than
+                                   primary defects in oligodendrocyte generation, underscoring the role of environmental
+                                   input in shaping white matter development.
+                                         In contrast, physical exercise is generally associated with beneficial effects on brain
+                                   structure and function, including modulation of oligodendrocyte lineage dynamics [69].
+                                   Aerobic exercise has been shown to increase oligodendrogenesis and promote myelin re-
+                                   modeling within hippocampal and cortical circuits, potentially through activity-dependent
+                                   and neuromodulatory mechanisms [70]. Importantly, exercise represents a mild physiologi-
+                                   cal stressor that engages stress-response pathways in a regulated manner, distinguishing
+                                   its effects from those of chronic or adverse stress.
+                                         The differential impact of stress and exercise on myelination may be mediated, in part,
+                                   by glucocorticoid signaling and hypothalamic–pituitary–adrenal (HPA) axis activity [37,71].
+                                   Sustained elevation of stress hormones has been associated with impaired oligodendrocyte
+                                   differentiation and reduced myelin formation, whereas adaptive modulation of glucocorti-
+                                   coid signaling during exercise may support neural plasticity [72]. These findings suggest
+                                   that the qualitative nature of stress exposure—rather than stress per se—plays a critical
+                                   role in determining myelination outcomes.
+                                         Environmental enrichment provides an additional framework for understanding how
+                                   combined cognitive, social, and sensorimotor experiences influence myelination. Enriched
+                                   environments consistently produce more pronounced oligodendroglial and myelin adap-
+                                   tations than isolated stimuli, indicating that convergent activity across multiple domains
+                                   enhances experience-dependent white matter plasticity [73]. Such environments may am-
+                                   plify circuit engagement and neuromodulatory signaling, thereby promoting coordinated
+                                   myelin remodeling across functionally relevant networks.
+                                         Together, these observations highlight stress, exercise, and environmental context as
+                                   powerful modulators of activity-dependent myelination. Rather than exerting uniform
+                                   effects, these factors interact dynamically with neuronal activity and neuromodulatory
+                                   systems to shape oligodendrocyte behavior in a circuit- and context-dependent manner.
+                                   This perspective reinforces the view of myelination as a plastic and experience-sensitive
+                                   process that integrates biological, behavioral, and environmental signals [34,59,74].
+
+                                   8. Discussion
+                                        The evidence synthesized in this review supports a reconceptualization of myelination
+                                   as a dynamic and experience-sensitive process that actively contributes to neural plasticity.
+                                   Rather than serving solely as a developmental or structural feature, myelin emerges as
+                                   a modifiable component of neural circuits that responds to neuronal activity, cognitive
+                                   engagement, and environmental context. Integrating oligodendroglial dynamics into
+                                   models of brain plasticity, therefore, expands traditional synapse-centered frameworks
+                                   toward a more comprehensive view of circuit adaptation [74,75].
+                                        A central finding across experimental paradigms is the close coupling between neu-
+                                   ronal firing patterns and oligodendrocyte lineage behavior. Activity-dependent signaling
+                                   enables oligodendrocyte precursor cells to selectively myelinate functionally engaged ax-
+                                   ons, suggesting that myelin remodeling may reinforce behaviorally relevant pathways and
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                            12 of 18
+
+
+
+                                   stabilize emerging circuit configurations. In this context, adaptive myelination appears
+                                   well positioned to complement synaptic plasticity by refining conduction velocity and
+                                   enhancing temporal coordination within neural networks [43].
+                                         Neurotransmitter and neuromodulatory systems further shape these processes across
+                                   multiple spatial and temporal scales. While fast synaptic transmission provides localized,
+                                   circuit-specific cues, neuromodulators convey information about global brain states such
+                                   as attention, motivation, and arousal. Oligodendrocyte lineage cells integrate these diverse
+                                   signals through intracellular calcium-dependent mechanisms, allowing myelin plasticity to
+                                   reflect both local activity and broader behavioral relevance [76].
+                                         Cognitive stimulation and learning paradigms consistently demonstrate region-
+                                   specific effects on oligodendrogenesis and myelin remodeling, reinforcing the notion
+                                   that myelination is selectively tuned to circuit demand rather than uniformly distributed
+                                   across the brain. Evidence suggests that oligodendrocyte responses often occur during
+                                   early phases of learning, indicating that myelination may contribute to the consolidation of
+                                   circuit changes initiated by faster synaptic mechanisms. Environmental factors, including
+                                   stress and physical exercise, further modulate these effects, emphasizing the sensitivity of
+                                   myelination to physiological and contextual variables [77].
+                                         Despite these advances, several important limitations must be acknowledged. Much
+                                   of the current evidence for activity-dependent myelination is derived from animal models,
+                                   in which neuronal activity and oligodendrocyte dynamics can be precisely manipulated.
+                                   Translating these findings to the human brain remains challenging due to species differ-
+                                   ences, circuit complexity, and methodological constraints. In human studies, white matter
+                                   adaptations are typically inferred from indirect imaging measures that lack cellular resolu-
+                                   tion, limiting direct assessment of oligodendrocyte behavior and myelin remodeling [78].
+                                         Additional limitations arise from the heterogeneity of cognitive and environmental
+                                   experiences. Cognitive stimulation encompasses diverse tasks that engage multiple neural
+                                   systems, making it difficult to isolate specific activity patterns responsible for observed
+                                   myelin changes. Moreover, individual variability in age, genetic background, and neuro-
+                                   modulatory state likely influences oligodendroglial responsiveness to activity, complicating
+                                   interpretation across studies.
+                                         Importantly, activity-dependent myelination should not be viewed as a deterministic
+                                   or uniformly beneficial outcome of cognitive or behavioral engagement. Current evidence
+                                   does not support direct clinical extrapolation, nor does it allow prediction of functional out-
+                                   comes based solely on presumed myelin changes. Overinterpretation of these mechanisms
+                                   risks oversimplifying the complexity of oligodendrocyte biology and experience-dependent
+                                   plasticity [40,64,68,79].
+                                         Overall, incorporating oligodendroglial plasticity into contemporary models of brain
+                                   function provides a more integrative framework for understanding how neuronal activity
+                                   and experience shape neural circuits. Recognizing both the potential and the limitations of
+                                   current evidence will be essential for guiding future research aimed at clarifying the role
+                                   of adaptive myelination in cognition and behavior across the lifespan [79]. To summarize
+                                   the multiscale dynamics of neural plasticity discussed in this review, Figure 2 illustrates
+                                   the complementary temporal organization of synaptic and myelin plasticity and their
+                                   convergence in long-term circuit optimization.
+
+
+
+
+                                                                                                https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                                13 of 18
+
+
+
+
+                                   Figure 2. Complementary temporal scales of synaptic and myelin plasticity in neural circuit adapta-
+                                   tion. Activity-dependent synaptic plasticity, including long-term potentiation (LTP) and long-term
+                                   depression (LTD), operates on rapid timescales (milliseconds to hours) and drives early network-level
+                                   adaptations. In parallel, oligodendrogenesis and experience-dependent myelin remodeling along
+                                   active axons unfold over longer timescales (days to weeks), contributing to network optimization
+                                   and functional integration. Background color gradients indicate distinct plasticity domains (synaptic
+                                   plasticity vs. myelin plasticity) and temporal progression, while arrows represent the directional-
+                                   ity of activity-dependent propagation from synaptic changes to network-level reorganization and
+                                   myelin remodeling.
+
+                                        All glial cells depicted correspond to oligodendrocyte lineage cells, including OPCs
+                                   and mature oligodendrocytes. The upper panel illustrates synaptic plasticity mecha-
+                                   nisms, such as long-term potentiation and long-term depression (LTP/LTD), which operate
+                                   over milliseconds to hours and enable rapid modulation of synaptic efficacy and net-
+                                   work adaptation. The lower panel depicts oligodendrogenesis and activity-dependent
+                                   myelin remodeling along active axons, processes that unfold over days to weeks and
+                                   support longer-term structural optimization, stabilization of neural circuits, and sustained
+                                   functional integration.
+
+                                   9. Conclusions
+                                         Activity-dependent myelination has emerged as a fundamental and dynamic
+                                   component of experience-dependent neuroplasticity, expanding traditional views that
+                                   have historically emphasized synaptic mechanisms as the primary drivers of circuit
+                                   adaptation [40,74,75]. Accumulating evidence indicates that oligodendrocyte lineage
+                                   cells actively sense neuronal activity and integrate synaptic and neuromodulatory sig-
+                                   nals to regulate myelin formation and remodeling in a circuit-specific manner [49,50,54].
+                                   Through these processes, myelination contributes not only to axonal insulation but also
+                                   to the fine-tuning of temporal coordination, signal transmission efficiency, and network
+                                   synchronization [43–45].
+                                        Cognitive stimulation, learning, physical activity, and environmental context shape
+                                   myelination by modulating neuronal firing patterns and global brain states [55,58,66,70].
+
+
+                                                                                                    https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                                     14 of 18
+
+
+
+                                   Rather than acting uniformly across the brain, adaptive myelination appears selectively
+                                   biased toward functionally engaged circuits, supporting the stabilization and optimization
+                                   of neural pathways that are repeatedly recruited by experience [59–61]. This selective
+                                   nature of myelin remodeling provides a biologically plausible mechanism through which
+                                   transient cognitive and behavioral experiences may lead to enduring structural adaptations
+                                   within white matter [56,57,73].
+                                         Importantly, myelin plasticity operates in close interaction with synaptic mechanisms,
+                                   suggesting a complementary relationship between fast, reversible synaptic changes and
+                                   slower, more persistent modifications of white matter architecture [15,43,44]. Within this
+                                   framework, synaptic plasticity may initiate circuit reorganization, while adaptive myelina-
+                                   tion contributes to the consolidation and long-term maintenance of these changes [40,74].
+                                   Recognizing this interplay offers a more integrative understanding of how neural circuits
+                                   adapt across multiple timescales [75,80].
+                                         Beyond its role in learning and memory, activity-dependent myelination may influence
+                                   broader aspects of brain function, including network efficiency, cognitive flexibility, and
+                                   resilience to environmental challenges [46,65,77]. Viewing myelin as a malleable and
+                                   experience-sensitive element of neural circuits shifts the conceptualization of white matter
+                                   from a passive substrate to an active participant in brain plasticity [66,75,79].
+                                         Together, the evidence reviewed supports a conceptual model in which oligoden-
+                                   droglial plasticity represents an essential, yet often underappreciated, layer of neural
+                                   adaptation [54,74,80]. Incorporating myelin dynamics into contemporary theories of brain
+                                   function provides a more comprehensive framework for understanding how cognitive
+                                   and environmental experiences shape neural systems across the lifespan and highlights
+                                   promising directions for future research into the cellular mechanisms underlying cognitive
+                                   neuroplasticity [40,75,79,80].
+
+                                   Author Contributions: Conceptualization: J.M.N.C. and M.V.V.; Methodology: J.M.N.C. and M.V.V.;
+                                   Formal analysis: J.M.N.C.; Investigation: J.M.N.C., A.L.G.O. and A.D.G.E.; Data curation: J.M.N.C.,
+                                   A.L.G.O., A.D.G.E. and M.B.R.S.; Validation: A.L.G.O., A.D.G.E. and M.B.R.S.; Visualization: J.M.N.C.,
+                                   C.M.R. and I.P.O.; Resources: A.D.G.E. and M.B.R.S.; Writing—original draft: J.M.N.C.; Writing—
+                                   review and editing: J.M.N.C., M.V.V., A.L.G.O., C.M.R., A.D.G.E., I.P.O. and M.B.R.S.; Supervision:
+                                   J.M.N.C. and M.V.V.; Project administration: J.M.N.C. All authors have read and agreed to the
+                                   published version of the manuscript.
+
+                                   Funding: Upon acceptance: APCs will be paid by the “Fondo Semilla” from Universidad Autónoma
+                                   de Guadalajara.
+
+                                   Institutional Review Board Statement: Not applicable.
+
+                                   Informed Consent Statement: Not applicable.
+
+                                   Data Availability Statement: Not applicable. The original contributions presented in this study are
+                                   included in the article. Further inquiries can be directed to the corresponding authors.
+
+                                   Acknowledgments: The authors also wish to thank the Universidad Autónoma de Guadalajara
+                                   (Faculty of Medicine) for its academic support and collaboration in the development of this work.
+                                   In addition, we gratefully acknowledge the support of the Fondo Semilla Program of Universidad
+                                   Autónoma de Guadalajara for supporting the publication of this article. We also thank colleagues from
+                                   partner institutions for their valuable contributions to the literature review and scientific discussion.
+
+                                   Conflicts of Interest: The authors declare no conflict of interest.
+
+
+
+
+                                                                                                         https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                                      15 of 18
+
+
+
+References
+1.    Fields, R.D. A new mechanism of nervous system plasticity: Activity-dependent myelination. Nat. Rev. Neurosci. 2015, 16,
+      756–767. [CrossRef]
+2.    Mount, C.W.; Monje, M. Wrapped to Adapt: Experience-Dependent Myelination. Neuron 2017, 95, 743–756. [CrossRef]
+3.    McKenzie, I.A.; Ohayon, D.; Li, H.; de Faria, J.P.; Emery, B.; Tohyama, K.; Richardson, W.D. Motor skill learning requires active
+      central myelination. Science 2014, 346, 318–322. [CrossRef] [PubMed]
+4.    Xiao, L.; Ohayon, D.; McKenzie, I.A.; Gibson, E.M.; Wedel, M.; Costa, R.M.; Hsieh, J.; Richardson, W.D.; Barres, B.A.; Chan, J.R.;
+      et al. Rapid production of new oligodendrocytes is required in the earliest stages of motor-skill learning. Nat. Neurosci. 2016, 19,
+      1210–1217. [CrossRef]
+5.    Hughes, E.G.; Orthmann-Murphy, J.L.; Langseth, A.J.; Bergles, D.E. Myelin remodeling through experience-dependent oligoden-
+      drogenesis in the adult somatosensory cortex. Nat. Neurosci. 2018, 21, 696–706. [CrossRef] [PubMed]
+6.    Gibson, E.M.; Purger, D.; Mount, C.W.; Goldstein, A.K.; Lin, G.L.; Wood, L.S.; Inema, I.; Miller, S.E.; Bieri, G.; Zuchero, J.B.; et al.
+      Neuronal activity promotes oligodendrogenesis and adaptive myelination in the mammalian brain. Science 2014, 344, 1252304.
+      [CrossRef]
+7.    Mensch, S.; Baraban, M.; Almeida, R.; Czopka, T.; Ausborn, J.; El Manira, A.; Lyons, D.A. Synaptic vesicle release regulates myelin
+      sheath number of individual oligodendrocytes in vivo. Nat. Neurosci. 2015, 18, 628–630. [CrossRef]
+8.    Wake, H.; Ortiz, F.C.; Woo, D.H.; Lee, P.R.; Angulo, M.C.; Fields, R.D. Nonsynaptic junctions on myelinating glia promote
+      preferential myelination of electrically active axons. Nat. Commun. 2015, 6, 7844. [CrossRef] [PubMed]
+9.    Bergles, D.E.; Jabs, R.; Steinhäuser, C. Neuron-glia synapses in the brain. Brain Res. Rev. 2010, 63, 130–137. [CrossRef] [PubMed]
+10.   Hamilton, N.; Vayro, S.; Kirchhoff, F.; Verkhratsky, A.; Robbins, J.; McCarthy, K.D. Mechanisms of ATP- and glutamate-mediated
+      calcium signaling in white matter astrocytes. Glia 2008, 56, 734–749. [CrossRef]
+11.   Kukley, M.; Kiladze, M.; Tognatta, R.; Schramm, J.; Fiehler, J.; Kirchhoff, F. Glial cells are born with synapses. FASEB J. 2008, 22,
+      2957–2969. [CrossRef]
+12.   Lin, S.C.; Bergles, D.E. Physiological characteristics of NG2-expressing glial cells. J. Neurocytol. 2002, 31, 537–549. [CrossRef]
+13.   Rinholm, J.E.; Hamilton, N.B.; Kessaris, N.; Richardson, W.D.; Bergersen, L.H.; Attwell, D. Regulation of oligodendrocyte
+      development and myelination by glucose and lactate. J. Neurosci. 2011, 31, 538–548. [CrossRef] [PubMed]
+14.   Scholz, J.; Klein, M.C.; Behrens, T.E.; Johansen-Berg, H. Training induces changes in white-matter architecture. J. Neurosci. 2009,
+      12, 1370–1371. [CrossRef]
+15.   Zatorre, R.J.; Fields, R.D.; Johansen-Berg, H. Plasticity in gray and white: Neuroimaging changes in brain structure during
+      learning. Nat. Neurosci. 2012, 15, 528–536. [CrossRef] [PubMed]
+16.   Makinodan, M.; Rosen, K.M.; Ito, S.; Corfas, G. A critical period for social experience-dependent oligodendrocyte maturation and
+      myelination. Science 2012, 337, 1357–1360. [CrossRef]
+17.   Liu, J.; Dietz, K.; DeLoyht, J.M.; Goldman, S.A.; Kocsis, J.D.; Casaccia, P. Impaired adult myelination in the prefrontal cortex of
+      socially isolated mice. Nat. Neurosci. 2012, 15, 1621–1623. [CrossRef]
+18.   Maugeri, G.; D’Agata, V.; Musumeci, G. Role of exercise in the brain: Focus on oligodendrocytes and remyelination. Neural Regen.
+      Res. 2023, 18, 2645–2646. [CrossRef]
+19.   Voss, M.W.; Nagamatsu, L.S.; Liu-Ambrose, T.; Kramer, A.F. Exercise, brain, and cognition across the life span. J. Appl. Physiol.
+      2011, 111, 1505–1513. [CrossRef]
+20.   Sampaio-Baptista, C.; Johansen-Berg, H. White Matter Plasticity in the Adult Brain. Neuron 2017, 96, 1239–1251. [CrossRef]
+21.   Sampaio-Baptista, C.; Khrapitchev, A.A.; Foxley, S.; Schlaghecken, F.; Scholz, J.; Jbabdi, S.; DeLuca, G.C.; Miller, K.L.; Taylor, A.;
+      Thomas, A.; et al. Motor skill learning induces changes in white matter microstructure and myelination. J. Neurosci. 2013, 33,
+      19499–19503. [CrossRef] [PubMed]
+22.   Fields, R.D. White matter in learning, cognition and psychiatric disorders. Trends Neurosci. 2008, 31, 361–370. [CrossRef]
+23.   Monje, M. Myelin Plasticity and Nervous System Function. Annu. Rev. Neurosci. 2018, 41, 61–76. [CrossRef] [PubMed]
+24.   Hughes, A.N.; Appel, B. Oligodendrocytes express synaptic proteins that modulate myelin sheath formation. Nat. Commun. 2019,
+      10, 4125. [CrossRef]
+25.   Malar, D.S.; Thitilertdecha, P.; Ruckvongacheep, K.S.; Brimson, S.; Tencomnao, T.; Brimson, J.M. Targeting Sigma Receptors for
+      the Treatment of Neurodegenerative and Neurodevelopmental Disorders. CNS Drugs 2023, 37, 399–440. [CrossRef]
+26.   Saab, A.S.; Nave, K.A. Myelin dynamics: Protecting and shaping neuronal functions. Curr. Opin. Neurobiol. 2017, 47, 104–112.
+      [CrossRef]
+27.   Krasnow, A.M.; Attwell, D. NMDA Receptors: Power Switches for Oligodendrocytes. Neuron 2016, 91, 3–5. [CrossRef]
+28.   Spitzer, S.O.; Sitnikov, S.; Kamen, Y.; Krzyzanowska, A.; Schneider, K.; Horn, M.; Höft, S.; Schäfer, M.K.E.; Möbius, W.; Nave,
+      K.-A.; et al. Oligodendrocyte Progenitor Cells Become Regionally Diverse and Heterogeneous with Age. Neuron 2019, 101,
+      459–471.e5. [CrossRef]
+
+
+
+
+                                                                                                        https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                                      16 of 18
+
+
+
+29.   Orthmann-Murphy, J.; Call, C.L.; Molina-Castro, G.C.; Geer, L.Y.; Williamson, J.M.; Pannullo, S.C.; Chan, J.R. Remyelination alters
+      the pattern of myelin in the cerebral cortex. eLife 2020, 9, e56621. [CrossRef] [PubMed]
+30.   Saab, A.S.; Tzvetanova, I.D.; Nave, K.A. The role of myelin and oligodendrocytes in axonal energy metabolism. Curr. Opin.
+      Neurobiol. 2013, 23, 1065–1072. [CrossRef]
+31.   Draganski, B.; Gaser, C.; Busch, V.; Schuierer, G.; Bogdahn, U.; May, A. Neuroplasticity: Changes in grey matter induced by
+      training. Nature 2004, 427, 311–312. [CrossRef]
+32.   Hofstetter, S.; Tavor, I.; Tzur Moryosef, S.; Assaf, Y. Short-term learning induces white matter plasticity in the fornix. J. Neurosci.
+      2013, 33, 12844–12850. [CrossRef] [PubMed]
+33.   Taubert, M.; Draganski, B.; Anwander, A.; Müller, K.; Horstmann, A.; Villringer, A. Dynamic properties of human brain structure:
+      Learning-related changes in cortical areas and associated fiber connections. J. Neurosci. 2010, 30, 11670–11677. [CrossRef]
+34.   Adams, K.L.; Riparini, G.; Banerjee, P.; Breur, M.; Bugiani, M.; Gallo, V. Endothelin-1 signaling maintains glial progenitor
+      proliferation in the postnatal subventricular zone. Nat. Commun. 2020, 11, 2138. [CrossRef]
+35.   Ainger, K.; Avossa, D.; Morgan, F.; Hill, S.J.; Barry, C.; Barbarese, E.; Carson, J.H. Transport and localization of exogenous myelin
+      basic protein mRNA microinjected into oligodendrocytes. J. Cell Biol. 1993, 123, 431–441. [CrossRef]
+36.   Lövdén, M.; Wenger, E.; Mårtensson, J.; Lindenberger, U.; Bäckman, L. Structural brain plasticity in adult learning and develop-
+      ment. Neurosci. Biobehav. Rev. 2013, 37, 2296–2310. [CrossRef] [PubMed]
+37.   De La Fuente, A.G.; Lange, S.; Silva, M.E.; Gonzalez, G.A.; Tempfer, H.; van Wijngaarden, P.; Pringle, N.P.; Miron, V.E.; Franklin,
+      R.J.M. Pericytes stimulate oligodendrocyte progenitor cell differentiation during CNS remyelination. Cell Rep. 2017, 20, 1755–1764.
+      [CrossRef]
+38.   Nishiyama, A.; Shimizu, T.; Sherafat, A.; Richardson, W.D. Life-long oligodendrocyte development and plasticity. Semin. Cell Dev.
+      Biol. 2021, 116, 25–37. [CrossRef]
+39.   Noori, R.; Park, D.; Griffiths, J.D.; Bhattacharya, P.; Tewarie, P.; van Dellen, E.; Stam, C.J. Activity-dependent myelination: A
+      glial mechanism of oscillatory self-organization in large-scale brain networks. Proc. Natl. Acad. Sci. USA 2020, 117, 13227–13237.
+      [CrossRef]
+40.   Xin, W.; Chan, J.R. Myelin plasticity: Sculpting circuits in learning and memory. Nat. Rev. Neurosci. 2020, 21, 682–694. [CrossRef]
+      [PubMed]
+41.   Bechler, M.E.; Swire, M.; Ffrench-Constant, C. Intrinsic and adaptive myelination-A sequential mechanism for smart wiring in the
+      brain. Dev. Neurobiol. 2018, 78, 68–79. [CrossRef]
+42.   Iyer, M.; Kantarci, H.; Cooper, M.H.; Snaidero, N.; Möbius, W.; Nave, K.-A. Oligodendrocyte calcium signaling promotes
+      actin-dependent myelin sheath extension. Nat. Commun. 2024, 15, 265. [CrossRef] [PubMed]
+43.   Almeida, R.G.; Czopka, T.; Ffrench-Constant, C.; Lyons, D.A. Individual axons regulate the myelinating potential of single
+      oligodendrocytes in vivo. Development 2011, 138, 4443–4450. [CrossRef]
+44.   Hill, R.A.; Li, A.M.; Grutzendler, J. Lifelong cortical myelin plasticity and age-related degeneration in the live mammalian brain.
+      Nat. Neurosci. 2018, 21, 683–695. [CrossRef] [PubMed]
+45.   Pajevic, S.; Basser, P.J.; Fields, R.D. Role of myelin plasticity in oscillations and synchrony of neuronal activity. Neuroscience 2014,
+      276, 135–147. [CrossRef]
+46.   Khelfaoui, H.; Ibaceta-Gonzalez, C.; Angulo, M.C. Functional myelin in cognition and neurodevelopmental disorders. Cell. Mol.
+      Life Sci. 2024, 81, 181. [CrossRef]
+47.   Ye, L.; Gastaldi, V.D.; Curto, Y.; Wildenburg, A.-F.; Yu, X.; Hindermann, M.; Eggert, S.; Ronnenberg, A.; Wang, Q.; Butt, U.J.; et al.
+      Transcriptional dynamics of the oligodendrocyte lineage and its regulation by the brain erythropoietin system. Nat. Commun.
+      2025, 16, 8291. [CrossRef]
+48.   Caldwell, M.; Ayo-Jibunoh, V.; Mendoza, J.C.; Muthukumaraswamy, S.D.; Harris, J.J.; Attwell, D.; Richardson, W.D. Axo-glial
+      interactions between midbrain dopamine neurons and oligodendrocyte lineage cells in the anterior corpus callosum. Brain Struct.
+      Funct. 2023, 228, 1993–2006. [CrossRef]
+49.   Chen, T.J.; Kula, B.; Nagy, B.; Barzan, R.; Gall, A.; Kukley, M. In Vivo Regulation of Oligodendrocyte Precursor Cell Proliferation
+      and Differentiation by the AMPA-Receptor Subunit GluA2. Cell Rep. 2018, 25, 852–861.e7. [CrossRef] [PubMed]
+50.   Geraghty, A.C.; Gibson, E.M.; Ghanem, R.A.; Greene, J.J.; Ocampo, A.; Goldstein, A.K.; Ni, L.; Yang, T.; Marton, R.M.; Paşca, S.P.;
+      et al. Loss of Adaptive Myelination Contributes to Methotrexate Chemotherapy-Related Cognitive Impairment. Neuron 2019, 103,
+      250–265.e8. [CrossRef]
+51.   Choe, Y.; Huynh, T.; Pleasure, S.J. Migration of oligodendrocyte progenitor cells is controlled by transforming growth factor β
+      family proteins during corticogenesis. J. Neurosci. 2014, 34, 14973–14983. [CrossRef]
+52.   Bergles, D.E.; Richardson, W.D. Oligodendrocyte Development and Plasticity. Cold Spring Harb. Perspect. Biol. 2015, 8, a020453.
+      [CrossRef]
+53.   Rangel-Gomez, M.; Alberini, C.M.; Deneen, B.; Arenkiel, B.R.; McKnight, S.L.; Eisch, A.J. Neuron-Glial Interactions: Implications
+      for Plasticity, Behavior, and Cognition. J. Neurosci. 2024, 44, e1231242024. [CrossRef]
+
+
+
+                                                                                                        https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                                        17 of 18
+
+
+
+54.   Stedehouder, J.; Kushner, S.A. Myelination of parvalbumin interneurons: A parsimonious locus of pathophysiological convergence
+      in schizophrenia. Mol. Psychiatry 2017, 22, 4–12. [CrossRef]
+55.   Tomassy, G.S.; Berger, D.R.; Chen, H.H.; Kasthuri, N.; Hayworth, K.J.; Vercelli, A.; Seung, H.S.; Lichtman, J.W. Distinct profiles of
+      myelin distribution along single axons of pyramidal neurons in the neocortex. Science 2014, 344, 319–324. [CrossRef] [PubMed]
+56.   Yeung, M.S.; Zdunek, S.; Bergmann, O.; Bernard, S.; Salehpour, M.; Alkass, K.; Perl, S.; Tisdale, J.; Possnert, G.; Brundin, L.; et al.
+      Dynamics of oligodendrocyte generation and myelination in the human brain. Cell 2014, 159, 766–774. [CrossRef] [PubMed]
+57.   Gao, Z.K.; Shen, X.Y.; Han, Y.; Guo, Y.S.; Yuan, M.; Bi, X. Enriched Environment Effects on Myelination of the Central Nervous
+      System: Role of Glial Cells. Neural Plast. 2022, 2022, 5766993. [CrossRef] [PubMed]
+58.   Emery, B.; Lu, Q.R. Transcriptional and Epigenetic Regulation of Oligodendrocyte Development and Myelination in the Central
+      Nervous System. Cold Spring Harb. Perspect. Biol. 2015, 7, a020461. [CrossRef]
+59.   Arnett, H.A.; Mason, J.; Marino, M.; Suzuki, K.; Matsushima, G.K.; Ting, J.P.Y. TNFα promotes proliferation of oligodendrocyte
+      progenitors and remyelination. Nat. Neurosci. 2001, 4, 1116–1122. [CrossRef]
+60.   Almeida, R.G.; Pan, S.; Cole, K.L.H.; Williamson, J.M.; Jäkel, S.; Koch, S.; Tischbirek, C.H. Myelination of Neuronal Cell Bodies
+      when Myelin Supply Exceeds Axonal Demand. Curr. Biol. 2018, 28, 1296–1305.e5. [CrossRef]
+61.   Mossink, B.; Negwer, M.; Schubert, D.; Nadif Kasri, N. The emerging role of chromatin remodelers in neurodevelopmental
+      disorders: A developmental perspective. Cell. Mol. Life Sci. 2021, 78, 2517–2563. [CrossRef]
+62.   Jensen, S.K.; Yong, V.W. Activity-Dependent and Experience-Driven Myelination Provide New Directions for the Management of
+      Multiple Sclerosis. Trends Neurosci. 2016, 39, 356–365. [CrossRef]
+63.   Fields, R.D.; Woo, D.H.; Basser, P.J. Glial Regulation of the Neuronal Connectome through Local and Long-Distant Communication.
+      Neuron 2015, 86, 374–386. [CrossRef]
+64.   Nave, K.A.; Werner, H.B. Myelination of the nervous system: Mechanisms and functions. Annu. Rev. Cell Dev. Biol. 2014, 30,
+      503–533. [CrossRef]
+65.   Arancibia-Carcamo, I.L.; Attwell, D. The node of Ranvier in CNS pathology. Acta Neuropathol. 2014, 128, 161–175. [CrossRef]
+      [PubMed]
+66.   Chang, K.J.; Redmond, S.A.; Chan, J.R. Remodeling myelination: Implications for mechanisms of neural plasticity. Nat. Neurosci.
+      2016, 19, 190–197. [CrossRef] [PubMed]
+67.   Lazari, A.; Lipp, I. Can MRI measure myelin? Systematic review, qualitative assessment, and meta-analysis of studies validating
+      microstructural imaging with myelin histology. Neuroimage 2021, 230, 117744. [CrossRef]
+68.   Wei, X.; Gunter, T.C.; Adamson, H.; Friederici, A.D.; Skeide, M.A.; Flöel, A. White matter plasticity during second language
+      learning within and across hemispheres. Proc. Natl. Acad. Sci. USA 2024, 121, e2306286121. [CrossRef] [PubMed]
+69.   de Lange, A.G.; Bråthen, A.C.; Grydeland, H.; Sexton, C.; Johansen-Berg, H.; Walhovd, K.B.; Fjell, A.M. White matter integrity as
+      a marker for cognitive plasticity in aging. Neurobiol. Aging 2016, 47, 74–82. [CrossRef]
+70.   Bennett, I.J.; Madden, D.J. Disconnected aging: Cerebral white matter integrity and age-related differences in cognition. Neuro-
+      science 2014, 276, 187–205. [CrossRef]
+71.   Seidlitz, J.; Nadig, A.; Liu, S.; Bethlehem, R.A.I.; Vértes, P.E.; Morgan, S.E.; Váša, F.; Romero-Garcia, R.; Lalonde, F.M.; Clasen, L.S.;
+      et al. Transcriptomic and cellular decoding of regional brain vulnerability to neurogenetic disorders. Nat. Commun. 2020, 11, 3358,
+      Correction in Nat. Commun. 2020, 11, 5936. [CrossRef]
+72.   van Tilborg, E.; de Theije, C.G.M.; van Hal, M.; Wagenaar, N.; de Vries, H.E.; Dijkhuizen, R.M.; Heijnen, C.J.; Benders, M.J.N.L.;
+      Nijboer, C.H.A. Origin and dynamics of oligodendrocytes in the developing brain: Implications for perinatal white matter injury.
+      Glia 2018, 66, 221–238. [CrossRef]
+73.   Young, K.M.; Psachoulia, K.; Tripathi, R.B.; Dunn, S.J.; Cossell, L.; Attwell, D.; Tohyama, K.; Richardson, W.D. Oligodendrocyte
+      dynamics in the healthy adult CNS: Evidence for myelin remodeling. Neuron 2013, 77, 873–885. [CrossRef]
+74.   Barateiro, A.; Fernandes, A. Temporal oligodendrocyte lineage progression: In vitro models of proliferation, differentiation and
+      myelination. Biochim. Biophys. Acta 2014, 1843, 1917–1929. [CrossRef] [PubMed]
+75.   Badimon, A.; Strasburger, H.J.; Ayata, P.; Chen, X.; Nair, A.; Ikegami, A.; Hwang, P.; Chan, A.T.; Graves, S.M.; Uweru, J.O.; et al.
+      Negative feedback control of neuronal activity by microglia. Nature 2020, 586, 417–423. [CrossRef]
+76.   Berghoff, S.A.; Spieth, L.; Sun, T.; Hosang, L.; Schlaphoff, L.; Depp, C.; Düking, T.; Winchenbach, J.; Neuber, J.; Ewers, D.; et al.
+      Microglia facilitate repair of demyelinated lesions via post-squalene sterol synthesis. Nat. Neurosci. 2021, 24, 47–60. [CrossRef]
+      [PubMed]
+77.   Timmler, S.; Simons, M. Grey matter myelination. Glia 2019, 67, 2063–2070. [CrossRef]
+78.   Micheva, K.D.; Wolman, D.; Mensh, B.D.; Pax, E.; Buchanan, J.; Smith, S.J. A large fraction of neocortical myelin ensheathes axons
+      of local inhibitory neurons. Elife 2016, 5, e15784. [CrossRef] [PubMed]
+
+
+
+
+                                                                                                          https://doi.org/10.3390/ijms27083603
+Int. J. Mol. Sci. 2026, 27, 3603                                                                                                    18 of 18
+
+
+
+79.   Camargo, N.; Goudriaan, A.; Van Deijk, A.-L.F.; Otte, W.M.; Brouwers, J.F.; Lodder, H.; Gutmann, D.H.; Nave, K.-A.; Dijkhuizen,
+      R.M.; Mansvelder, H.D.; et al. Oligodendroglial myelination requires astrocyte-derived lipids. PLoS Biol. 2017, 15, 1002605.
+      [CrossRef]
+80.   Mitew, S.; Gobius, I.; Fenlon, L.R.; McDougall, S.J.; Hawkes, D.; Xing, Y.L.; Bujalka, H.; Gundlach, A.L.; Richards, L.J.; Kilpatrick,
+      T.J.; et al. Pharmacogenetic stimulation of neuronal activity increases myelination in an axon-specific manner. Nat. Commun. 2018,
+      9, 306. [CrossRef]
+
+
+Disclaimer/Publisher’s Note: The statements, opinions and data contained in all publications are solely those of the individual
+author(s) and contributor(s) and not of MDPI and/or the editor(s). MDPI and/or the editor(s) disclaim responsibility for any injury to
+people or property resulting from any ideas, methods, instructions or products referred to in the content.
+
+
+
+
+                                                                                                       https://doi.org/10.3390/ijms27083603
+

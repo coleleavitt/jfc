@@ -130,6 +130,8 @@ pub struct Config {
     pub default_shell: Option<String>,
     #[serde(default, skip_serializing_if = "ClaudeCompatibilityConfig::is_empty")]
     pub claude: ClaudeCompatibilityConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<VoiceSettingsConfig>,
     /// Safe mode disables runtime customization that can mutate local state or
     /// fetch code: plugin installs/updates/runtime registration and theme
     /// persistence/preview. Also surfaced in the TUI footer.
@@ -616,6 +618,211 @@ pub struct CouncilMemberConfig {
     pub effort: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct VoiceSettingsConfig {
+    pub enabled: Option<bool>,
+    pub mode: Option<String>,
+    #[serde(alias = "vadEngine")]
+    pub vad_engine: Option<String>,
+    #[serde(alias = "autoSubmit")]
+    pub auto_submit: Option<bool>,
+    pub language: Option<String>,
+    pub backend: Option<String>,
+    #[serde(alias = "anthropicVoiceUrl", alias = "anthropic_voice_url")]
+    pub anthropic_voice_url: Option<String>,
+    #[serde(alias = "openaiApiKey")]
+    pub openai_api_key: Option<String>,
+    #[serde(alias = "localWhisperBin")]
+    pub local_whisper_bin: Option<String>,
+    #[serde(alias = "localWhisperModel")]
+    pub local_whisper_model: Option<String>,
+    #[serde(alias = "speakerGate")]
+    pub speaker_gate: Option<bool>,
+    #[serde(alias = "speakerProfile")]
+    pub speaker_profile: Option<String>,
+    #[serde(alias = "speakerThreshold")]
+    pub speaker_threshold: Option<f64>,
+    #[serde(alias = "speakerModel")]
+    pub speaker_model: Option<String>,
+    #[serde(alias = "readAloud", alias = "readAssistant")]
+    pub read_aloud: Option<bool>,
+    #[serde(alias = "echoSuppression")]
+    pub echo_suppression: Option<bool>,
+    #[serde(alias = "ttsVoice")]
+    pub tts_voice: Option<String>,
+    #[serde(alias = "ttsSpeed")]
+    pub tts_speed: Option<f32>,
+    #[serde(alias = "ttsOutputFormat")]
+    pub tts_output_format: Option<String>,
+    #[serde(alias = "ttsBaseUrl")]
+    pub tts_base_url: Option<String>,
+    #[serde(alias = "ttsPlaybackCommand")]
+    pub tts_playback_command: Option<String>,
+    #[serde(alias = "selectedSpeakerDeviceId", alias = "speakerDeviceId")]
+    pub selected_speaker_device_id: Option<String>,
+    #[serde(alias = "conversationEnabled", alias = "fullDuplex")]
+    pub conversation_enabled: Option<bool>,
+    #[serde(alias = "conversationBaseUrl")]
+    pub conversation_base_url: Option<String>,
+    #[serde(
+        alias = "organizationUuid",
+        alias = "organizationUUID",
+        alias = "orgUuid"
+    )]
+    pub organization_uuid: Option<String>,
+    #[serde(alias = "conversationUuid", alias = "conversationUUID")]
+    pub conversation_uuid: Option<String>,
+    #[serde(alias = "conversationInputEncoding")]
+    pub conversation_input_encoding: Option<String>,
+    #[serde(alias = "conversationOutputFormat")]
+    pub conversation_output_format: Option<String>,
+    pub timezone: Option<String>,
+    #[serde(alias = "conversationModel")]
+    pub conversation_model: Option<String>,
+    #[serde(alias = "conversationEffort")]
+    pub conversation_effort: Option<String>,
+    #[serde(alias = "conversationThinkingMode")]
+    pub conversation_thinking_mode: Option<String>,
+    #[serde(alias = "forwardInterims")]
+    pub forward_interims: Option<bool>,
+    #[serde(alias = "allowCustomAuthEndpoint")]
+    pub allow_custom_auth_endpoint: Option<bool>,
+    #[serde(alias = "allowInsecureAuthEndpoint")]
+    pub allow_insecure_auth_endpoint: Option<bool>,
+}
+
+impl VoiceSettingsConfig {
+    pub fn to_compat_json(&self) -> serde_json::Value {
+        let mut value = serde_json::Map::new();
+        insert_opt(&mut value, "enabled", self.enabled);
+        insert_opt_ref(&mut value, "mode", self.mode.as_ref());
+        insert_opt_ref(&mut value, "vadEngine", self.vad_engine.as_ref());
+        insert_opt(&mut value, "autoSubmit", self.auto_submit);
+        insert_opt_ref(&mut value, "language", self.language.as_ref());
+        insert_opt_ref(&mut value, "backend", self.backend.as_ref());
+        insert_opt_ref(
+            &mut value,
+            "anthropicVoiceUrl",
+            self.anthropic_voice_url.as_ref(),
+        );
+        insert_opt_ref(&mut value, "openaiApiKey", self.openai_api_key.as_ref());
+        insert_opt_ref(
+            &mut value,
+            "localWhisperBin",
+            self.local_whisper_bin.as_ref(),
+        );
+        insert_opt_ref(
+            &mut value,
+            "localWhisperModel",
+            self.local_whisper_model.as_ref(),
+        );
+        insert_opt(&mut value, "speakerGate", self.speaker_gate);
+        insert_opt_ref(&mut value, "speakerProfile", self.speaker_profile.as_ref());
+        insert_opt(&mut value, "speakerThreshold", self.speaker_threshold);
+        insert_opt_ref(&mut value, "speakerModel", self.speaker_model.as_ref());
+        insert_opt(&mut value, "readAloud", self.read_aloud);
+        insert_opt(&mut value, "echoSuppression", self.echo_suppression);
+        insert_opt_ref(&mut value, "ttsVoice", self.tts_voice.as_ref());
+        insert_opt(&mut value, "ttsSpeed", self.tts_speed);
+        insert_opt_ref(
+            &mut value,
+            "ttsOutputFormat",
+            self.tts_output_format.as_ref(),
+        );
+        insert_opt_ref(&mut value, "ttsBaseUrl", self.tts_base_url.as_ref());
+        insert_opt_ref(
+            &mut value,
+            "ttsPlaybackCommand",
+            self.tts_playback_command.as_ref(),
+        );
+        insert_opt_ref(
+            &mut value,
+            "selectedSpeakerDeviceId",
+            self.selected_speaker_device_id.as_ref(),
+        );
+        insert_opt(&mut value, "conversationEnabled", self.conversation_enabled);
+        insert_opt_ref(
+            &mut value,
+            "conversationBaseUrl",
+            self.conversation_base_url.as_ref(),
+        );
+        insert_opt_ref(
+            &mut value,
+            "organizationUuid",
+            self.organization_uuid.as_ref(),
+        );
+        insert_opt_ref(
+            &mut value,
+            "conversationUuid",
+            self.conversation_uuid.as_ref(),
+        );
+        insert_opt_ref(
+            &mut value,
+            "conversationInputEncoding",
+            self.conversation_input_encoding.as_ref(),
+        );
+        insert_opt_ref(
+            &mut value,
+            "conversationOutputFormat",
+            self.conversation_output_format.as_ref(),
+        );
+        insert_opt_ref(&mut value, "timezone", self.timezone.as_ref());
+        insert_opt_ref(
+            &mut value,
+            "conversationModel",
+            self.conversation_model.as_ref(),
+        );
+        insert_opt_ref(
+            &mut value,
+            "conversationEffort",
+            self.conversation_effort.as_ref(),
+        );
+        insert_opt_ref(
+            &mut value,
+            "conversationThinkingMode",
+            self.conversation_thinking_mode.as_ref(),
+        );
+        insert_opt(&mut value, "forwardInterims", self.forward_interims);
+        insert_opt(
+            &mut value,
+            "allowCustomAuthEndpoint",
+            self.allow_custom_auth_endpoint,
+        );
+        insert_opt(
+            &mut value,
+            "allowInsecureAuthEndpoint",
+            self.allow_insecure_auth_endpoint,
+        );
+        serde_json::Value::Object(value)
+    }
+}
+
+fn insert_opt<T>(map: &mut serde_json::Map<String, serde_json::Value>, key: &str, value: Option<T>)
+where
+    T: Serialize,
+{
+    if let Some(value) = value
+        && let Ok(value) = serde_json::to_value(value)
+    {
+        map.insert(key.to_owned(), value);
+    }
+}
+
+fn insert_opt_ref<T>(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    value: Option<&T>,
+) where
+    T: Serialize,
+{
+    if let Some(value) = value
+        && let Ok(value) = serde_json::to_value(value)
+    {
+        map.insert(key.to_owned(), value);
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -658,6 +865,7 @@ impl Default for Config {
             sandbox: None,
             default_shell: None,
             claude: ClaudeCompatibilityConfig::default(),
+            voice: None,
             safe_mode: false,
             copy_on_select: default_true(),
             refusal_fallback_enabled: default_true(),
@@ -784,6 +992,7 @@ impl Config {
             worktree: local_or_base!(worktree),
             sandbox: local_or_base!(sandbox),
             default_shell: local_or_base!(default_shell),
+            voice: local_or_base!(voice),
             refusal_fallback_model: local_or_base!(refusal_fallback_model),
             refusal_rewrite_retry_max: local_or_base!(refusal_rewrite_retry_max),
             bash_shell: local_or_base!(bash_shell),
@@ -2105,6 +2314,37 @@ model = "claude-opus-4-7"
         assert!(s.contains("theme"));
         let back: Config = toml::from_str(&s).expect("parse");
         assert_eq!(back.theme.as_deref(), Some("monokai"));
+    }
+
+    #[test]
+    fn voice_table_parses_and_converts_to_compat_json_normal() {
+        let cfg = parse(
+            r#"
+[voice]
+enabled = true
+mode = "vad"
+auto_submit = true
+backend = "anthropic"
+read_aloud = true
+tts_voice = "buttery"
+conversation_enabled = true
+organization_uuid = "org-123"
+conversation_uuid = "conv-456"
+allow_custom_auth_endpoint = true
+"#,
+        );
+        let voice = cfg.voice.expect("voice config");
+        let compat = voice.to_compat_json();
+
+        assert_eq!(voice.mode.as_deref(), Some("vad"));
+        assert_eq!(compat["enabled"], true);
+        assert_eq!(compat["autoSubmit"], true);
+        assert_eq!(compat["readAloud"], true);
+        assert_eq!(compat["ttsVoice"], "buttery");
+        assert_eq!(compat["conversationEnabled"], true);
+        assert_eq!(compat["organizationUuid"], "org-123");
+        assert_eq!(compat["conversationUuid"], "conv-456");
+        assert_eq!(compat["allowCustomAuthEndpoint"], true);
     }
 
     #[test]

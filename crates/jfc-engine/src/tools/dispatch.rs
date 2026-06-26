@@ -1040,17 +1040,68 @@ pub async fn execute_tool_with_runtime_id(
             // here (we don't run a second LLM pass) — it's surfaced
             // verbatim in the tool result so the model sees its own
             // intent and can summarize during the next turn.
+            // CS-JFC-002: validate the destination before issuing the request so
+            // a model-controlled URL cannot reach localhost, LAN, or cloud
+            // metadata endpoints (SSRF).
+            let mut current = match crate::tools::ssrf::validate_public_url(&url).await {
+                Ok(u) => u,
+                Err(reason) => {
+                    return ExecutionResult::failure(format!(
+                        "WebFetch blocked for {url}: {reason}"
+                    ));
+                }
+            };
+            // Disable automatic redirects so every hop is re-validated by the
+            // same SSRF guard (a public URL can otherwise 30x into a private one).
             let client = match reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
                 .user_agent("jfc/0.1 (https://github.com/coleleavitt/jfc)")
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
             {
                 Ok(c) => c,
                 Err(e) => return ExecutionResult::failure(format!("WebFetch: client init: {e}")),
             };
-            let resp = match client.get(&url).send().await {
-                Ok(r) => r,
-                Err(e) => return ExecutionResult::failure(format!("WebFetch: {url}: {e}")),
+            let resp = {
+                let mut hops = 0usize;
+                loop {
+                    let resp = match client.get(current.clone()).send().await {
+                        Ok(r) => r,
+                        Err(e) => return ExecutionResult::failure(format!("WebFetch: {url}: {e}")),
+                    };
+                    if !resp.status().is_redirection() {
+                        break resp;
+                    }
+                    let Some(location) = resp
+                        .headers()
+                        .get(reqwest::header::LOCATION)
+                        .and_then(|v| v.to_str().ok())
+                    else {
+                        break resp;
+                    };
+                    let next = match current.join(location) {
+                        Ok(u) => u,
+                        Err(e) => {
+                            return ExecutionResult::failure(format!(
+                                "WebFetch: bad redirect target `{location}`: {e}"
+                            ));
+                        }
+                    };
+                    hops += 1;
+                    if hops > crate::tools::ssrf::MAX_REDIRECTS {
+                        return ExecutionResult::failure(format!(
+                            "WebFetch: too many redirects from {url}"
+                        ));
+                    }
+                    current = match crate::tools::ssrf::validate_public_url(next.as_str()).await {
+                        Ok(u) => u,
+                        Err(reason) => {
+                            return ExecutionResult::failure(format!(
+                                "WebFetch blocked following redirect to {next}: {reason}"
+                            ));
+                        }
+                    };
+                }
             };
             let status = resp.status();
             let content_type = resp
@@ -1766,6 +1817,7 @@ fn mcp_dispatch_error_metadata(error: &crate::mcp::DispatchError) -> (ToolErrorC
         crate::mcp::DispatchError::ServerNotConnected(_) => (ToolErrorCategory::Transient, true),
         crate::mcp::DispatchError::ToolBlocked { .. } => (ToolErrorCategory::Permission, false),
         crate::mcp::DispatchError::AmbiguousToolName(_) => (ToolErrorCategory::Validation, false),
+        crate::mcp::DispatchError::UnknownTool(_) => (ToolErrorCategory::Validation, false),
         crate::mcp::DispatchError::Request(request_error) => match request_error {
             crate::mcp::RequestError::Disconnected
             | crate::mcp::RequestError::Timeout

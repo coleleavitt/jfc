@@ -210,11 +210,15 @@ pub async fn recall(
         * (CASE k.outcome WHEN 'verified' THEN 2.0 WHEN 'refuted' THEN 0.1 ELSE 1.0 END) \
         * (?3 / (?3 + CAST(?4 - k.created_at_ms AS REAL))) \
         * (1.0 + CAST(k.use_count AS REAL) / (k.use_count + 4))";
+    // Rank by MATCH RELEVANCE first (bm25: smaller = better match), then by our
+    // quality score as a tiebreak. The old ORDER ignored relevance entirely, so a
+    // specific failure query surfaced popular-but-unrelated lessons instead of the
+    // matching one (measured: 8% recall coverage). Relevance-first fixes that.
     let sql = format!(
         "SELECT k.* FROM knowledge k \
          JOIN knowledge_fts ON knowledge_fts.rowid = k.rowid \
          WHERE knowledge_fts MATCH ?1 AND k.superseded_by IS NULL AND {scope_clause} \
-         ORDER BY {score_expr} DESC \
+         ORDER BY bm25(knowledge_fts) ASC, {score_expr} DESC \
          LIMIT ?5"
     );
     let rows = sqlx::query(AssertSqlSafe(sql))

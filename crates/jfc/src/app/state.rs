@@ -15,6 +15,7 @@ use super::EngineState;
 /// Max number of recent RMS audio levels retained for the recording-cursor
 /// animation (the CLI's `LWA` ring length).
 pub const VOICE_AUDIO_LEVELS_CAP: usize = 16;
+pub const VOICE_TTS_TIMINGS_CAP: usize = 256;
 
 /// The expanded panel state cycled by Ctrl+T — mirrors Claude Code's
 /// `expandedView: "none" | "tasks" | "teammates"` state machine.
@@ -460,6 +461,13 @@ pub struct App {
     /// Used to delete the previous interim before inserting an updated one so
     /// live transcription replaces in place rather than appending.
     pub voice_interim_chars: usize,
+    /// When the user manually submits (Enter) while a voice utterance is still
+    /// in flight, the recorder may keep emitting late `Interim`/`Final` events
+    /// for that discarded utterance (it transcribes through finalize). This flag
+    /// makes the consumer drop those late events so they don't re-hydrate the
+    /// just-cleared input box or auto-submit a duplicate. Cleared on the next
+    /// `Recording` onset — the start of a fresh, wanted utterance.
+    pub voice_suppress_input: bool,
     /// Ring of the most recent normalized [0,1] RMS audio levels (newest last),
     /// fed by the voice pipeline while recording. Drives the animated recording
     /// cursor. Capped at [`VOICE_AUDIO_LEVELS_CAP`].
@@ -467,6 +475,11 @@ pub struct App {
     /// Monotonic instant the current recording session began — the time base for
     /// the recording cursor's hue rotation. `None` when not recording.
     pub voice_record_started: Option<std::time::Instant>,
+    pub voice_read_aloud_active: bool,
+    pub voice_read_aloud_started: Option<std::time::Instant>,
+    pub voice_read_aloud_last_stats: Option<(usize, usize)>,
+    pub voice_tts_word_timings: Vec<(String, u64)>,
+    pub voice_skip_next_stream_read_aloud: bool,
     /// Per-frame map of `(tool_id, screen_rect)` populated by the message
     /// renderer as each `ToolBlock` paints. The mouse handler reads this to
     /// translate a left-click into the tool whose body should expand —
@@ -653,8 +666,14 @@ impl App {
             voice_interim: None,
             voice_enabled: false,
             voice_interim_chars: 0,
+            voice_suppress_input: false,
             voice_audio_levels: Vec::new(),
             voice_record_started: None,
+            voice_read_aloud_active: false,
+            voice_read_aloud_started: None,
+            voice_read_aloud_last_stats: None,
+            voice_tts_word_timings: Vec::new(),
+            voice_skip_next_stream_read_aloud: false,
             tool_hit_regions: RefCell::new(Vec::new()),
             tool_copy_regions: RefCell::new(Vec::new()),
             render_cache: RefCell::new(RenderCache::new()),

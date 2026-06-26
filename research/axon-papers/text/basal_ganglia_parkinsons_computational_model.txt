@@ -1,0 +1,1288 @@
+Review
+
+Computational Modeling of Parkinson’s Disease Across Scales:
+From Mechanisms to Biomarkers, Drug Discovery, and
+Personalized Therapies
+Sandeep Sathyanandan Nair 1,2,3 , Aratrik Guha 1,2,3 , Srinivasa Chakravarthy 4,5 and Aasef G. Shaikh 1,2,3,6,7, *
+
+                                         1   Department of Biomedical Engineering, Case Western Reserve University, Cleveland, OH 44106, USA;
+                                             sandeep.nair@case.edu (S.S.N.); axg1334@case.edu (A.G.)
+                                         2   Cleveland FES Center, Louis Stokes Cleveland VA Medical Center, Cleveland, OH 44106, USA
+                                         3   Daroff-Dell’Osso Ocular Motility Laboratory, Louis Stokes Cleveland VA Medical Center,
+                                             Cleveland, OH 44106, USA
+                                         4   Department of Biotechnology, Bhupat and Mehta Jyoti School of Biosciences, IIT Madras, Chennai 600036,
+                                             India; schakra@ee.iitm.ac.in
+                                         5   Department of Medical Science and Technology, IIT Madras, Chennai 600036, India
+                                         6   Department of Neurology, University Hospitals, Cleveland, OH 44106, USA
+                                         7   Department of Neurology, Case Western Reserve University, Cleveland, OH 44106, USA
+                                         *   Correspondence: axs848@case.edu
+
+
+                                         Abstract
+                                         Parkinson’s disease (PD) is a multifactorial neurodegenerative disorder characterized by
+                                         complex interactions across molecular, cellular, circuit, and behavioral scales. While experi-
+                                         mental and clinical studies have provided critical insights into PD pathology, integrating
+                                         these heterogeneous data into coherent mechanistic frameworks and translational strate-
+                                         gies remains a major challenge. Computational modeling offers a powerful approach to
+                                         bridge these scales, enabling the systematic investigation of disease mechanisms, candidate
+                                         biomarkers, and therapeutic strategies. In this review, we survey state-of-the-art computa-
+                                         tional approaches applied to PD, spanning molecular dynamics and biophysical models,
+                                         cellular- and circuit-level network models, systems and abstract-level simulations of basal
+                                         ganglia function, and whole-brain and data-driven models linked to clinical phenotypes.
+                                         We highlight how multiscale and hybrid modeling strategies connect α-synuclein pathology,
+                                         mitochondrial dysfunction, oxidative stress, and dopaminergic degeneration to alterations
+                                         in neural dynamics and motor and non-motor symptoms. We further discuss the role of
+                                         computational models in biomarker discovery, including imaging, electrophysiological,
+                                         and digital biomarkers. In particular, eye-movement-based measures are highlighted as
+                                         quantitative, reproducible behavioral signals that provide principled constraints for indi-
+                                         vidualized computational modeling. We also review the emerging impact of computational
+                                         approaches on drug discovery, target prioritization, and in silico clinical trials. Finally, we
+                                         examine future directions toward personalized and precision medicine in PD, emphasizing
+Academic Editor: Peter König             digital twin frameworks, longitudinal validation, and the integration of patient-specific
+                                         data with mechanistic and data-driven models. Together, these advances underscore the
+Received: 31 December 2025
+Revised: 23 January 2026                 growing role of computational modeling as an integrative and hypothesis-generating
+Accepted: 29 January 2026                framework, with the long-term goal of supporting data-constrained predictive approaches
+Published: 31 January 2026               for biomarker development and translational applications.
+Copyright: © 2026 by the authors.
+Licensee MDPI, Basel, Switzerland.       Keywords: Parkinson’s disease; computational modeling; computational neuroscience;
+This article is an open access article   multiscale modeling; deep brain stimulation; L’DOPA; basal ganglia; therapeutics; eye
+distributed under the terms and
+                                         movements; neurodegenerative disease
+conditions of the Creative Commons
+Attribution (CC BY) license.
+
+
+
+
+Brain Sci. 2026, 16, 175                                                                                   https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                            2 of 23
+
+
+
+                           1. Introduction
+                                Neurodegenerative diseases such as PD represent a major scientific and clinical chal-
+                           lenge, affecting millions of individuals worldwide and imposing an increasing socioeco-
+                           nomic burden as populations age. PD is characterized by progressive neuronal dysfunction
+                           and loss, leading to irreversible cognitive and motor impairments [1]. Despite decades of
+                           intensive experimental and clinical research, effective disease-modifying therapies remain
+                           elusive, and diagnosis often occurs only after substantial neurodegeneration has taken
+                           place. A central obstacle to progress lies in the inherently multifactorial and multiscale
+                           nature of these diseases, which span molecular pathology, cellular vulnerability, circuit
+                           dysfunction, and behavioral impairment, challenging conventional reductionist approaches
+                           and prompting increased interest in integrative systems and computational frameworks.
+                                At the molecular and cellular levels, PD involves protein misfolding and aggregation,
+                           mitochondrial dysfunction, oxidative stress, and impaired protein balance, ultimately
+                           leading to the selective degeneration of dopaminergic neurons in the substantia nigra pars
+                           compacta (SNc) and depletion of striatal dopamine [2]. At the circuit level, dopamine loss
+                           disrupts the dynamics of BG–thalamocortical loops, giving rise to pathological rhythms
+                           and impaired action selection that underlie hallmark motor symptoms and a range of
+                           non-motor manifestations [3]. At the behavioral level, beyond limb motor behavior, eye
+                           movement control provides a uniquely tractable domain for testing computational models
+                           of basal ganglia (BG) dysfunction, owing to its well-defined circuitry, rapid dynamics, and
+                           sensitivity to dopaminergic modulation [4–6]. Understanding how these processes interact
+                           across scales from molecular networks to whole-brain circuitry and behavior remains a
+                           foundational challenge for neuroscience.
+                                Mathematical and computational models provide a powerful framework for integrat-
+                           ing heterogeneous data and mechanistic hypotheses across levels of organization. Such
+                           models formalize biological processes in quantitative terms, enabling the systematic explo-
+                           ration of causal relationships, hypothesis testing, and prediction in ways that complement
+                           experimental and clinical studies. Modeling approaches have been applied across a broad
+                           spectrum that includes mechanistic models of pathogenic processes, multiscale network
+                           models of interacting molecular pathways, and dynamical models of BG circuitry and deep
+                           brain stimulation [3].
+                                Beyond explanatory insight, these models are increasingly positioned as translational
+                           tools that can aid biomarker discovery, optimize therapeutic interventions such as deep
+                           brain stimulation, and explore patient-specific variability [3]. Recent developments in data
+                           acquisition, computational power, and integrative modeling methodologies are further
+                           accelerating the shift toward predictive and personalized neuroscience, suggesting new
+                           pathways toward digital twins and individualized therapeutic strategies.
+                                In this review, we highlight how mathematical modeling serves as a conceptual and
+                           practical bridge across scales in neurodegenerative diseases, with PD as a primary focus.
+                           Throughout this review, we emphasize eye movement control as a principled behavioral
+                           assay for linking multiscale computational models to quantifiable clinical outcomes in
+                           Parkinson’s disease. We review recent modeling advances, discuss their contributions to
+                           understanding disease mechanisms and treatment strategies, and outline open challenges
+                           and future directions for predictive computational frameworks in neurodegeneration. This
+                           review discusses how such models now occupy a central position in neurodegenerative
+                           disease research and how they may shape the future of diagnosis and treatment.
+
+
+
+
+                                                                                   https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                              3 of 23
+
+
+
+                           2. Perspectives from Disease-Specific Modeling
+                                PD is defined by the progressive degeneration of dopaminergic neurons in the SNc
+                           and the consequent disruption of BG–thalamocortical circuits, ultimately giving rise to
+                           abnormal action selection and motor behavior.
+                                To provide a holistic perspective across scales, behavior is first considered at the level
+                           of actions within the framework of optimal control theory, in which behavior emerges from
+                           the selection of control policies that minimize expected costs while achieving task goals.
+                           Within this normative framework, reinforcement learning (RL) offers a computationally
+                           principled description of how value-based learning and action selection can be guided
+                           by reward prediction errors (RPEs). Dopaminergic signaling is commonly interpreted as
+                           encoding such errors, and loss of dopaminergic input from the SNc compromises learning,
+                           policy evaluation, and action selection under uncertainty.
+                                At the circuit level, these behavioral impairments are accompanied by pathological net-
+                           work dynamics, most prominently exaggerated beta-band oscillations in the subthalamic
+                           nucleus (STN), globus pallidus externa (GPe), and related BG structures. Such dynam-
+                           ics are well captured by mechanistic spiking neuron models of BG circuits, which link
+                           dopamine depletion to abnormal synchrony and impaired action gating. At a deeper level,
+                           dopamine loss itself arises from cellular and molecular processes, including oxidative stress,
+                           mitochondrial dysfunction, protein aggregation, and α-synuclein pathology, which are
+                           addressed by biophysical cellular models of dopaminergic neuron vulnerability.
+                                Together, these modeling approaches provide a multiscale framework that links ab-
+                           normal actions in PD to circuit-level dynamics and, ultimately, to their underlying cellular
+                           and molecular mechanisms.
+                                Computational models of PD operate at distinct levels of abstraction, ranging from
+                           normative or algorithmic frameworks that describe optimal decision-making principles to
+                           mechanistic circuit-level models that explicitly represent BG–thalamocortical connectivity,
+                           and further to biophysical cellular models that capture ionic, metabolic, and molecular
+                           processes. In this review, RL and optimal control models are treated as normative descrip-
+                           tions of behavior, whereas BG network and cellular degeneration models are considered
+                           mechanistic or implementation-level frameworks. Accordingly, we organize the subsequent
+                           sections into three broad categories—behavioral-level, circuit-level, and cellular-level mod-
+                           els of PD. Mapping between these levels is conceptual rather than one-to-one, and care is
+                           taken throughout to distinguish explanatory abstractions from their biological realizations.
+
+                           2.1. Behavioral-Level Models of PD
+                                PD is characterized by a constellation of behavioral impairments, among which
+                           bradykinesia—the slowness in initiating and executing voluntary movements—stands
+                           as a defining clinical hallmark [7]. From a computational perspective, these impairments
+                           are increasingly understood not as failures of motor execution alone, but as disruptions
+                           in decision-making processes governing action selection, vigor, and effort allocation. This
+                           reframing has been driven by behavioral-level computational models that link dopaminer-
+                           gic signaling to normative principles of learning and control. Importantly, such models
+                           emphasize that BG dysfunction in PD affects not only motor behavior but also cognition,
+                           working memory, impulse control, and oculomotor function. This shift in perspective has
+                           motivated the use of RL frameworks, which offer a principled computational account of
+                           how dopaminergic signals shape learning and action selection.
+
+                           2.1.1. Dopamine, Prediction Errors, and RL
+                               In classical RL formulations, agents learn action policies by iteratively updat-
+                           ing value estimates based on RPEs, which are the differences between expected and
+
+
+
+                                                                                     https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                              4 of 23
+
+
+
+                           actual outcomes [8]. Seminal computational and electrophysiological work estab-
+                           lished that phasic activity of midbrain dopamine neurons closely resembles such RPE
+                           signals [9,10]. This insight provided a principled computational interpretation of
+                           dopamine’s role in learning, positioning dopaminergic neurons as teaching signals that
+                           guide adaptive behavior. Within the BG, RL mechanisms are thought to be instantiated
+                           through cortico–striatal plasticity, with dopamine modulating synaptic updates in a man-
+                           ner consistent with temporal-difference learning [11]. Under healthy conditions, these
+                           mechanisms support efficient learning, rapid action initiation, and flexible adaptation to
+                           changing reward contingencies.
+
+                           2.1.2. Dopamine Loss and Learning Asymmetries in PD
+                                 If dopaminergic signaling plays a central role in RL under healthy conditions, its
+                           degeneration in PD is expected to systematically bias learning processes. In PD, the degen-
+                           eration of dopaminergic neurons in the SNc leads to a substantial reduction in dopamine
+                           availability within the striatum. Computational models reproduce the experimentally
+                           observed phenomenon that this loss disproportionately impairs learning from positive
+                           outcomes while sparing or even enhancing learning from negative feedback. This pattern is
+                           consistent with empirical behavioral studies showing that unmedicated PD patients exhibit
+                           selective deficits in reward-based learning [12].
+                                 Neurocomputational models of the BG formalize this effect by distinguishing between
+                           D1 receptor-expressing “Go” pathways that facilitate action selection and D2 receptor-
+                           expressing “NoGo” pathways that suppress competing actions [13,14]. Dopamine depletion
+                           shifts the balance of this system toward excessive inhibition, resulting in conservative action
+                           policies, reduced exploration, and delayed movement initiation—computational signatures
+                           that map naturally onto bradykinesia and akinesia. While these learning asymmetries
+                           explain impaired action selection, they do not fully account for the pervasive slowing of
+                           movement observed in Parkinson’s disease.
+
+                           2.1.3. Action Selection, Vigor, and Opportunity Costs
+                                Beyond learning, dopamine has been implicated in regulating the vigor with which
+                           actions are executed. Normative models propose that movement vigor reflects a trade-
+                           off between reward rate and energetic or temporal costs [15]. In this framework, tonic
+                           dopamine encodes the opportunity cost of time, biasing organisms toward faster or slower
+                           actions depending on the expected reward landscape.
+                                Empirical and computational work has shown that PD patients behave as though
+                           the opportunity cost of time is underestimated, leading to slower movements even when
+                           faster actions would yield greater reward [7]. Related cost-based models of motor control
+                           further formalize bradykinesia as an increase in perceived effort or control costs, rather
+                           than a deficit in motor capability [16]. However, movement vigor is not expressed through
+                           discrete choices alone but through the continuous control of kinematic variables such as
+                           speed, force, and trajectory.
+
+                           2.1.4. From Discrete RL to Continuous Motor Control
+                                While early RL models relied on discrete state and action spaces, biological motor
+                           control is inherently continuous, involving the graded control of force, velocity, and tra-
+                           jectory. To address this mismatch, computational frameworks have integrated RL with
+                           optimal control theory. Optimal feedback control models describe motor behavior as the
+                           minimization of task-relevant costs under uncertainty, producing flexible and efficient
+                           movement strategies [17].
+                                A unifying computational framework was proposed in which the BG implements RL,
+                           the cerebellum supports supervised learning of motor dynamics, and the cortex performs
+
+
+                                                                                     https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                             5 of 23
+
+
+
+                           state representation and planning [18,19]. Within this architecture, dopamine-modulated
+                           RL shapes policy selection in continuous action spaces, enabling smooth and adaptive
+                           motor behavior. Dopamine loss in PD disrupts this learning process, leading to slower
+                           convergence toward optimal control policies and increased movement variability, consistent
+                           with experimental observations in reaching and adaptation tasks [20].
+                                Although these frameworks provide a normative account of motor behavior, linking
+                           them to PD requires grounding these computations in biologically realistic BG circuitry.
+
+                           2.1.5. Biologically Grounded BG Models
+                                 More recent models have incorporated detailed anatomical and physiological con-
+                           straints of BG circuitry. Actor–critic architectures map naturally onto BG–thalamocortical
+                           loops, with the actor associated with striatal action selection and the critic linked to
+                           dopaminergic value prediction [11,21]. Extensions of these models include explicit explo-
+                           ration mechanisms and biologically plausible learning rules, such as the Go–Explore–NoGo
+                           (GEN) framework [22]. Traditionally, the BG was looked viewed as a Go–NoGo circuitry;
+                           however, the GEN framework, with STN–GPe acting as the exploratory engine [23], added
+                           a new dimension to PD modeling research.
+                                 A central strength of computational approaches lies in their ability to bridge levels
+                           of explanation. By mapping computational variables such as states, actions, policies,
+                           and prediction errors onto BG–thalamocortical loops [22,24], RL-based models provide a
+                           mechanistic account of how molecular dopamine loss gives rise to circuit dysfunction and,
+                           ultimately, clinical symptoms. However, this mapping is often described abstractly, and a
+                           clear conceptual correspondence between RL components and their biological substrates is
+                           not always made explicit.
+                                 Computational approaches to PD operate across multiple interacting scales, ranging
+                           from cellular pathology and dopamine signaling to BG dynamics and behavior. Rather than
+                           treating these levels in isolation, multiscale models explicitly link intracellular pathology,
+                           dopamine signaling, BG dynamics, and motor behavior, providing a unified framework
+                           for understanding disease progression and therapeutic intervention. Figure 1 addresses
+                           this conceptual gap by illustrating the correspondence between behavioral RL constructs
+                           and BG–thalamocortical circuitry. Panel A presents a generic RL architecture in which
+                           an agent interacts with its environment, while Panel B depicts its biological instantiation
+                           within the BG–thalamocortical loop. The mapping between the neural substrates and the
+                           corresponding RL components is summarized in Table 1. This is an illustrative mapping
+                           rather than a one-to-one neural implementation.
+                                 Overall, behavioral-level RL models have played a central role in advancing compu-
+                           tational theories of PD. While they do not capture all aspects of disease progression, they
+                           provide a powerful explanatory framework for understanding how dopaminergic degen-
+                           eration translates into impaired action selection, reduced motivation, and bradykinesia.
+                           When integrated with circuit-level and cellular models, RL-based approaches contribute
+                           critically to multiscale accounts of PD pathophysiology and support more integrative,
+                           mechanism-informed modeling across behavioral and neural scales.
+                                 Importantly, these models converge on the view that PD-related motor deficits reflect
+                           altered decision-making dynamics rather than pure motor impairments. Bradykinesia
+                           emerges as a rational consequence of abnormal cost–benefit computations, distorted learn-
+                           ing signals, and overly inhibitory action selection policies. This computational reframing
+                           provides an explanatory framework that integrates motor and motivational symptoms of
+                           PD and helps account for the established effects of dopaminergic medication and deep
+                           brain stimulation (DBS).
+
+
+
+
+                                                                                    https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                                  6 of 23
+
+
+
+
+                           Figure 1. A representation of the behavioral model. (A) A simple RL-based model. (B) An illustrative
+                           mapping of the behavioral model to the BG–thalamocortical circuitry. Solid lines indicate local,
+                           explicitly modeled basal ganglia circuitry, whereas dotted lines represent indirect, polysynaptic, or
+                           abstracted pathways included for functional completeness.
+
+                           Table 1. Illustrative mapping of RL elements, corresponding neural substrates, and their functions.
+
+                                    RL Element                     Neural Substrate                       Function
+                                         State                   Sensorimotor cortex               Represents task state
+                                                                    Motor cortex +
+                                       Action                                                      Generates movement
+                                                                   BG-thalamus loop
+                                                                   D1/D2 pathways,
+                                        Policy                                                   Action selection strategy
+                                                                corticostriatal synapses
+                                                                   Dopamine system                Feedback and learning
+                                Reward & TD Error
+                                                                     (SNc/VTA)                           signal
+                                                               STN–GPe loop + cortical             Motor variability for
+                                     Exploration
+                                                                      noise                           exploration
+
+
+                               Crucially, these computational principles are not restricted to motor behavior but
+                           generalize to cognitive domains that also rely on basal ganglia-mediated decision processes
+                           and other non-motor and autonomic domains.
+
+                           2.1.6. Extending BG Models Beyond Motor Control
+                                While PD is classically defined by motor symptoms, computational models increas-
+                           ingly emphasize that BG dysfunction also affects cognition, working memory, and im-
+                           pulse control [25,26]. RL-based frameworks and generalized deep neural network agents
+                           have been proposed to capture a broad range of cognitive constructs, demonstrating that
+                           dopaminergic learning principles extend well beyond motor domains [27].
+                                BG models of working memory show how dopamine-dependent gating mechanisms
+                           regulate information maintenance and updating, providing insight into cognitive deficits
+                           observed in PD [25,27,28]. Similarly, network models have identified circuit-level markers
+                           associated with medication-induced impulsivity, linking dopaminergic therapy to altered
+                           decision thresholds and risk-sensitive behavior. These studies reinforce the view that
+                           PD reflects a disorder of distributed decision-making systems rather than isolated motor
+                           circuits. Among the various behavioral domains affected by BG dysfunction, eye movement
+                           control offers a uniquely tractable and well-characterized testbed for linking computational
+                           models to measurable behavior.
+
+
+
+                                                                                         https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                               7 of 23
+
+
+
+                           2.1.7. Eye Movement Control as a Computational Window into PD
+                                 Eye movement behaviors, including saccades, smooth pursuit, and fixation control,
+                           provide a powerful and well-characterized window into the neural mechanisms disrupted
+                           in PD. Unlike complex limb movements, eye movements are rapid, highly stereotyped,
+                           and supported by well-defined cortico–BG–brainstem circuits, making them particularly
+                           amenable to computational modeling. Patients with PD exhibit characteristic oculomotor
+                           abnormalities, including increased saccade latency, hypometric saccades, impaired smooth
+                           pursuit, and deficits in antisaccade tasks, reflecting disruptions in action initiation, inhibi-
+                           tion, and reward-dependent learning [29,30]. These behavioral signatures closely parallel
+                           deficits accounted for by dopamine-modulated RL models, positioning eye movements as
+                           an ideal behavioral assay for linking computational mechanisms to BG dysfunction.
+                                 From a modeling perspective, eye movement control has played a foundational role in
+                           the development of internal model theories of motor learning and prediction. Computa-
+                           tional frameworks proposed by Wolpert and colleagues emphasize the role of forward and
+                           inverse models in predicting sensory consequences of actions, while work by Shadmehr
+                           and collaborators highlights how motor learning emerges from error-based updating of
+                           these internal representations [31,32]. In PD, dopaminergic dysfunction and altered BG
+                           output are thought to impair the updating and selection of these internal models, leading
+                           to slowed initiation and reduced flexibility in oculomotor behavior. Integrating eye move-
+                           ment paradigms into RL and circuit-level models therefore offers a tractable route to link
+                           abstract learning variables, such as RPE, to measurable behavioral deficits and underlying
+                           neural dynamics.
+
+                           2.2. Circuit-Level Models of PD
+                                 Building on behavioral-level RL frameworks that describe dopaminergic modulation
+                           of motor decision-making, circuit-level models provide mechanistic insight into the neu-
+                           ral interactions within the BG that underlie pathological activity patterns in PD. These
+                           models move beyond abstract computations to capture how structural and synaptic con-
+                           nectivity, intrinsic neuronal properties, and dopamine depletion give rise to hallmark
+                           neurophysiological abnormalities, including excessive beta-band oscillations and impaired
+                           action selection.
+                                 Spiking network models further enhance biological realism by capturing the tem-
+                           poral dynamics of dopamine modulation and cortico-striatal plasticity [33,34]. These
+                           models reproduce key PD phenomena, including beta-band oscillations, reduced move-
+                           ment initiation, and impaired exploration, linking cellular-level pathology to system-level
+                           behavioral deficits.
+
+                           2.2.1. STN–GPe Dynamics and Beta Oscillations
+                                A prominent circuit-level hallmark of PD is the emergence of exaggerated beta-band
+                           (13–30 Hz) oscillations within the basal ganglia, particularly in the STN and GPe [35]. These
+                           oscillations correlate with motor impairments such as bradykinesia and rigidity and are
+                           alleviated by dopaminergic medication and DBS [36]. Computational modeling studies
+                           have identified the reciprocal excitatory–inhibitory connectivity between the STN and GPe
+                           as a key and well-supported mechanism contributing to the generation and amplification
+                           of beta oscillations. Dopamine depletion alters the balance of excitation and inhibition
+                           within this loop, promoting synchronized firing and reducing the system’s capacity for
+                           flexible action selection [33,34].
+                                At the same time, beta oscillations are increasingly viewed as arising from distributed
+                           BG–thalamocortical interactions, with contributions from cortical drive, thalamic dynamics,
+                           and potentially distinct beta sub-bands serving different functional roles [37–39]. The STN–
+
+
+
+                                                                                      https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                              8 of 23
+
+
+
+                           GPe loop is therefore best understood as a central component within a broader network
+                           mechanism, rather than as the sole source of pathological beta activity [40,41].
+
+                           2.2.2. Action Selection and Behavioral Flexibility
+                                Circuit-level models provide a mechanistic account of how dopamine-dependent
+                           deficits in RL translate into impaired motor exploration and action switching. In healthy
+                           states, the STN–GPe network facilitates dynamic suppression of competing motor pro-
+                           grams and rapid switching between alternative actions, supporting flexible, goal-directed
+                           behavior [33,42]. In PD, dopamine depletion disrupts this regulatory function, leading to
+                           excessive synchrony, over inhibition, and reduced exploratory behavior—providing a com-
+                           putational account aligned with bradykinesia and reduced movement vigor characterized
+                           in RL-based behavioral models [7,15].
+
+                           2.2.3. Biophysically Realistic Spiking Models
+                                Biophysically grounded models employ spiking neurons to capture tonic and burst
+                           firing patterns observed experimentally in STN and GPe neurons. The Izhikevich neuron
+                           model, in particular, offers a computationally efficient framework to reproduce the full
+                           spectrum of firing behaviors, from irregular tonic spiking to synchronized bursts, by
+                           adjusting a small set of parameters [43]. These models integrate excitatory glutamatergic
+                           inputs (NMDA/AMPA-mediated) and inhibitory GABAergic projections from neighboring
+                           neurons and the striatum, allowing the simulation of how dopamine depletion shifts
+                           excitation–inhibition balance, promotes pathological feedback loops, and stabilizes beta
+                           oscillations [33,44].
+
+                           2.2.4. DBS and Network Modulation
+                                Circuit-level modeling has been instrumental in elucidating the mechanisms of thera-
+                           peutic interventions, particularly DBS. High-frequency stimulation of the STN is known
+                           to suppress pathological beta oscillations and improve motor symptoms [45,46]. Compu-
+                           tational models simulate DBS as an external modulatory input that perturbs STN–GPe
+                           network activity, demonstrating that therapeutic effects emerge not from simple inhibition
+                           but from the disruption of abnormal synchrony and the restoration of desynchronized,
+                           information-rich firing patterns [26,47,48]. These simulations provide mechanistic predic-
+                           tions for optimal stimulation parameters, electrode placement, and network-level effects
+                           of neuromodulation.
+
+                           2.2.5. Linking Circuit Dynamics to Behavioral Computations
+                                 Circuit-level models bridge the gap between behavioral RL deficits and neural physi-
+                           ology. By embedding STN–GPe interactions within the broader BG–thalamocortical loop,
+                           these models explicitly connect dopamine-dependent disruptions in action selection and
+                           learning to the emergence of pathological oscillations and excessive synchrony [33,35,42].
+                           Importantly, they demonstrate how multiscale dynamics—from synaptic interactions to
+                           network oscillations—translate into observable motor impairments, providing a mechanis-
+                           tic substrate for behavioral phenomena such as bradykinesia, reduced movement vigor,
+                           and impaired exploratory behavior [7,15].
+                                 As discussed in the previous section, behavioral models capture deficits in action
+                           selection and learning but do not, by themselves, explain how these impairments emerge
+                           from specific circuit-level interactions within the basal ganglia.
+                                 Figure 2 addresses this conceptual gap by illustrating a circuit-level BG–thalamocortical
+                           model that explicitly represents interactions between the STN and GPe, a core BG subcircuit
+                           implicated in Parkinson’s disease. Dopamine depletion alters the excitation–inhibition
+                           balance within this loop, giving rise to excessive synchrony and pathological beta-band
+
+
+                                                                                     https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                                  9 of 23
+
+
+
+                           oscillations that impair flexible action selection. Incorporating DBS into this framework
+                           enables investigation of how high-frequency stimulation disrupts abnormal network dy-
+                           namics and restores the desynchronized activity associated with improved motor function.
+
+
+
+
+                           Figure 2. Circuit-level BG–thalamocortical model highlighting the STN–GPe loop and DBS. Patholog-
+                           ical synchrony and beta oscillations emerge under dopamine-depleted conditions and are modulated
+                           by high-frequency stimulation [43]. Solid lines indicate local, explicitly modeled basal ganglia cir-
+                           cuitry, whereas dotted lines represent indirect, polysynaptic, or abstracted pathways included for
+                           functional completeness. Red arrows denote inhibitory (GABAergic) connections, and green arrows
+                           denote excitatory (glutamatergic) connections. STR: striatum; THAL: thalamus; Wgs : synaptic weight
+                           from GPe to STN; Wsg : synaptic weight from STN to GPe.
+
+                           2.3. Cellular Models of Dopaminergic Degeneration
+                                While behavioral and circuit-level models often represent dopamine as a modifiable
+                           signal in a neural network, cellular models focus on the intrinsic cellular processes that
+                           underlie dopaminergic degeneration in PD. These models are critical for understanding how
+                           dopamine-producing neurons in the SNc deteriorate over time due to cellular stress and
+                           the molecular mechanisms associated with PD pathology. Key mechanisms implicated in
+                           neurodegeneration include oxidative stress, mitochondrial dysfunction, calcium overload,
+                           and excitotoxicity [49–51].
+                                It is important to emphasize that cellular models of dopaminergic degeneration do not
+                           attempt to replicate the absolute temporal scale of PD progression, which unfolds over years
+                           or decades in humans. Instead, they capture mechanistic trends and relative vulnerability
+                           patterns, enabling the investigation of how intracellular stressors and feedback interactions
+                           qualitatively drive progressive dopamine loss.
+                                By embedding cellular models of SNc neurons within larger BG–thalamocortical
+                           networks, these models offer a dynamic framework for studying progressive dopamine loss
+                           as an emergent process rather than a static parameter. As dopamine depletion progresses
+                           over time, these models allow for simulations that reflect the heterogeneous and nonlinear
+
+
+
+
+                                                                                         https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                           10 of 23
+
+
+
+                           nature of neurodegeneration, which is a hallmark of PD observed in both patients and
+                           experimental models.
+
+                           2.3.1. Mechanisms of Dopaminergic Cell Loss: Oxidative Stress and Mitochondrial Dysfunction
+                                One of the key cellular mechanisms driving dopaminergic degeneration in PD is
+                           oxidative stress, which results from an imbalance between reactive oxygen species (ROS)
+                           and the cell’s ability to neutralize them with antioxidants [52]. Dopaminergic neurons
+                           are particularly vulnerable to oxidative damage because dopamine itself can undergo
+                           auto-oxidation, producing ROS that damage cellular components like proteins, lipids, and
+                           DNA. Computational models incorporating oxidative stress demonstrate how this damage
+                           triggers a cascade of intracellular events, including mitochondrial dysfunction, calcium
+                           overload, and ultimately cell death [51,53–55].
+                                For example, computational simulations of SNc neurons highlight how sustained
+                           calcium influx through voltage-gated calcium channels leads to mitochondrial dysfunction
+                           by disrupting calcium buffering mechanisms, increasing energetic demand, and impairing
+                           ATP production [51,56]. This cascade results in the reduced synthesis of dopamine, which
+                           further exacerbates the deficit in dopaminergic signaling and accelerates the progression
+                           of PD.
+
+                           2.3.2. Calcium Dynamics and Cellular Vulnerability
+                                At the cellular level, SNc neurons exhibit autonomous pacemaking activity that is
+                           heavily reliant on calcium dynamics. The pacemaker activity in these neurons is modulated
+                           by calcium channels, which are integral to their regular firing patterns [34]. Computa-
+                           tional models that incorporate calcium-dependent processes can explain how sustained
+                           calcium influx under pathological conditions increases neuronal vulnerability. This leads
+                           to oxidative damage, impaired dopamine synthesis, and ultimately dopaminergic degener-
+                           ation. These mechanisms, when modeled computationally, also illustrate how disruptions
+                           in normal calcium homeostasis underlie key motor impairments seen in PD, including
+                           bradykinesia and rigidity.
+
+                           2.3.3. Progressive Dopamine Loss and Feedback Dynamics
+                                An important feature of cellular models is their ability to simulate progressive
+                           dopamine loss over time. By incorporating synaptic plasticity and intracellular stress
+                           responses into a BG network, these models can investigate how dopamine depletion
+                           reshapes network-level dynamics and motor behavior [48,55,57]. For example, cellular
+                           models of the SNc reveal how dysregulated signaling from the striatum can give feedback
+                           into the SNc, exacerbating cellular stress, and accelerating neurodegeneration. Striatal
+                           projections that influence SNc firing patterns form a closed-loop system, with altered motor
+                           and cognitive demands accelerating the degenerative process. This feedback mechanism is
+                           essential for understanding the heterogeneity of PD symptoms, as different brain regions
+                           and circuits are affected at varying rates [58–60].
+                                While circuit-level models explain how network dynamics produce motor deficits,
+                           they do not capture the cellular mechanisms underlying progressive dopaminergic degen-
+                           eration. Figure 3 illustrates this gap by depicting a cellular-level model of SNc neurons
+                           embedded within the BG–thalamocortical network. This framework incorporates progres-
+                           sive dopamine depletion, leading to altered dopamine signaling over time. Embedding
+                           these cellular processes within network-level models enables the investigation of how
+                           neuronal degeneration reshapes circuit dynamics and behavioral outcomes and how phar-
+                           macological interventions may modulate these effects.
+
+
+
+
+                                                                                   https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                                 11 of 23
+
+
+
+
+                           Figure 3. Cellular-level model of SNc degeneration embedded within the BG–thalamocortical
+                           network. The framework captures progressive dopamine loss driven by cellular stress mechanisms
+                           and allows simulation of pharmacological interventions [50]. Solid lines indicate local, explicitly
+                           modeled basal ganglia circuitry, whereas dotted lines represent indirect, polysynaptic, or abstracted
+                           pathways included for functional completeness.
+
+                                The biophysical models of SNc further delve into molecular-level mechanisms includ-
+                           ing metabolic vulnerabilities, oxidative stress, calcium dysregulation, and alpha-synuclein
+                           aggregation that contribute to neuronal death. A simplified illustration of molecular-level
+                           interactions between the SNc and striatum is shown in Figure 4, where dopaminergic
+                           signaling both shapes and is shaped by BG activity. Striatal feedback influences SNc firing
+                           and dopamine release, creating a dynamic coupling between circuit activity and cellular stress.
+                           This bidirectional interaction provides a mechanistic basis for understanding how altered motor
+                           demands and network states may accelerate dopaminergic degeneration in Parkinson’s disease.
+
+
+
+
+                           Figure 4. Schematic representation of bidirectional signaling between the SNc and striatum.
+                           Dopamine release, reuptake, and degradation regulate corticostriatal plasticity and BG output [50].
+                           VSNC , the voltage membrane of SNc neuron; JmCa , the calcium flux of SNc neuron as a function of
+                           VSNC ; Vsynt , the dopamine synthesis flux as a function of calcium; Prel , the probability release of
+                           dopamine extracellularly as a function of calcium. The dotted lines represent the outputs of each cell
+                           combined to produce the extracellular dopamine.
+
+
+
+
+                                                                                         https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                             12 of 23
+
+
+
+                           2.3.4. Pharmacological Interventions and Levodopa (L-DOPA) Therapy
+                                While previous subsections focused on cellular and biophysical modeling of SNc de-
+                           generation and its impact on dopamine signaling (Figures 3 and 4), these frameworks can
+                           be extended to incorporate therapeutic interventions. Pharmacokinetic–pharmacodynamic
+                           models provide a quantitative tool to simulate L-DOPA therapy, the clinical gold standard
+                           for Parkinson’s disease. Pharmacokinetic models describe L-DOPA absorption, distri-
+                           bution, metabolism, and clearance, while pharmacodynamic models capture its effects
+                           on dopamine synthesis, vesicular storage, release, and receptor activation at synaptic
+                           terminals [55,61–63].
+                                Figure 5 presents a block diagram of a pharmacokinetic–pharmacodynamic model
+                           that can be integrated with cellular degeneration frameworks to capture therapeutic effects
+                           quantitatively. This integrated approach enables the simulation of how L-DOPA affects
+                           dopamine dynamics, network activity, and motor behavior over time. It also allows
+                           the investigation of motor fluctuations, long-term outcomes, and personalized treatment
+                           strategies, providing a mechanistic and predictive tool for clinical translation [55,63].
+
+
+
+
+                           Figure 5. Block diagram representing the pharmacological model of L-DOPA administration [50].
+
+                                Extending cellular-level models in this way not only captures the mechanisms un-
+                           derlying progressive dopaminergic degeneration but also allows for the evaluation of
+                           how pharmacological interventions interact with residual neural circuits. When combined
+                           with behavioral and circuit-level models, pharmacokinetic–pharmacodynamic frameworks
+                           form a critical component of multiscale computational approaches to Parkinson’s disease,
+                           linking molecular pathology, neuronal vulnerability, network dysfunction, and therapeutic
+                           modulation. This integrated perspective naturally sets the stage for multiscale modeling, in
+                           which the cellular, circuit, and behavioral levels are unified to capture disease progression
+                           and response to treatment.
+
+                           2.3.5. Multiscale Approaches to PD Pathophysiology
+                                By linking cellular degeneration mechanisms to larger circuit-level models of BG cir-
+                           cuitry, cellular models of dopaminergic loss enhance our understanding of how dopamine
+
+
+                                                                                     https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                            13 of 23
+
+
+
+                           depletion affects network dynamics at the level of individual neurons and populations.
+                           These models provide a mechanistic framework for studying molecular pathology, neuronal
+                           vulnerability, and system-level dysfunction, forming a critical component of multiscale
+                           computational approaches to PD. The combination of biophysically grounded cellular
+                           models with network-level simulations enables the personalized modeling of PD pathology
+                           and offers important insights into the mechanisms that drive disease progression and
+                           therapeutic responses.
+                                Although cellular and molecular models of dopaminergic degeneration have primarily
+                           been evaluated in the context of limb motor behaviors, their implications naturally extend
+                           to oculomotor control through shared dopaminergic and basal ganglia gating mechanisms.
+                           Progressive calcium dysregulation, mitochondrial stress, and impaired dopamine synthesis
+                           in SNc neurons are expected to reduce striatal dopamine availability, thereby altering
+                           cortico–basal ganglia decision thresholds and inhibitory control. At the behavioral level,
+                           such changes would be expected to manifest as increased saccade latency, elevated antisac-
+                           cade error rates, and reduced smooth pursuit gain—phenotypes commonly observed in
+                           Parkinson’s disease.
+                                Importantly, direct empirical and computational mappings between molecular pathol-
+                           ogy and eye movement deficits remain limited, and this represents a critical direction for
+                           future work. Establishing predictive links across scales will require longitudinal validation
+                           and well-constrained priors, particularly as disease progression and therapeutic interven-
+                           tions unfold over time. In this context, eye movement measures provide highly quantifiable,
+                           low-dimensional behavioral outputs that are well suited to anchoring multiscale models
+                           and testing how molecular and biophysical processes of neurodegeneration translate into
+                           circuit dysfunction and observable behavior. Linking these measures with cellular and
+                           therapeutic models offers a promising pathway toward the development of more predictive
+                           and translational computational frameworks.
+
+                           3. Translational and Clinical Applications
+                                Beyond mechanistic understanding, computational and mathematical models are
+                           increasingly shaping therapeutic development and clinical decision-making in PD. By
+                           integrating biological data across scales, these models support rational drug design, indi-
+                           vidualized treatment strategies, and the optimization of neuromodulatory interventions.
+                           Importantly, modeling enables in silico experimentation that complements and, in some
+                           cases, precedes costly and time-consuming clinical trials.
+
+                           3.1. Drug Discovery and Personalized Medicine
+                                Mathematical modeling has become an integral component of modern drug discovery
+                           pipelines. Systems biology approaches integrate genomic, transcriptomic, proteomic, and
+                           metabolic data to identify dysregulated pathways and prioritize therapeutic targets. In PD,
+                           such models have been used to investigate pathways related to mitochondrial dysfunction,
+                           oxidative stress, α-synuclein aggregation, and calcium-dependent neurotoxicity, offering
+                           insights into potential disease-modifying strategies.
+                                Pharmacokinetic and pharmacodynamic modeling is particularly impactful in PD,
+                           where L-DOPA therapy must balance symptomatic relief against motor complications such
+                           as dyskinesia and wearing-off effects. Pharmacokinetic and pharmacodynamic frameworks
+                           quantitatively link dosing regimens to synaptic dopamine levels and motor outcomes,
+                           enabling the systematic exploration of therapeutic windows. Individualized parameter
+                           estimation using patient-specific data represents a practical step toward personalized
+                           medicine, allowing dose schedules to be optimized based on disease stage, metabolic
+                           differences, and treatment history.
+
+
+
+                                                                                    https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                            14 of 23
+
+
+
+                                More broadly, model-based approaches offer a means to predict treatment failure,
+                           identify responder subgroups, and optimize combination therapies. While most progress
+                           has been made in PD, similar strategies are increasingly being explored in other neurode-
+                           generative disorders, highlighting the generalizability of computational medicine.
+
+                           3.2. DBS and Neuromodulation
+                                DBS is one of the most successful surgical therapies for PD and represents a paradig-
+                           matic example of computationally informed intervention. Circuit-level models of the
+                           BG–thalamocortical network have demonstrated that high-frequency stimulation alleviates
+                           motor symptoms by disrupting pathological synchrony and beta-band oscillations, rather
+                           than simply suppressing neural activity [45,46].
+                                Patient-specific DBS models now enable simulation of electrode placement, stimulation
+                           amplitude, pulse width, and frequency prior to surgery. By modeling current spread
+                           and network-level effects, these tools provide a mechanistic insight into how stimulation
+                           parameters influence both therapeutic efficacy and side-effect profiles. Such approaches
+                           are increasingly used to guide surgical planning and postoperative parameter tuning.
+                                Increasing evidence further indicates that the clinical effects of DBS depend on the
+                           specific axonal pathways engaged by stimulation rather than on local neuronal inhibition
+                           alone. For example, recent work has shown that vestibular motion perception in PD patients
+                           correlates with the white matter tracts activated by STN DBS, highlighting the importance
+                           of pathway-specific stimulation effects and individual anatomical variability [64–67]. These
+                           findings reinforce the need for connectivity-aware, patient-specific computational models
+                           to predict stimulation spread and network-level outcomes.
+                                In addition to motor outcomes, eye movement behavior has emerged as a sensitive
+                           functional readout of the effects of DBS on BG and brainstem circuitry. Because eye move-
+                           ments rely on well-defined cortico–BG–brainstem circuits and exhibit rapid, quantifiable
+                           dynamics, they provide an ideal behavioral domain for testing RL and decision-making
+                           models in Parkinson’s disease. STN DBS has been shown to modulate saccade latency,
+                           velocity, and inhibitory control in antisaccade tasks, reflecting alterations in oculomotor
+                           decision thresholds and action suppression mechanisms. These effects highlight the in-
+                           volvement of BG outputs to the superior colliculus (SC) and frontal eye field (FEF) circuits,
+                           which overlap with pathways implicated in motor and cognitive control. Computational
+                           modeling of DBS-induced changes in oculomotor behavior therefore provides a tractable
+                           framework for linking stimulation parameters, pathway engagement, and behavioral out-
+                           comes, and suggests that eye movement metrics may serve as valuable biomarkers for
+                           optimizing stimulation settings [29,30,64–67].
+                                A major frontier in DBS research is the development of adaptive or closed-loop stim-
+                           ulation systems. In these paradigms, stimulation parameters are dynamically adjusted
+                           based on real-time neural biomarkers, such as beta-band power or phase-locked activity.
+                           Designing such feedback-driven neuromodulation strategies would be nearly impossible
+                           without computational frameworks that link neural signals to behavioral outcomes and
+                           control policies. Modeling thus plays a central role in advancing DBS from an open-loop
+                           intervention to a precise, responsive therapy.
+
+                           3.3. Biomarkers and Early Diagnosis
+                                One of the most promising applications of computational modeling lies in biomarker
+                           discovery and early diagnosis. Model-based analyses of motor behavior have demonstrated
+                           that kinematic features such as gait variability, turning dynamics, and obstacle negotiation
+                           can reveal disease-related impairments not captured by traditional clinical scales. Compu-
+                           tational studies of gait in constrained environments, such as navigating narrow doorways,
+
+
+
+                                                                                    https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                              15 of 23
+
+
+
+                           illustrate how task-specific motor deficits emerge from altered BG dynamics [68]. Simi-
+                           larly, experimental modeling approaches have been proposed to improve the assessment
+                           of Parkinsonian motor symptoms by linking observed behavior to latent computational
+                           variables governing action selection and vigor.
+                                 Machine learning and hybrid mechanistic–statistical models integrate multimodal
+                           data—including neuroimaging, electrophysiology, kinematics, speech, handwriting, and
+                           gait—to identify subtle disease signatures that precede overt motor symptoms [69,70].
+                           Among these modalities, eye movement behavior offers a uniquely sensitive and mechanis-
+                           tically interpretable window into BG dysfunction in Parkinson’s disease.
+                                 Eye movements are rapid, highly stereotyped, and supported by well-characterized
+                           cortico–BG–brainstem circuits, making them particularly amenable to quantitative analysis
+                           and computational modeling [4,29]. Patients with PD exhibit robust and reproducible
+                           oculomotor abnormalities, including increased saccade latency, reduced saccade velocity,
+                           hypometric saccades, impaired smooth pursuit gain, and deficits in antisaccade perfor-
+                           mance [30,71]. These features reflect impairments in action initiation, inhibitory control, and
+                           reward-dependent decision thresholds—core computational processes directly modulated
+                           by dopamine [12,72]. Importantly, several oculomotor measures show sensitivity to early
+                           or prodromal disease stages and demonstrate responsiveness to dopaminergic medication
+                           and DBS, highlighting their potential utility as both diagnostic and treatment-monitoring
+                           biomarkers [73,74].
+                                 Although eye movement abnormalities provide a mechanistically grounded source
+                           of quantitative biomarkers, most oculomotor measures should currently be regarded as
+                           research-stage candidate markers rather than clinically validated diagnostic tools. Their
+                           primary value lies in their sensitivity to BG dysfunction and their interpretability within
+                           computational frameworks, where they can serve as quantitative phenotypes for model
+                           validation and hypothesis testing. Their translation to routine clinical use will require large-
+                           scale longitudinal validation, assessment of disease-stage sensitivity, and demonstration of
+                           added value beyond existing clinical scales.
+                                 Computational models provide a principled framework for linking these observable
+                           eye movement features to latent neural and algorithmic variables, such as RPE/dopamine
+                           equivalent clamp/limit values, decision thresholds, exploration parameter, and BG path-
+                           way balance [75,76]. For example, increased saccade latency and antisaccade error rates
+                           can be interpreted as shifts in action selection thresholds under dopaminergic depletion,
+                           while abnormalities in smooth pursuit dynamics may reflect altered sensory prediction
+                           and feedback integration [31,32]. By grounding eye movement biomarkers in mechanistic
+                           models, it becomes possible to distinguish disease-related changes from compensatory
+                           strategies and inter-individual variability, thereby strengthening their interpretability and
+                           translational relevance. Table 2 summarizes commonly studied eye movement biomarkers
+                           in Parkinson’s disease, their underlying neural and computational interpretations, and
+                           their relevance for early diagnosis, disease progression, and therapeutic monitoring.
+                                 Longitudinal modeling further enables the tracking of disease progression and differ-
+                           entiation between phenotypic subtypes. The long-term vision is a unified digital biomarker
+                           ecosystem in which disease risk, progression, and treatment response can be monitored
+                           continuously and noninvasively, transforming both clinical practice and clinical trials.
+
+
+
+
+                                                                                      https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                                            16 of 23
+
+
+
+                                    Table 2. Eye movement-based biomarkers in PD [4,12,29,30,71,72,77–83].
+
+                                                                                                                        Sensitivity to
+    Eye Movement              PD-Related           Computational
+                                                                        Neural Substrate       Clinical Relevance          Disease
+       Measure                Alteration           Interpretation
+                                                                                                                       Stage/Treatment
+                                                                                                                       Increases with
+                           Increased (mild for    Elevated decision                                                        disease
+                                                                             BG to SC          Candidate marker
+                             visually guided            thresh-                                                         progression;
+                                                                        disinhibition (tonic     of processing
+   Saccade latency            and strong for      old/stronger tonic                                                     reduced by
+                                                                        SNr/GPi), cortical     speed/executive
+                                voluntary         inhibition, weaker                                                   dopaminergic
+                                                                         drive (FEF/LIP)              load
+                                saccades)            cortical drive                                                    medication and
+                                                                                                                          STN DBS
+                                                                                                                       Sensitive to early
+                                                  Weaker inhibitory                            Candidate Marker            cognitive
+                                                                        Top-down control
+    Antisaccade                                         control                                  for inhibitory          involvement.
+                           Increased direction                           (DLPFC/FEF) +
+ performance (error                               (NoGo/indirect                                  control and           Modulated by
+                            errors and latency                           BG gating + SC
+  rate and latency)                               efficacy), weaker                                executive            dopaminergic
+                                                                           suppression
+                                                     hyper direct                                 dysfunction           medication and
+                                                                                                                              DBS
+                                                                        BG-SC selection +
+                                                                                                                        Present early;
+                                                                         brainstem burst
+                                                    Deficient gain                                                         partially
+                               Reduced.                                     generator;         Candidate marker
+     Saccade gain                                   control. (SC to                                                     responsive to
+                           Hypometria/multi-                                cerebellar          for oculomotor
+     (hypometria)                                    displacement                                                        medication;
+                            step corrections                               calibration           bradykinesia
+                                                       mapping)                                                        variably affected
+                                                                          contributes to
+                                                                                                                            by DBS
+                                                                            accuracy
+                                                                         Brainstem burst         Best used for
+                           Often near-normal       Reduced burst                                                      Often preserved in
+         Peak                                                           generator + Omni          differential
+                            in idiopathic PD;          drive or                                                         idiopathic PD;
+    velocity/main                                                        pause; SC drive;        diagnosis and
+                           some cohorts show       delayed/partial                                                    reduced in atypical
+      sequence                                                          BG influences via         mechanistic
+                                reductions          disinhibition                                                        Parkinsonism
+                                                                            SC release           phenotyping
+                                                                                                    Promising           Impaired early;
+                                                   Altered sensory
+                             Reduced gain,                                                       research-stage         improves with
+   Smooth pursuit                                   prediction &         Cortico–pontine–
+                             more catch-up                                                         marker for             medication;
+       gain                                           feedback           cerebellar circuit
+                               saccades                                                           sensorimotor        sensitive to disease
+                                                     integration
+                                                                                                   integration              severity
+                                                  Higher oculomotor                            Emerging research       Sensitivity under
+    Fixation stabil-       Altered/Increased         noise/weaker          SC + cortical        stage biomarkers,        investigation;
+  ity/microsaccades        fixation instability    fixation attractor   attention networks     not yet established    altered by DBS and
+                                                        stability                              as clinical standard     attentional state
+
+
+                                    4. Challenges and Future Directions
+                                         Despite substantial progress, important limitations continue to constrain the predictive
+                                    power and clinical translation of computational models of PD. Rigorous validation against
+                                    longitudinal, multimodal datasets and evaluation across independent cohorts remain es-
+                                    sential for assessing the generalizability and reproducibility of model-derived predictions.
+                                    While many models provide compelling mechanistic explanations, their quantitative val-
+                                    idation and generalizability remain uneven across domains. Parameter uncertainty and
+                                    inter-individual variability constrain predictive accuracy, particularly when models are
+                                    applied beyond the conditions under which they were developed.
+                                         At the circuit level, STN–GPe models successfully reproduce qualitative features of
+                                    pathological beta-band activity, including the relevant frequency range, burst-like dynamics,
+                                    and sensitivity to dopaminergic state or stimulation. However, quantitative agreement with
+                                    patient local field potential recordings—such as beta power distributions, burst durations,
+                                    and inter-individual variability—varies across cohorts and experimental conditions. While
+                                    a small number of studies explicitly distinguish lower and higher beta sub-bands, as well
+
+
+
+                                                                                                   https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                            17 of 23
+
+
+
+                           as interactions with theta, alpha, or gamma activity, systematic quantitative validation
+                           against large patient datasets remains limited. As a result, current validation is primarily
+                           qualitative rather than fully quantitative, limiting the ability of these models to generate
+                           precise patient-specific predictions.
+                                 At the behavioral level, reinforcement learning-based models capture group-level ef-
+                           fects of dopaminergic medication on learning asymmetries, action selection, and movement
+                           vigor. Nonetheless, predictive accuracy at the level of individual patients remains limited
+                           due to parameter uncertainty, task dependence, and heterogeneity in disease phenotype.
+                           Although medication effects and response curves can be qualitatively reproduced by tuning
+                           model parameters, current studies do not establish longitudinal, patient-specific mappings
+                           between empirical response trajectories and inferred model parameters. Consequently, RL
+                           models currently serve best as explanatory and hypothesis-generating frameworks rather
+                           than individualized predictors of treatment response.
+                                 Pharmacokinetic and pharmacodynamic models of levodopa therapy provide valu-
+                           able quantitative descriptions of dopamine synthesis, release, and receptor activation,
+                           but rely on simplifying assumptions that limit their clinical applicability. Many models
+                           assume time-invariant pharmacokinetic parameters, homogeneous residual dopamin-
+                           ergic terminals, and a single smooth effect-site dopamine signal driving motor output.
+                           These assumptions neglect clinically important sources of variability, including disease
+                           progression, repeated dosing effects, non-dopaminergic deficits, task-dependent motor
+                           demands, and real-world pharmacokinetic fluctuations arising from gastric emptying,
+                           dietary amino acid competition, and gastrointestinal dysfunction. Addressing these lim-
+                           itations will be essential for improving the translational utility of pharmacokinetic and
+                           pharmacodynamic simulations.
+                                 In this context, eye movement measurements offer a promising complementary data
+                           source for model validation and parameter constraint. Oculomotor behaviors such as
+                           saccade latency, antisaccade error rates, and smooth pursuit gain can be measured with
+                           high temporal precision, minimal task demands, and strong cross-site reproducibility. These
+                           properties make eye movements particularly well suited to the longitudinal validation
+                           of computational models and to constraining individual-level parameters across disease
+                           stages and treatment conditions.
+                                 More broadly, a key challenge lies in bridging mechanistic and data-driven approaches.
+                           Many biologically grounded models and machine learning frameworks currently exist
+                           in isolation. Developing transparent hybrid models that combine interpretability with
+                           predictive performance will require standardized data formats, open benchmarking efforts,
+                           and rigorous validation against longitudinal multimodal clinical datasets.
+                                 Translation into clinical practice remains another major hurdle. Computational insights
+                           often fail to influence treatment decisions because models are not embedded within clinical
+                           workflows, lack regulatory alignment, or do not produce outputs that are actionable
+                           for clinicians. Addressing these barriers will require sustained collaboration between
+                           computational scientists, experimentalists, clinicians, and regulatory bodies.
+                                 Key future directions for computational modeling in PD include:
+                           •   Development of digital twins that integrate multimodal patient data, including eye-
+                               tracking metrics (saccade latency, antisaccade error rates, smooth pursuit gain), lo-
+                               cal field potentials, structural and diffusion MRI, postoperative CT imaging, and
+                               pharmacokinetic profiles, within Bayesian or hierarchical modeling frameworks for
+                               individualized parameter inference and disease tracking. Neuroimaging data are used
+                               to constrain model structure and prior distributions, including network topology, cou-
+                               pling strengths, dopaminergic integrity, and stimulation geometry, thereby enabling
+                               individualized parameter inference rather than serving as direct behavioral predictors.
+
+
+
+                                                                                    https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                             18 of 23
+
+
+
+                                Within this framework, computational models comprise latent parameters such as
+                                learning rates, dopamine gain, exploration–exploitation balance, decision thresholds,
+                                coupling gains, time constants, and bias terms, which can be systematically tuned to
+                                derive behavioral metrics.
+                           •    Integration of eye-movement-based digital biomarkers into multiscale computational
+                                models to provide non-invasive, high-temporal-resolution readouts of BG function,
+                                decision-making dynamics, and disease progression, and to constrain latent model
+                                parameters at the individual level.
+                                 For example, diffusion MRI-derived connectivity constrains priors over BG–
+                           thalamocortical coupling parameters, postoperative CT imaging defines stimulation vol-
+                           umes used to parameterize electric-field models affecting STN neuronal populations, and
+                           local field potential beta-band features inform likelihood functions or optimization targets
+                           over synaptic gain and time-constant parameters.
+                                 In practice, parameter inference within such digital twin and multiscale model-
+                           ing frameworks is achieved using a range of complementary strategies. Depending on
+                           data availability and model complexity, latent parameters may be estimated through
+                           optimization-based fitting, iterative trial-and-error tuning, simulation-based approaches,
+                           or data-driven methods such as neural networks and multilayer perceptron, in addition
+                           to Bayesian or likelihood-free inference. These approaches typically minimize discrepan-
+                           cies between simulated outputs and observed behavioral, electrophysiological, or clinical
+                           measurements, rather than computing closed-form posterior distributions.
+                                 Accordingly, future computational models of PD should be explicitly designed to sup-
+                           port rigorous longitudinal validation. In this context, longitudinal validation refers to eval-
+                           uating whether model parameters inferred at one time point reliably predict within-subject
+                           behavioral, electrophysiological, or clinical changes at subsequent measurements. This
+                           includes assessing parameter stability when physiological states are unchanged, system-
+                           atic parameter drift with disease progression, and sensitivity to therapeutic interventions
+                           such as dopaminergic medication or DBS. Crucially, longitudinal validation emphasizes
+                           temporal prediction rather than repeated cross-sectional fitting, thereby distinguishing
+                           true disease-related dynamics from noise or overfitting. This concept is distinct from
+                           generalizability across cohorts and reproducibility of inference pipelines, which address
+                           population-level transfer and methodological robustness, respectively.
+                           •    Advancement of closed-loop DBS systems guided by biomarker signals beyond mean
+                                beta power, including beta burst duration, phase–amplitude coupling, gamma-band
+                                activity, oculomotor reaction times, antisaccade performance, and fixation stability.
+                                Recent adaptive DBS studies employing multi-site BG recordings and real-time control
+                                strategies demonstrate the feasibility and therapeutic promise of such approaches [84,85].
+                           •    Additional spectral features, such as relative band power and cross-frequency interac-
+                                tions, may further enrich control signals, although their clinical relevance remains to
+                                be established through systematic validation.
+                           •    The development of hybrid mechanistic–data-driven models that combine biologically
+                                grounded BG circuit dynamics with machine learning components to improve the
+                                prediction of individual treatment response while retaining interpretability.
+                           •    The generation of large-scale, interoperable computational platforms enabling
+                                longitudinal validation, cross-cohort reproducibility, and clinical translation of
+                                model-derived biomarkers.
+
+                           5. Conclusions
+                               Neurodegenerative diseases such as PD represent one of the most enduring challenges
+                           in modern medicine, arising not from isolated failures but from progressive dysfunction
+
+
+                                                                                     https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                                     19 of 23
+
+
+
+                           across interacting molecular, cellular, circuit, and behavioral systems. Mathematical and
+                           computational modeling is uniquely positioned to confront this complexity by integrating
+                           diverse biological processes into coherent, quantitative frameworks capable of linking
+                           mechanism to behavior.
+                                This review has synthesized computational models of PD spanning behavioral, circuit,
+                           and cellular levels, highlighting how mechanistic approaches can bridge dopaminergic
+                           pathology, BG dynamics, and observable motor and cognitive phenotypes. Rather than
+                           advocating for a single unifying model, we emphasize how complementary modeling
+                           frameworks capture distinct facets of disease pathophysiology and together advance
+                           mechanistic understanding.
+                                As discussed in the challenges and future directions, a central frontier for the field lies
+                           in enhancing the predictive power of computational models through rigorous longitudinal
+                           validation. Models must not only reproduce cross-sectional effects but also demonstrate
+                           stability, sensitivity, and temporal predictive accuracy within individuals across disease
+                           progression and therapeutic interventions. Achieving this goal requires well-constrained
+                           priors informed by biologically grounded and quantitatively reliable data sources.
+                                Within this multiscale framework, eye movement behavior exemplifies how tightly
+                           controlled, high-temporal-resolution behavioral assays can serve as scalable, non-invasive
+                           readouts of BG function and decision-making dynamics. When integrated into com-
+                           putational models, such measures offer a powerful means to constrain individual-level
+                           parameters and to link neural dynamics with clinically relevant outcomes over time.
+                                Ultimately, the goal of computational modeling in PD is translational: to support
+                           biomarker discovery, therapy optimization, and personalized clinical decision-making.
+                           What began as abstract theoretical neuroscience has matured into a discipline with growing
+                           clinical relevance. As data availability, computational methods, and interdisciplinary
+                           collaboration continue to expand, computational models are poised to function not merely
+                           as explanatory tools but as predictive engines guiding precision interventions. In this
+                           vision, modeling is no longer ancillary to experimentation—it becomes an equal partner in
+                           the effort to understand, monitor, and treat Parkinson’s disease.
+
+                           Author Contributions: Conceptualization, S.S.N., A.G., S.C. and A.G.S.; writing—original draft
+                           preparation, S.S.N.; writing—review and editing, S.S.N., A.G., S.C. and A.G.S. All authors have read
+                           and agreed to the published version of the manuscript.
+
+                           Funding: This research is funded by grants from US Department of Veterans Affairs Merit Review 5
+                           I01 CX002086-03 (Shaikh), The American Academy of Neurology (Shaikh), American Parkinson’s
+                           Disease Association George C Cotzias Memorial Fellowship (Shaikh), Dystonia Medical Research
+                           Foundation Research (Shaikh), and philanthropic funds to the Department of Neurology at University
+                           Hospitals (The Allan Woll Fund and The Fox Fund). Shaikh also has Penni and Steven Weinberg
+                           Chair in Brain Health. The research was supported by American Academy of Neurology Career
+                           Award, George C Cotzias Memorial Fellowship and Department of VA I01 CX002086.
+
+                           Data Availability Statement: No new data were created or analyzed in this study.
+
+                           Conflicts of Interest: The authors declare no conflicts of interest. The funders had no role in the design
+                           of the study; in the collection, analyses, or interpretation of data; in the writing of the manuscript; or
+                           in the decision to publish the results.
+
+
+
+
+                                                                                            https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                                                20 of 23
+
+
+
+                                   Abbreviations
+                                   The following abbreviations are used in this manuscript:
+
+                                    PD          Parkinson’s Disease
+                                    SNc         Substantia Nigra pars Compacta
+                                    BG          Basal Ganglia
+                                    RL          Reinforcement Learning
+                                    STN         Subthalamic Nucleus
+                                    GPe         Globus pallidus externa
+                                    DBS         Deep Brain Stimulation
+                                    RPE         Reward Prediction Error
+                                    GEN         Go-Explore-NoGo
+                                    VTA         Ventral Tegmental Area
+                                    ROS         Reactive Oxygen Species
+                                    L-DOPA      Levodopa
+                                    FEF         Frontal Eye Field
+                                    LIP         Lateral Intraparietal Area
+                                    DLPFC       Dorsolateral prefrontal cortex
+                                    SC          Superior Colliculus
+
+References
+1.    Jankovic, J. Parkinson’s disease: Clinical features and diagnosis. J. Neurol. Neurosurg. Psychiatry 2008, 79, 368–376. [CrossRef]
+      [PubMed]
+2.    Dexter, D.T.; Jenner, P. Parkinson disease: From pathology to molecular disease mechanisms. Free. Radic. Biol. Med. 2013, 62,
+      132–144. [CrossRef] [PubMed]
+3.    Yu, Y.; Wang, X.; Wang, Q.; Wang, Q. A review of computational modeling and deep brain stimulation: Applications to Parkinson’s
+      disease. Appl. Math. Mech. 2020, 41, 1747–1768. [CrossRef]
+4.    Hikosaka, O.; Takikawa, Y.; Kawagoe, R. Role of the basal ganglia in the control of purposive saccadic eye movements. Physiol.
+      Rev. 2000, 80, 953–978. [CrossRef]
+5.    Sieger, T.; Bonnet, C.; Serranová, T.; Wild, J.; Novák, D.; Růžička, F.; Urgošík, D.; Růžička, E.; Gaymard, B.; Jech, R. Basal ganglia
+      neuronal activity during scanning eye movements in Parkinson’s disease. PLoS ONE 2013, 8, e78581. [CrossRef]
+6.    Pinkhardt, E.H.; Jürgens, R.; Lulé, D.; Heimrath, J.; Ludolph, A.C.; Becker, W.; Kassubek, J. Eye movement impairments in
+      Parkinson’s disease: Possible role of extradopaminergic mechanisms. BMC Neurol. 2012, 12, 5. [CrossRef]
+7.    Mazzoni, P.; Hristova, A.; Krakauer, J.W. Why don’t we move faster? Parkinson’s disease, movement vigor, and implicit
+      motivation. J. Neurosci. 2007, 27, 7105–7116. [CrossRef]
+8.    Dayan, P.; Niv, Y. Reinforcement learning: The good, the bad and the ugly. Curr. Opin. Neurobiol. 2008, 18, 185–196. [CrossRef]
+9.    Montague, P.; Dayan, P.; Sejnowski, T. A framework for mesencephalic dopamine systems based on predictive Hebbian learning.
+      J. Neurosci. 1996, 16, 1936–1947. [CrossRef]
+10.   Schultz, W.; Dayan, P.; Montague, P.R. A neural substrate of prediction and reward. Science 1997, 275, 1593–1599. [CrossRef]
+      [PubMed]
+11.   Joel, D.; Niv, Y.; Ruppin, E. Actor-critic models of the basal ganglia: New anatomical and computational perspectives. Neural
+      Networks 2002, 15, 535–547. [CrossRef] [PubMed]
+12.   Frank, M.J.; Seeberger, L.C.; O’reilly, R.C. By carrot or by stick: Cognitive reinforcement learning in Parkinsonism. Science 2004,
+      306, 1940–1943. [CrossRef] [PubMed]
+13.   Frank, M.J. Dynamic dopamine modulation in the basal ganglia: A neurocomputational account of cognitive deficits in medicated
+      and nonmedicated Parkinsonism. Cogn. Neurosci. 2005, 17, 51–72. [CrossRef] [PubMed]
+14.   Mink, J.W. The basal ganglia: Focused selection and inhibition of competing motor programs. Prog. Neurobiol. 1996, 50, 381–425.
+      [CrossRef]
+15.   Niv, Y.; Daw, N.D.; Joel, D.; Dayan, P. Tonic dopamine: Opportunity costs and the control of response vigor. Psychopharmacology
+      2007, 191, 507–520. [CrossRef]
+16.   Rigoux, L.; Guigon, E. A Model of Reward- and Effort-Based Optimal Decision Making and Motor Control. PLoS Comput. Biol.
+      2012, 8, e1002716. [CrossRef]
+17.   Todorov, E.; Jordan, M.I. Optimal feedback control as a theory of motor coordination. Nat. Neurosci. 2002, 5, 1226–1235. [CrossRef]
+18.   Doya, K. Reinforcement learning in continuous time and space. Neural Comput. 2000, 12, 219–245. [CrossRef]
+
+
+
+                                                                                                      https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                                               21 of 23
+
+
+
+19.   Doya, K. Reinforcement learning: Computational theory and biological mechanisms. HFSP J. 2007, 1, 30–40. [CrossRef]
+20.   Shadmehr, R.; Mussa-Ivaldi, F. Adaptive representation of dynamics during learning of a motor task. J. Neurosci. 1994, 14,
+      3208–3224. [CrossRef]
+21.   Barto, A.G.; Sutton, R.S.; Anderson, C.W. Neuronlike Adaptive Elements That Can Solve Difficult Learning Control Problems.
+      IEEE Trans. Syst. Man Cybern. 1983, SMC-13, 834–846. [CrossRef]
+22.   Chakravarthy, V.S.; Moustafa, A.A. Computational Neuroscience Models of the Basal Ganglia. In Movement Disorders: Official
+      Journal of the Movement Disorder Society; Springer: Singapore, 2018; Volume 15. [CrossRef]
+23.   Sridharan, D.; Prashanth, P.S.; Chakravarthy, V.S. The role of the basal ganglia in exploration in A neural model based on
+      reinforcement learning. Int. J. Neural Syst. 2006, 16, 111–124. [CrossRef] [PubMed]
+24.   E Alexander, G.; DeLong, M.R.; Strick, P.L. Parallel organization of functionally segregated circuits linking basal ganglia and
+      cortex. Annu. Rev. Neurosci. 1986, 9, 357–381. [CrossRef] [PubMed]
+25.   Vigneswaran, C.; Nair, S.S.; Chakravarthy, V.S. A Basal Ganglia model for understanding working memory functions in healthy
+      and Parkinson’s conditions. Cogn. Neurodynamics 2024, 18, 1913–1929. [CrossRef] [PubMed]
+26.   Mandali, A.; Chakravarthy, V.S.; Rajan, R.; Sarma, S.; Kishore, A. Electrode position and current amplitude modulate impulsivity
+      after subthalamic stimulation in Parkinsons disease-A computational study. Front. Physiol. 2016, 7, 585. [CrossRef]
+27.   Nair, S.S.; Muddapu, V.R.; Vigneswaran, C.; Balasubramani, P.P.; Ramanathan, D.S.; Mishra, J.; Chakravarthy, V.S. A generalized
+      reinforcement learning based deep neural network agent model for diverse cognitive constructs. Sci. Rep. 2023, 13, 1–12.
+      [CrossRef]
+28.   Balasubramani, P.P.; Chakravarthy, V.S.; Ali, M.; Ravindran, B.; Moustafa, A.A. Identifying the basal ganglia network model
+      markers for medication-induced impulsivity in Parkinson’s disease patients. PLoS ONE 2015, 10, e0127542. [CrossRef]
+29.   Leigh, R.J.; Zee, D.S. The Neurology of Eye Movements; Oxford University Press: Oxford, UK, 2015. [CrossRef]
+30.   Antoniades, C.A.; Spering, M. Eye movements in Parkinson’s disease: From neurophysiological mechanisms to diagnostic tools.
+      Trends Neurosci. 2024, 47, 71–83. [CrossRef]
+31.   Wolpert, D.M.; Ghahramani, Z.; Jordan, M.I. An internal model for sensorimotor integration. Science 1995, 269, 1880–1882.
+      [CrossRef]
+32.   Shadmehr, R.; Krakauer, J.W. A computational neuroanatomy for motor control. Exp. Brain Res. 2008, 185, 359–381. [CrossRef]
+33.   Humphries, M.D.; Stewart, R.D.; Gurney, K.N. A physiologically plausible model of action selection and oscillatory activity in the
+      basal ganglia. J. Neurosci. 2006, 26, 12921–12942. [CrossRef] [PubMed]
+34.   Lindahl, M.; Kotaleski, J.H. Untangling basal ganglia network dynamics and function: Role of dopamine depletion and inhibition
+      investigated in a spiking network model. eNeuro 2016, 3, 6. [CrossRef] [PubMed]
+35.   Little, S.; Brown, P. The functional role of beta oscillations in Parkinson’s disease. Park. Relat. Disord. 2014, 20, S44–S48. [CrossRef]
+      [PubMed]
+36.   Khawaldeh, S.; Tinkhauser, G.; Shah, S.A.; Peterman, K.; Debove, I.; Nguyen, T.A.K.; Nowacki, A.; Lachenmayer, M.L.;
+      Schuepbach, M.; Pollo, C.; et al. Subthalamic nucleus activity dynamics and limb movement prediction in Parkinson’s disease.
+      Brain 2020, 143, 582–596. [CrossRef]
+37.   Brittain, J.-S.; Brown, P. Oscillations and the basal ganglia: Motor control and beyond. NeuroImage 2014, 85, 637–647. [CrossRef]
+38.   Sherman, M.A.; Lee, S.; Law, R.; Haegens, S.; Thorn, C.A.; Hämäläinen, M.S.; Moore, C.I.; Jones, S.R. Neural mechanisms of
+      transient neocortical beta rhythms: Converging evidence from humans, computational modeling, monkeys, and mice. Proc. Natl.
+      Acad. Sci. USA 2016, 113, E4885–E4894. [CrossRef]
+39.   van Wijk, B.C.M.; Beek, P.J.; Daffertshofer, A. Neural synchrony within the motor system: What have we learned so far? Front.
+      Hum. Neurosci. 2016, 10, 345. [CrossRef]
+40.   Brown, P. Abnormal oscillatory synchronisation in the motor system leads to impaired movement. Curr. Opin. Neurobiol. 2007, 17,
+      656–664. [CrossRef]
+41.   McCarthy, M.M.; Moore-Kochlacs, C.; Gu, X.; Boyden, E.S.; Han, X.; Kopell, N. Striatal origin of the pathologic beta oscillations in
+      Parkinson’s disease. Proc. Natl. Acad. Sci. USA 2011, 108, 11620–11625. [CrossRef]
+42.   Gurney, K.; Prescott, T.J.; Redgrave, P. A computational model of action selection in the basal ganglia. I. A new functional anatomy.
+      Biol. Cybern. 2001, 84, 401–410. [CrossRef]
+43.   Izhikevich, E.M. Simple model of spiking neurons. IEEE Trans. Neural Networks 2003, 14, 1569–1572. [CrossRef]
+44.   Holgado, A.J.N.; Terry, J.R.; Bogacz, R. Conditions for the generation of beta oscillations in the subthalamic nucleus-globus
+      pallidus network. J. Neurosci. 2010, 30, 12340–12352. [CrossRef] [PubMed]
+45.   McIntyre, C.C.; Savasta, M.; Goff, L.K.-L.; Vitek, J.L. Uncovering the mechanism(s) of action of deep brain stimulation: Activation,
+      inhibition, or both. Clin. Neurophysiol. 2004, 115, 1239–1248. [CrossRef] [PubMed]
+46.   Rubin, J.E.; Terman, D. High frequency stimulation of the subthalamic nucleus eliminates pathological thalamic rhythmicity in a
+      computational model. J. Comput. Neurosci. 2004, 16, 211–235. [CrossRef] [PubMed]
+
+
+
+
+                                                                                                     https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                                               22 of 23
+
+
+
+47.   Chanu, M.P.; Kumar, G.; Vinjamuri, R.K.; Kakoty, N.M. Computational model for control of hand movement in Parkinson’s
+      disease using deep brain stimulation. Exp. Brain Res. 2025, 243, 1–21. [CrossRef]
+48.   Nair, S.S.; Chakravarthy, S. A Computational Model of Deep Brain Stimulation for Parkinson’s Disease Tremor and Bradykinesia.
+      Brain Sci. 2024, 14, 620. [CrossRef]
+49.   Finkel, T.; Holbrook, N.J. Oxidants, oxidative stress and the biology of ageing. Nature 2000, 408, 239–247. [CrossRef]
+50.   Schapira, A.H.; Jenner, P. Etiology and pathogenesis of Parkinson’s disease. Mov. Disord. 2011, 26, 1049–1055. [CrossRef]
+51.   Muddapu, V.R.; Chakravarthy, V.S. Influence of energy deficiency on the subcellular processes of Substantia Nigra Pars Compacta
+      cell for understanding Parkinsonian neurodegeneration. Sci. Rep. 2021, 11, 1–36. [CrossRef]
+52.   Guo, C.Y.; Sun, L.; Chen, X.P.; Zhang, D.S. Oxidative stress, mitochondrial damage and neurodegenerative diseases. Neural Regen.
+      Res. 2013, 8, 2003–2014. [CrossRef]
+53.   Sulzer, D.; Surmeier, D.J. Neuronal vulnerability, pathogenesis, and Parkinson’s disease. Mov. Disord. 2013, 28, 41–50. [CrossRef]
+      [PubMed]
+54.   Morris, H.R.; Spillantini, M.G.; Sue, C.M.; Williams-Gray, C.H. The pathogenesis of Parkinson’s disease. Lancet 2024, 403, 293–304.
+      [CrossRef] [PubMed]
+55.   Nair, S.S.; Muddapu, V.R.; Chakravarthy, V.S. A Multiscale, Systems-Level, Neuropharmacological Model of Cortico-Basal
+      Ganglia System for Arm Reaching Under Normal, Parkinsonian, and Levodopa Medication Conditions. Front. Comput. Neurosci.
+      2022, 15, 756881. [CrossRef] [PubMed]
+56.   Muddapu, V.R.; Dharshini, S.A.P.; Chakravarthy, V.S.; Gromiha, M.M. Neurodegenerative Diseases—Is Metabolic Deficiency the
+      Root Cause? Front. Neurosci. 2020, 14, 213. [CrossRef]
+57.   Shen, W.; Zhai, S.; Surmeier, D.J. Striatal synaptic adaptations in Parkinson’s disease. Neurobiol. Dis. 2022, 167, 105686. [CrossRef]
+58.   Watabe-Uchida, M.; Zhu, L.; Ogawa, S.K.; Vamanrao, A.; Uchida, N. Whole-Brain Mapping of Direct Inputs to Midbrain
+      Dopamine Neurons. Neuron 2012, 74, 858–873. [CrossRef]
+59.   Leblois, A.; Boraud, T.; Meissner, W.; Bergman, H.; Hansel, D. Competition between feedback loops underlies normal and
+      pathological dynamics in the basal ganglia. J. Neurosci. 2006, 26, 3567–3583. [CrossRef]
+60.   Zhai, S.; Tanimura, A.; Graves, S.M.; Shen, W.; Surmeier, D.J. Striatal synapses, circuits, and Parkinson’s disease. Curr. Opin.
+      Neurobiol. 2018, 48, 9–16. [CrossRef]
+61.   Best, J.A.; Nijhout, H.F.; Reed, M.C. Homeostatic mechanisms in dopamine synthesis and release: A mathematical model. Theor.
+      Biol. Med. Model. 2009, 6, 21. [CrossRef]
+62.   Reed, M.C.; Nijhout, H.F.; Best, J.A. Mathematical insights into the effects of levodopa. Front. Integr. Neurosci. 2012, 6, 21.
+      [CrossRef]
+63.   Baston, C.; Contin, M.; Buonaura, G.C.; Cortelli, P.; Ursino, M. A mathematical model of levodopa medication effect on basal
+      ganglia in parkinson’s disease: An application to the alternate finger tapping task. Front. Hum. Neurosci. 2016, 10, 280. [CrossRef]
+      [PubMed]
+64.   Munoz, M.J.; Goelz, L.C.; Pal, G.D.; Karl, J.A.; Metman, L.V.; Sani, S.; Rosenow, J.M.; Ciolino, J.D.; Kurani, A.S.; Corcos, D.M.; et al.
+      Increased Subthalamic Nucleus Deep Brain Stimulation Amplitude Impairs Inhibitory Control of Eye Movements in Parkinson’s
+      Disease. Neuromodulation 2022, 25, 866–876. [CrossRef] [PubMed]
+65.   Sun, Y.R.; Beylergil, S.B.; Gupta, P.; Ghasia, F.F.; Shaikh, A.G. Monitoring Eye Movement in Patients with Parkinson’s Disease:
+      What Can It Tell Us? Eye Brain 2023, ume 15, 101–112. [CrossRef] [PubMed]
+66.   Gupta, P.; Murray, J.M.; Beylergil, S.B.; Jacobs, J.; Kilbane, C.W.; Shaikh, A.G.; Ghasia, F.F. Objective assessment of eye alignment
+      and disparity-driven vergence in Parkinson’s disease. Front. Aging Neurosci. 2023, 15, 1217765. [CrossRef]
+67.   Beylergil, S.B.; Murray, J.; Noecker, A.M.; Gupta, P.; Kilbane, C.; McIntyre, C.C.; Shaikh, A.G.; Ghasia, F.F. Effects of subthalamic
+      deep brain stimulation on fixational eye movements in Parkinson’s disease. J. Comput. Neurosci. 2021, 49, 345–356. [CrossRef]
+68.   Muralidharan, V.; Balasubramani, P.P.; Chakravarthy, V.S.; Lewis, S.J.G.; Moustafa, A.A. A computational model of altered gait
+      patterns in parkinson’s disease patients negotiating narrow doorways. Front. Comput. Neurosci. 2014, 7, 190. [CrossRef]
+69.   Pratihar, R.; Sankar, R. Advancements in Parkinson’s Disease Diagnosis: A Comprehensive Survey on Biomarker Integration and
+      Machine Learning. Computers 2024, 13, 293. [CrossRef]
+70.   Nair, S.S.; Muddapu, V.R.J.; Sriram, M.; Aditya, R.; Gupta, R.; Chakravarthy, S. Is There a Better Way to Assess Parkinsonian Motor
+      Symptoms?—Experimental and Modelling Approach. In Techniques for Assessment of Parkinsonism for Diagnosis and Rehabilitation;
+      Springer: Singapore, 2022. [CrossRef]
+71.   Terao, Y.; Fukuda, H.; Yugeta, A.; Hikosaka, O.; Nomura, Y.; Segawa, M.; Hanajima, R.; Tsuji, S.; Ugawa, Y. Initiation and
+      inhibitory control of saccades with the progression of Parkinson’s disease—Changes in three major drives converging on the
+      superior colliculus. Neuropsychologia 2011, 49, 1794–1806. [CrossRef]
+72.   Munoz, D.P.; Everling, S. Look away: The anti-saccade task and the voluntary control of eye movement. Nat. Rev. Neurosci. 2004,
+      5, 218–228. [CrossRef]
+
+
+
+
+                                                                                                     https://doi.org/10.3390/brainsci16020175
+Brain Sci. 2026, 16, 175                                                                                                              23 of 23
+
+
+
+73.   MacAskill, M.R.; Anderson, T.J.; Jones, R.D. Adaptive modification of saccade amplitude in Parkinson’s disease. Brain 2002, 125,
+      1570–1582. [CrossRef]
+74.   Temel, Y.; Blokland, A.; Steinbusch, H.W.M.; Visser-Vandewalle, V. The functional role of the subthalamic nucleus in cognitive
+      and limbic circuits. Prog. Neurobiol. 2005, 76, 393–413. [CrossRef] [PubMed]
+75.   Bogacz, R.; Gurney, K. The basal ganglia and cortex implement optimal decision making between alternative actions. Neural
+      Comput. 2007, 19, 442–477. [CrossRef] [PubMed]
+76.   Ratcliff, R.; Frank, M.J. Reinforcement-based decision making in corticostriatal circuits: Mutual constraints by neurocomputational
+      and diffusion models. Neural Comput. 2012, 24, 1186–1229. [CrossRef] [PubMed]
+77.   Michell, A.W.; Xu, Z.; Fritz, D.; Lewis, S.J.G.; Foltynie, T.; Williams-Gray, C.H.; Robbins, T.W.; Carpenter, R.H.S.; Barker, R.A.
+      Saccadic latency distributions in Parkinson’s disease and the effects of L-dopa. Exp. Brain Res. 2006, 174, 7–18. [CrossRef]
+78.   Perneczky, R.; Ghosh, B.C.P.; Hughes, L.; Carpenter, R.H.S.; Barker, R.A.; Rowe, J.B. Saccadic latency in Parkinson’s disease
+      correlates with executive function and brain atrophy, but not motor severity. Neurobiol. Dis. 2011, 43, 79–85. [CrossRef]
+79.   Waldthaler, J.; Stock, L.; Student, J.; Sommerkorn, J.; Dowiasch, S.; Timmermann, L. Antisaccades in Parkinson’s Disease: A
+      Meta-Analysis. Neuropsychol. Rev. 2021, 31, 628–6421. [CrossRef]
+80.   Kitagawa, M.; Fukushima, J.; Tashiro, K. Relationship between antisaccades and the clinical symptoms in Parkinson’s disease.
+      Neurology 1994, 44, 2285. [CrossRef]
+81.   Yu, Y.; Yan, W.; Xu, X.; Zhang, K.; Si, L.; Liu, X.; Wang, J.; Song, J.; Sun, H.; Li, X. Response times for reflexive saccades correlate
+      with cognition in Parkinson’s disease, not disease severity or duration. Front. Neurol. 2022, 13, 945201. [CrossRef]
+82.   Wark, H.A.C.; Garell, P.C.; Walker, A.L.; Basso, M.A. A case report on fixation instability in Parkinson’s disease with bilateral
+      deep brain stimulation implants. J. Neurol. Neurosurg. Psychiatry 2008, 79, 443–447. [CrossRef]
+83.   Frei, K. Abnormalities of smooth pursuit in Parkinson’s disease: A systematic review. Clin. Park. Relat. Disord. 2021, 4, 100085.
+      [CrossRef]
+84.   Schmidt, S.L.; Chowdhury, A.H.; Mitchell, K.T.; Peters, J.J.; Gao, Q.; Lee, H.J.; Genty, K.; Chow, S.-C.; Grill, W.M.; Pajic, M.; et al.
+      At home adaptive dual target deep brain stimulation in Parkinson’s disease with proportional control. Brain 2024, 147, 911–922.
+      [CrossRef]
+85.   Oehrn, C.R.; Cernera, S.; Hammer, L.H.; Shcherbakova, M.; Yao, J.; Hahn, A.; Wang, S.; Ostrem, J.L.; Little, S.; Starr, P.A. Chronic
+      adaptive deep brain stimulation versus conventional stimulation in Parkinson’s disease: A blinded randomized feasibility trial.
+      Nat. Med. 2024, 30, 3345–3356. [CrossRef]
+
+
+Disclaimer/Publisher’s Note: The statements, opinions and data contained in all publications are solely those of the individual
+author(s) and contributor(s) and not of MDPI and/or the editor(s). MDPI and/or the editor(s) disclaim responsibility for any injury to
+people or property resulting from any ideas, methods, instructions or products referred to in the content.
+
+
+
+
+                                                                                                     https://doi.org/10.3390/brainsci16020175
+

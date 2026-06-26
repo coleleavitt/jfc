@@ -258,6 +258,20 @@ pub fn handle_remote_approval_response(
         "remote approval response"
     );
 
+    // CS-JFC-007: one approval response authorizes at most one execution. A
+    // remote client can send two valid frames (distinct sequence numbers) for
+    // the same tool_use_id; the second would otherwise rediscover the still
+    // unresolved tool call and dispatch it again. Reject any repeat.
+    if !state.consumed_remote_approvals.insert(tool_use_id.clone()) {
+        tracing::warn!(
+            target: "jfc::remote",
+            tool_use_id = %tool_use_id,
+            approved,
+            "dropping duplicate remote approval response for an already-decided tool_use"
+        );
+        return;
+    }
+
     if state
         .pending_approval
         .as_ref()
@@ -395,4 +409,85 @@ fn parse_option(o: &serde_json::Value) -> Option<QuestionOption> {
         description,
         preview,
     })
+}
+
+#[cfg(test)]
+mod remote_approval_dedup_tests {
+    use super::*;
+    use crate::types::ToolKind;
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    fn unresolved_bash_tool(id: &str) -> ToolCall {
+        ToolCall::new_pending(
+            id.into(),
+            ToolKind::Bash,
+            ToolInput::Bash {
+                command: "echo hi".into(),
+                timeout: None,
+                workdir: None,
+                run_in_background: None,
+                suppress_output: None,
+            },
+        )
+    }
+
+    // CS-JFC-007: a second remote approval response for an already-consumed
+    // tool_use_id must be dropped, never re-dispatched. We pre-seed the consumed
+    // set so the guard fires before any real dispatch could run a command.
+    #[tokio::test]
+    async fn duplicate_remote_approval_is_dropped() {
+        let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
+        let mut msg = crate::types::ChatMessage::assistant(String::new());
+        msg.parts
+            .push(MessagePart::Tool(Box::new(unresolved_bash_tool("toolu_x"))));
+        state.messages.push(msg);
+
+        // Mark the id as already-consumed (a prior response dispatched it).
+        state
+            .consumed_remote_approvals
+            .insert("toolu_x".to_string());
+
+        let (tx, mut rx) = mpsc::channel(8);
+        handle_remote_approval_response(&mut state, &tx, "toolu_x".into(), true);
+
+        // The duplicate must be a no-op: the tool stays unresolved and no
+        // dispatch/approval event is emitted.
+        assert!(
+            find_unresolved_tool_call(&state, "toolu_x").is_some(),
+            "duplicate approval must not resolve/dispatch the tool"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "duplicate approval must not emit any engine event"
+        );
+    }
+
+    #[tokio::test]
+    async fn first_remote_approval_id_is_recorded_as_consumed() {
+        let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
+        let (tx, _rx) = mpsc::channel(8);
+        // No matching tool → orphaned path returns, but the id is consumed.
+        handle_remote_approval_response(&mut state, &tx, "toolu_y".into(), false);
+        assert!(state.consumed_remote_approvals.contains("toolu_y"));
+    }
 }

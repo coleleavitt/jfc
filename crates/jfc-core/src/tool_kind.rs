@@ -1,5 +1,7 @@
 const SERVER_TOOL_USE_PREFIX: &str = "server_tool_use:";
 const MCP_TOOL_PREFIX: &str = "mcp__";
+const CODEGRAPH_MCP_ALIAS_PREFIX: &str = "codegraph_";
+const CODEGRAPH_MCP_ADVERTISED_PREFIX: &str = "mcp__codegraph__";
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ToolKind {
@@ -188,6 +190,14 @@ impl ToolKind {
 
         if name.starts_with(MCP_TOOL_PREFIX) {
             return Self::Mcp(name.to_owned());
+        }
+
+        if name.starts_with(CODEGRAPH_MCP_ALIAS_PREFIX) {
+            let mut advertised =
+                String::with_capacity(CODEGRAPH_MCP_ADVERTISED_PREFIX.len() + name.len());
+            advertised.push_str(CODEGRAPH_MCP_ADVERTISED_PREFIX);
+            advertised.push_str(name);
+            return Self::Mcp(advertised);
         }
 
         Self::UnknownTool {

@@ -179,31 +179,152 @@ pub async fn poll_for_token(
     }
 }
 
-/// Store a token to `.jfc/credentials.json`.
+/// Store the device-flow token in the user-scoped credential store.
+///
+/// Reusable OAuth bearer/refresh tokens must never be written inside the active
+/// repository: a shared or malicious checkout is an untrusted storage boundary
+/// (CS-JFC-001). If a legacy repo-local `.jfc/credentials.json` exists it is
+/// migrated (deleted) so a poisoned project file cannot shadow the real token.
 pub fn store_token(token: &TokenResponse) -> std::io::Result<()> {
-    let path = credentials_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let json = serde_json::to_string_pretty(token).map_err(std::io::Error::other)?;
-    std::fs::write(&path, json)?;
-    // Restrict permissions on Unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    write_token_file(token, &credentials_path())?;
+    // Migrate away from the legacy repo-local store so stale or attacker-planted
+    // credentials in a checkout cannot be picked up by `load_token`.
+    let legacy = legacy_repo_credentials_path();
+    if legacy.exists() {
+        let _ = std::fs::remove_file(&legacy);
     }
     Ok(())
 }
 
-/// Load a previously stored token from `.jfc/credentials.json`.
+/// Write a token JSON file with `0o600` permissions on Unix. Path is explicit so
+/// the store logic is unit-testable without touching the user config dir.
+fn write_token_file(token: &TokenResponse, path: &std::path::Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(token).map_err(std::io::Error::other)?;
+    std::fs::write(path, json)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+/// Load a previously stored token from the user-scoped store, falling back to a
+/// legacy repo-local `.jfc/credentials.json` only for read-time migration.
 pub fn load_token() -> Option<TokenResponse> {
-    let path = credentials_path();
-    std::fs::read_to_string(path)
+    let user = credentials_path();
+    if let Some(token) = std::fs::read_to_string(&user)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+    {
+        return Some(token);
+    }
+    let legacy = legacy_repo_credentials_path();
+    std::fs::read_to_string(&legacy)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
 }
 
-fn credentials_path() -> PathBuf {
-    PathBuf::from(".jfc/credentials.json")
+/// Remove every device-flow credential store (user-scoped and legacy
+/// repo-local). Returns the paths that were actually removed so `/logout` can
+/// report exactly which credential files it cleared.
+pub fn clear_token() -> Vec<PathBuf> {
+    remove_existing_files(&[credentials_path(), legacy_repo_credentials_path()])
+}
+
+/// Remove each path that exists, returning the ones actually deleted. Path-driven
+/// so the removal logic is unit-testable without touching the real user store.
+fn remove_existing_files(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut removed = Vec::new();
+    for path in paths {
+        if path.exists() && std::fs::remove_file(path).is_ok() {
+            removed.push(path.clone());
+        }
+    }
+    removed
+}
+
+/// User-scoped device-flow credential path: `~/.config/jfc/credentials.json`.
+pub fn credentials_path() -> PathBuf {
+    dirs::config_dir()
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("jfc")
+        .join("credentials.json")
+}
+
+/// Legacy repo-local credential path retained only for migration/cleanup.
+pub fn legacy_repo_credentials_path() -> PathBuf {
+    PathBuf::from(".jfc").join("credentials.json")
+}
+
+#[cfg(test)]
+mod credential_storage_tests {
+    use super::*;
+
+    fn sample_token() -> TokenResponse {
+        TokenResponse {
+            access_token: "secret-access".to_string(),
+            token_type: "Bearer".to_string(),
+            expires_in: Some(3600),
+            refresh_token: Some("secret-refresh".to_string()),
+            scope: None,
+        }
+    }
+
+    // CS-JFC-001: reusable OAuth tokens must land in a user-scoped store, never
+    // in the repo-relative `.jfc/credentials.json` sink.
+    #[test]
+    fn credentials_path_is_user_scoped_not_repo_local_regression() {
+        let user = credentials_path();
+        assert!(
+            user.ends_with("jfc/credentials.json"),
+            "expected user-scoped jfc/credentials.json, got {}",
+            user.display()
+        );
+        assert_ne!(
+            user,
+            PathBuf::from(".jfc/credentials.json"),
+            "device-flow store must not be the repo-local .jfc path"
+        );
+        assert_ne!(user, legacy_repo_credentials_path());
+        // A user-scoped store has more than two path components
+        // (e.g. ~/.config/jfc/credentials.json), unlike the 2-component repo path.
+        assert!(user.components().count() > 2);
+    }
+
+    #[test]
+    fn write_token_file_writes_json_with_locked_permissions_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("jfc").join("credentials.json");
+        write_token_file(&sample_token(), &path).unwrap();
+        let loaded: TokenResponse =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(loaded.access_token, "secret-access");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    // CS-JFC-001/009: clearing must remove every device-flow store including the
+    // legacy repo-local one, and report exactly what it removed.
+    #[test]
+    fn remove_existing_files_only_reports_deleted_robust() {
+        let dir = tempfile::tempdir().unwrap();
+        let present = dir.path().join("credentials.json");
+        let absent = dir.path().join("missing.json");
+        write_token_file(&sample_token(), &present).unwrap();
+
+        let removed = remove_existing_files(&[present.clone(), absent.clone()]);
+
+        assert_eq!(removed, vec![present.clone()]);
+        assert!(!present.exists());
+        assert!(!absent.exists());
+    }
 }

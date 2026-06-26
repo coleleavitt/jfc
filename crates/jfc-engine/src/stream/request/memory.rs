@@ -14,6 +14,7 @@ pub(super) async fn append_cross_project_knowledge(
     system_prompt: &mut String,
     cwd: &std::path::Path,
     query: &str,
+    session_id: Option<&str>,
 ) -> usize {
     let enabled = crate::config::load_arc().cross_project_recall_enabled;
     let query = query.trim();
@@ -22,8 +23,15 @@ pub(super) async fn append_cross_project_knowledge(
     }
     let cwd = cwd.to_path_buf();
     let query_owned = query.to_owned();
-    append_cross_project_knowledge_inner(system_prompt, cwd, Some(query_owned), enabled, false)
-        .await
+    append_cross_project_knowledge_inner(
+        system_prompt,
+        cwd,
+        Some(query_owned),
+        enabled,
+        false,
+        session_id,
+    )
+    .await
 }
 
 /// Session-start "knowledge brief" (PLAN TODO 17 / the diagram's MEMORY BANK read
@@ -34,10 +42,11 @@ pub(super) async fn append_cross_project_knowledge(
 pub(super) async fn append_session_start_knowledge_brief(
     system_prompt: &mut String,
     cwd: &std::path::Path,
+    session_id: Option<&str>,
 ) -> usize {
     let enabled = crate::config::load_arc().cross_project_recall_enabled;
     let cwd = cwd.to_path_buf();
-    append_cross_project_knowledge_inner(system_prompt, cwd, None, enabled, true).await
+    append_cross_project_knowledge_inner(system_prompt, cwd, None, enabled, true, session_id).await
 }
 
 /// Shared recall+render path. `query = None` is the session-start brief (top
@@ -50,6 +59,7 @@ async fn append_cross_project_knowledge_inner(
     query: Option<String>,
     enabled: bool,
     is_brief: bool,
+    session_id: Option<&str>,
 ) -> usize {
     if !enabled {
         return 0;
@@ -71,6 +81,25 @@ async fn append_cross_project_knowledge_inner(
         }
         let ids: Vec<String> = hits.iter().map(|h| h.id.clone()).collect();
         let _ = store.mark_used(&ids).await;
+        // Log the recall (which lessons surfaced this turn) for impact metrics —
+        // best-effort, only inside a session, never alters the prompt.
+        if let Some(sid) = session_id {
+            let source = if is_brief { "session_brief" } else { "cross_project" };
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            let event = jfc_knowledge::SessionRetrievalEvent {
+                id: format!("retr:{sid}:{now}:{}", ids.len()),
+                session_id: sid.to_owned(),
+                query: query.as_deref().unwrap_or("").chars().take(200).collect(),
+                source: source.to_owned(),
+                result_count: ids.len() as i64,
+                payload: serde_json::json!({ "ids": ids }).to_string(),
+                created_at_ms: now,
+            };
+            let _ = store.record_retrieval_event(&event).await;
+        }
         Some(render_knowledge_block_titled(&hits, is_brief))
     }
     .await;
@@ -364,6 +393,7 @@ mod cross_project_tests {
             Some("anything".to_string()),
             false, // disabled
             false,
+            None,
         )
         .await;
         assert_eq!(n, 0);

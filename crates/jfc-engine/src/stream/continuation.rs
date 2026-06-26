@@ -254,6 +254,10 @@ fn spawn_substream(
     let interrupt = state.interrupt_flag.clone();
     let cancel = state.cancel_token.clone();
     let overrides = StreamRequestOverrides {
+        session_id: state
+            .current_session_id
+            .as_ref()
+            .map(|s| s.as_str().to_owned()),
         background_reminders: state.take_background_reminders(),
         disallowed_tools: state.effective_disallowed_tools(),
         allowed_tools: state.allowed_tools.clone(),

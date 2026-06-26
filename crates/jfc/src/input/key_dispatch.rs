@@ -1088,6 +1088,11 @@ async fn handle_enter_submit(
                 crate::voice::discard_recording().await;
                 app.voice_interim = None;
                 app.voice_interim_chars = 0;
+                // Suppress late Interim/Final events from this in-flight
+                // utterance so they don't re-hydrate the box or auto-submit a
+                // duplicate after this manual submit. Cleared on the next
+                // Recording onset (see handle_voice_event).
+                app.voice_suppress_input = true;
             }
             // Enter-submit entry trace. `submitted_chars` is the source of
             // truth for the prompt-doubling bug: if it arrives already-doubled

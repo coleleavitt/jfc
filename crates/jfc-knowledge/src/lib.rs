@@ -1136,6 +1136,623 @@ pub struct SessionMessage {
     pub meta: Option<String>,
 }
 
+/// A self-improvement backlog suggestion (input form). `scope` is `"self"`
+/// (JFC's own reasoning/prompt/skill/tool) or `"project"` (an optimization for
+/// another codebase, keyed by `project_key`).
+#[derive(Debug, Clone)]
+pub struct BacklogItem {
+    pub scope: String,
+    pub project_key: Option<String>,
+    pub category: String,
+    pub title: String,
+    pub body: String,
+    pub evidence: String,
+    pub confidence: f64,
+    pub source_session_id: Option<String>,
+}
+
+impl BacklogItem {
+    /// Stable dedup id — the same suggestion re-proposed bumps `recurrence`
+    /// rather than creating a new row.
+    pub fn id(&self) -> String {
+        uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_OID,
+            format!(
+                "backlog:{}:{}:{}:{}",
+                self.scope,
+                self.project_key.as_deref().unwrap_or(""),
+                self.category,
+                self.title
+            )
+            .as_bytes(),
+        )
+        .simple()
+        .to_string()
+    }
+}
+
+/// A backlog row as read back (listing / review).
+#[derive(Debug, Clone)]
+pub struct BacklogRow {
+    pub id: String,
+    pub scope: String,
+    pub project_key: Option<String>,
+    pub category: String,
+    pub title: String,
+    pub body: String,
+    pub status: String,
+    pub confidence: f64,
+    pub recurrence: i64,
+    pub created_at_ms: i64,
+    pub applied_at_ms: Option<i64>,
+}
+
+/// A `(scope, status) → count` metric row.
+#[derive(Debug, Clone)]
+pub struct BacklogMetricRow {
+    pub scope: String,
+    pub status: String,
+    pub count: i64,
+}
+
+impl KnowledgeStore {
+    /// Record a backlog suggestion. New rows land `proposed`; an identical
+    /// suggestion (same id) bumps `recurrence` + `updated_at`, keeps the best
+    /// confidence and existing status (evidence accrues). Returns `(id, is_new)`.
+    pub async fn upsert_backlog_item(&self, item: &BacklogItem) -> Result<(String, bool)> {
+        let id = item.id();
+        let now = record::now_ms();
+        let exists = sqlx::query("SELECT 1 FROM improvement_backlog WHERE id = ?1")
+            .bind(&id)
+            .fetch_optional(&self.pool)
+            .await?
+            .is_some();
+        if exists {
+            sqlx::query(
+                "UPDATE improvement_backlog
+                 SET recurrence = recurrence + 1, updated_at_ms = ?2,
+                     confidence = MAX(confidence, ?3)
+                 WHERE id = ?1",
+            )
+            .bind(&id)
+            .bind(now)
+            .bind(item.confidence)
+            .execute(&self.pool)
+            .await?;
+            Ok((id, false))
+        } else {
+            sqlx::query(
+                "INSERT INTO improvement_backlog
+                   (id, scope, project_key, category, title, body, evidence,
+                    status, confidence, source_session_id, recurrence,
+                    created_at_ms, updated_at_ms)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,'proposed',?8,?9,1,?10,?10)",
+            )
+            .bind(&id)
+            .bind(&item.scope)
+            .bind(&item.project_key)
+            .bind(&item.category)
+            .bind(&item.title)
+            .bind(&item.body)
+            .bind(&item.evidence)
+            .bind(item.confidence)
+            .bind(&item.source_session_id)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+            Ok((id, true))
+        }
+    }
+
+    /// Transition a backlog item's status (proven|applied|rejected|superseded);
+    /// stamps `applied_at_ms` on `applied`.
+    pub async fn set_backlog_status(&self, id: &str, status: &str) -> Result<()> {
+        let now = record::now_ms();
+        let applied = (status == "applied").then_some(now);
+        sqlx::query(
+            "UPDATE improvement_backlog
+             SET status = ?2, updated_at_ms = ?3,
+                 applied_at_ms = COALESCE(?4, applied_at_ms)
+             WHERE id = ?1",
+        )
+        .bind(id)
+        .bind(status)
+        .bind(now)
+        .bind(applied)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Backlog metrics: counts by `(scope, status)` — the queryable
+    /// "is it improving itself" view.
+    pub async fn backlog_metrics(&self) -> Result<Vec<BacklogMetricRow>> {
+        let rows = sqlx::query(
+            "SELECT scope, status, COUNT(*) FROM improvement_backlog
+             GROUP BY scope, status ORDER BY scope, status",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(BacklogMetricRow {
+                    scope: r.try_get(0)?,
+                    status: r.try_get(1)?,
+                    count: r.try_get(2)?,
+                })
+            })
+            .collect()
+    }
+
+    /// List backlog items, highest-evidence first, optionally filtered.
+    pub async fn list_backlog(
+        &self,
+        scope: Option<&str>,
+        status: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<BacklogRow>> {
+        let rows = sqlx::query(
+            "SELECT id, scope, project_key, category, title, body, status,
+                    confidence, recurrence, created_at_ms, applied_at_ms
+             FROM improvement_backlog
+             WHERE (?1 IS NULL OR scope = ?1)
+               AND (?2 IS NULL OR status = ?2)
+             ORDER BY recurrence DESC, updated_at_ms DESC
+             LIMIT ?3",
+        )
+        .bind(scope)
+        .bind(status)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(BacklogRow {
+                    id: r.try_get(0)?,
+                    scope: r.try_get(1)?,
+                    project_key: r.try_get(2)?,
+                    category: r.try_get(3)?,
+                    title: r.try_get(4)?,
+                    body: r.try_get(5)?,
+                    status: r.try_get(6)?,
+                    confidence: r.try_get(7)?,
+                    recurrence: r.try_get(8)?,
+                    created_at_ms: r.try_get(9)?,
+                    applied_at_ms: r.try_get(10)?,
+                })
+            })
+            .collect()
+    }
+
+    /// Supersede harness-noise preferences (system reminders / continuation
+    /// nudges mistakenly mined as user preferences) so they stop polluting
+    /// recall. Reversible — sets `superseded_by`, doesn't delete. Returns count.
+    pub async fn prune_noisy_preferences(&self) -> Result<u64> {
+        let result = sqlx::query(
+            "UPDATE knowledge SET superseded_by = 'pruned:harness_noise'
+             WHERE kind = 'preference' AND superseded_by IS NULL
+               AND ( body LIKE '%system-reminder%'
+                  OR body LIKE '%/system-reminder%'
+                  OR body LIKE '%Continue — do the next%'
+                  OR body LIKE '%continue the remaining%'
+                  OR body LIKE '%automated background-task%' )",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Upsert a held-out eval case (the ground-truth fixture). Dedups by
+    /// source+failure+prompt; an identical case bumps `weight` (importance).
+    /// Returns `(id, is_new)`.
+    pub async fn upsert_eval_case(&self, case: &EvalCaseInput) -> Result<(String, bool)> {
+        let id = case.id();
+        let now = record::now_ms();
+        let existed = sqlx::query("SELECT 1 FROM eval_cases WHERE id = ?1")
+            .bind(&id)
+            .fetch_optional(&self.pool)
+            .await?
+            .is_some();
+        if existed {
+            sqlx::query("UPDATE eval_cases SET weight = weight + ?2 WHERE id = ?1")
+                .bind(&id)
+                .bind(case.weight)
+                .execute(&self.pool)
+                .await?;
+            Ok((id, false))
+        } else {
+            sqlx::query(
+                "INSERT INTO eval_cases
+                   (id, source, prompt, failure_mode, expected, project_key,
+                    source_session_id, weight, created_at_ms)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            )
+            .bind(&id)
+            .bind(&case.source)
+            .bind(&case.prompt)
+            .bind(&case.failure_mode)
+            .bind(&case.expected)
+            .bind(&case.project_key)
+            .bind(&case.source_session_id)
+            .bind(case.weight)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+            Ok((id, true))
+        }
+    }
+
+    pub async fn eval_case_count(&self) -> Result<i64> {
+        let row = sqlx::query("SELECT COUNT(*) FROM eval_cases")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(row.try_get(0)?)
+    }
+
+    /// Record an eval-run result for a variant (`control` | `candidate:<def_id>`).
+    pub async fn record_eval_run(
+        &self,
+        eval_id: &str,
+        variant: &str,
+        passed: Option<bool>,
+        score: Option<f64>,
+        detail: &str,
+    ) -> Result<()> {
+        let now = record::now_ms();
+        let id = format!("evalrun:{eval_id}:{variant}:{now}");
+        sqlx::query(
+            "INSERT OR IGNORE INTO eval_runs
+               (id, eval_id, variant, passed, score, detail, run_at_ms)
+             VALUES (?1,?2,?3,?4,?5,?6,?7)",
+        )
+        .bind(&id)
+        .bind(eval_id)
+        .bind(variant)
+        .bind(passed.map(|p| i64::from(p)))
+        .bind(score)
+        .bind(detail)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// `(total_runs, passed)` for a variant — the pass-rate signal.
+    pub async fn eval_pass_rate(&self, variant: &str) -> Result<(i64, i64)> {
+        let row = sqlx::query(
+            "SELECT COUNT(*), COALESCE(SUM(passed), 0) FROM eval_runs WHERE variant = ?1",
+        )
+        .bind(variant)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok((row.try_get(0)?, row.try_get(1)?))
+    }
+
+    /// Score statistics for a variant — the NOISE CEILING. A single pass-rate
+    /// hides whether a difference between variants is real or sampling noise;
+    /// mean ± stddev over repeated runs is what tells them apart. Returns `None`
+    /// when the variant has no scored runs.
+    pub async fn eval_score_stats(&self, variant: &str) -> Result<Option<EvalScoreStats>> {
+        let row = sqlx::query(
+            "SELECT COUNT(score), AVG(score), AVG(score*score), MIN(score), MAX(score)
+             FROM eval_runs WHERE variant = ?1 AND score IS NOT NULL",
+        )
+        .bind(variant)
+        .fetch_one(&self.pool)
+        .await?;
+        let runs: i64 = row.try_get(0)?;
+        if runs == 0 {
+            return Ok(None);
+        }
+        let mean: f64 = row.try_get(1)?;
+        let mean_sq: f64 = row.try_get(2)?;
+        let min: f64 = row.try_get(3)?;
+        let max: f64 = row.try_get(4)?;
+        // Population variance = E[x^2] - E[x]^2, clamped at 0 for fp slop.
+        let variance = (mean_sq - mean * mean).max(0.0);
+        Ok(Some(EvalScoreStats {
+            runs,
+            mean,
+            stddev: variance.sqrt(),
+            min,
+            max,
+        }))
+    }
+
+    /// Whether the mean-score gap between two variants clears the noise band:
+    /// `|mean_a - mean_b| >= k * pooled_stddev`. The Fan-talk lesson — a higher
+    /// score isn't an improvement if it sits inside the noise. `k` is the number
+    /// of pooled standard deviations to require (≈2 ≈ 95% under normality).
+    /// Returns `None` if either variant lacks scored runs.
+    pub async fn eval_difference_is_significant(
+        &self,
+        variant_a: &str,
+        variant_b: &str,
+        k: f64,
+    ) -> Result<Option<EvalSignificance>> {
+        let (Some(a), Some(b)) = (
+            self.eval_score_stats(variant_a).await?,
+            self.eval_score_stats(variant_b).await?,
+        ) else {
+            return Ok(None);
+        };
+        // Equal-weight pooled stddev; a degenerate 0 band would call an
+        // exactly-equal pair "significant", so floor it at EPSILON.
+        let pooled = ((a.stddev * a.stddev + b.stddev * b.stddev) / 2.0).sqrt();
+        let delta = (a.mean - b.mean).abs();
+        let band = (k * pooled).max(f64::EPSILON);
+        Ok(Some(EvalSignificance {
+            delta,
+            band,
+            significant: delta >= band,
+            better: if a.mean >= b.mean { variant_a } else { variant_b }.to_owned(),
+        }))
+    }
+
+    /// Record an error-pattern SIGNATURE for a failed eval run. `signature` is a
+    /// `FailureKind` bucket (optionally `<kind>:<step>`), so two variants with
+    /// the same pass-rate stay distinguishable by *how* they fail. Upserts the
+    /// per-`(variant, signature)` count.
+    pub async fn record_eval_error_signature(
+        &self,
+        variant: &str,
+        eval_id: &str,
+        signature: &str,
+    ) -> Result<()> {
+        let now = record::now_ms();
+        let id = uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_OID,
+            format!("errsig:{variant}:{eval_id}:{signature}").as_bytes(),
+        )
+        .simple()
+        .to_string();
+        sqlx::query(
+            "INSERT INTO eval_error_signatures
+               (id, variant, eval_id, signature, count, first_seen_ms, last_seen_ms)
+             VALUES (?1,?2,?3,?4,1,?5,?5)
+             ON CONFLICT(id) DO UPDATE SET count = count + 1, last_seen_ms = ?5",
+        )
+        .bind(&id)
+        .bind(variant)
+        .bind(eval_id)
+        .bind(signature)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// The error-pattern DISTRIBUTION for a variant — `(signature, count)`
+    /// descending. The comparison surface: two variants with equal pass-rates
+    /// whose distributions differ are NOT the same; the shift says what changed.
+    pub async fn eval_error_distribution(&self, variant: &str) -> Result<Vec<(String, i64)>> {
+        let rows = sqlx::query(
+            "SELECT signature, SUM(count) FROM eval_error_signatures
+             WHERE variant = ?1 GROUP BY signature ORDER BY SUM(count) DESC",
+        )
+        .bind(variant)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| Ok((r.try_get(0)?, r.try_get(1)?)))
+            .collect()
+    }
+
+    /// Record a knowledge gap (what it doesn't know). Bumps `ref_count` on an
+    /// existing label so recurring gaps rise to the top of the curriculum.
+    pub async fn record_knowledge_gap(&self, label: &str, reason: &str) -> Result<()> {
+        let now = record::now_ms();
+        let id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, format!("gap:{label}").as_bytes())
+            .simple()
+            .to_string();
+        sqlx::query(
+            "INSERT INTO knowledge_gaps (id, label, reason, ref_count, first_seen_ms, last_seen_ms)
+             VALUES (?1,?2,?3,1,?4,?4)
+             ON CONFLICT(id) DO UPDATE SET ref_count = ref_count + 1, last_seen_ms = ?4",
+        )
+        .bind(&id)
+        .bind(label)
+        .bind(reason)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Top open knowledge gaps (`label`, `ref_count`) — the self-directed
+    /// curriculum: what it should go learn.
+    pub async fn open_knowledge_gaps(&self, limit: i64) -> Result<Vec<(String, i64)>> {
+        let rows = sqlx::query(
+            "SELECT label, ref_count FROM knowledge_gaps
+             WHERE resolved_by IS NULL ORDER BY ref_count DESC LIMIT ?1",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(|r| Ok((r.try_get(0)?, r.try_get(1)?))).collect()
+    }
+
+    /// CONSOLIDATE: supersede exact-duplicate-body preferences, keeping the
+    /// most-used one per body. Collapses the "bigger, not stronger" mush so
+    /// recall surfaces one representative instead of N near-identical rows.
+    /// Reversible (`superseded_by = 'consolidated'`). Returns rows collapsed.
+    pub async fn consolidate_duplicate_preferences(&self) -> Result<u64> {
+        let result = sqlx::query(
+            "UPDATE knowledge SET superseded_by = 'consolidated'
+             WHERE kind = 'preference' AND superseded_by IS NULL
+               AND body IN (
+                 SELECT body FROM knowledge
+                 WHERE kind = 'preference' AND superseded_by IS NULL
+                 GROUP BY body HAVING COUNT(*) > 1
+               )
+               AND id NOT IN (
+                 SELECT id FROM (
+                   SELECT id, ROW_NUMBER() OVER (
+                     PARTITION BY body ORDER BY use_count DESC, id ASC
+                   ) AS rn
+                   FROM knowledge WHERE kind = 'preference' AND superseded_by IS NULL
+                 ) WHERE rn = 1
+               )",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Seed the eval suite from the distilled `finding` lessons — each known
+    /// failure mode becomes a held-out regression fixture (scenario = the error
+    /// class, expected = the lesson). Deterministic + idempotent (id = `eval:`+
+    /// knowledge id). Returns the number of new cases added.
+    pub async fn seed_eval_cases_from_findings(&self) -> Result<u64> {
+        let now = record::now_ms();
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO eval_cases
+               (id, source, prompt, failure_mode, expected, weight, created_at_ms)
+             SELECT 'eval:' || id, 'tool_failure', title, title, body,
+                    CAST(use_count AS REAL) + 1.0, ?1
+             FROM knowledge
+             WHERE kind = 'finding' AND superseded_by IS NULL",
+        )
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Seed the self-directed curriculum: record a knowledge gap for every tool
+    /// that fails repeatedly (the agent demonstrably struggles with it). The
+    /// `open_knowledge_gaps` list is then "what to go learn." Idempotent.
+    pub async fn seed_knowledge_gaps_from_failures(&self, min_failures: i64) -> Result<u64> {
+        let now = record::now_ms();
+        let result = sqlx::query(
+            "INSERT INTO knowledge_gaps
+               (id, label, reason, ref_count, first_seen_ms, last_seen_ms)
+             SELECT 'gap:tool:' || kind,
+                    'reliability of the ' || kind || ' tool',
+                    'recurring failures across sessions',
+                    COUNT(*), ?1, ?1
+             FROM session_tool_runs
+             WHERE status = 'failed'
+             GROUP BY kind HAVING COUNT(*) >= ?2
+             ON CONFLICT(id) DO UPDATE SET ref_count = excluded.ref_count, last_seen_ms = ?1",
+        )
+        .bind(now)
+        .bind(min_failures)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// IMPROVEMENT: promote verified, project-scoped `finding` lessons to GLOBAL
+    /// scope. A verified error-lesson ("re-read the exact bytes before retrying
+    /// Edit") is universal, so scoping it to one repo makes it invisible to
+    /// cross-project recall. Promoting makes the learned lessons actually
+    /// recallable everywhere. Returns the number promoted.
+    pub async fn promote_verified_findings_to_global(&self) -> Result<u64> {
+        let result = sqlx::query(
+            "UPDATE knowledge SET scope = 'global', project_key = NULL, promoted = 1
+             WHERE kind = 'finding' AND outcome = 'verified'
+               AND scope = 'project' AND superseded_by IS NULL",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Deterministic eval RUN (no model needed): for each known-failure eval
+    /// case, does the recall engine actually surface its lesson? Fills
+    /// `eval_runs` (variant `recall_coverage`) and returns `(total, passed)` —
+    /// a real "are the learned lessons actually recallable" measurement, which
+    /// is exactly what proves the loop is *useful*, not just busy.
+    pub async fn run_recall_coverage_eval(&self) -> Result<(i64, i64)> {
+        let cases = sqlx::query("SELECT id, prompt FROM eval_cases")
+            .fetch_all(&self.pool)
+            .await?;
+        let mut total = 0i64;
+        let mut passed = 0i64;
+        for row in &cases {
+            let id: String = row.try_get(0)?;
+            let prompt: String = row.try_get(1)?;
+            let filter = RecallFilter {
+                project_key: None,
+                limit: 8,
+            };
+            let hits = self.recall(&prompt, &filter).await.unwrap_or_default();
+            let covered = hits
+                .iter()
+                .any(|h| h.title.trim().eq_ignore_ascii_case(prompt.trim()));
+            total += 1;
+            if covered {
+                passed += 1;
+            }
+            self.record_eval_run(
+                &id,
+                "recall_coverage",
+                Some(covered),
+                Some(if covered { 1.0 } else { 0.0 }),
+                "",
+            )
+            .await?;
+        }
+        Ok((total, passed))
+    }
+}
+
+/// Input form for a held-out eval case (regression fixture).
+#[derive(Debug, Clone)]
+pub struct EvalCaseInput {
+    pub source: String,
+    pub prompt: String,
+    pub failure_mode: Option<String>,
+    pub expected: Option<String>,
+    pub project_key: Option<String>,
+    pub source_session_id: Option<String>,
+    pub weight: f64,
+}
+
+/// Score statistics for a variant's eval runs — the noise ceiling.
+/// See [`KnowledgeStore::eval_score_stats`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct EvalScoreStats {
+    pub runs: i64,
+    pub mean: f64,
+    pub stddev: f64,
+    pub min: f64,
+    pub max: f64,
+}
+
+/// Result of comparing two variants' mean scores against the noise band.
+/// See [`KnowledgeStore::eval_difference_is_significant`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct EvalSignificance {
+    /// `|mean_a - mean_b|`.
+    pub delta: f64,
+    /// `k * pooled_stddev` — the band the delta must clear to count as real.
+    pub band: f64,
+    /// Whether `delta >= band`.
+    pub significant: bool,
+    /// The higher-mean variant (only meaningful when `significant`).
+    pub better: String,
+}
+
+impl EvalCaseInput {
+    /// Stable dedup id (same scenario re-seeded bumps weight, not a new row).
+    pub fn id(&self) -> String {
+        uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_OID,
+            format!(
+                "eval:{}:{}:{}",
+                self.source,
+                self.failure_mode.as_deref().unwrap_or(""),
+                self.prompt
+            )
+            .as_bytes(),
+        )
+        .simple()
+        .to_string()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionEventRow {
     pub id: String,

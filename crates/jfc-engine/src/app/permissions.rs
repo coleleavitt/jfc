@@ -50,13 +50,20 @@ impl PermissionMode {
 
     /// Whether this mode allows a given tool to execute without prompting.
     pub fn auto_approves(self, tool: &ToolCall) -> PermissionDecision {
+        self.decide_parts(&tool.kind, &tool.input)
+    }
+
+    /// Permission decision from a tool's kind + input, without a full
+    /// [`ToolCall`]. Used by non-interactive executors (e.g. background
+    /// subagents) that need the same gate but don't have a `ToolCall` in hand.
+    pub fn decide_parts(self, kind: &ToolKind, input: &ToolInput) -> PermissionDecision {
         // Unknown tools are denied in every permission mode (including
         // BypassPermissions) — we don't dispatch a name we don't know,
         // because the input schema is unknown and `execute_tool` would
         // route the call to a "not yet implemented" failure anyway.
         // The whole point of the UnknownTool variant is to make the
         // refusal explicit instead of silently hitting that default.
-        if matches!(tool.kind, ToolKind::UnknownTool { .. }) {
+        if matches!(kind, ToolKind::UnknownTool { .. }) {
             return PermissionDecision::Denied("unknown tool — refusing to dispatch");
         }
         // Catastrophic-command backstop. A tiny denylist of effectively
@@ -71,8 +78,8 @@ impl PermissionMode {
         // Default / AcceptEdits already prompt for Bash, so this only changes
         // behaviour where it must.
         if matches!(self, Self::BypassPermissions | Self::Auto)
-            && let ToolKind::Bash = tool.kind
-            && let ToolInput::Bash { command, .. } = &tool.input
+            && let ToolKind::Bash = kind
+            && let ToolInput::Bash { command, .. } = input
             && let Some(reason) = super::shell_safety::catastrophic_bash_reason(command)
         {
             tracing::warn!(
@@ -89,8 +96,8 @@ impl PermissionMode {
                 // Default mode. This covers ls, cat, git status, etc. — the
                 // commands that never prompt in CC 177 regardless of mode.
                 // Non-bash tools still need explicit approval in Default mode.
-                if let ToolKind::Bash = tool.kind {
-                    if let ToolInput::Bash { command, .. } = &tool.input {
+                if let ToolKind::Bash = kind {
+                    if let ToolInput::Bash { command, .. } = input {
                         if super::shell_safety::is_readonly_bash(command) {
                             return PermissionDecision::Approved;
                         }
@@ -98,7 +105,7 @@ impl PermissionMode {
                 }
                 PermissionDecision::NeedsPrompt
             }
-            Self::Plan => match tool.kind {
+            Self::Plan => match kind {
                 ToolKind::Read
                 | ToolKind::Glob
                 | ToolKind::Grep
@@ -137,11 +144,11 @@ impl PermissionMode {
                 // the model surface a plan whenever it's ready —
                 // mirrors v132's `ExitPlanMode` contract.
                 | ToolKind::ExitPlanMode => PermissionDecision::Approved,
-                ToolKind::Mcp(ref name) if is_plan_safe_mcp_tool(name) => {
+                ToolKind::Mcp(name) if is_plan_safe_mcp_tool(name) => {
                     PermissionDecision::Approved
                 }
                 ToolKind::Bash => {
-                    let ToolInput::Bash { command, .. } = &tool.input else {
+                    let ToolInput::Bash { command, .. } = input else {
                         return PermissionDecision::Denied("Plan mode: malformed bash input");
                     };
                     match super::shell_safety::classify_readonly_bash(command) {
@@ -151,7 +158,7 @@ impl PermissionMode {
                 }
                 _ => PermissionDecision::Denied("Plan mode: write operations blocked"),
             },
-            Self::AcceptEdits => match tool.kind {
+            Self::AcceptEdits => match kind {
                 ToolKind::Write
                 | ToolKind::Edit
                 | ToolKind::MultiEdit

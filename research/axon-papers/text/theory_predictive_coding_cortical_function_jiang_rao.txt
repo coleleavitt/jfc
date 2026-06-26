@@ -1,0 +1,1514 @@
+                                             Cite as: Jiang, L. P., & Rao, R. P. N. (2022). Predictive coding theories of cortical function. In Oxford Research
+                                                       Encyclopedia of Neuroscience. doi: https://doi.org/10.1093/acrefore/9780190264086.013.328
+
+
+
+
+                                                           Predictive Coding Theories of Cortical Function
+                                                                        Linxing Preston Jiang1, 2, 3 and Rajesh P. N. Rao∗1, 2, 3
+                                                1 Paul G. Allen School of Computer Science & Engineering, University of Washington
+                                                                       2 Center for Neurotechnology, University of Washington
+                                                              3 Computational Neuroscience Center, University of Washington
+
+
+
+
+arXiv:2112.10048v3 [q-bio.NC] 19 May 2023
+                                                                                  {prestonj,rao}@cs.washington.edu
+
+
+
+
+                                                                                                    Summary
+
+                                                      Predictive coding is a unifying framework for understanding perception, action and neocortical organiza-
+                                                  tion. In predictive coding, different areas of the neocortex implement a hierarchical generative model of the
+                                                  world that is learned from sensory inputs. Cortical circuits are hypothesized to perform Bayesian inference
+                                                  based on this generative model. Specifically, the Rao-Ballard hierarchical predictive coding model assumes that
+                                                  the top-down feedback connections from higher to lower order cortical areas convey predictions of lower-level
+                                                  activities. The bottom-up, feedforward connections in turn convey the errors between top-down predictions
+                                                  and actual activities. These errors are used to correct current estimates of the state of the world and generate
+                                                  new predictions. Through the objective of minimizing prediction errors, predictive coding provides a functional
+                                                  explanation for a wide range of neural responses and many aspects of brain organization.
+
+
+                                            Keywords: Bayesian inference, predictive coding, perception, hierarchy, neocortex, internal model, sparse cod-
+                                            ing, Kalman filtering, attention, free energy principle, active inference, endstopping, visual cortex, prediction
+                                            errors
+
+                                            Subjects: Computational Neuroscience
+
+
+
+                                            Contents
+
+                                            Introduction                                                                                                             2
+
+
+                                            Predictive Coding Models: An Overview                                                                                    5
+
+                                               Generative Model of Images . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .          5
+
+                                                     Sparse Coding as a Special Case of Predictive Coding . . . . . . . . . . . . . . . . . . . . . . . .            6
+
+                                                     Hierarchical Predictive Coding . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .        6
+
+                                                     Network Dynamics and Synaptic Learning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .              8
+
+                                                     Feedforward Perception as the Initial Inference Step in Predictive Coding . . . . . . . . . . . . .             8
+
+                                               Prediction in Time: Spatiotemporal Predictive Coding and Kalman Filtering . . . . . . . . . . . . . . .               9
+                                              ∗ Corresponding Author
+
+
+
+
+                                                                                                         1
+         Prediction and Internal Simulation in the Absence of Inputs . . . . . . . . . . . . . . . . . . . .         9
+
+         Attention and Robust Predictive Coding . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     10
+
+         What-Where Predictive Coding Networks and Equivariance . . . . . . . . . . . . . . . . . . . .             11
+
+         Predictive Coding and the Free Energy Principle . . . . . . . . . . . . . . . . . . . . . . . . . . .      12
+
+         Action-Based Predictive Coding and Active Inference . . . . . . . . . . . . . . . . . . . . . . . .        13
+
+
+Predictive Coding in the Visual System                                                                              14
+
+   Predictive Coding in Early Stages of Visual Processing . . . . . . . . . . . . . . . . . . . . . . . . . . .     14
+
+   Predictive Coding in the Visual Cortex . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   15
+
+   Endstopping and Contextual Effects as Prediction Error Minimization . . . . . . . . . . . . . . . . . .          15
+
+   A Common Misconception About the Predictive Coding Model . . . . . . . . . . . . . . . . . . . . . .             18
+
+   Neuroanatomical Implementation of Predictive Coding . . . . . . . . . . . . . . . . . . . . . . . . . .          18
+
+
+Empirical Evidence for Predictive Coding                                                                            19
+
+   Internal Representation Neurons and Prediction Error Neurons in the Cortex . . . . . . . . . . . . . .           19
+
+   Layer 2/3 Neurons as Top-Down Bottom-Up Signal Comparators . . . . . . . . . . . . . . . . . . . . .             22
+
+
+Discussion                                                                                                          25
+
+
+Acknowledgement                                                                                                     26
+
+
+
+Introduction
+
+A normative theory for understanding perception is that the brain uses an internal model of the external world
+to infer the hidden causes of its sensory inputs and maintain beliefs about these causes. In the early work of
+Gregory et al. (1980), perception was defined as hypothesis testing, emphasizing the process of inferring expla-
+nations for sensory inputs. The notion that perception is an inference process based on internal models (rather
+than a purely bottom-up feature-extracting process) is well exemplified by the phenomenon of binocular rivalry
+(Tong et al., 2006). Binocular rivalry occurs when conflicting monocular images are presented separately to
+each of the two eyes (Figure 1A) Instead of perceiving a stable mixture or superposition of the two stimuli, the
+subject perceives exclusively the object or feature in one of the two distinct images presented to each eye, with
+perception alternating between the two images every few seconds. Such “rivalry” challenges the traditional
+stimulus-driven feature-extraction view of perception – why would perception alternate between two interpre-
+tations if the process is completely bottom-up, given that the stimulus does not change? When perception is
+viewed as forming hypotheses to infer the hidden causes of images, binocular rivalry can be understood as the
+brain entertaining two competing hypotheses to explain a conflicting sensory input.
+
+Having an internal model of the environment also helps disambiguate sensory inputs with multiple interpre-
+tations. Figure 1B shows an example: the two footprints on the right appear to be convex (oriented upward
+towards the viewer) while the two on the left appear to be concave (oriented downward away from the viewer).
+However, the image on the right is the same as the image on the left, only rotated 180 degrees. The two different
+interpretations of the footprints arise from the brain using a “light-from-above” prior assumption (Sun & Per-
+ona, 1998): the brain’s internal model assumes that light sources tend to be above the observer, an ecologically
+valid assumption. Such assumptions are necessary because visual perception is an ill-posed problem: multiple
+
+
+                                                          2
+           A
+
+
+
+
+           B
+
+
+
+
+Figure 1: Bayesian perception. (A) Example stimuli (dichoptic orthogonal gratings) presented to the left and
+right eye simultaneously that induce binocular rivalry. Subjects perceive exclusively one of the two grating
+orientations, with perception switching between the two orientations every few seconds. Adapted from Tong
+et al. (2006). (B) An illustration of the effects of the light-from-above prior assumption that the brain appears to
+use in 3D visual perception of a 2D image. The image of the two footprints on the right is a 180 degree rotation
+of the image on the left, but the perception of the shape of the footprints is markedly different. Adapted from
+Ernst and Luca (2011).
+
+
+
+
+                                                         3
+3D configurations can give rise to the same 2D image due to the projection of the 3D world onto a 2D retina,
+making assumptions such as “light-from-above” necessary for inferring properties of visual objects. Note that
+the observer is typically not aware of such prior assumptions but rather, they are incorporated by the neural
+circuits subconsciously to compute beliefs over hidden causes through the dynamics of neural activities (thereby
+implementing perception as “unconscious inference”). As part of the internal model, such priors can be expected
+to be adapted to the environment that the organism lives in.
+
+How can neural circuits in the cortex learn internal models of the world, and how can such circuits combine prior
+beliefs with sensory evidence for Bayesian inference? Predictive coding offers a possible neural implementation.
+The predictive coding model of Rao and Ballard (1999) assumes that the areas comprising the cortical hierarchy
+(Felleman & Van Essen, 1991; Hubel & Wiesel, 1959) implement a hierarchical generative model of the sensory
+world. The neural activities at each level of the hierarchy represent the brain’s internal belief of the hidden
+causes of the stimuli at a particular abstraction level (e.g., edges, object parts, objects). Furthermore, the model
+assumes that the top-down feedback connections from higher to lower order cortical areas convey predictions
+of lower-level activities. The bottom-up feedforward connections in turn convey prediction errors, calculated
+as the difference between the top-down predictions and actual activities. The neural activities at each level
+representing the beliefs about the hidden causes are jointly influenced by both the top-down predictions and
+the bottom-up error signals. Overall, the model assumes the goal of the cortex is to minimize prediction errors
+across all levels. Importantly, the above neural operations can be interpreted within a Bayesian framework: the
+top-down predictions convey prior beliefs based on learned expectations while the bottom-up prediction errors
+carry evidence from the current input. Predictive coding combines these two sources of information, weighted
+according to their reliability (inverse variances or “precisions”), to compute the posterior beliefs over hidden
+causes at each level. The objective of minimizing prediction errors across all levels can thus be shown to be
+equivalent to finding the maximum a posteriori (MAP) estimates of the hidden causes.
+
+The phrase “predictive coding” was originally used to capture a form of efficient coding. The center-surround
+receptive fields and biphasic temporal antagonism in responses of cells in the retina and lateral geniculate nucleus
+(LGN) can be interpreted as performing decorrelation through a simple form of predictive coding: rather than
+conveying the local intensity directly, retinal and LGN cells can be interpreted as sending the differences (errors)
+between the local intensity and a prediction of that intensity computed as a linear weighted sum of nearby values
+in space and preceding input values in time (Dong & Atick, 1995b; Huang & Rao, 2011; Srinivasan et al., 1982).
+In auditory information processing, Smith and Lewicki (2006) used the same efficient coding principle to derive
+a model which yields kernels (filter weights) that closely match auditory filters.
+
+More broadly, predictive coding can be viewed as Bayesian inference in the context of Rao and Ballard’s hier-
+archical predictive coding model (Rao & Ballard, 1997, 1999). This model was originally proposed to explain
+extra-classical receptive field effects and contextual modulation. More recent models inspired by predictive cod-
+ing have demonstrated that a network trained to predict future inputs can explain a number of other cortical
+properties (Lotter et al., 2020; Singer et al., 2018). Beyond the cortex, the idea of computing errors between top-
+down predictions and lower-level inputs is consistent with theories of the cerebellum (Bell et al., 1997; Wolpert
+et al., 1998) and models of dopamine responses as reward prediction errors (Schultz et al., 1997). These examples
+suggest that the general principle of predictive coding could be a widely applicable and flexible algorithmic strat-
+egy implemented by the brain across different regions to support perception, motor control, and reward-based
+learning.
+
+Empirical evidence for prediction and prediction error signals in the cortex has been growing at a fast pace.
+Neural responses corresponding to prediction errors induced by visual mismatches during self-generated loco-
+motion have been discovered in layer 2/3 of the primary visual cortex (V1) in rodents (Fiser et al., 2016; Keller
+et al., 2012). Predictive signals have been found in V1 when an animal is adapted to visual-locomotion coupling
+in a virtual environment (Fiser et al., 2016). The cortex also learns to predict novel auditory stimuli coupled to an
+animal’s locomotion and once learned, suppresses the responses to the learned stimuli in primary auditory cor-
+tex (Schneider et al., 2018), consistent with prediction error minimization. More recent studies (Jordan & Keller,
+2020) have found some support for the distinct computational roles of the laminar structure of cortical columns
+proposed by predictive coding theories. Recent research has also found that unexpected stimuli which induce
+large prediction error signals can drive synaptic learning in neural circuits (Gillon et al., 2021), as expected in a
+predictive coding circuit that uses prediction errors to learn a generative model of the world.
+
+This review is organized as follows. The section “Predictive Coding Models: An Overview” introduces the Rao-
+Ballard predictive coding model (Rao & Ballard, 1999) and several related models, as well as the relationship to
+
+
+                                                         4
+the free energy principle and active inference. The section “Predictive Coding in the Visual System” discusses
+the application of hierarchical predictive coding to the visual cortex, explaining classical and extra-classical re-
+ceptive field effects in V1 in terms of prediction error minimization, followed by a review of experimental studies
+investigating predictive coding in the neocortex in the section “Empirical Evidence for Predictive Coding”. The
+final section discusses open questions pertaining to predictive coding and potential future directions.
+
+
+
+Predictive Coding Models: An Overview
+
+The predictive coding model of Rao & Ballard begins with the assumption that sensory inputs are being generated
+by hidden states or “causes” in the external world via an unknown generative model. The goal of the brain then
+is to learn this generative model over many inputs. Perception, for any given sensory input I, involves inverting
+this generative model, that is, estimating the hidden states or causes of input I given a learned generative model.
+Neural activities in the predictive coding model are assumed to represent estimates of the hidden state (also
+known as the latent variable) vector as estimated by the predictive coding neural network, given the observed
+sensory input vector I. The prior distribution of hidden states is assumed to be 𝑝 (r), which imposes a constraint
+on neural activities such as sparse activation. The observation model 𝑝 (I|r) is the likelihood that input I is
+generated given the cause or hidden state r. The predictive coding model assumes that 𝑝 (I|r) is parameterized
+by a matrix U, which is assumed to be learned and encoded in the “top-down” synaptic weights of the network.
+Inference and learning correspond respectively to estimating r (equivalent to perception) and learning an estimate
+U (corresponding to synaptic learning), both with the goal of maximizing the joint probability 𝑝 (I, r). Since 𝑝 (I)
+is constant, this is equivalent to maximizing the posterior probability 𝑝 (r|I), also known as maximum a posteriori
+(MAP) inference.
+
+
+Generative Model of Images
+
+In the predictive coding model, the likelihood 𝑝 (I|r) is governed by the following equation, which relates the
+hidden state r to the input I via a function 𝑓 and a matrix U:
+
+                                                   I = 𝑓 (Ur) + n.                                             (2.1)
+
+Here, n is assumed to be zero mean Gaussian noise with covariance 𝜎 2 I (I is the identity matrix). This equation
+states that the input is assumed to be generated as a linear combination of the columns of matrix U weighted by
+the elements of r, followed by a function 𝑓 and additive noise. The function 𝑓 is a linear or nonlinear function
+(e.g., identity function, rectification function, or a sigmoidal function). The columns of U can be regarded as the
+“basis” vectors (e.g., edges or “parts” of an image or scene) that can be used to compose an input according to
+the values in the hidden “causes” vector r. Given Equation 2.1 and the fact that n is zero mean Gaussian, the
+negative logarithm of the likelihood 𝑝 (I|r) can be shown to be proportional to:
+                                     1                     1
+                              𝐻1 =      kI − 𝑓 (Ur) k 22 = 2 (I − 𝑓 (Ur)) > (I − 𝑓 (Ur)),                      (2.2)
+                                     𝜎2                   𝜎
+               √︃Í
+where kxk 2 =           2
+                     𝑖 𝑥𝑖 denotes the Euclidean or 𝐿2 norm of vector x. 𝐻 1 is the sum of squared errors between the
+image I and its reconstruction (or “prediction”) 𝑓 (Ur) across all pixels, weighted by the inverse noise variance
+(or precision) 𝜎12 . The predictive coding model also allows prior probability distributions 𝑝 (r) and 𝑝 (U) for the
+parameters r and U, respectively. Taking these priors into account, we obtain the overall optimization function:
+
+                                                    𝐻 = 𝐻1 + 𝐻2                                                (2.3)
+
+with
+
+                                                 𝐻 2 = 𝑔(r) + ℎ(U),                                            (2.4)
+
+where 𝑔(r) and ℎ(U) are proportional to the negative logarithms of 𝑝 (r) and 𝑝 (U), respectively. If one assumes
+that both prior distributions are zero mean Gaussians with inverse variances 𝛼 and 𝜆, respectively, one obtains:
+
+                                                               𝑟 2𝑗 + 𝜆    𝑈𝑖2𝑗 .
+                                                            ∑︁          ∑︁
+                                      𝐻 2 = 𝑔(r) + ℎ(U) = 𝛼                                                  (2.5)
+                                                               𝑗          𝑖,𝑗
+
+
+                                                           5
+Minimizing the overall optimization function 𝐻 is thus equivalent to MAP estimation. Predictive coding min-
+imizes this objective function using both inference (of r) and learning (of U). Inference of r is implemented by
+a recurrent neural network that performs gradient descent on 𝐻 with respect to r for each input. Remarkably,
+rather than being chosen a priori, the architecture of the predictive coding neural network is predicted from first
+principles by the gradient descent equations for optimizing 𝐻 with respect to r (see “Network Dynamics and
+Synaptic Learning” section for details). The matrix U is represented by the synaptic weights of the same network
+and learned through gradient descent on 𝐻 with respect to U across many inputs.
+
+
+Sparse Coding as a Special Case of Predictive Coding
+
+The sparse coding model of Olshausen and Field (1996) for learning simple cell-like receptive fields can be re-
+garded as a special case of the predictive coding model described above. In their model, the choice of the like-
+lihood 𝑝 (I|r) remains the same as above, but the prior 𝑝 (r) for the hidden state (causes) r is assumed to be a
+heavy-tailed distribution such as a Laplace distribution. Such a prior encourages sparsity in r (majority of the
+elements of r are zero or close to zero). Their model does not explicitly assume any specific prior for the synaptic
+weights U. The inference and learning processes are almost identical to those for a single-level predictive cod-
+ing model (see “Network Dynamics and Synaptic Learning” section). When applied to natural image patches,
+their model produces localized, orientation-selective receptive fields (columns of U) similar to those of V1 simple
+cells, compared to using a Gaussian prior, which produces more global receptive fields. Such a sparseness prior
+promotes statistical independence in the output and encourages efficiency by selecting only a small subset of
+features to encode information (Barlow, 1961; Olshausen & Field, 1996, 1997). The underlying assumption here
+is that objects in the natural world are composed of a wide variety of features (or parts) but any given object
+is composed of only a small subset of them. This is consistent with the view that the brain evolved to adopt
+ecologically useful priors for learning its neural representations in its quest to learn an internal model of the
+world appropriate for the organism’s ecological niche.
+
+
+Hierarchical Predictive Coding
+
+The above-described generative model can be extended to multiple hierarchical levels by assuming that the hid-
+den state can be generated by a higher-level representation rℎ , corresponding to more abstract image properties
+than the lower-level representation:
+
+                                           r = r𝑡𝑑 + n𝑡𝑑 = 𝑓 (Uℎ rℎ ) + n𝑡𝑑 ,                                   (2.6)
+
+where r𝑡𝑑 = 𝑓 (Uℎ rℎ )is the top-down prediction of r and n𝑡𝑑 is zero mean Gaussian noise with variance 𝜎𝑡𝑑   2 . The
+
+lower-level neurons have smaller receptive fields and represent a local image region by estimating the hidden
+state r. The higher-level neurons estimate their state rℎ based on several lower-level hidden states r associated
+with local image patches. This arrangement results in a progressive convergence of inputs from lower to higher
+levels and an increase in receptive field size as one ascends the hierarchical network, until the receptive fields of
+the highest-level neurons span the entire input image.
+
+The overall optimization function for the hierarchical predictive coding model is:
+                  1                                1
+            𝐻=     2
+                     (I − 𝑓 (Ur)) > (I − 𝑓 (Ur)) + 2 (r − r𝑡𝑑 ) > (r − r𝑡𝑑 ) + 𝑔(r) + 𝑔(rℎ ) + ℎ(U) + ℎ(Uℎ ),   (2.7)
+                 𝜎                                𝜎𝑡𝑑
+
+where 𝑔(rℎ ) and ℎ(Uℎ ) are terms proportional to the negative logarithm of the priors for rℎ and Uℎ respectively.
+Minimizing 𝐻 is again equivalent to maximizing the posterior 𝑝 (r, rℎ , U, Uℎ |I). Perceptual inference involves
+minimizing 𝐻 with respect to r and rℎ jointly, and learning involves minimizing 𝐻 with respect to U and Uℎ .
+Note that the first level state r is now conditioned on the second level state rℎ and synaptic weights Uℎ , but an
+additional prior constraint such as sparseness may be placed on r as well (the 𝑔(r) term).
+
+
+
+
+                                                           6
+    A
+
+
+
+
+    B
+
+
+
+
+    C
+
+
+
+
+Figure 2: Hierarchical Predictive Coding Model. (A) The general architecture of the hierarchical predictive
+coding model. Each predictive estimator (PE) module maintains an internal representation, generates top-down
+prediction (lower arrows, feedback), and receives bottom-up prediction errors (upper arrows, feedforward). (B)
+Components of a PE module. Feedforward connections carry bottom-up prediction errors from the lower level.
+Feedback connections deliver top-down predictions to the lower level. The internal representation neurons
+correct their current estimate r using both the bottom-up prediction error and the top-down prediction error.
+A separate class of error-detecting neurons compute the discrepancy between the current estimate and its top-
+down prediction, and send the error to the higher level. (C) An example two-level hierarchical network. Three
+image patches at Level 0 are processed separately by three Level 1 PE modules. These three Level 1 modules
+converge to provide input (prediction errors) to a single Level 2 module, which attempts to predict the states r in
+all three of these Level 1 PE modules. This convergence effectively increases the receptive field size of neurons
+as one ascends the hierarchy.
+
+
+
+                                                        7
+Network Dynamics and Synaptic Learning
+
+Given the hierarchical generative model above, a MAP estimate of r can be obtained using gradient descent on
+𝐻 with respect to r:
+                        dr    𝑘 1 𝜕𝐻   𝑘1   𝜕𝑓 >                𝑘1        𝑘
+                                                                               1
+                           =−        = 2 U>      (I − 𝑓 (Ur)) + 2 r𝑡𝑑 − r − 𝑔 0 (r),                    (2.8)
+                        d𝑡     2 𝜕r   𝜎      𝜕x                𝜎𝑡𝑑            2
+
+where 𝑘 1 is a positive constant governing the rate of descent toward a minimum for 𝐻 , x = Ur, and 𝑔 0 is the
+derivative of 𝑔 with respect to r. A discrete time implementation of the above-mentioned dynamics leads to the
+following update equation for r at each time step (represented by neural activities or firing rates):
+                                   𝑘1     𝜕𝑓 >                       𝑘1                𝑘
+                                                                                           1 0
+                     r̂𝑡 = r̂𝑡 −1 + 2 U>        (I − 𝑓 (Ur̂𝑡 −1 )) + 2 r𝑡𝑑𝑡 −1 − r̂𝑡 −1 −   𝑔 (r̂𝑡 −1 ) . (2.9)
+                                   𝜎     𝜕x𝑡 −1                     𝜎𝑡𝑑                   2
+
+
+This equation, derived from first principles, specifies recurrent network dynamics for hierarchical predictive
+coding in terms of how the firing rate (or neural response) vector at a given level should be updated over time.
+At each time step, the neural activity vector r is multiplied by the feedback matrix U and a new prediction is
+generated for the lower level (Figure 2A and Figure 2B). This prediction is then subtracted from the lower-level
+representation I to generate the bottom-up error (I − 𝑓 (Ur)), which is filtered by the feedforward weights U>
+and the gradient of the function 𝑓 . Note that the bottom-up synaptic weights are the transpose of the top-down
+synaptic weights in this model, although this assumption can be relaxed using an approach similar to the one used
+in variational autoencoders (VAEs) (see “Predictive Coding and the Free Energy Principle” section). The neural
+response vector r is updated based on a weighted combination of the bottom-up prediction error (I − 𝑓 (Ur)) and
+the top-down prediction error r𝑡𝑑 − r) (Figure 2B). Each error is weighted by the inverse of the corresponding
+noise variance: The larger the noise variance, the smaller the weight given to that error term, consistent with
+the concept of Kalman filtering (see section “Prediction in Time: Spatiotemporal Predictive Coding and Kalman
+Filtering”).
+
+The learning rule for the feedback synaptic weights U (and feedforward weights U> ) is obtained by using gradient
+descent on 𝐻 with respect to U:
+                                 dU    𝑘 2 𝜕𝐻  𝑘 2 𝜕𝑓 >
+                                    =−        = 2       (I − 𝑓 (Ur))r> − 𝑘 2 𝜆U,                             (2.10)
+                                 d𝑡    2 𝜕U 𝜎 𝜕x
+where 𝑘 2 is a positive parameter determining the learning rate of the network and x = Ur. Note that this
+learning rule is a form of Hebbian plasticity: for the feedforward weights U> , the input presynaptic activity is
+                                              d𝑓 >
+the residual error (I − 𝑓 (Ur)) (weighted by dx ) and the output postsynaptic activity is r. More importantly,
+unlike backpropagation, the learning rule above is local since the feedforward connection explicitly conveys the
+prediction error at each level. To ensure stability, learning of synaptic weights operates on a slower time scale
+than the dynamics of r: The learning rate 𝑘 2 is a much smaller value than the rate 𝑘 1 governing the dynamics
+of the network. For static inputs, this implies that the network responses r converge to an estimate for the
+current input before the synaptic weights U are updated based on this converged estimate. An example two-
+level hierarchical network is depicted in Figure 2C.
+
+
+Feedforward Perception as the Initial Inference Step in Predictive Coding
+
+How does the traditional feedforward “bucket brigade” model of perception, where inputs are processed se-
+quentially in one area and passed on to the next (e.g., LGN →V1 →V2 . . . ), align with the hierarchical predictive
+coding view of cortical processing? The answer to this question is easy to obtain from Equation 2.9 by consid-
+ering what happens in the very first time step 𝑡 = 1 when r̂0 = 0 and the two top-down prediction terms 𝑓 (Ur̂0
+and r𝑡𝑑 are also both 0. In this case, if 𝑔 0 (0) is also 0, Equation 2.9 reduces to:
+                                                        𝑘 1 > 𝜕𝑓 >
+                                                r̂𝑡 =      U        I.                                       (2.11)
+                                                        𝜎2   𝜕x𝑡 −1
+Thus, the first feedforward pass through the network multiplies the input I with the feedforward weights U>
+(besides the other multiplicative factors). Assuming this happens at all patches of an image, this equation de-
+scribes exactly the type of operation implemented by a standard feedforward layer where the filters are given
+
+
+                                                           8
+by the rows of U> . In the other words, for a static input, if the top-down predictions are assumed to be zero,
+a hierarchical predictive coding network (e.g., Figure 2C) initializes its estimates at all levels in the same man-
+ner as a deep neural network via a feedforward pass through all layers, before proceeding to further minimize
+prediction errors by generating top-down predictions from these initial estimates and refining them based on
+prediction errors.
+
+
+Prediction in Time: Spatiotemporal Predictive Coding and Kalman Filtering
+
+The model described thus far focused on learning and predicting static inputs. But the world is dynamic – most of
+the time, animals receive time-varying stimuli either due to their own movement or due to other moving objects
+in the environment. This makes the ability to predict future stimuli essential for survival (e.g., predicting the
+location of predators). The predictive coding framework can be extended to include temporal predictions (Rao,
+1999; Rao & Ballard, 1998). Specifically, the network dynamics derived above for predictive coding implements
+a nonlinear and hierarchical form of Bayesian inference that can be related to the classic technique of Kalman
+filtering (Kalman, 1960). This relationship becomes clear when we augment the spatial generative model in
+Equation 2.1 with the ability to model the temporal dynamics of hidden state r from time step 𝑡 to 𝑡 + 1:
+
+                                                  r𝑡 +1 = V𝑡 r𝑡 + m𝑡 ,                                         (2.12)
+
+where V𝑡 is a (potentially time-varying) transition matrix and m𝑡 is zero mean Gaussian noise. Equation 2.12
+models how a hidden state in the world, for example, the location of a predator, changes over time by assuming
+that the next state depends only on the current state (“Markov” assumption) plus some noise. Making the weights
+V𝑡 time-varying allows the equation to capture nonlinear transition dynamics.
+
+Combining Equation 2.1 with Equation 2.12 and assuming the function 𝑓 is the identity function, one can derive
+the following equations for the network dynamics:
+
+                                      Prediction: r̄𝑡 = V𝑡 r𝑡 −1
+                                     Correction: r̂𝑡 = r̄𝑡 + N𝑡 U> G𝑡 (I𝑡 − Ur̄𝑡 ),                            (2.13)
+
+where N𝑡 and G𝑡 are gain terms that depend on the (co-)variances of m in Equation 2.12 and n in Equation 2.1
+(see Rao (1999) for the derivation). The prediction equation takes the current estimate of the state and generates
+a prediction of the next state r̄𝑡 via the matrix V𝑡 . The correction equation corrects this prediction r̄𝑡 by adding
+to it the prediction error (I𝑡 − Ur̄𝑡 ) weighted by gain terms N𝑡 and G𝑡 , with the matrix U> translating the error
+from the image space back to the more abstract state space of r. The gain terms N𝑡 and G𝑡 could potentially
+depend on task-dependent factors and can be regarded as “attentional modulation” of the prediction error (see
+section “Attention and Robust Predictive Coding”) (Rao, 1998). The above equations implement a Kalman filter
+(see Rao (1999)).
+
+Figure 3 illustrates a neural network implementing the spatiotemporal predictive coding model given by Equa-
+tion 2.13: the network uses local recurrent (lateral) connections V to make a prediction r̄𝑡 for the next time
+step, translates the prediction to the lower level as Ur̄𝑡 via feedback connections, conveys the prediction error
+(I𝑡 − Ur̄𝑡 ) via feedforward connections, and then corrects its state prediction r̄𝑡 with prediction error weighted
+by the gain term G.
+
+
+Prediction and Internal Simulation in the Absence of Inputs
+
+The spatiotemporal predictive coding model allows for the possibility that the organism or agent might want to
+perform internal simulations of the dynamics of the external world (e.g., for planning) by predicting how future
+states evolve given a starting state (and possibly actions). This can be done by setting the input prediction error
+gain term G𝑡 in Equation 2.13 to zero (see also the relationship to attention below). This results in the following
+network dynamics for a single-level network:
+
+                                                      r̄𝑡 = V𝑡 r̂𝑡 −1                                          (2.14)
+                                                      r̂𝑡 = r̄𝑡 .                                              (2.15)
+
+
+
+                                                             9
+Figure 3: Spatiotemporal predictive coding model. The network is similar to the predictive coding model
+in Figure 2 in terms of the feedback and feedforward pathways conveying prediction and prediction error, re-
+spectively, but the spatiotemporal model additionally utilizes local recurrent synapses (lateral connections) to
+generate the prediction for the next time step. Based on Rao (1999).
+
+
+In this case, the network ignores any inputs and simply predicts future states moving forward in time using the
+learned state transition dynamics V𝑡 . The network thus acts as a recurrent network, with a possibly time-varying
+set of recurrent weights V𝑡 to model nonlinear transitions.
+
+For a hierarchical network, the network dynamics becomes (based on Equation 2.9):
+                                                              
+                                           r̂𝑡 = r𝑡 + 𝛼 r𝑡𝑑
+                                                         𝑡 − r𝑡 ,                                             (2.16)
+
+where 𝛼 is the weight assigned to the prediction r𝑡𝑑 𝑡 from the higher level. Here, the network combines a local
+recurrent prediction r̄𝑡 at one level with a prediction r𝑡𝑑
+                                                          𝑡 from a higher level (using the weights (1 − 𝛼) and 𝛼
+respectively), allowing higher levels to guide the predictions at the lower levels during internal simulation, while
+ignoring external inputs.
+
+
+Attention and Robust Predictive Coding
+
+The Rao-Ballard predictive coding model can be extended to model top-down attention using a robust optimiza-
+tion function as first proposed in Rao (1998). Specifically, instead of using the squared error loss function
+                                     1                     1
+                              𝐻1 =      kI − 𝑓 (Ur) k 22 = 2 (I − 𝑓 (Ur)) > (I − 𝑓 (Ur)),                     (2.17)
+                                     𝜎2                   𝜎
+the robust predictive coding model uses
+
+                                                𝐻 1𝑅 = 𝜌 (I − 𝑓 (Ur)),                                        (2.18)
+
+where 𝜌 is a function that reduces the influence of outliers (large prediction errors) in the estimation of r. As an
+example, 𝜌 could be defined in terms of a diagonal matrix S as follows (Rao, 1998):
+                                               1
+                                        𝐻𝑅 =      (I − 𝑓 (Ur)) > S(I − 𝑓 (Ur)),                               (2.19)
+                                               𝜎2
+where the diagonal entries 𝑆𝑖𝑖 determine the weight accorded to the prediction error at input location 𝑖: (𝐼𝑖 −
+𝑓 (u𝑖 r)) 2 where u𝑖 denotes the 𝑖th row of U (u𝑖 here is a row vector). A simple but attractive choice for these
+weights is the nonlinear function given by:
+                                                                         
+                                                               𝑐
+                                          𝑆𝑖𝑖 = min 1,                      ,                               (2.20)
+                                                        (𝐼𝑖 − 𝑓 (u𝑖 r)) 2
+
+where 𝑐 is a threshold parameter. This function has the following desirable effect: S clips the squared prediction
+error for the 𝑖th input location to a constant value 𝑐 if (𝐼𝑖 − 𝑓 (u𝑖 r)) 2 exceeds the threshold 𝑐.
+
+
+                                                          10
+Figure 4: Robust predictive coding and attention. Left panel: The robust predictive coding model utilizes a
+gain or gating term to modulate the prediction errors before they are fed to the predictive estimator network
+that estimates the state vector r. This allows the network to filter out any outliers dynamically as a function
+of the current top-down hypothesis, allowing the network to “focus attention” and test its hypothesis. Right
+panel: The top row shows images of two objects the network was trained on. The middle row illustrates how the
+network can filter out occluders and background objects as outliers, recovering an estimate of a training object
+(the duck). The bottom row shows how, when presented with an image containing both training objects, the
+network can sequentially focus and recognize each object.
+
+
+Minimizing the robust optimization function 𝐻 𝑅 leads to the following equation for robust predictive coding:
+                                                                  d𝑓 >
+                                      r̂𝑡 = r̂𝑡 −1 + 𝑘 1 U> G𝑡          (I − 𝑓 (Ur̂𝑡 −1 )) ,                       (2.21)
+                                                                 dx𝑡 −1
+where G𝑡 is a diagonal matrix whose diagonal entries at time constant 𝑡 are given by 𝐺𝑖𝑖 = 0 if (𝐼𝑖 − 𝑓 (u𝑖 r̂𝑡 −1 )) 2 >
+𝑐𝑡 and 1 otherwise. Here, 𝑐𝑡 is a potentially time-varying threshold on the squared prediction error.
+
+The gain G𝑡 acts as an “attentional filter” for outlier detection and filtering, allowing the predictive coding net-
+work estimating r (Figure 4, left panel) to suppress large prediction errors in parts of the input containing outliers.
+This enables the network to focus on verifying the feasibility of its current best hypothesis by trying to mini-
+mize prediction errors while ignoring outliers. Robust predictive coding thus allows the network to “focus its
+attention” on one object while ignoring occluders and background objects, and even “switch attention” from one
+object to another (Figure 4, right panel) (see Rao (1998, 1999)).
+
+
+What-Where Predictive Coding Networks and Equivariance
+
+The predictive coding models above do not consider the fact that many natural inputs, such as videos, are gener-
+ated by the same object or feature undergoing specific transformations such as translations, rotations, and scal-
+ing. The predictive coding model has been extended to account for such transformations using “What-Where”
+predictive coding (Rao & Ballard, 1998) and related models that learn transformations based on Lie groups (Miao
+& Rao, 2007; Rao & Ruderman, 1998) and bilinear models (Grimes & Rao, 2005).
+
+The What-Where predictive coding model is shown in Figure 5. It employs two networks to explain a new input
+I(x): one network, called the “What” network, is similar to the original predictive coding network discussed
+above and estimates the features or object present in the image via the state vector r; the other network, called
+the “Where” network, estimates the transformation x in the new input relative to a previous (canonical) input
+I(0). The network architecture and the dynamics of how r and x are updated are both derived from first principles
+through prediction error minimization (Rao & Ruderman, 1998).
+
+
+                                                                 11
+Figure 5: What-Where predictive coding networks. Two networks jointly minimize prediction error: one
+network estimates object features/identity (“What”) while the other estimates transformations (“Where”) relative
+to a canonical representation.
+
+
+The What-Where predictive coding network was one of the first neural networks to demonstrate equivariance:
+the representation of an object in the “What” network remains stable and invariant by virtue of having a sec-
+ond network, the “Where” network, which absorbs changes in the input stream by modeling these changes as
+transformations of a canonical representation (Rao & Ballard, 1998) (cf. the more recent line of research on equiv-
+ariance using “capsule” networks (Hinton et al., 2011; Kosiorek et al., 2019; Sabour et al., 2017). The What-Where
+predictive coding model contrasts with traditional deep neural networks which utilize pooling in successive
+layers to achieve invariance to transformations but at the cost of losing information about the transformations
+themselves.
+
+While its architecture is derived from the principle of prediction error minimization, the What-Where predictive
+coding model shares similarities with the ventral-dorsal visual processing pathways in the primate visual cortex,
+where ventral cortical areas have been implicated in object-related processing (“What”) and dorsal cortical areas
+have been implicated in motion- and spatial-transformation-related processing (“Where”).
+
+
+Predictive Coding and the Free Energy Principle
+
+Predictive coding and the principle of prediction error minimization are closely related to variational inference
+and learning, which form the basis for VAEs in machine learning research (Dayan et al., 1995; Kingma & Welling,
+2014) as well as the free energy principle in neuroscience as proposed by Friston and colleagues (Friston, 2005,
+2010; Friston & Kiebel, 2009). This relationship is briefly summarized below.
+
+MAP inference, as employed in the predictive coding model above, finds an estimate that maximizes the posterior
+distribution 𝑝 (r|I). Variational inference aims to find the full posterior distribution instead of a point estimate.
+Applying Bayes’ rule:
+
+                                                  𝑝 (I|r)𝑝 (r)    𝑝 (I|r)𝑝 (r)
+                                      𝑝 (r|I) =                =∫                .                             (2.22)
+                                                      𝑝 (I)       dr𝑝 (I|r)𝑝 (r)
+
+
+The normalizing factor (denominator) contains multidimensional integrals that are usually intractable to com-
+pute (e.g., if 𝑝 (r) is a sparsity-inducing Laplace distribution in sparse coding). Due to this intractability, vari-
+ational inference approximates the posterior as follows: the true posterior probability distribution 𝑝𝜃 parame-
+terized by parameters 𝜃 is approximated with a more tractable distribution 𝑞𝜑 parameterized by parameters 𝜑.
+The “error” between the two distributions is quantified using the Kullback-Leibler (KL) divergence between the
+
+
+                                                           12
+posterior probabilities of the latent variable r given the input data I:
+                                                               𝑞𝜑 (r|I)
+                                              ∫
+                                                  𝑞𝜑 (r|I) log           dr
+                                          
+                     𝐾𝐿 𝑞𝜑 (r|I) k𝑝𝜃 (r|I) =
+                                                               𝑝𝜃 (r|I)
+                                                               𝑞𝜑 (r|I)
+                                              ∫                               ∫
+                                            =     𝑞𝜑 (r|I) log           dr +    𝑞𝜑 (r|I) log 𝑝𝜃 (I)dr
+                                                               𝑝𝜃 (r, I)
+                                                               𝑞𝜑 (r|I)
+                                              ∫
+                                            =     𝑞𝜑 (r|I) log           dr + log 𝑝𝜃 (I)
+                                                               𝑝𝜃 (r, I)
+                                            = F + log 𝑝𝜃 (I),                                                   (2.23)
+
+where F is called the “variational free energy” and log 𝑝𝜃 (I) is called the data log likelihood (given model pa-
+rameters 𝜃 ) or model evidence. Note that variational free energy F should not be confused with the physical
+notion of free energy (e.g., in thermodynamics), although there is a similarity in their definitions.
+
+Rewriting Equation 2.23, we have:
+
+                                         log 𝑝𝜃 (I) = 𝐾𝐿 𝑞𝜑 (r|I) k𝑝𝜃 (r|I) − F
+                                                                           
+
+                                                                                                                (2.24)
+                                                                           
+                                                    = 𝐾𝐿 𝑞𝜑 (r|I) k𝑝𝜃 (r|I) + L,
+
+where L = −F is called the evidence lower bound (or ELBO) in the variational learning and VAE literature since
+log 𝑝𝜃 (I) ≥ L (the KL divergence is nonnegative). It can be seen that an organism or artificial agent can increase
+model evidence (data log likelihood) by maximizing the ELBO L or equivalently, minimizing variational           free
+energy F with respect to the latent state and parameters. Note that since F = 𝐾𝐿 𝑞𝜑 (r|I) k𝑝𝜃 (r|I) −log 𝑝𝜃 (I) and
+                                                                                                    
+log 𝑝𝜃 (I) does not depend on r or 𝜑, maximizing the ELBO (minimizing F ) with respect to r and 𝜑 is equivalent
+to minimizing the KL divergence between the approximating tractable distribution 𝑞 and the true distribution 𝑝.
+
+To make the connection to predictive coding, the definition of variational free energy F used in Equation 2.23
+can be rewritten as follows:
+                                                   𝑞𝜑 (r|I)
+                                 ∫
+                             F =   𝑞𝜑 (r|I) log                dr
+                                                𝑝𝜃 (I|r)𝑝𝜃 (r)
+                                                𝑞𝜑 (r|I)                          1
+                                 ∫                            ∫
+                               =   𝑞𝜑 (r|I) log          dr +     𝑞𝜑 (r|I) log          dr
+                                                 𝑝𝜃 (r)                        𝑝𝜃 (I|r)
+                               = 𝐾𝐿(𝑞𝜑 (r|I)||𝑝𝜃 (r)) − E𝑞 [log 𝑝𝜃 (I|r)] .                             (2.25)
+
+Using the relationship in Equation 2.2 for the negative logarithm of 𝑝𝜃 (I|r) and using 𝛼 as the constant of pro-
+portionality for Equation 2.2, the free energy for the predictive coding model is given by:
+
+        F = 𝐾𝐿(𝑞𝜑 (r|I)||𝑝𝜃 (r)) − E𝑞 [−𝛼𝐻 1 ]
+                                          1
+                                                         
+          = 𝐾𝐿(𝑞𝜑 (r|I)||𝑝𝜃 (r)) + 𝛼E𝑞 2 kI − 𝑓 (Ur) k 22
+                                         𝜎
+           = KL divergence between posterior and prior for r + 𝛼 × mean squared prediction error.               (2.26)
+
+Thus, within the predictive coding framework, minimizing the variational free energy F , as advocated by the
+free energy principle of brain function (Bogacz, 2017; Friston, 2010), is equivalent to finding an approximating
+posterior distribution 𝑞𝜑 that both minimizes prediction errors while also attempting to be close to the prior for
+r. This can be regarded as a full-distribution version of the predictive coding model described above, which uses
+MAP inference to find an optimal point estimate that minimizes prediction errors while also being constrained
+by the negative logarithm of the prior (Equation 2.3).
+
+
+Action-Based Predictive Coding and Active Inference
+
+Prediction error can be minimized not only by estimating optimal hidden states r (perception) and learning
+optimal synaptic weights U and V (internal model learning) but also by choosing appropriate actions. Inferring
+actions that minimize prediction error with respect to a goal, or more generally, a prior distribution over future
+states, is called active inference (Fountas et al., 2020; Friston et al., 2017; Friston et al., 2011). For example, in
+a navigation task, if the objective is to reach a desired goal location by passing through a series of landmarks,
+
+
+                                                            13
+prediction error with respect to the goal and landmarks can be minimized by selecting actions at each time step
+that reach each landmark and eventually the goal location. Active inference can be regarded as an example of
+“planning by inference” where an internal model is used to perform Bayesian inference of actions that maximize
+expected reward or the probability of reaching a goal state (Attias, 2003; Botvinick & Toussaint, 2012; Verma &
+Rao, 2005; Verma & Rao, 2006).
+
+Predictive coding allows internal models for action inference to be learned by predicting the sensory conse-
+quences of an executed action. For example, babies, even in the womb, make seemingly random movements
+called “body babbling” (Rao et al., 2007) that can allow a predictive coding network to learn a mapping between
+the current action and the sensory input received immediately after. After learning such an action-based pre-
+diction model via prediction error minimization, the model can be unrolled in time into the future to specify a
+desired goal state (or states) (see, e.g., Verma and Rao (2005) and Verma and Rao (2006)), and predictive coding-
+based inference can used to infer a set of current and future actions most likely to lead to the goal state(s). Some
+of the empirical evidence reviewed in the section “Empirical Evidence for Predictive Coding” on visual and au-
+ditory predictions based on motor activity can be understood within the framework of action-based predictive
+coding.
+
+
+
+Predictive Coding in the Visual System
+
+Predictive Coding in Early Stages of Visual Processing
+
+Early “predictive coding” models focused on explaining the center–surround response properties and biphasic
+temporal antagonism of cells in the retina (Atick, 1992; Buchsbaum et al., 1983; Meister & Berry, 1999; Srinivasan
+et al., 1982) and lateral geniculate nucleus (LGN) (Dan et al., 1996; Dong & Atick, 1995b). These models were
+derived from the information-theoretic principle of efficient coding (Attneave, 1954; Barlow, 1961) rather than
+hierarchical generative models like the Rao-Ballard model. Under the efficient coding hypothesis, the goal of
+the visual system is to efficiently represent visual information by reducing redundancy arising from natural
+scene statistics (Dong & Atick, 1995a; Field, 1987; Ruderman & Bialek, 1994). A simple example of redundancy
+reduction is to remove aspects of an input that are predictable from nearby inputs. Neural activities then only
+need to represent information that deviates from the prediction.
+
+Srinivasan et al. (1982) proposed that the spatial and temporal receptive field properties of retinal ganglion cells
+are a result of predicting local intensity values in natural images from a linear weighted sum of nearby values in
+space or preceding input values in time. Training a linear system that predicts the pixel intensity at a location
+from its surrounding pixels produces prediction weights that closely resemble the receptive fields of retinal
+ganglion cells (Huang & Rao, 2011; Srinivasan et al., 1982). Thus, the neural activities of retinal ganglion cells
+can be seen as representing the “whitened” residual errors that the system cannot predict. Srinivasan et al. also
+showed that the linear predictor weights depend on the signal-to-noise (SNR) ratios of visual scenes. Larger
+groups of neighboring regions need to be integrated in order to cancel out high statistical noise in low SNR
+input, a phenomenon observed by the authors in the fly eye. More recently, Hosoya et al. (2005) showed that
+retinal ganglion cells can rapidly adapt to environments with changing correlation structure and become more
+sensitive to novel stimuli, consistent with the predictive coding view of the retina.
+
+Similar ideas have been used to cast LGN processing as performing temporal whitening of inputs from the retina
+(Atick, 1992; Dan et al., 1996; Dong & Atick, 1995b; Kaplan et al., 1993). Dong and Atick (1995b) derived a linear
+model whose objective is to produce decorrelated output in the frequency domain. The optimized spatiotemporal
+filter compares remarkably well with the physiological data from the LGN (Saul & Humphrey, 1990). Dan et al.
+(1996) confirmed through experiments that the output from the LGN is temporally decorrelated (especially for
+lower-frequency 3–15 Hz) for natural stimuli but not white noise, suggesting that the LGN selectively whitens
+stimuli that match natural scene statistics. In summary, these results suggest that the early stages of visual
+processing (the retina and LGN) are tuned to the statistical properties of the natural environment. The same
+insight, implemented via a hierarchical generative model, forms the core of the Rao-Ballard predictive coding
+model of the visual cortex.
+
+
+
+
+                                                        14
+Predictive Coding in the Visual Cortex
+
+The model presented in “Hierarchical Predictive Coding” was used by Rao and Ballard to explain both classical
+and extra-classical receptive fields effects in the visual cortex in terms of prediction error minimization. The cor-
+tex is modeled as a hierarchical network in which higher-level neurons predict the neural activities of lower-level
+neurons via feedback connections (Figure 2A, lower arrows). A class of lower-level neurons, known as “error
+neurons,” compute the differences between the predictions from the higher level and the actual responses at the
+lower level, and convey these prediction errors back to the higher level via feedforward connections (Figure 2A,
+upper arrows). Except for neurons at the highest level, neural activities at every level are influenced by both
+“top-down” predictions and “bottom-up” prediction errors (Figure 2B). Additionally, the network is structured
+such that the higher-level neurons make predictions at a larger spatial scale than lower-level neurons; this is
+achieved by allowing higher-level neurons to predict the responses of several lower-level modules, resulting in
+a combined receptive field larger than any single lower-level neuron’s receptive field (e.g., in Figure 2C, a single
+Level 2 module predicts the responses of three Level 1 modules).
+
+The dynamics of the recurrent neural network implementing predictive coding is governed by Equation 2.8
+and the synaptic weights are learned using Equation 2.10. When trained on natural image patches (Figure 6,
+top panel), the synaptic weights that were learned in the first level resembled oriented spatial filters or Gabor
+wavelets similar to the receptive fields of simple cells in V1 while at the second level, the synaptic weights
+resembled more complex features that appear to be combinations of several lower-level filters (Figure 6, Level
+2).
+
+
+Endstopping and Contextual Effects as Prediction Error Minimization
+
+Some visual cortical neurons (particularly those in layers 2/3) exhibit the curious property that a strong response
+to a stimulus gets suppressed when a stimulus is introduced in the surrounding region whose properties (e.g.,
+orientation) match the properties of the stimulus at the center of the receptive field (RF). Such effects, which have
+been reported in several cortical areas (Bolz & Gilbert, 1986; Desimone & Schein, 1987; Hubel & Wiesel, 1968), are
+known as “extra-classical” receptive field effects or contextual modulation. Hubel and Wiesel named one class of
+such cells in area V1 “hypercomplex” cells and noted that these cells exhibit the property of “endstopping”: The
+cell’s response is inhibited or eliminated when an oriented bar stimulus in the center of the cell’s RF is extended
+beyond its RF to the surrounding region.
+
+Rao and Ballard (1999) suggested that endstopping and related contextual effects could be interpreted in terms
+of prediction errors in a network trained for predictive coding of natural images. The responses of neurons
+representing prediction errors (e.g., neurons in cortical layers 2/3 that send axons to a “higher” cortical area)
+are suppressed when the top-down prediction becomes more accurate because the larger stimulus (e.g., longer
+bar) engages higher-level neurons tuned to this stimulus. These neurons generate more accurate predictions for
+the lower level, resulting in low prediction errors. When the surrounding context is missing or at odds with
+the central stimulus, the prediction error responses are high due to the mismatch between the higher level’s
+prediction and the lower-level responses. Rao and Ballard proposed that the tendency for the higher level to
+expect similar statistics (e.g., similar orientation) for a central patch and its surrounding region arises from the
+statistics of natural images that exhibit such statistical regularities and the fact that the hierarchical predictive
+coding network has been trained as a generative model to emulate these statistics.
+
+Figure 7 illustrates the prediction error responses from a two-level predictive coding network trained on natu-
+ral images. The error-detecting model neurons at the first level (with firing rates r − r𝑡𝑑 ) display endstopping
+similar to cortical neurons (Figure 7B, solid curve): Model neuron responses are suppressed when the bar ex-
+tends beyond the classical receptive field (figure 7A, solid curve) as the predictions from the higher level become
+progressively more accurate with longer bars. Elimination of predictive feedback causes the error-detecting
+neurons to continue to respond robustly to longer bars (Figure 7A, dotted curve). The same model can also ex-
+plain contextual effects (Figure 7C): The first-level error detecting neurons show greater responses (solid line)
+when the texture stimulus at the center has the same orientation as the stimulus in the surround compared to
+an orthogonally oriented surround stimulus (dashed line). Similar contextual effects have been reported in V1
+neurons (Zipser et al., 1996). Other V1 response properties such as cross-orientation suppression and orientation
+contrast facilitation can also be explained by the predictive coding framework (Spratling, 2008, 2010).
+
+
+
+                                                         15
+Figure 6: Emergence of visual cortex–like receptive fields in the hierarchical predictive coding model.
+Top panel: Natural images used for training the hierarchical model. Several thousand natural image patches
+were extracted from these five images. The bottom-right corner shows the size of Level 1 and Level 2 receptive
+fields relative to the natural images. Middle two panels: Level 1 and Level 2 feedforward synaptic weights (rows
+of U> ) learned from the natural images using a Gaussian prior. Values can be zero (always represented by the
+same gray level), negative (inhibitory, black regions), and positive (excitatory, bright regions). These weights
+resemble centered oriented Gabor-like receptive fields in Level 1 and in Level 2, various combinations of the
+synaptic weights in Level 1. Bottom panel: Localized Gabor filter-like synaptic weights learned in Level 1 using
+a sigmoidal nonlinear generative model and a sparse kurtotic prior distribution similar to those used in Olshausen
+and Field (1996). Adapted from Rao and Ballard (1999).
+
+
+
+
+                                                       16
+             A                                             B
+
+
+
+
+             C
+
+
+
+
+Figure 7: Extra-classical receptive field effects in the hierarchical predictive coding model. (A) Tuning
+curve of a first level model neuron for the control case (solid curve) and after ablation of feedback from the
+second level (dotted curve). (B) Endstopping in a layer 2/3 complex cell in cat primary visual cortex. Tuning
+curves with respect to bar stimulus length are shown for the control case (solid curve) and after inactivation
+of layer 6 (dotted curve). (C) Contextual modulation effects. Responses of an error-detecting model neuron for
+oriented texture stimuli with center and surround regions having the same (dotted line) versus different (solid
+line) orientations. Adapted from Rao and Ballard (1999)
+
+
+
+
+                                                      17
+Figure 8: Putative laminar implementation of the Rao-Ballard predictive coding model. A mapping of
+the hierarchical predictive coding model components (see Figures 2 and 3) to cortical layers.
+
+
+In summary, the predictive coding model suggests that (a) the physiological properties of visual cortical neu-
+rons are a consequence of statistical learning of an internal model of the natural environment—specifically, the
+objective of prediction error minimization allows the cortex to learn a hierarchical generative model of the nat-
+ural world; and (b) perception is the process of actively explaining input stimuli by inverting a learned internal
+generative model via inference to recover hidden causes of the input. Context effects such as endstopping arise
+as a natural consequence of the visual cortex detecting prediction errors or deviations from the expectations
+generated by a learned internal model of the natural environment.
+
+
+A Common Misconception About the Predictive Coding Model
+
+One of the most common misconceptions about the predictive coding model is that the model predicts suppres-
+sion of all neural activity when stimuli become predictable. This has led some authors to state that experimental
+evidence showing neurons not being suppressed or maintaining persistent firing for predictable inputs contra-
+dicts the predictive coding model. On the contrary, the predictive coding model requires a group of neurons to
+maintain the internal representation (state estimate r̂) at each hierarchical level for generating predictions for
+the lower level (see “Hierarchical Predictive Coding” and Figure 8). Thus, in the predictive coding model, the
+neurons that are suppressed when stimuli become predictable are error-detecting neurons that are distinct from
+the neurons maintaining the network’s internal representation of the external world. Similar to the efficient cod-
+ing models of the retina and LGN (Dong & Atick, 1995b; Srinivasan et al., 1982), redundancy reduction occurs
+primarily in the feedforward pathways of the Rao-Ballard predictive coding model, with the feedback pathways
+remaining active to convey predictions.
+
+
+Neuroanatomical Implementation of Predictive Coding
+
+Rao and Ballard (1999) postulated two groups of neurons at each hierarchical level with distinct computational
+goals (Figure 8). One group of neurons maintains an internal representation (state estimate) for generating top-
+down predictions of lower-level activities. These neurons are hypothesized to be in the deep layers 5/6 of cortical
+columns and are predicted by the model to exhibit sustained activity to maintain predictions to lower levels. A
+different group of neurons at the same level calculates prediction errors to be conveyed to the next higher level.
+These were suggested to be layer 2/3 neurons which send connections to “higher” order cortical areas and which
+are expected to exhibit transient activity. Since prediction errors can be positive or negative, Rao and Ballard
+(1999) proposed two subclasses of error-detecting neurons, one subclass representing positive errors and another
+representing negative errors, similar to on-center off-surround and off-center on-surround neurons in the retina
+and LGN.
+
+
+                                                        18
+In general, as seen above in endstopping and other contextual effects, the model predicts that layer 2/3 neurons
+are suppressed when the stimuli are predictable (i.e., consistent with natural image statistics) while deeper layer
+neurons remain active. Stimuli that deviate from natural image statistics (“novel” stimuli) on the other hand
+elicit large responses in layer 2/3 neurons. The model also predicts that prediction error signals are used for
+unsupervised learning of the synaptic connections in the predictive coding network, driving the synaptic weights
+to better reflect the structure of the input stimuli.
+
+
+
+Empirical Evidence for Predictive Coding
+
+Experimental evidence has been mounting for predictive processing in the cortex thanks to advances in neuronal
+recording and stimulation techniques such as optical imaging and optogenetics. Particularly relevant to the
+hierarchical predictive coding model proposed by Rao and Ballard (1999) are findings of top-down predictive
+“internal representation” neurons and bottom-up error-detecting neurons in a cortical column. These findings
+appear to suggest that the cortex may indeed be implementing a hierarchical generative model of the natural
+world. We briefly review the experimental evidence below.
+
+
+Internal Representation Neurons and Prediction Error Neurons in the Cortex
+
+The hierarchical predictive coding model predicts the existence of at least two functionally distinct classes of
+neurons in the cortex: internal state representation neurons r, which maintain the current estimate of state at
+a given hierarchical level and are postulated to reside in the deeper layers 5/6 of the cortex, and error-detecting
+neurons r − r𝑡𝑑 in layers 2/3, which compute the difference between the current state estimate and its top-down
+prediction from a higher level. Recent studies have provided evidence for both types of neurons in the cortex.
+
+Keller et al. (2012) recorded neural activities from layer 2/3 cells in the monocular visual cortex of behaving
+mice that were head-fixed and running on a spherical treadmill. The mice were exposed to 10–30 minutes of
+visual feedback as they ran on the treadmill. In normal “feedback” trials, the visual flow stimuli provided to the
+mouse were full-field vertical gratings coupled to the mouse’s locomotion on the treadmill. In “mismatch” trials,
+visual-locomotion mismatches were delivered randomly as brief visual flow halts (1 second). As a control, the
+mice also went through “playback trials” in which visual flow was passively viewed without locomotion.
+
+
+
+
+                                                        19
+A
+
+
+
+
+B       C
+
+
+
+
+    C
+
+
+
+
+D        E
+
+
+
+
+F
+
+
+
+
+        20
+Figure 9: Evidence for predictive neurons and error-detecting neurons in two visual-locomotion tasks.
+(A) Sample fluorescence change (Δ𝐹 /𝐹 ) traces from two cells (black). Green trace: binary indicator of visual flow.
+Red trace: binary indicator of locomotion. Gray shading: visual feedback with locomotion. Orange shading:
+feedback mismatch (no visual flow with motion). Green shading: playback (visual flow with no motion). White:
+baseline. Cell 677 responded predominately to feedback mismatch while cell 452 responded mainly to visual
+feedback with locomotion. (B) Average population response to onsets (time=0) of different trials: feedback mis-
+match (orange), running (black), playback (green), and passive viewing of playback halts (yellow). (C) Mismatch
+responses during various speeds of locomotion. Darker traces represent faster locomotion speed. (D) Schematic
+representation of the texture lining both walls of the virtual tunnel that mice ran through. The last block in-
+dicates the percentage of appearance of each texture (including omission trials) under different conditions. (E)
+Two example neurons’ response traces when the mouse ran through the tunnel. Blue shading represents the
+period when the mouse was in Block A, red shading represents Block B. Both neurons are spatially selective
+only to Block B, not Block A. The neuron depicted by the black trace showed predictive responses (activation
+prior to entering Block B), while the neuron depicted by the gray trace was only responsive after the mouse
+entered Block B. (F) left: average population response to omission trials (black dashed) compared to Block A
+trials (blue), Block B trials (red), and the 90% Block B5 trials (red dashed). Panel F, right: average responses of
+the omission-selective neural population. Adapted from Keller et al. (2012) (Panels A–C) and Fiser et al. (2016)
+(Panels D–F).
+
+
+The authors found that 13.0% of the visual cortical neurons recorded responded predominately to feedback mis-
+matches. Figure 9A shows a sample neuron (cell number 677) that responded mainly to mismatch trials (orange
+shading). Also, 23.6% of the neurons responded mainly to feedback trials in which visual flow feedback was pre-
+dictable (cell number 452 in Figure 9A). The mismatch responses were also significant in the population average
+(Figure 9B) and the activity onset in mismatch trials was much stronger than that in the other trials. Furthermore,
+the mismatch signals encoded the degree of mismatch – a visual flow halt during faster locomotion resulted in a
+stronger response than during slow locomotion (Figure 9C, darker lines denote faster speed at the time of visual
+flow halt).
+
+V1 neurons have also been found to be predictive of spatial locations after adapting to a new environment. In
+an experiment by Fiser et al. (2016), mice went through a virtual tunnel with blocks of two different grating
+patterns (A or B) separated by distinct landmarks. The five trial conditions only differed in the fifth block, where
+the grating patterns A and B as well as omission with no visual stimuli had different probabilities of occurring
+(see Figure 9D). After adaptation, some neurons developed predictive responses to specific visual stimuli based
+on spatial information. As shown in Figure 9E, an example neuron (black trace) showed strong activation before
+the mouse perceived Block B (but not Block A). In contrast, another sample neuron (gray trace) showed activation
+after entering Block B (but not Block A). The authors also discovered prediction error responses similar to those
+reported by Keller et al. (2012). The population average of neural activities during omission trials was much
+greater than during A and B trials (Figure 9F, left). Moreover, a subset of neurons (2.3%) developed omission-
+selectivity – they showed large responses only to the omission trials (Figure 9F, right).
+
+Other studies have also documented neural responses carrying predictive information. Xu et al. (2012) found
+that after rats adapted to a visual moving dot trajectory, a brief flash at the starting point of the same trajectory
+triggered the same sequential firing pattern in the rat’s V1 as evoked by the full-sequence stimulus. Similarly,
+Gavornik and Bear (2014) discovered that after an animal is exposed to a sequence of stimuli during training, V1
+regenerates the sequential response even when certain elements of the sequence are omitted.
+
+Prediction and prediction error-like signals have also been found in cortical areas in the human visual cortex (e.g.,
+S. O. Murray et al. (2002)) and the hierarchical face processing region of the monkey inferior temporal cortex (IT)
+(Freiwald & Tsao, 2010; Tsao et al., 2006). Schwiedrzik and Freiwald (2017) exposed macaque monkeys to fixed
+pairs of face images with different head orientations and identities such that the successor face image can be
+predicted from the preceding face image. Neurons in the lower-level face area ML (middle lateral section of the
+superior temporal sulcus) displayed large responses when the pair association was violated (either in identity,
+or head orientation, or both). Furthermore, prediction errors resulting from view violation (head orientation)
+diminished and eventually vanished during the late phase of responses while those resulting from identity vio-
+lation remained significant. This is consistent with the interpretation that the top-down predictive signals from
+the view-invariant neurons in higher-level anterior lateral and anterior medial areas suppress the view mismatch
+responses (encoded locally in the lower-level ML area), while identity-related mismatch signals are propagated
+through feedforward circuits for further processing. In another study, Issa et al. (2018) used different face-part
+
+
+                                                         21
+configuration stimuli (typical versus atypical) and found that the lower-level areas of the hierarchy (posterior IT
+and central IT) signal deviations of their preferred features from the expected configurations, whereas the top
+level (anterior IT) maintained a preference for natural, frontal face-part configuration. The authors further dis-
+covered that the early responses in central IT and anterior IT are correlated with late responses in posterior IT:
+Images that produced large responses in higher-level areas early are followed by reduced activities in lower-level
+areas, consistent with top-down predictions signal subduing lower-level responses.
+
+In another experiment, Choi et al. (2018) showed that a hierarchical inference model could explain the effect of
+feedback signals from the prefrontal cortex to intermediate visual cortex V4 as top-down predictions of partially
+occluded shapes.
+
+Schneider et al. (2018) explored the effects of learning on prediction error-like activity in the primary auditory
+cortex. Rats were given artificial auditory feedback coupled to their locomotion: The pitch of the sound was
+proportional to the rat’s running speed. They found that a group of neurons in the rat’s primary auditory cortex
+initially responded strongly to the artificial auditory feedback (“reafferent sound”) but over the course of several
+days, the neuronal circuits learned to suppress this activity. The suppression occurred whenever the reafferent
+sound was coupled to the rat’s locomotion and did not occur when a nonreafferent sound was played or when
+the reafferent sound was played during resting. The gradual suppression of responses is consistent with how
+the predictive coding model learns an internal model of the environment: as the network learns to predict the
+artificial sound coupled to the rat’s locomotion, the predictions get better, resulting in decreasing prediction
+errors which manifest as suppression of the auditory neurons’ activities.
+
+The results discussed above provide evidence for predictive neural activity and prediction error-like responses
+in the cortex. The Rao and Ballard model additionally postulates that layer 2/3 neurons compute and convey the
+prediction errors while neurons in the deeper layers 5/6 maintain the state estimate. Recent experiments have
+attempted to test these predictions. While it is hard to distinguish the state estimating “internal representation”
+neurons from those driven by bottom-up sensory stimuli (see review by Keller and Mrsic-Flogel (2018) for further
+discussions), there is a growing body of evidence suggesting that layer 2/3 neurons may indeed play a role in
+comparing bottom-up information and top-down predictions.
+
+
+Layer 2/3 Neurons as Top-Down Bottom-Up Signal Comparators
+
+For biological networks to use prediction errors to correct their estimate, both positive and negative errors need
+to be represented. At any input location, a positive prediction error ((I − Ur > 0)) occurs when the input is not
+predicted (or incorrectly predicted) while a negative prediction error ((I − Ur < 0)) occurs when a predicted
+input is omitted. Rao and Ballard (1999) postulated that layer 2/3 in the cortex may employ two different groups
+of neurons, one to convey positive errors and another for negative errors, similar to on-center, off-surround and
+off-center, on-surround ganglion cells in the retina (Srinivasan et al., 1982).
+
+To test this theory, Jordan and Keller (2020) used an experimental setup similar to the one used in Keller et
+al. (2012): mice ran on a treadmill with locomotion-coupled visual flow feedback. Whole-cell recordings were
+obtained from both layer 2/3 and layer 5/6 neurons in V1. Visual feedback could be interrupted with a brief flow
+halt (1 second) at random times to generate visual-locomotion mismatch events. Out of 32 neurons recorded in
+layer 2/3, 17 neurons showed depolarizing activities (Figure 10A, left, depolarizing mismatch (dMM) neurons)
+and 6 neurons showed hyperpolarizing activities (Figure 10A, right, hyperpolarizing mismatch (hMM) neurons)
+during mismatch trials. These results suggest that the dMM and hMM neurons in layer 2/3 may subserve the
+function of encoding positive and negative prediction errors.
+
+In addition, 30% of the neurons exhibited significant correlations between the mismatch responses and the speed
+of locomotion (visual halts that occurred during faster locomotion generated “stronger” mismatch signals). The
+sign of the correlation was also different between dMM and hMM neurons, with dMM neurons showing a pos-
+itive correlation (Figure 10B, left) and hMM neurons showing a negative correlation (Figure 10B, right). These
+results are consistent with Keller and colleagues’ calcium imaging study previously discussed Keller et al. (2012)
+(Figure 9C), showing that the responses of layer 2/3 neurons could potentially signal the quantitative level of
+prediction errors.
+
+
+
+
+                                                        22
+A
+
+
+
+
+B
+
+
+
+
+C
+
+
+
+
+D
+
+
+
+
+    23
+Figure 10: Comparison of layer 2/3 versus layer 5/6 neurons in the mouse visual cortex. (A) left: Average
+membrane potential (Vm) response (top) and firing rate histogram (bottom) during mismatch trials of a layer
+2/3 neuron (dMM), showing depolarizing Vm. Orange shading represents the mismatch trial period. The mean
+prestimulus voltage is –58mV. Panel A, right: Average Vm of another layer 2/3 neuron (hMM) showing hyperpo-
+larizing Vm during mismatch trials. (B), left: An example dMM neuron showing a positive correlation between
+response and locomotion speed. Panel B, right: An example hMM neuron showing a negative correlation be-
+tween response and locomotion speed. (C) Comparison of average responses between layer 2/3 neurons (light
+gray) and layer 5/6 neurons (dark gray) during visual feedback trials (left) and during mismatch trials (right).
+(D) Scatter plot of correlation coefficients between the membrane potential of the neurons and visual flow speed
+(x-axis) or locomotion speed (y-axis). The dot color denotes the membrane potential change in response in mis-
+match trials. The gray dashed line is the fitted linear regression line to the data. Solid lines represent the average
+responses of dMM neurons (red), hMM neurons (turquoise), and unclassified neurons (gray). Panel D shows
+layer 2/3 neurons (left) and layer 5/6 neurons (right). Adapted from Jordan and Keller (2020).
+
+
+Jordan and Keller (2020) also investigated the differences between the responses of layer 2/3 neurons and deeper
+layer 5/6 neurons during normal visual feedback trials and mismatch trials. A much lower ratio of neurons in
+layers 5/6 (5 out of 14) responded predominately to mismatch trials. Additionally, larger activity during mismatch
+trials was rare (1 neuron), with 7 neurons exhibiting reduced activities. The difference in responses between
+superficial and deep layer neurons was significant in mismatch trials (Figure 10C, right) but not in normal visual
+flow trials (Figure 10C, left). To further characterize the influence of visual flow and locomotion on layer 2/3
+neurons versus layer 5/6 neurons, correlations between the activities of these neurons and locomotion speed or
+visual flow speed were calculated. As seen in Figure 10D (left plot), the distribution of correlations in layer 2/3
+was bimodal: Activities of most dMM neurons were positively correlated with locomotion speed and negatively
+correlated with visual flow speed (and vice versa for hMM neurons). On the other hand, activities of layer 5/6
+neurons were mostly positively correlated with both locomotion speed and visual flow speed (Figure 10D, right).
+These results suggest that layer 2/3 neurons are well-suited to computing the error between the locomotion-
+generated predictions of visual inputs and the actual visual input, whereas the deeper layer 5/6 neurons may
+integrate top-down predictions (here, from motor areas) and bottom-up input to compute an estimate of the
+state at the current hierarchical level.
+
+The difference in neural responses to expected versus unexpected visual flows in layer 2/3 versus layer 5 was also
+confirmed in a recent study by Gillon et al. (2021). The authors used an open-loop experiment (no sensorimotor
+coupling to locomotion) with stimuli consisting of moving squares. Expectation violations were created in some
+trials by making 25% of the visual squares move in the opposite direction compared to the other 75%. The
+authors found that somatic and distal apical dendritic populations in layer 5 did not exhibit significantly different
+responses to expected versus unexpected visual flow, whereas both layer 2/3 somatic and distal apical dendritic
+populations showed a significant difference in responses. Additionally, this difference increased over days of
+exposure. Gillon et al. also found learning effects when mice were exposed to Gabor sequence stimuli for
+several consecutive days. The responses to unexpected stimuli (in this case, novel Gabor stimuli replacing an
+expected stimulus in a sequence) were predictive of how these responses evolve in subsequent sessions on a cell-
+by-cell basis. Besides implicating layer 2/3 neuron in prediction error computation, these results further confirm
+that the neural responses to unexpected stimuli (i.e., prediction errors) can drive learning in neural circuits, an
+important computational prediction of the predictive coding model (Rao & Ballard, 1999) (see Equation 2.10).
+
+The larger distribution of error detecting neurons in superficial layers than deep layers was also confirmed by
+Hamm et al., 2021 in awake mice with visual oddball paradigms. The authors additionally showed that optoge-
+netic suppression of prefrontal inputs to V1 reduced the contextual selectivity of the error detecting neurons,
+consistent with the effect of top-down signals in the predictive coding model. Finally, through laminar local field
+potential recordings in monkeys, Bastos et al. (2020) showed that predictability of visual stimuli affects neural
+activities in the superficial and deep layers differently—during predictable trials, there was an enhancement of
+alpha and beta power in the deep layers of the cortex whereas during unpredictable trials, an increase in spiking
+and gamma power was observed in the superficial layers.
+
+
+
+
+                                                         24
+Discussion
+
+By casting Bayesian inference and learning in terms of minimizing prediction errors based on an internal model
+of the world, predictive coding provides a unifying view of perception and learning. Perception is equated with
+Bayesian inference of hidden states of the world and proceeds by forming predictive hypotheses about inputs
+that are corrected based on prediction errors. Learning corresponds to using the inferred states to build an
+internal model of the world that minimizes prediction errors through synaptic plasticity. Actions can further
+minimize prediction errors with respect to future goals via active inference.
+
+The hierarchical predictive coding model (Rao & Ballard, 1999) assumes that the hierarchical structure of the
+cortex forms predictive hypotheses at multiple levels of abstractions to explain input data. The model postulates
+that feedback connections between cortical areas convey predictions of expected neural activity from higher to
+lower levels, while the feedforward connections convey the prediction errors back to the higher level to correct
+the neural activity at that level, characteristics that differentiate hierarchical predictive coding from other cortical
+models (Heeger, 2017; Lee & Mumford, 2003).
+
+Early empirical support for the hierarchical predictive coding model was based on its ability to explain extra-
+classical receptive field effects such as endstopping and other contextual modulation of responses in the visual
+cortex in terms of prediction error minimization (Rao & Ballard, 1999). Rao and Ballard proposed that neurons in
+layer 2/3 exhibiting such effects can be interpreted as error-detecting neurons whose responses are suppressed
+when the properties of stimuli in the center of the receptive field can be predicted by stimuli in the surround,
+following natural image statistics. Several recent experimental studies have discovered neurons in the visual
+and auditory cortex that encode predictions or prediction errors in a variety of sensory-motor tasks (Fiser et
+al., 2016; Keller et al., 2012; Schneider et al., 2018). Some studies have tested more detailed neuroanatomical
+predictions such as the role of cortical layer 2/3 neurons in error computation (Jordan & Keller, 2020). Others
+have shown that these error-related neural activities can drive learning in synaptic connections (Gillon et al.,
+2021). Although further tests are required, the experimental results reviewed above support the hypothesis that
+the cortex implements a predictive model of the world, uses this model to generate predictions, and utilizes
+prediction errors to both correct its moment-to-moment estimates and to learn a better model of the world.
+
+There remain many aspects of predictive coding that require further exploration and experimental corroboration.
+For example, are layer 5/6 neurons computing and maintaining the hidden state as specified by Equation 2.8?
+Are the inverse variances in Equation 2.8 (“precisions” terms in the free energy principle; see Friston (2010))
+computed in the cortex? If so, how are they used to weigh the bottom-up and top-down terms in the predictive
+coding network dynamics (Equation 2.8)? How is this “precision”-based weighting related to attention and
+robust predictive coding (Rao, 1998, 1999)? More broadly, can “what-where” predictive coding networks be
+made hierarchical and be used to understand visual processing in the ventral and dorsal streams of the visual
+cortex?
+
+Spatiotemporal hierarchical predictive coding is another area worthy of further study. Palmer et al. (2015) de-
+rived a model by solving the information bottleneck problem (Tishby et al., 2000) and suggested that retinal
+ganglion cells may signal predictive information about the future states of the environment, a result recently
+confirmed by Liu et al. (2021). Rao (1999) presented a single-level Kalman filtering model for predicting inputs
+one time-step ahead based on learning linear transition dynamics from input sequences. These models, how-
+ever, do not address hierarchical representation of temporal information. Experimental evidence suggests that
+cortical representations exhibit a hierarchy of timescales from lower-order to higher-order areas across both
+sensory and cognitive regions (J. D. Murray et al., 2014; Runyan et al., 2017; Siegle et al., 2021). Recent work by
+the authors (Jiang et al., 2021) suggests that a hierarchical predictive coding model based on dynamic synaptic
+connections (via “hypernetworks”) can learn visual cortical space-time receptive fields and hierarchical temporal
+representations from natural video sequences. Ongoing work is focused on exploring the connections between
+such learned temporal representations and response properties in different cortical areas.
+
+The original predictive coding model of Rao and Ballard described how a hierarchical network can converge to
+maximum a posteriori estimates of hidden states at different hierarchical levels. Although the model included
+variances for the top-down and bottom-up errors, it did not explicitly represent uncertainty. The Kalman filter
+version of predictive coding (Rao, 1999) does represent uncertainty in terms of a Gaussian posterior distribution,
+but whether the cortex can compute covariance matrices (or just the diagonal variances) remains unclear. Other
+theories of how the brain may represent uncertainty and perform Bayesian inference using population coding
+
+
+                                                          25
+and sampling (Echeveste et al., 2020; Huang & Rao, 2016; Orbán et al., 2016; Rao, 2004, 2005) are complementary
+to predictive coding and the connections between these theories remain to be worked out.
+
+Finally, there is much to be explored in relating predictive coding to cognition, memory, and behavior. Several
+studies have shown that prediction errors (or “surprise”-related signals) can drive memory reactivation and re-
+consolidation (Bein et al., 2020; Kim et al., 2014; Rust & Palmer, 2021; Sinclair & Barense, 2019), suggesting a role
+for error signals in memory updating, but the connections to predictive coding theories remain unclear. Friston
+and colleagues have made important contributions in establishing some of these connections (Friston, 2010; Fris-
+ton et al., 2017) through the free energy principle and active inference (see the section “Predictive Coding and
+the Free Energy Principle”). Empirical studies such as those reviewed above have demonstrated the close links
+between predictive coding and active behaviors such as locomotion. We expect future predictive coding theories
+to incorporate actions, attention, memory, and planning. Together with new tools such as Neuropixels probes
+(Jun et al., 2017; Steinmetz et al., 2021) for large-scale recordings and optogenetics for stimulation, predictive
+coding theories can enable new paradigms for theory-driven experimentation in neuroscience.
+
+
+
+Acknowledgement
+
+This material is based upon work supported by the Defense Advanced Research Projects Agency (contract num-
+ber HR001120C0021); the National Institute of Mental Health (grant number 5R01MH112166); the National Sci-
+ence Foundation (grant number EEC-1028725); and a grant from the Templeton World Charity Foundation. The
+opinions expressed in this publication are those of the authors and do not necessarily reflect the views of the
+funders. The authors would like to thank Ares Fisher, Dimitrios Gklezakos, and Samantha Sun for suggestions,
+discussions, and manuscript edits.
+
+
+
+References
+Atick, J. J. (1992). Could information theory provide an ecological theory of sensory processing? Network: Com-
+          putation in Neural Systems, 3(2), 213–251. https://doi.org/10.1088/0954-898X 3 2 009
+Attias, H. (2003). Planning by Probabilistic Inference. International Workshop on Artificial Intelligence and Statis-
+          tics, 9–16.
+Attneave, F. (1954). Some informational aspects of visual perception. Psychological Review, 61(3), 183–193. https:
+          //doi.org/10.1037/h0054663
+Barlow, H. B. (1961). Possible principles underlying the transformation of sensory messages. Sensory communi-
+          cation, 1(01).
+Bastos, A. M., Lundqvist, M., Waite, A. S., Kopell, N., & Miller, E. K. (2020). Layer and rhythm specificity for
+          predictive routing. Proceedings of the National Academy of Sciences. https : / / doi . org / 10 . 1073 / pnas .
+          2014868117
+Bein, O., Duncan, K., & Davachi, L. (2020). Mnemonic prediction errors bias hippocampal states. Nature Commu-
+          nications, 11(1), 3451. https://doi.org/10.1038/s41467-020-17287-1
+Bell, C. C., Han, V. Z., Sugawara, Y., & Grant, K. (1997). Synaptic plasticity in a cerebellum-like structure depends
+          on temporal order. Nature, 387(6630), 278–281. https://doi.org/10.1038/387278a0
+Bogacz, R. (2017). A tutorial on the free-energy framework for modelling perception and learning. Journal of
+          Mathematical Psychology, 76, 198–211. https://doi.org/10.1016/j.jmp.2015.11.003
+Bolz, J., & Gilbert, C. D. (1986). Generation of end-inhibition in the visual cortex via interlaminar connections.
+          Nature, 320(6060), 362–365. https://doi.org/10.1038/320362a0
+Botvinick, M., & Toussaint, M. (2012). Planning as inference. Trends in Cognitive Sciences, 16(10), 485–488. https:
+          //doi.org/10.1016/j.tics.2012.08.006
+Buchsbaum, G., Gottschalk, A., & Barlow, H. B. (1983). Trichromacy, opponent colours coding and optimum
+          colour information transmission in the retina. Proceedings of the Royal Society of London. Series B. Bio-
+          logical Sciences, 220(1218), 89–113. https://doi.org/10.1098/rspb.1983.0090
+Choi, H., Pasupathy, A., & Shea-Brown, E. (2018). Predictive Coding in Area V4: Dynamic Shape Discrimination
+          under Partial Occlusion. Neural Computation, 30(5), 1209–1257. https://doi.org/10.1162/neco a 01072
+Dan, Y., Atick, J. J., & Reid, R. C. (1996). Efficient Coding of Natural Scenes in the Lateral Geniculate Nucleus:
+          Experimental Test of a Computational Theory. Journal of Neuroscience, 16(10), 3351–3362. https://doi.
+          org/10.1523/JNEUROSCI.16-10-03351.1996
+
+
+                                                           26
+Dayan, P., Hinton, G. E., Neal, R. M., & Zemel, R. S. (1995). The Helmholtz Machine. Neural Computation, 7(5),
+           889–904. https://doi.org/10.1162/neco.1995.7.5.889
+Desimone, R., & Schein, S. J. (1987). Visual properties of neurons in area V4 of the macaque: Sensitivity to stimulus
+           form. Journal of Neurophysiology, 57(3), 835–868. https://doi.org/10.1152/jn.1987.57.3.835
+Dong, D. W., & Atick, J. J. (1995a). Temporal decorrelation: A theory of lagged and nonlagged responses in the
+           lateral geniculate nucleus. Network: Computation in neural systems, 6(2), 159–178. https://doi.org/10.
+           1088/0954-898X 6 2 003
+Dong, D. W., & Atick, J. J. (1995b). Statistics of natural time-varying images. Network: Computation in Neural
+           Systems, 6(3), 345–358. https://doi.org/10.1088/0954-898X 6 3 003
+Echeveste, R., Aitchison, L., Hennequin, G., & Lengyel, M. (2020). Cortical-like dynamics in recurrent circuits
+           optimized for sampling-based probabilistic inference. Nature Neuroscience, 23(9), 1138–1149. https : / /
+           doi.org/10.1038/s41593-020-0671-1
+Ernst, M. O., & Luca, M. D. (2011). Multisensory Perception: From Integration to Remapping. Sensory Cue Inte-
+           gration. Oxford University Press. https://doi.org/10.1093/acprof:oso/9780195387247.003.0012
+Felleman, D. J., & Van Essen, D. C. (1991). Distributed Hierarchical Processing in the Primate Cerebral Cortex.
+           Cerebral Cortex, 1(1), 1–47. https://doi.org/10.1093/cercor/1.1.1
+Field, D. J. (1987). Relations between the statistics of natural images and the response properties of cortical cells.
+           JOSA A, 4(12), 2379–2394. https://doi.org/10.1364/JOSAA.4.002379
+Fiser, A., Mahringer, D., Oyibo, H. K., Petersen, A. V., Leinweber, M., & Keller, G. B. (2016). Experience-dependent
+           spatial expectations in mouse visual cortex. Nature Neuroscience, 19(12), 1658–1664. https://doi.org/10.
+           1038/nn.4385
+Fountas, Z., Sajid, N., Mediano, P., & Friston, K. (2020). Deep active inference agents using Monte-Carlo methods.
+           Advances in Neural Information Processing Systems, 33, 11662–11675.
+Freiwald, W. A., & Tsao, D. Y. (2010). Functional Compartmentalization and Viewpoint Generalization Within the
+           Macaque Face-Processing System. Science, 330(6005), 845–851. https://doi.org/10.1126/science.1194908
+Friston, K. (2005). A theory of cortical responses. Philosophical Transactions of the Royal Society B: Biological
+           Sciences, 360(1456), 815–836. https://doi.org/10.1098/rstb.2005.1622
+Friston, K. (2010). The free-energy principle: A unified brain theory? Nature Reviews Neuroscience, 11(2), 127–138.
+           https://doi.org/10.1038/nrn2787
+Friston, K., FitzGerald, T., Rigoli, F., Schwartenbeck, P., & Pezzulo, G. (2017). Active Inference: A Process Theory.
+           Neural Computation, 29(1), 1–49. https://doi.org/10.1162/NECO a 00912
+Friston, K., & Kiebel, S. (2009). Predictive coding under the free-energy principle. Philosophical Transactions of
+           the Royal Society B: Biological Sciences, 364(1521), 1211–1221. https://doi.org/10.1098/rstb.2008.0300
+Friston, K., Mattout, J., & Kilner, J. (2011). Action understanding and active inference. Biological Cybernetics,
+           104(1), 137–160. https://doi.org/10.1007/s00422-011-0424-z
+Gavornik, J. P., & Bear, M. F. (2014). Learned spatiotemporal sequence recognition and prediction in primary
+           visual cortex. Nature Neuroscience, 17(5), 732–737. https://doi.org/10.1038/nn.3683
+Gillon, C. J., Pina, J. E., Lecoq, J. A., Ahmed, R., Billeh, Y., Caldejon, S., Groblewski, P., Henley, T. M., Kato, I.,
+           Lee, E., Luviano, J., Mace, K., Nayan, C., Nguyen, T., North, K., Perkins, J., Seid, S., Valley, M., Williford,
+           A., . . . Zylberberg, J. (2021). Learning from unexpected events in the neocortical microcircuit. https :
+           //doi.org/10.1101/2021.01.15.426915
+Gregory, R. L., Longuet-Higgins, H. C., & Sutherland, N. S. (1980). Perceptions as hypotheses. Philosophical Trans-
+           actions of the Royal Society of London. B, Biological Sciences, 290(1038), 181–197. https://doi.org/10.1098/
+           rstb.1980.0090
+Grimes, D. B., & Rao, R. P. N. (2005). Bilinear Sparse Coding for Invariant Vision. Neural Computation, 17(1),
+           47–73. https://doi.org/10.1162/0899766052530893
+Hamm, J. P., Shymkiv, Y., Han, S., Yang, W., & Yuste, R. (2021). Cortical ensembles selective for context. Proceedings
+           of the National Academy of Sciences, 118(14). https://doi.org/10.1073/pnas.2026179118
+Heeger, D. J. (2017). Theory of cortical function. Proceedings of the National Academy of Sciences, 114(8), 1773–
+           1782. https://doi.org/10.1073/pnas.1619788114
+Hinton, G. E., Krizhevsky, A., & Wang, S. D. (2011). Transforming Auto-Encoders. In T. Honkela, W. Duch, M.
+           Girolami, & S. Kaski (Eds.), Artificial Neural Networks and Machine Learning – ICANN 2011 (pp. 44–51).
+           Springer. https://doi.org/10.1007/978-3-642-21735-7 6
+Hosoya, T., Baccus, S. A., & Meister, M. (2005). Dynamic predictive coding by the retina. Nature, 436(7047), 71–77.
+           https://doi.org/10.1038/nature03689
+Huang, Y., & Rao, R. P. N. (2011). Predictive coding. WIREs Cognitive Science, 2(5), 580–593. https://doi.org/10.
+           1002/wcs.142
+
+
+
+                                                           27
+Huang, Y., & Rao, R. P. N. (2016). Bayesian Inference and Online Learning in Poisson Neuronal Networks. Neural
+           Computation, 28(8), 1503–1526. https://doi.org/10.1162/NECO a 00851
+Hubel, D. H., & Wiesel, T. N. (1959). Receptive fields of single neurones in the cat’s striate cortex. The Journal of
+           Physiology, 148(3), 574–591.
+Hubel, D. H., & Wiesel, T. N. (1968). Receptive fields and functional architecture of monkey striate cortex. The
+           Journal of Physiology, 195(1), 215–243. https://doi.org/10.1113/jphysiol.1968.sp008455
+Issa, E. B., Cadieu, C. F., & DiCarlo, J. J. (2018). Neural dynamics at successive stages of the ventral visual stream
+           are consistent with hierarchical error signals (E. Connor, E. Marder, & E. Connor, Eds.). eLife, 7, e42870.
+           https://doi.org/10.7554/eLife.42870
+Jiang, L. P., Gklezakos, D. C., & Rao, R. P. N. (2021). Dynamic Predictive Coding with Hypernetworks. bioRxiv,
+           2021.02.22.432194. https://doi.org/10.1101/2021.02.22.432194
+Jordan, R., & Keller, G. B. (2020). Opposing Influence of Top-down and Bottom-up Input on Excitatory Layer
+           2/3 Neurons in Mouse Primary Visual Cortex. Neuron, 108(6), 1194–1206.e5. https://doi.org/10.1016/j.
+           neuron.2020.09.024
+Jun, J. J., Steinmetz, N. A., Siegle, J. H., Denman, D. J., Bauza, M., Barbarits, B., Lee, A. K., Anastassiou, C. A.,
+           Andrei, A., Aydın, Ç., Barbic, M., Blanche, T. J., Bonin, V., Couto, J., Dutta, B., Gratiy, S. L., Gutnisky,
+           D. A., Häusser, M., Karsh, B., . . . Harris, T. D. (2017). Fully integrated silicon probes for high-density
+           recording of neural activity. Nature, 551(7679), 232–236. https://doi.org/10.1038/nature24636
+Kalman, R. E. (1960). A new approach to linear filtering and prediction problems. Journal of Basic Engineering,
+           82(1), 35–45. https://doi.org/10.1115/1.3662552
+Kaplan, E., Mukherjee, P., & Shapley, R. (1993). Information filtering in the lateral geniculate nucleus. In R.
+           Shapley & D.-K. Lam (Eds.), Contrast sensitivity (pp. 183–200). MIT Press.
+Keller, G. B., Bonhoeffer, T., & Hübener, M. (2012). Sensorimotor Mismatch Signals in Primary Visual Cortex of
+           the Behaving Mouse. Neuron, 74(5), 809–815. https://doi.org/10.1016/j.neuron.2012.03.040
+Keller, G. B., & Mrsic-Flogel, T. D. (2018). Predictive Processing: A Canonical Cortical Computation. Neuron,
+           100(2), 424–435. https://doi.org/10.1016/j.neuron.2018.10.003
+Kim, G., Lewis-Peacock, J. A., Norman, K. A., & Turk-Browne, N. B. (2014). Pruning of memories by context-
+           based prediction error. Proceedings of the National Academy of Sciences, 111(24), 8997–9002. https://doi.
+           org/10.1073/pnas.1319438111
+Kingma, D. P., & Welling, M. (2014). Auto-Encoding Variational Bayes. In Y. Bengio & Y. LeCun (Eds.), 2nd
+           International Conference on Learning Representations, ICLR 2014, Banff, AB, Canada, April 14-16, 2014,
+           Conference Track Proceedings.
+Kosiorek, A., Sabour, S., Teh, Y. W., & Hinton, G. E. (2019). Stacked Capsule Autoencoders. Advances in Neural
+           Information Processing Systems, 32.
+Lee, T. S., & Mumford, D. (2003). Hierarchical Bayesian inference in the visual cortex. JOSA A, 20(7), 1434–1448.
+           https://doi.org/10.1364/JOSAA.20.001434
+Liu, N., Li, S., Du, Y., Tenenbaum, J., & Torralba, A. (2021). Learning to Compose Visual Relations. Advances in
+           Neural Information Processing Systems, 34, 23166–23178.
+Lotter, W., Kreiman, G., & Cox, D. (2020). A neural network trained for prediction mimics diverse features of
+           biological neurons and perception. Nature Machine Intelligence, 2(4), 210–219. https://doi.org/10.1038/
+           s42256-020-0170-9
+Meister, M., & Berry, M. J. (1999). The Neural Code of the Retina. Neuron, 22(3), 435–450. https://doi.org/10.1016/
+           S0896-6273(00)80700-X
+Miao, X., & Rao, R. P. N. (2007). Learning the Lie Groups of Visual Invariance. Neural Computation, 19(10), 2665–
+           2693. https://doi.org/10.1162/neco.2007.19.10.2665
+Murray, J. D., Bernacchia, A., Freedman, D. J., Romo, R., Wallis, J. D., Cai, X., Padoa-Schioppa, C., Pasternak, T.,
+           Seo, H., Lee, D., & Wang, X.-J. (2014). A hierarchy of intrinsic timescales across primate cortex. Nature
+           Neuroscience, 17(12), 1661–1663. https://doi.org/10.1038/nn.3862
+Murray, S. O., Kersten, D., Olshausen, B. A., Schrater, P., & Woods, D. L. (2002). Shape perception reduces activity
+           in human primary visual cortex. Proceedings of the National Academy of Sciences, 99(23), 15164–15169.
+           https://doi.org/10.1073/pnas.192579399
+Olshausen, B. A., & Field, D. J. (1996). Emergence of simple-cell receptive field properties by learning a sparse
+           code for natural images. Nature, 381(6583), 607–609. https://doi.org/10.1038/381607a0
+Olshausen, B. A., & Field, D. J. (1997). Sparse coding with an overcomplete basis set: A strategy employed by V1?
+           Vision Research, 37(23), 3311–3325. https://doi.org/10.1016/S0042-6989(97)00169-7
+Orbán, G., Berkes, P., Fiser, J., & Lengyel, M. (2016). Neural Variability and Sampling-Based Probabilistic Repre-
+           sentations in the Visual Cortex. Neuron, 92(2), 530–543. https://doi.org/10.1016/j.neuron.2016.09.038
+
+
+
+                                                          28
+Palmer, S. E., Marre, O., Berry, M. J., & Bialek, W. (2015). Predictive information in a sensory population. Proceed-
+           ings of the National Academy of Sciences, 112(22), 6908–6913. https://doi.org/10.1073/pnas.1506855112
+Rao, R. P. N. (1998). Correlates of Attention in a Model of Dynamic Visual Recognition. Advances in Neural
+           Information Processing Systems.
+Rao, R. P. N. (1999). An optimal estimation approach to visual perception and learning. Vision Research, 39(11),
+           1963–1989. https://doi.org/10.1016/S0042-6989(98)00279-X
+Rao, R. P. N. (2004). Bayesian Computation in Recurrent Neural Circuits. Neural Computation, 16(1), 1–38. https:
+           //doi.org/10.1162/08997660460733976
+Rao, R. P. N. (2005). Bayesian inference and attentional modulation in the visual cortex. NeuroReport, 16(16),
+           1843–1848. https://doi.org/10.1097/01.wnr.0000183900.92901.fc
+Rao, R. P. N., & Ballard, D. H. (1997). Dynamic Model of Visual Recognition Predicts Neural Response Properties
+           in the Visual Cortex. Neural Computation, 9(4), 721–763. https://doi.org/10.1162/neco.1997.9.4.721
+Rao, R. P. N., & Ballard, D. H. (1998). Development of localized oriented receptive fields by learning a translation-
+           invariant code for natural images. Network: Computation in Neural Systems, 9(2), 219–234. https://doi.
+           org/10.1088/0954-898X 9 2 005
+Rao, R. P. N., & Ballard, D. H. (1999). Predictive coding in the visual cortex: A functional interpretation of some
+           extra-classical receptive-field effects. Nature Neuroscience, 2(1), 79–87. https://doi.org/10.1038/4580
+Rao, R. P. N., & Ruderman, D. (1998). Learning Lie Groups for Invariant Visual Perception. Advances in Neural
+           Information Processing Systems, 11.
+Rao, R. P. N., Shon, A. P., & Meltzoff, A. N. (2007). A Bayesian model of imitation in infants and robots. In
+           C. L. Nehaniv & K. Dautenhahn (Eds.), Imitation and Social Learning in Robots, Humans and Animals:
+           Behavioural, Social and Communicative Dimensions (pp. 217–248). Cambridge University Press.
+Ruderman, D. L., & Bialek, W. (1994). Statistics of natural images: Scaling in the woods. Physical Review Letters,
+           73(6), 814–817. https://doi.org/10.1103/PhysRevLett.73.814
+Runyan, C. A., Piasini, E., Panzeri, S., & Harvey, C. D. (2017). Distinct timescales of population coding across
+           cortex. Nature, 548(7665), 92–96. https://doi.org/10.1038/nature23020
+Rust, N. C., & Palmer, S. E. (2021). Remembering the Past to See the Future. Annual Review of Vision Science, 7(1),
+           349–365. https://doi.org/10.1146/annurev-vision-093019-112249
+Sabour, S., Frosst, N., & Hinton, G. E. (2017). Dynamic Routing Between Capsules. Advances in Neural Information
+           Processing Systems, 30.
+Saul, A. B., & Humphrey, A. L. (1990). Spatial and temporal response properties of lagged and nonlagged cells
+           in cat lateral geniculate nucleus. Journal of Neurophysiology, 64(1), 206–224. https://doi.org/10.1152/jn.
+           1990.64.1.206
+Schneider, D. M., Sundararajan, J., & Mooney, R. (2018). A cortical filter that learns to suppress the acoustic
+           consequences of movement. Nature, 561(7723), 391–395. https://doi.org/10.1038/s41586-018-0520-5
+Schultz, W., Dayan, P., & Montague, P. R. (1997). A Neural Substrate of Prediction and Reward. Science, 275(5306),
+           1593–1599. https://doi.org/10.1126/science.275.5306.1593
+Schwiedrzik, C. M., & Freiwald, W. A. (2017). High-Level Prediction Signals in a Low-Level Area of the Macaque
+           Face-Processing Hierarchy. Neuron, 96(1), 89–97.e4. https://doi.org/10.1016/j.neuron.2017.09.007
+Siegle, J. H., Jia, X., Durand, S., Gale, S., Bennett, C., Graddis, N., Heller, G., Ramirez, T. K., Choi, H., Luviano, J. A.,
+           Groblewski, P. A., Ahmed, R., Arkhipov, A., Bernard, A., Billeh, Y. N., Brown, D., Buice, M. A., Cain,
+           N., Caldejon, S., . . . Koch, C. (2021). Survey of spiking in the mouse visual system reveals functional
+           hierarchy. Nature, 592(7852), 86–92. https://doi.org/10.1038/s41586-020-03171-x
+Sinclair, A. H., & Barense, M. D. (2019). Prediction Error and Memory Reactivation: How Incomplete Reminders
+           Drive Reconsolidation. Trends in Neurosciences, 42(10), 727–739. https://doi.org/10.1016/j.tins.2019.08.
+           007
+Singer, Y., Teramoto, Y., Willmore, B. D., Schnupp, J. W., King, A. J., & Harper, N. S. (2018). Sensory cortex
+           is optimized for prediction of future input (J. L. Gallant & S. Kastner, Eds.). eLife, 7, e31557. https :
+           //doi.org/10.7554/eLife.31557
+Smith, E. C., & Lewicki, M. S. (2006). Efficient auditory coding. Nature, 439(7079), 978–982. https://doi.org/10.
+           1038/nature04485
+Spratling, M. W. (2008). Reconciling Predictive Coding and Biased Competition Models of Cortical Function.
+           Frontiers in Computational Neuroscience, 2. https://doi.org/10.3389/neuro.10.004.2008
+Spratling, M. W. (2010). Predictive coding as a model of response properties in cortical area V1. The Journal of
+           Neuroscience: The Official Journal of the Society for Neuroscience, 30(9), 3531–3543. https://doi.org/10.
+           1523/JNEUROSCI.4911-09.2010
+
+
+
+
+                                                             29
+Srinivasan, M. V., Laughlin, S. B., & Dubs, A. (1982). Predictive coding: A fresh view of inhibition in the retina.
+          Proceedings of the Royal Society of London. Series B. Biological Sciences, 216(1205), 427–459. https://doi.
+          org/10.1098/rspb.1982.0085
+Steinmetz, N. A., Aydin, C., Lebedeva, A., Okun, M., Pachitariu, M., Bauza, M., Beau, M., Bhagat, J., Böhm, C.,
+          Broux, M., Chen, S., Colonell, J., Gardner, R. J., Karsh, B., Kloosterman, F., Kostadinov, D., Mora-Lopez, C.,
+          O’Callaghan, J., Park, J., . . . Harris, T. D. (2021). Neuropixels 2.0: A miniaturized high-density probe for
+          stable, long-term brain recordings. Science, 372(6539), eabf4588. https://doi.org/10.1126/science.abf4588
+Sun, J., & Perona, P. (1998). Where is the sun? Nature Neuroscience, 1(3), 183–184. https://doi.org/10.1038/630
+Tishby, N., Pereira, F. C., & Bialek, W. (2000). The information bottleneck method. arXiv:physics/0004057.
+Tong, F., Meng, M., & Blake, R. (2006). Neural bases of binocular rivalry. Trends in Cognitive Sciences, 10(11),
+          502–511. https://doi.org/10.1016/j.tics.2006.09.003
+Tsao, D. Y., Freiwald, W. A., Tootell, R. B. H., & Livingstone, M. S. (2006). A Cortical Region Consisting Entirely
+          of Face-Selective Cells. Science, 311(5761), 670–674. https://doi.org/10.1126/science.1119983
+Verma, D., & Rao, R. P. (2005). Goal-Based Imitation as Probabilistic Inference over Graphical Models. Advances
+          in Neural Information Processing Systems, 18.
+Verma, D., & Rao, R. P. N. (2006). Planning and Acting in Uncertain Environments using Probabilistic Inference.
+          2006 IEEE/RSJ International Conference on Intelligent Robots and Systems, 2382–2387. https://doi.org/10.
+          1109/IROS.2006.281675
+Wolpert, D. M., Miall, R. C., & Kawato, M. (1998). Internal models in the cerebellum. Trends in Cognitive Sciences,
+          2(9), 338–347. https://doi.org/10.1016/S1364-6613(98)01221-2
+Xu, S., Jiang, W., Poo, M.-m., & Dan, Y. (2012). Activity recall in a visual cortical ensemble. Nature Neuroscience,
+          15(3), 449–455. https://doi.org/10.1038/nn.3036
+Zipser, K., Lamme, V. A. F., & Schiller, P. H. (1996). Contextual Modulation in Primary Visual Cortex. Journal of
+          Neuroscience, 16(22), 7376–7389. https://doi.org/10.1523/JNEUROSCI.16-22-07376.1996
+
+
+
+
+                                                          30
+

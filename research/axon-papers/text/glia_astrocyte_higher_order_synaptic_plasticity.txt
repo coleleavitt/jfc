@@ -1,0 +1,987 @@
+                                    communications biology                                                                                                                               Article
+                                    A Nature Portfolio journal
+
+
+
+
+                                                                                                                                                      https://doi.org/10.1038/s42003-026-10044-y
+
+
+                                    Astrocyte-mediated higher-order control
+                                    of synaptic plasticity
+                                                                                                                                                                                  Check for updates
+
+                                    Gustavo Menesse1,2             , Ana P. Millán      1
+                                                                                            & Joaquín J. Torres      1
+
+
+
+
+                                    The dynamics of higher-order topological signals are increasingly recognized as a key aspect of the
+                                    activity of complex systems. A paradigmatic example are synaptic dynamics: synaptic efﬁcacy
+                                    changes over time driven by different mechanisms. Beyond traditional node-driven short-term
+                                    plasticity, the role of astrocyte modulation through higher-order interactions, in the tripartite synapse,
+
+
+1234567890():,;   1234567890():,;
+                                    is increasingly recognized. However, the competition and interplay between node-driven and higher-
+                                    order mechanisms remain poorly understood. Here, we introduce a higher-order model of the tripartite
+                                    synapse, accounting for astrocyte-synapse-neuron interactions in short-term plasticity, such that
+                                    astrocyte gliotransmission and pre-synaptic facilitation jointly modulate neurotransmitter release,
+                                    generalizing earlier short-term plasticity models. We study these mechanisms in a minimal recurrent
+                                    motif—a directed ring of three excitatory neurons—where one neuron receives external stimulation.
+                                    Due to strong recurrence, the circuit is prone to self-sustained activity, often ignoring external input. By
+                                    introducing higher-order interactions via astrocyte modulation, we show this robustly stabilizes circuit
+                                    dynamics and expands the parameter space supporting stimulus-driven activity. Our ﬁndings
+                                    highlight how astrocytes reshape effective connectivity through higher-order interactions—even in
+                                    simple recurrent circuits.
+
+
+                                    Synaptic interactions between neurons form a dynamic, adaptive network               research ﬁeld of higher-order topological dynamics1, combining the study of
+                                    that shapes brain dynamics and emergent cognitive phenomena. Such                    non-linear dynamics with algebraic topology to model and study the
+                                    structure-function coupling is a deﬁning feature of complex systems in               dynamics of higher-order topological signals, has revealed the emergence of
+                                    which underlying connectivity shapes—and is shaped by—emergent                       new dynamical states in such systems12–17. The impact of higher-order
+                                    behavior. Typically, the system dynamics are associated only with the nodes          topological dynamics goes beyond the study of complex systems. Recently,
+                                    of the network, which in the case of neuronal networks stand for neurons.            for instance, it has led to a new general framework for AI algorithms that can
+                                    Recently, however, it has become evident that the edges between the nodes            take advantage of the novel dynamics that are uniquely possible for higher-
+                                    —the synapses—can also be associated with topological signals, i.e., dyna-           order topological signals18–22.
+                                    mical variables which are not necessarily reduced to node dynamics1.                       Synaptic signals are a paradigmatic example of higher-order topolo-
+                                    Topological signals are ubiquitous in complex systems, and include mole-             gical signals. Synapses are typically modeled as the (1-dimensional) edges of
+                                    cular transportation ﬂuxes in cells, synaptic signals in the brain, dynamic          neuronal networks and, notably, their efﬁcacy changes dynamically over
+                                    functional connectivity among brain regions2–9, or vector ﬁelds such as the          time both in short and long time-scales via synaptic plasticity mechanisms.
+                                    one representing currents in the ocean10. Each topological signal is asso-           Among these, short-term plasticity (STP) plays a crucial role in modulating
+                                    ciated with a dimension that emerges from the underlying topological                 the on-line transmission of the neural code by dynamically adjusting
+                                    substrate of simplicial and cell complexes11 and reﬂects the type of inter-          synaptic strength on timescales of milliseconds to seconds23. STP includes
+                                    action the signal represents: signals on nodes are 0-dimensional, those on           transient facilitation (STF) and depression (STD), which depend primarily
+                                    edges are 1-dimensional, those on ﬁlled triangles or cycles (forming poly-           on the recent activity of the presynaptic neuron and govern the immediate
+                                    gons) are 2-dimensional and so on. Simplicial complexes and topological              response of a synapse to successive stimuli24–27. This rapid, activity-
+                                    signals provide a natural way to model and analyze complex, multi-scale              dependent modulation acts as a dynamic ﬁlter that can emphasize or sup-
+                                    interactions within a uniﬁed mathematical framework11. The emerging                  press speciﬁc temporal patterns of neural activity, effectively shaping
+
+
+                                    1
+                                        Department of Electromagnetism and Matter Physics and Institute “Carlos I” of Theoretical and Computational Physics, University of Granada, Granada, Spain.
+                                    2
+                                        Departamento de Física, Facultad de Ciencias Exactas y Naturales, Universidad Nacional de Asunción, San Lorenzo, Paraguay.
+                                          e-mail: gmenesse@facen.una.py; jtorres@onsager.ugr.es
+
+
+                                    Communications Biology | (2026)9:684                                                                                                                             1
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                  Article
+
+information ﬂow in real time. A well-established model of STP introduced            probability of neurotransmitter release at the pre-synaptic neuron, either
+in Ref. 28 captures both facilitation and depression, and has been shown to         increasing or decreasing it52,53. Models of astrocyte regulation of different
+generate non-equilibrium phases linked to dynamic memory and resonance              levels of detail have been proposed45,54,55. Many of these extend traditional
+phenomena near criticality29–32. In contrast to long-term plasticity, which         short- and long-term synaptic dynamics to incorporate astrocyte inﬂuences,
+involves lasting changes driven by correlated pre- and post-synaptic activity,      ranging from biophysically detailed compartmental models56,57 to more
+STP provides a fast, ﬂexible mechanism for regulating synaptic efﬁcacy and          simpliﬁed descriptions58. Overall, previous models have neglected the
+supporting context-dependent computation in neural circuits.                        interplay between pre-synaptic and astrocyte mechanisms. Given than both
+      Over the past two decades, accumulating evidence has shown that               of them act on the same neurotransmitters, exploring this competition
+synaptic plasticity involves not only pair-wise, neuron-to-neuron commu-            remains an open question with potentially far-reaching implications.
+nication, but also mechanisms that are intrinsically higher-order. A para-                In order to address this gap, in this study we propose a simple higher-
+digmatic example is the tripartite synapse, in which astrocytes—non-                order astrocyte-synapse-neuron short-term plasticity model (ASN-STP)
+neuronal glial cells and the most abundant cell type in the brain—play an           that captures the competition between astrocyte and pre-synaptic
+active role in modulating synaptic transmission33,34. Unlike traditional            mechanisms in short-term facilitation dynamics. Acknowledging the large
+neuron-centric models, where synaptic plasticity is viewed as a local, node-        variate of astrocytic regulatory mechanisms, we focus speciﬁcally on glio-
+driven process, the tripartite model reveals a more distributed and collective      transmission as a tractable and mechanistically transparent entry point to
+form of regulation. Astrocytes can simultaneously monitor and modulate              study higher-order astrocyte-synapse interactions. We introduce a general
+the activity of multiple neighboring synapses, often across different neurons,      STP framework which reduces to previous models in the literature28,50 for
+exerting control over synaptic efﬁcacy and, consequently, over information          speciﬁc simpliﬁcations. By examining the dynamics of the tripartite synapse
+ﬂow in neural circuits35,36.                                                        from a higher-order perspective13, our model provides an uniﬁed framework
+      Astrocytes regulate neuronal activity through a broad range of                to study the interplay between neuronal (dimension zero), synaptic
+mechanisms (see37 for a comprehensive review). These include direct                 (dimension one) and astrocyte (dimension two) dynamics, and how these
+modulation of synaptic plasticity via multiple signaling pathways34,38, as well     shape emergent neuronal activity.
+as indirect regulation through control of extracellular ion concentrations,               To illustrate the emergent dynamics of the system, we consider in
+such as potassium, which has been shown to play a key role in shaping               particular the role of astrocyte regulation in a simple ring of neurons con-
+neuronal bursting activity by modulating neuronal afterhyperpolarization39.         nected by excitatory synapses. Our ﬁndings illustrate that the presence of
+These and other processes operate across multiple spatial and temporal              even a single tripartite synapse is sufﬁcient to prevent runaway excitatory
+scales and can strongly inﬂuence network stability and responsiveness. This         activity. This effect is strongest when higher-order interactions are present,
+glial modulation is not merely auxiliary but may constitute a core                  such that a single astrocyte modulates several synapses coordinately, as it is
+mechanism of synaptic computation, contributing to the temporal ﬁltering,           the case in brain networks. Higher-order interactions further enhance the
+integration, and stabilization of synaptic signals34,36. The effects of astrocyte   system’s responsiveness to external stimuli when they act on internal
+modulation compete with those of traditional node-driven STP, a fact that is        synapses, as opposed to those responding directly external stimuli, sug-
+typically overlooked both in STP and tripartite-synapse models. From a              gesting that astrocyte modulation plays a more central role in deeper,
+higher-order perspective, however, such effects arise naturally1. In this           integrative circuits, rather than sensory ones. The fact that tripartite synapse
+context, a neuronal network made of neurons and synapses is expanded by             are more abundant in the hippocampus and cerebellum59, present in more
+coupling the synapses through a new, higher-dimensional element, the                than 50% of all synapses in the hippocampus60, which are regions with high
+astrocytes. Topologically, astrocytes are thus modeled as the 2-dimensional         internal recurrence61,62 support the biological plausibility of our theoretical
+polygons of the higher-order network (or cell complex), in which nodes and          results. In short, our study indicate that higher-order astrocyte modulation
+synapses are respectively the 0-dimensional nodes and the 1-dimensional             is highly beneﬁcial to control plasticity and neuronal activity of high-
+edges. And in a higher-order network modeling the dynamics of edge-signal           recurrent circuits.
+(synaptic efﬁcacies) naturally involves interactions through the nodes
+(neurons) they share, as well as through the polygons (the astrocytes) they         Results
+conform10,40.                                                                       To study the low- and high-order effects of the tripartite synapse on synaptic
+      Another example of higher-order modulation is the axo-axonic                  and neuronal dynamics, we propose a neuron-synapse-astrocyte model (see
+synapse, where a neuron directly targets the axon of another neuron to              “Methods” section). We consider a minimal recurrent circuit of excitatory
+modulate the efﬁcacy of its downstream synaptic connections—typically               neurons arranged in a ring, such that each neuron projects an excitatory
+exerting an inhibitory effect41,42. Recent work has framed axo-axonic               (directed) synapse onto the following one (for simplicity, in the main part of
+interactions as a form of triadic control over edge dynamics, leading to            this study we focus on this small recurrent network and in the ﬁnal section
+emergent spatiotemporal patterns in recurrent neural circuits13,43. Together,       we will explore the effect of increasing the circuit size). The network receives
+these mechanisms support the view that synaptic computation is not a                external input via a spike train arriving at one of the neurons, namely the
+purely dyadic phenomenon but a multi-agent, higher-order process, with              read-in neuron, and activity is read from the last neuron in the ring, hereby
+astrocytes playing a particularly central role in the orchestration of dynamic      refereed to as read-out neuron. As main control parameters of the model we
+and context-sensitive plasticity. In this context, a higher-order network           consider the fraction α of neurotransmitters that remain available for the
+perspective naturally arises, in which astrocytes mediate triadic interactions      synapses—such that (1 − α) is the fraction of neurotransmitters recruited by
+between synapses, giving rise to effective link-link couplings that cannot be       the astrocyte—and the frequency of incoming pulses at the read-in neuron.
+reduced to independent pairwise synaptic effects.                                         This neuronal circuit already exhibits various behaviors in the absence
+      From the neuroscience perspective, modeling of astrocyte signaling is a       of astrocyte interaction, driven by local STP (see Supplementary Fig. A),
+signiﬁcant challenge due to their complex morphology and diverse                    including synﬁre activity, bistable (switching on-off) activity controlled by
+dynamics. Astrocytes regulate synaptic plasticity by different mechanisms,          external stimuli, and bursting activity. As shown in Fig. 1a, in this case the
+including gliotransmission44 and neurotransmitter uptake that clears the            circuit is highly susceptible to entering a state of self-sustained activity (SSA)
+synaptic cleft45. In particular, gliotransmission is a process in neuron-           where the network is unresponsive to external stimuli—equivalent to a
+astrocyte interaction by which astrocytes (and more generally glia cells)           supercritical state63. This occurs as soon as synaptic currents are large
+release gliotransmitters such as glutamate46 and ATP38 (key excitatory              enough so that each pre-synaptic spikes triggers a post-synaptic one.
+neurotransmitters) that interact directly with different receptors of both the      Consequently, the ﬁring rate of the read-in neuron remains high for all
+pre- and post-synaptic neurons44. Among other effects47–49 gliotransmission         values of α, and the SSA regime spans a large area of the parameter space
+plays a role both in short-50 and long-term51 plasticity by modulating the          (indicated by the black line in Fig. 1a). As we go on to show (see also
+
+
+Communications Biology | (2026)9:684                                                                                                                                2
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                       Article
+
+
+
+
+Fig. 1 | Astrocyte higher-order modulation extends the responsive region of the        astrocytes. Astrocyte-synapse interactions are indicated by green short lines. The
+neuronal circuit. We      network activity through the average ﬁring frequency of
+                      show                                                            read-in neuron that receives the external stimulus and which activity is shown in the
+the read-in neuron νin (heat-map diagrams) as a function of the fraction of            heat-maps is indicated by a red arrow. In each diagram, the black line indicates the
+neurotransmitters that remain in the synaptic cleft (α), and of the stimulus fre-      transition to the SSA regime. This line marks the critical value of α above which the
+quency. Each panel corresponds to a different astrocyte conﬁguration as indicated by   synaptic currents emitted by neurons are always sufﬁcient to trigger spikes in their
+the corresponding graph diagram: a no astrocytes; b–d respectively one, two, and       postsynaptic partners, thereby sustaining activity within the circuit. For a detailed
+three astrocytes that interact with single synapses (low-order regulation); e, f one   description of how the transition line is computed, see Supplementary Section 4.
+astrocyte that interacts with multiple synapses (higher-order regulation). In the      Network parameters were set to the default values listed in Table 1, and we set
+graph diagrams blue circles stand for neurons, black lines for synapses (with the      ε = 0.01, Cath = 0.04, β = 0.05.
+round end pointing towards the post-synaptic neuron), and green stars for
+
+
+
+Supplementary Fig. B), astrocyte modulation disrupts the SSA regime and                      Assuming the absence of gap-junction coupling between astrocytes
+extends the region where the system is responsive to external stimuli.                 (DCa = 0), we ﬁrst compare different low- and higher-order modulation
+      In order to study the role of astrocyte modulation on preventing                 schemes. In low-order schemes, each astrocyte modulates only a single
+runaway activity, we focus here mainly on the case ε < USE. That implies,              synapse, so that astrocytic dynamics effectively contribute only to ﬁrst-order
+according to equation (11) (see “Methods” section), that astrocyte regula-             (link-level) interactions. In higher-order schemes, by contrast, each astro-
+tion in the tripartite plasticity leads only to a decrease in neurotransmitter         cyte modulates multiple synapses, thereby implementing effective link–link
+release probability, i.e., a sort of anti-facilitation. In a later section, we also    (second-order) interactions. This conﬁguration is consistent with the
+consider the effect of positive astrocyte facilitation (ε > USE). To characterize      organization observed in neuronal–astrocyte networks and naturally gives
+the system dynamics, we quantify the activity of the read-in (neuron 1, red            rise to higher-order interactions.
+arrow in Fig. 1) and read-out (neuron 3, see Fig. 1) neurons, denoted 〈νin〉                  Finally, we consider astrocyte–astrocyte interactions mediated by gap
+and 〈νout〉, respectively, to assess the potential functional beneﬁts and side          junctions (see equation (17) in “Methods” section) and examine how these
+effects of negative astrocytic modulation.                                             affect the system dynamics, and whether such diffusive coupling can recover
+
+
+Communications Biology | (2026)9:684                                                                                                                                      3
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                            Article
+
+
+
+
+Fig. 2 | Astrocyte interaction scheme determines the circuit interval of monotonic         that interacts with multiple synapses (higher-order regulation). The region between
+positive response. We show network activity through the average ﬁring frequency
+                                                                                    of   the black dashed lines indicates the range of α values for which the read-out neuron
+the read-out neuron (indicated by a black arrow in the graph diagrams) νout . Each         responds to the stimulus (below SSA transition) across the explored range of
+panel corresponds to a different astrocyte conﬁguration as indicated by the corre-         stimulation frequencies. Parameters: ε = 0.01, Cath = 0.04, β = 0.05. Other simulation
+sponding graph diagram: a no astrocytes; b–d respectively one, two, and three              parameters are listed in Table 1.
+astrocytes that interact with single synapses (low-order regulation); e, f one astrocyte
+
+
+the effects of genuine higher-order astrocyte regulation in low-order                      role of higher-order interactions, as mediated by astrocytes in the tripartite
+schemes.                                                                                   synapse, in regulating excessive activity at the node and edge level, thus
+                                                                                           expanding the responsiveness of the system of external stimuli.
+Higher-order modulation prevents runaway excitatory activity
+We assess the regulatory effect of astrocyte modulation on activity propa-                 Higher-order tripartite plasticity improves read-out neuron
+gation under low-order and higher-order schemes (see Fig. 1).                              response to stimuli
+      Our results show that the presence of even a single tripartite synapse is            To explore possible side effects of astrocyte regulation, we consider in Fig. 2
+sufﬁcient to regulate activity-propagation and signiﬁcantly extend the area                the average ﬁring-rate of the read-out neuron, namely 〈νout〉, in the same
+of the responsive phase in the parameter space, in particular in the control               modulation schemes as considered in the previous section (Fig. 1). In the
+parameter α (panels b–f). Notably, this effect is greatest when astrocytes act             absence of astrocyte regulation (panel a), 〈νout〉 is high except for a small
+in a higher-order scheme, that is, when a single astrocyte modulates multiple              region for small α and small stimulus frequency (below 2Hz), for which the
+synapses (panels e, f), rather than astrocytes acting locally at the single-               read-out neuron does not ﬁre. In this regime a spike of the pre-synaptic
+synapse level (panels b, c). In the higher-order scheme, astrocytes integrate              neuron is not enough to cause a spike of the post-synaptic neuron, and STP
+the signals of different synapses. This not only leads to a faster [Ca2+]                  does not effectively operate at such low frequencies due to the typical
+increase in the astrocyte and quicker gliotransmitter release, but this release            timescales of plasticity mechanisms64. Otherwise the average ﬁring rate is
+also occurs simultaneously across all adjacent synapses, thus allowing for a               high as for the pre-synaptic neuron in Fig. 1a, indicating low sensitivity of
+more effective modulation of neuronal activity. These results highlight the                the circuit to the stimulation rate and its susceptibility to falling into the SSA
+
+
+Communications Biology | (2026)9:684                                                                                                                                           4
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                Article
+
+regime. Similarly to the read-in neuron case, the presence of at least one         ﬁring rates for input frequencies below 10 Hz, indicating that small changes
+tripartite synapse is sufﬁcient to modulate activity, signiﬁcantly increasing      in α can produce abrupt increases in ﬁring rate. This behavior makes the
+the read-out neuron’s sensitivity to external stimuli.                             circuit less stable with respect to external stimulation, and this effect is more
+      To quantify the ability of the circuit to respond to external stimuli, we    pronounced in the case of low-order modulation of the ﬁrst synapse
+identify an interval in α for which the read-out neuron response mono-             (see Fig. 3c).
+tonically increase (monotonic positive response) with respect to stimulus                In contrast, the higher-order scheme in which only internal synapses
+frequencies (1–100 Hz), and for which the circuit is not in the SSA regime.        (2 → 3 and 3 → 1) are modulated (see Fig. 3e) exhibits a high average
+This is shown in Fig. 2 as the area between the two black dashed lines. A          dynamic range across the largest α interval. The higher-order case in which
+comparison between circuit activity in the safe regime with monotonic              all three synapses are regulated (see Fig. 3f) shows the largest average
+positive response vs SSA regime is presented in Supplementary Fig. C. The          dynamic range overall, although this occurs within a smaller α interval. In
+addition of astrocyte modulation, either in a low- or higher-order setting,        Supplementary Fig. G, we also report the dynamic range estimated for each
+expands the monotonic positive response interval except for the case where         value of α. This analysis makes explicit that astrocytic modulation extends
+a single astrocyte regulates all three synapses (panel f), which we discuss in     the range of α values associated with a monotonic positive response
+detail in the next paragraph. The conﬁguration with the largest monotonic          (characterized by a large positive dynamic range), and provides a clear
+positive response interval (panel e) corresponds to higher-order regulation        visualization of the relationship between the loss of monotonicity in the
+by a single astrocyte of the two internal synapses (synapses 2 → 3                 response and the SAA transition.
+and 3 → 1).                                                                              These results highlight a simple yet important point: for tripartite
+      In the higher-order case in which the astrocyte regulates all three          plasticity to be beneﬁcial in a recurrent network such as the one studied here,
+synapses (panel f), we observe that the read-out neuron becomes silent at          modulation should only apply to internal synapses, i.e., synapses that are
+high stimulation frequencies, and that the monotonic positive interval shifts      activated by the network’s own activity. When astrocytes interact with
+toward higher α values while shrinking in extent.                                  synapses not regulated by the internal activity of the circuit, meaning,
+      Notably, as mentioned above, this phenomenon is not observed in the          synapses that will be activated by external factors, then excessive modulation
+higher-order case in which the astrocyte does not regulate the ﬁrst synapse        can occur, undermining the beneﬁts of astrocyte involvement.
+(panel e). This is because the activation of the ﬁrst synapse (1 → 2) can be
+independent of the internal dynamics of the circuit, as it is directly driven by   On whether higher-order modulation differs from low-order
+the external stimulus that induces ﬁring in neuron 1. The repeated activation      modulation
+of synapse 1 → 2 maintains a high calcium concentration in the astrocyte           In our set-up, low- and higher-order regulation schemes differ in the
+(through the associated IP3 currents, see equation (14) in “Methods”),             number of synaptic inputs received by each astrocyte, which always equals
+causing the astrocyte to remain active for longer periods. This sustained          one in the low-order schemes, and two or three in the higher-order ones.
+activity reduces synaptic efﬁcacy by lowering the release probability              This leads to lower IP3 production, lower calcium concentration, and thus
+(equation (11) in “Methods”), thereby disrupting activity propagation              reduced astrocyte modulation in the low-order schemes. This raises the
+before it reaches the read-out neuron.                                             question of whether the differences observed in Figs. 1 and 2 between low-
+      A similar but signiﬁcantly weaker effect occurs in the low-order             order (panels b and c) and higher-order (panels e and f) regulatory schemes
+modulation case (panel c), becoming noticeable only for very small values of       are simply due to a different scaling of the calcium levels, rather than an
+α < 0.55 and high stimulation frequencies (>50 Hz). In Supplementary               effect of higher-order regulation. To test this, in Fig. 4 we performed
+Fig. D, we show that this effect arises in any scheme involving modulation of      additional analyses for the low-order modulation scheme shown in panel
+the ﬁrst synapse, even when it is the only synapse being regulated. However,       (b) of Figs. 1 and 2, that is, the case where two different astrocytes regulate
+when the same astrocyte also interacts with the second synapse, the sup-           the internal synapses 2 → 3 and 3 → 1, respectively. In particular, we
+pression of activity at high frequencies is considerably ampliﬁed. Although        analyzed how the parameters β and Cath controlling the astrocytes’ calcium
+this frequency-selective response may be interesting from the perspective of       dynamics affect the 〈νout〉 diagrams. In particular, β controls the level of
+selective signal transmission, usually studied in the context of excitatory-       intracellular [Ca2+] elevation due to IP3 production, while Cath sets the
+inhibitory circuits65, in the following we mainly focus on the dynamical           calcium threshold required for gliotransmitter release (equation (17) in
+regime characterized by a monotonic positive response across stimulus              Methods). Gliotransmission is facilitated both by increasing β and/or
+frequencies.                                                                       decreasing Cath. In Fig. 4 we systematically increase β and decrease Cath,
+      In order to study the monotonic positive response regime in more             starting from their reference values, thereby enhancing gliotransmission.
+detail, in Fig. 3 we show 〈νout〉 again, but now using Poisson spike trains         We ﬁnd that in either case the onset of the SSA regime (dark-red region)
+instead of periodic stimulation, and only for α values within the monotonic        shifts towards higher α values, partially mimicking the behavior observed in
+positive response interval identiﬁed in Fig. 2. The response is shown as a         the higher-order scheme of Fig. 2e. However, in neither case do we recover
+function of the stimulus frequency. In Supplementary Fig. E, we report the         the length of α parameter interval for monotonic positive response Δαr
+read-out response for different modulation schemes under Poisson stimu-            found under the higher-order regulation scheme. On the contrary, by
+lation. The results show the same qualitative behavior as in the periodic case,    increasing gliotransmission in the low-order case we ﬁnd that it disrupts
+with a mitigation of the response suppression for low α and high-frequency         synaptic signal propagation prematurely, and the readout neuron becomes
+observed in the low-order scheme due to the stochastic inter-spike intervals.      unresponsive to external stimuli (white region) already for smaller fre-
+      To further characterize the circuit response, we estimate the average        quency inputs. Thus, the modulatory beneﬁts seen in the higher-order setup
+dynamic range (see Supplementary Fig. F) of the read-out neuron for each           cannot be replicated by simply amplifying astrocyte calcium currents in low-
+modulatory scheme within the safe α interval (i.e., below the SAA transi-          order schemes. This underscores the functional signiﬁcance of astrocyte-
+tion). Using random rather than periodic stimulation allows us to obtain a         mediated higher-order interactions in modulating synaptic activity at the
+smoother transfer function, which facilitates a more robust estimation of the      circuit level.
+dynamic range. The estimated values are reported as inset text in the cor-
+responding panels of Fig. 3, together with the length of the read-out              Positive modulation by astrocytes
+responsive α interval, Δαr. For additional details on the dynamic range            In the previous analyses, we assumed that gliotransmission exerts a
+estimation, see Section 6 of the Supplementary Information.                        depressive modulatory effect on synaptic transmission. More generally,
+      The presence of astrocyte modulation increases the average dynamic           however, gliotransmission can also have a facilitating effect. In the model,
+range within the safe region (responsive region below SAA transition). Low-        this is captured by the parameter ε: for ε < USE, gliotransmission
+order modulatory schemes lead to a more spread distribution of response            decreases synaptic facilitation, whereas for ε > USE it increases facilitation.
+
+
+Communications Biology | (2026)9:684                                                                                                                              5
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                    Article
+
+
+
+
+Fig. 3 | Neuronal circuit response improves under higher-order astrocyte mod-        function of the stimulus frequency. Each data-point corresponds to a value of α, as
+ulation of internal synapses. Each panel corresponds to a different astrocyte con-   indicated by the color-code (see color-bar). The median ﬁring rate for each stimulus
+ﬁguration as indicated by the corresponding graph diagram: a no astrocytes;          frequency is shown by the black dashed line. Inset text in each panel reports the
+b–d respectively one, two, and three astrocytes that interact with single synapses   average dynamic range Δ (dB) (see Section 6 of Supplementary Information) and the
+(low-order regulation); e, f one astrocyte that interacts with multiple synapses     length of the monotonic positive response interval Δαr. Parameter values were
+(higher-order regulation). We show the same data as in Fig. 2 restricted to the      ε = 0.01, Cath = 0.04, β = 0.05 and DCa = 0. Other simulation parameter values are
+monotonic positive regime, for each interaction scheme. Here we show 〈νout〉 as a     listed in Table 1.
+
+
+
+For ε = USE, gliotransmission has no net effect, a case known as                     progressively shrinks as ε → USE. Accordingly, the choice of ε = 0.01 is
+occlusion36.                                                                         arbitrary, as any circuit with ε < USE but sufﬁciently close to USE exhibits
+     In Fig. 5, we compare decreased and increased facilitation in both              qualitatively similar behavior across the different modulatory schemes,
+lower-order (top panels) and higher-order (bottom panels) interaction                where the only difference is the size of the unresponsive region for the high-
+schemes. We ﬁnd, ﬁrst, that the extension of the SAA regime in α (dark-red           order modulatory scheme that includes the ﬁrst (external) synapse.
+area) is not strongly affected by the type of astrocytic modulation (i.e.,                Exploring different values of ε further reveals that achieving a sensitive
+decreased versus increased facilitation), but rather by the presence of              read-out response across a large range of stimulus frequencies is possible
+astrocytes and the interaction scheme. Speciﬁcally, the extent of the SAA            even when the ﬁrst synapse is modulated, but would require more precise
+regime in parameter space shrinks under higher-order astrocytic regulation           tuning. Since ε is an effective parameter rather than a directly measurable
+(bottom panels), regardless of whether gliotransmission decreases or                 biophysical quantity, any ﬁne-tuning would be ad hoc and undesirable.
+increases facilitation. Thus, the mere competition for activating presynaptic        Therefore, it is preferable to focus on regimes in which circuit behavior is
+neuroreceptors (quantiﬁed by γas and γpre) is sufﬁcient to prevent (or sig-          robust over broad parameter ranges, rather than relying on narrowly tuned
+niﬁcantly reduce) vulnerability to runaway activity in the neuronal circuit.         values.
+     Second, we ﬁnd that facilitating astrocytic modulation leads to higher
+ﬁring frequencies in the read-out neuron, as expected. Consequently, the             Astrocyte diffusive network
+region of excessive suppression that renders the read-out neuron unre-               The astrocyte model also allows us to introduce coupling between astrocytes
+sponsive (white regions on the right-hand side of the diagrams) is sig-              through a diffusive term representing gap-junction interactions. Generally,
+niﬁcantly reduced. To illustrate this point, in Supplementary Fig. H we              this can have non-trivial effects on the emergent dynamics of the system,
+compare different values of ε < USE and show that, while the qualitative             particularly in large systems. Here, and in line with the rest of the study, we
+behavior remains the same, the region of non-responsive read-out neuron              consider in particular the question of whether astrocyte-coupling in low-
+
+
+Communications Biology | (2026)9:684                                                                                                                                   6
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                               Article
+
+
+
+
+Fig. 4 | Low-order modulation cannotreplicate         higher-order effect. We show the     top). The region between the black dashed lines indicates the range of α values for
+ﬁring frequency of the read-out neuron νout under a low-order interaction scheme             which the read-out neuron responds to the stimulus (below SSA transition) across
+as shown by the graph top-right inset (two uncoupled astrocytes regulating the               the explored range of stimulation frequencies. The reference values (considered in
+internal synapses synapses 2 → 3 and 3 → 1 respectively) for different values of the         the previous ﬁgures) are β = 0.05 and Cath = 0.04. Gliotransmission is facilitated both
+parameters β and Cath controlling the astrocytes' calcium dynamics (equation (17)).          by increasing β and/or decreasing Cath. Here ε = 0.01 and all other parameters are as
+In particular, β = {0.05, 0.1, 0.15} for left to right, and Cath = {0.04, 0.02} (bottom to   listed in Table 1.
+
+
+
+order schemes, in which each astrocyte modulates only one synapse, can                       that, in the absence of astrocyte regulation (panel a), the system now enters
+replicate the ﬁndings of higher-order schemes, in which an astrocyte                         the SSA regime for almost any value of the control parameters. This
+modulates several synapses concurrently. In Fig. 6, we consider the low-                     behavior is due to the interplay between the intrinsic time-scales of STP
+order scheme of three astrocytes, each modulating a synapse, corresponding                   recurrent pulses that travel through the cycle, which cause the system to
+to panel (c) of Figs. 1 and 2. In this case, we couple the three astrocytes via              enter a resonance state insensitive to the details of the external stimulus. For
+pair-wise gap-junctions (according to equation (17)), as indicated in the                    more details of this phenomenon see Supplementary Fig. J.
+ﬁgure, and consider increasing diffusion coefﬁcients DCa. Our ﬁndings show                         A responsive operating regime becomes possible only in larger cycles
+that calcium diffusion across astrocytes has a small effect that does not                    through astrocyte modulation. To analyze the effect of particular astrocyte
+signiﬁcantly alter the phase diagram of the system, and, in particular, is not               interaction schemes, we focus on those not regulating the input synapse, as
+able to recover the effects of higher-order modulation. When a single                        we discussed above. We ﬁnd that, when the astrocyte modulates all synapses
+astrocyte modulates several synapses, it receives and integrates inputs from                 but this one (n = 4 interacting synapses, panel b), excessive modulation
+all of them, resulting in enhanced gliotransmission. Therefore, it is an                     arises as the frequency of the stimulus increases (white region in the right-
+aggregative, rather than diffusive, effect, and it cannot be replicated via                  hand side of the diagrams) that is akin to the behavior in panel (f) of Fig. 2
+diffusive coupling. In Supplementary Fig. I, we show how diffusive coupling                  and that ultimately disrupts the network’s responsiveness to external sti-
+through gap-junctions reduces calcium concentration variability between                      muli. In this case, excessive astrocyte “inhibition” (through decreased
+astrocytes but with minimal effect on plasticity modulation.                                 facilitation) arises from its interaction with several synapses, which rapidly
+      However, we emphasize that the limited impact of gap-junction-                         rises [Ca2+] in the astrocyte. Given that the astrocyte regulates all synapses
+mediated calcium diffusion observed here is likely speciﬁc to the small, local               concurrently, it stops activity propagation before it reaches the read-out
+circuits considered in this study. At larger spatial scales, gap-junction cou-               neuron.
+pling and other diffusive mechanisms are expected to play a more promi-                            The case of intermediate higher-order modulation, i.e., when the
+nent role, as they introduce signal propagation delays and spatial gradients                 astrocyte modulates two synapses (n = 2), one of which is the recurrence one
+that can support richer forms of collective dynamics not observable at very                  and the other is an internal synapse, achieves optimal response of the read-
+small scales. In extended astrocytic networks, such delays and spatial                       out neuron (panels e and f). In this manner, the astrocyte effectively inte-
+interactions could enable coordinated or wave-like activity that qualitatively               grates information about overall network activity through the later synapse,
+alters neuronal modulation57,66,67, in contrast to the predominantly aggre-                  while directly modulating recurrent excitability with the former. This
+gative effects observed in the minimal circuits studied here.                                interplay enables an optimal operational regime that balances propagation
+                                                                                             and stability. Notably, when the astrocyte only modulates internal synapses
+Astrocyte modulation in larger networks                                                      (panels c for n = 3 and d for n = 2), excessive modulation still occurs.
+In the main part of this study we have considered a simple system made by a                        To gain more insight into the effects of regulating the recurrence
+three-neuron recurrent circuit. To gain a glimpse on the effects of higher-                  synapses, extended the analysis of astrocyte modulation of two synapses to a
+order astrocyte modulation on larger systems, we consider here larger                        larger cycle consisting of 20 excitatory neurons in Fig. 8. We considered in
+networks in the form of N-node cycles under different modulation schemes.                    particular three schemes: two internal synapses (panel a), the recurrence
+Firstly, in Fig. 7 we consider N = 5 and four interaction schemes: (a) no                    synapse and the one before it (panel b), and the recurrence synapse and an
+astrocyte regulation; (b) a single astrocyte modulating all internal synapses;               internal synapse close to the read-in neuron (panel c). We consider in this
+and (c, d) a single astrocyte modulating two synapses, one of which is the                   case the average ﬁring rates of the read-in neuron 〈νin〉 (second row of
+recurrence synapse connecting the read-in and read-out neurons. We ﬁnd                       panels), an intermediate neuron, indicated by the orange arrow in the graph
+
+
+Communications Biology | (2026)9:684                                                                                                                                              7
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                           Article
+
+
+
+
+Fig. 5 | From negative to positive astrocyte modulation (effect of ε). Effect of the       the black dashed lines indicates the range of α values for which the read-out neuron
+modulation type (controlled by ε) for a higher-order (top panels) and the corre-           responds to the stimulus (below SSA transition) across the explored range of sti-
+sponding low-order (bottom panels) schemes, as indicated by the graph diagrams.            mulation frequencies. The reference value (used for the previous ﬁgures) is ε = 0.01.
+a corresponds to decreased facilitation, ε = 0.05 < USE, whereas b, c correspond to        Other parameter values were Cath = 0.04, β = 0.05 and DCa = 0. Additional simulation
+increased facilitation (ε > USE), respectively with ε = 0.15 and 0.2. The region between   parameter values are provided in Table 1.
+
+
+
+
+Fig. 6 | Astrocyte diffusion-network does not recover higher-order modulation              Each column corresponds to a different diffusion coefﬁcient DCa, namely
+schemes. Here we consider the low-order modulation scheme with three astrocytes,           DCa = 10−3 ms−1 (a), 10−2 ms−1 (b), and 10−1 ms−1 (c). For each panel,
+                                                                                                                                                              we show via a
+such that each astrocyte modulates one synapse (corresponding to (c) in                    colormap the average ﬁring rateof (top row) the read-in neuron νin and (bottom
+Figs. 1 and 2), as shown by the graph diagram. In this case the astrocytes are coupled     row) the read-out neuron νout . Parameter values were ε = 0.01, Cath = 0.04 and
+via gap-junctions (equation (17)) as represented by red lines in the graph cartoon.        β = 0.05 in ms−1. Other simulation parameter values are listed in Table 1.
+
+
+
+panels, 〈νinter〉 (third row of panels), and the read-out neuron 〈νout〉 (fourth             astrocyte (panels b and c), regardless of which other synapse is modulated.
+row of panels). As expected from our previous results, the read-in neuron                  In contrast, when the astrocyte modulates only two of the ﬁrst synapses in
+exhibits a safe response to external stimuli of any frequency and across a                 the circuit (panel a), signal propagation is suppressed for a large region of the
+broad range of α values, due to higher-order astrocyte modulation (see top                 parameter space and stimulus frequency; as a result, the read-out neuron is
+row of Fig. 8). As before, we observe that increased responsiveness of the                 unresponsive (white region in the right-hand side of the read-out neuron
+read-out neuron occurs when the recurrence synapse is modulated by the                     diagram).
+
+
+Communications Biology | (2026)9:684                                                                                                                                          8
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                           Article
+
+
+
+
+Fig. 7 | Astrocyte modulation in a larger cycle
+                                             of  ﬁve neurons. Colormaps indicate         just two internal synapses, where in (d) astrocite does not modulate the recurrence
+the average ﬁring rate of read-out neuron νout . Each panel corresponds to a               synapse and in (e, f) it modulates the recurrence synapse from the read-out to the
+different interaction scheme, as indicated by the graph diagrams: a no astrocytes; a       read-in neuron, and a second one. Simulation with ε = 0.01, Cath = 0.04, β = 0.05 and
+single astrocyte modulating (b) three internal synapses, (c) all four internal synapses;   DCa = 0. Other simulation parameter values are listed in Table 1.
+
+
+
+       To investigate the robustness of these results over the network, we                 passive support cells, astrocytes are now understood to participate in a wide
+consider now the activity of the internal synapse. Interestingly, when the                 range of processes, from neural circuit development69 to regulation of neural
+recurrence synapse is modulated the activity of the internal synapses does                 circuit activity37. In particular, their involvement in synaptic plasticity—
+depend on the location of the second modulated synapse. When the                           through the release of gliotransmitters and the modulation of pre- and
+astrocyte modulates the last two synapses in the cycle (panel b of Fig. 8),                postsynaptic activity—has attracted increasing attention70,71. For instance,
+activity in the early part of the circuit is weakly modulated, and the inter-              glutamate clearance, primarily carried out by astrocytes72, is essential for
+mediate neuron behaves similarly to the read-in neuron. In contrast, if the                normal brain function and to prevent excitoxicity which has been hypo-
+second synapse modulated by the astrocyte is located early-on in the cycle                 thesized to play a role in neurodegenerative diseases including amyotrophic
+(panel c of Fig. 8), the behavior of the intermediate neuron resembles now                 lateral sclerosis, Alzheimer’s disease and Huntington’s disease73. Further-
+that of the read-out neuron. This result suggests that the astrocyte’s spatial             more, gliotransmission can activate extrasynaptic inhibitory receptors
+scope of integration—whether it spans the beginning and end of the circuit,                through astrocyte GABA release, a mechanism that, when dysregulated, has
+i.e., accessing non-local information about the network state, or only the                 been linked to Alzheimer’s disease49. These and other effects highlight
+end, i.e., accessing only local information—inﬂuences activity propagation                 astrocyte-neuron interactions as key regulators of both physiological and
+through the cycle, and the responsiveness of the internal neurons to the                   pathological behaviors in neuronal media. This accumulating experimental
+external stimuli.                                                                          evidence has led to a surge in computational55 and experimental models74
+                                                                                           aiming to capture the bidirectional interactions between astrocytes and
+Discussion and conclusions                                                                 neurons.
+In recent years, there has been a growing recognition of the active role                        Despite this momentum, relatively little effort has been made to ana-
+astrocytes play in shaping neuronal network dynamics68. Far from being                     lyze these neuron-astrocyte interactions from the perspective of higher-
+
+
+Communications Biology | (2026)9:684                                                                                                                                          9
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                      Article
+
+
+
+
+Fig. 8 | Interaction architecture shapes internal response   in larger systems.       neurons, respectively. In all cases, the astrocyte modulates two synapses: a not
+Colormaps
+ inter     indicate the averageﬁring
+                                       rate of the read-in νin (top), intermediate     including the recurrence synapse; b the recurrence synapse and the previous
+ ν        (middle), and read-out νout (bottom) neurons. Each column corresponds         synapse; and c the recurrence synapse and the ﬁrst internal synapse. Simulations
+to a different astrocyte interaction scheme, illustrated by the graph diagrams at the   were performed with ε = 0.01, Cath = 0.04, β = 0.05, and DCa = 0. Other simulation
+top. Red, orange, and black arrows indicate the read-in, intermediate, and read-out     parameters are listed in Table 1.
+
+
+
+order interactions—that is, interactions that cannot be reduced to the sum of           domain78. Interestingly, many models in the literature already implement
+pairwise components75. Higher-order interactions are increasingly recog-                mechanisms that can be interpreted as higher-order, albeit implicitly. For
+nized as a key phenomenon underlying the structure and dynamics of                      example, when an astrocyte signal simultaneously alters the release prob-
+complex systems such as the brain1,75. From a modeling perspective, higher-             ability or efﬁcacy of two different synapses50, this constitutes an edge-edge
+order interactions are known to lead to explosive phase transitions and to              interaction—a classical case of higher-order modulation in a higher-order
+change the location of the transition points in the parameter space40,76, with          network. However, such mechanisms are rarely framed or analyzed expli-
+important consequences for applications e.g., in clinical neuroscience5,14,77.          citly through the lens of higher-order network-theory. By making this
+In biological networks, higher-order interactions can manifest naturally                connection explicit, our study offers a new interpretive lens to understand
+when a single element such as an astrocyte modulates multiple connections               the computational role of astrocytes. We show that, when a single astrocyte
+simultaneously, effectively coupling synapses. This is particularly relevant in         regulates multiple synapses within a recurrent circuit, it introduces non-
+the context of astrocytes, whose broad spatial reach and integrative capacity           trivial dependencies that shape local network behavior—dependencies that
+allow them to coordinate the activity of multiple synapses within their                 cannot be decomposed into pairwise synaptic dynamics alone. This re-
+
+
+Communications Biology | (2026)9:684                                                                                                                                   10
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                            Article
+
+framing helps to bridge cellular-level mechanisms and meso-scale network             This work introduces a computational framework that formalizes
+dynamics, suggesting that glial modulation operates as a higher-order          astrocyte-mediated modulation of synaptic dynamics as a tripartite plasti-
+control structure within the brain.                                            city mechanism. By extending classical STP models to include astrocyte-
+      Simulations in a minimal recurrent circuit demonstrate that astrocyte-   dependent facilitation, our approach captures how a single astrocyte can
+mediated plasticity can effectively prevent the emergence of SSA—a             simultaneously inﬂuence multiple synapses, thereby introducing higher-
+pathological regime of runaway excitation and loss of responsiveness79,80.     order dependencies into network dynamics. This provides a biologically
+Crucially, this homeostatic effect only emerges when the astrocyte mod-        grounded implementation of higher-order interactions in neuronal-
+ulates multiple synapses simultaneously—i.e., when higher-order interac-       astrocytes systems.
+tions are present. In this regime, the astrocyte balances excitability and           Despite these contributions, our model remains a limited simpliﬁca-
+responsiveness by dynamically regulating synaptic efﬁcacy across the cir-      tion of biological reality. We describe a minimal circuit of excitatory neu-
+cuit. We have compared low- versus higher-order modulating schemes,            rons, which does not incorporate inhibitory dynamics, astrocyte
+demonstrating that, when a single astrocyte modulates several synapses         heterogeneity, or spatially distributed networks. While focusing on local-
+concurrently the parameter interval for monotonic positive response is         scale gliotransmission provides a tractable and mechanistically transparent
+maximized. This effect cannot be reproduced by low-order schemes, even         entry point to study higher-order astrocyte-synapse interactions, we
+when adjusting model parameters or including diffusive coupling between        acknowledge that astrocytes can inﬂuence neuronal activity through many
+astrocytes.                                                                    additional mechanisms, operating at both low- and high-order levels. For
+      Furthermore, we have shown that this regime is prominent when the        example, astrocyte could regulate synaptic efﬁcacy through gliotransmis-
+astrocyte modulates synapses that are internal to the circuit—particularly     sion, but also through neurotransmitter uptake, being able to induce global
+the recurrent synapse projecting from the read-out neuron back to the read-    synchronous bursting82. In the context of our model, this means the
+in neuron. This phenomenon is robust across larger cyclic networks with        astrocyte could effectively (in both low- and high- order schemes) manip-
+N = 5 and N = 20 neurons and across different higher-order coupling            ulate α (our model control parameter), making it a dynamic homeostatic
+schemes. Although the network sizes studied here remain small compared         variable instead of a ﬁxed parameter.
+to typical biological neuronal systems, our ﬁndings are compatible with the         Astrocytes can also act directly on postsynaptic neurons by promoting
+idea that astrocytes can coordinate the modulation of multiple synapses        slow inward currents through extrasynaptic receptors48,83, as well as by
+within local circuits in a structured manner. However, we leave open the       inducing inhibitory postsynaptic currents via GABA release84. Incorporat-
+question of how such mechanisms scale to system-level organization in          ing these effects would require extending the model to include an explicit
+larger networks.                                                               astrocyte-neuron current, corresponding to a low-order interaction term in
+      Our results also align with observations that tripartite synapses are    the membrane potential equation (equation (1)). Moreover, astrocytic
+more abundant in brain regions where recurrent connectivity is functionally    regulation of extracellular potassium levels can modulate neuronal after-
+important—such as the hippocampus and cerebellum59–62. In these regions,       hyperpolarization, a mechanism shown, both theoretically and experi-
+it is thought that avoiding runaway excitatory activity and maintaining        mentally, to play a key role in shaping inter-burst interval statistics39,85, and
+circuit responsiveness typically requires mechanisms such as inhibitory        to depend critically on astrocytic gap-junction coupling at larger spatial
+feedback79. However, based on our ﬁndings, alternative or complementary        scales. Within our framework, these mechanisms would translate into
+mechanisms involving tripartite synapses and astrocytic modulation may         astrocyte-induced modulation of the refractory time constant ta and
+also play an important role.                                                   motivate extensions toward coupled neuron-astrocyte networks beyond the
+      Our computational model formalizes this perspective by extending         local synaptic scale explored in our current work.
+classical STP frameworks28 to include an astrocyte-mediated facilitation            Overall, this work contributes to a growing body of evidence that
+mechanism. The resulting tripartite plasticity model generalizes and uniﬁes    astrocytes are key players in neural computation—not only at the synaptic
+previous works: when astrocyte modulation is disabled, it reduces to the       level but also in the emergent coordination of network activity through
+standard STP model; when pre-synaptic facilitation is removed, it recovers     structured interactions43,86. However, our model explores only a restricted
+the astrocyte-driven dynamics proposed by Brunel and De Pittà50. This          region of the broader landscape of possible astrocyte-mediated (low- and
+makes the model a ﬂexible platform for studying different regimes of short-    high-order) modulation mechanisms. Extending the framework to incor-
+time synaptic plasticity, ranging from purely neuronal to glia-integrated      porate additional modulation pathways and larger spatial scales therefore
+mechanisms.                                                                    represents an important direction for future work.
+      From the higher-order perspective, our model takes advantage of the
+recently proposed framework of triadic percolation43,81, that studies the      Methods
+dynamic changes in connectivity induced by triadic interactions—those in       Higher-order neuron-synapse-astrocyte model
+which a node regulates the status of the link between two other nodes.         Here we propose a simple ASN-STP that captures the potential competition
+Recently, this framework was applied to the study of axo-axonic interactions   between gliotransmission, mediated by astrocytes, and pre-synaptic
+in a toy-model neural medium of excitatory neurons13, demonstrating that       mechanisms, mediated by the pre-synaptic neuron, as short-term facilita-
+triadic interactions not only lead to dynamic connectivity, but also to        tion. Our model includes the description of neuronal, synaptic, and astro-
+complex spatio-temporal patterns of neuronal activity. Here we took            cyte dynamics, as well as the interactions among them. Neurons constitute
+inspiration from these studies to propose the modeling of neuron-astrocyte     the nodes of the higher-order network, and thus we refer to their dynamics
+networks explicitly as a higher-order network in which astrocytes directly     as dimension-0. Synapses connect neurons in a directed manner, with the
+control the status to node-to-node interactions—the synapses—and are in        pre-synaptic neuron projecting onto the post-synaptic neuron. Synaptic
+turn controlled by neuronal and synaptic activity.                             dynamics are represented as 1-dimensional topological signals taking place
+      Moreover, while the high-order interaction perspective offers a com-     on the edges of the higher-order network. Finally, astrocytes modulate
+pelling conceptual framework, further work is needed to systematically         synaptic dynamics in an aggregative, non-linear manner. In actual brains,
+quantify and classify such interactions in biologically realistic networks.    one astrocyte modulates several synapses at the same time, whereas each
+Future studies could expand this framework to larger and more hetero-          synapse can have at most one adjacent astrocyte, as astrocyte will usually
+geneous systems, include multiple interacting astrocytes, and explore how      have non-overlapping territories87. Given that astrocytes couple the
+astrocyte modulation interfaces with long-term plasticity mechanisms.          1-dimensional edge signals, they are represented as 2-dimensional topolo-
+Additionally, formal tools from higher-order network theory and topolo-        gical signals. An exemplary minimal circuit composed by three neurons
+gical data analysis could be employed to characterize emergent dynamics        arranged in a loop, with three directed excitatory synapses, and one astrocyte
+and identify signatures of glial modulation in experimental data.              modulating the three synapses, is shown in Fig. 9.
+
+
+Communications Biology | (2026)9:684                                                                                                                         11
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                                  Article
+
+
+
+
+Fig. 9 | Model scheme in a minimal recurrent excitatory circuit. We consider a              the dynamics of neuron 1 and the astrocyte a. d shows the IP3 dynamics in the
+minimal recurrent network consisting of three excitatory neurons arranged in a ring,        astrocyte process at synapse ij, displaying the increase in ½IP3 a12 following pre-
+                                    syn
+with states Vi. An external input I ext arrives at neuron 1 inducing spiking activity, as   synaptic spikes. e shows the dynamics of the astrocyte variables: the calcium con-
+                                                                                            centration ½Caþ2  (top panel), and the astrocyte depletion and facilitation variables
+                                                                                                                     a
+shown in (a), which propagates through the circuit. b show the synaptic variables ua12
+(neurotransmitter release probability) and γa12;pre (pre-synaptic facilitation variable),   xaastro and γaij;astro . High-order interaction (HOI): By astrocyte mediation, the activity
+which increase following pre-synaptic activity. c shows the amplitude of the synaptic       on synapse 1 → 2 affects facilitation in synapse 3 → 1 (f), which change the
+currents at synapse 1 → 2, namely ASEy12 (equation (3)), which is affected both by          recurrence current in Neuron 1 (g).
+
+
+                                                                                                                                         a
+     Neuronal, synaptic, and astrocyte dynamics used in the present                         proportional to 1 − α. When a ½Ca2þ  threshold is reached, we assume the
+work are deﬁned in detail in the following subsections. Here we                             astrocyte to become active and release gliotransmitters into its adjacent
+describe them in a summary manner. The reference values of all                              synapses ij, modulating their pre-synaptic release probability uij (equation
+parameters are detailed in Table 1. Neurons are deﬁned as leaky                             (11)). Contrary to neuron-driven STF, gliotransmission can lead to both an
+integrate-and-ﬁre (LIF) units whose state is given by a voltage variable                    increase and a decrease of the probability of neurotransmitter release
+Vi(t) (equation (1)), such that the neuron is said to ﬁre or release an                     depending on a control parameter (namely ε in equation (11))53. Moreover,
+action potential or spike when the voltage reaches a threshold. After-                      recruitment of neurotransmitters by the astrocyte competes with neuron-
+wards, Vi(t) is reset to a hyperpolarized (negative) value. Synapses are                    driven STF, naturally leading to competition effects that cannot be recovered
+characterized by the fraction of active neurotransmitters yij (equation                     by the independent original models, as we go on to show. The competition is
+(4)). Each time the pre-synaptic neuron ﬁres, yij increases depending                       affected by the relative temporal scales of each mechanisms. Pre-synaptic
+on three factors: the fraction α of neurotransmitters that remain at the                    STF occurs on scales of hundreds of milliseconds to a few seconds, whereas
+synapse, the probability of neurotransmitter release uij, and the fraction                  gliotransmission is slower and takes place in the time-scale of seconds to
+of available neurotransmitters xij. The parameter α accounts for the                        minutes. This fact, and its consequences, is directly captured with our
+competition between the astrocyte and the synapse for released neu-                         proposed model. Finally, we also consider short-term depression in the
+rotransmitters. A fraction 1 − α of released neurotransmitter is                            model, reﬂecting the depletion of neurotransmitters after repeated resources
+recruited by the astrocyte (equation (15)), leaving only a fraction α                       release, and which occurs both at the synapse and astrocyte levels (eqs. (12)).
+available for synaptic transmision. Thus α is a main control parameter
+of the dynamics. The synaptic variables uij (equation (11)) and xij                         Dimension zero dynamics: the neurons
+(equation (12)) account respectively for short-term facilitation and                        The neuronal population is modeled using the LIF model. If the membrane
+depression mechanisms.                                                                      potential of the neuron is below a threshold Vth, the dynamics follow:
+     STF is affected both by presynaptic mechanisms driven by the pre-
+synaptic neuron and gliotransmission driven by the astrocyte. Here, we                                                 dV j
+                                                                                                                  τV        ¼ V j þ RI stim
+                                                                                                                                                   syn
+                                                                                                                                        j ðtÞ þ RI j ðtÞ;
+                                                                                                                                                                                   ð1Þ
+consider both effects, as well as the competition between them. The neuron-                                             dt
+driven plasticity dynamics is inspired by previous models of neuron-driven
+STP25,28. Regarding astrocytes, they affect STF through gliotransmission, the                where Vj is the membrane potential of neuron j, R the membrane resistance,
+process by which they recruit and release gliotransmitters at each adjacent                 and τV the membrane time constant. When the membrane potential crosses
+                                                                                                                                         spk
+synapse50. Astrocyte dynamics is usually described by variations of its                     the threshold, i.e., Vj(t)≥Vth at time t ¼ t j , a spike is emitted by neuron j,
+                                          a        a                                                                                                                  spk
+cytosolic calcium concentration, ½Ca2þ  . ½Ca2þ  increases following each                 and the membrane potential is reset to a hyperpolarized value, Vðt j Þ ¼
+pre-synaptic neuron spike at any synapse regulated by the astrocyte, from                   V reset mV. Following this, the neuron enters an absolute refractory period ta,
+which the astrocyte recruits a fraction of the released neurotransmitters                   during which the potential is clamped at Vreset.
+
+
+
+Communications Biology | (2026)9:684                                                                                                                                               12
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                                                                             Article
+
+Table 1 | Description, symbols, and values of model                                                           Dimension one dynamics: the synapses
+parameters                                                                                                    Lets consider ﬁrst that each synapse is modulated by one astrocyte. In the
+                                                                                                              following we indicate this in all synaptic variables by the super-index a,
+ Parameter                                      Symbol                   Value
+                                                                                                              indicating the astrocyte that modulates the synapse. The fraction of active
+ Membrane time constant                         τV                       20 ms                                neurotransmitter yaij ðtÞ accounting for the dynamical state of synapse ij,
+ Membrane resistance                            R                        200 MΩ                               modulated by astrocyte a, evolves according to (see28):
+ Absolute refractory period                     ta                       4 ms
+                                                                                                                                     dyaij         yaij                                         spk
+ Spike threshold potential                      Vth                      5 mV                                                                ¼           þ α xaij ðtÞ uaij ðtÞ δðt  t i Þ;                                       ð4Þ
+ Reset potential                                Vreset                   −5 mV
+                                                                                                                                      dt           τ in
+ Synaptic deactivation time                     τin                      4 ms                                  Here α is a main control parameter of the model, representing the fraction
+ constant
+                                                                                                              of neurotransmitters that remain in the synaptic cleft and contribute to the
+ Absolute synaptic efﬁcacy                      ASE                      3 nA                                 post-synaptic current (equation (3)). A fraction 1 − α of neurotransmitter
+ Fraction of neurotransmitter in                α                        0.25–0.975                           escapes the synaptic cleft and activates astrocyte receptors instead of post-
+ the cleft                                                                                                    synaptic ones. The explicit inclusion of α thus allows us to differentiate
+ Neurotransmitter recovery time                 τr                       100 ms                               between synaptic and astrocyte activation. The synaptic variables xaij ðtÞ and
+ constant                                                                                                     uaij ðtÞ account respectively for the fraction of available synaptic resources
+ Gliotransmitter recovery time                  τ as
+                                                  r                      100 ms                               (neurotransmitters) and for the neurotransmitter release probability at
+ constant                                                                                                     synapse ij, and account for STP mechanisms. In the following, we discuss
+ Steady-state gliotransmitter                   Uas
+                                                 SE                      0.1                                  ﬁrstly facilitation and secondly depression mechanisms.
+ release probability
+ Steady-state neurotransmitter                  USE                      0.1                                  Short-term facilitation: node- and astrocyte-driven mechanisms. To
+ release probability                                                                                          model STF when both pre-synaptic and gliotransmission mechanisms
+ Astrocyte facilitation modulation              ε                        0.01–0.2                             are present, we extend the strategy presented in ref. 50. Firstly, we
+ parameter                                                                                                    hypothesize that uaij ðtÞ depends on the fraction of receptors and channels
+ IP3 decay time constant                        τ IP3                    6 ms                                 activated by (a) gliotransmission and (b) pre-synaptic activity, namely
+ Calcium decay time constant                    τCa                      100 ms
+                                                                                                              γaij;astro ðtÞ and γaij;pre ðtÞ. Secondly, in the absence of neuronal of astrocyte
+                                                                                                              inputs, uaij ðtÞ should reach a steady-state USE (where u stands for “utili-
+ Astrocyte calcium diffusion                    DCa                      0−10−1 ms−1
+ coefﬁcient
+                                                                                                              zation” and SE for “synaptic efﬁcacy”), as originally introduced in the
+                                                                                                              Tsodyks-Markram model for STP25,28. We further hypothesize that, near
+ Calcium increase rate via IP3                  β                        0.05−0.15 ms−1
+                                                                                                              its steady state, uaij ðtÞ is a smooth function that we can approximate by its
+ Synaptic facilitation time                     τ pre
+                                                  f
+                                                                         200 ms                               ﬁrst-order power expansion, i.e.,
+ constant (pre-synaptic)
+                                                                                                                                                                                                              
+ Synaptic facilitation time                     τ as
+                                                  f                      5000 ms                                                                            ∂uaij                                   ∂uaij 
+ constant (astrocyte)                                                                                         uaij ðγaij;pre ; γaij;astro ; tÞ  U SE þ                          γaij;astro ðtÞ þ                        γaij;pre ðtÞ:
+                                                                                                                                                          ∂γaij;astro                               ∂γaij;pre 
+ Gliorelease calcium threshold                  Cath                     0.02−0.04 μM                                                                                     ð0;0Þ                                    ð0;0Þ
+ External synaptic current                      Aext                     0.3 nA                                                                                                                                                    ð5Þ
+ amplitude
+To ensure physiologically plausible synaptic currents, ASE is tuned such that the peak current from            An important detail is the timescale difference between the two mechan-
+an individual synapse is of order Oð101 Þ nA. For example, typical AMPA receptor-mediated                    isms: pre-synaptic facilitation typically operates over hundreds of
+synaptic currents are around 0.3 nA98. Given that both xij and uij are on the order of Oð101 Þ, it follows   milliseconds to a few seconds, whereas gliotransmission can inﬂuence
+that ASE should be of order Oð1Þ nA to yield realistic current magnitudes.
+                                                                                                              synaptic function over longer timescales (seconds to minutes)36,50. This
+                                                                                                              justiﬁes modeling both activated fractions with separate dynamics and
+                                                                                                              distinct time constants.
+                          1 ðtÞ arrives at neuron 1 (I j≠1 ðtÞ ¼ 0), which is
+       An input current I stim                         stim
+                                                                                                                    The fractions of active neurotransmitters are bounded between 0 and 1,
+modeled as a series of exponentially decaying pulses applied at speciﬁc times                                 as well as the total fraction, i.e., 0 ≤ γaij;pre ðtÞ þ γaij;astro ðtÞ ≤ 1. Moreover, given
+t stim
+  k , namely                                                                                                  that uaij is a probability, it is also bounded between 0 and 1, and the deri-
+                                                                                                              vatives in equation (5) must be deﬁned to maintain these bounds. In par-
+                                  X            stim    
+                                               tk  t                                                         ticular, for the pre-synaptic mechanism we set
+                     1 ðtÞ ¼
+                   I stim                A exp            Θðt  t stim
+                                                                  k Þ;                                ð2Þ
+                                        k ext      τ in                                                                                                    
+                                                                                                                                                  ∂uaij 
+ where Aext is the stimulus amplitude, τin the decay time constant, and Θ(⋅)                                                                                           ¼ 1  U SE ;                                               ð6Þ
+                                                                                                                                                 ∂γaij;pre 
+the Heaviside step function. The synaptic current received by neuron j is,                                                                                     ð0;0Þ
+including STP mechanisms:
+                                              X                                                                 which recovers the Tsodyks-Markram dynamics in the absence of
+                                  syn
+                                I j ðtÞ ¼                    A y ðtÞ;
+                                                      i2nnðjÞ SE ij
+                                                                                                      ð3Þ     gliotransmission. Regarding gliotransmission, we follow the reasoning in
+                                                                                                              ref. 36 and deﬁne
+ where nn(j) denotes the set of pre-synaptic neurons projecting onto                                                                                        
+neuron j, and ASE is the maximum synaptic efﬁcacy. The variable                                                                                  ∂uaij 
+yij(t) indicates the synaptic efﬁcacy: it stands for fraction of active                                                                                                ¼ ε  U SE ;                                               ð7Þ
+                                                                                                                                                ∂γaij;astro 
+neurotransmitters in synapse ij, i.e., the amount of neurotransmitters                                                                                          ð0;0Þ
+that bound to post-synaptic receptors. The dynamics of yij(t) depend
+both on node- and astrocyte-driven short-term mechanisms, as we                                                where 0 < ε < 1. This allows us to model the dual nature of gliotransmission,
+describe in the following subsections.                                                                        i.e., its capacity to either promote or inhibit neurotransmitter release. In
+
+
+
+Communications Biology | (2026)9:684                                                                                                                                                                                                13
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                                                   Article
+
+particular, if ε > USE, gliotransmission increases the release probability;                             and recovers with time constant τr,astro. This formulation ensures that both
+otherwise, it decreases it. We note that these deﬁnitions ensure that uaij is                           synaptic and astrocyte release dynamics are constrained by a limited pool of
+bounded between 0 and 1 both in the case of no transmission (in which case                              resources.
+γaij;astro ¼ γaij;pre ¼ 0 and uaij ¼ U SE ), and maximum transmis-
+           pre
+sion (γij þ γaij;astro ¼ 0).                                                                            Dimension two dynamics: the astrocytes
+         Next, we deﬁne the dynamics of the fractions of activated neuro-                               Astrocytes possess two main compartments: the soma and the astrocyte
+transmitters. Assuming that the onset of receptor activation’s effect on                                processes, i.e., the terminal structures (leaﬂets) that directly interact with
+synaptic release is much faster than its decay time for both mechanisms, the                            neuronal synapses and form the tripartite synapse88. Each process can host
+coupled dynamics are described as:                                                                      localized calcium domains with faster dynamics compared to the soma35.
+                                                                                                        Calcium can diffuse from one process to another and to the soma, where the
+dγaij;astro           γaij;astro           h                            i                               signals from different processes are integrated, enabling a global calcium
+                                                                                  a
+              ¼                   þ Ga ðtÞ 1  ðγaij;astro þ γaij;pre Þ Θð½Ca2þ  ðtÞ  Cath Þ;        response and territorial synaptic modulation78. This means that an astrocyte
+    dt                τ f ;astro
+                                                                                                        can modulate one synapse based on activity at other synapses within its
+                                                                                                  ð8Þ   territory of inﬂuence. Here, we consider a simpliﬁed scenario where calcium
+                                                    h                            i                      diffuses instantaneously within the cell, reducing the complexity of the
+              dγaij;pre            γaij;pre                                               sp
+                          ¼                  þ U SE 1  ðγaij;astro þ γaij;pre Þ δðt  t i Þ;    ð9Þ   model, allowing us to focus on the integration effect of the astrocyte.
+                 dt                τ f ;pre                                                                   We describe the state of astrocyte a by its calcium concentration
+                                                                                                               a                                                           a
+                                                                                                        ½Ca2þ  ðtÞ. Similarly to neuronal dynamics, when ½Ca2þ  ðtÞ crosses a
+ where Ga(t) is the gliotransmitter release efﬁcacy, which is proportional to                           threshold Cath we assume the astrocyte to become active and starts to release
+the availability of gliotransmitters at the astrocyte53, xaastro ðtÞ, namely                            gliotransmitters into its neighboring synapses, modulating the presynaptic
+                                                                                                        release probability uaij ðtÞ, as shown in the previous section (eqs. (9) and (11)).
+                                              Ga ðtÞ ¼ xaastro ðtÞU astro ;                      ð10Þ   Unlike neuronal dynamics and previous works that model this as a discrete
+                                                                                                        event50,58 (i.e., a spike), we treat gliotransmitter release as a continuous
+ where Uastro is a constant setting the release probability. Gliotransmitter                            process. This is supported by experimental and computational evidence
+release is assumed to be a continuous process occurring as long as the                                  indicating that astrocyte calcium signals are slow (lasting from hundreds of
+astrocyte calcium concentration remains above the threshold Cath and                                    milliseconds to several seconds or more) compared to the millisecond-scale
+resources are available. In contrast, the pre-synaptic facilitation mechanism                           action potentials in neurons56,89–91. Therefore, we consider an astrocyte to be
+                                                                                                                                       a
+—driven by voltage-dependent calcium channels—is triggered directly by                                  active as long as ½Ca2þ  ðtÞ remains above the threshold Cath (eqs. (9)
+the arrival of an action potential and is independent on the amount of                                  and (12)).
+                                                                                                                                                                                       a
+neurotransmitter concentration in the synaptic cleft. Thus, we use the same                                   We consider in our model three main mechanisms driving ½Ca2þ  ðtÞ
+                                                                                                                                  2þ a
+efﬁcacy USE, which ensures that in the absence of gliotransmission, the                                 dynamics. Firstly, ½Ca  ðtÞ increases following each pre-synaptic spike in
+mechanism recovers the original facilitation model proposed by refs. 25,28.                             the synapses ij modulated by astrocyte a. This occurs through the release of
+     The release probability is ultimately expressed as                                                 glutamate caused by the ﬁring of the pre-synaptic neuron, which in turn
+                                                                                                        leads to the synthesis of IP3 (Inositol Trisphosphate, a signaling molecule)
+  uaij ðγaij;astro ; γaij;pre ; tÞ ¼ U SE þ ðε  U SE Þγaij;astro ðtÞ þ ð1  U SE Þγaij;pre ðtÞ;        inside the astrocyte92. Following the formulation proposed by ref. 58, which
+                                                                                                        simpliﬁes earlier work93, we assume that the concentration of IP3 at the
+                                                                                                 ð11Þ
+                                                                                                        astrocyte processes of astrocyte a that interact which synapse ij, ½IP3 aij ,
+ where one needs to solve the coupled dynamics of γaij;pre ðtÞ and γaij;astro ðtÞ.                      increases instantaneously whenever the presynaptic neuron i ﬁres an action
+Our proposed facilitation model generalizes previous models as we show in                               potential, namely
+the Supplementary Information (Section 1). In particular, we demonstrate
+how our model reduces to the classical facilitation model proposed in                                               d½IP3 aij        ½IP3 aij              h             i
+refs. 25,28 in the absence of gliotransmission, and how it becomes equivalent                                                    ¼               þ W aij ðtÞ 1  ½IP3 aij δðt  t isp Þ;      ð14Þ
+                                                                                                                       dt              τ IP3
+to the model in ref. 50 in the absence of pre-synaptic facilitation.
+                                                                                                        where the term
+Resource depletion. Due to resource depletion, neither neuro-
+transmission nor gliotransmission can occur indeﬁnitely under repeated                                                            W aij ðtÞ ¼ ð1  αÞxaij ðtÞuaij ðtÞ                           ð15Þ
+stimulation. To model this, we consider a depression mechanism such
+that the fraction of available neurotransmitters and gliotransmitters                                    represents the coupling efﬁcacy between the synapse ij and the astrocyte
+decreases with each release event. The former is implemented via a short-                               process. Here, (1 − α) denotes the fraction of neurotransmitters that escapes
+term depression model for the pre-synaptic spine28, and we introduce a                                  the synaptic cleft and binds to receptors on astrocyte processes (such as
+novel analogous mechanism for the latter:                                                               glutamate metabotropic receptors). We note that this formulation con-
+                                                                                                        strains [IP3] between 0 and 1, serving both as a normalization and a simple
+                          dxaij         1  xaij ðtÞ                                                    way to incorporate saturation. As discussed above, we assume that IP3
+                                    ¼                    uaij ðtÞ xaij ðtÞ δðt  t isp Þ        ð12Þ   diffuses instantaneously within the astrocyte, and thus we can write the total
+                            dt                  τr
+                                                                                                        IP3 concentration in astrocyte a, ½IP3 a , as
+         dxaastro 1  xaastro ðtÞ                                                                                                                  X
+                 ¼                 U astro xaastro ðtÞ Θð½Ca2þ a  Cath Þ;                     ð13Þ                             ½IP3 a ¼                        ½IP3 aij ðtÞ;
+           dt        τ r;astro                                                                                                                          ij2nnðaÞ
+                                                                                                                                                                                                ð16Þ
+
+ where τr and τr,astro are the recovery time constants for synaptic and astrocyte                        where nn(a) denotes the set of synaptic neighbors, i.e., all synapses adjacent
+processes, respectively. In this model, we assume these values to be uniform                            to the astrocyte.
+across all processes. The synaptic resource variable xaij ðtÞ decreases instan-                              The second mechanism in the astrocyte calcium dynamics is calcium
+taneously with every pre-synaptic spike t isp , and recovers exponentially                              release or clearance away from the soma and astrocyte-synapse processes.
+between spikes with time constant τr. Similarly, the astrocyte resource                                 Different mechanisms are at play in this processes, including e.g., SERCA
+variable xaastro ðtÞ depletes proportionally to gliotransmitter release, which                          pumps that transport calcium into the astrocyte’s endoplasmatic reticulum
+occurs when astrocyte calcium concentration exceeds the threshold Cath,                                 (where it is not readily available for gliotransmission)56. Here, we simplify
+
+
+Communications Biology | (2026)9:684                                                                                                                                                             14
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                               Article
+                                                                 a
+these processes to an effective exponential decay of ½Ca2þ  over time,           9.    Nartallo-Kaluarachchi, R. et al. Multilevel irreversibility reveals higher-
+following approaches used in previous models for both synaptic and                      order organization of nonequilibrium interactions in human brain
+astrocyte calcium dynamics50,94,95. Finally, the third mechanism of astrocyte           dynamics. Proc. Natl. Acad. Sci. 122, https://doi.org/10.1073/pnas.
+calcium dynamics accounts for direct interaction between astrocytes.                    2408791122 (2025).
+Astrocytes are interconnected through gap junctions, forming undirected           10.   Schaub, M. T., Benson, A. R., Horn, P., Lippner, G. & Jadbabaie, A.
+astrocyte networks that enable calcium diffusion between cells96. Con-                  Random walks on simplicial complexes and the normalized Hodge
+sidering the three mechanisms together, we arrive at the following dynamics             1-Laplacian. SIAM Rev. 62, 353–391 (2020).
+for the calcium concentration at astrocyte a:                                     11.   Barbarossa, S. & Sardellitti, S. Topological signal processing over
+                                                                                        simplicial complexes. IEEE Trans. Signal Process. 68, 2992–3007
+     d½Ca2þ 
+             a
+                  ½Ca2þ 
+                         a                  X                                         (2020).
+                                                              k         a
+               ¼          þ β½IP3 a ðtÞ þ          D ½Ca2þ   ½Ca2þ  ;
+        dt          τ Ca                     k2annðaÞ Ca                          12.   Battiston, F. et al. Networks beyond pairwise interactions: Structure
+                                                                          ð17Þ          and dynamics. Phys. Rep. 874, 1–92 (2020).
+                                                                                  13.   Millán, A. P., Sun, H. & Torres, J. J. Spatio-temporal activity patterns
+ where β has units of ms−1, τCa is a decay constant that captures effective             induced by triadic interactions in an in silico neural medium. J. Phys.:
+calcium clearance due to calcium pumps, and DCa is the diffusion coefﬁcient             Complex. 6, 015017 (2025).
+modeling gap-junction-mediated calcium exchange with astrocyte neigh-             14.   Di Gaetano, L. et al. Neighbourhood topology unveils pathological
+bors ann(a).                                                                            hubs in the brain networks of epilepsy-surgery patients. Brain
+     The coupled system of differential equations was integrated                        Commun. 7, fcaf431 (2025).
+numerically using a forward Euler method with a ﬁxed time step of 10−3.           15.   Stolz, B., Emerson, T., Nahkuri, S., Porter, M. & Harrington, H.
+Simulations were implemented in Julia. We veriﬁed that further                          Topological data analysis of task-based fMRI data from experiments
+reductions of the time step did not qualitatively affect the results. The               on schizophrenia. J. Phys.: Complex. 2, 035006 (2021).
+source code used in this study is available in a public GitHub reposi-            16.   Torres, L., Blevins, A. S., Bassett, D. & Eliassi-Rad, T. The why, how,
+tory (see97).                                                                           and when of representations for complex systems. SIAM Rev. 63,
+                                                                                        435–485 (2021).
+Reporting summary                                                                 17.   Cencetti, G., Contreras, D. A., Mancastroppa, M. & Barrat, A.
+Further information on research design is available in the Nature Portfolio             Distinguishing simple and complex contagion processes on
+Reporting Summary linked to this article.                                               networks. Phys. Rev. Lett. 130, 247401 (2023).
+                                                                                  18.   Zhou, D., Huang, J., Scholkopf, B. Learning with hypergraphs:
+Data availability                                                                       clustering, classiﬁcation, and embedding. In: NeurIPS https://doi.org/
+All data supporting the ﬁndings of this study were generated from numerical             10.5555/2976456.2976657 (2006).
+simulations of the model described in the “Methods” section. These data can       19.   Sardellitti, S. & Barbarossa, S. Topological signal processing over
+be reproduced using the code provided and are therefore not separately                  generalized cell complexes. IEEE Transactions on Signal Processing
+archived. Example outputs are available from the corresponding author                   72,687–700 (2024).
+upon reasonable request.                                                          20.   Zhao, Y. et al. Dynamic hypergraph structure learning for trafﬁc ﬂow
+                                                                                        forecasting. In Proc. IEEE 39th International Conference on Data
+Code availability                                                                       Engineering (ICDE) 2303–2316 (IEEE, 2023).
+The code used to perform the simulations and generate the results is publicly     21.   Ji, J., Ren, Y. & Lei, M. Fc–hat: hypergraph attention network for
+available97.                                                                            functional brain network classiﬁcation. Inf. Sci. 608, 1301–1316
+                                                                                        (2022).
+Received: 25 July 2025; Accepted: 31 March 2026;                                  22.   Antelmi, A. et al. A survey on hypergraph representation learning.
+                                                                                        ACM Comput. Surv. 56, 1–38 (2023).
+                                                                                  23.   Abbott, L. F. & Regehr, W. G. Synaptic computation. Nature 431,
+References                                                                              796–803 (2004).
+1.    Millán, A. P. et al. Topology shapes dynamics of higher-order               24.   Stevens, C. F. & Wang, Y. Facilitation and depression at single central
+      networks. Nat. Phys. 21, 353–361 (2025).                                          synapses. Neuron 14, 795–802 (1995).
+2.    Faskowitz, J., Betzel, R. F. & Sporns, O. Edges in brain networks:          25.   Markram, H. & Tsodyks, M. Redistribution of synaptic efﬁcacy
+      contributions to models of structure and function. Netw. Neurosci. 6,             between neocortical pyramidal neurons. Nature 382, 807–810 (1996).
+      1–28 (2022).                                                                26.   Lin, R. C. & Scheller, R. H. Mechanisms of synaptic vesicle exocytosis.
+3.    Herzog, R. et al. Genuine high-order interactions in brain networks and           Annu. Rev. Cell Dev. Biol. 16, 19–49 (2000).
+      neurodegeneration. Neurobiol. Dis. 175, 105918 (2022).                      27.   Li, L. & Chin, L.-S. The molecular machinery of synaptic vesicle
+4.    Santoro, A., Battiston, F., Petri, G. & Amico, E. Higher-order                    exocytosis. Cell. Mol. Life Sci. 60, 942–960 (2003).
+      organization of multivariate time series. Nat. Phys. 19, 221–229 (2023).    28.   Tsodyks, M., Pawelzik, K. & Markram, H. Neural networks with
+5.    Santoro, A., Battiston, F., Lucas, M., Petri, G. & Amico, E. Higher-order         dynamic synapses. Neural Comput. 10, 821–835 (1998).
+      connectomics of human brain function reveals local topological              29.   Torres, J.J., Kappen, H.J. Emerging phenomena in neural networks
+      signatures of task decoding, individual identiﬁcation, and behavior.              with dynamic synapses and their computational implications. Front.
+      Nat. Commun. 15, 10244 (2024).                                                    Comput. Neurosci. 7, https://doi.org/10.3389/fncom.2013.00030
+6.    Santos, F.A. et al. Emergence of high-order functional hubs in the                (2013).
+      human brain. bioRxiv, 2023–02. https://doi.org/10.1101/2023.02.10.          30.   Torres, J. J. & Marro, J. Brain performance versus phase transitions.
+      528083 (2023).                                                                    Sci. Rep. 5, 12216 (2015).
+7.    Tewarie, P. K. et al. Non-reversibility outperforms functional              31.   Pretel, J., Torres, J.J., Marro, J. Eegs disclose signiﬁcant brain activity
+      connectivity in characterisation of brain states in meg data.                     correlated with synaptic ﬁckleness. Biology 10, https://doi.org/10.
+      NeuroImage 276, 120186 (2023).                                                    3390/biology10070647 (2021).
+8.    Li, Q. et al. Higher-order triadic interactions: Insights into the          32.   Menesse, G. & Torres, J. J. Information dynamics of in silico EEG brain
+      multiscale network organization in schizophrenia. Hum. Brain Mapp.                waves: insights into oscillations and functions. PLoS Comput Biol. 20,
+      46, https://doi.org/10.1002/hbm.70399 (2025).                                     1–41 (2024).
+
+
+Communications Biology | (2026)9:684                                                                                                                            15
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                                 Article
+
+33. Araque, A., Parpura, V., Sanzgiri, R. P. & Haydon, P. G. Tripartite                  properties in the developing cortex. PLoS Comput. Biol. 16, https://
+    synapses: glia, the unacknowledged partner. Trends Neurosci. 22,                     doi.org/10.1371/journal.pcbi.1008360 (2020).
+    208–215 (1999).                                                                57.   Verisokin, A.Y., Verveyko, D.V., Postnov, D.E., Brazhe, A.R. Modeling
+34. Pittà, M. D., Brunel, N. & Volterra, A. Astrocytes: orchestrating                    of astrocyte networks: toward realistic topology and dynamics. Front.
+    synaptic plasticity? Neuroscience 323, 43–61 (2016).                                 Cell. Neurosci. 15, https://doi.org/10.3389/fncel.2021.645068 (2021).
+35. Bazargani, N. & Attwell, D. Astrocyte calcium signaling: the third wave.       58.   Lenk, K. et al. A computational model of interactions between
+    Nat. Neurosci. 19, 182–189 (2016).                                                   neuronal and astrocytic networks: The role of astrocytes in the
+36. DePittà, M., Berry, H. A Neuron–Glial Perspective for Computational                  stability of the neuronal ﬁring rate. Front. Comput. Neurosci. 13,
+    Neuroscience. Springer, 2019). 3–35.                                                 https://doi.org/10.3389/fncom.2019.00092 (2020).
+37. Oliveira, J. F. & Araque, A. Astrocyte regulation of neural circuit activity   59.   Tan, C. X. & Eroglu, C. Cell adhesion molecules regulating astrocyte-
+    and network states. Glia 70, 1455–1466 (2022).                                       neuron interactions. Curr. Opin. Neurobiol. 69, 170–177 (2021).
+38. Lezmy, J. How astrocytic ATP shapes neuronal activity and brain                60.   Ventura, R. & Harris, K. M. Three-dimensional relationships between
+    circuits. Curr. Opin. Neurobiol. 79, 102685 (2023).                                  hippocampal synapses and astrocytes. J. Neurosci. 19, 6897–6906
+39. Dossi, E. et al. Astroglial gap junctions strengthen hippocampal                     (1999).
+    network activity by sustaining afterhyperpolarization via KCNQ                 61.   Duigou, C.L., Simonnet, J., Teleñczuk, M.T., Fricker, D., Miles, R.
+    channels. Cell Rep. 43, 114158 (2024).                                               Recurrent synapses and circuits in the ca3 region of the
+40. Millán, A. P., Torres, J. J. & Bianconi, G. Explosive higher-order                   hippocampus: an associative network. Front. Cell. Neurosci. 7,
+    Kuramoto dynamics on simplicial complexes. Phys. Rev. Lett. 124,                     https://doi.org/10.3389/fncel.2013.00262 (2014).
+    218301 (2020).                                                                 62.   Sammons, R.P. et al. Structure and function of the hippocampal CA3
+41. Cover, K. K. & Mathur, B. N. Axo-axonic synapses: Diversity in neural                module. Proc. Natl. Acad. Sci. 121, https://doi.org/10.1073/pnas.
+    circuit function. J. Comp. Neurol. 529, 2391–2401 (2021).                            2312281120 (2024).
+42. Pan-Vazquez, A., Wefelmeyer, W., Sabater, V. G., Neves, G. &                   63.   O’Byrne, J. & Jerbi, K. How critical is brain criticality? Trends Neurosci.
+    Burrone, J. Activity-dependent plasticity of axo-axonic synapses at                  45, 820–837 (2022).
+    the axon initial segment. Neuron 106, 265–276 (2020).                          64.   Protachevicz, P. R., Batista, A. M., Caldas, I. L. & Baptista, M. S.
+43. Sun, H., Radicchi, F., Kurths, J. & Bianconi, G. The dynamic nature of               Analytical solutions for the short-term plasticity. Chaos Solit. Fractals
+    percolation on networks with triadic interactions. Nat. Commun. 14,                  181, 114678 (2024).
+    1308 (2023).                                                                   65.   Ito, H.T., Schuman, E.M. Frequency-dependent signal transmission
+44. Ceglia, R. et al. Specialized astrocytes mediate glutamatergic                       and modulation by neuromodulators. Front. Neurosci. 2, https://doi.
+    gliotransmission in the CNS. Nature 622, 120–129 (2023).                             org/10.3389/neuro.01.027.2008 (2008).
+45. Lenk, K. et al. Computational Models of Astrocyte Function at                  66.   Hirase, H., Qian, L., Barthó, P. & Buzsáki, G. Calcium dynamics of
+    Glutamatergic Synapses. Springer, 2024). 229–263.                                    cortical astrocytic networks in vivo. PLoS Biol. 2, 96 (2004).
+46. Malarkey, E. B. & Parpura, V. Mechanisms of glutamate release from             67.   Lallouette, J., Pittà, M.D. & Berry, H. In Astrocyte Networks and
+    astrocytes. Neurochem. Int. 52, 142–154 (2008).                                      Intercellular Calcium Propagation (eds Pittà, M.D. & Berry, H.)
+47. Kovács, A. & Pál, B. Astrocyte-dependent slow inward currents (SICS)                 177–210. https://doi.org/10.1007/978-3-030-00817-8_7 (Springer,
+    participate in neuromodulatory mechanisms in the pedunculopontine                    2019).
+    nucleus (ppn). Front. Cell. Neurosci. 11, https://doi.org/10.3389/fncel.       68.   Miguel-Quesada, C. et al. Astrocytes adjust the dynamic range of
+    2017.00016 (2017).                                                                   cortical network activity to control modality-speciﬁc sensory
+48. Csemer, A. et al. Astrocyte- and NMDA receptor-dependent slow                        information processing. Cell Rep. 42, 112950 (2023).
+    inward currents differently contribute to synaptic plasticity in an age-       69.   Clarke, L. E. & Barres, B. A. Emerging roles of astrocytes in neural
+    dependent manner in mouse and human neocortex. Aging Cell 22,                        circuit development. Nat. Rev. Neurosci. 14, 311–321 (2013).
+    https://doi.org/10.1111/acel.13939 (2023).                                     70.   Ota, Y., Zanetti, A. T. & Hallock, R. M. The role of astrocytes in the
+49. Jo, S. et al. Gaba from reactive astrocytes impairs memory in mouse                  regulation of synaptic plasticity and memory formation. Neural Plast.
+    models of alzheimer’s disease. Nat. Med. 20, 886–896 (2014).                         2013, 1–11 (2013).
+50. Pittà, M.D., Brunel, N. Multiple forms of working memory emerge from           71.   Squadrani, L. et al. Astrocytes enhance plasticity response during
+    synapse-astrocyte interactions in a neuron-glia network model. Proc.                 reversal learning. Commun. Biol. 7, 852 (2024).
+    Natl. Acad. Sci. 119, https://doi.org/10.1073/pnas.2207912119                  72.   Radulescu, A. R. et al. Estimating the glutamate transporter surface
+    (2022).                                                                              density in distinct sub-cellular compartments of mouse hippocampal
+51. Durkee, C., Kofuji, P., Navarrete, M. & Araque, A. Astrocyte and                     astrocytes. PLoS Comput. Biol. 18, 1009845 (2022).
+    neuron cooperation in long-term depression. Trends Neurosci. 44,               73.   Lewerenz, J. & Maher, P. Chronic glutamate toxicity in
+    837–848 (2021).                                                                      neurodegenerative diseases-what is the evidence? Front. Neurosci.
+52. Navarrete, M. & Araque, A. Endocannabinoids mediate neuron-                          9, 469 (2015).
+    astrocyte communication. Neuron 57, 883–893 (2008).                            74.   Paniccia, J. E., Otis, J. M. & Scoﬁeld, M. D. Looking to the stars for
+53. Pittà, M. D., Volman, V., Berry, H. & Ben-Jacob, E. A tale of two stories:           answers: strategies for determining how astrocytes inﬂuence
+    astrocyte regulation of synaptic depression and facilitation. PLoS                   neuronal activity. Comput. Struct. Biotechnol. J. 20, 4146–4156
+    Comput Biol. 7, 1002293 (2011).                                                      (2022).
+54. De Pitta’, M. et al. Computational quest for understanding the role of         75.   Battiston, F. et al. The physics of higher-order interactions in complex
+    astrocyte signaling in synaptic transmission and plasticity. Front.                  systems. Nat. Phys. 17, 1093–1098 (2021).
+    Comput. Neurosci. 6, https://doi.org/10.3389/fncom.2012.00098                  76.   Iacopini, I., Petri, G., Barrat, A. & Latora, V. Simplicial models of social
+    (2012).                                                                              contagion. Nat. Commun. 10, 2485 (2019).
+55. Oschmann, F., Berry, H., Obermayer, K. & Lenk, K. From in silico               77.   Gatica, M. et al. High-order functional redundancy in ageing explained
+    astrocyte cell models to neuron-astrocyte network models: a review.                  via alterations in the connectome in a whole-brain model. PLoS
+    Brain Res. Bull. 136, 76–84 (2018).                                                  Comput. Biol. 18, 1010431 (2022).
+56. Manninen, T., Saudargiene, A., Linne, M.L. Astrocyte-mediated spike-           78.   Araque, A. et al. Gliotransmitters travel in time and space. Neuron 81,
+    timing-dependent long-term depression modulates synaptic                             728–739 (2014).
+
+
+
+Communications Biology | (2026)9:684                                                                                                                              16
+https://doi.org/10.1038/s42003-026-10044-y                                                                                                             Article
+
+79. Hasselmo, M., Schnell, E. & Barkai, E. Dynamics of learning and recall      Acknowledgements
+    at excitatory recurrent synapses and cholinergic modulation in rat          This work has been supported by Grant No. PID2023-149174NB-I00
+    hippocampal region CA3. J. Neurosci. 15, 5249–5262 (1995).                  ﬁnanced by the Spanish Ministry and Agencia Estatal de Investigación
+80. Sadeh, S. & Clopath, C. Inhibitory stabilization and cortical               MICIU/AEI/10.13039/501100011033 and ERDF funds (European Union) (to
+    computation. Nat. Rev. Neurosci. 22, 21–37 (2021).                          A.P.M. and J.J.T.). A.P.M. also acknowledges ﬁnancial support by the
+81. Millán, A. P., Sun, H., Torres, J. J. & Bianconi, G. Triadic percolation    ‘Ramón y Cajal’ program of the Spanish Ministry of Science and Innovation
+    induces dynamical topological patterns in higher-order networks.            (Grant RYC2021-031241-I). G.M. would like to thank the “Programa
+    PNAS Nexus 3, 270 (2024).                                                   Nacional de Becas de Postgrados en el Exterior “Don Carlos Antonio
+82. Kumar, R., Huang, Y.-T., Chen, C.-C., Tzeng, S.-F. & Chan, C.-K.            López”—BECAL” of the Ministry of Economy and Finance of Paraguay for
+    Astrocytic regulation of synchronous bursting in cortical cultures:         the ﬁnancial sponsorship to pursue his doctoral studies in the Physics and
+    from local to global. Cereb. Cortex Commun. 1, https://doi.org/10.          Mathematics Program of the University of Granada. We thank Maurizio De
+    1093/texcom/tgaa053 (2020).                                                 Pittà for his valuable feedback on this manuscript, which helped enhance
+83. Flanagan, B., McDaid, L., Wade, J., Wong-Lin, K. & Harkin, J. A             both its clarity and depth through his thoughtful comments and suggestions.
+    computational study of astrocytic glutamate inﬂuence on post-
+    synaptic neuronal excitability. PLoS Comput. Biol. 14, 1006040              Author contributions
+    (2018).                                                                     A.P.M., G.M. and J.J.T. conceived the study. G.M. and J.J.T. developed the
+84. Kwak, H. et al. Astrocytes control sensory acuity via tonic inhibition in   theoretical framework and computational methodology, and designed the
+    the thalamus. Neuron 108, 691–70610 (2020).                                 numerical experiments. G.M. implemented the model, performed the
+85. Zonca, L. & Holcman, D. Modeling bursting in neuronal networks              simulations, conducted the data analysis, visualization and interpretation of
+    using facilitation-depression and afterhyperpolarization. Commun.           the results. G.M., A.P.M. and J.J.T. wrote the original draft of the manuscript.
+    Nonlinear Sci. Numer. Simul. 94, 105555 (2021).                             G.M. and J.J.T. contributed to manuscript revision and provided critical
+86. De Pittà, M. In Neuron-Glial Interactions (eds Jaeger, D., Jung, R.)        feedback. J.J.T. supervised the project, and acquired funding.
+    1–30. https://doi.org/10.1007/978-1-4614-7320-6_100691-1
+    (Springer, 2020).                                                           Competing interests
+87. Allen, N. J. & Eroglu, C. Cell biology of astrocyte-synapse interactions.   The authors declare no competing interests.
+    Neuron 96, 697–708 (2017).
+88. Semyanov, A. & Verkhratsky, A. Astrocytic processes: from tripartite        Additional information
+    synapses to the active milieu. Trends Neurosci. 44, 781–792 (2021).         Supplementary information The online version contains
+89. Pasti, L., Pozzan, T. & Carmignoto, G. Long-lasting changes of              supplementary material available at
+    calcium oscillations in astrocytes. J. Biol. Chem. 270, 15203–15210         https://doi.org/10.1038/s42003-026-10044-y.
+    (1995).
+90. Verkhratsky, A., Rodríguez, J. J. & Parpura, V. Calcium signalling in       Correspondence and requests for materials should be addressed to
+    astroglia. Mol. Cell. Endocrinol. 353, 45–56 (2012).                        Gustavo Menesse or Joaquín J. Torres.
+91. Sasaki, T. et al. Astrocyte calcium signalling orchestrates neuronal
+    synchronization in organotypic hippocampal slices. J. Physiol. 592,         Peer review information Communications Biology thanks Lou Zonca and
+    2771–2783 (2014).                                                           Tim LaRock for their contribution to the peer review of this work. Primary
+92. Meriney, S.D., Fanselow, E.E. Metabotropic G-protein-coupled                Handling Editors: Jonathan Touboul and Jasmine Pan.
+    receptors and their cytoplasmic signaling pathways. In Synaptic
+    Transmission (eds Meriney, S.D., Fanselow, E.E.) Ch. 12, 245–273.           Reprints and permissions information is available at
+    https://doi.org/10.1016/B978-0-12-815320-8.00012-0 (Academic                http://www.nature.com/reprints
+    Press, 2019).
+93. Pittà, M.D. et al. Coexistence of amplitude and frequency modulations       Publisher’s note Springer Nature remains neutral with regard to
+    in intracellular calcium dynamics. Phys. Rev. E Stat. Nonlinear Soft        jurisdictional claims in published maps and institutional afﬁliations.
+    Matter Phys. 77, https://doi.org/10.1103/PhysRevE.77.030903
+    (2008).                                                                     Open Access This article is licensed under a Creative Commons
+94. Graupner, M. & Brunel, N. Calcium-based plasticity model explains           Attribution-NonCommercial-NoDerivatives 4.0 International License,
+    sensitivity of synaptic changes to spike pattern, rate, and dendritic       which permits any non-commercial use, sharing, distribution and
+    location. Proc. Natl. Acad. Sci. 109, 3991–3996 (2012).                     reproduction in any medium or format, as long as you give appropriate
+95. Chindemi, G. et al. A calcium-based plasticity model for predicting         credit to the original author(s) and the source, provide a link to the Creative
+    long-term potentiation and depression in the neocortex. Nat.                Commons licence, and indicate if you modiﬁed the licensed material. You
+    Commun. 13, https://doi.org/10.1038/s41467-022-30214-w                      do not have permission under this licence to share adapted material
+    (2022).                                                                     derived from this article or parts of it. The images or other third party
+96. Halassa, M. M. & Haydon, P. G. Integrated brain circuits: Astrocytic        material in this article are included in the article’s Creative Commons
+    networks modulate neuronal activity and behavior. Annu. Rev.                licence, unless indicated otherwise in a credit line to the material. If material
+    Physiol. 72, 335–355 (2010).                                                is not included in the article’s Creative Commons licence and your intended
+97. Menesse, G., Millan, A.P., Torres, J.J. Astrocyte-Mediated Higher-          use is not permitted by statutory regulation or exceeds the permitted use,
+    Order Synaptic Plasticity. Zenodo https://doi.org/10.5281/zenodo.           you will need to obtain permission directly from the copyright holder. To
+    19260114 (2026).                                                            view a copy of this licence, visit http://creativecommons.org/licenses/by-
+98. Gerstner, W., Kistler, W. M., Naud, R., Paninski, L. Neuronal               nc-nd/4.0/.
+    Dynamics: From Single Neurons to Networks and Models of
+    Cognition. Cambridge University Press, 2014.                                © The Author(s) 2026
+
+
+
+
+Communications Biology | (2026)9:684                                                                                                                          17
+

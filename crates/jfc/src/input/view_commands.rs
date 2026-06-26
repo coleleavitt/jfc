@@ -365,6 +365,129 @@ pub(super) async fn cmd_voice(
         return;
     }
 
+    // `/voice readaloud on|off` — toggle TTS read-aloud of assistant replies.
+    // Read-aloud needs no microphone, so handle it before the capture check
+    // (otherwise a machine with no mic could never enable it).
+    if matches!(arg.as_str(), "readaloud" | "read_aloud" | "read" | "speak") {
+        let on = !matches!(
+            parts
+                .get(2)
+                .copied()
+                .unwrap_or("on")
+                .trim()
+                .to_lowercase()
+                .as_str(),
+            "off" | "false" | "0" | "no" | "stop" | "disable"
+        );
+        crate::voice::set_read_aloud_override(on);
+        jfc_engine::toast::push_with_cap(
+            &mut app.engine.toasts,
+            jfc_engine::toast::Toast::new(
+                jfc_engine::toast::ToastKind::Info,
+                if on {
+                    "Read-aloud ON — assistant replies will be spoken (needs OAuth login + a PCM player).".to_string()
+                } else {
+                    "Read-aloud OFF.".to_string()
+                },
+            ),
+        );
+        return;
+    }
+
+    // `/voice enroll-self` — voiceprint the assistant's OWN TTS voice (by
+    // synthesizing a known phrase) into the reject-list, so the gate drops the
+    // assistant's own speech echoing back. Needs OAuth login (TTS).
+    if matches!(arg.as_str(), "enroll-self" | "enroll_self" | "self") {
+        jfc_engine::toast::push_with_cap(
+            &mut app.engine.toasts,
+            jfc_engine::toast::Toast::new(
+                jfc_engine::toast::ToastKind::Info,
+                "Enrolling self-voice — synthesizing a sample…".to_string(),
+            ),
+        );
+        let voice_cfg = crate::voice::current_config();
+        let (kind, msg) = match jfc_providers::current_access_token().await {
+            Some(token) => {
+                let user_agent = format!("jfc-voice/{}", env!("CARGO_PKG_VERSION"));
+                match jfc_voice::enroll_self_voice(&voice_cfg, &token, &user_agent).await {
+                    Ok(path) => (
+                        jfc_engine::toast::ToastKind::Info,
+                        format!(
+                            "Self-voice reject profile saved → {}. The gate will now drop the assistant's own voice.",
+                            path.display()
+                        ),
+                    ),
+                    Err(e) => (
+                        jfc_engine::toast::ToastKind::Error,
+                        format!("Self-voice enrollment failed: {e}"),
+                    ),
+                }
+            }
+            None => (
+                jfc_engine::toast::ToastKind::Error,
+                "Self-voice enrollment needs a Claude OAuth login (for TTS).".to_string(),
+            ),
+        };
+        jfc_engine::toast::push_with_cap(
+            &mut app.engine.toasts,
+            jfc_engine::toast::Toast::new(kind, msg),
+        );
+        return;
+    }
+
+    // `/voice enroll [name] [secs]` — record a voiceprint so the speaker gate
+    // admits only our speakers. No name → the primary (legacy) profile; a name →
+    // an additional speaker in the accept-list. `secs` (2–20, default 6) is the
+    // capture length. Speak only the target speaker during enrollment.
+    if arg == "enroll" {
+        let secs = parts
+            .iter()
+            .skip(2)
+            .find_map(|p| p.trim().parse::<f64>().ok())
+            .unwrap_or(6.0)
+            .clamp(2.0, 20.0);
+        let name = parts
+            .get(2)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty() && s.parse::<f64>().is_err())
+            .map(str::to_owned);
+        jfc_engine::toast::push_with_cap(
+            &mut app.engine.toasts,
+            jfc_engine::toast::Toast::new(
+                jfc_engine::toast::ToastKind::Info,
+                format!(
+                    "Enrolling {} — speak now for {:.0}s…",
+                    name.as_deref().unwrap_or("primary speaker"),
+                    secs
+                ),
+            ),
+        );
+        let voice_cfg = crate::voice::current_config();
+        let result = match &name {
+            Some(n) => jfc_voice::enroll_speaker(&voice_cfg, n, secs).await,
+            None => jfc_voice::enroll_primary_speaker(&voice_cfg, secs).await,
+        };
+        let (kind, msg) = match result {
+            Ok(path) => (
+                jfc_engine::toast::ToastKind::Info,
+                format!(
+                    "Enrolled {} → {}. Turn on the gate with voice.speaker_gate=true.",
+                    name.as_deref().unwrap_or("primary speaker"),
+                    path.display()
+                ),
+            ),
+            Err(e) => (
+                jfc_engine::toast::ToastKind::Error,
+                format!("Enrollment failed: {e}"),
+            ),
+        };
+        jfc_engine::toast::push_with_cap(
+            &mut app.engine.toasts,
+            jfc_engine::toast::Toast::new(kind, msg),
+        );
+        return;
+    }
+
     // Check availability
     if jfc_voice::AudioCapture::detect_backend().await.is_none() {
         jfc_engine::toast::push_with_cap(
@@ -377,10 +500,12 @@ pub(super) async fn cmd_voice(
         return;
     }
 
-    let mut val = jfc_engine::config::load_arc()
-        .claude
+    let cfg = jfc_engine::config::load_arc();
+    let mut val = cfg
         .voice
-        .clone()
+        .as_ref()
+        .map(jfc_config::VoiceSettingsConfig::to_compat_json)
+        .or_else(|| cfg.claude.voice.clone())
         .unwrap_or(serde_json::json!({}));
     apply_voice_mode_override(&mut val, &arg);
     if let Some(tx_inner) = tx {

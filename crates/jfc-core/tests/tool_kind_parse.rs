@@ -111,6 +111,18 @@ mod tests {
     }
 
     #[test]
+    fn from_name_codegraph_alias_routes_to_advertised_mcp_regression() {
+        for name in ["codegraph_arch", "codegraph_explore", "codegraph_node"] {
+            match ToolKind::from_name(name) {
+                ToolKind::Mcp(s) => {
+                    assert_eq!(s, format!("mcp__codegraph__{name}"));
+                }
+                other => panic!("expected Mcp for {name}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn from_name_mcp_without_separator_is_unknown_tool_robust() {
         // Without the `mcp__` prefix the name is just an unknown tool,
         // not an MCP-routed call.

@@ -1,6 +1,6 @@
-//! Voice mode configuration — parsed from ClaudeCompatibilityConfig.voice.
-
 use serde::{Deserialize, Serialize};
+
+use crate::conversation_ws::VoiceConversationOptions;
 
 /// How push-to-talk or voice activity detection is triggered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -49,27 +49,6 @@ pub enum VadEngine {
 }
 
 impl VadEngine {
-    /// Resolve the configured engine from `JFC_VAD_ENGINE`.
-    ///
-    /// - `energy`/`classic`/`default` → Energy.
-    /// - `neural`/`silero`/`onnx`/`ml` → Neural only when
-    ///   `JFC_VAD_ENABLE_NEURAL=1` is also set.
-    /// - When unset, or when neural is requested without the unsafe opt-in, use
-    ///   Energy. ONNX Runtime can segfault during environment construction on
-    ///   some hosts, before Rust can return an error.
-    pub fn from_env() -> Self {
-        match std::env::var("JFC_VAD_ENGINE")
-            .unwrap_or_default()
-            .to_lowercase()
-            .as_str()
-        {
-            "neural" | "silero" | "onnx" | "ml" if Self::neural_runtime_enabled() => Self::Neural,
-            "energy" | "classic" | "default" => Self::Energy,
-            // Unset / unrecognized / neural without opt-in → safe default.
-            _ => Self::build_default(),
-        }
-    }
-
     /// The safe default engine for every build.
     pub const fn build_default() -> Self {
         Self::Energy
@@ -77,7 +56,13 @@ impl VadEngine {
 
     /// Whether this process is allowed to construct the native neural VAD.
     pub fn neural_runtime_enabled() -> bool {
-        env_flag("JFC_VAD_ENABLE_NEURAL")
+        matches!(
+            std::env::var("JFC_VAD_ENABLE_NEURAL")
+                .unwrap_or_default()
+                .to_lowercase()
+                .as_str(),
+            "1" | "true" | "yes" | "on"
+        )
     }
 
     /// Parse from a config-file string. `None` for unrecognized values.
@@ -98,7 +83,7 @@ impl VadEngine {
 }
 
 /// Resolved voice configuration.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct VoiceConfig {
     /// Voice mode is enabled.
     pub enabled: bool,
@@ -123,23 +108,86 @@ pub struct VoiceConfig {
     /// Target-speaker gate: when enabled and a profile is enrolled, captured
     /// utterances that don't match the enrolled primary speaker (e.g. a movie /
     /// TV / another person in the room) are dropped instead of transcribed.
-    /// OFF by default; opt-in via config `voice.speakerGate` or
-    /// `JFC_VOICE_SPEAKER_GATE`.
     pub speaker_gate: bool,
     /// Path to the enrolled [`crate::speaker::SpeakerProfile`] JSON. When unset,
     /// defaults to `<config dir>/speaker_profile.json`. The gate no-ops when the
     /// file is missing/unreadable.
     pub speaker_profile_path: Option<String>,
-    /// Optional override for the profile's calibrated acceptance threshold
-    /// (`JFC_VOICE_SPEAKER_THRESHOLD`). Larger = more permissive.
+    /// Optional override for the profile's calibrated acceptance threshold.
     pub speaker_threshold: Option<f64>,
-    /// Path to an ECAPA-TDNN/x-vector ONNX speaker-embedding model
-    /// (`JFC_VOICE_SPEAKER_MODEL`). Only used when built with the
-    /// `speaker-neural` feature; enables the SOTA-accuracy neural gate. When
-    /// unset/unavailable the gate uses the classical MFCC-template score. The
-    /// embedder reads this env directly; the field is here for discoverability
-    /// and so the config can surface it.
+    /// Path to an ECAPA-TDNN/x-vector ONNX speaker-embedding model.
     pub speaker_model_path: Option<String>,
+    pub read_aloud: bool,
+    /// Half-duplex echo guard: while read-aloud is playing (+ a short decay
+    /// tail), suppress VAD mic-start so the assistant's own spoken reply can't
+    /// trigger an utterance. There is no acoustic echo cancellation, so this
+    /// defaults on. Turn it off (`echoSuppression: false`) for full-duplex
+    /// voice barge-in if you use headphones.
+    pub echo_suppression: bool,
+    /// TTS voice style passed to `text_to_speech/text_stream?voice=…`. The five
+    /// Anthropic voices (claude.ai picker): `buttery` (default), `airy`,
+    /// `mellow`, `glassy`, `rounded`. Any server-accepted value works.
+    pub tts_voice: String,
+    pub tts_speed: f32,
+    pub tts_output_format: String,
+    pub tts_base_url: Option<String>,
+    pub tts_playback_command: Option<String>,
+    pub selected_speaker_device_id: Option<String>,
+    pub conversation_enabled: bool,
+    pub conversation_base_url: Option<String>,
+    pub conversation_organization_uuid: Option<String>,
+    pub conversation_uuid: Option<String>,
+    pub conversation_input_encoding: String,
+    pub conversation_output_format: String,
+    pub conversation_timezone: String,
+    pub conversation_model: Option<String>,
+    pub conversation_effort: Option<String>,
+    pub conversation_thinking_mode: Option<String>,
+    pub forward_interims: bool,
+    pub allow_custom_auth_endpoint: bool,
+    pub allow_insecure_auth_endpoint: bool,
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: VoiceMode::Hold,
+            vad_engine: VadEngine::build_default(),
+            auto_submit: false,
+            language: "en".to_owned(),
+            backend: SttBackendKind::Auto,
+            anthropic_voice_url: None,
+            openai_api_key: None,
+            local_whisper_bin: None,
+            local_whisper_model: None,
+            speaker_gate: false,
+            speaker_profile_path: None,
+            speaker_threshold: None,
+            speaker_model_path: None,
+            read_aloud: false,
+            echo_suppression: true,
+            tts_voice: "buttery".to_owned(),
+            tts_speed: 1.0,
+            tts_output_format: "pcm_16000".to_owned(),
+            tts_base_url: None,
+            tts_playback_command: None,
+            selected_speaker_device_id: None,
+            conversation_enabled: false,
+            conversation_base_url: None,
+            conversation_organization_uuid: None,
+            conversation_uuid: None,
+            conversation_input_encoding: "linear16".to_owned(),
+            conversation_output_format: "pcm_16000".to_owned(),
+            conversation_timezone: "UTC".to_owned(),
+            conversation_model: None,
+            conversation_effort: None,
+            conversation_thinking_mode: None,
+            forward_interims: true,
+            allow_custom_auth_endpoint: false,
+            allow_insecure_auth_endpoint: false,
+        }
+    }
 }
 
 /// Which STT backend to attempt first.
@@ -150,7 +198,7 @@ pub enum SttBackendKind {
     Auto,
     /// Anthropic real-time WebSocket (requires Claude.ai OAuth).
     Anthropic,
-    /// OpenAI Whisper API (requires OPENAI_API_KEY).
+    /// OpenAI Whisper API.
     OpenAiWhisper,
     /// Local whisper.cpp binary (works offline).
     LocalWhisper,
@@ -159,24 +207,7 @@ pub enum SttBackendKind {
 impl VoiceConfig {
     /// Build from the `voice` serde_json::Value from ClaudeCompatibilityConfig.
     pub fn from_settings(voice_value: Option<&serde_json::Value>) -> Self {
-        let mut cfg = Self {
-            language: std::env::var("JFC_VOICE_LANGUAGE").unwrap_or_else(|_| "en".to_owned()),
-            anthropic_voice_url: std::env::var("JFC_VOICE_ANTHROPIC_URL")
-                .ok()
-                .or_else(|| std::env::var("VOICE_STREAM_BASE_URL").ok()),
-            openai_api_key: std::env::var("OPENAI_API_KEY").ok(),
-            local_whisper_bin: std::env::var("JFC_WHISPER_BIN").ok(),
-            local_whisper_model: std::env::var("JFC_WHISPER_MODEL").ok(),
-            backend: parse_backend_env(),
-            vad_engine: VadEngine::from_env(),
-            speaker_gate: env_flag("JFC_VOICE_SPEAKER_GATE"),
-            speaker_profile_path: std::env::var("JFC_VOICE_SPEAKER_PROFILE").ok(),
-            speaker_threshold: std::env::var("JFC_VOICE_SPEAKER_THRESHOLD")
-                .ok()
-                .and_then(|s| s.parse().ok()),
-            speaker_model_path: std::env::var("JFC_VOICE_SPEAKER_MODEL").ok(),
-            ..Default::default()
-        };
+        let mut cfg = Self::default();
 
         let Some(v) = voice_value else { return cfg };
 
@@ -185,24 +216,41 @@ impl VoiceConfig {
             cfg.enabled = enabled;
         }
 
-        // voice.mode: "hold" | "tap"
         if let Some(mode_str) = v.get("mode").and_then(|m| m.as_str()) {
             if let Some(mode) = VoiceMode::from_str(mode_str) {
                 cfg.mode = mode;
             }
         }
 
-        // voice.vadEngine: "energy" | "neural" (env JFC_VAD_ENGINE wins).
+        if let Some(language) = string_field(v, &["language"]) {
+            cfg.language = language.to_owned();
+        }
+        if let Some(backend) = string_field(v, &["backend"])
+            && let Some(kind) = SttBackendKind::from_str(backend)
+        {
+            cfg.backend = kind;
+        }
+        if let Some(url) = string_field(v, &["anthropicVoiceUrl", "anthropic_voice_url"]) {
+            cfg.anthropic_voice_url = Some(url.to_owned());
+        }
+        if let Some(key) = string_field(v, &["openaiApiKey", "openai_api_key"]) {
+            cfg.openai_api_key = Some(key.to_owned());
+        }
+        if let Some(bin) = string_field(v, &["localWhisperBin", "local_whisper_bin"]) {
+            cfg.local_whisper_bin = Some(bin.to_owned());
+        }
+        if let Some(model) = string_field(v, &["localWhisperModel", "local_whisper_model"]) {
+            cfg.local_whisper_model = Some(model.to_owned());
+        }
+
         if let Some(engine_str) = v.get("vadEngine").and_then(|m| m.as_str()) {
-            if std::env::var("JFC_VAD_ENGINE").is_err() {
-                if let Some(engine) = VadEngine::from_str(engine_str) {
-                    cfg.vad_engine =
-                        if engine == VadEngine::Neural && !VadEngine::neural_runtime_enabled() {
-                            VadEngine::Energy
-                        } else {
-                            engine
-                        };
-                }
+            if let Some(engine) = VadEngine::from_str(engine_str) {
+                cfg.vad_engine =
+                    if engine == VadEngine::Neural && !VadEngine::neural_runtime_enabled() {
+                        VadEngine::Energy
+                    } else {
+                        engine
+                    };
             }
         }
 
@@ -211,11 +259,106 @@ impl VoiceConfig {
             cfg.auto_submit = auto;
         }
 
-        // voice.speakerGate (env JFC_VOICE_SPEAKER_GATE wins).
-        if std::env::var("JFC_VOICE_SPEAKER_GATE").is_err() {
-            if let Some(g) = v.get("speakerGate").and_then(|g| g.as_bool()) {
-                cfg.speaker_gate = g;
-            }
+        if let Some(read) = v
+            .get("readAloud")
+            .or_else(|| v.get("readAssistant"))
+            .and_then(|a| a.as_bool())
+        {
+            cfg.read_aloud = read;
+        }
+
+        if let Some(echo) = v
+            .get("echoSuppression")
+            .or_else(|| v.get("echo_suppression"))
+            .and_then(|a| a.as_bool())
+        {
+            cfg.echo_suppression = echo;
+        }
+
+        if let Some(voice) = v.get("ttsVoice").and_then(|p| p.as_str()) {
+            cfg.tts_voice = voice.to_owned();
+        }
+        if let Some(speed) = v.get("ttsSpeed").and_then(|p| p.as_f64()) {
+            cfg.tts_speed = speed as f32;
+        }
+        if let Some(format) = v.get("ttsOutputFormat").and_then(|p| p.as_str()) {
+            cfg.tts_output_format = format.to_owned();
+        }
+        if cfg.tts_base_url.is_none() {
+            cfg.tts_base_url = v
+                .get("ttsBaseUrl")
+                .or_else(|| v.get("tts_base_url"))
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_owned());
+        }
+        if cfg.selected_speaker_device_id.is_none() {
+            cfg.selected_speaker_device_id = v
+                .get("selectedSpeakerDeviceId")
+                .or_else(|| v.get("speakerDeviceId"))
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_owned());
+        }
+        if let Some(enabled) = v
+            .get("conversationEnabled")
+            .or_else(|| v.get("fullDuplex"))
+            .and_then(|p| p.as_bool())
+        {
+            cfg.conversation_enabled = enabled;
+        }
+        if cfg.conversation_base_url.is_none() {
+            cfg.conversation_base_url = v
+                .get("conversationBaseUrl")
+                .and_then(|p| p.as_str())
+                .map(str::to_owned);
+        }
+        if cfg.conversation_organization_uuid.is_none() {
+            cfg.conversation_organization_uuid = v
+                .get("organizationUuid")
+                .or_else(|| v.get("organizationUUID"))
+                .or_else(|| v.get("orgUuid"))
+                .and_then(|p| p.as_str())
+                .map(str::to_owned);
+        }
+        if cfg.conversation_uuid.is_none() {
+            cfg.conversation_uuid = v
+                .get("conversationUuid")
+                .or_else(|| v.get("conversationUUID"))
+                .and_then(|p| p.as_str())
+                .map(str::to_owned);
+        }
+        if let Some(encoding) = v.get("conversationInputEncoding").and_then(|p| p.as_str()) {
+            cfg.conversation_input_encoding = encoding.to_owned();
+        }
+        if let Some(format) = v.get("conversationOutputFormat").and_then(|p| p.as_str()) {
+            cfg.conversation_output_format = format.to_owned();
+        }
+        if let Some(timezone) = v.get("timezone").and_then(|p| p.as_str()) {
+            cfg.conversation_timezone = timezone.to_owned();
+        }
+        if cfg.conversation_model.is_none() {
+            cfg.conversation_model = v
+                .get("conversationModel")
+                .or_else(|| v.get("model"))
+                .and_then(|p| p.as_str())
+                .map(str::to_owned);
+        }
+        if cfg.conversation_effort.is_none() {
+            cfg.conversation_effort = v
+                .get("conversationEffort")
+                .or_else(|| v.get("effort"))
+                .and_then(|p| p.as_str())
+                .map(str::to_owned);
+        }
+        if cfg.conversation_thinking_mode.is_none() {
+            cfg.conversation_thinking_mode = v
+                .get("conversationThinkingMode")
+                .or_else(|| v.get("thinkingMode"))
+                .and_then(|p| p.as_str())
+                .map(str::to_owned);
+        }
+
+        if let Some(g) = v.get("speakerGate").and_then(|g| g.as_bool()) {
+            cfg.speaker_gate = g;
         }
         // voice.speakerProfile (path) / voice.speakerThreshold.
         if cfg.speaker_profile_path.is_none() {
@@ -227,16 +370,25 @@ impl VoiceConfig {
         if cfg.speaker_threshold.is_none() {
             cfg.speaker_threshold = v.get("speakerThreshold").and_then(|t| t.as_f64());
         }
-        // voice.speakerModel: ONNX embedding model path (speaker-neural). The
-        // embedder reads JFC_VOICE_SPEAKER_MODEL, so mirror a config value into
-        // the env when the env isn't already set, keeping env-wins precedence.
         if cfg.speaker_model_path.is_none() {
             if let Some(p) = v.get("speakerModel").and_then(|p| p.as_str()) {
                 cfg.speaker_model_path = Some(p.to_owned());
-                // SAFETY: single-threaded config load at startup; bridges the
-                // config value to the env the embedder reads.
-                unsafe { std::env::set_var("JFC_VOICE_SPEAKER_MODEL", p) };
             }
+        }
+        if let Some(value) = v.get("forwardInterims").and_then(|value| value.as_bool()) {
+            cfg.forward_interims = value;
+        }
+        if let Some(value) = v
+            .get("allowCustomAuthEndpoint")
+            .and_then(|value| value.as_bool())
+        {
+            cfg.allow_custom_auth_endpoint = value;
+        }
+        if let Some(value) = v
+            .get("allowInsecureAuthEndpoint")
+            .and_then(|value| value.as_bool())
+        {
+            cfg.allow_insecure_auth_endpoint = value;
         }
 
         cfg
@@ -265,30 +417,62 @@ impl VoiceConfig {
             ),
         }
     }
-}
 
-fn parse_backend_env() -> SttBackendKind {
-    match std::env::var("JFC_VOICE_BACKEND")
-        .unwrap_or_default()
-        .to_lowercase()
-        .as_str()
-    {
-        "anthropic" => SttBackendKind::Anthropic,
-        "openai" | "whisper-api" | "openai-whisper" => SttBackendKind::OpenAiWhisper,
-        "local" | "whisper" | "local-whisper" | "whisper-cpp" => SttBackendKind::LocalWhisper,
-        _ => SttBackendKind::Auto,
+    pub fn clamped_tts_speed(&self) -> f32 {
+        self.tts_speed.clamp(0.7, 1.2)
+    }
+
+    pub fn voice_conversation_options(&self) -> Option<VoiceConversationOptions> {
+        if !self.conversation_enabled {
+            return None;
+        }
+        let org = self
+            .conversation_organization_uuid
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())?;
+        let conversation = self
+            .conversation_uuid
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())?;
+        let mut opts = VoiceConversationOptions::new(org, conversation);
+        opts.input_encoding = self.conversation_input_encoding.clone();
+        opts.output_format = self.conversation_output_format.clone();
+        opts.language = self.language.clone();
+        opts.timezone = self.conversation_timezone.clone();
+        opts.voice = self.tts_voice.clone();
+        opts.tts_speed = self.tts_speed;
+        opts.model = self.conversation_model.clone();
+        opts.effort = self.conversation_effort.clone();
+        opts.thinking_mode = self.conversation_thinking_mode.clone();
+        opts.allow_custom_auth_endpoint = self.allow_custom_auth_endpoint;
+        opts.allow_insecure_auth_endpoint = self.allow_insecure_auth_endpoint;
+        Some(opts)
+    }
+
+    pub(crate) fn endpoint_policy(&self) -> crate::auth_endpoint::AuthEndpointPolicy {
+        crate::auth_endpoint::AuthEndpointPolicy {
+            allow_custom: self.allow_custom_auth_endpoint,
+            allow_insecure: self.allow_insecure_auth_endpoint,
+        }
     }
 }
 
-/// Interpret an env var as a boolean flag (`1`/`true`/`yes`/`on` → true).
-fn env_flag(key: &str) -> bool {
-    matches!(
-        std::env::var(key)
-            .unwrap_or_default()
-            .to_lowercase()
-            .as_str(),
-        "1" | "true" | "yes" | "on"
-    )
+impl SttBackendKind {
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_lowercase().as_str() {
+            "auto" => Some(Self::Auto),
+            "anthropic" => Some(Self::Anthropic),
+            "openai" | "whisper-api" | "openai-whisper" => Some(Self::OpenAiWhisper),
+            "local" | "whisper" | "local-whisper" | "whisper-cpp" => Some(Self::LocalWhisper),
+            _ => None,
+        }
+    }
+}
+
+fn string_field<'a>(value: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(|value| value.as_str()))
+        .filter(|value| !value.trim().is_empty())
 }
 
 #[cfg(test)]
@@ -316,15 +500,59 @@ mod tests {
     }
 
     #[test]
+    fn voice_config_reads_tts_settings_normal() {
+        let val = json!({
+            "readAloud": true,
+            "ttsVoice": "mellow",
+            "ttsSpeed": 2.0,
+            "ttsBaseUrl": "https://voice.example",
+            "ttsPlaybackCommand": "aplay -q -f S16_LE -r 16000 -c 1",
+            "selectedSpeakerDeviceId": "alsa:hw:0,0"
+        });
+        let cfg = VoiceConfig::from_settings(Some(&val));
+
+        assert!(cfg.read_aloud);
+        assert_eq!(cfg.tts_voice, "mellow");
+        assert_eq!(cfg.clamped_tts_speed(), 1.2);
+        assert_eq!(cfg.tts_base_url.as_deref(), Some("https://voice.example"));
+        assert!(cfg.tts_playback_command.is_none());
+        assert_eq!(
+            cfg.selected_speaker_device_id.as_deref(),
+            Some("alsa:hw:0,0")
+        );
+    }
+
+    #[test]
+    fn voice_config_reads_conversation_settings_normal() {
+        let val = json!({
+            "conversationEnabled": true,
+            "organizationUuid": "org-123",
+            "conversationUuid": "conv-456",
+            "conversationInputEncoding": "pcm_s16le",
+            "conversationOutputFormat": "pcm_16000",
+            "timezone": "America/Detroit",
+            "conversationModel": "claude-test",
+            "conversationEffort": "medium"
+        });
+        let cfg = VoiceConfig::from_settings(Some(&val));
+        let opts = cfg.voice_conversation_options().unwrap();
+
+        assert!(cfg.conversation_enabled);
+        assert_eq!(opts.organization_uuid, "org-123");
+        assert_eq!(opts.conversation_uuid, "conv-456");
+        assert_eq!(opts.input_encoding, "pcm_s16le");
+        assert_eq!(opts.output_format, "pcm_16000");
+        assert_eq!(opts.timezone, "America/Detroit");
+        assert_eq!(opts.model.as_deref(), Some("claude-test"));
+        assert_eq!(opts.effort.as_deref(), Some("medium"));
+    }
+
+    #[test]
     fn voice_config_defaults_on_none_robust() {
         let cfg = VoiceConfig::from_settings(None);
         assert!(!cfg.enabled);
         assert_eq!(cfg.mode, VoiceMode::Hold);
-        // The engine comes from the env resolver, which uses the safe default
-        // when JFC_VAD_ENGINE is unset.
-        if std::env::var("JFC_VAD_ENGINE").is_err() {
-            assert_eq!(cfg.vad_engine, VadEngine::build_default());
-        }
+        assert_eq!(cfg.vad_engine, VadEngine::build_default());
     }
 
     #[test]
@@ -352,11 +580,27 @@ mod tests {
 
     #[test]
     fn voice_config_ignores_neural_settings_without_native_opt_in_regression() {
-        // Only when the env override isn't set (env wins over file).
-        if std::env::var("JFC_VAD_ENGINE").is_err() {
+        if !VadEngine::neural_runtime_enabled() {
             let val = json!({"enabled": true, "mode": "vad", "vadEngine": "neural"});
             let cfg = VoiceConfig::from_settings(Some(&val));
             assert_eq!(cfg.vad_engine, VadEngine::Energy);
         }
+    }
+
+    #[test]
+    fn voice_config_reads_backend_and_endpoint_policy_normal() {
+        let val = json!({
+            "backend": "anthropic",
+            "forwardInterims": false,
+            "allowCustomAuthEndpoint": true,
+            "allowInsecureAuthEndpoint": true
+        });
+
+        let cfg = VoiceConfig::from_settings(Some(&val));
+
+        assert_eq!(cfg.backend, SttBackendKind::Anthropic);
+        assert!(!cfg.forward_interims);
+        assert!(cfg.allow_custom_auth_endpoint);
+        assert!(cfg.allow_insecure_auth_endpoint);
     }
 }
