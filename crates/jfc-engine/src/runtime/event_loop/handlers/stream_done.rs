@@ -585,7 +585,10 @@ pub async fn handle_stream_done(
         && state.pending_tool_calls.is_empty()
         && state.pending_classifications == 0
         && state.in_flight_eager_dispatches == 0
-        && state.in_flight_tool_batches == 0;
+        && state.in_flight_tool_batches == 0
+        // An open AskUserQuestion modal means the turn isn't done — don't stamp
+        // the post-turn footer / auto-name while the user is still answering.
+        && state.pending_question.is_none();
     if turn_done {
         // v132 session auto-naming — fire on the first
         // assistant-turn completion if no title is set
@@ -808,7 +811,10 @@ pub async fn handle_stream_done(
         && state.pending_tool_calls.is_empty()
         && state.pending_classifications == 0
         && state.in_flight_eager_dispatches == 0
-        && state.in_flight_tool_batches == 0;
+        && state.in_flight_tool_batches == 0
+        // Keep the turn clock running while an AskUserQuestion modal is open —
+        // the turn only genuinely ends once the user answers/declines.
+        && state.pending_question.is_none();
     let needs_dynamic_loop_keepalive = turn_genuinely_done && dynamic_loop_keepalive_needed(state);
     if turn_genuinely_done {
         state.turn_started_at = None;
@@ -827,6 +833,9 @@ pub async fn handle_stream_done(
         && state.pending_approval.is_none()
         && state.approval_queue.is_empty()
         && state.pending_tool_calls.is_empty()
+        // A queued prompt must not race ahead of an open AskUserQuestion modal —
+        // the user's pending answer is the next input, not the queued prompt.
+        && state.pending_question.is_none()
         && !state.queued_prompts.is_empty()
     {
         drain_queued_prompts(state, tx).await;

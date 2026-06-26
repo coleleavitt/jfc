@@ -13,7 +13,7 @@ use crate::config::{SttBackendKind, VoiceConfig};
 ///
 /// Priority:
 /// 1. Anthropic WebSocket (if OAuth token available)
-/// 2. OpenAI Whisper API (if OPENAI_API_KEY set)
+/// 2. OpenAI Whisper API (if configured)
 /// 3. Local whisper binary (if binary found on PATH)
 ///
 /// Returns `None` if the audio is silent or empty.
@@ -154,24 +154,31 @@ async fn try_anthropic_ws(
 ) -> anyhow::Result<Option<String>> {
     let token = resolve_oauth_token(oauth_token)?;
 
-    // Base WS origin: explicit override (VOICE_STREAM_BASE_URL or the configured
-    // voice URL) → wss form; else the default api host. Mirrors the CLI, which
-    // converts the REST base to wss://.
-    let base_wss = std::env::var("VOICE_STREAM_BASE_URL")
-        .ok()
-        .unwrap_or_else(|| {
-            let http = cfg
-                .anthropic_voice_url
-                .as_deref()
-                .filter(|u| !u.is_empty())
-                .unwrap_or("https://api.anthropic.com");
-            http.replacen("https://", "wss://", 1)
-                .replacen("http://", "ws://", 1)
-        });
+    let http = cfg
+        .anthropic_voice_url
+        .as_deref()
+        .filter(|u| !u.is_empty())
+        .unwrap_or("https://api.anthropic.com");
+    let base_wss = http
+        .replacen("https://", "wss://", 1)
+        .replacen("http://", "ws://", 1);
 
     let user_agent = format!("jfc-voice/{}", env!("CARGO_PKG_VERSION"));
-    crate::anthropic_ws::transcribe_pcm(pcm, token.as_ref(), &base_wss, &cfg.language, &user_agent)
-        .await
+    let opts = crate::anthropic_ws::StreamOpts {
+        language: cfg.language.clone(),
+        keyterms: Vec::new(),
+        forward_interims: false,
+        allow_custom_auth_endpoint: cfg.allow_custom_auth_endpoint,
+        allow_insecure_auth_endpoint: cfg.allow_insecure_auth_endpoint,
+    };
+    crate::anthropic_ws::transcribe_pcm_with_opts(
+        pcm,
+        token.as_ref(),
+        &base_wss,
+        &user_agent,
+        &opts,
+    )
+    .await
 }
 
 async fn try_anthropic_batch(
@@ -205,12 +212,16 @@ async fn try_anthropic_batch(
              the OpenAI Whisper fallback."
         ));
     };
+    crate::auth_endpoint::validate_auth_http_base_url_with_policy(base_url, cfg.endpoint_policy())?;
 
     let token = resolve_oauth_token(oauth_token)?;
 
     // The configured gateway must expose an OpenAI-compatible transcription
     // route. (We do not append to api.anthropic.com — that endpoint 404s.)
-    let url = format!("{base_url}/v1/audio/transcriptions");
+    let url = format!(
+        "{base_url}/v1/audio/transcriptions",
+        base_url = base_url.trim_end_matches('/')
+    );
 
     let client = reqwest::Client::new();
     let part = reqwest::multipart::Part::bytes(wav.to_vec())
@@ -262,11 +273,7 @@ fn resolve_oauth_token(token: Option<&str>) -> anyhow::Result<std::borrow::Cow<'
     if let Some(token) = token.filter(|token| !token.trim().is_empty()) {
         return Ok(std::borrow::Cow::Borrowed(token));
     }
-    std::env::var("CLAUDE_ACCESS_TOKEN")
-        .or_else(|_| std::env::var("ANTHROPIC_ACCESS_TOKEN"))
-        .or_else(|_| std::env::var("JFC_ANTHROPIC_ACCESS_TOKEN"))
-        .map(std::borrow::Cow::Owned)
-        .context("no Anthropic OAuth token available for voice STT")
+    anyhow::bail!("no Anthropic OAuth token provided for voice STT")
 }
 
 // ── OpenAI Whisper API ────────────────────────────────────────────────────────
@@ -275,7 +282,7 @@ async fn try_openai_whisper(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Opt
     let api_key = cfg
         .openai_api_key
         .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("no OPENAI_API_KEY for Whisper API"))?;
+        .ok_or_else(|| anyhow::anyhow!("no OpenAI API key configured for Whisper API"))?;
 
     let client = reqwest::Client::new();
     let part = reqwest::multipart::Part::bytes(wav.to_vec())
@@ -585,7 +592,7 @@ pub mod anthropic_streaming {
         tokio::sync::mpsc::Sender<Vec<u8>>,
         tokio::sync::mpsc::Receiver<StreamEvent>,
     )> {
-        let url = build_ws_url(cfg);
+        let url = build_ws_url(cfg)?;
         debug!(target: "jfc::voice::ws", url = %url, "connecting to Anthropic STT WebSocket");
 
         let ws_stream = open_ws(&url, oauth_token).await?;
@@ -595,14 +602,13 @@ pub mod anthropic_streaming {
         Ok((audio_tx, event_rx))
     }
 
-    fn build_ws_url(cfg: &VoiceConfig) -> String {
+    fn build_ws_url(cfg: &VoiceConfig) -> anyhow::Result<String> {
         let base = cfg
             .anthropic_voice_url
             .as_deref()
             .unwrap_or("https://api.anthropic.com");
-        let ws_base = base
-            .replace("https://", "wss://")
-            .replace("http://", "ws://");
+        let ws_base = http_base_to_ws_base(base);
+        crate::auth_endpoint::validate_auth_base_url_with_policy(&ws_base, cfg.endpoint_policy())?;
         let params = format!(
             "encoding=linear16&sample_rate=16000&channels=1\
              &endpointing_ms=300&utterance_end_ms=1000\
@@ -610,7 +616,20 @@ pub mod anthropic_streaming {
              &forward_interims=typed&stt_provider=deepgram-nova3",
             lang = cfg.language,
         );
-        format!("{ws_base}/api/ws/speech_to_text/voice_stream?{params}")
+        Ok(format!(
+            "{ws_base}/api/ws/speech_to_text/voice_stream?{params}",
+            ws_base = ws_base.trim_end_matches('/')
+        ))
+    }
+
+    fn http_base_to_ws_base(base: &str) -> String {
+        if let Some(rest) = base.strip_prefix("https://") {
+            format!("wss://{rest}")
+        } else if let Some(rest) = base.strip_prefix("http://") {
+            format!("ws://{rest}")
+        } else {
+            base.to_owned()
+        }
     }
 
     async fn open_ws(
@@ -624,11 +643,15 @@ pub mod anthropic_streaming {
         let mut req =
             tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(url)
                 .context("invalid WebSocket URL")?;
+        let auth = tokio_tungstenite::tungstenite::http::HeaderValue::from_str(&format!(
+            "Bearer {oauth_token}"
+        ))
+        .context("invalid OAuth token header")?;
+        req.headers_mut().insert("Authorization", auth);
         req.headers_mut().insert(
-            "Authorization",
-            format!("Bearer {oauth_token}").parse().unwrap(),
+            "x-app",
+            tokio_tungstenite::tungstenite::http::HeaderValue::from_static("cli"),
         );
-        req.headers_mut().insert("x-app", "cli".parse().unwrap());
         let (ws, _) = connect_async_tls_with_config(req, None, false, None)
             .await
             .context("WebSocket connection failed")?;
@@ -756,6 +779,41 @@ pub mod anthropic_streaming {
                 debug!(target: "jfc::voice::ws", type_ = %type_, "unknown STT event");
                 StreamEvent::Closed // treat unknown terminal events as close
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn build_ws_url_accepts_default_anthropic_normal() {
+            let cfg = VoiceConfig::default();
+            let url = build_ws_url(&cfg).unwrap();
+
+            assert!(url.starts_with("wss://api.anthropic.com/api/ws/speech_to_text/voice_stream?"));
+        }
+
+        #[test]
+        fn build_ws_url_rejects_custom_without_opt_in_robust() {
+            let cfg = VoiceConfig {
+                anthropic_voice_url: Some("https://example.invalid".to_owned()),
+                ..Default::default()
+            };
+            let err = build_ws_url(&cfg).unwrap_err();
+
+            assert!(err.to_string().contains("non-Anthropic"));
+        }
+
+        #[test]
+        fn build_ws_url_rejects_cleartext_without_opt_in_robust() {
+            let cfg = VoiceConfig {
+                anthropic_voice_url: Some("http://api.anthropic.com".to_owned()),
+                ..Default::default()
+            };
+            let err = build_ws_url(&cfg).unwrap_err();
+
+            assert!(err.to_string().contains("scheme"));
         }
     }
 }

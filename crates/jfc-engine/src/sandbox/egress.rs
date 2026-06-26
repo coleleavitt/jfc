@@ -266,6 +266,7 @@ mod tests {
             allowed_domains: vec!["*.pypi.org".into(), "crates.io".into()],
             denied_domains: vec!["evil.pypi.org".into()],
             allow_managed_domains_only: false,
+            ..Default::default()
         };
         let p = EgressPolicy::from_network_config(&cfg);
         assert!(p.outbound_enabled);

@@ -1,0 +1,1904 @@
+Review
+
+Memory Impairments: Type, Causes, and Molecular
+Players—Memory Dysfunction Across Neurologic Insults
+Saad A. Farooqui 1 , Maryline Santerre 1 , Natalia Shcherbik 2 and Bassel E. Sawaya 1,3,4, *
+
+                                         1   FELS Cancer Institute for Personalized Medicine, Lewis Katz School of Medicine, Temple University,
+                                             Philadelphia, PA 19140, USA
+                                         2   Department of Cell and Molecular Biology, School of Osteopathic Medicine, Rowan University,
+                                             Stratford, NJ 08084, USA
+                                         3   Department of Cancer and Cellular Biology, Lewis Katz School of Medicine, Temple University,
+                                             Philadelphia, PA 19140, USA
+                                         4   Department of Neural Sciences, Lewis Katz School of Medicine, Temple University,
+                                             Philadelphia, PA 19140, USA
+                                         *   Correspondence: sawaya@temple.edu; Tel.: +1-215-707-5446; Fax: +1-252-707-5948
+
+                                         Abstract
+                                         Viral infections of the central nervous system produce memory impairment through
+                                         mechanisms that extend beyond acute neuronal injury. Herpes simplex virus type 1,
+                                         human immunodeficiency virus, varicella zoster virus, cytomegalovirus, Epstein–Barr
+                                         virus, influenza, SARS-CoV-2, West Nile virus, and Zika virus each enter or engage the
+                                         brain through distinct routes, yet converge on four shared molecular pathways that se-
+                                         lectively damage hippocampal circuits: mitochondria-associated membrane (MAM) dys-
+                                         function, chronic neuroinflammation, blood–brain barrier (BBB) disruption, and impaired
+                                         CREB-BDNF signaling. These pathways specifically compromise the dentate gyrus, CA3,
+                                         and CA1 subfields, producing predictable deficits in pattern separation, associative re-
+                                         trieval, and temporal memory binding. Antiretroviral and antiviral therapies suppress
+                                         viral replication but fail to reverse organelle-level dysfunction, leaving most hippocampal
+                                         injury unaddressed. Emerging plasma biomarkers, p-tau217, neurofilament light chain, and
+                                         GFAP, combined with hippocampal subfield MRI, now enable mechanistic stratification
+                                         before irreversible circuit loss occurs. This review proposes, as a unifying hypothesis, that
+                                         virus-associated memory impairment represents a convergent hippocampal syndrome
+                                         driven by shared downstream pathways, and that combination therapies targeting these
+                                         pathways simultaneously offer greater therapeutic promise than pathogen-specific ap-
+                                         proaches alone. The evidentiary basis for this framework varies across pathogens and
+                                         conditions; direct mechanistic evidence, mechanistic analogy, and preclinical data are
+                                         distinguished throughout.
+
+                                         Keywords: memory impairment; neurodegenerative diseases; viruses; other stimuli
+
+Academic Editor: Aditi Bhargava
+
+Received: 9 April 2026
+Revised: 4 May 2026                      1. Introduction: Memory Architecture and Its Convergent Vulnerabilities
+Accepted: 11 May 2026                          Memory impairment is among medicine’s most prevalent and least reversible con-
+Published: 18 May 2026
+                                         sequences of neurological disease, yet the field has long treated it as a collection of dis-
+Copyright: © 2026 by the authors.
+                                         tinct pathogen- or disease-specific syndromes. Alzheimer’s amyloid plaques, Parkinson’s
+Licensee MDPI, Basel, Switzerland.
+                                         α-synuclein aggregates, HIV viral proteins, stroke-induced ischemia, and post-traumatic
+This article is an open access article
+distributed under the terms and
+                                         stress disorder produce fundamentally different upstream pathologies yet arrive at the same
+conditions of the Creative Commons       clinical destination: the selective failure of hippocampal circuits that encode, consolidate,
+Attribution (CC BY) license.             and retrieve episodic memory [1,2].
+
+
+Cells 2026, 15, 923                                                                                            https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                            2 of 28
+
+
+
+                            We propose that this convergence is not coincidental but reflects a shared down-
+                      stream architecture in which diverse triggers engage four common molecular pathways,
+                      mitochondria-associated membrane (MAM) dysfunction [3,4], chronic neuroinflamma-
+                      tion [5], blood–brain barrier (BBB) disruption [6], and impaired CREB-BDNF signaling [7,8],
+                      that selectively compromise hippocampal subfields across at least 26 neurological, viral,
+                      psychiatric, and acquired conditions. This framework is presented as a unifying hypothesis
+                      intended to motivate combination therapeutic research, and the strength of the supporting
+                      evidence is distinguished throughout as direct mechanistic demonstration, mechanistic
+                      analogy, or primarily preclinical data.
+                            Understanding why the hippocampus is the convergent target requires a brief ac-
+                      count of memory systems and their neural substrates. Memory is not a single faculty
+                      but a collection of functionally and anatomically distinct systems, each with different vul-
+                      nerabilities to disease. Working memory, the temporary maintenance and manipulation
+                      of information online, depends principally on the dorsolateral prefrontal and posterior
+                      parietal cortices; its capacity is limited to approximately 4 items and degrades under in-
+                      terference or cognitive load [9,10]. Importantly, the hippocampus contributes to working
+                      memory under high-load or relational conditions, linking even short-term cognition to
+                      the circuit vulnerabilities described in this review [11]. Long-term memory divides into
+                      declarative and nondeclarative streams. Declarative memory is explicit and conscious:
+                      episodic memory, the retrieval of personally experienced events in their spatiotemporal
+                      context, depends on the hippocampal–entorhinal network and is exquisitely sensitive to
+                      metabolic, inflammatory, and synaptic disruption [12,13]; semantic memory, the store of
+                      factual and conceptual knowledge, is distributed across anterior temporal cortical networks.
+                      Nondeclarative memory, procedural skills, habits, priming, and conditioned responses
+                      are mediated by corticostriato-cerebellar circuits and remain intact until subcortical and
+                      cerebellar systems are also compromised [14,15]. This dissociation is clinically important:
+                      procedural memory is typically the last to fail across the conditions reviewed here, while
+                      episodic memory is the first and most consistently affected.
+                            At the core of the most demanding memory computations is the hippocampal–entorhinal
+                      circuit. The dentate gyrus (DG) performs pattern separation, generating orthogonal repre-
+                      sentations of overlapping inputs to minimize mnemonic interference [16]. CA3 performs
+                      pattern completion through recurrent collateral circuitry, reconstructing memories from
+                      partial cues. CA1 integrates hippocampal output with entorhinal temporal signals to en-
+                      code the sequential structure that gives episodic memory its narrative coherence [17]. Adult
+                      neurogenesis in the rodent dentate gyrus supports ongoing pattern separation; its extent in
+                      humans remains debated [18], but dentate gyrus plasticity performs analogous functions
+                      regardless of its mechanism. These three subfields impose extraordinary metabolic, synap-
+                      tic, and neurovascular demands: CA1 is the most perfusion-sensitive structure in the brain;
+                      the DG neurogenic niche is acutely sensitive to neuroinflammatory suppression; and the
+                      hippocampal microvasculature is particularly susceptible to cytokine-mediated BBB disrup-
+                      tion. Any pathological process that impairs energy metabolism, vascular integrity, trophic
+                      signaling, or immune homeostasis will therefore disproportionately damage hippocampal-
+                      dependent episodic memory, precisely what the four convergent pathways do. The subfield-
+                      specificity of injury is diagnostically informative: DG damage produces pattern separation
+                      failure and encoding deficits; CA3 injury fragments associative recall; CA1 compromise
+                      disrupts temporal ordering and context-dependent memory [10,17]. These profiles map
+                      directly onto the clinical presentations reviewed in the following sections.
+                            Conditions were included in this review when peer-reviewed evidence supported
+                      the involvement of at least two of the four pathways and documented hippocampal
+                      subfield involvement. Where evidence is indirect, mechanistically analogous, or primarily
+
+
+
+                                                                                 https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                    3 of 28
+
+
+
+                                   preclinical, this is explicitly designated in the text and in the accompanying tables. The
+                                   goal is not to assert equivalent mechanistic documentation across all 26 conditions, but to
+                                   provide a scaffold that motivates combination therapeutic strategies commensurate with
+                                   the complexity of the injury (Table 1).
+
+                                   Table 1. Brain regions and their associated memory types, subtypes, temporal duration, and pri-
+                                   mary mnemonic functions. This table provides the neuroanatomical framework for understand-
+                                   ing how diverse insults selectively damage specific memory systems. The hippocampal subfields
+                                   (DG, CA3, CA1) bear the highest metabolic and synaptic demands and are the most consistently
+                                   vulnerable across the 26 conditions reviewed. Legend: DG = Dentate Gyrus; CA1/CA3 = Cornu
+                                   Ammonis subfields 1 and 3; dlPFC = Dorsolateral Prefrontal Cortex. Memory subtypes: Explicit
+                                   (Declarative) = conscious, intentional recollection; Implicit = unconscious, automatic memory.
+                                   Short-term = seconds to minutes; Long-term = hours to a lifetime; Ultra short-term = milliseconds to
+                                   seconds; Relay/Consolidation = thalamic function supporting transfer between memory systems.
+
+                                                                               Short or
+        Brain Region             Memory Type          Memory Subtype                                             Function
+                                                                              Long-Term
+                                                                                                 Pattern separation; encoding distinct
+     Hippocampus (DG)           Episodic, Spatial         Explicit            Long-term         memories; reducing interference between
+                                                                                                          similar experiences
+                                                                                                 Associative retrieval; pattern completion
+    Hippocampus (CA3)         Episodic, Associative       Explicit            Long-term                from partial cues; recurrent
+                                                                                                            collateral circuitry
+                                                                                                Temporal binding; memory consolidation;
+    Hippocampus (CA1)         Episodic, Temporal          Explicit            Long-term              integrating hippocampal and
+                                                                                                           entorhinal signals
+                                                                                                Gateway to hippocampus; spatial mapping
+      Entorhinal Cortex         Episodic, Spatial         Explicit            Long-term
+                                                                                                 via grid cells; sensory input integration
+                                                                                                 Holding and manipulating information
+  Prefrontal Cortex (dlPFC)   Working, Executive          Explicit            Short-term
+                                                                                                online; strategic retrieval; decision-making
+                                                                                                    Emotional memory encoding; fear
+          Amygdala              Emotional, Fear       Implicit/Explicit       Long-term               conditioning; modulation of
+                                                                                                      hippocampal consolidation
+                                                                                                Motor learning; timing and coordination;
+         Cerebellum            Procedural, Motor          Implicit            Long-term
+                                                                                                            skill automation
+                                                                                                 Habit formation; reward-based learning;
+   Basal Ganglia/Striatum      Procedural, Habit          Implicit            Long-term
+                                                                                                cortico-striatal-thalamic circuit automation
+                                                                                                 Conceptual knowledge storage; word
+   Anterior Temporal Lobe           Semantic              Explicit            Long-term
+                                                                                                 meaning; object and person recognition
+                                                                                                   Spatial working memory; attention;
+  Posterior Parietal Cortex     Spatial, Working          Explicit            Short-term
+                                                                                                         visuospatial processing
+                                                                                                   Iconic (visual) and echoic (auditory)
+  Primary Sensory Cortices          Sensory               Implicit         Ultra short-term
+                                                                                                  sensory buffer; perceptual continuity
+                                                                                                  Filtering and routing memory signals;
+          Thalamus                  Multiple              Explicit        Relay/Consolidation      thalamocortical relay; diencephalic
+                                                                                                          memory consolidation
+                                                                                                Spatial memory; memory consolidation via
+     Mammillary Bodies          Episodic, Spatial         Explicit            Long-term
+                                                                                                Papez circuit; thiamine-dependent function
+                                                                                                  Object recognition; familiarity-based
+      Perirhinal Cortex       Semantic, Familiarity       Explicit            Long-term
+                                                                                                 memory judgments; semantic encoding
+
+
+
+                                   2. Neurodegenerative Diseases and Memory Impairment
+                                         Neurodegeneration does not randomly erase memories; it follows predictable anatom-
+                                   ical trajectories determined by protein propagation patterns, regional metabolic vulnerabili-
+                                   ties, and the selective engagement of the four convergent pathways. Despite heterogeneous
+                                   molecular triggers, the same hippocampal subfields fail, the same computations degrade,
+
+
+
+
+                                                                                                     https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                            4 of 28
+
+
+
+                      and the same downstream mechanisms converge. What differs across conditions is the
+                      entry point; what converges is the outcome.
+                      A.   Age-Related Neurodegenerative Diseases
+                           1. Alzheimer’s Disease (AD). AD accounts for 60–80% of dementia cases [19]. Amyloid
+                      plaques and tau tangles propagate from the entorhinal cortex to the hippocampus according
+                      to Braak staging, producing synaptic loss, neuroinflammation, and neuronal death [20]. Early
+                      DG and CA1 damage disrupts pattern separation and temporal coding, generating mnemonic
+                      discrimination deficits that precede clinical diagnosis [21]; semantic and working memory
+                      decline follows, while procedural memory is preserved into late stages [22]. Amnestic MCI
+                      progresses to dementia at 10–15% annually [23]; plasma p-tau217/231 and Aβ42/40 predict
+                      hippocampal atrophy. All four convergent pathways are engaged: MAM dysfunction via
+                      presenilin-mediated ER–mitochondrial decoupling [24]; chronic neuroinflammation driven by
+                      Aβ-primed microglia with TREM2-dependent clearance failure [25]; BBB disruption via peri-
+                      cyte loss and MMP-mediated tight junction degradation [26]; and CREB-BDNF suppression
+                      by Aβ oligomers. Anti-amyloid antibodies modestly slow progression, reinforcing the need
+                      for combination approaches that simultaneously target downstream convergent pathways.
+                           2. Vascular Dementia (VaD). VaD accounts for 15–20% of dementia cases and fre-
+                      quently co-occurs with AD [27]. Its subtypes, multi-infarct, small-vessel subcortical is-
+                      chemic, strategic single-infarct, and hypoperfusion, share the common feature of CA1 vul-
+                      nerability to ischemic injury [28,29]. Hypoperfusion, oxidative stress, and neuroinflamma-
+                      tion converge on encoding and consolidation failure. BBB disruption is the dominant path-
+                      way, with white matter hyperintensities reflecting ischemic demyelination and microglial
+                      activation, which compound hippocampal injury [28]. MAM pathway involvement is
+                      inferred from the shared mitochondrial stress phenotype of ischemic neurons; CREB-BDNF
+                      suppression occurs through ischemia-mediated oxidative stress.
+                           3. Lewy Body Dementia (LBD). LBD encompasses dementia with Lewy bodies (DLB)
+                      and Parkinson’s disease dementia (PDD), distinguished by the one-year rule separating
+                      cognitive and motor onset [30]. α-Synuclein aggregates propagate from the brainstem to
+                      limbic and cortical regions, often with AD co-pathology [31]. Episodic memory deficits
+                      reflect CA1 vulnerability rather than DG failure; retrieval is more impaired than encoding,
+                      distinguishing LBD from AD [32,33]. Cognitive fluctuations and visual hallucinations
+                      correlate with EEG slowing [34]; REM sleep behavior disorder is a characteristic early
+                      sign [35]. DaTscan imaging and the fourth consensus criteria support the diagnosis [30,36].
+                      All four pathways are engaged, with α-synuclein-mediated mitochondrial dysfunction and
+                      MAM disruption [3] central to the bioenergetic failure underlying CA1 synaptic loss.
+                      B.   Idiopathic Neurodegenerative Diseases
+                           4. Parkinson’s Disease (PD). Monogenic forms of PD caused by LRRK2, SNCA, PINK1,
+                      PARK2, and GBA mutations share the same convergent pathway engagement described
+                      here but represent age-related, genetically defined entry points that are more appropriately
+                      classified alongside the genetic neurodegenerative conditions in Sections A and C.
+                           PD affects 1–2% of adults over 65 [37]. Dopaminergic degeneration in the substantia
+                      nigra reduces striatal dopamine, while α-synuclein Lewy bodies spread caudorostrally
+                      through cholinergic, noradrenergic, and serotonergic systems [38]. Early cognitive deficits
+                      reflect frontostriatal dysfunction, impaired working memory and executive control, rather
+                      than direct hippocampal damage [39]. Episodic memory shows early retrieval deficits, with
+                      recognition preserved; CA1 involvement emerges later; procedural learning fails when in-
+                      ternal cues are required [40]. Approximately 80% develop dementia within 20 years, driven
+                      by late-stage mitochondrial stress, MAM dysfunction, and CA1 synaptic dysregulation [25].
+
+
+
+
+                                                                                 https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                            5 of 28
+
+
+
+                            5. Progressive Supranuclear Palsy (PSP), Multiple System Atrophy (MSA), Normal
+                      Pressure Hydrocephalus (NPH), and Corticobasal Syndrome (CBS). These conditions
+                      produce retrieval-biased memory deficits through disconnection of subcortical and frontos-
+                      triatal networks rather than direct hippocampal damage. PSP involves tau deposition in
+                      the basal ganglia, brainstem, and frontal cortex (MAPT H1 haplotype), impairing work-
+                      ing memory and executive retrieval while relatively sparing encoding. MSA produces
+                      mild executive and working memory impairment through striato–cerebellar degeneration;
+                      hippocampal involvement is secondary. NPH generates gait-dominant frontostriatal com-
+                      pression with reversible cognitive impairment in 60–80% of cases following CSF shunting.
+                      CBS presents asymmetric frontoparietal degeneration with visuospatial and working mem-
+                      ory failure, frequently with underlying CBD, PSP, AD, or FTLD pathology. Across all four,
+                      MAM dysfunction and neuroinflammation are documented (direct or analogous evidence),
+                      while BBB disruption and CREB-BDNF impairment are variably supported.
+                      C.   Genetic Neurodegenerative Diseases
+                            6. Huntington’s Disease (HD). HD results from CAG repeat expansion in HTT, with a
+                      prevalence of 5–10 per 100,000 [41]. Medium spiny neuron degeneration in the striatum
+                      disrupts cortico–striatal–thalamic circuits before cortical atrophy appears [42]. Mutant
+                      huntingtin impairs transcription, axonal transport, and mitochondrial function; reduced
+                      BDNF accelerates striatal vulnerability [43–45]. Cognitive decline begins years before motor
+                      signs, with early working memory deficits reflecting frontostriatal failure and episodic
+                      encoding impairment emerging as the hippocampus becomes involved [46]. All four
+                      pathways are engaged with strong preclinical evidence.
+                            7. Spinocerebellar Ataxias (SCAs) and Friedreich’s Ataxia (FRDA). SCAs are a genet-
+                      ically heterogeneous group (ATXN1/2/3, CACNA1A, and others) producing cerebellar
+                      degeneration with secondary cerebellar–frontal circuit disconnection, impairing working
+                      memory, procedural learning, and spatial episodic retrieval. FRDA (FXN GAA expan-
+                      sion) leads to mitochondrial iron accumulation and oxidative stress in the cerebellum and
+                      spinal cord, with analogous impairments in working memory and procedural learning.
+                      MAM dysfunction and neuroinflammation are supported; BBB involvement is limited;
+                      CREB-BDNF impairment is documented for FRDA through mitochondrial oxidative stress.
+                      Omaveloxolone (an Nrf2 activator) and AAV-frataxin gene therapy represent emerging
+                      therapeutic approaches for FRDA.
+                            8. ALS and Frontotemporal Dementia (FTD). FTD encompasses behavioral-variant,
+                      semantic-variant, and nonfluent primary progressive aphasia subtypes [47], with molecular
+                      heterogeneity across FTLD-tau, FTLD-TDP, and FTLD-FUS pathology driven by MAPT, GRN,
+                      and C9orf72 mutations [48]. Frontal degeneration impairs strategic retrieval; hippocampal
+                      and entorhinal involvement disrupts DG and CA1 functions [49]. Semantic-variant FTD
+                      damages semantic memory through anterior temporal atrophy while initially sparing episodic
+                      memory [50]. ALS produces working memory and executive impairment through frontal
+                      cortical involvement; ALS-FTD overlap (C9orf72) causes combined frontal–hippocampal
+                      failure. TDP-43 mislocalization and C9orf72 poly-PR aggregation drive RNA processing
+                      failure and MAM disruption [51]. All four pathways are engaged in FTD; direct BBB evidence
+                      is more limited in ALS without FTD co-pathology.
+                            9. Creutzfeldt–Jakob Disease (CJD). Although prion diseases are classified here
+                      under genetic conditions based on PRNP mutation forms, sporadic CJD, the most common
+                      presentation, shares mechanistic features with idiopathic neurodegeneration, and the place-
+                      ment reflects molecular rather than etiological classification. CJD is a rapidly progressive
+                      prion disease that produces global network failure through widespread propagation of
+                      prions in the cortex, thalamus, and cerebellum. All memory systems fail simultaneously
+                      within months. The prion protein misfolding cascade impairs MAM function and triggers
+
+
+                                                                                 https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                            6 of 28
+
+
+
+                                   neuroinflammation; BBB disruption and CREB-BDNF impairment occur as secondary con-
+                                   sequences of rapid neurodegeneration. No disease-modifying therapy exists; management
+                                   is palliative.
+                                   D.      Other Neurodegenerative Conditions
+                                         10. Korsakoff Syndrome (KS). KS results from thiamine deficiency, most commonly in
+                                   the context of chronic alcohol use disorder, producing selective destruction of the mammil-
+                                   lary bodies and mediodorsal thalamus through the Papez circuit, with severe anterograde
+                                   and retrograde amnesia in the context of preserved working memory and procedural
+                                   learning. Hippocampal–diencephalic disconnection disrupts consolidation without di-
+                                   rectly damaging the hippocampus. Thiamine-dependent metabolic failure engages MAM
+                                   dysfunction and neuroinflammation; BBB disruption and CREB-BDNF suppression are
+                                   documented in the context of chronic alcohol exposure. Thiamine replacement prevents
+                                   progression if initiated early; established KS shows limited reversal.
+                                         11. Chronic Traumatic Encephalopathy (CTE). CTE results from repetitive head
+                                   trauma, producing perivascular tau deposition in frontal and temporal cortices that spreads
+                                   to the hippocampus with advancing stage. Episodic and working memory impairment,
+                                   executive dysfunction, and behavioral change emerge years to decades after exposure. All
+                                   four convergent pathways are engaged: BBB disruption from repeated mechanical injury
+                                   initiates the cascade; tau propagation disrupts MAM contacts; chronic neuroinflammation
+                                   sustains microglial activation; and CREB-BDNF impairment compounds hippocampal
+                                   synaptic fragility. APOE4 accelerates disease course and increases CTE severity following
+                                   equivalent trauma exposure.
+                                         Conclusion. Across these 17 neurodegenerative conditions, memory impairment
+                                   arises at the intersection of hippocampal subfield vulnerability and convergent pathways.
+                                   Hippocampal-predominant conditions (AD, KS, HSV encephalitis) show early DG/CA1 en-
+                                   coding failure. Subcortical and frontostriatal conditions (PD, HD, PSP, MSA, NPH, VaD)
+                                   produce retrieval-biased deficits through network disconnection. Frontotemporal conditions
+                                   (FTD, PPA, ALS, CBS) vary with the balance of frontal versus hippocampal involvement.
+                                   Cerebellar conditions (SCAs, FRDA) impair working memory and procedural learning. CJD
+                                   and severe CTE overwhelm all systems simultaneously. Despite this heterogeneity, MAM
+                                   dysfunction, CREB-BDNF impairment, BBB breakdown, and chronic neuroinflammation
+                                   recur as the shared drivers, supporting a unified mechanistic framework (Tables 2 and 3).
+
+                                   Table 2. Classification of memory types, subtypes, categories, and systems impaired across 17 neu-
+                                   rodegenerative and cerebrovascular disorders. AD = Alzheimer’s Disease; PD = Parkinson’s
+                                   Disease; LBD = Lewy Body Dementia; FTD = Frontotemporal Dementia; VaD = Vascular De-
+                                   mentia; PSP = Progressive Supranuclear Palsy; MSA = Multiple System Atrophy; ALS = Amy-
+                                   otrophic Lateral Sclerosis; NPH = Normal Pressure Hydrocephalus; HD = Huntington’s Disease;
+                                   SCAs = Spinocerebellar Ataxias; CBS = Corticobasal Syndrome; CJD = Creutzfeldt–Jakob Disease;
+                                   CTE = Chronic Traumatic Encephalopathy; PPA = Primary Progressive Aphasia; KS = Korsakoff
+                                   Syndrome; FRDA = Friedreich’s Ataxia.
+
+                                        Type of Memory               Memory
+              Disease                                                                        Memory Category                Memory System
+                                           Impaired                  Subtype
+      Alzheimer’s Disease (AD)          Episodic, Semantic     Explicit (Declarative)        Long-term Memory                 Events, Facts
+      Parkinson’s Disease (PD)       Procedural, Episodic        Implicit, Explicit          Long-term Memory                 Skills, Events
+     Lewy Body Dementia (LBD)      Episodic, Attention-based     Explicit, Implicit          Long-term Memory              Events, Facts, Tasks
+   Frontotemporal Dementia (FTD)        Semantic, Episodic     Explicit (Declarative)        Long-term Memory                 Facts, Events
+      Vascular Dementia (VaD)           Episodic, Working             Explicit          Long-term, Short-term Memory   Events, Real-time Processing
+      Progressive Supranuclear
+                                     Procedural, Episodic        Implicit, Explicit          Long-term Memory                 Skills, Events
+            Palsy (PSP)
+
+
+
+
+                                                                                                            https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                                                     7 of 28
+
+
+
+                                           Table 2. Cont.
+
+                                                    Type of Memory                      Memory
+                Disease                                                                                            Memory Category                  Memory System
+                                                       Impaired                         Subtype
+   Multiple System Atrophy (MSA)               Procedural, Episodic                 Implicit, Explicit             Long-term Memory                   Skills, Events
+        Amyotrophic Lateral
+                                                Working, Episodic                        Explicit             Short-term, Long-term Memory    Events, Immediate Processing
+          Sclerosis (ALS)
+         Normal Pressure
+                                               Episodic, Procedural                 Explicit, Implicit             Long-term Memory                   Events, Skills
+       Hydrocephalus (NPH)
+     Huntington’s Disease (HD)                 Procedural, Episodic                 Implicit, Explicit             Long-term Memory                   Skills, Events
+   Spinocerebellar Ataxias (SCAs)                   Spatial, Episodic                    Explicit                  Long-term Memory                Navigation, Events
+    Corticobasal Syndrome (CBS)                Procedural, Semantic                 Implicit, Explicit             Long-term Memory                    Skills, Facts
+   Creutzfeldt–Jakob Disease (CJD)             Episodic, Procedural                 Explicit, Implicit             Long-term Memory                   Events, Skills
+        Chronic Traumatic
+                                                Episodic, Working                        Explicit             Long-term, Short-term Memory    Events, Immediate Processing
+       Encephalopathy (CTE)
+ Primary Progressive Aphasia (PPA)              Semantic, Episodic                Explicit (Declarative)           Long-term Memory                   Facts, Events
+     Friedreich’s Ataxia (FRDA)                     Spatial, Episodic             Explicit (Declarative)           Long-term Memory                Navigation, Events
+      Korsakoff Syndrome (KS)               Anterograde, Retrograde               Explicit (Declarative)           Long-term Memory                   Events, Facts
+
+
+
+                                           Table 3. Viral pathogens contribute to memory impairment through gene-environment interactions,
+                                           direct neurotoxicity, chronic neuroinflammation, and vascular injury. Gene interactions indicate
+                                           host genetic variants that modulate susceptibility or severity. ACE2, angiotensin-converting enzyme
+                                           2; APOE, apolipoprotein E; BBB, blood-brain barrier; BDNF, brain-derived neurotrophic factor;
+                                           CMV, cytomegalovirus; DG, dentate gyrus; EBV, Epstein-Barr virus; EBNA1, EBV nuclear antigen
+                                           1; HSV-1, herpes simplex virus type 1; LTP, long-term potentiation; MBP, myelin basic protein; MS,
+                                           multiple sclerosis; NLRP3, NOD-like receptor pyrin domain containing 3; SARS-CoV-2, severe acute
+                                           respiratory syndrome coronavirus 2; TREM2, triggering receptor expressed on myeloid cells 2; VZV,
+                                           varicella zoster virus; WNV, West Nile virus; ZIKV, Zika virus.
+
+                                   Genes                     Type of Memory                   Primary                     Primary
+         Virus                                                                                                                                     Key Mechanisms
+                                  Involved                      Impaired                      Deficit                  Circuit/Region
+                                                                                                                                             Limbic tropism; promotes Aβ
+                                                                                                                                               via ↑ β/γ-secretase; viral
+                               apoE, app, bace1,                                                                  Hippocampus, Entorhinal
+         HSV-1                                              Episodic, Semantic        Encoding/Consolidation                                  glycoproteins seed amyloid;
+                                psen1/2, mapt                                                                            Cortex
+                                                                                                                                             APOE4 ↑ reactivation, impairs
+                                                                                                                                                     viral clearance
+                                                                                                                                              Chronic neuroinflammation:
+                                                            Episodic, Working,                                        Hippocampus,           Tat/gp120 inhibit CREB/BDNF;
+          HIV             apoE, trem2, creb, gsk3β                                    Encoding/Consolidation
+                                                                Executive                                             Frontal–Striatal       mitochondrial dysfunction; BBB
+                                                                                                                                              disruption; premature aging
+                                                                                                                                                   VZV vasculopathy;
+                                                                                                                                                  arteritis, thrombosis,
+                                                                                                                   Hippocampus, Vascular     ischemic/hemorrhagic stroke;
+          VZV                 apoE (risk modifier)          Episodic, Semantic        Vascular/Inflammatory
+                                                                                                                        Networks                  white-matter lesions;
+                                                                                                                                                  prothrombotic state;
+                                                                                                                                               post-herpetic inflammation
+                                                                                                                                               Immunosenescence; CD8+
+                                                                                                                                               T-cell exhaustion/inflation;
+                             apoE, trem2, bdnf              Semantic, Working,
+         CMV                                                                            Executive/Retrieval          Frontal–Subcortical       BDNF Met ↑ vulnerability;
+                            (Val66Met), pi-calm              Processing Speed
+                                                                                                                                                 inflammaging; reduced
+                                                                                                                                                      T-cell diversity
+                                                                                                                                                   Molecular mimicry
+                                                                                                                                                 (EBNA1/MBP, GFAP);
+                                                                                                                    Hippocampus, White
+          EBV                 apoE, trem2, mapt             Episodic, Working         Encoding/Autoimmune                                     autoimmune demyelination;
+                                                                                                                        Matter (MS)
+                                                                                                                                               anti-EBNA1 antibodies →
+                                                                                                                                             cortical atrophy; 32× ↑ MS risk
+                                                                                                                                              Microglial priming; cytokine
+                                                                                                                                               storm (IL-6, TNF-α, IL-1β);
+                               apoE, ifnar, tlr3,           Working, Attention,                                    Hippocampus, Frontal
+       Influenza                                                                      Executive/Inflammatory                                   impaired DG neurogenesis;
+                                nlrp33, mapk1                   Semantic                                                 Cortex
+                                                                                                                                                exaggerated inflammatory
+                                                                                                                                             responses to subsequent insults
+
+
+
+
+                                                                                                                                   https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                                  8 of 28
+
+
+
+                                    Table 3. Cont.
+
+                            Genes               Type of Memory               Primary                   Primary
+         Virus                                                                                                                   Key Mechanisms
+                           Involved                Impaired                  Deficit                Circuit/Region
+                                                                                                                           ACE2-mediated neuroinvasion
+                                                                                                                                   (olfactory, BBB);
+                                                                                                                                microglial activation;
+                                                                                                                           NLRP3 inflammasome; vascular
+                       apoE, trem2, gsk3β,     Episodic, Working,     Encoding/Consolidation/   Hippocampus, Frontal,
+      SARS-CoV-2                                                                                                                endothelial damage;
+                           ace2, nlrp3         Semantic, Attention          Executive         Parahippocampal, Olfactory
+                                                                                                                           complement-mediated synaptic
+                                                                                                                             pruning; “brain fog” in long
+                                                                                                                                  COVID; APOE4 ↑
+                                                                                                                             severity/cognitive sequelae
+                                                                                                                              Direct neuronal infection
+                                                                                                                               (hippocampus, cortex);
+                                                                                                                               neuronal loss; persistent
+       West Nile       apoE, trem2, oas1       Episodic, Executive,                              Hippocampus, Cortex,
+                                                                      Encoding/Consolidation                                microglial activation; elevated
+      Virus (WNV)         (candidate)               Attention                                    Thalamus, Brainstem
+                                                                                                                           IL-6/TNF-α; impaired LTP, DG
+                                                                                                                                neurogenesis, spatial
+                                                                                                                                       memory
+                                                                                                                               Neurotropism for neural
+                                                                                                                            progenitor cells; impaired DG
+                        apoE, axl, if-nar      Episodic, Working      Encoding/Neurogenesis       Hippocampus (DG              neurogenesis; microglial
+   Zika Virus (ZIKV)
+                          (candidate)           (emerging data)            Impairment             neural progenitors)      activation; congenital syndrome
+                                                                                                                           (microcephaly); adult cognitive
+                                                                                                                                  sequelae emerging
+                                    Arrow facing up meaning increase (the expression of the protein increased).
+
+
+                                    3. Viral Pathogens and Their Convergent Hippocampal Mechanisms
+                                          The nine pathogens discussed below differ substantially in their routes of CNS engage-
+                                    ment, the directness of their neuroinvasive effects, and the strength of evidence linking them
+                                    to the four convergent pathways. Direct neuroinvasive effects, post-infectious inflammatory
+                                    syndromes, vascular mechanisms, and epidemiological associations are distinguished where
+                                    evidence permits. Pathway involvement is designated as supported by direct mechanistic
+                                    evidence, mechanistic analogy to related models, or primarily preclinical data.
+                                          1. Herpes Simplex Virus Type 1 (HSV-1)
+                                          HSV-1 establishes latency in the trigeminal ganglia following primary infection, with
+                                    seroprevalence reaching approximately 70% in adults aged 50 years or older [52]. Reactivation
+                                    allows spread to the hippocampus and entorhinal cortex via olfactory and trigeminal projec-
+                                    tions, and acute encephalitis produces severe anterograde and retrograde amnesia through
+                                    hippocampal necrosis. The more clinically prevalent scenario is recurrent subclinical reacti-
+                                    vation, which silently impairs encoding and consolidation through sustained synaptic loss
+                                    and low-grade inflammation [53]. At the molecular level, HSV-1 engages all four convergent
+                                    pathways. Viral glycoproteins seed amyloid-beta aggregation, HSV DNA is detectable within
+                                    senile plaques, and reactivation increases beta- and gamma-secretase activity, linking HSV-1 to
+                                    the same MAM-disrupting presenilin pathology seen in Alzheimer’s disease [54]. Microglial
+                                    activation during reactivation produces sustained IL-6 and TNF-alpha release that suppresses
+                                    hippocampal neurogenesis and LTP. HSV-1 glycoprotein B directly disrupts tight junction pro-
+                                    teins, compromising BBB integrity. CREB phosphorylation is suppressed during active viral
+                                    replication through multiple kinase-mediated mechanisms, reducing BDNF expression and
+                                    synaptic resilience [54,55]. The APOE4 genotype substantially amplifies hippocampal vulnera-
+                                    bility to HSV-1, with carriers exhibiting impaired viral clearance, more extensive hippocampal
+                                    spread, and accelerated amyloid seeding, thereby increasing the risk of Alzheimer’s disease
+                                    by 1.5–2.5-fold compared with seronegative individuals [55]. The evidence linking HSV-1 to
+                                    MAM dysfunction and CREB-BDNF suppression is predominantly derived from in vitro and
+                                    animal models; direct human mechanistic data remain limited, and the causal relationship
+                                    between subclinical reactivation and progressive hippocampal injury in immunocompetent
+                                    individuals requires further longitudinal validation.
+                                          2. Human Immunodeficiency Virus (HIV)
+
+
+
+                                                                                                                https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                              9 of 28
+
+
+
+                            HIV enters the central nervous system within weeks of systemic infection, establish-
+                      ing reservoirs in perivascular macrophages and microglia that persist despite effective
+                      antiretroviral therapy [56]. The consequence is a chronic neuroinflammatory state that
+                      drives HIV-associated neurocognitive disorder (HAND) in 30–50% of treated individuals, a
+                      prevalence that has not substantially declined in the antiretroviral era, indicating that viral
+                      suppression is insufficient to resolve the underlying molecular pathology [57]. The viral
+                      protein Tat is released by infected cells and taken up by neighboring neurons regardless
+                      of the neurons’ infection status, and it remains detectable in the CNS even under effective
+                      antiretroviral suppression [16,18,19,58,59]. Tat activates c-Src kinase, which phosphorylates
+                      PTPIP51 at Y176, displacing VAPB from MAM contact sites without altering total protein
+                      expression, collapsing ER-mitochondria calcium transfer and driving a lipidomic signa-
+                      ture, triglyceride accumulation, membrane phospholipid depletion, ceramide elevation,
+                      and bioenergetic failure that mirrors aged brain tissue [3,4]. The resulting metabolic state
+                      independently increases ischemic vulnerability, providing a molecular bridge between
+                      HIV infection and the 1.5–2-fold elevated stroke risk observed epidemiologically in people
+                      living with HIV [10,11]. Estimates of the degree to which HIV accelerates brain aging
+                      vary across studies and methodological approaches; the figures cited here reflect observed
+                      ranges from epidemiological cohort studies rather than a settled consensus [56,57].
+                            Beyond MAM dysfunction, Tat inhibits CREB phosphorylation and reduces BDNF
+                      levels, while gp120 activates caspase-3, thereby compounding CREB-dependent transcrip-
+                      tional failure [60,61]. Both proteins independently compromise BBB integrity by disrupting
+                      tight junction proteins and activating matrix metalloproteinases. Microglial activation
+                      driven by Tat and gp120 produces sustained IL-6, TNF-alpha, and complement-mediated
+                      synaptic pruning that persists under viral suppression [62,63]. The hippocampal con-
+                      sequences are subfield-specific: suppressed dentate gyrus neurogenesis impairs pattern
+                      separation, CA1 synaptic loss disrupts temporal encoding, and disrupted DG-CA3 connec-
+                      tivity fragments associative retrieval [62].
+                            3. Varicella Zoster Virus (VZV)
+                            VZV reactivation from sensory ganglia triggers cerebral vasculopathy as a primary
+                      mechanism of hippocampal injury, distinguishing it from the direct neurotropic mecha-
+                      nisms of HSV-1 and HIV [64,65]. Infection of cerebral arterial walls produces ischemic
+                      lesions, white matter hyperintensities, and antiphospholipid-mediated thrombosis, with
+                      CA1 bearing the disproportionate burden of injury. VZV-associated vasculopathy activates
+                      the complement cascade and drives endothelial inflammation, compromising tight junc-
+                      tion integrity throughout the cerebrovasculature and thereby allowing sustained access of
+                      peripheral inflammatory mediators to the hippocampal microenvironment. CREB-BDNF
+                      signaling is suppressed through ischemia-mediated oxidative stress and cytokine-driven
+                      pathways. The cumulative effect is a 20–30% increased risk of dementia, particularly vascu-
+                      lar and mixed subtypes, in individuals with a history of VZV reactivation [64,65]. Direct
+                      evidence for MAM dysfunction in VZV-associated hippocampal injury is currently limited;
+                      this pathway is included by mechanistic analogy with ischemia-driven MAM disruption
+                      documented in other cerebrovascular contexts.
+                            4. Cytomegalovirus (CMV)
+                            CMV achieves near-universal latency in immunocompetent hosts, with seropreva-
+                      lence reaching 70–90% in elderly populations [66,67]. Its hippocampal impact is mediated
+                      primarily through the chronic immune activation state that periodic reactivation sustains
+                      over decades. This inflammaging phenotype, characterized by reduced T-cell diversity,
+                      chronically elevated IL-6 and TNF-alpha, and impaired immune resolution, erodes hip-
+                      pocampal resilience through sustained microglial activation and progressive BDNF sup-
+                      pression [68,69]. Reactivation-driven cytokines directly impair CREB phosphorylation and
+
+
+
+                                                                                   https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                            10 of 28
+
+
+
+                      reduce BDNF expression, and the BDNF Val66Met polymorphism substantially ampli-
+                      fies this vulnerability by impairing activity-dependent BDNF secretion [68]. The MAM
+                      pathway is engaged through sustained mitochondrial stress driven by chronic cytokine
+                      exposure and impaired mitophagy. The evidence for direct CMV-induced MAM disruption
+                      is predominantly preclinical; the link to hippocampal MAM dysfunction in human subjects
+                      has not been directly demonstrated and represents a testable hypothesis generated by the
+                      convergent framework.
+                            5. Epstein–Barr Virus (EBV)
+                            EBV establishes lifelong latency in B lymphocytes, and its relationship to hippocampal
+                      memory impairment operates primarily through autoimmune and demyelinating mech-
+                      anisms rather than direct neuroinvasion [70]. EBV nuclear antigen 1 (EBNA-1) contains
+                      molecular mimicry sequences that trigger cross-reactive antibody production, damaging
+                      hippocampal and frontotemporal networks [71]. In the context of multiple sclerosis, where
+                      EBV seropositivity is nearly universal, this autoimmune hippocampal attack contributes to the
+                      episodic memory deficits, working memory impairment, and processing speed reductions that
+                      characterize MS-associated cognitive decline [72]. The CREB-BDNF pathway is suppressed
+                      through EBV-driven cytokine production and through the direct effects of demyelination
+                      on hippocampal afferent connectivity. BBB disruption is mediated by EBV-associated lym-
+                      phocyte infiltration and complement activation. Direct evidence for MAM dysfunction in
+                      EBV-associated hippocampal injury is lacking in the current literature; this pathway is con-
+                      sidered a mechanistic analogy based on shared downstream mitochondrial stress signatures
+                      observed in demyelinating and autoimmune neurological conditions.
+                            6. Influenza Virus
+                            Influenza virus rarely achieves direct CNS entry in immunocompetent individuals, yet
+                      severe influenza infection produces cognitive impairment persisting for months to years in
+                      15–30% of cases, predominantly affecting episodic memory, attention, and executive func-
+                      tion [73]. The mechanism is a systemic cytokine storm: IL-6, TNF-alpha, and IL-1beta,
+                      produced peripherally during the acute infection, breach the blood–brain barrier, producing
+                      a neuroinflammatory state that outlasts the period of active viral replication. This post-
+                      infectious neuroinflammation inhibits hippocampal neurogenesis, suppresses LTP, and acti-
+                      vates complement-mediated synaptic pruning in the dentate gyrus and CA1. Microglia primed
+                      by the initial cytokine storm exhibit exaggerated responses to subsequent inflammatory stim-
+                      uli, a phenomenon that may contribute to accelerated cognitive aging in individuals with a
+                      history of severe influenza. BDNF suppression during the acute phase reduces the capacity
+                      for hippocampal circuit recovery, while BBB disruption allows ongoing peripheral immune
+                      surveillance of the CNS parenchyma. MAM pathway involvement in influenza-associated
+                      hippocampal injury is inferred from the shared mitochondrial stress phenotype observed with
+                      cytokine-driven neuroinflammation; direct mechanistic evidence in influenza-specific models
+                      is limited.
+                            7. SARS-CoV-2
+                            Long COVID cognitive impairment, characterized by memory deficits, processing
+                      speed reductions, and attentional dysfunction, affects 10–30% of individuals following
+                      SARS-CoV-2 infection [74]. More recent longitudinal cohort studies have refined these
+                      estimates and suggest that a meaningful proportion of affected individuals show partial
+                      recovery over 12–24 months, though a subset experiences persistent deficit; the literature
+                      through 2024 is incorporated here [74,75]. SARS-CoV-2 gains CNS access through the olfac-
+                      tory epithelium and through systemic endothelial infection that compromises BBB integrity
+                      throughout the cerebral vasculature. MRI studies demonstrate hippocampal and parahip-
+                      pocampal gray matter loss in individuals with long COVID, and postmortem analysis
+                      reveals microgliosis and synaptic loss without widespread viral RNA in brain parenchyma,
+
+
+
+                                                                                  https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                                      11 of 28
+
+
+
+                                         indicating that the neurological injury is driven primarily by inflammatory rather than
+                                         direct cytopathic mechanisms [75]. At the molecular level, ongoing microglial activation
+                                         and complement dysregulation, with elevated C1q and C3 detectable months after vi-
+                                         ral clearance, drive sustained synapse elimination in the dentate gyrus and CA1 [74,75].
+                                         ACE2-mediated endothelial infection compromises tight junction proteins across the cere-
+                                         bral microvasculature. Mitochondrial dysfunction driven by viral N protein-mediated
+                                         disruption of mitochondrial membrane dynamics impairs MAM calcium transfer and ATP
+                                         production. CREB-BDNF signaling is suppressed through cytokine-mediated pathways
+                                         and through direct impairment of ACE2-dependent signaling [76].
+                                               8. West Nile Virus (WNV)
+                                               West Nile virus neuroinvasive disease directly infects hippocampal neurons, producing
+                                         acute neuronal loss, astrogliosis, and microglial activation [77,78]. Episodic memory deficits
+                                         and executive dysfunction persist for months to years following neuroinvasive WNV infec-
+                                         tion, with ongoing neuroinflammation impairing neurogenesis and synaptic plasticity in the
+                                         absence of detectable viral replication [79]. The sustained inflammatory response maintains a
+                                         microglial activation state that progressively erodes CA1 synaptic density and dentate gyrus
+                                         progenitor cell populations. MAM dysfunction in WNV-infected neurons arises through
+                                         direct viral disruption of mitochondrial membrane dynamics, with WNV NS5 protein im-
+                                         pairing mitochondrial calcium uptake and driving bioenergetic failure that compounds the
+                                         structural neuronal injury of acute infection. CREB-BDNF signaling is suppressed through
+                                         NF-kB-mediated inhibition of CREB phosphorylation during acute infection, with persistent
+                                         BDNF reduction contributing to impaired hippocampal circuit recovery.
+                                               9. Zika Virus (ZIKV)
+                                               ZIKV exerts its most severe hippocampal effects during adult infection by targeting
+                                         neural progenitor cells in the dentate gyrus, thereby disrupting the neurogenic niche that
+                                         supports ongoing pattern separation and hippocampal circuit adaptation [80]. ZIKV di-
+                                         rectly infects Sox2-positive neural progenitors, inducing cell-cycle arrest and apoptosis,
+                                         thereby depleting the dentate gyrus progenitor pool. Spatial memory deficits and sustained
+                                         microglial activation persist for weeks after viral clearance in adult animal models [80].
+                                         Microglial activation drives progenitor cell loss through cytokine-mediated suppression of
+                                         Wnt signaling, BDNF production is reduced through both direct viral effects and inflamma-
+                                         tory suppression of CREB-dependent transcription, and BBB disruption in the hippocampal
+                                         microvasculature amplifies the neuroinflammatory environment during the acute phase.
+                                         Direct evidence for MAM dysfunction in ZIKV infection is currently absent from the human
+                                         literature; its inclusion here reflects a mechanistic analogy with progenitor cell metabolic
+                                         stress phenotypes documented in related flavivirus models (Table 4).
+
+                                         Table 4. Classification of memory types, subtypes, categories, and systems impaired across acquired
+                                         and developmental conditions. Gene(s) involved indicate genetic variants modulating susceptibility
+                                         and severity. APOE, apolipoprotein E; BDNF, brain-derived neurotrophic factor; CR1, complement
+                                         receptor 1; GSK3β, glycogen synthase kinase 3 beta; MAPT, microtubule-associated protein tau; TBI,
+                                         traumatic brain injury; TREM2, triggering receptor expressed on myeloid cells 2.
+
+                                                                   Type of Memory                                        Memory
+        Condition                 Gene(s) Involved                                           Memory Subtype                                 Memory System
+                                                                      Impaired                                           Category
+     Traumatic Brain                                                                                                 Long-term Memory,       Events, Facts,
+                             apoE, mapt, trem2, gsk3β, bdnf   Episodic, Working, Semantic   Explicit (Declarative)
+       Injury (TBI)                                                                                                  Short-term Memory      Working Memory
+                                                                                                                     Long-term Memory,       Events, Facts,
+  Sports Contact Injuries     apoE, mapt, gsk3β, bdnf, cr1        Episodic, Working         Explicit (Declarative)
+                                                                                                                     Short-term Memory      Working Memory
+                                                                                                                     Long-term Memory,       Events, Facts,
+ Accidents (Head Injuries)   apoE, mapt, trem2, gsk3β, bdnf   Episodic, Working, Semantic   Explicit (Declarative)
+                                                                                                                     Short-term Memory      Working Memory
+ Congenital Birth Deficits                                                                                           Short-term Memory,
+                               GSK3β, apoE, mapt, bdnf            Working, Semantic           Implicit, Explicit                          Working Memory, Facts
+  (e.g., Cerebral Palsy)                                                                                             Long-term Memory
+
+
+
+
+                                                                                                                         https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                            12 of 28
+
+
+
+                                         Table 4. Cont.
+
+                                                              Type of Memory                                    Memory
+        Condition                 Gene(s) Involved                                  Memory Subtype                                Memory System
+                                                                 Impaired                                       Category
+          Stroke             apoE, mapt, trem2, gsk3β, bdnf   Episodic, Semantic   Explicit (Declarative)   Long-term Memory       Events, Facts
+ Chronic Hypoxia (e.g., in                                                                                  Long-term Memory,     Events, Facts,
+                                apoE, mapt, gsk3β, bdnf       Episodic, Working    Explicit (Declarative)
+    preterm infants)                                                                                        Short-term Memory    Working Memory
+
+
+
+                                         4. The Four Convergent Molecular Pathways: Mechanistic Detail
+                                         A1. Mitochondria-Associated Membrane (MAM) Dysfunction
+                                              Mitochondria-associated membranes are specialized contact sites between the endoplas-
+                                         mic reticulum and mitochondrial outer membrane, maintained by protein tethering complexes
+                                         including VAPB-PTPIP51, that regulate calcium transfer from ER stores to mitochondria, ATP
+                                         synthesis, lipid metabolism, and autophagosome formation [3,4]. The spatial proximity main-
+                                         tained by these tethers, typically 10–25 nm, is functionally essential: calcium transfer across
+                                         this gap drives oxidative phosphorylation and sustains synaptic ATP production. When
+                                         MAM contacts are disrupted, calcium transfer fails, mitochondrial ATP synthesis collapses,
+                                         and fatty acids are diverted from oxidation and membrane synthesis into triglyceride stor-
+                                         age, producing a lipid-loaded, metabolically rigid neuronal state that is acutely vulnerable
+                                         to additional insults [4]. The hippocampus is exceptionally sensitive to MAM disruption
+                                         because of the high ATP demands of sustained high-frequency synaptic transmission and
+                                         the dependence of LTP on calcium-triggered kinase cascades that require MAM-competent
+                                         mitochondrial buffering. Multiple viral proteins engage this pathway. SARS-CoV-2 N-protein
+                                         disrupts mitochondrial membrane dynamics and impairs MAM calcium transfer [24,76]. The
+                                         downstream lipidomic and metabolomic consequences of MAM disruption are consistent
+                                         across viral and neurodegenerative contexts: triglyceride accumulation with sequestration of
+                                         arachidonic acid and DHA-containing species, membrane phospholipid depletion, ceramide
+                                         elevation, and concurrent falls in ATP and acetyl-CoA reflecting mitochondrial bioenergetic
+                                         failure [4]. This signature mirrors aged brain tissue, providing a molecular basis for the
+                                         premature cognitive aging observed in HIV and other chronic viral infections. Therapeutic
+                                         targets at this pathway include sigma-1 receptor agonists, which stabilize MAM contact site
+                                         integrity, and calcium modulators that restore mitochondrial calcium uptake independently
+                                         of the tethering complex.
+                                         A2. Chronic Neuroinflammation
+                                               Microglia serve as the brain’s resident immune sentinels, rapidly sensing and responding
+                                         to pathogen-associated molecular patterns and damage signals. In the context of acute viral
+                                         infection, this response is protective. However, chronic microglial activation, sustained by
+                                         persistent viral antigens, ongoing stimulation of pattern recognition receptors by residual viral
+                                         RNA, and feedback amplification through cytokine networks, transforms the neuroprotective
+                                         response into a driver of synaptic destruction [5]. Activated microglia eliminate synapses
+                                         through multiple converging mechanisms: CR3-dependent complement-mediated phagocy-
+                                         tosis of C1q- and C3-tagged synaptic terminals, TNF-alpha-mediated reduction in synaptic
+                                         AMPA receptor expression, IL-1beta-driven suppression of LTP, and direct physical engulf-
+                                         ment of dendritic spines. In the hippocampus, this chronic pruning produces progressive
+                                         circuit degradation that is not reversed by viral clearance or antiretroviral suppression. The
+                                         TREM2-dependent microglial clearance pathway is relevant across multiple viral contexts:
+                                         TREM2 loss-of-function impairs microglial debris clearance and amplifies the neuroinflam-
+                                         matory response in Alzheimer’s disease [25], and similar impairments of TREM2-dependent
+                                         resolution occur in SARS-CoV-2 and HIV-associated neuroinflammation. Complement dysreg-
+                                         ulation, particularly sustained elevations in C1q and C3, provides a mechanistic link between
+
+
+
+                                                                                                                https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                            13 of 28
+
+
+
+                      acute viral neuroinflammation and the progressive synapse loss characteristic of neurodegen-
+                      erative conditions [74,75]. Therapeutic targets in this pathway include TREM2 agonists that
+                      restore microglial homeostasis, NLRP3 inflammasome inhibitors that interrupt IL-1β- driven
+                      amplification, and mast cell stabilizers that reduce histamine-mediated BBB permeabilization.
+                      A3. Blood–Brain Barrier Disruption
+                           The blood–brain barrier is maintained by the coordinated function of cerebrovascular
+                      endothelial tight junctions, pericytes that regulate vascular tone and endothelial integrity,
+                      and astrocytic endfeet that couple neuronal metabolic demand to vascular supply [26]. Its
+                      disruption exposes CA1, the most perfusion-sensitive and vascularly dependent hippocampal
+                      subfield, to systemic inflammation, hypoperfusion, and peripheral immune activation. Viral
+                      disruption of BBB integrity occurs through multiple mechanisms: direct endothelial infection
+                      (HIV, SARS-CoV-2), cytokine-mediated downregulation of tight junction proteins including
+                      claudin-5 and occludin (influenza, CMV, HIV), pericyte loss driven by viral-induced oxidative
+                      stress, and complement-mediated endothelial activation (SARS-CoV-2, VZV). Matrix metallo-
+                      proteinase activity is central to viral BBB disruption: HIV Tat and gp120, SARS-CoV-2 spike
+                      protein, and VZV glycoproteins each upregulate MMP-2 and MMP-9, which degrade extracel-
+                      lular matrix components that support endothelial junction integrity and pericyte adhesion.
+                      The resulting BBB disruption creates a permissive environment for peripheral monocyte and
+                      lymphocyte infiltration, amplifying the neuroinflammatory response. Therapeutic approaches
+                      targeting BBB restoration include MMP inhibitors that preserve junctional integrity, pericyte
+                      replacement and stabilization strategies, and activation of the angiopoietin-1 pathway, which
+                      promotes endothelial junction formation.
+                      A4. Impaired CREB-BDNF Signaling
+                            The CREB-BDNF signaling axis is the molecular foundation of hippocampal plasticity
+                      and resilience. CREB phosphorylation at Ser133, driven by calcium influx, cAMP elevation,
+                      and neurotrophin signaling, activates immediate early gene expression and drives BDNF
+                      transcription, which in turn supports dendritic arborization, synaptogenesis, and the mainte-
+                      nance of hippocampal progenitor cell populations [6–8]. Suppression of this pathway reduces
+                      neurogenesis, impairs LTP, and accelerates hippocampal atrophy. Viral suppression of CREB-
+                      BDNF signaling occurs through multiple converging mechanisms. HIV Tat directly inhibits
+                      CREB phosphorylation by activating GSK-3beta and interfering with the calcium/calmodulin-
+                      dependent kinase cascade [60]. gp120 activates caspase-3, thereby degrading CREB, com-
+                      pounding transcriptional failure [61]. CMV-driven IL-6 and TNF-alpha suppress BDNF
+                      through NF-kB-mediated inhibition of CREB-dependent transcription. SARS-CoV-2 impairs
+                      ACE2-dependent pathways that normally support trophic signaling in hippocampal neurons.
+                      WNV NS5 protein activates NF-kB in a manner that directly competes with CREB for transcrip-
+                      tional co-activator binding [79]. The BDNF Val66Met polymorphism substantially modulates
+                      the impact of viral CREB-BDNF suppression, the Met allele impairs activity-dependent BDNF
+                      secretion through reduced sorting to the regulated secretory pathway, and carriers show
+                      greater hippocampal volume loss in response to CMV reactivation and greater cognitive
+                      impairment in HIV [68,81].
+                            An important additional regulatory component within this pathway is TGF-β1, a neu-
+                      rotrophic and cytokine factor whose hippocampal deficit has been consistently associated with
+                      depression, cognitive dysfunction, and stress vulnerability in both animal models and clinical
+                      studies [82,83]. TGF-β1 SMAD-dependent signaling interacts directly with CREB and modu-
+                      lates dentate gyrus neurogenesis; its suppression during chronic viral neuroinflammation may
+                      compound CREB-BDNF impairment, particularly in the context of stress-related comorbidities
+                      that frequently co-occur with chronic viral infection. The viral conditions discussed in this
+                      review produce neuroinflammatory states that suppress TGF-β1 signaling, and the integration
+
+
+
+                                                                                  https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                          14 of 28
+
+
+
+                                       of this pathway component strengthens the mechanistic basis for dentate gyrus neurogenic
+                                       failure across multiple viral contexts.
+                                             Synergistic Amplification. These four pathways do not operate in isolation. MAM
+                                       dysfunction sensitizes hippocampal neurons to inflammatory insults by impairing the
+                                       bioenergetic capacity required to mount protective responses. BBB disruption floods the
+                                       hippocampal parenchyma with peripheral inflammatory mediators, amplifying microglial
+                                       activation. Neuroinflammation elevates ATP demand through cytokine-driven hyperex-
+                                       citability while simultaneously suppressing BDNF production. CREB-BDNF impairment
+                                       reduces the expression of PGC-1alpha, the master regulator of mitochondrial biogenesis,
+                                       completing the cycle by further impairing the mitochondrial function on which MAM in-
+                                       tegrity depends. This synergistic amplification explains why single-pathway interventions
+                                       have produced modest cognitive benefit across virtually every memory disorder studied
+                                       to date, and why combination strategies targeting multiple pathways simultaneously are
+                                       mechanistically indicated (Table 5).
+
+                                       Table 5. Key molecular players driving convergent hippocampal circuit failure across memory
+                                       disorders. The primary function, conditions with the highest involvement, memory mechanisms,
+                                       and therapeutic targeting strategies are shown for each gene or protein. AMPK, AMP-activated
+                                       protein kinase; APOE, apolipoprotein E; BDNF, brain-derived neurotrophic factor; CBS, corticobasal
+                                       syndrome; CREB, cAMP response element-binding protein; CTE, chronic traumatic encephalopathy;
+                                       DG, dentate gyrus; FTD, frontotemporal dementia; GSK3β, glycogen synthase kinase 3 beta; HDAC,
+                                       histone deacetylase; LATE, limbic-predominant age-related TDP-43 encephalopathy; LBD, Lewy
+                                       body dementia; LTP, long-term potentiation; MAPT, microtubule-associated protein tau; NAD+,
+                                       nicotinamide adenine dinucleotide; NMN, nicotinamide mononucleotide; NR, nicotinamide ribo-
+                                       side; PDE4, phosphodiesterase 4; SIRT1, sirtuin 1; TDP-43, TAR DNA-binding protein 43; TREM2,
+                                       triggering receptor expressed on myeloid cells 2; VaD, vascular dementia.
+
+                                                   Conditions with Highest
+      Gene               Primary Function                                            Memory Mechanism                   Therapeutic Targeting
+                                                        Involvement
+                                                                                  Synaptic repair, cholesterol
+                         Lipid transport, Aβ                                     delivery, blood–brain barrier       Anti-APOE4 antibodies; APOE
+                                                   AD, LBD, VaD, HSV-1, HIV,
+       apoE              clearance, synaptic                                     integrity; APOE4 impairs Aβ         mimetics; APOE gene editing;
+                                                       CMV, TBI, Stroke
+                              integrity                                             clearance and enhances             lipid-lowering strategies
+                                                                                         tau pathology
+                                                                                   Physiological tau regulates       Tau antisense oligonucleotides
+                                                                                       synaptic function;                  (BIIB080); anti-tau
+      mapt            Microtubule stabilization,    AD, FTD, PSP, CBS, CTE,
+                                                                                    hyperphosphorylated tau            antibodies (semorinemab);
+      (Tau)               axonal transport                TBI, HSV-1
+                                                                                disrupts transport, forms tangles,           GSK-3β/CDK5
+                                                                                   spreads trans-synaptically        inhibitors; MTBR tau vaccines
+                                                                                  Master regulator of synaptic
+                                                                                                                      PDE4 inhibitors (rolipram);
+                                                        AD, PD, HD, HIV,          plasticity; phosphorylates to
+                      Transcriptional regulation                                                                       HDAC inhibitors; AMPK
+       creb                                         Influenza (all conditions      activate BDNF, c-fos, Arc;
+                          of memory genes                                                                            activators (metformin); direct
+                                                         impairing LTP)               CREB dysfunction =
+                                                                                                                            CREB activators
+                                                                                     impaired consolidation
+                                                                                 Activity-dependent secretion;
+                                                                                                                        Exercise (most effective);
+                                                                                 TrkB signaling enhances LTP,
+                                                                                                                            BDNF mimetics
+                       Neurotrophin; synaptic           AD, PD, HD, TBI,            spine maturation, DG
+       bdnf                                                                                                          (7,8-dihydroxyflavone); TrkB
+                       plasticity, neurogenesis      Stroke, CMV, Hypoxia          neurogenesis; Val66Met
+                                                                                                                       agonists; ketamine (rapid
+                                                                                        polymorphism
+                                                                                                                           BDNF induction)
+                                                                                     modulates secretion
+                                                                                     Hyperactive GSK3β
+                                                                                                                     Lithium; tideglusib; AZD1080;
+                      Serine/threonine kinase                                    phosphorylates tau (promotes
+                                                     AD, FTD, PD, PSP, TBI,                                            small-molecule inhibitors
+      gsk3β                regulating tau,                                      tangles), inhibits CREB (blocks
+                                                          HIV, HCV                                                   (selective for GSK3β to avoid
+                        CREB, inflammation                                      consolidation), activates NF-κB
+                                                                                                                              Wnt effects)
+                                                                                     (inflammation) [84]
+
+
+
+
+                                                                                                              https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                          15 of 28
+
+
+
+                                      Table 5. Cont.
+
+                                                    Conditions with Highest
+      Gene               Primary Function                                            Memory Mechanism                  Therapeutic Targeting
+                                                         Involvement
+                                                                                     TREM2 variants impair
+                                                                                                                      TREM2 agonist antibodies
+                                                                                 microglial clearance of Aβ, tau,
+                      Microglial phagocytosis,                                                                      (AL002); microglial activation
+                                                     AD, LBD, FTD, HSV-1,        apoptotic debris; R47H variant
+      trem2                inflammation                                                                             modulators; anti-inflammatory
+                                                           HIV, TBI              increases AD risk 2–4-fold; loss
+                             regulation                                                                                  strategies targeting
+                                                                                     of function causes Nasu-
+                                                                                                                          DAP12 signaling
+                                                                                          Hakola disease
+                                                                                  Deacetylates CREB (enhances       NAD+ precursors (NMN, NR);
+                         NAD+-dependent                                            transcription), p53 (reduces      resveratrol; SIRT1 activators
+       sirt1                                           AD, PD, HD, Aging
+                       deacetylase; longevity                                    apoptosis), histones (chromatin     (SRT1720); caloric restriction
+                                                                                 remodeling); declines with age             mimetics [85]
+                                                                                 Regulates apoptosis, synaptic
+                                                                                                                    p53 inhibitors (pifithrin-α) in
+                                                                                   function; age-related DNA
+                        Tumor suppressor;                                                                           acute injury; SIRT1 activation
+       p53                                         TBI, Stroke, Aging, Hypoxia   damage increases p53, shifting
+                         stress response                                                                             to deacetylate p53; restoring
+                                                                                     neurons from plasticity
+                                                                                                                          SIRT1/p53 balance
+                                                                                           to survival
+                                                                                   Regulates synaptic mRNA
+                                                                                                                     Antisense oligonucleotides;
+                                                                                     transport/translation;
+                                                                                                                      small molecules restoring
+                         RNA processing,                ALS, FTD, LATE,              mislocalization causes
+      tdp-43                                                                                                        nuclear localization; inhibitors
+                         local translation                   Aging                 loss-of-function (impaired
+                                                                                                                           of liquid–liquid
+                                                                                          splicing) and
+                                                                                                                          phase separation
+                                                                                  gain-of-function (aggregates)
+
+
+
+                                      B.        Genetic Modulators of Viral Hippocampal Vulnerability
+                                            Genetic background substantially modulates the impact of viral engagement of con-
+                                      vergent pathways, creating interindividual variation in vulnerability relevant to both risk
+                                      stratification and the design of precision interventions. APOE4 is the most broadly relevant
+                                      genetic modifier, amplifying viral hippocampal injury through at least three mechanisms:
+                                      impaired viral clearance (HSV-1), reduced lipid-mediated neuroprotection in the context of
+                                      MAM-driven lipid dysregulation (HIV), and potentiated neuroinflammatory responses to
+                                      complement activation (SARS-CoV-2) [55,76]. APOE4 carriers show accelerated hippocam-
+                                      pal atrophy in response to viral infection across multiple pathogen contexts. The BDNF
+                                      Val66Met polymorphism reduces activity-dependent BDNF secretion and amplifies the im-
+                                      pact of viral CREB-BDNF suppression, predicting greater hippocampal volume loss in CMV
+                                      seropositivity and greater cognitive vulnerability in HIV [68,81]. FKBP5 polymorphisms
+                                      modulate glucocorticoid receptor sensitivity, influencing the degree to which stress hor-
+                                      mones released during acute viral infection amplify hippocampal inflammatory responses.
+                                      TREM2 variants impair microglial clearance function, prolonging the neuroinflammatory
+                                      consequences of viral priming.
+                                            Sex-dependent differences in hippocampal vulnerability to viral infection represent
+                                      an understudied but mechanistically important dimension of this framework. Estradiol-
+                                      mediated protection of MAM tethering reserve, through upregulation of VAPB expression
+                                      and maintenance of ER-mitochondria contact site density, and estradiol-dependent BDNF
+                                      expression provide a basis for differential hippocampal vulnerability between sexes ob-
+                                      served in HIV-associated neurocognitive disorder and stress-related conditions. These
+                                      protective mechanisms are attenuated after menopause, consistent with the accelerated
+                                      cognitive aging and increased HAND severity observed in women over 50. The develop-
+                                      mental timing of pathway activation is also relevant: prenatal and perinatal viral exposures
+                                      engage MAM and neuroinflammatory pathways during critical windows of hippocampal
+                                      circuit formation, with consequences for neurogenic niche establishment that differ funda-
+                                      mentally from those of adult exposure. Adolescent infection engages pathways during a
+                                      period of ongoing synaptic pruning and BDNF-dependent circuit refinement, while adult
+                                      exposure acts on a fully formed but potentially compromised circuit. These developmental
+
+
+                                                                                                             https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                            16 of 28
+
+
+
+                      distinctions are relevant to interpreting the clinical heterogeneity of post-viral cognitive
+                      outcomes across age groups.
+                      C.   Diagnostic Approaches for Virus-Associated Hippocampal Injury
+                            The convergence of viral hippocampal injury across four shared molecular pathways
+                      creates an opportunity for pathway-specific, rather than pathogen-specific, biomarker-
+                      guided mechanistic stratification, identifying which component of the convergent injury is
+                      driving ongoing dysfunction in each individual. Plasma neurofilament light chain (NfL)
+                      provides a sensitive measure of ongoing neuronal injury and axonal damage, rising in
+                      proportion to the rate of hippocampal circuit degeneration regardless of the upstream
+                      cause [7]. Plasma GFAP reflects astrocytic activation and is particularly sensitive to BBB-
+                      associated astrocytic remodeling. Plasma p-tau217 detects tauopathic changes that may
+                      be secondary to chronic MAM dysfunction and neuroinflammation, and its elevation in
+                      long COVID and HIV-associated neurocognitive decline suggests that tau pathology is a
+                      downstream consequence of convergent pathway activation [8]. The CSF/serum albumin
+                      quotient provides a direct measure of BBB integrity. Hippocampal subfield MRI, specifically
+                      volumetric measurement of dentate gyrus, CA3, and CA1, enables anatomical localization
+                      of injury that maps directly onto the functional deficits described above [17].
+                            The degree of validation for these biomarkers is not equivalent across the conditions
+                      discussed in this review. NfL and GFAP have the broadest validation across neuroinflam-
+                      matory and neurodegenerative contexts; p-tau217 as a marker of post-viral hippocampal
+                      injury remains an emerging area with limited cross-disorder validation. Hippocampal
+                      subfield MRI is predominantly a research tool and has not been validated as a clinical end-
+                      point in post-viral cognitive impairment trials. These tools are presented here as offering a
+                      pathway toward precision mechanistic stratification as their cross-disorder validation is
+                      established, rather than as currently applicable clinical instruments.
+
+                      5. Psychiatric Disorders and Memory Impairment
+                            Psychiatry and neurology have long been treated as separate disciplines, yet their
+                      primary disorders share hippocampal circuits, the same four molecular pathways, and
+                      overlapping episodic memory failures. The boundary between a depressed brain and a
+                      degenerating one is less categorical than clinical tradition implies.
+                            1. Major Depressive Disorder (MDD). MDD affects over 300 million people world-
+                      wide; cognitive symptoms, including memory impairment, occur in 85–94% of patients and
+                      persist into remission [51]. The memory profile is distinctive: impaired autobiographical
+                      encoding, overgeneralized recollection, and reduced pattern separation consistent with
+                      DG dysfunction. Meta-analyses confirm an 8–10% reduction in hippocampal volume, with
+                      preferential atrophy of CA1 and DG [86]. Chronic glucocorticoid exposure drives mito-
+                      chondrial dysfunction and impairs ATP production; sustained microglial activation prunes
+                      synapses and disrupts BBB integrity; suppressed CREB-BDNF signaling reduces neuro-
+                      genesis by 30–50% [81]. The BDNF Val66Met polymorphism amplifies risk and predicts
+                      greater hippocampal volume loss. SSRIs restore neurogenesis and raise BDNF 2–3-fold;
+                      ketamine acts rapidly through BDNF-TrkB signaling and hippocampal synaptogenesis.
+                            2. Schizophrenia. Cognitive deficits precede psychosis in 75–85% of individuals and
+                      predict long-term functional outcome more reliably than positive symptoms [87]. Working
+                      memory impairment is severe (effect size d = 1.0–1.5), with hippocampal volume reduced
+                      4–8% in CA1 and subiculum. Mitochondrial complex I deficits disrupt MAM contacts
+                      and energy metabolism; C4A overexpression drives excessive adolescent synaptic pruning
+                      through complement-mediated microglial activation [88]; NMDA receptor hypofunction
+                      suppresses CREB-BDNF signaling [89]; and BBB disruption elevates the albumin quo-
+                      tient. BDNF Val66Met carriers show greater cognitive impairment. Minocycline improves
+
+
+                                                                                  https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                              17 of 28
+
+
+
+                      working memory in early schizophrenia; N-acetylcysteine and aerobic exercise support
+                      hippocampal recovery.
+                            3. Post-Traumatic Stress Disorder (PTSD). PTSD presents a paradox: traumatic mem-
+                      ories are hyperconsolidated and intrusive while context-dependent memory, fear extinction,
+                      and pattern separation fail, reflecting DG dysfunction at its core [90]. Hippocampal volume
+                      is reduced 5–8%, most prominently in CA3 and DG [91]. Glucocorticoid dysregulation
+                      disrupts mitochondrial function and MAM calcium homeostasis; sustained neuroinflam-
+                      mation increases BBB permeability; impaired CREB-BDNF signaling compounds synaptic
+                      fragility. BDNF Val66Met increases PTSD risk (OR 1.4–1.8); FKBP5 polymorphisms modu-
+                      late glucocorticoid receptor sensitivity, predicting hippocampal volume loss [92]. Prolonged
+                      exposure therapy increases hippocampal volume; SSRIs enhance BDNF and support fear
+                      memory reconsolidation.
+                            4. Bipolar Disorder. Cognitive impairment affects 40–60% of individuals even during
+                      euthymia [93], with episodic memory deficits (effect size 0.7–1.0) and CA1/DG abnormal-
+                      ities persisting between mood episodes. Mitochondrial complex I deficits correlate with
+                      cognitive severity; episodic neuroinflammation during mood episodes elevates IL-6 and
+                      TNF-α; BDNF falls during depressive phases, disrupting CREB-dependent plasticity [94].
+                      Lithium is mechanistically coherent: it increases BDNF, enhances mitochondrial function,
+                      inhibits GSK-3β, and preserves hippocampal volume [95].
+                            Convergent Mechanisms. MDD, schizophrenia, PTSD, and bipolar disorder share a
+                      biological rather than symptomatic unity. Genetic vulnerabilities, BDNF Val66Met, FKBP5,
+                      COMT, and C4A, translate psychological stress into hippocampal damage through the same
+                      four pathways that drive neurodegeneration and viral injury. Combination approaches
+                      targeting mitochondrial function, neuroinflammation, BBB integrity, and CREB-BDNF
+                      signaling, augmented by aerobic exercise, cognitive remediation, and stress reduction,
+                      offer greater promise than neurotransmitter-focused monotherapies. Biomarker-guided
+                      stratification using plasma BDNF, inflammatory markers, and hippocampal subfield MRI
+                      can enable precision intervention before irreversible circuit loss occurs.
+
+                      6. Additional Factors Affecting Memory
+                            Brain injury, vascular disruption, developmental insults, and neoplastic disease round
+                      out the spectrum of memory-impairing conditions. Despite their heterogeneity, they
+                      converge on the same hippocampal vulnerabilities through the four shared pathways.
+                            Traumatic Brain Injury (TBI). TBI causes diffuse axonal injury, acute BBB disruption,
+                      and chronic neuroinflammation that initiate tau pathology and progressive hippocampal
+                      circuit failure [96,97]. APOE4 amplifies severity and accelerates post-injury neurodegeneration.
+                      Critically, TBI is not an acute event alone: data from the Framingham Heart Study confirm that
+                      TBI is associated with increased long-term all-cause mortality driven substantially by dementia-
+                      related death [98], underscoring the clinical urgency of targeting convergent hippocampal
+                      pathways in TBI survivors. All four pathways are robustly engaged.
+                            Stroke and Chronic Hypoxia. Stroke produces focal hippocampal, diencephalic, and
+                      frontal lesions compounded by white matter ischemia and suppressed neurogenesis [99].
+                      CA1 is exquisitely sensitive to ischemic injury; even subclinical hypoperfusion impairs encod-
+                      ing and consolidation through mechanisms shared with VaD and metabolic injury. Chronic
+                      intermittent hypoxia engages ferroptosis and ER stress pathways in hippocampal neurons [99],
+                      providing a mechanistic link between sleep-disordered breathing and progressive episodic
+                      memory impairment. BBB breakdown and neuroinflammation are primary contributors to
+                      the pathway; MAM dysfunction is secondary to ischemic mitochondrial injury.
+                            Developmental Disorders. Cerebral palsy and hypoxic–ischemic encephalopathy
+                      disrupt working memory through frontal–subcortical circuit injury [100], demonstrating
+
+
+
+                                                                                    https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                                    18 of 28
+
+
+
+                                           that the convergent mechanisms operate across the lifespan from perinatal insult through
+                                           late-life neurodegeneration. TGF-β1 pathway suppression during early developmental
+                                           windows compounds dentate gyrus neurogenic failure, as discussed in Section 4.
+                                                 Brain Tumors. Brain tumors impair memory through mass effect, edema, and seizure
+                                           activity, while treatment amplifies the damage: radiation and chemotherapy add direct
+                                           hippocampal injury, mitochondrial dysfunction, and chronic neuroinflammation to an
+                                           already compromised circuit [101,102]. The therapeutic paradox, treating the tumor while
+                                           injuring the hippocampus, makes neuroprotective strategies targeting convergent pathways
+                                           a clinical priority, particularly for tumors near the temporal lobe, where hippocampal
+                                           radiation exposure is unavoidable (Table 6).
+
+                                           Table 6. Current FDA-approved therapies, active clinical trials (Phase 2/3, 2022 onwards), and
+                                           investigational agents across major memory disorders. Mechanism of action and memory/cognitive
+                                           impact are shown for approved therapies. Trial target and mechanism are shown for investigational
+                                           agents. AChE, acetylcholinesterase; AD, Alzheimer’s disease; ALS, amyotrophic lateral sclerosis;
+                                           ASO, antisense oligonucleotide; BBB, blood-brain barrier; CBS, corticobasal syndrome; CDR-SB,
+                                           Clinical Dementia Rating Sum of Boxes; CJD, Creutzfeldt-Jakob disease; CSF, cerebrospinal fluid;
+                                           CTE, chronic traumatic encephalopathy; DA, dopamine; DLB, dementia with Lewy bodies; FRDA,
+                                           Friedreich’s ataxia; FTD, frontotemporal dementia; GLP-1, glucagon-like peptide-1; HD, Huntington’s
+                                           disease; HTT, huntingtin; KS, Korsakoff syndrome; LP, lumboperitoneal; MAO-B, monoamine oxidase
+                                           B; MAPK, mitogen-activated protein kinase; mAb, monoclonal antibody; MSA, multiple system
+                                           atrophy; NMDA, N-methyl-D-aspartate; NPH, normal pressure hydrocephalus; Nrf2, nuclear factor
+                                           erythroid 2-related factor 2; PD, Parkinson’s disease; PDD, Parkinson’s disease dementia; PDE,
+                                           phosphodiesterase; PPA, primary progressive aphasia; PSP, progressive supranuclear palsy; RAGE,
+                                           receptor for advanced glycation end products; SCAs, spinocerebellar ataxias; SOD1, superoxide
+                                           dismutase 1; TREM2, triggering receptor expressed on myeloid cells 2; VA, ventriculoatrial; VaD,
+                                           vascular dementia; VMAT2, vesicular monoamine transporter 2; VP, ventriculoperitoneal.
+
+                                                                                                       Active Trials
+   Disease     FDA-Approved Therapies              Mechanism         Memory/Cognitive Impact                                     Trial Target/Mechanism
+                                                                                                     (Phase 2/3, 2022+)
+                                                                       Modest improvement in
+                Donepezil, rivastigmine,
+                                                  AChE inhibitor     attention, working memory,          Masitinib             Mast cell/neuroinflammation
+                    galantamine
+                                                                          episodic retrieval
+                                                     NMDA             Stabilizes excitotoxicity;
+                        Memantine                                                                       Lecanemab             Anti-Aβ mAb (approved 2023)
+                                                    antagonist        modest functional benefit
+                                                                       Slows decline modestly
+                        Lecanemab
+                                                  Anti-Aβ mAb                (~27% CDR-                Donanemab              Anti-Aβ mAb (approved 2024)
+                           [103]
+                                                                        SB); reduces plaques
+     AD
+                                                                                                        BIIB080,
+                                                                                                                               Tau antisense oligonucleotide
+                                                                                                     IONIS-MAPTRx
+                                                                                                       Semorinemab,
+                                                                          Slows decline ~35%                                          Anti-tau mAb
+                                                                                                        tilavonemab
+                      Donanemab [104]             Anti-Aβ mAb         (intermediate tau); reduces
+                                                                             plaques/tau              GV-971 (sodium
+                                                                                                                               Gut microbiome modulation
+                                                                                                      oligomannate)
+                                                                                                                                     RAGE inhibitor,
+                                                                                                    Azeliragon (TTP488)
+                                                                                                                                    anti-inflammatory
+                                                                        Variable cognitive effect
+                                                                                                      Prasinezumab,
+                 Levodopa, DA agonists        Dopamine replacement   (dose-dependent “overdose”);                                 Anti-α-synuclein mAb
+                                                                                                       cinpanemab
+                                                                            improves motor
+  PD/PDD
+                        Rivastigmine                                 Improves attention, episodic        Nilotinib             Autophagy (c-Abl inhibitor)
+                                                  AChE inhibitor
+                      (PDD approved)                                      retrieval in PDD               Exenatide            GLP-1 agonist, neuroprotection
+                                                                                                                                      PDE9 inhibitor
+                                                                                                           E2027
+                                                                      Reduces cognitive fluctua-                                     (cGMP pathway)
+    DLB         Rivastigmine, donepezil           AChE inhibitor      tions, improves attention                                   p38α MAPK inhibitor,
+                                                                                                      Neflamapimod
+                                                                                                                                   anti-inflammatory
+
+
+
+
+                                                                                                                     https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                                      19 of 28
+
+
+
+                                         Table 6. Cont.
+
+                                                                                                          Active Trials
+   Disease     FDA-Approved Therapies            Mechanism            Memory/Cognitive Impact                                      Trial Target/Mechanism
+                                                                                                        (Phase 2/3, 2022+)
+                                                                                                           ABBV-8E12,
+                                                                                                                                        Anti-tau mAb
+                                                                                                           tilavonemab
+                                                                                                                                    Glutamate modulator,
+    FTD               None approved                   —                            —                   TPN-101 (troriluzole)
+                                                                                                                                      neuroprotection
+                                                                                                                                        Anti-sortilin
+                                                                                                              AL001
+                                                                                                                                   (progranulin pathway)
+                                                                                                       Branaplam (LMI070)        Splicing modulator (↑ HTT)
+                                                                                                                                  Sigma-1 receptor agonist,
+                       Tetrabenazine,               VMAT2              No cognitive benefit; may           Pridopidine
+     HD                                                                                                                               neuroprotection
+                      deutetrabenazine       inhibitor (motor only)      worsen depression
+                                                                                                                                     HTT-lowering ASO
+                                                                                                            WVE-003
+                                                                                                                                      (allele-selective)
+                                                                           Stroke prevention
+                                                                                                                                       PDE3 inhibitor,
+                  No specific approval                —                  (antiplatelet, statin, BP          Cilostazol
+                                                                                                                                   antiplatelet, vasodilator
+                                                                       control) limits progression
+    VaD
+                         Donepezil                                         Modest benefit in                                         NMDA antagonist,
+                                                AChE inhibitor                                          NA-1 (Tat-NR2B9c)
+                         (off label)                                       mixed dementia                                          neuroprotection (stroke)
+                                                                                                      Tilavonemab, ABBV-8E12            Anti-tau mAb
+    PSP               None approved                   —                            —                          AL001              Anti-sortilin (tau clearance)
+                                                                                                      Davunetide (failed Ph3)       Microtubule stabilizer
+                                                                                                                                     MAO-B inhibitor +
+                                                                                                       Rasagiline + riluzole
+                                                                                                                                    glutamate modulator
+    MSA               None approved                   —                            —
+                                                                                                                                        α-Synuclein
+                                                                                                            Rifampicin
+                                                                                                                                    aggregation inhibitor
+                                                                                                        AMX0035 (sodium
+                                                                       No cognitive benefit; slows
+                          Riluzole           Glutamate modulator                                         phenylbutyrate-          Mitochondrial/ER stress
+                                                                        motor decline modestly
+                                                                                                          taurursodiol)
+                                                                          No cognitive benefit;
+    ALS                                                                                                 Tofersen (approved
+                         Edaravone               Antioxidant                  slows motor                                                SOD1 ASO
+                                                                                                           2023, SOD1)
+                                                                           decline modestly
+                                                                        Slows motor decline in                                    Myeloperoxidase inhibitor,
+               Tofersen, (SOD1-ALS) [105]         SOD1 ASO                                                 Verdiperstat
+                                                                        SOD1 mutation carriers                                       anti-inflammatory
+                                                                        Improves gait, cognition
+                 CSF shunting (VP, VA,
+    NPH                                         CSF diversion            (attention, executive)                 —                             —
+                      LP shunt)
+                                                                               in 60–80%
+                                                                                                            Troriluzole             Glutamate modulator
+    SCAs              None approved                   —                            —                    AAV-frataxin gene
+                                                                                                                                Gene replacement (FRDA only)
+                                                                                                         therapy (FRDA)
+                                                                                                           ABBV-8E12,
+    CBS               None approved                   —                            —                                                    Anti-tau mAb
+                                                                                                           tilavonemab
+                                                                                                                                 Prion aggregation inhibitors
+                                                                                                       Quinacrine, pentosan
+    CJD                 Noneffective                  —                            —                                                 (compassionate use,
+                                                                                                           polysulfate
+                                                                                                                                        not effective)
+                                                                         Symptomatic manage-
+    CTE               None approved                   —                                                         —                             —
+                                                                             ment only
+                                                                                                          GV-971, anti-tau      See AD trials (lvPPA overlaps
+    PPA               None approved                   —                Speech therapy mainstay
+                                                                                                      (lvPPA/AD pathology)                with AD)
+                                                                                                         Omaveloxolone                 Nrf2 activator,
+                                                                                                         (approved 2023)          mitochondrial antioxidant
+   FRDA               None approved                   —                            —
+                                                                                                           AAV-frataxin
+                                                                                                                                      Gene replacement
+                                                                                                           gene therapy
+                                                                      Prevents progression if given
+                 Thiamine replacement          Restores thiamine-
+     KS                                                                  early; limited reversal                —                             —
+                  (preventive/acute)         dependent metabolism
+                                                                              once chronic
+                                         Arrow pointing up means increase.
+
+
+                                         7. Therapeutic Strategies
+                                              The mechanistic convergence of virus-associated hippocampal injury on four shared
+                                         pathways has direct therapeutic implications. Pathogen-specific interventions, antiretro-
+                                         virals, antivirals, and vaccines address the upstream trigger but leave the downstream
+                                         molecular architecture largely intact. Cognitive recovery requires interventions that, in
+                                         combination, restore MAM integrity, resolve chronic neuroinflammation, repair BBB func-
+
+
+
+                                                                                                                      https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                          20 of 28
+
+
+
+                                         tion, and restore CREB-BDNF signaling, commensurate with the multi-pathway nature of
+                                         the injury.
+                                               For HIV-associated neurocognitive disorder, antiretrovirals suppress viral replication
+                                         but do not restore VAPB-PTPIP51 contact-site integrity, resolve microglial activation, or
+                                         reverse the lipidomic signature of MAM disruption. A rational combination approach,
+                                         which remains to be tested in controlled clinical trials, would pair antiretroviral therapy
+                                         with a MAM stabilizing agent (sigma-1 receptor agonist or dasatinib-mediated Src inhibi-
+                                         tion to prevent PTPIP51 phosphorylation), a microglial modulator (masitinib, for which
+                                         Phase II/III data exist in other neurological contexts), and aerobic exercise as the most
+                                         accessible BDNF-enhancing intervention, targeting all four pathways simultaneously [4,57].
+                                         This combination strategy is mechanistically motivated but has not been evaluated in a
+                                         controlled clinical trial in HAND; the evidence base for each component individually varies
+                                         from preclinical only to Phase II clinical data.
+                                               For long COVID cognitive impairment, where no approved treatments exist, the in-
+                                         flammatory and vascular components of injury are most prominent. An anti-inflammatory
+                                         backbone targeting complement dysregulation and microglial activation, combined with
+                                         BBB repair strategies and aerobic exercise, addresses the dominant pathways. These ap-
+                                         proaches remain at the preclinical or early-phase clinical stage for long COVID specifically;
+                                         the therapeutic rationale is derived from mechanistic overlap with better-studied neuroin-
+                                         flammatory conditions rather than from long COVID-specific trial data.
+                                               The role of aerobic exercise merits particular emphasis. Aerobic exercise consistently
+                                         increases BDNF by 2–3-fold, enhances hippocampal neurogenesis, reduces neuroinflam-
+                                         matory markers, and improves BBB integrity through endothelial shear stress-mediated
+                                         upregulation of tight junction proteins [7,8]. It engages all four convergent pathways simul-
+                                         taneously to a magnitude that no current pharmacological agent achieves as monotherapy,
+                                         and it does so without the adverse-effect profile that limits dose escalation in most CNS-
+                                         active drugs. In the absence of approved combination pharmacotherapy for post-viral hip-
+                                         pocampal injury, aerobic exercise represents the most evidence-supported multi-pathway
+                                         intervention currently available (Table 7).
+
+                                         Table 7. Disease-specific memory deficits, primary cognitive failure modes, neuroanatomical cir-
+                                         cuits, and genetic drivers across neurodegenerative and cerebrovascular disorders. AD, Alzheimer’s
+                                         disease; ALS, amyotrophic lateral sclerosis; APOE, apolipoprotein E; APP, amyloid precursor pro-
+                                         tein; ATXN, ataxin; C9orf72, chromosome 9 open reading frame 72; CACNA1A, calcium voltage-
+                                         gated channel subunit alpha 1A; CBS, corticobasal syndrome; CBD, corticobasal degeneration; CJD,
+                                         Creutzfeldt-Jakob disease; COQ2, coenzyme Q2; CTE, chronic traumatic encephalopathy; DM, dia-
+                                         betes mellitus; FTD, frontotemporal dementia; FTLD, frontotemporal lobar degeneration; FUS, fused
+                                         in sarcoma; FXN, frataxin; GBA, glucocerebrosidase; GRN, granulin; HD, Huntington’s disease;
+                                         HTN, hypertension; HTT, huntingtin; KS, Korsakoff syndrome; LBD, Lewy body dementia; LRRK2,
+                                         leucine-rich repeat kinase 2; MAPT, microtubule-associated protein tau; MSA, multiple system at-
+                                         rophy; NPH, normal pressure hydrocephalus; PARK2, parkin; PINK1, PTEN-induced kinase 1; PD,
+                                         Parkinson’s disease; PPA, primary progressive aphasia; PRNP, prion protein; PSEN1/2, presenilin
+                                         1/2; PSP, progressive supranuclear palsy; SCAs, spinocerebellar ataxias; SNCA, alpha-synuclein;
+                                         SOD1, superoxide dismutase 1; TARDBP, TAR DNA-binding protein; TREM2, triggering receptor
+                                         expressed on myeloid cells 2; TDP, TAR DNA-binding protein; VaD, vascular dementia; bv, behavioral
+                                         variant; lv, logopenic variant; nfv, nonfluent variant; SD, semantic dementia; sv, semantic variant.
+
+                       Type of Memory
+  Disease                                                Primary Deficit            Primary Circuit/Region                    Main Gene(s)
+                          Impaired
+                                                                                  Hippocampus/Entorhinal →
+    AD          Episodic → Semantic, Working         Encoding/Consolidation                                           APP, PSEN1/2, APOE ε4, TREM2
+                                                                                         Neocortex
+                      Working, Procedural,                 Retrieval/
+    PD                                                                           Striatum, Frontal–Striatal Loops   SNCA, LRRK2, PARK2, PINK1, GBA
+                      Episodic (retrieval)                 Executive
+
+
+
+
+                                                                                                                https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                                       21 of 28
+
+
+
+                                             Table 7. Cont.
+
+                        Type of Memory
+  Disease                                                       Primary Deficit           Primary Circuit/Region                       Main Gene(s)
+                           Impaired
+                                                                                          Hippocampus, Posterior
+    LBD         Episodic, Working, Attention                  Encoding/ Attention                                                   SNCA, GBA, APOE
+                                                                                              Cortex, Frontal
+                       Working, Executive,
+  FTD-bv                                                       Strategic Encoding       Frontal–Subcortical Networks                MAPT, GRN, C9orf72
+                       Episodic (encoding)
+                       Semantic (severe),
+  FTD-SD                                                      Semantic Knowledge          Anterior Temporal Lobes                   MAPT, GRN, C9orf72
+                       Episodic (variable)
+                       Working, Executive,                        Retrieval/
+    VaD                                                                               Frontal–Subcortical, White Matter       Vascular risk factors (HTN, DM)
+                       Episodic (retrieval)                    Processing Speed
+    PSP        Working, Executive, Procedural                 Retrieval/Executive     Basal Ganglia, Frontal, Brainstem            MAPT (H1 haplotype)
+   MSA            Executive, Working (mild)               Executive/Procedural        Striatum, Cerebellum, Brainstem          COQ2 (rare), SNCA (pathology)
+    ALS         Working, Executive (ALS-FTD)                  Executive/Working         Frontal Cortex (in ALS-FTD)             SOD1, TARDBP, C9orf72, FUS
+   NPH         Episodic (retrieval), Procedural           Retrieval/Psychomotor       Frontal–Subcortical (compression)                 Not genetic
+                      Procedural, Working,
+    HD                                                        Retrieval/Executive      Striatum, Frontal–Striatal Loops            HTT (CAG expansion)
+                       Episodic (retrieval)
+                      Working, Procedural,                                                 Cerebellum, Cerebellar–
+   SCAs                                                       Retrieval/Executive                                             ATXN1/2/3, CACNA1A (SCA6)
+                      Episodic (retrieval)                                                     Frontal Circuits
+                      Working, Visuospatial,
+    CBS                                                       Retrieval/Executive        Asymmetric Frontoparietal             Variable (CBD, PSP, AD, FTLD)
+                       Episodic (retrieval)
+                                                                                            Widespread (Cortex,
+    CJD           All systems (rapid global)              Global Network Failure                                             PRNP (genetic), prion propagation
+                                                                                           Thalamus, Cerebellum)
+    CTE         Episodic, Working, Executive                  Encoding/Executive       Perivascular Frontal/Temporal         APOE (risk modifier), tau pathology
+  PPA-nfv       Verbal (language-dependent)               Phonological Encoding          Left Inferior Frontal/Insula          GRN, MAPT (FTLD-tau/TDP)
+  PPA-sv          Semantic (severe), Verbal                   Semantic Knowledge          Anterior Temporal Lobes                       GRN, MAPT
+                                                                                            Left Temporoparietal,
+  PPA-lv          Episodic, Verbal Working             Consolidation (AD pathology)                                               APOE ε4 (AD pathology)
+                                                                                               Hippocampus
+                      Working, Procedural,                                                 Cerebellum, Cerebellar–
+   FRDA                                                       Retrieval/Executive                                                  FXN (GAA expansion)
+                      Episodic (retrieval)                                                     Frontal Circuits
+                                                                                        Diencephalic-Hippocampal
+    KS            Anterograde, Retrograde                        Consolidation                                                      Thiamine deficiency
+                                                                                      (Mammillary Bodies, Thalamus)
+
+
+
+                                              8. Conclusions and Future Directions
+                                                   Virus-associated memory impairment is not a collection of entirely distinct pathogen-
+                                             specific syndromes. The evidence reviewed here is consistent with a convergent hippocam-
+                                             pal failure framework driven by four shared molecular pathways, MAM dysfunction,
+                                             chronic neuroinflammation, BBB disruption, and impaired CREB-BDNF signaling, through
+                                             which multiple neurotropic and neurovirulent viruses engage through distinct upstream
+                                             mechanisms. This framework is proposed as a unifying hypothesis that motivates com-
+                                             bination therapeutic research rather than as an established biological fact; the strength of
+                                             mechanistic evidence varies substantially across the nine pathogens discussed, and causal
+                                             relationships between pathway activation and cognitive outcome have been rigorously
+                                             established in some contexts (HIV, HSV-1) while remaining largely inferential in others
+                                             (influenza, ZIKV, EBV).
+                                                   This framework has several important implications. It provides a mechanistic expla-
+                                             nation for why antiviral therapies, despite suppressing viral replication, leave substantial
+                                             cognitive impairment unresolved; the downstream molecular injury operates indepen-
+                                             dently of ongoing viral activity. It identifies genetic modulators, APOE4, BDNF Val66Met,
+                                             TREM2, FKBP5, and sex-related biological factors that stratify individual vulnerability and
+                                             can guide precision intervention design. It provides a biomarker framework, NfL, GFAP,
+                                             p-tau217, albumin quotient, hippocampal subfield MRI, that enables pathway-matched
+                                             rather than pathogen-matched mechanistic stratification, with the important caveat that
+                                             cross-disorder validation for several of these tools remains incomplete.
+                                                   Future research priorities include directly comparing MAM integrity across viral
+                                             models using standardized assays, longitudinally characterizing biomarker trajectories in
+
+
+
+                                                                                                                        https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                         22 of 28
+
+
+
+                                   post-viral cognitive impairment to identify the window of maximal therapeutic opportu-
+                                   nity, designing combination clinical trials that simultaneously target multiple convergent
+                                   pathways with outcome measures sensitive to subfield-specific hippocampal function, and
+                                   extending the framework to examine whether TGF-β1 pathway suppression represents
+                                   a consistent co-contributor to dentate gyrus failure across viral contexts. The increasing
+                                   burden of post-viral cognitive impairment, driven in particular by the long COVID epi-
+                                   demic, makes these research priorities urgent. The mechanistic framework developed here
+                                   provides the scientific rationale for combination approaches that move beyond pathogen-
+                                   specific treatment toward hippocampal circuit protection as a shared therapeutic goal,
+                                   while acknowledging that translating this framework into clinical practice will require the
+                                   rigorous multi-pathway trial evidence that does not yet exist (Table 8).
+
+                                   Table 8. Convergent molecular mechanisms—neuroinflammation, mitochondria-associated mem-
+                                   brane dysfunction, blood–brain barrier disruption, and impaired CREB-BDNF signaling—across
+                                   26 neurological, viral, psychiatric, and acquired conditions. ✓ = documented involvement; — = not
+                                   established or minimal evidence. Memory type impaired and the primary brain region affected
+                                   are shown for each condition. BBB, blood–brain barrier; BDNF, brain-derived neurotrophic factor;
+                                   CA1/CA3, cornu ammonis subfields; CREB, cAMP response element-binding protein; DG, den-
+                                   tate gyrus; MAM, mitochondria-associated membrane; ALS, amyotrophic lateral sclerosis; CBS,
+                                   corticobasal syndrome; CJD, Creutzfeldt–Jakob disease; CMV, cytomegalovirus; CTE, chronic trau-
+                                   matic encephalopathy; EBV, Epstein–Barr virus; FRDA, Friedreich’s ataxia; HAND, HIV-associated
+                                   neurocognitive disorder; HSV-1, herpes simplex virus type 1; MSA, multiple system atrophy; MS,
+                                   multiple sclerosis; NPH, normal pressure hydrocephalus; PPA, primary progressive aphasia; PSP,
+                                   progressive supranuclear palsy; SARS-CoV-2, severe acute respiratory syndrome coronavirus 2; SCAs,
+                                   spinocerebellar ataxias; VZV, varicella zoster virus; WNV, West Nile virus; ZIKV, Zika virus.
+
+      Disease/Condition      BBB     MAM      Neuro-inflammation   CREB-BDNF       Memory Type Impaired                    Brain Region
+                                                                                                                     Hippocampus (DG, CA1),
+      Alzheimer’s Disease    ✓         ✓              ✓                ✓         Episodic, Semantic, Working
+                                                                                                                        Entorhinal Cortex
+                                                                                                                  Substantia Nigra, Frontostriatal,
+      Parkinson’s Disease    ✓         ✓              ✓                ✓           Working, Episodic (late)
+                                                                                                                             CA1 (late)
+     Lewy Body Dementia      ✓         ✓              ✓                ✓         Episodic (retrieval), Working    CA1, Brainstem, Limbic Cortex
+                                                                                                                    Frontal, Anterior Temporal,
+   Frontotemporal Dementia   ✓         ✓              ✓                ✓         Semantic, Episodic (retrieval)
+                                                                                                                             DG, CA1
+                                                                                                                      Striatum, Frontostriatal,
+     Huntington’s Disease    —         ✓              ✓                ✓           Working, Episodic (late)
+                                                                                                                        Hippocampus (late)
+       Vascular Dementia     ✓         —              ✓                ✓              Episodic, Working             CA1, White Matter, Frontal
+                                                                                                                     Frontostriatal, Brainstem,
+              PSP            ✓         ✓              ✓               —              Working, Procedural
+                                                                                                                            Thalamus
+             MSA             ✓         ✓              ✓               —              Working, Procedural          Cerebellum, Striatum, Brainstem
+             ALS             ✓         ✓              ✓                ✓              Working, Episodic               Frontal, Hippocampus
+             NPH             ✓         —              ✓               —               Working, Episodic            Frontostriatal, Hippocampus
+             SCAs            —         ✓              ✓                ✓             Working, Procedural                Cerebellum, Frontal
+              CBS            ✓         ✓              ✓               —               Working, Episodic           Frontal, Parietal, Hippocampus
+                                                                                                                    Widespread, Hippocampus,
+              CJD            ✓         ✓              ✓               —          Episodic, Semantic, Working
+                                                                                                                             Cortex
+             CTE             ✓         ✓              ✓                ✓              Episodic, Working             Hippocampus, Frontal, CA1
+             PPA             ✓         —              ✓                ✓              Semantic, Working             Anterior Temporal, Frontal
+             FRDA            —         ✓              ✓                ✓             Working, Procedural          Cerebellum, Spinal Cord, Frontal
+                                                                                                                     Hippocampus, Thalamus,
+      Korsakoff Syndrome     ✓         ✓              ✓                ✓              Episodic, Working
+                                                                                                                       Mammillary Bodies
+                                                                                       Episodic (antero-             Hippocampus, Entorhinal
+            HSV-1            ✓         —              ✓                ✓
+                                                                                      grade/retrograde)                  Cortex, Limbic
+                                                                                      Episodic, Working,
+         HIV/HAND            ✓         ✓              ✓                ✓                                              DG, CA1, CA3, Frontal
+                                                                                      Processing Speed
+                                                                                                                  Hippocampus, Cerebral Arteries,
+             VZV             ✓         —              ✓               —              Episodic, Executive
+                                                                                                                         White Matter
+
+
+
+
+                                                                                                        https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                    23 of 28
+
+
+
+                                Table 8. Cont.
+
+      Disease/Condition   BBB     MAM      Neuro-inflammation    CREB-BDNF         Memory Type Impaired                 Brain Region
+             CMV          —         —              ✓                  ✓               Episodic, Working             Hippocampus, Frontal
+                                                                                      Episodic, Working,            Hippocampus, White
+           EBV/MS         ✓         —              ✓                  ✓
+                                                                                      Processing Speed              Matter, Frontotemporal
+           Influenza      ✓         —              ✓                  ✓          Episodic, Attention, Executive     Hippocampus, Frontal
+                                                                                                                        Hippocampus,
+      SARS-CoV-2/Long
+                          ✓         ✓              ✓                  ✓          Episodic, Attention, Executive     Parahippocampus, DG,
+          COVID
+                                                                                                                            CA1
+             WNV          ✓         —              ✓                  —               Episodic, Executive           Hippocampus, Frontal
+             ZIKV         —         —              ✓                  ✓                Spatial, Episodic              DG, Hippocampus
+
+
+
+                                     Memory is among the most complex biological phenomena in nature, spanning molec-
+                                ular events at individual synapses to systems-level circuit dynamics across timescales from
+                                milliseconds to decades and failing in ways that are simultaneously predictable in their
+                                anatomical pattern and deeply individual in their clinical expression. That conditions
+                                as etiologically distant as a trinucleotide repeat expansion, a retroviral infection, and a
+                                stress-related psychiatric disorder converge on the same hippocampal subfields through
+                                the same four molecular pathways is not a simplification of this complexity but a discovery
+                                within it.
+
+                                Author Contributions: S.A.F., M.S., N.S., and B.E.S. contributed to manuscript preparation and
+                                editing. All authors have read and agreed to the published version of the manuscript.
+
+                                Funding: This research received no external funding.
+
+                                Institutional Review Board Statement: Not applicable.
+
+                                Informed Consent Statement: Not applicable.
+
+                                Data Availability Statement: No new data were created or analyzed in this study.
+
+                                Acknowledgments: During manuscript preparation, the authors used Grammarly (8.937.0) to im-
+                                prove clarity and readability. The authors reviewed and edited all content and take full responsibility
+                                for the published article.
+
+                                Conflicts of Interest: The authors declare no conflicts of interest.
+
+                                Abbreviations
+
+                                Aβ               Amyloid beta
+                                AD               Alzheimer’s disease
+                                ALS              Amyotrophic lateral sclerosis
+                                APOE4            Apolipoprotein E ε4 allele
+                                ATP              Adenosine triphosphate
+                                BBB              Blood–brain barrier
+                                BDNF             Brain-derived neurotrophic factor
+                                CA1/CA3          Cornu Ammonis hippocampal subfields
+                                CBS              Corticobasal syndrome
+                                CDR-SB           Clinical Dementia Rating–Sum of Boxes
+                                CJD              Creutzfeldt–Jakob disease
+                                CMV              Cytomegalovirus
+                                CNS              Central nervous system
+                                CREB             cAMP response element-binding protein
+                                CTE              Chronic traumatic encephalopathy
+                                DaTscan          Dopamine transporter imaging
+
+
+
+
+                                                                                                        https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                 24 of 28
+
+
+
+                                   DG              Dentate gyrus
+                                   EBV             Epstein–Barr virus
+                                   EEG             Electroencephalography
+                                   ER              Endoplasmic reticulum
+                                   FRDA            Friedreich’s ataxia
+                                   FTD             Frontotemporal dementia
+                                   GFAP            Glial fibrillary acidic protein
+                                   HAND            HIV-associated neurocognitive disorder
+                                   HD              Huntington’s disease
+                                   HIV             Human immunodeficiency virus
+                                   HSV-1           Herpes simplex virus type 1
+                                   IL              Interleukin
+                                   KS              Korsakoff syndrome
+                                   LBD             Lewy body dementia
+                                   LTP             Long-term potentiation
+                                   MAM             Mitochondria-associated membrane
+                                   MCI             Mild cognitive impairment
+                                   MRI             Magnetic resonance imaging
+                                   MSA             Multiple system atrophy
+                                   NAC             N-acetylcysteine
+                                   NLRP3           NOD-like receptor pyrin domain-containing 3
+                                   NPH             Normal pressure hydrocephalus
+                                   PD              Parkinson’s disease
+                                   PET             Positron emission tomography
+                                   PPA             Primary progressive aphasia
+                                   PSP             Progressive supranuclear palsy
+                                   PTSD            Post-traumatic stress disorder
+                                   SCAs            Spinocerebellar ataxias
+                                   SARS-CoV-2      Severe acute respiratory syndrome coronavirus 2
+                                   TBI             Traumatic brain injury
+                                   TNF-α           Tumor necrosis factor alpha
+                                   VaD             Vascular dementia
+                                   VAPB            Vesicle-associated membrane protein-associated protein B
+                                   VZV             Varicella zoster virus
+                                   WNV             West Nile virus
+                                   ZIKV            Zika virus
+
+References
+1.    Squire, L.R.; Wixted, J.T. The cognitive neuroscience of human memory since H.M. Annu. Rev. Neurosci. 2011, 34, 259–288.
+      [CrossRef]
+2.    Eichenbaum, H. Time (and space) in the hippocampus. Curr. Opin. Behav. Sci. 2017, 17, 65–70. [CrossRef]
+3.    Paillusson, S.; Stoica, R.; Gomez-Suaga, P.; Lau, D.H.W.; Mueller, S.; Miller, T.; Miller, C.C.J. There’s Something Wrong with my
+      MAM; the ER-Mitochondria Axis and Neurodegenerative Diseases. Trends Neurosci. 2016, 39, 146–157. [CrossRef]
+4.    Arjona, S.P.; Allen, C.N.S.; Santerre, M.; Gross, S.; Soboloff, J.; Booze, R.; Sawaya, B.E. Disruption of Mitochondrial-associated
+      ER membranes by HIV-1 tat protein contributes to premature brain aging. CNS Neurosci. Ther. 2023, 29, 365–377. [CrossRef]
+      [PubMed]
+5.    Bui, V.; Santerre, M.; Shcherbik, N.; Sawaya, B.E. Mitochondria-associated membranes (MAMs): Molecular organization, cellular
+      functions, and their role in health and disease. FEBS Open Bio 2025, 16, 11–24. [CrossRef] [PubMed]
+6.    Kim, S.K.; Kwon, Y.J.; Seo, E.B.; Lee, H.S.; Sohn, J.O.; Shin, H.M.; Kim, S.J.; Ye, S.K. Neuroprotective Effects of STAT3 Inhibitor on
+      Hydrogen Peroxide-Induced Neuronal Cell Death via the ERK/CREB Signaling Pathway. Neurochem. Res. 2024, 50, 52. [CrossRef]
+      [PubMed]
+7.    Jack, C.R., Jr.; Bennett, D.A.; Blennow, K.; Carrillo, M.C.; Dunn, B.; Haeberlein, S.B.; Holtzman, D.M.; Jagust, W.; Jessen, F.;
+      Karlawish, J.; et al. NIA-AA Research Framework: Toward a biological definition of Alzheimer’s disease. Alzheimer’s Dement.
+      2018, 14, 535–562. [CrossRef]
+
+
+
+                                                                                                      https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                     25 of 28
+
+
+
+8.    Martínez-Dubarbie, F.; Guerra-Ruiz, A.; López-García, S.; Lage, C.; Fernández-Matarrubia, M.; Nevado-Cáceres, Á.; Rivera-
+      Sánchez, M.; Valera-Barrero, A.; Pozueta-Cantudo, A.; García-Martínez, M.; et al. Diagnostic performance of plasma p-tau217 in a
+      memory clinic cohort using the Lumipulse automated platform. Alzheimer’s Res. Ther. 2025, 17, 68. [CrossRef]
+9.    Chai, W.J.; Abd Hamid, A.I.; Abdullah, J.M. Working Memory From the Psychological and Neurosciences Perspectives: A Review.
+      Front. Psychol. 2018, 9, 401. [CrossRef]
+10.   Cowan, N. What are the differences between long-term, short-term, and working memory? Prog. Brain Res. 2008, 169, 323–338.
+11.   Slotnick, S.D. No convincing evidence the hippocampus is associated with working memory. Cogn. Neurosci. 2023, 14, 96–106.
+      [CrossRef] [PubMed]
+12.   Slotnick, S.D. The hippocampus and long-term memory. Cogn. Neurosci. 2022, 13, 113–114. [CrossRef] [PubMed]
+13.   Dickerson, B.C.; Eichenbaum, H. The episodic memory system: Neurocircuitry and disorders. Neuropsychopharmacology 2010, 35,
+      86–104. [CrossRef]
+14.   Earle, F.S.; Ullman, M.T. Deficits of Learning in Procedural Memory and Consolidation in Declarative Memory in Adults with
+      Developmental Language Disorder. J. Speech Lang. Hear. Res. 2021, 64, 531–541. [CrossRef]
+15.   Carbone, J.; Diekelmann, S. An update on recent advances in targeted memory reactivation during sleep. npj Sci. Learn. 2024,
+      9, 31. [CrossRef]
+16.   She, X.; Moore, B.J.; Roeder, B.M.; Nune, G.; Robinson, B.S.; Lee, B.; Shaw, S.; Gong, H.; Heck, C.N.; Popli, G.; et al. Distributed
+      Temporal Coding of Visual Memory Categories in Human Hippocampal Neurons Revealed by an Interpretable Decoding Model.
+      Adv. Sci. 2025, 12, e02047. [CrossRef]
+17.   Eichenbaum, H. Time cells in the hippocampus: A new dimension for mapping memories. Nat. Rev. Neurosci. 2014, 15, 732–744.
+      [CrossRef]
+18.   Boldrini, M.; Fulmore, C.A.; Tartt, A.N.; Simeon, L.R.; Pavlova, I.; Poposka, V.; Rosoklija, G.B.; Stankov, A.; Arango, V.; Dwork, A.J.;
+      et al. Human Hippocampal Neurogenesis Persists throughout Aging. Cell Stem Cell 2018, 22, 589–599.e5. [CrossRef] [PubMed]
+19.   Scheltens, P.; De Strooper, B.; Kivipelto, M.; Holstege, H.; Chételat, G.; Teunissen, C.E.; Cummings, J.; van der Flier, W.M.
+      Alzheimer’s disease. Lancet 2021, 397, 1577–1590. [CrossRef]
+20.   Long, J.M.; Holtzman, D.M. Alzheimer Disease: An Update on Pathobiology and Treatment Strategies. Cell 2019, 179, 312–339.
+      [CrossRef]
+21.   Jahn, H. Memory loss in Alzheimer’s disease. Dialogues Clin. Neurosci. 2013, 15, 445–454. [CrossRef]
+22.   Kirova, A.M.; Bays, R.B.; Lagalwar, S. Working memory and executive function decline across normal aging, mild cognitive
+      impairment, and Alzheimer’s disease. Biomed. Res. Int. 2015, 2015, 748212. [CrossRef]
+23.   Petersen, R.C. Mild Cognitive Impairment. Continuum 2016, 22, 404–418. [CrossRef]
+24.   Li, Z.; Cao, Y.; Pei, H.; Ma, L.; Yang, Y.; Li, H. The contribution of mitochondria-associated endoplasmic reticulum membranes
+      (MAMs) dysfunction in Alzheimer’s disease and the potential countermeasure. Front. Neurosci. 2023, 17, 1158204. [CrossRef]
+      [PubMed]
+25.   Mantovani, E.; Martini, A.; Dinoto, A.; Zucchella, C.; Ferrari, S.; Mariotto, S.; Tinazzi, M.; Tamburin, S. Biomarkers for cognitive
+      impairment in alpha-synucleinopathies: An overview of systematic reviews and meta-analyses. npj Park. Dis. 2024, 10, 211.
+      [CrossRef] [PubMed]
+26.   Montagne, A.; Barnes, S.R.; Sweeney, M.D.; Halliday, M.R.; Sagare, A.P.; Zhao, Z.; Toga, A.W.; Jacobs, R.E.; Liu, C.Y.; Amezcua, L.;
+      et al. Blood-brain barrier breakdown in the aging human hippocampus. Neuron 2015, 85, 296–302. [CrossRef] [PubMed]
+27.   Yang, H.M. Vascular Dementia: From Pathophysiology to Therapeutic Frontiers. J. Clin. Med. 2025, 14, 6611. [CrossRef]
+28.   Li, T.R.; Li, B.L.; Xu, X.R.; Zhong, J.; Wang, T.S.; Liu, F.Q.; Alzheimer’s Disease Neuroimaging Initiative. Association of white
+      matter hyperintensities with cognitive decline and neurodegeneration. Front. Aging Neurosci. 2024, 16, 1412735.
+29.   Hong, Y.; Feng, M. Severity and Prognosis of Vascular Dementia in Patients with Acute Cerebral Infarction Combined with
+      H-Type Hypertension and Its Correlation with Uric Acid Levels. Neuropsychiatr. Dis. Treat. 2025, 21, 1261–1270. [CrossRef]
+30.   McKeith, I.G.; Boeve, B.F.; Dickson, D.W.; Halliday, G.; Taylor, J.P.; Weintraub, D.; Aarsland, D.; Galvin, J.; Attems, J.; Ballard, C.G.;
+      et al. Diagnosis and management of dementia with Lewy bodies: Fourth consensus report of the DLB Consortium. Neurology
+      2017, 89, 88–100. [CrossRef]
+31.   Outeiro, T.F.; Koss, D.J.; Erskine, D.; Walker, L.; Kurzawa-Akanbi, M.; Burn, D.; Donaghy, P.; Morris, C.; Taylor, J.P.; Thomas, A.;
+      et al. Dementia with Lewy bodies: An update and outlook. Mol. Neurodegener. 2019, 14, 5. [CrossRef]
+32.   Negi, S.; Khurana, N.; Duggal, N. The misfolding mystery: α-synuclein and the pathogenesis of Parkinson’s disease. Neurochem.
+      Int. 2024, 177, 105760. [CrossRef]
+33.   Ferman, T.J.; Smith, G.E.; Boeve, B.F.; Graff-Radford, N.R.; Lucas, J.A.; Knopman, D.S.; Petersen, R.C.; Ivnik, R.J.; Wszolek, Z.;
+      Uitti, R.; et al. Neuropsychological differentiation of dementia with Lewy bodies from normal aging and Alzheimer’s disease.
+      Clin. Neuropsychol. 2006, 20, 623–636. [CrossRef]
+34.   Schumacher, J.; Peraza, L.R.; Firbank, M.; Thomas, A.J.; Kaiser, M.; Gallagher, P.; O’Brien, J.T.; Blamire, A.M.; Taylor, J.P.
+      Dysfunctional brain dynamics and their origin in Lewy body dementia. Brain 2019, 142, 1767–1782. [CrossRef] [PubMed]
+
+
+
+                                                                                                         https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                   26 of 28
+
+
+
+35.   Cagnin, A.; Fragiacomo, F.; Camporese, G.; Turco, M.; Bussè, C.; Ermani, M.; Montagnese, S. Sleep-Wake Profile in Dementia with
+      Lewy Bodies, Alzheimer’s Disease, and Normal Aging. J. Alzheimer’s Dis. 2017, 55, 1529–1536. [CrossRef] [PubMed]
+36.   Yanez-Perez, R.; Habich, A.; Toledo, J.B.; Barroso, J.; Ferreira, D. The cognitive connectome in dementia with lewy bodies
+      undergoes early alterations already at the mild cognitive impairment stage. Sci. Rep. 2025, 15, 37162. [CrossRef] [PubMed]
+37.   Poewe, W.; Seppi, K.; Tanner, C.M.; Halliday, G.M.; Brundin, P.; Volkmann, J.; Schrag, A.E.; Lang, A.E. Parkinson disease. Nat.
+      Rev. Dis. Primers 2017, 3, 17013. [CrossRef]
+38.   Calabresi, P.; Mechelli, A.; Natale, G.; Volpicelli-Daley, L.; Di Lazzaro, G.; Ghiglieri, V. Alpha-synuclein in Parkinson’s disease
+      and other synucleinopathies: From overt neurodegeneration back to early synaptic dysfunction. Cell Death Dis. 2023, 14, 176.
+      [CrossRef]
+39.   Gratwicke, J.; Jahanshahi, M.; Foltynie, T. Parkinson’s disease dementia: A neural networks perspective. Brain 2015, 138,
+      1454–1476. [CrossRef]
+40.   Ruitenberg, M.F.L.; Duthoo, W.; Santens, P.; Seidler, R.D.; Notebaert, W.; Abrahamse, E.L. Sequence learning in Parkinson’s
+      disease: Focusing on action dynamics and the role of dopaminergic medication. Neuropsychologia 2016, 93, 30–39. [CrossRef]
+41.   Bates, G.P.; Dorsey, R.; Gusella, J.F. Huntington disease. Nat. Rev. Dis. Primers 2015, 1, 15005. [CrossRef]
+42.   Rüb, U.; Seidel, K.; Heinsen, H.; Vonsattel, J.P.; den Dunnen, W.F.; Korf, H.W. Huntington’s disease (HD): The neuropathology of
+      a multisystem neurodegenerative disorder of the human brain. Brain Pathol. 2016, 26, 726–740. [CrossRef]
+43.   Pradhan, S.; Gaikwad, S.; Tsai, C.L.; Smith, C.; Zhang, N.; Bush, K.; Chakraborty, A.; Yuan, S.; Choudhary, S.; Keene, C.D.; et al.
+      Huntingtin preserves mitochondrial genome integrity in neurons, which is impaired in Huntington’s disease. bioRxiv 2025.
+      bioRxiv:2025.07.24.666629. [CrossRef]
+44.   Miguez, A.; Gomis, C.; Vila, C.; Monguió-Tortajada, M.; Fernández-García, S.; Bombau, G.; Galofré, M.; García-Bravo, M.; Sanders,
+      P.; Fernández-Medina, H.; et al. Soluble mutant huntingtin drives early human pathogenesis in Huntington’s disease. Cell. Mol.
+      Life Sci. 2023, 80, 238. [CrossRef] [PubMed]
+45.   Azman, K.F.; Zakaria, R. Brain-Derived Neurotrophic Factor (BDNF) in Huntington’s Disease: Neurobiology and Therapeutic
+      Potential. Curr. Neuropharmacol. 2025, 23, 384–403. [CrossRef]
+46.   Pino, R.D.; Acera, M.Á.; de Echevarrría, A.O.; Tijero, B.; Ruiz-Lopez, M.; Somme, J.; Ruiz-Martínez, J.; Gabilondo, A.; Croitoru,
+      I.M.; Pardina, L.; et al. Characterization of visual cognition in pre-manifest, manifest and reduced penetrance Huntington’s
+      disease. Sci. Rep. 2025, 15, 4707. [CrossRef] [PubMed]
+47.   Gorno-Tempini, M.L.; Hillis, A.E.; Weintraub, S.; Kertesz, A.; Mendez, M.; Cappa, S.F.; Ogar, J.M.; Rohrer, J.D.; Black, S.; Boeve,
+      B.F.; et al. Classification of primary progressive aphasia and its variants. Neurology 2011, 76, 1006–1014. [CrossRef]
+48.   Hodgson, R.E.; Rayment, J.A.; Huang, W.P.; Sanchez Avila, A.; Ellis, B.C.S.; Lin, Y.H.; Soni, N.; Hautbergue, G.M.; Shelkovnikova,
+      T.A. C9orf72 poly-PR forms anisotropic condensates causative of nuclear TDP-43 pathology. iScience 2024, 27, 110937. [CrossRef]
+49.   Bussè, C.; Zorzi, G.; Pettenuzzo, I.; Mozzetta, S.; Cagnin, A. Episodic Memory in Amnestic Behavioral Frontotemporal Dementia
+      and Alzheimer’s Disease. J. Alzheimer’s Dis. Rep. 2023, 7, 605–612. [CrossRef]
+50.   Hodges, J.R.; Patterson, K. Semantic dementia: A unique clinicopathological syndrome. Lancet Neurol. 2007, 6, 1004–1014.
+      [CrossRef]
+51.   Rock, P.L.; Roiser, J.P.; Riedel, W.J.; Blackwell, A.D. Cognitive impairment in depression: A systematic review and meta-analysis.
+      Psychol. Med. 2014, 44, 2029–2040. [CrossRef]
+52.   Li, D.Y.; Choi, E.S.; Bao, X. HSV-1 as a Potential Driver of Alzheimer’s Disease. Pathogens 2025, 14, 1022. [CrossRef]
+53.   Wozniak, M.A.; Mee, A.P.; Itzhaki, R.F. Herpes simplex virus type 1 DNA is located within Alzheimer’s disease amyloid plaques.
+      J. Pathol. 2009, 217, 131–138. [CrossRef]
+54.   Itzhaki, R.F. Herpes and Alzheimer’s Disease: Subversion in the Central Nervous System and How It Might Be Halted.
+      J. Alzheimer’s Dis. 2016, 54, 1273–1281. [CrossRef]
+55.   Linard, M.; Garrigue, I.; Vellas, B.; Coley, N.; Zetterberg, H.; Blennow, K.; Ashton, N.J.; Payoux, P.; Salabert, A.S.; Dartigues, J.F.;
+      et al. Association between herpes simplex virus infection and Alzheimer’s disease biomarkers: Analysis within the MAPT trial.
+      Sci. Rep. 2025, 15, 2362. [CrossRef]
+56.   Chan, P.; Li, X.; Li, F.; Emu, B.; Price, R.W.; Spudich, S. Longitudinal CNS and systemic T-lymphocyte and monocyte activation
+      before and after antiretroviral therapy beginning in primary HIV infection. Front. Immunol. 2025, 16, 1531828. [CrossRef]
+57.   Said, N.; Venketaraman, V. Neuroinflammation, Blood-Brain Barrier, and HIV Reservoirs in the CNS: An In-Depth Exploration of
+      Latency Mechanisms and Emerging Therapeutic Strategies. Viruses 2025, 17, 572. [CrossRef]
+58.   Peterson, L.R.; Peterson, M.J. Short-term retention of individual verbal items. J. Exp. Psychol. 1959, 58, 193–198. [CrossRef]
+59.   Awh, E.; Vogel, E.K. Working memory needs pointers. Trends Cogn. Sci. 2025, 29, 230–241. [CrossRef]
+60.   Shrestha, J.; Santerre, M.; Allen, C.N.; Arjona, S.P.; Hooper, R.; Mukerjee, R.; Kaul, M.; Shcherbik, N.; Soboloff, J.; Sawaya, B.E.
+      HIV-1 gp120 protein promotes HAND through the calcineurin pathway activation. Mitochondrion 2023, 70, 31–40. [CrossRef]
+61.   Allen, C.N.S.; Arjona, S.P.; Santerre, M.; De Lucia, C.; Koch, W.J.; Sawaya, B.E. Metabolic Reprogramming in HIV-Associated
+      Neurocognitive Disorders. Front. Cell. Neurosci. 2022, 16, 812887. [CrossRef]
+
+
+
+                                                                                                        https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                      27 of 28
+
+
+
+62.   Shrestha, J.; Santerre, M.; Allen, C.N.S.; Arjona, S.P.; Merali, C.; Mukerjee, R.; Chitrala, K.N.; Park, J.; Bagashev, A.; Bui, V.; et al.
+      HIV-1 gp120 Impairs Spatial Memory Through Cyclic AMP Response Element-Binding Protein. Front. Aging Neurosci. 2022,
+      14, 811481. [CrossRef]
+63.   Santerre, M.; Bagashev, A.; Gorecki, L.; Lysek, K.Z.; Wang, Y.; Shrestha, J.; Del Carpio-Cano, F.; Mukerjee, R.; Sawaya, B.E. HIV-1
+      Tat protein promotes neuronal dysregulation by inhibiting E2F transcription factor 3 (E2F3). J. Biol. Chem. 2019, 294, 3618–3633.
+      [CrossRef]
+64.   Eyting, M.; Xie, M.; Michalik, F.; Heß, S.; Chung, S.; Geldsetzer, P. A natural experiment on the effect of herpes zoster vaccination
+      on dementia. Nature 2025, 641, 438–446. [CrossRef]
+65.   Bakradze, E.; Kirchoff, K.F.; Antoniello, D.; Springer, M.V.; Mabie, P.C.; Esenwa, C.C.; Labovitz, D.L.; Liberman, A.L. Varicella
+      Zoster Virus Vasculitis and Adult Cerebrovascular Disease. Neurohospitalist 2019, 9, 203–208. [CrossRef]
+66.   Cicin-Sain, L. Cytomegalovirus memory inflation and immune protection. Med. Microbiol. Immunol. 2019, 208, 339–347. [CrossRef]
+67.   Müller, L.; Di Benedetto, S. Immunosenescence and Cytomegalovirus: Exploring Their Connection in the Context of Aging,
+      Health, and Disease. Int. J. Mol. Sci. 2024, 25, 753. [CrossRef]
+68.   Derhovanessian, E. Impact of Cytomegalovirus infection on immune signatures in cancer patients. Cancer Immunol. Immunother.
+      2010, 59, 335–336. [CrossRef]
+69.   Savitz, J.; Goeckner, B.D.; Ford, B.N.; Kent Teague, T.; Zheng, H.; Harezlak, J.; Harezlak, J.; Mannix, R.; Tugan Muftuler, L.; Brett,
+      B.L.; et al. The effects of cytomegalovirus on brain structure following sport-related concussion. Brain 2023, 146, 4262–4273.
+      [CrossRef]
+70.   Bjornevik, K.; Münz, C.; Cohen, J.I.; Ascherio, A. Epstein-Barr virus as a leading cause of multiple sclerosis: Mechanisms and
+      implications. Nat. Rev. Neurol. 2023, 19, 160–171. [CrossRef]
+71.   Sattarnezhad, N.; Kockum, I.; Thomas, O.G.; Liu, Y.; Ho, P.P.; Barrett, A.K.; Comanescu, A.I.; Wijeratne, T.U.; Utz, P.J.; Alfredsson,
+      L.; et al. Antibody reactivity against EBNA1 and GlialCAM differentiates multiple sclerosis patients from healthy controls. Proc.
+      Natl. Acad. Sci. USA 2025, 122, e2424986122. [CrossRef]
+72.   Sumowski, J.F.; Leavitt, V.M.; Rocca, M.A.; Inglese, M.; Riccitelli, G.; Buyukturkoglu, K.; Meani, A.; Filippi, M. Mesial temporal
+      lobe and subcortical grey matter volumes differentially predict memory across stages of multiple sclerosis. Mult. Scler. 2018, 24,
+      675–678. [CrossRef]
+73.   Hosseini, S.; Wilk, E.; Michaelsen-Preusse, K.; Gerhauser, I.; Baumgärtner, W.; Geffers, R.; Schughart, K.; Korte, M. Long-Term
+      Neuroinflammation Induced by Influenza A Virus Infection and the Impact on Hippocampal Neuron Morphology and Function.
+      J. Neurosci. 2018, 38, 3060–3080. [CrossRef]
+74.   Fernández-Castañeda, A.; Lu, P.; Geraghty, A.C.; Song, E.; Lee, M.H.; Wood, J.; O’Dea, M.R.; Dutton, S.; Shamardani, K.;
+      Nwangwu, K.; et al. Mild respiratory COVID can cause multi-lineage neural cell and myelin dysregulation. Cell 2022, 185,
+      2452–2468.e16. [CrossRef]
+75.   Meyer, P.; Zaiser, A.K. Insights on the neurocognitive mechanisms underlying hippocampus-dependent memory impairment in
+      COVID-19. Sci. Rep. 2025, 15, 20114. [CrossRef]
+76.   Samudyata, S.; Oliveira, A.O.; Malwade, S.; Rufino de Sousa, N.; Goparaju, S.K.; Gracias, J.; Orhan, F.; Steponaviciute, L.; Schalling,
+      M.; Sheridan, S.D.; et al. SARS-CoV-2 promotes microglial synapse elimination in human brain organoids. Mol. Psychiatry 2022,
+      27, 3939–3950. [CrossRef]
+77.   Gallo, R.; De Rosa, R.C.; Durante-Mangoni, E. From vectors to victims: Understanding the threat of West Nile virus infection. Eur.
+      J. Intern. Med. 2025, 139, 106449. [CrossRef]
+78.   Gould, C.V.; Staples, J.E.; Guagliardo, S.A.J.; Martin, S.W.; Lyons, S.; Hills, S.L.; Nett, R.J.; Petersen, L.R. West Nile Virus: A Review.
+      JAMA 2025, 334, 618–628. [CrossRef]
+79.   O’Niel, A.; Parkins, C.J.; Pederson, A.; Saltonstall, E.; Bunnell, E.; Aggarwal, R.; Sandholm, P.; Kessler, K.; Harrison, H.F.; Smith,
+      J.L.; et al. Effects of West Nile virus on behavioral and cognitive performance, cortical Aβ pathology, viral loads, and immune
+      measures of middle-aged NL-G-F/E3 and NL-G-F/E4 mice. Front. Aging Neurosci. 2025, 17, 1600119. [CrossRef]
+80.   Vhp, L.; Aragão, M.M.; Pinho, R.S.; Hazin, A.N.; Paciorkowski, A.R.; Penalva de Oliveira, A.C.; Masruha, M.R. Congenital Zika
+      Virus Infection: A Review with Emphasis on the Spectrum of Brain Abnormalities. Curr. Neurol. Neurosci. Rep. 2020, 20, 49.
+      [CrossRef]
+81.   Duman, R.S.; Monteggia, L.M. A neurotrophic model for stress-related mood disorders. Biol. Psychiatry 2006, 59, 1116–1127.
+      [CrossRef]
+82.   Fidilio, A.; Grasso, M.; Caruso, G.; Musso, N.; Begni, V.; Privitera, A.; Torrisi, S.A.; Campolongo, P.; Schiavone, S.; Tascedda, F.;
+      et al. Prenatal stress induces a depressive-like phenotype in adolescent rats: The key role of TGF-β1 pathway. Front. Pharmacol.
+      2022, 13, 1075746. [CrossRef]
+83.   Mitra, S.; Werner, C.; Dietz, D.M. Neuroadaptations and TGF-β signaling: Emerging role in models of neuropsychiatric disorders.
+      Mol. Psychiatry 2022, 27, 296–306. [CrossRef]
+84.   Hooper, C.; Killick, R.; Lovestone, S. The GSK3 hypothesis of Alzheimer’s disease. J. Neurochem. 2008, 104, 1433. [CrossRef]
+
+
+
+                                                                                                          https://doi.org/10.3390/cells15100923
+Cells 2026, 15, 923                                                                                                                   28 of 28
+
+
+
+85.  Akantibila, M.; Carabetta, V.J. Sirtuins as Therapeutic Targets for Treating Cancer, Metabolic Diseases, and Neurodegenerative
+     Diseases. Pharmaceuticals 2025, 18, 1723. [CrossRef]
+86. Schmaal, L.; Veltman, D.J.; van Erp, T.G.; Sämann, P.G.; Frodl, T.; Jahanshad, N.; Loehrer, E.; Tiemeier, H.; Hofman, A.; Niessen,
+     W.J.; et al. Subcortical brain alterations in major depressive disorder: Findings from the ENIGMA Major Depressive Disorder
+     working group. Mol. Psychiatry 2016, 21, 806–812. [CrossRef]
+87. Green, M.F.; Kern, R.S.; Braff, D.L.; Mintz, J. Neurocognitive deficits and functional outcome in schizophrenia: Are we measuring
+     the “right stuff”? Schizophr. Bull. 2000, 26, 119–136. [CrossRef]
+88. Sekar, A.; Bialas, A.R.; de Rivera, H.; Davis, A.; Hammond, T.R.; Kamitaki, N.; Tooley, K.; Presumey, J.; Baum, M.; Van Doren, V.;
+     et al. Schizophrenia risk from complex variation of complement component 4. Nature 2016, 530, 177–183. [CrossRef]
+89. Heckers, S.; Konradi, C. GABAergic mechanisms of hippocampal hyperactivity in schizophrenia. Schizophr. Res. 2015, 167, 4–11.
+     [CrossRef]
+90. Liberzon, I.; Abelson, J.L. Context Processing and the Neurobiology of Post-Traumatic Stress Disorder. Neuron 2016, 92, 14–30.
+     [CrossRef]
+91. Smith, M.E. Bilateral hippocampal volume reduction in adults with post-traumatic stress disorder: A meta-analysis of structural
+     MRI studies. Hippocampus 2005, 15, 798–807. [CrossRef]
+92. Binder, E.B.; Bradley, R.G.; Liu, W.; Epstein, M.P.; Deveau, T.C.; Mercer, K.B.; Tang, Y.; Gillespie, C.F.; Heim, C.M.; Nemeroff, C.B.;
+     et al. Association of FKBP5 polymorphisms and childhood abuse with risk of posttraumatic stress disorder symptoms in adults.
+     JAMA 2008, 299, 1291–1305. [CrossRef]
+93. Bora, E.; Yucel, M.; Pantelis, C. Cognitive endophenotypes of bipolar disorder: A meta-analysis of neuropsychological deficits in
+     euthymic patients and their first-degree relatives. J. Affect. Disord. 2009, 113, 1–20. [CrossRef]
+94. Stork, C.; Renshaw, P.F. Mitochondrial dysfunction in bipolar disorder: Evidence from magnetic resonance spectroscopy research.
+     Mol. Psychiatry 2005, 10, 900–919. [CrossRef] [PubMed]
+95. Yao, P.; Ni, P.; Yin, L. Efficacy of Different Combination Therapies for Mania in Bipolar Disorder: A Systematic Review and
+     Meta-Analysis. Brain Behav. 2025, 15, e71139. [CrossRef] [PubMed]
+96. Chi, K.; Chen, J.; Zhou, S.; Han, Z. The effectiveness of digital cognitive intervention in patients with traumatic brain injury:
+     Systematic review and meta-analysis. Front. Neurol. 2025, 16, 1651443. [CrossRef] [PubMed]
+97. Zhang, W.; Xiao, D.; Mao, Q.; Xia, H. Role of neuroinflammation in neurodegeneration development. Signal Transduct. Target.
+     Ther. 2023, 8, 267. [CrossRef]
+98. Burton, R.; Durape, S.; Price, E.; Chien-Young, K.; Joshi, P.; Yhang, E.; Liu, Y.; Devine, S.; Gurnani, A.S.; Ang, T.F.A.; et al.
+     Traumatic Brain Injury and All-Cause and Dementia-Related Mortality in the Framingham Heart Study. JAMA Netw. Open. 2026,
+     9, e2555138. [CrossRef] [PubMed] [PubMed Central]
+99. Zhong, P.; Li, L.; Feng, X.; Teng, C.; Cai, W.; Zheng, W.; Wei, J.; Li, X.; He, Y.; Chen, B.; et al. Neuronal ferroptosis and ferroptosis-
+     mediated endoplasmic reticulum stress: Implications in cognitive dysfunction induced by chronic intermittent hypoxia in mice.
+     Int. Immunopharmacol. 2024, 138, 112579. [CrossRef]
+100. Fluss, J.; Lidzba, K. Cognitive and academic profiles in children with cerebral palsy: A narrative review. Ann. Phys. Rehabil. Med.
+     2020, 63, 447–456. [CrossRef]
+101. Ghadimi, K.; Abbas, I.; Karandish, A.; Crisman, C.; Eskandar, E.N.; Kobets, A.J. Cognitive Decline in Glioblastoma (GB) Patients
+     with Different Treatment Modalities and Insights on Untreated Cases. Curr. Oncol. 2025, 32, 152. [CrossRef] [PubMed]
+102. Mires, tean, C.C.; Buzea, C.G.; Zară, A.D.; Iancu, R.I.; Iancu, D.P.T. Potential Risk of Cognitive Impairment Due to Irradiation
+     of Neural Structures in Locally Advanced Nasopharyngeal Cancer Treated by Curative Radiotherapy. Medicina 2025, 61, 810.
+     [CrossRef] [PubMed]
+103. Knopman, D.S.; Hershey, L. Implications of the Approval of Lecanemab for Alzheimer Disease Patient Care: Incremental Step or
+     Paradigm Shift? Neurology 2023, 101, 610. [CrossRef]
+104. Lu, M.; Kim, M.J.; Collins, E.C.; Shcherbinin, S.; Ellinwood, A.K.; Yokoi, Y.; Brooks, D.A.; Hansson, O.; Knopman, D.S.; Sims, J.R.;
+     et al. Posttreatment Amyloid Levels and Clinical Outcomes Following Donanemab for Early Symptomatic Alzheimer Disease:
+     A Secondary Analysis of the TRAILBLAZER-ALZ 2 Randomized Clinical Trial. JAMA Neurol. 2025, 82, 1251. [CrossRef]
+105. Writing Committee for the HEALEY ALS Platform Trial; Andrews, J.; Paganoni, S.; Macklin, E.A.; Chibnik, L.B.; Quintana,
+     M.; Saville, B.R.; Detry, M.A.; Vestrucci, M.; Marion, J.; et al. Verdiperstat in Amyotrophic Lateral Sclerosis: Results From the
+     Randomized HEALEY ALS Platform Trial. JAMA Neurol. 2025, 82, 333.
+
+
+Disclaimer/Publisher’s Note: The statements, opinions and data contained in all publications are solely those of the individual
+author(s) and contributor(s) and not of MDPI and/or the editor(s). MDPI and/or the editor(s) disclaim responsibility for any injury to
+people or property resulting from any ideas, methods, instructions or products referred to in the content.
+
+
+
+
+                                                                                                        https://doi.org/10.3390/cells15100923
+

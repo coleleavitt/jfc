@@ -126,6 +126,9 @@ pub fn tool_permission_path(input: &crate::types::ToolInput) -> Option<&str> {
             ..
         } => Some(workdir.as_str()),
         ToolInput::MemoryDelete { path } => Some(path.as_str()),
+        // CS-JFC-002: expose the fetch URL so URL-aware permission policy can
+        // gate WebFetch to public-web-only destinations.
+        ToolInput::WebFetch { url, .. } => Some(url.as_str()),
         _ => None,
     }
 }

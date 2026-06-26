@@ -1,0 +1,1118 @@
+                                                  STUDY PROTOCOL
+
+                                                  Protocol for testing global neuronal workspace
+                                                  and integrated information theories of
+                                                  consciousness in non-human primates and mice
+                                                  Matilda Gibbons1‡, Ethan G. McBride2‡, Raghuram Holenarasipura Venkatasubbaiah3‡,
+                                                  Majid Khalili-Ardali4‡, Jacqulyn R. Kuyat2, Samuel Gale2, Vayle LaFehr2,
+                                                  Nathan W. Vogler1, Mohammadali Kheirkhah Ravandi3, Ming-Jiun Tsai3,
+                                                  Corbett Bennett2, Arjun Sridhar2, Benjamin Hardcastle 2, Hannah Cabasco2,
+                                                  Christof Koch 2,5, Lionel Naccache6, Giulio Tononi7, Shawn Olsen2*‡,
+                                                  Maria Neimark Geffen1*‡, Theofanis I. Panagiotaropoulos8,9*‡, Yuri B. Saalmann 3,10*‡
+
+                                                  1 Department of Otorhinolaryngology, University of Pennsylvania, Philadelphia, Pennsylvania, United
+                                                  States of America, 2 Allen Institute, Seattle, Washington, United States of America, 3 Department
+                                                  of Psychology, University of Wisconsin – Madison, Madison, Wisconsin, United States of America,
+                                                  4 Cognitive Neuroimaging Unit, CEA, INSERM, Université Paris-Saclay, NeuroSpin Center, France,
+                                                  5 Tiny Blue Dot Foundation, Santa Monica, California, United States of America, 6 Paris Brain Institute,
+                                                  Sorbonne University, Paris, France, 7 Department of Psychiatry, University of Wisconsin – Madison,
+                                                  Madison, Wisconsin, United States of America, 8 Department of Psychology, National and Kapodistrian
+                                                  University of Athens, Athens, Greece, 9 Centre for Basic Research, Biomedical Research Foundation
+                                                  of the Academy of Athens (BRFAA), Athens, Greece, 10 Wisconsin National Primate Research Center,
+                                                  Madison, Wisconsin, United States of America
+
+                                                  ‡ MG, EGM, RHV and MK-A authors share first authorship on this work. SO, MNG, TIP and YBS are
+   OPEN ACCESS                                    senior authors on this work.
+                                                  * shawno@alleninstitute.org (SO); mgeffen@pennmedicine.upenn.edu (MNG); fanispa@gmail.com (TIP);
+Citation: Gibbons M, McBride EG,
+                                                  saalmann@wisc.edu (YB)
+Holenarasipura Venkatasubbaiah R, Khalili-
+Ardali M, Kuyat JR, Gale S, et al. (2026)
+Protocol for testing global neuronal workspace
+and integrated information theories of            Abstract
+consciousness in non-human primates and
+mice. PLoS One 21(2): e0342770. https://doi.      Identifying the neural correlates of consciousness (NCC) is widely regarded as
+org/10.1371/journal.pone.0342770
+                                                  imperative to our understanding of consciousness. Although several scientific theo-
+Editor: Avanti Dey, Public Library of Science,    ries of consciousness make predictions about the NCC, they often differ in their level
+UNITED STATES OF AMERICA
+                                                  of detail, making direct comparison through experimental findings difficult. Here, we
+Received: January 14, 2026
+                                                  report an adversarial collaboration protocol in which unbiased experimentalists will
+Accepted: January 23, 2026                        test predictions formed by theory proponents of Global Neuronal Workspace Theory
+Published: February 25, 2026                      (GNWT) and Integrated Information Theory (IIT), concerning the location, timing and
+Copyright: © 2026 Gibbons et al. This is an       functional connectivity of the NCC. To enable cross-species comparisons, non-human
+open access article distributed under the terms   primates (NHPs) and mice will view/listen to supra-threshold visual/auditory stimuli
+of the Creative Commons Attribution License,
+which permits unrestricted use, distribution,
+                                                  for variable durations in a go-nogo task that controls for report confounds, while we
+and reproduction in any medium, provided the      record with Neuropixels electrodes neuronal responses from visual, auditory, pos-
+original author and source are credited.          terior parietal and/or prefrontal cortical areas. To causally test predictions about the
+Data availability statement: Pilot data and       timing and location, we will manipulate activity in prefrontal cortical regions using
+analysis code can be found at Figshare:
+                                                  electrical stimulation in NHPs or optogenetic silencing in mice. This Study Protocol
+10.6084/m9.figshare.25792359. All raw data
+and code from the planned research will be        details the experimental design, analyses, divergent predictions, and the anticipated
+shared upon completion of the research.           outcomes, along with their interpretation.
+
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                              1 / 24
+Funding: Y.S., M.N.G., S.O., T.P., C.K., L.N.,                              Introduction
+G.T.: This work is funded by the Templeton
+World Charity Foundation (TWCF0590) under                                   The problem of relating subjective conscious experiences to the objective, physical
+its Accelerating Research on Consciousness                                  brain is often described as the “Hard Problem” of consciousness [1]. It is not only an
+(ARC) initiative: ​​​​​​​​​​​​​​​​​​​​​​​​​​​​https://www.templetonworld-   intellectual problem of the first order, but also one that carries major scientific, clinical,
+charity.org/our-priorities/discovery/accelerat-
+ing-research-consciousness. The funders have
+                                                                            legal, ethical, and societal implications, particularly in determining who or what is con-
+no role in study design, data collection and                                scious: an unresponsive ICU patient? A second-trimester fetus? A lobster? A cortical
+analysis, decision to publish or preparation of                             organoid? An artificial system such as a large language model?
+the manuscript.
+                                                                               For the past thirty years, a key focus of the consciousness science community has
+Competing interests: We have read the jour-                                 been to identify the neural correlates of consciousness (NCC), the minimal neuronal
+nal’s policy and the authors of this manuscript
+                                                                            mechanisms jointly sufficient for any one conscious experience, and to differentiate
+have the following competing interests: C.K.
+and G.T. are Board Members and have a                                       these from the enabling factors necessary for consciousness tout court, such as
+financial interest in Intrinsic Powers Inc., a                              appropriate metabolic, hemodynamic and neuromodulatory factors [2,3].
+company whose purpose is to develop a device                                   In parallel, scientific theories of consciousness have emerged, with various
+that can be used to assess the presence of
+                                                                            amounts of empirical support [4]. Yet these theories often have very different meta-
+consciousness. They do not pose a conflict of
+interest with regard to the work undertaken for                             physical commitments with flagrantly opposing predictions concerning the NCC. In
+these studies.                                                              an attempt to adjudicate, the Templeton World Charity Foundation established five
+                                                                            adversarial collaborations, designed to directly pit predictions of two theories against
+                                                                            each other [5] using best practices in open science: large sample sizes, replication
+                                                                            across theory-neutral labs, pre-registration, and open access to all data and analysis
+                                                                            code.
+                                                                               The first adversarial collaboration, named Cogitate, tested predictions from two
+                                                                            theories that come to different conclusions with respect to the NCC in humans [6,7],
+                                                                            Integrated Information Theory (IIT) [8,9] and Global Neuronal Workspace Theory
+                                                                            (GNWT) [10,11]. IIT proposes that the quality of an experience corresponds to a
+                                                                            system’s cause-effect structure (or Φ structure) – composed by the set of causes and
+                                                                            effects specified by different parts of the system on each other, and their overlap [12].
+                                                                            IIT uses a mathematical framework to quantify the amount of integrated information
+                                                                            specified by this structure with a measure called Φ. Through examining the composi-
+                                                                            tion and quantity of the Φ structure, IIT suggests that we can understand the quality
+                                                                            and quantity of any one conscious experience, respectively. A key limitation of IIT
+                                                                            raised by critics is that, currently, Φ cannot be computed for a system as complex as
+                                                                            the human brain [13] (but also see: [14]). GNWT, in contrast, posits that conscious-
+                                                                            ness arises when selected information is globally broadcast across the brain, creating
+                                                                            a ‘global workspace’ [10], allowing otherwise nonconscious processing pathways
+                                                                            to access this information which enables integration and rerouting of information.
+                                                                            GNWT suggests that, when new information enters the workspace, a sudden, global
+                                                                            ‘ignition’ signal occurs, representing the moment of conscious access. A key limitation
+                                                                            of GNWT raised by critics is the lack of empirical data regarding the nature of ignition
+                                                                            at the level of neurons [15].
+                                                                               Although not all aspects of these two theories are mutually exclusive [16], there
+                                                                            are some testable hypotheses that are directly comparable and opposable. These
+                                                                            hypotheses broadly relate to the location (Question 1), timing (Question 2) and func-
+                                                                            tional connectivity (Question 3) of the NCC. Regarding the location (Table 1, Q1),
+                                                                            IIT predicts that the NCC are found in regions that maximize cause-effect powers.
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                                            2 / 24
+Table 1. Prediction table outlining the analysis plan for theory-specific predictions of consciousness.
+Question       Dataset                            Hypothesis                Sampling        Analy- Interpretation             Theory interpretation
+               Response    Sample      Time                                 plan            sis plan given to different       GNWT           IIT
+               variable                window                                                        outcomes
+Question     Average     PFC           Stimulus   H0: Performance is        Data will be    Half        A. Bayes < 1/10:    Pass:            Pass:
+1a: Where decoder                      onset      equal to chance level     collected       Cauchy      Strong evidence     Requires B       Requires F
+is conscious performance                          H1: Performance is        until the       prior for   for H0              and D
+content rep-                                      greater than chance       Bayes factor    H1          or
+resented?                                         level                     is at least                 B. Bayes factor >
+                                                                            10X in favor                10: Strong evidence
+                                                                            of H1 over H0               for H1
+                           PPC                    H0: Performance is        Data will be    Half        C. Bayes < 1/10:
+                                                  equal to chance level     collected       Cauchy      Strong evidence
+                                                  H1: Performance is        until the       prior for   for H0
+                                                  greater than chance       Bayes factor    H1          or
+                                                  level                     is at least                 D. Bayes factor >
+                                                                            10X in favor                10: Strong evidence
+                                                                            of H1 over H0               for H1
+                           PFC; PPC; Stimulus     H0: Performance           Data will be    Half        E. Bayes < 1/10:
+                           sensory   duration     combining PPC and/        collected       Cauchy      Strong evidence
+                           regions                or sensory regions is     until the       prior for   for H0
+                                                  equal to that in PFC      Bayes factor    H1          or
+                                                  H1: Performance           is at least                 F. Bayes factor >
+                                                  combining PPC and/        10X in favor                10: Strong evidence
+                                                  or sensory regions is     of H1 over H0               for H1
+                                                  greater than in PFC
+Question       Average     PPC,        Stimulus   H0: No difference in      Data will be    Full        A. Bayes < 1/10 for   Pass:          Pass:
+1b: Is PFC     decoder     w/ PFC      onset      performance in PPC        collected       Cauchy      H0 vs. H1: Strong     Requires B for Requires F
+required for   performance manipula-              with PFC manipulation     until the       prior for   evidence for H0       NHPs and D
+conscious-                 tion                   H1: Performance in        Bayes factor    H1; half    or                    for mice
+ness?                                             PPC changes with          is at least     Cauchy      B. Bayes >10 for
+                                                  PFC manipulation (for     10X in favor    prior for   H0 vs. H1: Strong
+                                                  NHPs)                     of either H1    H2          evidence for H1
+                                                  H2: Performance in        or H2 over H0               C. Bayes < 1/10 for
+                                                  PPC is lower with PFC                                 H0 vs. H2: Strong
+                                                  manipulation (mice)                                   evidence for H0
+                                                                                                        or
+                                                                                                        D. Bayes >10 for
+                                                                                                        H0 vs. H2: Strong
+                                                                                                        evidence for H2
+                           PPC,                   H0: Performance           Data will be    Half        E. Bayes < 1/10 for
+                           sensory                combining PPC and/        collected       Cauchy      H0 vs. H1: Strong
+                           regions,               or sensory regions is     until the       prior for   evidence for H0
+                           w/ PFC                 equal to chance level     Bayes factor    H1          or
+                           manipula-              H1: Performance           is at least                 F. Bayes >10 for
+                           tion                   combining PPC and/        10X in favor                H0 vs. H1: Strong
+                                                  or sensory regions is     of H1 over H0               evidence for H1
+                                                  greater than chance
+                                                  level
+
+                                                                                                                                              (Continued)
+
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                             3 / 24
+Table 1. (Continued)
+
+Question       Dataset                               Hypothesis                Sampling        Analy- Interpretation             Theory interpretation
+               Response      Sample       Time                                 plan            sis plan given to different       GNWT            IIT
+               variable                   window                                                        outcomes
+Question       Average       PFC          Stimulus   H0: Generalization is     Data will be    Half        A. Bayes < 1/10 for   Pass:           Pass:
+2. When is     decoder                    onset      equal to chance level     collected       Cauchy      H0 vs. H1: Strong     Requires B      Requires J
+conscious      generaliza-                           H1: Generalization is     until the       prior for   evidence for H0       and D; weak
+content rep-   tion                                  greater than chance       Bayes factor    H1          or                    theoretical
+resented?                                            level                     is at least                 B. Bayes >10 for      commitment
+                                                                               10X in favor                H0 vs. H1: Strong     to F and H.
+                                                                               of H1 over H0               evidence for H1
+                             PPC                     H0: Generalization is                                 C. Bayes < 1/10 for
+                                                     equal to chance level                                 H0 vs. H1: Strong
+                                                     H1: Generalization is                                 evidence for H0
+                                                     greater chance level                                  or
+                                                                                                           D. Bayes >10 for
+                                                                                                           H0 vs. H1: Strong
+                                                                                                           evidence for H1
+               Average       PFC          Stimulus   H0: Spike rate is equal   Data will be    Half        E. Bayes < 1/10 for
+               spike rate                 offset     to baseline               collected       Cauchy      H0 vs. H1: Strong
+                                                     H1: Spike rate is         until the       prior for   evidence for H0
+                                                     greater than baseline     Bayes factor    H1          or
+                                                                               is at least                 F. Bayes >10 for
+                                                                               10X in favor                H0 vs. H1: Strong
+                                                                               of H1 over H0               evidence for H1
+                             PPC                     H0: Spike rate is equal                               G. Bayes < 1/10 for
+                                                     to baseline                                           H0 vs. H1: Strong
+                                                     H1: Spike rate is                                     evidence for H0
+                                                     greater than baseline                                 or
+                                                                                                           H. Bayes >10 for
+                                                                                                           H0 vs. H1: Strong
+                                                                                                           evidence for H1
+               Average       PPC and/     Stimulus   H0: Generalization is     Data will be    Half        I. Bayes < 1/10 for
+               decoder       or sensory   duration   equal to chance level     collected       Cauchy      H0 vs. H1: Strong
+               generaliza-   regions                 H1: Generalization is     until the       prior for   evidence for H0
+               tion                                  greater than chance       Bayes factor    H1          or
+                                                     level                     is at least                 J. Bayes >10 for
+                                                                               10X in favor                H0 vs. H1: Strong
+                                                                               of H1 over H0               evidence for H1
+Question       Pairwise    PFC with       Stimulus   H0: Pairwise phase        Data will be    Half        A. Bayes < 1/10 for   Pass:           Pass:
+3. What        phase       PPC            onset      consistency is equal to   collected       Cauchy      H0 vs. H1: Strong     Requires B, D   Requires
+functional     consistency                           baseline                  until the       prior for   evidence for H0       and F           H and J for
+connectivity                                         H1: Pairwise phase        Bayes factor    H1          or                                    NHPs and
+supports                                             consistency is greater    is at least                 B. Bayes >10 for                      J for mice
+conscious-                                           than baseline             10X in favor                H0 vs. H1: Strong
+ness?                                                                          of H1 over H0               evidence for H1
+                             PFC with                H0: Pairwise phase        Data will be    Half        C. Bayes < 1/10 for
+                             sensory                 consistency is equal to   collected       Cauchy      H0 vs. H1: Strong
+                             regions                 baseline                  until the       prior for   evidence for H0
+                                                     H1: Pairwise phase        Bayes factor    H1          or
+                                                     consistency is greater    is at least                 D. Bayes >10 for
+                                                     than baseline             10X in favor                H0 vs. H1: Strong
+                                                                               of H1 over H0               evidence for H1
+                                                                                                                                                  (Continued)
+
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                                4 / 24
+Table 1. (Continued)
+
+Question       Dataset                                 Hypothesis                Sampling        Analy- Interpretation             Theory interpretation
+               Response       Sample        Time                                 plan            sis plan given to different       GNWT           IIT
+               variable                     window                                                        outcomes
+                              PPC with                 H0: Pairwise phase        Data will be    Half        E. Bayes < 1/10 for
+                              sensory                  consistency is equal to   collected       Cauchy      H0 vs. H1: Strong
+                              regions                  baseline                  until the       prior for   evidence for H0
+                                                       H1: Pairwise phase        Bayes factor    H1          or
+                                                       consistency is greater    is at least                 F. Bayes >10 for
+                                                       than baseline             10X in favor                H0 vs. H1: Strong
+                                                                                 of H1 over H0               evidence for H1
+                              Higher-­      Stimulus   H0: Pairwise phase        Data will be    Half        G. Bayes < 1/10 for
+                              order with    duration   consistency is equal to   collected       Cauchy      H0 vs. H1: Strong
+                              lower-­                  baseline                  until the       prior for   evidence for H0
+                              order                    H1: Pairwise phase        Bayes factor    H1          or
+                              sensory                  consistency is greater    is at least                 H. Bayes >10 for
+                              regions                  than baseline             10X in favor                H0 vs. H1: Strong
+                                                                                 of H1 over H0               evidence for H1
+                              Within                   H0: Pairwise phase        Data will be    Half        I. Bayes < 1/10 for
+                              sensory                  consistency increase is   collected       Cauchy      H0 vs. H1: Strong
+                              regions                  equal to baseline         until the       prior for   evidence for H0
+                                                       H1: Pairwise phase        Bayes factor    H1          or
+                                                       consistency increase is   is at least                 J. Bayes >10 for
+                                                       greater than baseline     10X in favor                H0 vs. H1: Strong
+                                                                                 of H1 over H0               evidence for H1
+
+This table details the analysis plan for testing the predictions of the Global Neuronal Workspace Theory (GNWT) and Integrated Information Theory (IIT)
+across the three questions regarding conscious content: 1) Where is it represented?, 2) When is it represented?, and 3) What functional connectivity
+supports it? Each row specifies the null and alternative hypotheses, the relevant brain region(s), the time window of interest, sampling plan, the response
+variable used (average decoding performance or generalization, or pairwise phase consistency), and the interpretation given to the possible outcomes
+both in terms of theory-dependent requirements and theory-independent conclusions. Bayesian inference is used throughout, with hypotheses evaluated
+based on the strength of the Bayes Factor (BF). A BF > 10 in favor of H1 or H2 over H0 is interpreted as strong evidence for the alternative hypothesis, and
+a BF < 1/10 as strong evidence for the null. Each outcome is labeled (A–J) and corresponds to the schematic visualizations in Fig 3.
+
+https://doi.org/10.1371/journal.pone.0342770.t001
+
+
+
+Given the lattice-like, “topographic” connectivity of visual, auditory and tactile cortical areas, which likely underlies max-
+imal irreducibility, the neural substrate of consciousness and the various NCC should be found primarily in posterior corti-
+cal regions, including sensory cortical areas [17]. Conversely, GNWT predicts that the NCC are found in the higher order
+associative areas, in particular the prefrontal cortical regions (PFC) and posterior parietal cortical regions (PPC) [18,19],
+but also in other areas that are accessible via top-down mobilization. As for the timing of the NCC (Table 1, Q2), IIT
+predicts that their timing is sustained in the posterior cortex for as long as the stimulus is consciously perceived, because
+the quality of any one experience should be identical to the particular composition of the cause-effect structure, itself
+specified by the system in a particular state. GNWT, however, predicts brief “ignitions” at the onset of conscious percep-
+tion, followed by the active and sustained maintenance of the accessed representation within the global workspace, as
+long as the individual remains conscious of it. Ignition at offset is not a direct prediction of GNWT because it is predicted
+to occur only if the participant is aware of this offset [20]. Finally, regarding the functional connectivity of the NCC (Table
+1, Q3), IIT predicts that posterior cortical regions that specify the conscious contents that bind to create the experience
+of a particular stimulus should be linked by short-range synchrony, because causal relations (bindings) are predicted
+to depend on an overlap in inputs and outputs, and that shared inputs and outputs of activated areas should translate
+into increased phase-synchrony during the experience of the stimulus. GNWT, however, predicts long-range synchrony
+between distant areas, because information between distant regions should be globally integrated to create a conscious
+experience.
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                                  5 / 24
+    Cogitate tested these predictions in 250 subjects tested on tasks that required consciousness and recorded with fMRI,
+EEG, MEG and implanted ECoG electrodes, using several decoding analyses [6]. Their results both supported and chal-
+lenged both theories. For Question 1, their results supported IIT overall, as conscious content was robustly represented
+in the PPC and sensory regions, and only partly in the PFC, but note that the absence of a conscious versus unconscious
+contrast prevented the isolation of strict NCC in that study. For Question 2, they found that neural activity was sustained
+throughout the conscious perception in posterior areas and there was no ignition signal at stimulus offset, supporting IIT
+and challenging GNWT. Finally, for Question 3, they found no evidence for sustained short-range synchrony in the PPC
+and sensory regions, and partially some long-range dynamic functional connectivity between the PFC and sensory areas,
+supporting GNWT.
+    Our adversarial collaboration builds directly on this framework, extending it to two additional mammalian species: rhe-
+sus macaques (Macaca mulatta) and mice (Mus musculus). This approach offers two major advantages: 1) direct access
+to the activity of individual neurons with intracranial electrophysiology, and 2) the ability to causally manipulate brain activ-
+ity using electrical stimulation and optogenetics. The former has the advantage of directly measuring neuronal population
+spiking activity, thus providing substantially higher spatiotemporal resolution compared to methods like fMRI, EEG or
+ECoG. The latter specifically means that we can answer Question 1 causally, by directly manipulating activity in the PFC
+and assessing whether activity and stimulus decodability is modulated in the PPC and sensory regions (GNWT prediction)
+or persists without being obliterated in the PPC and/or sensory regions (IIT prediction).
+    We designed a similar set of experiments to Cogitate, adapted for non-human primates (NHPs) and mice. Neuronal
+activity will be recorded using Neuropixels probes in multiple areas of the NHP or mouse cortex (Fig 1) while subjects
+perform a go/no-go discrimination task involving supra-threshold stimuli, presented one at a time, and for a long dura-
+tion. Task-irrelevant stimuli are interleaved with targets in order to minimize behavioral report confounds. These stimuli,
+including the task-irrelevant stimuli, are assumed to be consciously perceived–given their salience, duration, and lack of
+competing stimuli–an assumption that is supported by prior evidence of consciousness in both macaques [21,22] and
+mice [23,24]. The task is designed to allow for testing different aspects of neuronal responses to the stimuli to differentiate
+between predictions of the two theories [25].
+    Assessing the predictions for Question 1 (location) will involve testing whether PFC, PPC and/or sensory region activity
+can be used to decode task-irrelevant and/or non-target stimuli (specific theory predictions are outlined in the analysis
+plan and Table 1). Additionally, we will manipulate PFC activity on a subset of trials to test whether the PFC is required
+for stimulus decodability in the PPC and/or sensory regions. To test Question 2 (timing), stimulus decoding in these areas
+will be measured using a moving temporal window across the length of the stimulus presentation. We will test Question
+3 (connectivity) by analyzing content-specific spike-LFP phase synchrony within and between PFC, PPC and sensory
+regions, testing for content-specific long- or short-range synchrony.
+    Importantly, the predictions tested here are not unique to GNWT or IIT; other prominent theories of consciousness
+also suggest similar neural mechanisms. For instance, higher-order theories implicate the PFC, while re-entry theories
+emphasize the role of the PPC and sensory regions [4,30]. As such, we expect our findings will be inherently valuable
+for advancing the broader search for the NCC, regardless of whether they align more closely with one theory or another.
+Accordingly, we do not treat our results as definitive proof for or against any specific theory. Rather, we interpret them as
+evidence about the neural basis of consciousness, evidence that may support or challenge many theories.
+    We test predictions in both macaques and mice to take advantage of the different experimental strengths of each
+species. Macaques have more similar neuroanatomical organization to humans and allow for more complex behavioral
+paradigms; whereas viral and genetic techniques are more advanced in mice, allowing for greater control over causal
+manipulations. Considering that the latency of neural responses in cortical areas is generally shorter in mice, due to, e.g.,
+their smaller brain size, it is possible that the timing of the perceptual mechanisms in question may be earlier in mice than
+primates. So we will test the hypothesis (outside of theory hypotheses) that stimulus information is represented earlier
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                   6 / 24
+Fig 1. Comparative anatomical location of recording sites across species. This figure illustrates the anatomical regions used in our decoding
+and connectivity analyses in non-human primates (NHPs) (a, c) and mice (b, d). Prefrontal cortical areas (PFC) are depicted by pink circles, posterior
+parietal cortical areas (PPC) by blue circles, and yellow circles represent sensory regions. All locations are schematic and approximate. (a) Approximate
+illustration of the recording sites in NHPs and (b) in mice. (c) Corresponding coronal sections containing the recording sites in NHPs from the Scalable
+Brain Atlas [26,27] and (d) in mice from the Allen Mouse Brain Atlas [28,29]. (a, b) Created in BioRender. Gibbons, M. (2026) https://BioRender.com/
+mdbdh1b. Reprinted under a CC BY license, with permission from BioRender, original copyright 2026.
+
+https://doi.org/10.1371/journal.pone.0342770.g001
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                           7 / 24
+in each area in mice compared with macaques [31]. To do this, we will decode stimuli using a moving temporal window
+across the length of the stimulus presentation. This allows us to examine the degree to which mechanisms are shared
+across species, providing insight into the evolution of the NCC.
+   Together, this work aims to provide a rigorous, cross-species test of competing models of consciousness, using both
+observational and causal tools to determine where, when, and how conscious experience arises in the brain.
+
+
+Materials and methods
+Ethics information
+The research procedures comply with all relevant ethical regulations and adhere to the National Institutes of Health Guide
+for the Care and Use of Laboratory Animals. NHP experimental protocols have been approved by the Institutional Ani-
+mal Care and Use Committee (IACUC) at the University of Wisconsin–Madison. Mouse experiment protocols have been
+approved by the IACUCs at the Allen Institute and the University of Pennsylvania. This research follows the ARRIVE
+guidelines [32] for reporting animal studies.
+
+Animals
+NHP experiments will be conducted in adult male rhesus macaques (Macaca mulatta; age 8–9 years; weight 10–15 kg).
+Animals will be socially-housed in a temperature-controlled environment (22–26 °C) under a 12-hour light/dark cycle, and
+will receive daily fresh produce alongside standard primate chow. Water intake will be regulated according to behavioral
+training protocols. All experiments will be conducted during the macaques’ active (light) phase, in full compliance with
+institutional care standards. Animals are under the care of full-time veterinarians, veterinary technicians, and the general
+care staff in addition to the research team. The research team and the behavioral management unit carry out an environ-
+mental enrichment program to ensure the psychological health of the monkeys and to prevent environmental stress. Toys
+and other interactive devices are provided on a rotational basis and new toys are introduced regularly. The animals also
+see a member of the research team or animal care staff each day and are provided with primate treats during these inter-
+actions. The behavioral training relies on positive reinforcement (juice, raisin and nut rewards).
+   Mouse experiments will be conducted in adult male and female Mus musculus, either C57BL/6 (Stock No. 000664),
+Vgat-ires-Cre (Slc32a1; Stock No. 028862), or Ai32 × Vgat-ires-Cre (Stock Nos. 024109, 028862) lines, aged 60–250
+days and weighing 18–30g (The Jackson Laboratory). Mice will be single-housed in a temperature-controlled environment
+(28 °C) under a 12-hour light/dark cycle. Food will be available ad libitum, and water will be restricted in accordance with
+behavioral protocols. All experiments will be conducted during the animals’ dark (active) cycle. In a subset of mice, we will
+conduct auditory brainstem response measurements using standard methods [33] to ensure that the mice are not under-
+going premature hearing loss.
+
+Overall design
+Subjects will perform a discrimination task in which they are presented with a supra-threshold stimulus, either an image
+of a face or object (NHPs) or an auditory tone or visual grating (mice), that may be task-relevant or irrelevant. These
+two modalities were used in mice because of their limited capacity to discriminate among multiple categories of complex
+visual stimuli. During the task, we will record both single unit spiking activity and local field potentials (LFPs) using high-­
+density Neuropixels silicon probes targeting five cortical regions. In a subset of trials, activity in PFC will be manipulated:
+electrically stimulated using a linear electrode array in NHPs [34,35], or optogenetically silenced in mice via activation of
+channelrhodopsin-­expressing inhibitory neurons using an optical fiber or focused laser [36,37].
+   Our primary analysis, similar to the approach used in the Cogitate human study, will involve decoding spiking activity
+related to sensory content, under the assumption that subjects consciously perceive the supra-threshold stimuli. Data
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                    8 / 24
+collection and analysis will not be blinded to experimental conditions. However, we will randomize stimulus presentation,
+inter-trial intervals, and manipulation conditions (electrical stimulation vs. no stimulation in NHPs; optogenetic silencing vs.
+no silencing in mice).
+
+Brain region terminology
+We use the terminology in Table 2 to refer to subsets of brain regions targeted for electrophysiological recordings.
+
+Behavior
+Both NHPs and mice will perform a go-nogo behavioral task in which they must discriminate target stimuli from non-target
+relevant stimuli and from task-irrelevant stimuli (Fig 2).
+
+Set-up
+NHPs will sit upright in a primate chair (Crist Instruments, Hagerstown MD), with their heads stabilized using a
+head holder (Neuronitek, London, Canada). NHPs will be positioned 57 cm from a 19 inch CRT monitor (100 Hz
+refresh rate). NHPs will use eye movements to perform the behavioral task and earn juice rewards. Eye position
+will be monitored using a video eye tracker (SMI, Berlin, Germany). Behavioral task events, monitoring of eye
+position and feedback delivery will be controlled by custom-written software in Presentation (Neurobehavioral
+Systems, Albany CA). Juice rewards will be delivered via a TTL pulse issued to an infusion pump system (Harvard
+Apparatus, Holliston MA).
+   Mice will be head-fixed on a freely-moving wheel with a lick spout that delivers 5 μL water rewards extended in front of
+them. There will be a screen facing the mouse’s right eye and a speaker above and to the side of the mouse. We will also
+use an infrared camera and light source to record the size of the mouse’s pupil that is viewing the screen.
+
+Task design
+One category (or modality) of stimuli, either faces or objects for NHPs and visual or auditory stimuli for mice, will be task
+relevant while the other category will be task irrelevant. Which modality is task relevant will change for each trial in the
+NHP task and for each individual subject in the mouse version (counterbalanced across mice).
+
+Stimuli
+In the NHP task, the targets will be both the front and side views of the particular instructed face or object and the non-­
+targets will be any other face or object. The visual stimuli will be presented in grayscale at 100% luminance contrast, with
+
+
+Table 2. Brain area terminology in non-human primates (NHPs) and mice.
+Brain regions                                       NHPs                                                                Mice
+Prefrontal cortical regions (PFC)                   Area 45 (including the face-related area prefrontal ventral         Anterior cingulate area (ACA) and orbital
+                                                    [38]) and Area 46 (prefrontal arcuate)                              frontal cortex (ORB)
+Posterior parietal cortical regions (PPC)           Area 7a                                                             Posterior parietal association area (PTLp)
+Sensory Areas                                       Posterior inferior temporal cortex (pITC), including the poste-     Primary visual cortex (VISp) and primary
+                                                    rior lateral face patch (PL), and middle inferior temporal cortex   auditory cortex (AUDp)
+                                                    (mITC), including the middle lateral face patch (ML), as well
+                                                    as object-selective areas
+
+This table displays the targeted cortical areas in NHPs alongside their functionally-similar homologs in mice across three regions: prefrontal cortical
+regions (PFC), posterior parietal cortical regions (PPC), and sensory areas.
+
+https://doi.org/10.1371/journal.pone.0342770.t002
+
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                                    9 / 24
+Fig 2. Experimental paradigm. Behavioral task structure for NHP (a) face and (b) object target trials, and for mouse (c) visual and (d) auditory target
+trials. (a, b) Cascade of screenshots showing initial cue instructing the NHP about the target stimulus in the trial—face in (a) and object in (b)—followed
+by two stimuli in random order. The stimuli will be the target (e.g., face in a), non-target (a different face) or irrelevant stimulus (object in a). Stimuli will
+be presented one at a time for a duration of either 0.02, 0.5 or 1.5 s (chosen randomly). On presentation of a target stimulus, the NHP will saccade (blue
+arrow) to a peripheral circle (green) to report the target (side and thus saccade direction will be randomized). After making a saccade, fixation is reac-
+quired, and the next stimulus will be presented. NHPs will maintain central fixation for the non-target and irrelevant stimuli. 0–2 targets will be presented
+per trial. The peripheral circle location and saccade direction will be varied randomly across trials. On one-third of 0.02 s trials, the stimulus (e.g., face)
+will be quickly followed by a mask (scrambled face); on another third of 0.02 s trials, the stimulus will be omitted and just the mask will be presented; on
+another third of 0.02 s trials, only the stimulus will be presented. (c, d) One group of mice will be trained that visual stimuli are targets (c), and a balanced
+group will be trained that auditory stimuli are targets (d). When visual stimuli are targets, the auditory stimuli will be the irrelevant stimuli, and vice versa.
+Stimuli will be presented one at a time for a duration of 0.5 or 1.5 s (chosen randomly). Each trial will consist of a random pre-stimulus period (1.5-4 s;
+mean 2 s) during which the screen is gray, followed by a stimulus and response period (3 s; includes 0.5 or 1.5 s stimuli). For the last 1.5 seconds of the
+pre-stimulus period, the mouse must withhold licking, otherwise a new random pre-stimulus period is drawn and the trial restarts. Four trials are shown
+for each example session. The speaker icon is shown for illustration purposes only, during auditory trials the visual display is uniform gray.
+
+https://doi.org/10.1371/journal.pone.0342770.g002
+
+
+
+
+a visual angle of 6 × 4 degrees. The face stimuli will be obtained using the PrimFace Database [39], and the object stimuli
+from the Object Databank [40].
+   For mice, the targets will be either a vertically-oriented grating or a 6 kHz pure tone, and the non-targets will be a
+horizontal grating or an 11 kHz pure tone. The visual stimuli will be presented in grayscale at 100% luminance contrast,
+with a spatial frequency of 0.04 cycles/degree and a size of 50 degrees. Auditory stimuli will be presented at 65 dB sound
+pressure level relative to 20 µPa.
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                                 10 / 24
+Task
+For NHPs, we will aim to present 160 targets (40 face front, 40 face side, 40 object front, 40 object side), 160 non-targets
+and 320 task-irrelevant stimuli in each recording session (exact numbers will depend on the NHP behavior in any given
+session). For mice, we will aim to present 150 targets (150 vertical gratings or 150 6 kHz tones), 150 non-targets (150
+horizontal gratings or 150 11 kHz tones), and 300 task-irrelevant stimuli (150 of either both visual stimuli or both auditory
+stimuli) in each recording session. Each stimulus will have a duration of, for NHPs, either 0.5 or 1.5 s (or 0.02 s for masked
+trials), followed by a delay of 0.45–0.5 s, and, for mice, either 0.5 or 1.5 s followed by a delay of 1.5–4 s (drawn from an
+exponential distribution). The order of target, non-target and irrelevant stimuli presentation will be pseudorandomised.
+    For NHPs, the trials will start with fixation on a central white circle for 0.25–0.35 s, then an instruction cue will appear
+for 0.5–1 s to signal the target stimulus for the duration of the trial. They will then experience a variable delay of 0.35–0.5 s
+before being presented with the first test stimulus. After a further delay of 0.45–0.5 s, two peripheral, colored circles, one
+green and one red, will appear on either side of the central fixation. The peripheral circles and the correct saccade direc-
+tion will be randomly varied from trial-to-trial, to minimize action preparation during test stimulus presentation. After the
+response, the NHPs will be required to re-engage central fixation to initiate the second test stimulus presentation. 0–2
+targets will be presented per trial. The time between test stimuli will depend on reaction time and the re-engagement of
+central fixation. As an awareness control (not present in the Cogitate human study), we will incorporate a backward mask-
+ing manipulation into a subset of the trials with 0.02 s stimulus duration. On one-third of these masking trials, the stimulus
+will be followed by a mask (scrambled face) of 0.04 s duration; on another third of trials, the stimulus will be omitted and
+just the mask will be presented; in addition to the one-third of trials in which only the stimulus will be presented.
+    Mice will start the session with five trials of the target stimulus paired with a water reward to promote participation. For
+the rest of the session, target, non-target stimuli and irrelevant stimuli will be pseudorandomly presented to the mouse.
+Mice will be required to withhold licking during a 1.5 s quiescent period where the screen is blank (gray) just prior to each
+stimulus, otherwise the trial will restart with a randomly-chosen pre-stimulus time between 1.5–4 seconds (exponential
+distribution).
+
+Reporting of target stimuli
+NHPs will report the target stimulus by a saccadic response away from a central white circle they are fixated on to a
+peripheral green colored circle, and not saccading to the distractor peripheral red circle on the other side of the screen
+(sides will be randomly varied from trial-to-trial). This response will be rewarded by administering a juice reward at the
+end of the trial, but only if the correct response is shown to both test stimuli. The correct response to non-targets and
+irrelevant stimuli will be to maintain central fixation on the white circle. Incorrect responses to the non-target and irrelevant
+stimuli will not be punished. To control for possible saccade-related neuronal activity, we will also collect neuronal data in a
+guided saccade task to the two locations of the peripheral circles, at the start of each session.
+    Mice will report the target stimulus by licking the water spout within the response window (0.1–1 s following stimulus
+onset). This response will be rewarded by administering a water reward immediately. The correct response to non-targets
+and irrelevant stimuli will be to withhold licking. Incorrect responses to the non-target and irrelevant stimuli will not be
+punished.
+
+Training
+We will employ a stepwise training protocol to familiarize each head-fixed NHP with color-coded peripheral circles, which
+serve as response cues. In the initial phase, each NHP will be trained to maintain central fixation for progressively longer
+durations. Once stable fixation performance is achieved, a white peripheral circle will be introduced, prompting the NHP
+to execute a saccade toward its location. Subsequently, green and red peripheral circles will be presented, with the green
+circle serving as a cue for saccading to its location and the red circle serving as a distractor. Each trial will begin with an
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                  11 / 24
+instruction cue, followed by the presentation of a test stimulus (relevant target, non-target, or irrelevant). The NHP will be
+trained to saccade toward and fixate on the green peripheral circle when a target stimulus is presented, while maintaining
+central fixation on the white circle when a relevant non-target or irrelevant stimulus is presented. The location of the green
+and red peripheral circles, as well as the saccade direction, will be randomized across trials. Initial training will involve
+presenting a single test stimulus per trial. Once the NHP demonstrates consistent and accurate performance (~85%
+accuracy), a second test stimulus will be introduced. In this phase, after responding to the first stimulus, the NHP will be
+required to re-establish central fixation to initiate the presentation of the second test stimulus. The test stimuli will vary in
+duration (0.5 or 1.5 seconds). Correct responses to both test stimuli will be reinforced with a juice reward at the end of the
+trial, while incorrect responses to either stimulus will not be rewarded. The NHP must maintain stable task performance
+with an overall accuracy of approximately 85% before proceeding to neuronal recordings.
+    Mice will be habituated by handling for five minutes each day for five days. They will then be water restricted to 85% of
+their baseline weight. Following this, mice will be trained to lick from the water spout by being given manually-dispensed
+water rewards, freely at first and then only when the mouse licks. Then, mice will be trained to lick when shown the target
+stimulus by presenting the mice with 150 randomly-interleaved target and non-target stimuli, with free water rewards along-
+side the target stimulus, and the quiescent period will be introduced. When mice lick for at least 75% trials in a session, they
+will move to the main training stage. The main training procedure will introduce parts of the behavioral task structure, includ-
+ing the initial five autorewarded targets, the pseudorandom stimulus presentation and the criteria for reward and punishment.
+However, it differs from the full behavioral task in a few ways. First, if a mouse fails to respond to the target after ten consec-
+utive target trials, then an autoreward will be dispensed on the 11th presentation of the go stimulus to promote participation.
+Second, an incorrect response to the non-target stimuli will be punished with a 3 s timeout paired with an error cue stimulus
+(a black screen for visual target mice and white noise for auditory target mice). Third, all stimulus durations will be 0.5 sec-
+onds. Finally, the task-irrelevant stimuli will not be presented. When mice achieve a d-prime of 2 for two out of three consec-
+utive days on this task, they will move on to the full behavioral task, in which irrelevant stimuli will be introduced, stimuli will
+vary in duration (0.5 or 1.5 seconds), and incorrect responses to non-target or irrelevant stimuli will not be punished. Mice
+must then maintain a d-prime of 2 for two days on the behavioral task before undergoing the electrophysiology experiment.
+
+Surgery
+To access the intended brain recording sites, all animals will undergo a head post surgery, to allow for head stabilization
+during experiments, and a craniotomy procedure, to allow for insertion of the probes. All surgeries will be performed under
+general anesthesia, maintained using either isoflurane gas (1–3% isofluorane/O2) for mice and NHPs (using an endotra-
+cheal tube), or via a constant rate infusion of propofol (0.1–0.6 mg/kg/min, IV) for NHPs only. All surgeries will be per-
+formed under sterile conditions with the animal secured in a stereotaxic frame.
+   In NHPs, the head post surgery will be performed prior to behavioral training, and will involve attaching an acrylic head
+implant, head post and recording chamber to the skull. This procedure will start with preparing the scalp through hair
+removal and antiseptic cleansing, then making an incision along the midline to expose the skull. Then, using a hand drill
+with a safety cuff to limit drill descent (cuff size will be based on the individual’s skull thickness determined from presur-
+gical structural MRI), 12 threaded holes (2.5 mm diameter) in the skull will be made around the planned margin of the
+implant (as determined by presurgical high-resolution MRI). The implant will be secured to the skull using ceramic skull
+screws inserted into the holes and acrylic covering the screws. The head post will then be attached to the left side of the
+skull using acrylic, and the recording chamber will be positioned over the right hemisphere and secured to the implant
+with screws that slot into plastic nuts in the implant. We will then suture (3–0) the incision to bring skin together around
+the implant margin. In the subsequent NHP craniotomy surgery, up to five small (2 mm) craniotomies will be made within
+the recording chamber above the target cortical sites, the precise locations of which will be determined by presurgical
+high-resolution MRI. 3D printed parts (modified from [41]) will be used to hold the probes. The 3D printed connector will
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                     12 / 24
+be secured to the skull with dental acrylic at each craniotomy, then the 3D printed probe holder will be inserted into the
+connector using a customized guide and a micromanipulator system, and secured with small screws. This will seal the
+craniotomy site and allow the probe to be held in place across sessions under the recording chamber. After surgeries,
+animals will receive an antibiotic (cefazolin, up to 30 mg/kg IM) and an analgesic agent (buprenorphine, 0.01–0.02 mg/kg
+IM, every 8–12 hours for at least the first 48 post-operative hours).
+    When NHP experiments have been completed, animals return to the general population of the animal colony. However,
+should a case arise in which euthanasia is necessary due to poor health, euthanasia will be carried out with an overdose
+of sodium pentobarbital (or equivalent) as approved by a clinical veterinarian and according to the current recommenda-
+tions of the Panel on Euthanasia of the American Veterinary Medical Association.
+    In mice, we will perform either a whole-hemisphere craniotomy (WHC) that replaces the skull and dura mater above
+the recording sites with a custom-built implant [42] or small craniotomies over the target locations. For the WHC route, the
+head post and craniotomy surgeries will be performed simultaneously, prior to behavioral training. For small craniotomies,
+the head post surgery will be performed before behavioral training while the craniotomy surgery will be performed the
+day before the recording. Prior to any surgical procedure, mice will be administered subcutaneous injections of sustained
+release buprenorphine (1 mg/kg) for analgesia, dexamethasone (0.2 mg/kg) for reduction of swelling, and bupivacaine
+(2 mg/kg), for local anesthesia.
+    All mice surgeries will start with preparing the scalp through hair removal and antiseptic cleansing with 10% povidone-­
+iodine solution (Betadine, U.S.A.) and 70% ethanol. Then, the scalp skin will be incised and removed to expose the
+skull. For the small craniotomy head post surgery, a metal head post will be adhered to the skull using dental acrylic, and
+vetbond will be used to close up the scalp skin. For the subsequent craniotomies, the skin will be reopened and small
+(~1 mm) craniotomies will be made using a drill. The locations will be determined using Pinpoint [43] and stereotaxic
+coordinates. For the WHC surgery, the mouse’s head will then be leveled and an outline of the WHC will be made on the
+left hemisphere using Dumont #5/45 Forceps (Fine Science Tools, U.S.A.). A custom-built headframe will then be adhered
+to the skull using dental acrylic. Next, the skull will be drilled along the WHC outline and subsequently removed. The dura
+mater will then be removed using a Bonn Micro Probe (Fine Science Tools, U.S.A.) and scissors (McPherson- Vannas
+Scissors, 8 cm, 45-degree angle, World Precision Instruments, USA). The exposed brain will then be covered with the
+custom-built implant which contains holes centered at the intended recording sites (bregma coordinates: anterior/posterior
+(AP), medial/lateral (ML): ORB: AP + 2.35, ML −1.05; ACA: + 1.1, −0.8; PTLp: −2.25, −1.8; AUD: −2.7, −4.05; VIS: −3.6,
+−2.3) that are covered by a removable protective silicon layer during behavioral training. The implant will be secured to the
+skull edges using Loctite 4305 (Loctite, U.S.A) and dental acrylic. Mice will receive a subcutaneous injection of an antibi-
+otic, enrofloxacin (Baytril; 5 mg/kg), for 3 days as part of their post-operative care. At least one day before an experiment,
+the silicon layer of this implant will be removed to allow for probe insertion into the brain at the defined recording sites.
+This layer will be replaced with Kwiksil (World Precision Instruments) or Dura-Gel (Dowsil 3–4680).
+    When mouse experiments have been completed, euthanasia will be performed by infusion of ketamine (300 mg/kg) and
+dexmedetomidine (3 mg/kg) or prolonged exposure to CO2. Both methods are consistent with the recommendations of the
+American Veterinary Medical Association (AVMA) Guidelines on Euthanasia.
+
+Electrophysiology experiments
+We will use Neuropixels probes to record spiking activity and LFPs simultaneously from two PFC areas, two sensory
+areas and one parietal area in NHPs and mice during the behavioral task across multiple days. As detailed above, these
+areas are areas 45 and 46, pITC, mITC and area 7a in NHPs and ACA, ORB, VISp, AUDp and PTLp in mice. The feasi-
+bility of simultaneous recordings with Neuropixels has been shown in both mice [42] and NHPs [34,44]. Brain areas will
+be targeted using high-resolution structural MRI for NHPs (3D T1-weighted images, using an inversion-recovery prepared
+gradient echo sequence) and, for mice, by using stereotaxic coordinates and manipulator angle verified with sensory
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                               13 / 24
+response properties and/or reconstruction of probe trajectories by coating probes with DiI or DiO and using ex vivo
+brain imaging or post-hoc histology. For NHPs, ITC face patches will be identified by anatomical “bumps” on the lateral
+bank of the superior temporal sulcus [45]. Probes in NHPs will be inserted in the right hemisphere as there is a possible
+right-hemispheric bias for face processing [46,47], whereas probes in mice will be inserted in the left hemisphere to lever-
+age existing surgical and electrophysiological infrastructure.
+   For NHPs, we will semi-chronically implant (up to five of) the NHP version of the Neuropixels probes with probes
+attached to customized 3D-printed holders affixed to the skull (10 mm probes for frontal sites, and 45 mm probes for poste-
+rior sites) and, for mice, we will acutely insert (up to six) Neuropixels 1.0 probes on the day of the recording using Pinpoint
+software to guide locations.
+
+PFC perturbation experiments
+Activity in the PFC will be perturbed in a subset of recording experiments, as a causal test of GNWT versus IIT. According
+to GNWT, this should influence “ignition”, the phasic increase in neuronal activity that is necessary for conscious experi-
+ence; whereas for IIT, conscious experience does not depend critically on such phasic activity in the frontal cortical areas.
+   Manipulation trials will be randomly interleaved with no-stimulation trials. PFC activity manipulation will occur from
+0–0.5 s after stimulus onset in NHPs and mice, for irrelevant stimuli. Manipulation experiments in will only use one stim-
+ulus duration (0.5 s), in order to have a sufficient number of trials for analysis. If the causal manipulation at manipulation
+onset or offset induces consistent inappropriate behavioral responses (saccades/ licking on irrelevant trials), then we will
+extend the manipulation duration from 0.1 s before sensory stimulus onset to the end of the behavioral response window.
+We will also perform control trials in mice in which manipulation is performed outside of the sensory stimulation epoch and
+with wild-type mice that do not express channelrhodopsin. For NHPs, control trials will also be performed where electrical
+stimulation occurs during central fixation only.
+   Manipulation of PFC activity will be achieved by electrical stimulation (NHPs) and optogenetic silencing (mice) of the
+PFC on a trial-to-trial basis. For NHPs, we will replace Neuropixels in PFC (areas 45/46) with linear electrode arrays
+(e.g., 24-contacts, 200 µm spacing between contacts) for stimulation across cortical layers (stimulating electrodes held
+by the customized holders), after completing simultaneous recordings from PFC and posterior cortical sites. We will use
+high-frequency stimulation (e.g., 100 Hz, 200 µA, 400 µs biphasic pulses, simultaneously applied across 16 stimulating
+electrode contacts, to perturb “ignition”). In mice, we will use injections of a virus carrying the Cre-dependent red-shifted
+opsin ChrimsonR [36] or a similar red-shifted excitatory opsin into the ACA and ORB regions of a pan-inhibitory reporter
+line (Slc32a1-Cre a.k.a. Vgat-ires-Cre). Red light is less scattered by brain tissue, thus can reach deeper regions such as
+ORB with higher power. Photoactivating opsin-expressing inhibitory neurons effectively silences cortical activity and is a
+well-established technique used in our labs and others [37,48]. We will use a large diameter fiber-coupled light-emitting
+diode to provide broad-field PFC illumination, or a focused scanning laser to deliver light to the regions of interest, bilat-
+erally. We will validate the perturbational effect with electrophysiological recordings in pilot experiments prior to the main
+experiment. If methodological issues prevent the above method, we will use the VGAT-ChR2 mouse line (Vgat-ires-Cre
+x Ai32), in which channelrhodopsin is expressed in all GABAergic cortical neurons. Photoactivating the cells in this line
+effectively silences cortex activity and is a well-established technique used in our labs and others [37,48].
+
+Analysis plan
+Neuronal data pre-processing
+We will acquire high-pass-filtered (>500 Hz) signals sampled at 30 kHz (the action potential band), and low-pass filtered
+signals (<1 kHz) sampled at 2.5 kHz (the local field potential band) using the Open Ephys GUI [49]. The LFP band data
+will be pre-processed in MATLAB or Python to remove noisy channels or probes. The raw action potential (AP) band data
+will be pre-processed and then spike-sorted by a standardized spike-sorting pipeline that uses Kilosort via SpikeInterface
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                14 / 24
+[50]. Spike sorting will be followed by multi-step curation, including assessment of drift metrics, refractory period viola-
+tions, and waveform properties. We will apply the same set of quality metrics and curation procedures across all datasets
+and laboratories to ensure consistency and reproducibility. Based on our previous experience we expect to record from
+50–200 single units in the cortex per probe per session.
+   All spike data, LFP data, and behavioral metadata will be packaged into the Neurodata Without Borders [51] 2.0 data
+standard for sharing between groups within the project and for ultimate public release. Spike rate, LFP power and current
+source density (to localize cells/LFPs to cortical layers) analyses will also be performed using MATLAB or Python-based
+software [34,52].
+
+Decoding analysis
+We will perform decoding analyses using openly shared tools [52,53]. Briefly, we will calculate the number of spikes,
+sorted at the level of individual units, in each time window (dependent on the question; see Analysis plan for predictions
+below) across the trial [54]. Only ‘correct’ trials will be included (i.e., correct response to target stimulus and no response
+to non-target and irrelevant stimuli). For mice, we will only include trials when the mice were actively engaged in the
+task, defined as at least an 80% response rate to target trials in the preceding and following two minutes. For NHPs, we
+will only include trials during stable task performance with an overall accuracy of greater than 75% per session. We will
+then use a classifier, e.g., a support vector machine (SVM), scikit- learn package sklearn.svm.LinearSVC with ten-fold
+cross-validation at each bin independently (i.e., using spike counts for all cells in one session in each bin as input fea-
+tures, and classified stimulus label at each bin as output) [55].
+    When content-specific sensory region decoding is involved in the analysis, the recording data will be from the sensory
+region that is associated with the sensory content in the relevant trial. For example, if the stimulus being decoded is faces
+(NHPs) or visual gratings (mice), then we will use pITC (including PL), mITC (including ML) and VISp as the content-­
+specific sensory regions, respectively.
+    For NHPs, we will use neural activity to decode category (face vs. object) both within-condition (i.e., train and test with
+cross-validation for non-target relevant faces vs. non-target relevant objects, and separately for irrelevant faces vs. irrel-
+evant objects) and across-condition (e.g., train on non-target relevant faces vs. non-target relevant objects, and test on
+irrelevant stimuli). Across-condition decoding will be used for Question 1 and within-condition for Question 2 (see Analysis
+plan for predictions below). We will also decode stimulus orientation within category, a variable that was never reinforced,
+for non-target relevant and irrelevant stimuli combined (to yield sufficient trial numbers). For theories to pass questions
+involving decoding, decoding of both category and orientation (in at least one category) is required, reflecting the multidi-
+mensional character of consciousness.
+    Since each mouse only experiences one modality as relevant, for mice we will focus on the irrelevant stimuli and
+decode their identity within-condition (i.e., train and test with cross-validation on irrelevant tone 1 vs. irrelevant tone
+2 in a visual-trained mouse) for all decoding-related questions. This analysis is comparable to orientation decoding
+in NHPs, since the irrelevant stimuli were never reinforced, and it eliminates potential confounds from movement or
+­reinforcement-related neural activity.
+    This decoding analysis is crucial, as both Integrated Information Theory (IIT) and Global Neuronal Workspace (GNW)
+ posit that every consciously experienced content (here a stimulus feature such as orientation) should be decodable from
+ activity in brain areas relevant to consciousness. Successful decoding would thus provide empirical support for the pres-
+ ence of orientation information within the neural substrate of conscious perception.
+
+Functional connectivity analysis
+We will use the pairwise phase consistency metric to assess functional connectivity between brain areas’ spikes and
+LFPs. Content-specific spike-LFP pairwise phase consistency will be calculated for non-target and irrelevant stimuli. The
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                 15 / 24
+pairwise phase consistency metric is unbiased by the number of trials or spikes [56,57]. For each neuron, we will calculate
+the LFP phase relative to individual spikes, using the Fourier transform of the LFP (Hanning windowed). We will then cal-
+culate the pairwise phase consistency using the FieldTrip toolbox [58]. When calculating the pairwise phase consistency
+from channels on the same probe, we will exclude LFP channels within 40 microns of the best channel of the sorted unit.
+To test the predictions of IIT, we will apply pairwise phase consistency analyses to neurons and LFPs significantly acti-
+vated (based on a t test) in response to the stimuli, i.e., increased spike rate for neurons or increased gamma power for
+LFPs, in the window between 250 ms post-stimulus onset to stimulus offset for NHPs and between 150 ms post-stimulus
+onset to stimulus offset for mice, compared to baseline (0–250 ms pre-stimulus onset). To test the predictions of GNWT,
+we will apply pairwise phase consistency analyses between significantly responsive neurons/LFPs (in the window 250–
+500 ms post-stimulus onset for NHPs and 150–400 ms post-stimulus onset in mice, compared to the baseline 0–250 ms
+pre-stimulus onset) and all other LFPs/neurons located in putative GNWT brain areas, because GNWT predicts that the
+early local sensory response is broadcast during ignition into the global workspace and made available to its components,
+whether or not each of them adds additional processing.
+
+Statistical and sampling plan
+Bayes factor analysis
+We will use Bayesian t tests and a (half) Cauchy distribution (width, r = 0.707) to calculate the Bayes factors (BFs)
+which will be used to interpret evidence for each theory. For each question, we will aim to continue data collection until
+the BF is at least 10X in favor for either of our alternative/null hypotheses (and at least nine recording sessions from
+each macaque, and nine recording sessions from each region of interest in mice, based on frequentist power analy-
+sis below). However, we will enforce a sample size limitation of 15 recording sessions in each NHP and, for mice, 4
+recordings per area per mouse, with a maximum of 20 mice. These sample sizes take into account factors such as the
+viability of probes in chronic recordings in NHPs and the effects of multiple probe penetrations in acute recordings in
+mice. The theory interpretations of each question are still feasible even if these maximal sample sizes yield a lower BF
+than 10 (see Table 1), i.e., BFs from 3 to 10 will be considered as moderate evidence, and BFs larger than 10 consid-
+ered as strong evidence.
+
+Frequentist statistical analysis
+We will also report frequentist statistics, to complement the information provided by the BFs (although evidence for
+each theory will be based on BFs). We will perform at least nine recording sessions from each macaque (two total),
+and nine recording sessions from each region of interest in mice. Based on our pilot recordings of ≥50 units per
+region of interest per session, we will exceed robust sample sizes for decoding, estimated from our pilot analyses,
+and published sample sizes yielding robust functional connectivity results from pairwise phase consistency analy-
+ses [55–57]. All neurons and correct trials will be included in our analyses. Our sampling plan is based on the power
+analysis of pilot data from Neuropixels recordings in the visual (VISp) and/or auditory (AUDp/AUDpo/AUDd) cortex
+during the mouse behavioral task (Fig 1 in S1 Supporting Information in S1 File). We trained an SVM classifier to
+decode the identity of the task irrelevant stimulus using mean spike counts measured from simultaneously recorded
+neurons (Fig 2 in S1 Supporting Information in S1 File). This classifier accurately decoded stimulus identity in both
+the visual-­relevant group (N = 3 mice) and the auditory-relevant group (N = 4 mice). We computed the pooled standard
+deviation of classifier performance (using 25 neurons and 30 trials/condition, when decoder performance saturated)
+and used this to estimate the number of samples needed given an alpha value of 0.05 and power of 0.95. Because we
+seek relatively large effect sizes, we set a threshold for decoding performance at 0.7, which equates to an effect size
+of 1.93 and a required sample size of 8.09 at 0.95 power (rounded up to nine recording sessions). See S1 Supporting
+Information for full details in S1 File.
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                            16 / 24
+Discussion
+Analysis plan for predictions
+    Question 1a: Where is conscious content represented?. GNWT prediction: Stimuli are decodable from PFC and
+PPC.
+    IIT prediction: Stimuli are maximally decodable from PPC and/or sensory regions.
+    To address the theory predictions regarding the location of conscious content in the brain, we will assess the average
+decoding performance in the PFC, PPC, and content-dependent sensory regions during both the stimulus onset win-
+dow (250–500 ms post-stimulus onset for NHPs and 150–400 ms post-stimulus onset for mice) and the stimulus duration
+window (250 ms post-stimulus onset – stimulus offset for NHPs and 150 ms post-stimulus onset – stimulus offset for
+mice). These time windows were chosen to reflect the likely time period in which conscious processing of the stimuli in the
+predicted cortical areas would occur. Subsequently, the mouse time window is shifted earlier than the NHP window, due
+toknown faster processing speeds of neuronal signals to the cortex [31]. Output labels will be randomly permuted (1,000
+times) for each time window, and actual and permuted decoding accuracies will be compared. A Bayesian t test will also
+be applied for each time window, comparing evidence for greater than chance decoding using a half Cauchy prior (width,
+r = 0.707) versus chance decoding with a point nil.
+    To test GNWT’s prediction that conscious content is encoded in the PFC and PPC, we will test whether average decod-
+ing performance is greater than chance in PFC and in PPC in the stimulus onset time window. A BF greater than 10 will be
+interpreted as strong evidence for alternative hypothesis (H1), that performance is greater than chance (Table 1: PFC: B;
+PPC: D), while a BF less than 1/10 will be taken as strong evidence for null hypothesis (H0), that performance is equal to
+chance (Table 1: PFC: A; PPC: C). A pass for GNWT requires evidence that decoder performance is above chance in both
+PFC (Fig 3 and Table 1: B) and PPC (Fig 3 and Table 1: D).
+    To test IIT’s alternative prediction that conscious content is instead maximally encoded in the PPC and/or sensory
+regions than in the PFC, we will compare the average decoding performance between these regions, within the stimulus
+duration window. A BF greater than 10 will be interpreted as strong evidence for H1, that performance is greater in PPC
+and/or sensory regions (Table 1: F), while a BF less than 1/10 will be taken as strong evidence for H0, that performance
+is equal between regions (Table 1: E). A pass for IIT requires evidence that decoder performance is higher in PPC and/or
+sensory regions than in the PFC (Fig 3 and Table 1: F).
+    Question 1b: Is PFC required for consciousness?. GNWT prediction: Decoding from PPC should be modified
+(increased or decreased) by PFC manipulation, due to interference with ignition, while decoding from sensory areas
+(visual or auditory cortices) should be preserved in the early time-window before ignition.
+    IIT prediction: Decoding from PPC and/or sensory regions is not obliterated by PFC manipulation.
+    In order to test the theories’ differing predictions about whether the PFC is a required brain area for consciousness, we
+will assess whether the average decoding performance is different during PFC manipulation trials (cf. no manipulation
+trials) in the PPC (GNWT) and PPC/sensory regions (IIT), within the stimulus onset time window.
+    To address GNWT’s prediction that the PFC is required for consciousness due to ignition, we will test whether
+the average decoding performance in PPC is affected by PFC manipulation in the stimulus onset window. For each
+comparison, a BF less than 1/10 will be taken as strong evidence for the H0, that there is no difference (Table 1: H0
+vs. H1: A; H0 vs. H2: C). A BF greater than 10 will be interpreted as strong evidence for either H1, that PPC perfor-
+mance is altered with PFC manipulation (Table 1: B) or H2, that PPC is lower with PFC manipulation (Table 1: D).
+GNWT predicts that decoding performance in the PPC will be affected by PFC manipulation, specifically, perfor-
+mance should be lower for mice and either higher or lower for NHPs, based on higher confidence in the inhibitory
+effect of the PFC manipulation in mice vs. NHPs [37,48,59,60]. Thus, a GNWT pass requires that decoder per-
+formance in PPC after PFC manipulation is lower in mice (Fig 3 and Table 1: D) and different in NHPs (Fig 3 and
+Table 1: B or D).
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                              17 / 24
+Fig 3. Schematic of the analysis plan in relation to the theory-specific predictions. This figure displays the decoding, activation and connectivity-­
+based tests designed to assess the predictions from the Global Neuronal Workspace Theory (GNWT) and Integrated Information Theory (IIT) across
+three key questions. Bayesian model comparison is used across all analyses. Bayes Factors (BF) > 10 are interpreted as strong evidence for the
+alternative hypothesis (H1), while BF < 1/10 supports the null hypothesis (H0). Letters next to each arrow (A–J) correspond to hypothesis outcomes listed
+in Table 1. Pass criteria for each theory are indicated by framed “GNWT pass” or “IIT pass” labels within each panel. Question 1: Where is conscious
+content represented? Question 1A (top left): Decoding performance is compared across prefrontal cortex (PFC), posterior parietal cortex (PPC), and
+sensory regions. GNWT predicts above-chance decoding in both PFC (B) and PPC (D) during the stimulus onset window (left panel), while IIT predicts
+stronger decoding in PPC and/or sensory regions than in PFC (F) during the stimulus duration window (right panel). Question 1B (bottom left): The effect
+of PFC manipulation on decoding in PPC and/or sensory regions is assessed. GNWT predicts a change in PPC decoding during the stimulus onset
+window (D for mice, B for NHPs). IIT predicts above chance decoding will persist in PPC (A and C) and/or sensory regions (E and G) during the stimulus
+onset window. Question 2: When is conscious content represented? Decoding generalization is tested across time using a sliding 250 ms window.
+GNWT predicts above-chance generalization in both PFC (B) and PPC (D) during the stimulus onset window (left subpanel). It also predicts a second
+ignition signal at stimulus offset (center subpanel), shown by significantly increased spiking compared to baseline (as decoding is not possible after stim-
+ulus offset) (F, H). IIT predicts sustained decoding generalization throughout the stimulus duration period in PPC and/or sensory regions (J; right sub-
+panel). Question 3: What functional connectivity supports consciousness? Pairwise phase consistency between brain regions is measured to evaluate
+changes in functional connectivity. GNWT predicts increased connectivity from pre-stimulus to stimulus onset between PFC and PPC (B), and between
+PFC/ PPC and sensory regions (D, F). IIT predicts increased connectivity during the stimulus duration period within and between sensory regions (H, J).
+Dashed lines represent weak theoretical commitment.
+
+https://doi.org/10.1371/journal.pone.0342770.g003
+
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                            18 / 24
+   To test IIT’s prediction that PFC is not required for consciousness, we will also assess whether average decoding
+performance in the PPC and/or sensory regions is not obliterated by PFC manipulation in the stimulus onset window. A
+BF greater than 10 will be interpreted as strong evidence for H1, that PPC and/or sensory region decoding performance is
+greater than chance with PFC manipulation (Table 1: F). A BF less than 1/10 will be taken as evidence for H0, that decod-
+ing performance is equal to chance after manipulation (Table 1: E). To pass, IIT requires performance to be greater than
+chance with PFC manipulation for PPC and/or sensory regions (Fig 3 and Table 1: F).
+   Question 2: When is conscious content represented?. GNWT prediction: Decoding generalizes in PFC and PPC
+during ignition, and continues as long as the stimulus is consciously perceived. As it is not clear whether the subject
+continues to consciously see the stimulus at later times, as well as notices the offset as neither is task-relevant, GNWT
+does not make any strong prediction about stimulus offset. A bimodal distribution of cross-condition decodability (high
+versus chance decodability) might be observed reflecting this variability of conscious access to stimulus offset.
+   IIT prediction: Decoding in PPC and/or sensory regions generalizes across stimulus duration.
+   To assess the theories’ predictions regarding the timing of the neuronal processing of conscious content, we will look
+at whether decoders trained on multiple time bins using a sliding window approach are able to generalize to the theory-­
+specified time windows: the stimulus onset window (GNWT) and stimulus duration window (IIT). The average cross-­
+temporal decoder generalization will be computed by training the decoder in a 250 ms window moving every 100 ms, from
+250 ms pre-stimulus onset to 250 ms post-stimulus offset, and testing each time window’s decoder on every other time
+window’s data. Output labels will be randomly permuted (1,000 times) for each time window, and actual and permuted
+decoding accuracies will be compared at each window, with Holm’s correction applied to account for multiple compari-
+sons. A Bayesian t test will also be applied at each time window, comparing evidence for greater than chance decoding
+using a half Cauchy prior (width, r = 0.707) versus chance decoding with a point nil.
+   To test GNWT’s prediction that conscious processing is neuronally represented by an ignition signal just after stimulus
+onset in PFC and PPC, we will assess whether average decoding performance generalization is above chance level,
+in both PFC and PPC, in the stimulus onset window (250–500 ms after stimulus onset for NHPs, and 150–400 ms after
+stimulus onset for mice). A BF greater than 10 will be interpreted as strong evidence for H1, that decoding generalization
+is higher than chance (Table 1: PFC: B; PPC: D), and a BF less than 1/10 will be taken as strong evidence for H0, that
+decoding generalization is equal to chance (Table 1: PFC: A; PPC: C).
+   To test GNWT’s prediction that the ignition signal should also occur just after stimulus offset, we will assess whether
+spike rate in PFC and PPC in the stimulus offset window (250–500 ms after stimulus offset for NHPs, and 150–400 ms
+after stimulus offset for mice) is greater than the baseline spike rate (0–250 ms before stimulus onset) using a t test and
+Bayesian t test. The blank screen after stimulus offset precludes the use of decoding in this period. A BF greater than 10
+will be interpreted as strong evidence for H1, that spike rate at stimulus offset is greater than at baseline (Table 1: PFC:
+F; PPC: H), and a BF less than 1/10 will be taken as evidence for H0, that spike rate at stimulus offset is equal to that at
+baseline (Table 1: PFC: E; PPC: G).
+   However, to account for the possibility that on some trials animals may not be consciously aware of the stimulus
+towards the end of the presentation window and thus, would not generate the offset ignition signal corresponding to the
+new experience, we will first assess this possibility and then attempt to filter these cases out (but see controls – including
+surprise memory task – for similar human task which suggest subjects are aware of the stimulus across its duration for
+both relevant and irrelevant stimuli [6]). To test this, we will first measure the average variance in spike rate in the stim-
+ulus onset window and compare it to the stimulus offset window, in both PFC and PPC cells, using an F test (α = 0.05).
+Significantly higher variance post-stimulus offset may suggest bimodal responses. If variance is not significantly different,
+we will run the spike rate analysis to test ignition at stimulus offset on all trials. If variance is significantly different in the
+stimulus offset window, we will extract the spike rates in this window and test for a bimodal distribution using the dip test
+(α = 0.05). If there is no bimodality, we will run the spike rate analysis to test ignition at stimulus offset on all trials. If there
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                       19 / 24
+is bimodality, we will use Gaussian mixture models (assigning trials to the Gaussian distribution with highest probability) to
+split the trials into the low and high spiking groups (which may reflect perceptual differences between the groups), and run
+the spike rate analysis to test ignition at stimulus offset on the high group.
+   For GNWT to pass this question, generalization is required to be greater than chance in the stimulus onset window in
+both PFC (Fig 3 and Table 1: B) and PPC (Fig 3 and Table 1: D). Due to the possibility that on some trials animals may
+not be consciously aware of the stimulus towards the end of the presentation window and thus, would not generate the
+offset ignition signal corresponding to the new experience, there is only a weak theoretical commitment from GNWT to the
+requirement that the spike rate be greater than baseline in the stimulus offset window in both PFC (Fig 3 and Table 1: F)
+and PPC (Fig 3 and Table 1: H).
+   To test IIT’s prediction that conscious content will be neuronally represented across the duration of stimulus presenta-
+tion, we will assess whether average decoding performance generalization is above chance level in the PPC and/or sen-
+sory regions, across the stimulus duration time window. A BF greater than 10 will be interpreted as strong evidence for H1,
+that decoding generalization is higher than chance (Table 1: J), and a BF less than 1/10 will be taken as strong evidence
+for H0, that decoding generalization is equal to chance (Table 1: I). For a pass, IIT requires generalization across stimulus
+duration to be greater than chance (Fig 3 and Table 1: J).
+   Question 3: What functional connectivity supports consciousness?. GNWT prediction: Increased connectivity
+between PFC and PPC and sensory regions during ignition post-stimulus onset and offset.
+   IIT prediction: Maintained content-specific connectivity within and between sensory regions, across stimulus duration.
+   To test the theories’ diverging predictions regarding the functional connectivity of the neuronal representation of con-
+scious content, we will look at whether there is an increase in the average pairwise phase consistency between PFC
+and PPC (for GNWT), between PFC and sensory regions (for GNWT), between PPC with sensory regions (for GNWT),
+between sensory regions (only in NHPs for IIT) and within sensory regions (for IIT), from the baseline pre-stimulus onset
+window (0–250 ms pre-stimulus onset) to the stimulus onset window (250–500 ms post-stimulus onset for NHPs and 150–
+400 ms post-stimulus onset for mice; for GNWT) and stimulus duration window (for IIT). To calculate this, we will first find
+the spike-LFP pairwise phase consistency [56,57] for each area pair being tested, then, we will compare the consistency
+at pre-stimulus onset with both the consistency at the two tested time windows. We will use t tests and Bayesian t tests.
+   To test GNWT’s prediction that connectivity between the PFC and PPC with sensory brain regions increases after stimu-
+lus presentation, we will assess whether the difference in pairwise phase consistency is greater than baseline in the stimulus
+onset window in the PFC and PPC pair, the PFC and sensory regions pair, and the PPC and sensory regions pair. A BF
+greater than 10 will be interpreted as strong evidence for H1, that the difference in pairwise phase consistency is greater than
+baseline (Table 1: PFC/PPC pair: B; PFC and sensory regions pair: D; PPC and sensory regions pair: F), while a BF less than
+1/10 will be taken as strong evidence for H0, that pairwise phase consistency is equal to baseline (Table 1: PFC/PPC pair: A;
+PFC and sensory regions pair: C; PPC and sensory regions pair: E). To pass, GNWT requires the pairwise phase consistency
+increase to be greater than baseline in the stimulus onset window in the PFC and PPC pair (Fig 3 and Table 1: B) and the
+PFC and sensory regions pair (Fig 3 and Table 1: D) and the PPC and sensory regions pair (Fig 3 and Table 1: F).
+   To test IIT’s prediction that connectivity within the activated posterior brain regions is increased in the duration of
+stimulus presentation, we will look at whether the difference in pairwise phase consistency is greater than baseline in the
+stimulus duration window within and between the activated neurons/LFPs in sensory regions. A BF greater than 10 will
+be interpreted as strong evidence for H1, that the difference in consistency is greater than baseline (Table 1: higher-order
+and lower-order sensory regions pair in NHPs: H; within sensory regions pair: J), while a BF less than 1/10 will be taken
+as strong evidence for H0, that pairwise phase consistency is equal to baseline (Table 1: higher-order and lower-order sen-
+sory regions pair: G; within sensory regions pair: I). To pass, IIT requires the pairwise phase consistency increase to be
+greater than baseline in the stimulus duration window in the higher-order and lower-order sensory region pairs (Fig 3 and
+Table 1: H) and within sensory regions (Fig 3 and Table 1: J).
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                 20 / 24
+Supporting information
+S1 File. Pilot data.
+(DOCX)
+
+
+Acknowledgments
+We thank Dawid Potgieter for initiating these series of five Adversarial Collaborations in Consciousness Science. We
+thank all participants at the Templeton Workshop on Testing Theories of Consciousness in Animals Models that took place
+in October 2019 at the Allen Institute in Seattle for helping shape the current protocol – Anne Churchland, Zach Mainen,
+Lucia Melloni, Masanori Murayama, Yuval Nir, Michael Pitts, Pieter Roelfsema, Massimo Scanziani and Mark Schnitzer.
+
+Author contributions
+Conceptualization: Christof Koch, Lionel Naccache, Giulio Tononi, Shawn Olsen, Maria Neimark Geffen, Theofanis I.
+  Panagiotaropoulos, Yuri B. Saalmann.
+Data curation: Matilda Gibbons, Ethan G. McBride, Raghuram Holenarasipura Venkatasubbaiah, Jacqulyn R. Kuyat,
+  Vayle LaFehr, Nathan W. Vogler, Corbett Bennett, Arjun Sridhar, Benjamin Hardcastle, Hannah Cabasco.
+Formal analysis: Matilda Gibbons, Ethan G. McBride, Raghuram Holenarasipura Venkatasubbaiah, Jacqulyn R. Kuyat,
+  Nathan W. Vogler, Shawn Olsen, Maria Neimark Geffen, Theofanis I. Panagiotaropoulos, Yuri B. Saalmann.
+Funding acquisition: Christof Koch, Lionel Naccache, Giulio Tononi, Shawn Olsen, Maria Neimark Geffen, Theofanis I.
+  Panagiotaropoulos, Yuri B. Saalmann.
+Investigation: Matilda Gibbons, Ethan G. McBride, Raghuram Holenarasipura Venkatasubbaiah, Majid Khalili-Ardali,
+   Jacqulyn R. Kuyat, Vayle LaFehr, Nathan W. Vogler, Mohammadali Kheirkhah Ravandi, Ming-Jiun Tsai, Hannah
+   Cabasco, Shawn Olsen, Maria Neimark Geffen, Theofanis I. Panagiotaropoulos, Yuri B. Saalmann.
+Methodology: Matilda Gibbons, Ethan G. McBride, Raghuram Holenarasipura Venkatasubbaiah, Majid Khalili-Ardali,
+  Jacqulyn R. Kuyat, Samuel Gale, Mohammadali Kheirkhah Ravandi, Ming-Jiun Tsai, Corbett Bennett, Shawn Olsen,
+  Maria Neimark Geffen, Theofanis I. Panagiotaropoulos, Yuri B. Saalmann.
+Software: Ethan G. McBride, Samuel Gale, Arjun Sridhar, Benjamin Hardcastle.
+Supervision: Ethan G. McBride, Corbett Bennett, Shawn Olsen, Maria Neimark Geffen, Theofanis I. Panagiotaropoulos,
+  Yuri B. Saalmann.
+Visualization: Matilda Gibbons, Ethan G. McBride, Raghuram Holenarasipura Venkatasubbaiah, Shawn Olsen, Maria
+   Neimark Geffen, Theofanis I. Panagiotaropoulos, Yuri B. Saalmann.
+Writing – original draft: Matilda Gibbons, Ethan G. McBride, Raghuram Holenarasipura Venkatasubbaiah, Majid Khalili-
+  Ardali, Jacqulyn R. Kuyat, Christof Koch, Lionel Naccache, Giulio Tononi, Shawn Olsen, Maria Neimark Geffen,
+  Theofanis I. Panagiotaropoulos, Yuri B. Saalmann.
+Writing – review & editing: Matilda Gibbons, Ethan G. McBride, Raghuram Holenarasipura Venkatasubbaiah, Majid
+  Khalili-Ardali, Jacqulyn R. Kuyat, Nathan W. Vogler, Mohammadali Kheirkhah Ravandi, Ming-Jiun Tsai, Christof
+  Koch, Lionel Naccache, Giulio Tononi, Shawn Olsen, Maria Neimark Geffen, Theofanis I. Panagiotaropoulos, Yuri B.
+  Saalmann.
+
+
+References
+1.   Chalmers DJ. Facing up to the problem of consciousness. J Conscious Stud. 1995;2:200–19.
+2.   Chalmers DJ. On the search for the neural correlate of consciousness. Sci Conscious. 1998;II(2):219.
+
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                         21 / 24
+ 3.   Crick F, Koch C. Towards a neurobiological theory of consciousness. vol. 2. Saunders Scientific Publications; 1990. p. 263–75.
+ 4.   Seth AK, Bayne T. Theories of consciousness. Nat Rev Neurosci. 2022;23(7):439–52. https://doi.org/10.1038/s41583-022-00587-4 PMID:
+      35505255
+ 5.   Melloni L, Mudrik L, Pitts M, Koch C. Making the hard problem of consciousness easier. Science. 2021;372(6545):911–2. https://doi.org/10.1126/
+      science.abj3259 PMID: 34045342
+ 6.   Cogitate Consortium, Ferrante O, Gorska-Klimowska U, Henin S, Hirschhorn R, Khalaf A, et al. Adversarial testing of global neuronal workspace
+      and integrated information theories of consciousness. Nature. 2025;642(8066):133–42. https://doi.org/10.1038/s41586-025-08888-1 PMID:
+      40307561
+ 7.   Melloni L, Mudrik L, Pitts M, Bendtz K, Ferrante O, Gorska U, et al. An adversarial collaboration protocol for testing contrasting predictions of global
+      neuronal workspace and integrated information theory. PLoS One. 2023;18(2):e0268577. https://doi.org/10.1371/journal.pone.0268577 PMID:
+      36763595
+ 8.   Albantakis L, Barbosa L, Findlay G, Grasso M, Haun AM, Marshall W, et al. Integrated information theory (IIT) 4.0: Formulating the properties of
+      phenomenal existence in physical terms. PLoS Comput Biol. 2023;19(10):e1011465. https://doi.org/10.1371/journal.pcbi.1011465 PMID: 37847724
+ 9.   Tononi G, Boly M, Massimini M, Koch C. Integrated information theory: from consciousness to its physical substrate. Nat Rev Neurosci.
+      2016;17(7):450–61. https://doi.org/10.1038/nrn.2016.44 PMID: 27225071
+10.   Dehaene S, Naccache L. Towards a cognitive neuroscience of consciousness: basic evidence and a workspace framework. Cognition. 2001;79(1–
+      2):1–37. https://doi.org/10.1016/s0010-0277(00)00123-2 PMID: 11164022
+11.   Dehaene S, Changeux J-P. Experimental and theoretical approaches to conscious processing. Neuron. 2011;70:200–27.
+12.   Mudrik L, Boly M, Dehaene S, Fleming SM, Lamme V, Seth A, et al. Unpacking the complexities of consciousness: Theories and reflections. Neu-
+      rosci Biobehav Rev. 2025;170:106053. https://doi.org/10.1016/j.neubiorev.2025.106053 PMID: 39929381
+13.   Klincewicz M, Cheng T, Schmitz M, Sebastián MÁ, Snyder JS. What makes a theory of consciousness unscientific? Nat Neurosci. 2025;28:689–93.
+14.   Tononi G, Albantakis L, Barbosa L, Boly M, Cirelli C, Comolatti R, et al. Consciousness or pseudo-consciousness? A clash of two paradigms. Nat
+      Neurosci. 2025;28(4):694–702. https://doi.org/10.1038/s41593-025-01880-y PMID: 40065188
+15.   Whyte CJ, Smith R. The predictive global neuronal workspace: A formal active inference model of visual consciousness. Prog Neurobiol.
+      2021;199:101918. https://doi.org/10.1016/j.pneurobio.2020.101918 PMID: 33039416
+16.   Doerig A, Schurger A, Herzog MH. Hard criteria for empirical theories of consciousness. Cogn Neurosci. 2021;12(2):41–62. https://doi.org/10.1080/
+      17588928.2020.1772214 PMID: 32663056
+17.   Koch C, Massimini M, Boly M, Tononi G. Neural correlates of consciousness: progress and problems. Nat Rev Neurosci. 2016;17(5):307–21.
+      https://doi.org/10.1038/nrn.2016.22 PMID: 27094080
+18.   Dehaene S, Changeux J-P, Naccache L, Sackur J, Sergent C. Conscious, preconscious, and subliminal processing: a testable taxonomy. Trends
+      Cogn Sci. 2006;10(5):204–11. https://doi.org/10.1016/j.tics.2006.03.007 PMID: 16603406
+19.   Mashour GA, Roelfsema P, Changeux JP, Dehaene S. Conscious processing and the global neuronal workspace hypothesis. Neuron.
+      2020;105:776–98.
+20.   Naccache L, Sergent C, Dehaene S, Wang X-J, Farisco M, Changeux J-P. GNW theoretical framework and the ‘Adversarial testing of global neuro-
+      nal workspace and integrated information theories of consciousness’. Neurosci Conscious. In press.
+21.   Ben-Haim MS, Dal Monte O, Fagan NA, Dunham Y, Hassin RR, Chang SWC, et al. Disentangling perceptual awareness from nonconscious
+      processing in rhesus monkeys (Macaca mulatta). Proc Natl Acad Sci U S A. 2021;118(15):e2017543118. https://doi.org/10.1073/pnas.2017543118
+      PMID: 33785543
+22.   Tasserie J, Uhrig L, Sitt JD, Manasova D, Dupont M, Dehaene S, et al. Deep brain stimulation of the thalamus restores signatures of conscious-
+      ness in a nonhuman primate model. Sci Adv. 2022;8(11):eabl5547. https://doi.org/10.1126/sciadv.abl5547 PMID: 35302854
+23.   Zeng H, Jiang Y, Beer-Hammer S, Yu X. Awake Mouse fMRI and Pupillary Recordings in the Ultra-High Magnetic Field. Front Neurosci.
+      2022;16:886709. https://doi.org/10.3389/fnins.2022.886709 PMID: 35903811
+24.   Kissinger ST, O’neil E, Li B, Johnson KW, Krajewski JL, Kato AS. Distinctive Neurophysiological Signatures of Analgesia after Inflammatory Pain in
+      the ACC of Freely Moving Mice. J Neurosci. 2024;44(29):e2231232024. https://doi.org/10.1523/JNEUROSCI.2231-23.2024 PMID: 38755005
+25.   Tsuchiya N, Wilke M, Frässle S, Lamme VAF. No-Report Paradigms: Extracting the True Neural Correlates of Consciousness. Trends Cogn Sci.
+      2015;19(12):757–70. https://doi.org/10.1016/j.tics.2015.10.002 PMID: 26585549
+26.   Calabrese E, Badea A, Coe CL, Lubach GR, Shi Y, Styner MA, et al. A diffusion tensor MRI atlas of the postmortem rhesus macaque brain. Neuro-
+      image. 2015;117:408–16. https://doi.org/10.1016/j.neuroimage.2015.05.072 PMID: 26037056
+27.   Bakker R, Tiesinga P, Kötter R. The Scalable Brain Atlas: Instant Web-Based Access to Public Brain Atlases and Related Content. Neuroinformat-
+      ics. 2015;13(3):353–66. https://doi.org/10.1007/s12021-014-9258-x PMID: 25682754
+28.   Hawrylycz M, Ng L, Feng D, Sunkin S, Szafer A, Dang C. The Allen Brain Atlas. In: Kasabov N, editor. Springer Handbook of Bio-/Neuroinformat-
+      ics. Springer Berlin Heidelberg; 2014. p. 1111–26. https://doi.org/10.1007/978-3-642-30574-0_62
+29.   Wang Q, Ding S-L, Li Y, Royall J, Feng D, Lesnar P, et al. The Allen Mouse Brain Common Coordinate Framework: A 3D Reference Atlas. Cell.
+      2020;181(4):936–953.e20. https://doi.org/10.1016/j.cell.2020.04.007 PMID: 32386544
+
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                              22 / 24
+30.   LeDoux JE, Brown R. A higher-order theory of emotional consciousness. Proc Natl Acad Sci U S A. 2017;114(10):E2016–25. https://doi.
+      org/10.1073/pnas.1619316114 PMID: 28202735
+31.   Schmolesky MT, Wang Y, Hanes DP, Thompson KG, Leutgeb S, Schall JD, et al. Signal timing across the macaque visual system. J Neurophysiol.
+      1998;79(6):3272–8. https://doi.org/10.1152/jn.1998.79.6.3272 PMID: 9636126
+32.   Percie du Sert N, Hurst V, Ahluwalia A, Alam S, Avey MT, Baker M, et al. The ARRIVE guidelines 2.0: Updated guidelines for reporting animal
+      research. J Cereb Blood Flow Metab. 2020;40(9):1769–77. https://doi.org/10.1177/0271678X20943823 PMID: 32663096
+33.   Akil O, Oursler AE, Fan K, Lustig LR. Mouse Auditory Brainstem Response Testing. Bio Protoc. 2016;6(6):e1768. https://doi.org/10.21769/BioPro-
+      toc.1768 PMID: 28280753
+34.   Redinbaugh MJ, et al. Thalamus modulates consciousness via layer-specific control of cortex. Neuron. 2020;106:66–75.e12.
+35.   Redinbaugh MJ, Afrasiabi M, Phillips JM, Kambi NA, Mohanta S, Raz A, et al. Thalamic deep brain stimulation paradigm to reduce consciousness:
+      Cortico-striatal dynamics implicated in mechanisms of consciousness. PLoS Comput Biol. 2022;18(7):e1010294. https://doi.org/10.1371/journal.
+      pcbi.1010294 PMID: 35816488
+36.   Klapoetke NC, Murata Y, Kim SS, Pulver SR, Birdsey-Benson A, Cho YK, et al. Independent optical excitation of distinct neural populations. Nat
+      Methods. 2014;11(3):338–46. https://doi.org/10.1038/nmeth.2836 PMID: 24509633
+37.   Li N, Chen S, Guo ZV, Chen H, Huo Y, Inagaki HK, et al. Spatiotemporal constraints on optogenetic inactivation in cortical circuits. Elife.
+      2019;8:e48622. https://doi.org/10.7554/eLife.48622 PMID: 31736463
+38.   Landi SM, Freiwald WA. Two areas for familiar face recognition in the primate brain. Science. 2017;357(6351):591–5. https://doi.org/10.1126/sci-
+      ence.aan1139 PMID: 28798130
+39.   PrimFace - Visiome Platform. Available from: https://visiome.neuroinf.jp/primface/
+40.   tarrlab - stimuli. Available from: https://sites.google.com/andrew.cmu.edu/tarrlab/stimuli
+41.   van Daal RJJ, Aydin Ç, Michon F, Aarts AAA, Kraft M, Kloosterman F, et al. Implantation of Neuropixels probes for chronic recording of neuronal
+      activity in freely behaving mice and rats. Nat Protoc. 2021;16(7):3322–47. https://doi.org/10.1038/s41596-021-00539-9 PMID: 34108732
+42.   Bennett C, Ouellette B, Ramirez TK, Cahoon A, Cabasco H, Browning Y, et al. SHIELD: Skull-shaped hemispheric implants enabling large-scale
+      electrophysiology datasets in the mouse brain. Neuron. 2024;112(17):2869-2885.e8. https://doi.org/10.1016/j.neuron.2024.06.015 PMID: 38996587
+43.   Birman D, Yang KJ, West SJ, Karsh B, Browning Y, et al, International Brain Laboratory. Pinpoint: trajectory planning for multi-probe electrophys-
+      iology and injections in an interactive web-based 3D environment. bioRxiv. 2023;:2023.07.14.548952. https://doi.org/10.1101/2023.07.14.548952
+      PMID: 37503284
+44.   Phillips JM, Afrasiabi M, Kambi NA, Redinbaugh MJ, Steely S, Johnson ER, et al. Primate thalamic nuclei select abstract rules and shape prefron-
+      tal dynamics. Neuron. 2025;113(12):2014-2027.e12. https://doi.org/10.1016/j.neuron.2025.03.021 PMID: 40233749
+45.   Arcaro MJ, Mautz T, Berezovskii VK, Livingstone MS. Anatomical correlates of face patches in macaque inferotemporal cortex. Proc Natl Acad Sci
+      U S A. 2020;117(51):32667–78. https://doi.org/10.1073/pnas.2018780117 PMID: 33277435
+46.   Júnior R de M, Marinho de Sousa B, Fukusima S. Hemispheric specialization in face recognition: From spatial frequencies to holistic/analytic cog-
+      nitive processing. Psychol Neurosci. 2014;7:503–11.
+47.   Tsao DY, Moeller S, Freiwald WA. Comparing face patch systems in macaques and humans. Proc Natl Acad Sci U S A. 2008;105(49):19514–9.
+      https://doi.org/10.1073/pnas.0809662105 PMID: 19033466
+48.   Gale SD, Strawder C, Bennett C, Mihalas S, Koch C, Olsen SR. Backward masking in mice requires visual cortex. Nat Neurosci. 2024;27(1):129–
+      36. https://doi.org/10.1038/s41593-023-01488-0 PMID: 37957319
+49.   Siegle JH, López AC, Patel YA, Abramov K, Ohayon S, Voigts J. Open Ephys: an open-source, plugin-based platform for multichannel electrophys-
+      iology. J Neural Eng. 2017;14(4):045003. https://doi.org/10.1088/1741-2552/aa5eea PMID: 28169219
+50.   AIND Staging. Available from: https://www.allenneuraldynamics.org/tools/spike-sorting-pipeline-code
+51.   Rübel O, Tritt A, Ly R, Dichter BK, Ghosh S, Niu L, et al. The Neurodata Without Borders ecosystem for neurophysiological data science. Elife.
+      2022;11:e78362. https://doi.org/10.7554/eLife.78362 PMID: 36193886
+52.   Dwarakanath A, Kapoor V, Werner J, Safavi S, Fedorov LA, Logothetis NK, et al. Bistability of prefrontal states gates access to consciousness.
+      Neuron. 2023;111(10):1666–83.e4. https://doi.org/10.1016/j.neuron.2023.02.027 PMID: 36921603
+53.   Afrasiabi M, Redinbaugh MJ, Phillips JM, Kambi NA, Mohanta S, Raz A, et al. Consciousness depends on integration between parietal cortex,
+      striatum, and thalamus. Cell Syst. 2021;12(4):363–373.e11. https://doi.org/10.1016/j.cels.2021.02.003 PMID: 33730543
+54.   Shimazaki H, Shinomoto S. A method for selecting the bin size of a time histogram. Neural Comput. 2007;19(6):1503–27. https://doi.org/10.1162/
+      neco.2007.19.6.1503 PMID: 17444758
+55.   Wood KC, Angeloni CF, Oxman K, Clopath C, Geffen MN. Neuronal activity in sensory cortex predicts the specificity of learning in mice. Nat Com-
+      mun. 2022;13(1):1167. https://doi.org/10.1038/s41467-022-28784-w PMID: 35246528
+56.   Vinck M, van Wingerden M, Womelsdorf T, Fries P, Pennartz CMA. The pairwise phase consistency: a bias-free measure of rhythmic neuronal
+      synchronization. Neuroimage. 2010;51(1):112–22. https://doi.org/10.1016/j.neuroimage.2010.01.073 PMID: 20114076
+
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                           23 / 24
+57.   Vinck M, Battaglia FP, Womelsdorf T, Pennartz C. Improved measures of phase-coupling between spikes and the Local Field Potential. J Comput
+      Neurosci. 2012;33(1):53–75. https://doi.org/10.1007/s10827-011-0374-4 PMID: 22187161
+58.   Oostenveld R, Fries P, Maris E, Schoffelen J-M. FieldTrip: Open source software for advanced analysis of MEG, EEG, and invasive electrophysio-
+      logical data. Comput Intell Neurosci. 2011;2011:156869. https://doi.org/10.1155/2011/156869 PMID: 21253357
+59.   Dorval AD, Grill WM. Deep brain stimulation of the subthalamic nucleus reestablishes neuronal information transmission in the 6-OHDA rat model
+      of parkinsonism. J Neurophysiol. 2014;111(10):1949–59. https://doi.org/10.1152/jn.00713.2013 PMID: 24554786
+60.   Chiken S, Nambu A. Mechanism of deep brain stimulation: inhibition, excitation, or disruption? Neurosci Rev J Bringing Neurobiol Neurol Psychia-
+      try. 2016;22:313–22.
+
+
+
+
+PLOS One | https://doi.org/10.1371/journal.pone.0342770 February 25, 2026                                                                       24 / 24
+

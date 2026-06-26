@@ -591,6 +591,12 @@ pub struct EngineState {
     /// were silently dropped, leaving the conversation with a tool_use that
     /// had no matching tool_result and a stalled agentic loop.
     pub approval_queue: std::collections::VecDeque<ToolCall>,
+    /// Tool-use ids whose remote approval response has already been consumed
+    /// (CS-JFC-007). A remote client can send two valid responses with distinct
+    /// sequence numbers for the same `tool_use_id`; without this, the second
+    /// rediscovers the still-unresolved tool call and dispatches it a second
+    /// time. One approval response authorizes at most one execution.
+    pub consumed_remote_approvals: std::collections::HashSet<String>,
     /// Active `AskUserQuestion` modal, if any. While `Some`, the agentic loop
     /// is parked (the question is the turn's terminal act) and key input is
     /// routed to the question handler. Resolved by submit (answer → tool_result)
@@ -1202,6 +1208,7 @@ impl EngineState {
             cwd,
             pending_approval: None,
             approval_queue: std::collections::VecDeque::new(),
+            consumed_remote_approvals: std::collections::HashSet::new(),
             pending_question: None,
             pending_elicitations: std::collections::VecDeque::new(),
             deferred_tool_uses: VecDeque::with_capacity(DEFERRED_TOOL_USES_CAP),

@@ -1,0 +1,2257 @@
+                                                Dynamics of Adaptive Continuous Attractor
+                                                            Neural Networks
+
+
+
+
+arXiv:2410.06517v1 [q-bio.NC] 9 Oct 2024
+                                               Yujun Li1 , Tianhao Chu3 , Si Wu2, 3
+                                           1 Yuanpei College, Peking University, China
+                                           2 School of Psychological and Cognitive Sciences,Peking University, China
+                                           3 Academy for Advanced Interdisciplinary Studies, Peking University, China
+
+                                               Keywords: CANN, neural adaptation, neural dynamics
+
+
+
+                                                                                     Abstract
+                                                     Attractor neural networks consider that neural information is stored as sta-
+                                                 tionary states of a dynamical system formed by a large number of interconnected
+                                                 neurons. The attractor property empowers a neural system to encode informa-
+                                                 tion robustly, but it also incurs the difficulty of rapid update of network states,
+                                                 which can impair information update and search in the brain. To overcome this
+                                                 difficulty, a solution is to include adaptation in the attractor network dynamics,
+                                                 whereby the adaptation serves as a slow negative feedback mechanism to desta-
+                                                 bilize which are otherwise permanently stable states. In such a way, the neural
+                                                 system can, on one hand, represent information reliably using attractor states, and
+                                                 on the other hand, perform computations wherever rapid state updating is involved.
+                                                 Previous studies have shown that continuous attractor neural networks with adap-
+                                                 tation (A-CANNs) exhibits rich dynamical behaviors accounting for various brain
+                                                 functions. In this paper, we present a comprehensive review of the rich diverse
+                                                 dynamics of A-CANNs. Moreover, we provide a unified mathematical framework
+                                                 to understand these different dynamical behaviors, and briefly discuss about their
+                                                 biological implications.
+
+
+                                           1    Introduction
+                                           Attractor networks are a class of neural network models which consider that neural
+                                           information is encoded as stationary states of a dynamical system formed by a large
+                                           number of interconnected neurons. An early influential attractor network model is the
+                                           Hopfield network [1], which considers that representations of information (neuronal
+                                           activity patterns) are stored as local minimums of an energy function of the network
+dynamics. The Hopfield model typically considers that the stored information repre-
+sentations are random patterns, which leads to discrete attractors in the state space (see
+Fig.1a). These discrete attractors ensure that once the initial state of the network falls
+into the basin of an attractor, the network state will robustly converge to it, achieving
+the so-called associative memory.
+    Although the Hopfield model can explain associative memory for independent in-
+formation representations, it falls to account for situations when representations are
+highly correlated or the information takes continuous values. In such a case, a new
+type of attractor network model called continuous attractor neural networks (CANNs)
+was developed [2, 3, 4], in which the network attractors form a continuous subspace
+to represent the stored information in a continuous manner (see Fig.1b), such as the
+orientation, head-direction, or spatial-location of an object [5, 6, 7]. A key property
+of a CANN is that the network is neutrally stable on the attractor space, which allows
+the neural system to track the movement of an object smoothly by updating the cor-
+responding neural representations continuously, such as for tracking head rotation or
+performing path integration [8, 9].
+
+
+
+
+                                            2
+  a           Discrete concept                     b        Continuous feature
+
+                                                                             Head direction
+
+
+
+
+        Dog           Cat           Bird
+
+              Discrete attractor                            Continuous attractor
+                        Concept 2
+
+
+
+                                                                                         Energy
+
+ Concept 1
+                                                                      U                State space
+                                       Concept 3
+
+
+                                                                 Attractor states         x
+
+
+
+
+Figure 1:     Discrete and continuous attractor network model. a. An illustration of discrete
+concept and discrete attractors. Each attractor represents a single concept or item, such as
+dog, cat and bird. b. An illustration of continuous feature and continuous attractor. Head
+direction cells represent the continuous angular orientations of the rodent’s head movement
+during exploration in a new environment. The stationary states of a CANN form a subspace
+in which the network states are neutrally stable. The subspace is illustrated as a canyon in the
+energy space. The movement of the network state along the canyon corresponds to the position
+shift of the bump.
+
+    Strictly speaking, both the Hopfield network and CANNs are idealised mathemati-
+cal models, which correspond to two extreme situations, respectively, i.e., when neural
+information representations are independent to each other or constitute a continuous
+spectrum. In reality, neural representations may have a correlation structure in between
+the two ends, and consequently, the structure of the attractor space of the neural net-
+work has a form in between those of the Hopfield network and CANNs. Nevertheless,
+through studying the simplified Hopfield network and CANNs, it gives us insight into
+understanding how general attractor networks contribute to brain functions.
+    The key property of an attractor network is that it holds information representations
+as stationary states of the network, which endows the neural system with the capacity
+of representing information reliably and retrieving information robustly. In practice,
+however, the neural system needs not only to represent information reliably, but also to
+process it efficiently. For instance, during a memory recall task, the neural system often
+needs to search memory candidates over a large state space by updating its current state
+
+
+                                               3
+rapidly. This requires the neural representation to have sufficient mobility, which seems
+to contradict with the demand of maintaining stability of information representation. To
+overcome this dilemma, a solution is to introduce an additional mechanism to destabi-
+lize attractors to increase the mobility of the network state, and such a mechanism can
+be neural adaptation.
+    Neural adaptation refers to a general phenomenon that a neural system exploits
+negative feedback to suppress its responses when the activity level is high. Neural
+adaptation can occur either at the single neuron level via spike frequency adaptation
+(SFA) [4, 10] or at the synapse level via short-term plasticity (STP) [11, 12, 13],
+both widely existing in neural systems. The time scale of neural adaptation is typically
+much slower than that of single neuron and synapse dynamics. Thus, by incorporating
+adaptation in an attractor network, it, on one hand, allows the network to hold an active
+state in a short time scale to encode information reliably, and on the other hand, enables
+the network to update states in a long time scale easily.
+    In previous works, the authors and their collaborates have studied the model of
+CANNs with adaptation [14, 15], referred to as adaptive CANNs (A-CANNs) here-
+after. They showed that an A-CANN exhibits rich dynamical behaviors not shared by
+a CANN without adaptation, and these rich dynamics contribute to various brain func-
+tions. In this paper, we provide a comprehensive review of these studies. In particular,
+we present new theoretical analyses which link the different dynamical behaviors re-
+ported in previous publications, and hence provide a unified mathematical framework
+to understand these different results. Limited by space, our focus is on presenting the
+mathematical analyses of the rich dynamics of A-CANNs, and their biological implica-
+tions are only briefly discussed.
+    The organization of the paper is as follows. In Sec.2, we first introduce a model of
+A-CANN which adopts SFA as the adaptation mechanism, and then present a projection
+method to simplify the dynamics of the A-CANN, which is crucial for theoretical anal-
+ysis. In Sec.3, we study the spontaneous dynamics of the A-CANN, including the static
+bump state when the adaptation is weak and the travelling wave state when the adapta-
+tion strength is large enough. In Sec.4, we study the tracking dynamics of the A-CANN
+when the network receives an external moving input. We show that depending on the
+relative strengths of adaptation and external input, the network exhibits three different
+states, which are smoothing tracking, oscillatory tracking, and travelling wave. The
+biological implications of these states are discussed. In Sec.5, we study the stochas-
+tic dynamics of the A-CANN when the adaptation is noisy. We show that when the
+noisy adaptation strength is around the boundary of travelling wave, the spontaneous
+dynamics of the network state exhibits the characteristic of Lévy flight. In Sec.6, over-
+all conclusions and discussions of this work are given. Finally, Appendixes present the
+detailed mathematical analyses of the network model.
+
+
+
+
+                                            4
+    a                                                             b
+                                               Inh. synapse
+                                               Exc. synapse
+            Global
+            Inhibition
+
+
+
+
+                                  ,                                     Recurrent interaction
+                                                                        Adaptation current
+                                                                        External feedforward input
+    c
+    U                         U
+                                                                 v0                   v1
+
+
+                      =                             +                       +                        +
+                                                                        x-z(t)                  x-z(t)
+                                                                                                         …
+                         x              z(t)         x
+         Bump state          Closest stationary state         Height mode        Position mode
+          U(x,t)         =            u0(x|z(t)) +           c1(t)u1(x-z(t)) +    c2(t)u2(x-z(t))
+                                                                        +    (higher order modes)
+
+
+
+
+Figure 2: An adaptive continuous attractor neural network (A-CANN) model. a. An illustra-
+tion of the structure of an one-dimensional A-CANN. Neurons are uniformly distributed in the
+feature space x ∈ (−∞, +∞) to encode a continuous variable (e.g. orientation or direction).
+Neurons are connected with each other recurrently with weights J(x, x′ ), and they receive the
+adaptation current V (x, t) and the external input I ext (x, t). b. An illustration of the dynamics
+of a single neuron in the A-CANN. c. An illustration of the first two motion modes of a CANN.
+An arbitrary network state (red curve) can be approximated as the superposition of a steady
+bump state and the distortions in the bump shape including the height (v0 ), position(v1 ), and so
+on.
+
+2       Adaptive Continuous Attractor Neural Networks
+2.1     An A-CANN model
+We begin with a one-dimensional A-CANN, where neurons are distributed uniformly
+in a feature space denoted by x, with x ranging over the entire real line (−∞, ∞) (see
+Fig. 2a), and neurons are interconnected recurrently. Let U (x, t) be the synaptic input
+that a neuron at x receives at time t, and r(x, t) the corresponding firing rate. The
+network’s dynamics is described as follows:
+
+
+
+
+                                                         5
+                                  Z ∞
+        dU (x, t)
+      τ           = −U (x, t) + ρ      J(x, x′ )r(x′ , t) dx′ − V (x, t) + I ext (x, t), (1)
+           dt                       −∞
+                             U (x, t)2
+          r(x, t) =        R ∞                  ,                                        (2)
+                    1 + kρ −∞ U 2 (x′ , t), dx′
+
+where τ is the time constant of U (x, t) and ρ the neuron density. The connection
+strength between neurons√      at x and x′ is denoted as J(x, x′ ), which takes the Gaussian
+form J(x, x′ ) = J0 /( 2πa) exp[−(x − x′ )2 /(2a2 )], with J0 controlling the maximum
+connection strength and a the range of neuronal interactions. The parameter k in Eq. (2)
+controls the amplitude of divisive normalization, which reflects the contribution of in-
+hibitory neurons not explicitly represented in the model. In real biological systems, di-
+visive normalization can be realized via shunting inhibition of inhibitory neurons [16].
+It is noteworthy that the neuronal connection profile is translation-invariant in the fea-
+ture space, i.e., J(x, x′ ) is a function of difference (x − x′ ). This is the key structure of
+a CANN. I ext (x, t) denotes the external input to the network.
+     What distinguishes an A-CANN from a conventional CANN is the term −V (x, t)
+on the right hand-side of Eq. (1). It represents the adaptation current and can be bio-
+physically traced back to the effect of spike frequency adaptation (SFA) in neuronal
+dynamics. Although we adopts SFA as the adaptation mechanism in this work, others
+such as short-term synaptic depression (STD) can also serve as the mechanism. The
+dynamics of the adaptation is written as (see the illustration in Fig. 2b),
+
+                                dV (x, t)
+                           τv             = −V (x, t) + mU (x, t),                         (3)
+                                   dt
+where τv is the time constant of V (x, t) and τv ≫ τ holds, implying that the adaptation
+effect caused by neuronal activity is delayed. The parameter m controls the strength of
+SFA, i.e., the larger the value of m is, the stronger the adaptation effect.
+
+2.2     The simplified dynamics of the A-CANN
+We introduce how to use a projection method to simplify the dynamics of the A-CANN,
+which enables us to further carry out theoretical analysis. Previous studies have shown
+that because of the localized and translation-invariant recurrent connections, the state of
+the CANN can be largely approximated as of the Gaussian shape, known as the bump
+state [17, 15] (see illustration in Fig. 2c). The bumps are expressed as
+                                             (               )
+                                                           2
+                                                 [x − z(t)]
+                     U0 (x, t) = Au exp −                      ,                        (4)
+                                                     4a2
+                                             (                        )
+                                                                    2
+                                                 [x − z(t) + sv (t)]
+                      V0 (x, t) = Av exp −                              ,               (5)
+                                                         4a2
+                                             (               )
+                                                [x − z(t)]2
+                      r0 (x, t) = Ar exp −                     ,                        (6)
+                                                    2a2
+
+                                               6
+where z(t) denotes the bump position, and Au , Av , and Ar denote the heights of bumps
+U0 (x, t), V0 (x, t), and r0 (x, t), respectively. sv (t) represents the discrepancy between
+the neural activity bump U (x, t) and the adaptation current V (x, t).
+    The efficacy of the seemingly over-idealistic Gaussian-shaped state comes from that
+even the bump state is disturbed by noises, the attractor dynamics of the network will
+rapidly clean out those distortions perpendicular to the attractor space, thereby main-
+taining the Gaussian-shaped neural activities [18, 17]. Therefore, in below analyses, we
+assume that Eqs. (4-6) hold when the external input I ext (x, t) or the adaptation current
+V (x, t) is small.
+    Substituting Eqs. (4-6) into Eqs. (1-3), we have (see Appendix A),
+
+                                                                         A2u
+                                                      Ar      =           √      ,  (7)
+                                                                1 + kρ 2πaA2u
+                                        
+                            x − z dz dAu                                     ρJ0
+                       τ Au         +      N (z, 2a)          = (−Au + √ Ar )N (z, 2a)
+                             2a2 dt   dt                                       2
+                                                              −Av N (z − sv , 2a)
+                                                              +I ext (x, t),        (8)
+                                      
+             x − z + sv d(z − sv ) dAv
+ τv       Av                      +      N (z − sv , 2a)      = −Av N (z − sv , 2a)
+                2a2         dt      dt
+                                                             +mAu N (z, 2a),           (9)
+
+where N (µ, σ) denotes the Gaussian function, N (z, σ) = exp − (x − z)2 /2σ 2 . At
+                                                                                   
+
+first glance, Eqs. (8-9) may appear to be intractable due to the high dimensionality
+(2N , with N the number of neurons). However, a key property of CANNs is that their
+dynamics are dominated by a few motion modes, which correspond to the distortions of
+the bump in height, position, width, etc. (see Fig.2d) [17]. Therefore, by projecting the
+network dynamics onto these dominant motion modes, we can significantly simplify
+the network dynamics [17]. Typically, projecting onto the first two motion modes is
+sufficient to capture the main features of the network dynamics.
+     For the bump U (x, t), the first two motion modes are,
+
+                                             [x − z(t)]2
+                                                        
+                      u0 (x, t) = exp −                    ,                          (10)
+                                                 4a2
+                                                       [x − z(t)]2
+                                                                  
+                      u1 (x, t) = [x − z(t)] exp −                   .                (11)
+                                                            4a2
+
+      For the bump V (x, t), the first two motion modes are,
+
+                                        [x − z(t) + d(t)]2
+                                                          
+                v0 (x, t) = exp −                            ,                         (12)
+                                               4a2
+                                                         [x − z(t) + d(t)]2
+                                                                           
+                v1 (x, t) = [x − z(t) + d(t)] exp −                           .        (13)
+                                                                4a2
+
+      Projecting Eqs. (8-9) onto the first two dominant motion modes, we obtain (see
+
+
+
+                                              7
+Appendix B),
+
+                                                      sv (t)2
+                                                              Z
+      dAu                  ρJ0
+    τ        =   (−Au + √ Ar ) − Av exp −                      + I ext (x, t)u0 (x)dx,       (14)
+       dt                    2                         8a2       x
+                                   sv (t)2
+                                           Z
+        dz
+  τ Au       =   sv (t)Av exp −              + I ext (x, t)u1 (x)dx,                         (15)
+        dt                          8a2           x
+                                         sv (t)2
+                                                
+      dAv
+   τv        =   −Av + mAu exp −                    ,                                        (16)
+       dt                                  8a2
+                               sv (t)2
+                                                                     Z
+       dsv                                    τv 2                 τv Av
+τv A v       =   sv (t) exp −                     A − mAu +                 I ext (x, t)u1 (x)dx.
+        dt                      8a2         τ Au v                 τ Au x
+                                                                                             (17)
+
+The dimension of the A-CANN dynamics is now reduced to four. In the following
+sections, we will use these simplified equations to study the dynamics of A-CANN.
+
+
+3     Spontaneous Dynamics of the A-CANN
+In this section, we study the spontaneous dynamics of the A-CANN. By spontaneous
+dynamics, it refers to the dynamical behaviors of the A-CANN without the drive of
+external input.
+    The spontaneous/intrinsic dynamics of neural circuits has gained increasing atten-
+tion in the field due to its important contributions to information processing in the brain.
+For instance, the spontaneous activity patterns observed in the developing visual sys-
+tem have been found to play a crucial role in the refinement of neural connections and
+the establishment of functional circuits [19, 20]. Similarly, ongoing oscillations in the
+brain have been linked to important cognitive processes such as attention, perception,
+and memory [21]. An appealing substrate for these oscillations is the spontaneous hip-
+pocampal replay referring to the reactivation and replay of neural activity patterns in the
+hippocampus. It occurs during the rest or sleep period (offline) and involves sequential
+reactivation of specific neurons or groups of neurons that were active during previous
+awake experiences. It is suggested that the hippocampal replay plays a crucial role
+in memory consolidation and spatial navigation, as it supports the strengthening and
+integration of newly acquired experiences [22, 23]. Through replay, most heavy com-
+putations of constructing representation space take place offline, thus the computational
+burden is reduced in online behaviors.
+    Moreover, the study of spontaneous activity is crucial in understanding neurological
+and psychiatric disorders, as abnormal patterns of intrinsic activity have been observed
+in conditions like epilepsy, schizophrenia, and autism spectrum disorders [24, 25]. An-
+alyzing these spontaneous dynamics can provide valuable insights into the underlying
+neural mechanisms of such disorders and aid in developing potential therapeutic strate-
+gies.
+
+
+
+
+                                               8
+3.1    Static bump state
+We first study the condition when the A-CANN holds static bumps as its stationary
+states. When no external input exists, the network dynamics given by Eqs. (14-17) are
+further simplified to be,
+                                                          
+                          dAu       1           ρJ0
+                                =        −Au + √ Ar − Av ,                      (18)
+                           dt       τ             2
+                            dz      sv (t)Av
+                                =            ,                                  (19)
+                            dt        τ Au
+                          dAv       1
+                                =       (−Av + mAu ) ,                          (20)
+                           dt       τv
+                                                      
+                        dsv (t)              Av    mAu
+                                = sv (t)        −        .                      (21)
+                          dt                τ Au τv Av
+
+In the above, we have applied the condition sv (t) << a which gives exp [−sv (t)2 /8a2 ] ≈
+1. This approximation holds well in practice.
+    In the static bump state, the bump center remains stationary, i.e., dz/dt = 0, sv (t) =
+0, and bump heights are constant, i.e., dAu /dt = dAv /dt = dAr /dt = 0. Substituting
+these constraints into Eqs.(18-21), we have,
+                                    ρJ0
+                             (−Au + √ Ar ) − Av = 0,                                   (22)
+                                      2
+                                    −Av + mAu = 0.                                     (23)
+
+Combining with Eq. (7), we obtain,
+                                       q          √
+                               ρJ0 +    ρ2 J02 − 8 2π(1 + m)2 kρa
+                     Au =                 √                       .                    (24)
+                                         4 π(1 + m)kρa
+                     Av = mAu ,                                                        (25)
+                          √
+                            2(1 + m)
+                     Ar =            Au .                                              (26)
+                              ρJ0
+Thus, the static bump state is solved. To verify the theoretical result, we conducted
+simulations of the original network dynamics. Eq. (24) predicts that increasing the
+global inhibition k decreases the the height of the neural activity bump Au . Fig. 3a
+shows that our theoretical analysis agrees very well with the simulation.
+    We proceed to analyze the stability of the static bump state by examining how the
+global inhibition strength k and adaptation strength m impact the bump state. A widely
+used and powerful tool in computational neuroscience for studying the dynamics of
+complex systems is Jacobian matrix, which provides valuable information about the
+local behavior of a system at certain point in phase space. By analyzing the eigenvalues
+of Jacobian matrix, we can determine the stability of the state and classify it as a fixed
+point, a limit cycle, or a chaotic attractor. The signs of the eigenvalues reveal the motion
+tendency of the system under small perturbations, indicating whether they will cause
+the system to return to its steady-state or diverge from it. Specifically, we calculate the
+
+                                             9
+eigenvalues of the matrix derived from Eqs.(18 - 21). The Jacobian matrix is calculated
+to be:                            √                                       
+                    1
+                        −1 +        √2ρJ0 Au     −   1
+                                                        0          0
+                  τ           (1+ 2πkρaA2u )2       τ
+                                  m
+                                                 − τ1v 0
+                                                                             
+                                τv
+                                                                   0         
+           M=                 sv (t)Av         sv (t)           Av
+                                                                             .    (27)
+                           −     τ Au2          τ Au
+                                                        0        τ Au
+                                                                             
+                                                                           
+                                                 sv (t)
+                            − svτ(t)A
+                                    A2
+                                        v
+                                                 τ Au
+                                                        0    Av
+                                                            τ Au
+                                                                 − τmA   u
+                                                                      v Av
+                                    u
+
+
+Considering the condition sv (t) ≈ 0 near the steady state, we observe that the matrix
+becomes block-diagonal, where the dynamics of Au (t) and Av (t) are completely inde-
+pendent of the dynamics of z(t) and sv (t). Therefore, we can simplify the calculation
+by separating the 4-rank matrix into two smaller 2-rank matrices.
+    First, we focus on the 2-rank Jacobian matrix of the dynamics of Au (t) and Av (t),
+which yields:                              √                  !
+                                1
+                                    −1 +     √2ρJ0 Au      −  1
+                     M1 =       τ        (1+ 2πkρaA2u )2     τ    .               (28)
+                                           m                  1
+                                           τv
+                                                           − τv
+
+Denote the eigenvalues of the Jacobian matrix as λ1 and λ2 . For the solution to be
+stable, both eigenvalues need to be negative, which require that,
+                                 "           √                    #
+                              1                2Au J0 ρ        τ
+                λ1 + λ2 =          −1 +       √             −       < 0,       (29)
+                              2         (1 + 2πkρaA2u )2 τv
+                                                 √              !
+                               τ                   2A J ρ
+                   λ1 λ2 =          m+1−          √ u 0             ≥ 0.       (30)
+                              τv             (1 + 2πkρaA2u )2
+
+The above inequalities are satisfied when,
+
+                                      ρJ02 (1 + ττv )(1 + 2m − ττv )
+                     0 < k < kc1 =            √                      ,                  (31)
+                                            8 2πa(1 + m)4
+                                              ρJ02
+                     0 < k < kc2    = √                  .                              (32)
+                                      8 2πa(1 + m)2
+
+It is easy to check that kc2 < kc1 . Thus, the first condition for the network to hold static
+bumps as its steady state is 0 < k < kc2 .
+     Second, we study the 2-rank Jacobian matrix of the the dynamics of z(t) and sv (t),
+which gives,
+                                                    m
+                                                        
+                                            0       τ
+                                 M2 =                       .                           (33)
+                                            0 m  τ
+                                                   − τ1v
+It’s easy to check that the eigenvalues are λ1 = 0, λ2 = m − τ /τv . Thus, the second
+condition for the static bump state to be stable is m < τ /τv .
+     In summary, the parametric conditions for the A-CANN holding a static bump as
+its stationary state without relying on external input are that both the inhibition and
+adaptation need to be sufficiently small, satisfying 0 < k < kc2 and m < τ /τv . These
+agree with our intuition, as too strong inhibition will suppress neuronal activities and
+too large adaptation will destabilize the static bump (see below).
+
+                                             10
+3.2    Traveling wave state
+The above analysis reveals that for the A-CANN holding static bump states, it requires
+the adaptation strength m < τ /τv . If m > τ /τv , the strong adaptation will destabilize
+the bump, causing the bump to move spontaneously in the feature space (illustrated in
+Fig.3b). This is called the traveling wave state [4, 14, 26, 27]. In this section, we study
+the condition for the A-CANN holding the traveling wave state.
+    Let us denote the speed of travelling wave to be vint , which is also called the in-
+trinsic speed of the A-CANN, as its value only depends on the network parameters.
+Without loss of generality, the bump center can be expressed as z(t) = vint t. At the
+travelling wave state, the bump heights remain invariant, i.e., dAu /dt = dAv /dt = 0.
+The network dynamics Eqs. (14-17) are simplified to be,
+                                                        sv (t)2
+                                                               
+                                 ρJ0
+                        Au = √ Ar − Av exp −                      ,                    (34)
+                                    2                     8a2
+                                                  sv (t)2
+                                                         
+                  τ Au vint = sv (t)Av exp −                 ,                         (35)
+                                                   8a2
+                                              sv (t)2
+                                                     
+                        Av = mAu exp −                   ,                             (36)
+                                                8a2
+                                              sv (t)2
+                                                                        
+                    dsv (t)                                  τv 2
+             τv Av           = sv (t) exp −                      A − mAu .             (37)
+                      dt                        8a2         τ Au v
+    Combining the above equations with Eq. (7), we can analytically solve the travelling
+wave state, which are given by (Appendix C):
+                         q            √
+                 ρJ0 + ρ2 J02 − 8 2πkρa(1 + mτ
+                                                    p
+                                                      τv
+                                                         )2
+       Au =                  √                              ,                        (38)
+                           4 πkρa(1 + mτ
+                                         p
+                                            τv
+                                                )
+                         q            √
+                 ρJ0 + ρ2 J02 − 8 2πkρa(1 + mτ
+                                                    p
+                                                      τv
+                                                         )2
+       Av =                       √                         ,                        (39)
+                                2 2πkρ2 aJ0
+                                                    q          √
+                                                     ρ2 J02 − 8 2πkρa(1 + mτ
+                                                                          p
+                                                                                )2
+                             "      p τ #
+                 r
+                    mτ         1 − mτv    ρJ  0  +                           τv
+       Ar =              exp                           √          p mτ             , (40)
+                    τv               2                4 πkρa(1 + τv )
+                    s      r
+                                τ
+       sv = 2a 1 −                 ,                                                 (41)
+                              mτv
+                    s          r
+                 2a mτv            mτv
+      vint =                 −         .                                             (42)
+                 τv      τ           τ
+                                                              q       p
+Thus, the travelling wave speed is given by vint = a/τv mτv /τ − mτv /τ , and the
+lag of the adaptation current to the bump center sv remain a constant. Fig. 3c confirms
+that theoretical prediction of the intrinsic speed vint agrees well with the simulation
+result. From Eq. (42), we also observe that for the traveling wave speed vint to take a
+real value, it requires,
+                                                 τ
+                                         m> ,                                        (43)
+                                                 τv
+
+                                            11
+which is consistent with the stability analysis in the previous section. Combining
+Eqs. (32,43), we can draw the phase diagram of the spontaneous states of the A-CANN,
+which is depicted in Fig.3d.
+
+3.2.1   Biological implications of travelling wave
+Spontaneous propagation of neural activity has been widely observed in both in vitro
+and in vivo experiments conducted on the cortex [28, 29] and sub-cortical areas like
+hippocampus [30, 31]. Here, our model suggests a mechanism to generate these spon-
+taneous activities as a consequence of neural adaptation. Consider a bump emerges
+randomly at a location in the attractor space due to noises. Because of the adaptation,
+those neurons around the bump position (i.e., those most active neurons) receive the
+strongest suppression, which destabilizes the bump at the current location. Aided by
+recurrent interactions between neurons, the bump moves away to the neighborhood,
+where the adaptation starts to destabilize the bump at the new location again. Conse-
+quently, the bump keeps moving in the attractor space, and the network exhibits the
+travelling wave behavior.
+    The traveling wave behavior may play important roles in neural information pro-
+cessing. Intuitively, it enables a neural system to progressively visit all stationary states,
+and hence endows the neural system with the capacity of actively retrieving all stored
+memories. This could support cognitive functions where memory search and memory
+consolidation are involved [23]. Tracing computational roles of traveling wave could
+be a fascinating avenue for future research.
+
+
+
+
+                                             12
+       a                    6
+                                                                                                  b
+                                                                                                               1.5
+                                                                                                                                        U(t1)   U(t2)
+                            5
+
+
+
+
+       U bump height A u
+                            4
+                                                         simulation                                                                     V(t1)   V(t2)
+                                                         theoretical solution
+                                                                                                                 1
+                            3
+
+
+                            2
+                                                                                                  U, V
+                                                                                                               0.5
+                            1
+
+
+                            0
+                                0       0.2     0.4     0.6    0.8     1         1.2                             0
+                                                                                                                             -2           0       2
+                                      Global inhibition strength k                                                                        x
+       c                                                                                          d
+
+
+
+
+                                                                                       Adaptation strength m
+                                                                                                               0.06
+
+
+
+
+    Intrinsic speed vint
+                           20
+                                    Static
+                                                                                                                             Traveling
+                                              Traveling wave
+                                    bump                                                                       0.04         wave state          Silent
+                                                                                                                                                state
+                           10
+                                                                                                               0.02
+
+                                                                                                                          Static bump state
+                           0
+                                                                                                                  0
+                                0                     0.05                 0.1                                        0             5            10
+                                       Adaptation strength m                                                               Global inhibition strength k
+
+
+
+Figure 3: The spontaneous dynamics of the A-CANN. a. The bump height Au vs. the
+global inhibition strength k. b. An illustration of the travelling wave state of the A-
+CANN. The bumps U (red) and V (blue) moves spontaneously with the speed vint , and
+the discrepancy between their centers is s. c. As the adaptation strength m increases
+across a threshold m0 = τ /τv , the steady state of the A-CANN changes from static
+bump (vint = 0) to travelling wave (vint > 0). d. The phase diagram of spontaneous
+states of the A-CANN. Parameters are: a = 0.4, J0 = 1, k = 0.76, τ = 3ms,τv =
+152ms, ρ = 128/(2π), m = 0.3, α = 0.2, vext = 0.5/s.
+
+
+4         Tracking Dynamics of the A-CANN
+In the above, we have studied the spontaneous dynamics of the A-CANN in the absence
+of external inputs. In this section, we further study the tracking dynamics of the A-
+CANN when an external moving input is presented. When no adaptation exists, the
+continuous manifold of attractor states enables a conventional CANN to track a moving
+input smoothly with a constant delay [17, 18, 32]. When adaptation is included, it
+induces rich tracking behaviors of the network [14, 33].
+    Without loss of generality, we consider the external moving input taking the below
+
+
+
+                                                                                       13
+form,
+                                                      (x − vext t)2
+                                                                   
+                               ext
+                           I         (x, t) = α exp −                 ,                    (44)
+                                                          4a2
+where vext is the speed of the external input and α controls the strength of the input.
+    For the convenience of analysis, we assume that the bump heights remain constants
+during the tracking process, i.e., dAu /dt = 0, dAv /dt = 0, dAr /dt = 0 (this assump-
+tion is not always feasible as in the case of oscillatory tracking, nevertheless, it gives
+good approximation results). Substituting Eq. (44) and constant amplitude assumption
+into the network dynamics Eqs. (14-17), we obtain the simplified tracking dynamics,
+which are:
+                                       su (t)2                  sv (t)2
+                                                                     
+                ρJ0
+       Au = √ Ar + α exp −                       − Av exp −               ,                 (45)
+                  2                      8a2                      8a2
+                               sv (t)2
+                                      
+       Av = mAu exp −                     ,                                                 (46)
+                                8a2
+                                     sv (t)2                          su (t)2
+                                                                           
+   dsu (t)       Av                                α
+           =         sv (t) exp −              −       su (t) exp −             − vext ,    (47)
+     dt         τ Au                   8a2       τ Au                   8a2
+                                                   sv (t)2                         su (t)2
+                                                                                      
+   dsv (t)         Av      mAu                                    α
+           =            −           sv (t) exp −              −      su (t) exp −            ,
+     dt           τ Au τv Av                        8a2         τ Au                 8a2
+                                                                                            (48)
+
+where su (t) denotes the discrepancy between the neural activity and the external input
+bumps, i.e., su (t) = z(t) − vext t.
+    In the blow study, we focus on the case that the speed of the external input complies
+with the condition vext ≪ a/τv . This is the biologically relevant regime in practice.
+For instance, if to model head rotation with biologically plausible parameters such as
+τv = 100ms and a = 50◦ , vext = 0.1a/τv corresponds to a speed of 500◦ /s, which
+is quite fast for head rotation of rodents. Furthermore, we take the approximations
+exp(−s2v /8a2 ) ≈ 1 and exp(−s2u /8a2 ) ≈ 1, as they always hold in practice. From
+Eqs. (45-46), we have
+
+                                   ρJ0     A2
+                       (m + 1)Au − √      √ u       − α = 0.                               (49)
+                                     2 1 + 2πakρA2u
+
+Eq. (49) can be rearranged into a general cubic equation of Au , which is written as,
+
+                             a3 A3u + a2 A2u + a1 Au + a0 = 0,                     (50)
+              √                         √                 √
+where a3 = 2π(m + 1)akρ, a2 = − 2πakρα − ρJ0 / 2, a1 = m + 1, and a0 = −α.
+It is easy to check that Eq. (50) only has one real solution, which is written as,
+                           r                   1/3           r          1/3
+                  q               q      p                q       q 2  p 3
+            Au = − +             ( )2 + ( )3           + − −     ( ) +( )       ,          (51)
+                  2               2      3                2       2    3
+
+where q = (3a3 a1 − a22 )/(3a23 ) and p = (27a23 a0 − 9a3 a2 a1 + 2a32 )/(27a33 ). The form
+of Au given by Eq. (51) is quite complicated. By numerical simulation, we find that
+
+                                                  14
+             √                                                √
+the√condition 2πakρA2u ≫ 1 always holds. This gives A2u /(1 + 2πakρA2u ) ≈
+1/ 2πakρ. Thus, the expression of Au can be simplified to be,
+                                          √
+                                    J0 + 2 πakα
+                             Au = √                .                   (52)
+                                   2 πak(1 + m)
+
+From Eq. (46), we have Av ≈ mAu . In the below, we continue to solve the dynamics
+of su (t) and sv (t), which vary with different parameter conditions.
+
+
+
+
+  a                                                                                           b
+                                                                                                      a/ v 0.2
+                                                                                                                                                                    simulation result
+                                                                                                                                                                    theoritical solution
+
+
+
+
+                                                                                              External speed v ext
+                                                                                                                  0.175
+
+
+
+
+      Neural activity
+                                                                                                                                        Delayed                    Anticipate
+                                                                                                                       0.15
+                                                                                                                                        tracking state             tracking state
+
+                                                                                                                  0.125
+
+
+
+                                                                                                                           0.1
+                                                                                                                                    0           0.5         1            1.5               2
+                                                                                                                                                                                               / v
+                                                      X                                                                                         Adaptation strength m
+  c                                                                                           d
+                   ms 8                                                                                        ms
+                                                                simulation result                                                                                     simulation result
+                                                                theoritical solution                                                                                  theoritical solution
+                                                                                                                           15                                           / v
+
+
+
+
+      Anticipation time tant                                                                      Anticipation time tant
+                               6
+
+                                                                                                                           10
+                               4
+
+
+                                                                                                                           5
+                               2
+
+
+
+                               0                                                                                           0
+                                   0   0.2      0.4       0.6          0.8             1 -3                                     0        0.05         0.1   0.15      0.2      0.25        0.3
+                                                                                       10                                                                                                      / v
+                                             External speed vext                                                                                  Adaptation strength m
+
+
+
+
+Figure 4: Smooth tracking of the A-CANN. a. An illustration of the smooth tracking state
+of A-CANN. The neural activity bump U (x, t) moves at the speed vext of the external input
+I ext (x, t) with a separation su . The adaptation current V (x, t) is delayed by sv with respect
+to the bump U (x, t). b. Depending on the relative sizes of vext and vint (scaled by τ /τv ), the
+bump can either lead the external input (su > 0, anticipate tracking state) or lag the external
+input (su < 0, delayed tracking state). c. For small speed values, the A-CANN achieves a
+roughly constant anticipation time tant with respect to the external input. d. The anticipation
+time tant increases roughly linearly with adaptation strength m. Parameters are: a = 0.4,
+J0 = 1, k = 5, τ = 1ms, τv = 48ms, ρ = 512/(2π), α = 0.19, m = 0.1 in (b), vext = 0.5/s
+in (c).
+
+
+
+
+                                                                                         15
+4.1     Smooth tracking state
+We begin by studying the smooth tracking state, in which the neural bump tracks the
+external input in a phase-locking manner, in terms of that the discrepancy between
+the neural activity bump and the external input bump su (t), and the discrepancy be-
+tween the neural activity bump and the adaptation current bump sv (t) are constants,
+i.e., dsu (t)/dt = 0 and dsv (t)/dt = 0. This occurs when the external input strength is
+sufficiently strong or the adaptation strength is sufficiently weak.
+     Substituting dsu (t)/dt = 0, dsv (t)/dt = 0 into Eqs. (47-48), we have,
+                                                      "    2       #
+                              s2u
+                                  
+                                           τ Au vext τv Av
+                   su exp − 2         =                           −1 ,             (53)
+                              8a               α        mτ Au
+                               s2v
+                                  
+                                           τv Av vext
+                   sv exp − 2         =               .                            (54)
+                              8a             mAu
+Combining Eqs. (53-54) with Eqs. (45-46) , we solve the smooth tracking state, which
+gives,
+
+                       sv = τv vext ,                                                  (55)
+                                            h                                   i
+                                                              τ 2 v2
+                                 τv vext m exp               − v4aext
+                                                                   2       − ττv
+                      su =                                                   2 .   (56)
+                                                                          2 2
+                                                                        τ v
+                                1 − ρJ
+                                    √ 0 Ar − m
+                                      2Au
+                                                             exp       − v4aext
+                                                                            2
+
+
+
+It can be checked from Eq. (56) that when vint > vext , su > 0, that is, the neural activity
+bump leads the external input.                                     √
+    Furthermore, when the conditions vext ≪ a/τv and su ≪ 2 2a are satisfied, the
+value of su can be approximated to be
+                                        Au vext τv     τ
+                                su ≈               (m − ),                             (57)
+                                            α          τv
+which indicates that su increases linearly with vext . In such a case, the anticipation time
+is a constant independent of the input speed, which is calculated to be
+                                        s           Au τv     τ
+                             tant =             ≈         (m − ).                      (58)
+                                      vext           α        τv
+These theoretical results are verified by simulations (Fig.4b-c).
+    In summary, we have two observations: 1) the neural bump of the A-CANN can
+track the external moving input in an anticipative manner when vint > vext ; 2) the
+anticipation time can be approximated as a constant for a wide range of input speeds.
+
+4.1.1   Stability analysis of the smooth tracking state
+We proceed to study the stability of the smooth tracking state. The Jacobian matrix of
+the simplified tracking dynamics in Eqs. (47-48) is calculated to be:
+                            − τ Aαu F (su )        Av
+                                                                        !
+                                                   τ Au
+                                                        F  (s v )
+                     M=                                                  ,       (59)
+                            − τ Aαu F (su )    Av
+                                              τ Au
+                                                   −   mAu
+                                                       τv A v
+                                                                F (sv )
+
+                                                    16
+where the function F (x) = (1 − x2 /4a2 ) exp(−x2 /8a2 ). The matrix can be further
+simplified as,                                          
+                             Av            −ϕ      1
+                        M=       F (su )                   ,                   (60)
+                            τ Au           −ϕ (1 − θ)
+in which,
+                                       mτ Au 2
+                                    θ =   ( ),                                         (61)
+                                       τv Av
+                                       α F (su )
+                                   ϕ =            .                                    (62)
+                                       Av F (sv )
+
+According to the Vieta theorem, the eigenvalues of the Jacobian matrix M, denoted as
+λ1 and λ2 , satisfy,
+
+                                λ1 + λ2 = 1 − θ − ϕ,                                   (63)
+                                   λ1 λ2 = ϕθ > 0.                                     (64)
+
+For the smooth tracking state to be stable, it requires that both eigenvalues have negative
+real parts, which implies:
+                                        θ + ϕ > 1.                                     (65)
+We consider that the external input speed vext ≪ a/τv and the discrepancies su ≪ a
+and sv ≪ a. Under these conditions, we have the approximations F (su ) ≈ F (sv ) ≈ 1
+and Av ≈ mAu (see Eq. (46)). Substituting Eqs. (61-62, 46) into Eq. (65), we get,
+                                           τ    α
+                                     m−       <    .                                   (66)
+                                           τv   Au
+Based on Eq. (66), we differentiate two different situations on the stability of the smooth
+tracking state: 1) when the adaptation strength is too weak to produce a traveling wave,
+i.e., m < τ /τv , the smooth tracking state is stable since Eq. (66) always holds (note
+α ≥ 0). 2) When the adaptation strength m > τ /τv , the smooth tracking state is
+stable only when m < τ /τv + α/Au , i.e., it requires the external input strength α to be
+sufficiently large.
+
+4.1.2   Biological implications of anticipative tracking
+A CANN can track an external moving input smoothly, a property that has been used to
+model spatial navigation in the hippocampus [34]. The tracking of a CANN is, however,
+always lagging behind the true location of the external input, as it takes time for the net-
+work responding to the external input change. Here, we show that by including strong
+enough adaptation in the neural dynamics, the A-CANN is able to track an external
+moving input anticipatively. The underlying mechanism can be intuitively understood
+as follows. The adaptation induces intrinsic mobility of the neural bump, in term of
+that the bump tends to move spontaneously as travelling wave at the speed vint when
+the adaptation strength is sufficiently strong, while the external moving input wants to
+drive the bump to moves at the speed vext . These two forces compete with each other,
+leading to that the bump leads the external input when vint > vext . Furthermore, if the
+
+                                            17
+speed of the external input is not too large, the bump leads the external input with a
+constant leading time.
+    Time delays are pervasive and significant in the brain, as the transmission of neural
+signal over hierarchical layers take time. If these delays are not compensated properly,
+our perception and reaction will lag behind the real circumstance in the external world
+significantly, impairing our vision and movement. The anticipative tracking behavior
+of the A-CANN may provide a simple yet effective mechanism to compensate these
+delays. For instance, the experiment depicted that the internal head-direction represen-
+tation in the anterior thalamus of a rat anticipates the animal’s head-direction by about
+20 − 25ms, independent of the rotation speed of the head [35]. The head-direction sys-
+tem has been modeled using CANNs [36], and the A-CANN can justify the constant
+anticipation time as observed in the experiment.
+
+4.2    Oscillatory tracking state
+We further study the tracking dynamics of the A-CANN when the smooth tracking state
+is unstable. Eq. (66) shows that the bifurcation point is at m0 = αAu + τ /τv . As m
+increases from a small value to be larger than m0 , the real parts of eigenvalues λ1 and λ2
+change sign from negative to positive. At the bifurcation point, the phase space formed
+by dsu /dt and dsv /dt changes its topology. The type of bifurcation depends on the
+imaginary parts of eigenvalues at the fixed point, which is given by,
+                                    p
+                              ∆ = (1 − θ − ϕ)2 − 4ϕθ.                                  (67)
+
+At the bifurcation point, λ1 +λ2 = 1−θ−ϕ = 0 holds, which leads to ∆2 = −4ϕθ < 0.
+As a result, the bifurcation point m0 is Hopf bifurcation, in term of that the eigenvalues
+change their signs through the imaginary axis (see illustration in Fig.5b) [37]. Hopf
+bifurcation incurs the emergence of limit cycle dynamics of a dynamical system (see
+Fig. 5a) [37]. This leads to the neural bump of the A-CANN tracks the external input
+in an oscillatory way, in term of that the neural bump will sweep forth and back around
+the external input [26, 38, 39] (Fig. 5c).
+
+
+
+
+                                            18
+ a                                                                                                                              b
+                                                                                                                                                                            Su                                                                                   Trajectory
+                                                                                                                                                                                                                                                                 Limit cycle
+                                                                                                                                                                                              Sv
+
+
+
+                                                                                                                                                                                                                                                           parameter
+
+
+
+
+                                                                                                                                        stable fixed point                         unstable fixed point + stable limit cycle
+
+
+ c                                                                      d                                                                      e                                                                  f
+           2.5                                                                                                                                                                                                                       0.6
+                                      Bump center position                                                                                                                                                                                                                        simulation
+                                      External input position                                                                                                                                                                                 Traveling                           theoretical
+
+
+
+
+                                                                      Oscillation frequency                                                  Oscillation frequency
+                                                                                                                                                                                                                                              wave state
+
+
+
+
+                                                                                                                                                                                                                Adaptation stre. m
+            2                                                                                 8                                                                      8                                                               0.5
+
+
+
+
+Position
+           1.5                                                                                                                                                                                                                       0.4
+                                          s(t)                                                                                                                                                                                                              Oscillatory
+                                                                                                                                                                                                                                                          tracking state
+            1                                                                                 4                                                                      4                                                               0.3
+                           d0
+                                                                                                                                                                                                                                                                Smooth
+           0.5                                                                                                   Theoretical results                                                      Theoretical results                        0.2
+                                                                                                                                                                                                                                                             tracking state
+                                                                                                                 Simulation results                                                       Simulation results
+            0                                                                                 0                                                                      0                                                               0.1
+                 0   0.1        0.2        0.3      0.4         0.5                               1        1.2          1.4            1.6                               0.08       0.1              0.12                               0.1        0.15        0.2         0.25                 0.3
+
+
+                                      Time(s)                                                            Adaptation. stre. m                                                     Input stre. alpha                                                Input stre. alpha
+
+
+
+
+Figure 5: Oscillatory tracking of the A-CANN. a. Eigenvalues cross the imaginary
+axis from a non-zero point. b. Geometric interpretation of the Hopf bifurcation and
+the emergence of oscillatory tracking. The Hopf bifurcation is generated when the
+eigenvalues cross the imaginary axis, which leads to oscillation (red line). c. The
+oscillatory tracking process of the A-CANN. The bump center (blue dashed line) tracks
+the position of the external input (black line) in an oscillatory way with a constant
+offset d0 > 0. The parameters are chosen, such that ω ≈ 8Hz is in the range of theta
+frequency. d-e. The oscillation frequency increases approximately linearly over a wide
+range of m (d) and α (e). f. Phase diagram of the tracking dynamics of the A-CANN.
+Parameters are: a = 0.4, J0 = 1, k = 0.76, τ = 3ms,τv = 152ms, ρ = 128/(2π),
+m = 0.3, α = 0.2, vext = 0.5/s.
+
+    For the convenience of analysis, in the oscillatory tracking state, we assume that the
+discrepancies su (t) and sv (t) undergo harmonic oscillations, which are expressed as:
+
+                                                                                                           su (t) = cu sin(ωt) + du ,                                                                                                                                        (68)
+                                                                                                      sv (t) = cv sin(ωt + γ) + dv ,                                                                                                                                         (69)
+
+where cu , cv and ω represent the amplitudes and frequency of the bump oscillation, du
+and dv represent the average offsets between the bump oscillation and the external input,
+γ represents the phase offset between the bumps of U (x, t) and V (x, t).
+    Substituting Eqs. (68-69) and (7) into the tracking dynamics given by Eqs. (45-48),
+and further taking the approximations that exp(−s2u /8a2 ) ≈ exp(−s2v /8a2 ) ≈ 1 and
+
+
+
+
+                                                                                                                                       19
+that bump heights Au , Av and Ar are constants, we get,
+
+                       ρJ0         A2u
+                 Au = √            √         + α − Av ,                             (70)
+                         2 1 + kρ 2πaA2u
+                 Av = mAu ,                                                         (71)
+                        Av                               α
+         cu ω cos ωt =      (cv sin (ωt + γ) + dv ) −       (cu sin ωt + du ) − vext(,72)
+                       τ Au                            τ Au
+                         mAu
+  cv ω cos (ωt + γ) = −        (cv sin (ωt + γ) + dv ) + cu ω cos ωt + vext .       (73)
+                         τv Av
+Eqs. (72-73) can be re-written as,
+                          α                        Av                     Av
+         cu ω cos ωt +       (cu sin ωt + du ) =       cv sin (ωt + γ) +      dv − vext , (74)
+                        τ Au                      τ Au                   τ Au
+                                        
+  α                          Av     mAu
+     (cu sin ωt + du ) =         −          (cv sin (ωt + γ) + dv ) − cv ω cos (ωt + γ).(75)
+τ Au                        τ Au τv Av
+
+At first glance, it may appear to be impossible to solve for six unknown variables
+(cu , cv , ω, γ, du , and dv ) with only two equations. However, by applying the trigono-
+metric transformation formula and Av = mAu , we can transform Eqs. (74-75) into a
+form where both sides of two equations can be represented as sine waves, which are:
+       s                2
+                     α                          α         m                   m
+ cu ω 1 +                   sin (ωt + ψ1 ) +       du =      cv sin (ωt + γ) + dv − vext ,
+                                                                                      (76)
+                  τ Au ω                      τ Au         τ                  τ
+               p
+             cv τv2 ω 2 + 1 sin (ωt + γ + ψ2 ) + dv = τv (cu ω cos ωt + vext ) ,      (77)
+                           q                                        p
+where ψ1 = arcsin(1/ 1 + ( τ Aαu ω )2 ), and ψ2 = arcsin(τv ω/ τv2 ω 2 + 1).
+     We can obtain six equations by equating the amplitudes, phase, and constant offset
+of both sides of Eqs. (76, 77), which are:
+                                 s              2
+                                            α           m
+                             cu ω 1 +                =     cv ,                       (78)
+                                          τ Au ω        τ
+                                                 ψ1 = γ,                              (79)
+                                              α         m
+                                                 du =      dv − vext ,                (80)
+                                            τ Au        τ
+                                       p
+                                     cv τv2 ω 2 + 1 = τv cu ω,                        (81)
+                                                        π
+                                            γ + ψ2 =      ,                           (82)
+                                                        2
+                                                 dv = τv vext .                       (83)
+
+Finally, combining Eqs.(78-83), we solve the oscillatory tracking state, which are given
+
+
+
+
+                                            20
+by,
+                                     τv Au               τ
+                            du =            vext (m − ),                               (84)
+                                       α                 τv
+                            dv =     vext τv ,                                         (85)
+                                     s √
+                                          2 παak(1 + m)
+                             ω =                      √            ,                   (86)
+                                        τ τv (J0 + 2 πakα)
+                                                       1
+                            ψ1 =     arcsin( q                     ),                  (87)
+                                                  1 + ( τ Aαu ω )2
+                                       r
+                                                τ Au
+                            cu =     cv 1 +           .                                (88)
+                                                 τv α
+From Eq. (86), we see that the oscillation frequency ω of the bump increases sublinearly
+with both the external input strength α and the adaptation strength m. Simulation results
+confirm these theoretical results (Fig. 5d and e).
+
+4.2.1   Stability analysis of the oscillatory tracking state
+We proceed to analyze the stability of the oscillatory tracking state. As the adaptation
+strength m continuously increase, the real parts of eigenvalues λ1 and λ2 keep increas-
+ing and their imaginary parts decrease to zero. The conditions for both eigenvalues
+being positive numbers are
+
+                         λ1 + λ2 = 1 − θ − ϕ > 0,                                      (89)
+                             ∆2 = (ϕ + θ − 1)2 − 4θϕ ≥ 0,                              (90)
+
+which is equivalent to
+                                           p
+                                 θ+ϕ+       θϕ < 1.                                    (91)
+
+We consider that the external input speed vext ≪ a/τv and the discrepancies su ≪ a
+and sv ≪ a. Under these conditions, we have the approximations F (su ) ≈ F (sv ) ≈ 1
+and Av ≈ mAu (see Eq. (46)). Substituting Eqs. (61-62) and (46) into Eq. (91), we get
+(?),                                           r      !
+                                τ     α          τ Au
+                          m−       >       1+            .                       (92)
+                                τv    Au         τv α
+In this case, since both two eigenvalues are positive, the network state deviates from a
+fixed point, and the network falls into the state of travelling wave.
+
+4.2.2   Biological implications of oscillatory tracking
+We can intuitively understand how the A-CANN generates oscillatory tracking. Adap-
+tation induces intrinsic mobility of the neural bump. Given that the strength of the
+external input is fixed. If the adaptation is too strong, the neural bump will move spon-
+taneously as if no external input, realizing travelling wave; if the adaptation is too weak,
+
+                                             21
+the external input will drive the neural bump to move at its speed, realizing smooth
+tracking. Oscillatory tracking occurs when the adaptation strength has an intermediate
+value, whereby the neural bump tries to run away but is pulled back by the external
+input, causing the neural bump moves back and forth around the external input.
+    Oscillatory tracking of the A-CANN can account for a number of theta response
+characteristics of hippocampal place cells during navigation found in rat experiments.
+By choosing the parameters properly, we can set the frequency of bump oscillation in
+the range of theta band, independent of the speed of the external input. At the popula-
+tion level, the oscillation of the bump center around the external input resembles theta
+sweeps of the decoded position based on place cell activities around the true position
+of the moving rat. At the single neuron level, the forward and backward sweeps of the
+neural bump lead to that each neuron generates bursting responses at the theta rhythm,
+and the firing phases of a neuron in each theta cycle preceeds or proceeds, respectively,
+as the external input transfers through the receptive field of the neuron. This resembles
+the phase precession and procession phenomena observed in the expriments. For de-
+tails, please refer to [39]. Both theta sweeps and phase shift have been suggested to
+play important roles in spatial information encoding and memory formation.
+
+4.3     Phase diagram of the tracking dynamics of the A-CANN
+From Eqs. (66,92), we get the phase diagram of the tracking dynamics of A-CANN.
+Particularly, by gradually increasing the adaptation strength m while keeping the exter-
+nal input strength α fixed (or equivalently, by keeping the adaptation strength m fixed
+while gradually increasing the external input strength α), we have
+
+      • Smooth tracking state, in which the neural bump tracks the external input at
+        the speed vext in a phase-locking manner. This occurs for m − τ /τv < α/Au .
+        Furthermore, depending on the relative amplitudes of vext and vint , the neural
+        bump can either lead the external input when vint > vext or lag behind the input
+        when vint < vext . In particular, for small speed of the external input (vext ≪
+        a/τv ) and m > τ /τv , the neural bump tracks the external input with a constant
+        anticipation time.
+
+      • Oscillatory tracking state, in which the neural bump tracks the external
+                                                                             qinput in
+                                                                                 τ Au
+        an oscillatory manner. This occurs for α/Au < m−τ /τv < α/Au 1 + τv α .
+
+                                                q bump moves freely at the speed vint .
+      • Traveling wave state, in which the neural
+        This occurs for m − τ /τv > α/Au 1 + ττv Aαu .
+
+The phase diagram of the A-CANN is presented in Fig. 5f. Our theoretical analyses
+agree well with simulation results.
+
+
+
+
+                                           22
+5     Noisy adaptation generates Diffusion and Super-diffusion
+      Dynamics in CANNs
+In the previous sections, we have discussed the dynamics of the A-CANN without noise.
+In reality, however, real biological nervous systems are full of endogenous and exoge-
+nous noises at neuronal dynamics and signal transmission. Extensive researches have
+shown that noises introduce randomness in network dynamics, which can enhance neu-
+ral information processing (see, e.g., [40, 41, 42]). In the below, we study how noises
+affect the dynamics of the A-CANN and their implications on neural information pro-
+cessing. In particular, in addition to noises on the neuronal dynamics, we also consider
+noises on the adaptation dynamics.
+    With noises, the dynamics of the A-CANN are re-written as,
+                                 Z ∞
+   dU (x, t)
+ τ            = −U (x, t) + ρ          J(x, x′ )r(x′ , t) dx′ − V (x, t) + I ext (x, t) + σU ξU (x, t),
+      dt                           −∞
+                                                                                                  (93)
+   dV (x, t)
+τv            = −V (x, t) + mU (x, t) + σm ξm (x, t)f [U (x, t)] ,                                (94)
+      dt
+where the term σU ξU (x, t) represents noises on the neuronal dynamics, with σU the
+noise strength and ξU (x, t) Gaussian white noise of zero mean and unit variance. The
+term σm ξm (x, t)f [U (x, t)] represents noises on the adaptation dynamics, with σm con-
+trolling the noise strength and ξm (x, t) Gaussian white noise of zero mean and unit
+variance; the function f [U (x, t)] denoting how the noise strength depends on the neu-
+ronal activity.
+
+5.1    Spontaneous dynamics of the noisy A-CANN
+We first study the spontaneous dynamics of the noisy A-CANN by setting I ext (x, t) =
+0. We consider f [U (x, t)] = U (x, t) for the clarity of theoretical analysis. Again, we
+assume that the network state can be approximately to be of the Gaussian form, which
+hold when noises are not too strong.
+   Substituting Eqs. (4-5) into Eqs. (93-94) and (2), we obtain,
+
+                                                        A2u
+                                             Ar =       √        ,             (95)
+                                                  1 + kρ 2πaA2u
+                                   
+                     x − z dz dAu                          ρJ0
+              τ Au      2
+                             +        N (z, 2a) = (−Au + √ Ar )N (z, 2a)
+                      2a dt      dt                          2
+                                                  −Av N (z − s, 2a) + σU ξU (x, t),
+                                                                               (96)
+                               
+       x − z + s d(z − s) dAv
+τv A v                    +       N (z − s, 2a) = −Av N (z − s, 2a)
+          2a2       dt       dt
+                                                  +[m + σm ξm (x, t)]Au N (z, 2a),
+                                                                               (97)
+
+
+                                               23
+where s denotes the separation between U and V bumps, while other notations keep the
+same as in previous sections.
+   We project Eqs. (96-97) onto the two dominating motion modes of the network
+dynamics, i.e., the bump height (u0 (x|z)) and position (u1 (x|z)), and obtain,
+                                                    s(t)2
+                                                         
+          dAu                 ρJ0                                   1
+        τ        = (−Au + √ Ar ) − Av exp − 2 + √                       σU ξU,0 (t),    (98)
+           dt                   2                    8a            2πa
+                                           r
+                                    s(t)2
+                                
+            dz                                   2
+      τ Au       = s(t)Av exp − 2 +                σU ξU,1 (t),                         (99)
+            dt                       8a          π
+                                                                  s(t)2
+                                                                       
+          dAv                        1
+       τv        = −Av + [m + √ σm ξm,0 (t)]Au exp − 2 ,                               (100)
+           dt                      2 πa                            8a
+                                 s(t)2
+                                                                                  
+            ds                               τv 2               1
+     τv Av       = s(t) exp − 2                A − [m + √ σm ξm,0 (t)]Au
+            dt                    8a       τ Au v            2 πa
+                            r
+                       τv Av 2
+                     +          σm ξm,1 (t),                                           (101)
+                       τ Au π
+where ξU,0 (t), ξU,1 (t), ξm,0 (t), ξm,1 (t) are the projections of ξU (t) and ξm (t) onto the
+two motion modes, respectively, and they are still Gaussian noises of zero mean and
+unit variance.
+    The previous sections have shown that in the case of no noises, m0 = τ /τv is the
+critical point, below which (m < m0 ) the network holds the static bump state and
+above which (m > m0 ) the network holds the travelling wave state. Intuitively, it is
+understandable that when Gaussian white noises are included, they causes the neural
+bump to experience local Brownian motion when m ≪ m0 , while they have little effect
+on the travelling wave when m ≫ m0 . The interesting phenomenon happens when m
+is close to the boundary m0 , as noises will cause the effective adaptation strength m̃(t)
+to fluctuate around the boundary, leading to that the neural bump to exhibit a mixed
+movement pattern: temporally Brownian motion when m̃(t) < m0 and temporally
+large-size movement caused by travelling wave when m̃(t) < m0 . Such a motion
+pattern is called Lévy flights. In below, we analyze this Lévy flights state.
+    For the convenience of analysis, we consider that the levels of noises are low and that
+the variances of bump heights Au and Av are negligible. Under these approximations,
+Eqs. (99,101) can be simplified as,
+                           r
+       dz                    2 σU
+     τ     = ms(t) +                ξU,1 (t),                                            (102)
+       dt                    π Au
+                                                            r
+       ds               τv          σm                        2 τv σ U 2     1 σm 2
+    τv     = −[1 − m + √                    ξm,0 (t)]s(t) +    (      ) +     ( ) ξs (t),
+       dt                τ       2 πam                        π τ Au        2π m
+                                                                                         (103)
+where ξs (t) is Gaussian white noise of zero mean and unit variance.
+    Eq. (102) shows that the bump position z(t) is determined by twop   parts, a drift term
+(ms(t)) reflecting the contribution of adaptation and a diffusion term ( 2/π(σU /Au )ξU,1 (t))
+reflecting the contribution of noises on the neuronal dynamics. It is evident that, in the
+absence of adaptation (m = 0), the dynamics of the bump center expressed by Eq. (102)
+degenerate into a Brownian motion process driven by Gaussian noise [43].
+
+                                             24
+   To solve the dynamics of z(t), we first solve the dynamics of s(t). For clearance,
+we re-organize Eq. (103) as,
+                                ds
+                           τv      = −(µ + γξm,0 )s + σs ξs ,                          (104)
+                                dt
+where µ = 1−mτv /τ denotes the distance-to-boundary ratio, reflecting the gap between
+       √ adaptation strength and the boundary of the travelling wave (τ /τv ). γ =
+the mean
+σm /(2 πam)pdenotes the noise-to-strength ratio, reflecting the relative amplitude of
+noises. σs = 2τv2 σU2 /(πτ 2 A2u ) + 2a2 γ 2 represents the re-scaled neuronal noises.
+     We first consider that no noise in the adaptation (γ = 0). In such a case, if µ < 0,
+i.e., m > τ /τv , s(t) will simply increase monotonically with time without converging
+to any stable points. If µ > 0, i.e., 0 < m < τ /τv , the evolution of the equation
+proposed in Eq. (104) gives rise to an Ornstein-Uhlenbeck (OU) process [44], and the
+distribution of s(t) is Gaussian [44]. It can be written as,
+
+                                                     µs2 2
+                                     r                     
+                             st          µ
+                            p (s) =          exp −       σ                           (105)
+                                       πσs2           . s
+
+Combining Eqs. (105) and (102), the dynamics of dz/dt turns out to be determined by
+the sum of two Gaussian noise terms, which is still Gaussian. This implies that the
+bump takes on Brownian motion.
+    The dynamics of the bump center z(t) becomes intriguing when the adaptation
+strength m fluctuates, i.e. γ > 0, since the multiplicative noise ξm in the drift term
+will play its role. Utilizing Ito calculus, we can rewrite Eq. (104) as a first order differ-
+ence equation,
+                                Z t+dt 
+                                           µs(t′ ) γs(t′ )
+                                                                               
+                                                                    σs
+        s(t + dt) = s(t) +               −         + √ ξm (t ) + √ ξs (t ) dt′ ,
+                                                               ′             ′
+                                  t          τv        τv             τv
+                                    µs(t)        1 
+                                                     −s(t)γdtξ¯m + σs dtξ¯s ,
+                                                                           
+                         = s(t) −         dt + √                                       (106)
+                                     τv           τv
+
+where dtξ¯m and dtξ¯s are the Ito prescriptions in the limit of dt −
+                                                                   → 0. To derive the
+Fokker-Planck equation, we adopt a smooth trail function R(s) proposed by Rivers[45]
+and calculate its time average,
+                                      Z
+                             ⟨R(t)⟩ = R(s)p(s, t)ds,                            (107)
+
+where p(s, t) is the distribution of s(t) at time t. The evolution of the average value of
+R(t) in a short interval dt at time t is given by,
+                    Z                                                         
+                                  µs         1          ¯          ¯
+⟨R(t + dt)⟩ =            R s − dt + √ (−sγdtξm + σs dtξs ) p(s, t)ds , (108)
+                                  τv          τv
+                                                                σs2 + γ 2 s2
+                    Z                                                                 
+                                         ′       µ         ′′
+               =           R(s) + dtR (s)(− s) + dtR (s)(                    ) p(s, t)ds .
+                                                τv                   2τv
+                                                                                       (109)
+
+                                              25
+Eq. (109) is the first-order Taylor-series expansion of the trail function R(·). Note that
+the left side corresponds to the partial derivative of p(s, t) with respect to t, and the right
+side corresponds to the partial derivative of p(s, t) with respect to s. Thus we obtain the
+Fokker-Planck equation which describes the time evolution of the distribution of s(t),
+
+                                                   ∂ 2 σs2 + γ 2 s2
+                                                                         
+            ∂p(s, t)      ∂       µ
+                     =−        − sp(s, t) + 2                        p(s, t) .           (110)
+               ∂t         ∂s      τv              ∂s         2τv
+
+The stationary distribution of pst (s) is achieved when
+
+                                        d σs2 + γ 2 s2
+                                                             
+                         µ
+                      − sp(s, t) =                     p(s, t) .                         (111)
+                        τv              ds      2τv
+
+Thus we obtain the stationary distribution of s(t) by solving the corresponding Fokker-
+Planck equation, which gives,
+                                                             2
+                            p(s) = c0 (σs2 + γ 2 s2 )−(1+µ/γ ) ,                         (112)
+
+where c0 is a normalization constant.
+    According to Eq. (102), the displacement
+                                       p        of z(t) in a short time interval δt is cal-
+culated to be ||∆z|| = ||msδt/τ + 2δt/(πτ )σU /Au ξU,1 ||. Substituting s with its
+stationary distribution Eq. (112), we finally derive the distribution of ||∆z||,
+
+                              p(||∆z||) = c1 ||∆z||−1−α ,                                (113)
+
+which clearly satisfies a power-law distribution with the exponent α = 1 + 2µ/γ 2 .
+    The above power-law distribution represents a typical diffusion (or random walk)
+process. When the diffusion parameter α satisfies 0 < α < 2, the distribution describes
+Lévy flights, also termed as anomalous diffusion or super diffusion. When α > 2, the
+above process degenerates to Brownian motion due to the Central Limit Theorem [43].
+Although both are random wanderings, Lévy flight and Brownian motion have different
+properties. The distribution of steps in Brownian motion can be drawn as a bell-shaped
+curve. Lévy flights, on the other hand, are a class of random processes with Markovian
+properties characterized by occasional long-range jumps, i.e. long-tailed asymptotic
+form as |s| −→ ∞ . Therefore, Lévy flights are more prone to occasional long-range
+jumps in comparison to Brownian motion. We carry simulations to verify our theoretical
+results. Fig. 6c shows the phase diagram of the spontaneous dynamics of noisy A-
+CANN. Fig. 6a and b shows the comparison between the simulation results and the
+theoretical solutions of the distribution exponent α.
+
+5.1.1   Biological implications of Lévy flights
+The A-CANN with adaptation has the intrinsic mobility of generating a travelling wave
+when the adaptation strength is strong enough [4, 14]. The condition of m0 = τ /τv de-
+fines the boundary of the traveling wave. Above the boundary, the bump moves sponta-
+neously in the attractor space; while below the boundary, the bump remains static with-
+out external input or exhibits Brownian motion when external noise is present. When
+noises are considered in the adaptation strength, the A-CANN displays new interesting
+
+                                              26
+dynamical behaviors. Specifically, consider the mean of the adaptation strength is close
+to the traveling wave boundary, noises occasionally push the adaptation strength across
+the boundary, causing bump movement to temporarily fall into the traveling wave state,
+and the bump travels a long distance (long jump) in the attractor space. Over time, due
+to the adaptation strength fluctuations, the bump movement displays intermittent local
+Brownian motion (the adaptation strength below the boundary) and long-jump motion
+(the adaptation strength above the boundary) , manifesting the characteristic of Lévy
+flights [46].
+    Mathematically, Lévy flight is an efficient strategy for information search in an un-
+known open space [47, 48, 49]. It has been widely found in animal forging behaviors
+and also in human psychology experiments, such as free memory recalls [50, 51] . Fur-
+thermore, recently, the data recorded in electrophysiological experiments also revealed
+that when experimental animals remain still, the sequential reactivation of place cells
+in the hippocampal region follow statistical characteristics of Lévy flights [52]. Our
+model may offer a potential mechanism for explaining the patterns of sequential ac-
+tivation of place cells, thus providing more insights into the understanding of higher
+cognitive functions associated with them.
+
+
+
+
+                                           27
+    a     2
+                                                                                  b
+                                                                                                    2
+                                                  simulation result                                                                                        simulation result
+        1.9                                       theoretical solution                        1.9                                                          theoretical solution
+
+        1.8
+                                                                                              1.8
+        1.7
+                                                                                              1.7
+        1.6
+                                                                                              1.6
+        1.5
+                                                                                              1.5
+        1.4
+                                                                                              1.4
+        1.3
+
+        1.2                                                                                   1.3
+
+
+        1.1                                                                                   1.2
+
+          1                                                                                   1.1
+                 0                0.5                          1.0                                           0                             0.6                                    1.2
+
+
+
+
+    c                                                                             d
+                           simulation result                             2
+                                                                                        
+                                                                                                           2.5
+
+         1.2                             Levy                            1.9
+                                        flights                                                                     Traveling
+                                                                         1.8                               2.0
+                                                                                                                    wave state
+
+
+
+                                                                                      Adaptation stre. m
+                                                                         1.7
+
+                                                                         1.6                               1.5
+         0.8
+                     Traveling
+                                                                         1.5
+                     wave state
+                                             Brownian                    1.4                               1.0
+                                                                                                                    Brownian
+                                              motion                     1.3                                         motion
+         0.4
+                                                                         1.2                               0.5
+
+
+                                                  simulation             1.1
+                                                                                                                      Levy
+                                                    theory                                                           flights
+                                                                                                           0.0
+          0                                                              1                                    0.0              0.1         0.2       0.3                   0.4
+          -1.0                    0                            1.0
+                                                                                                                                     Input stre. α
+
+
+
+Figure 6: Spontaneous dynamics of the noisy A-CANN. a. The Lévy exponent α vs. µ
+with γ = 0.77. Note that when µ > γ 2 /2, all α > 2 (Brownian motion) will converge
+to α = 2 due to the Central Limit Theorem. b. The Lévy exponent α vs. γ with
+µ = 0.16. c. The phase diagram of the network dynamics with respect to the distance-
+to-boundary µ and the noise-to-strength ratio γ. d. The phase diagram of the network
+dynamics with respect to the input strength α and the adaptation strength m. Parameters
+are: a = π/10, J0 = 10, k = 0.05, τ = 10ms,τv = 25ms, ρ = 1600/(2π), m̄ = 0.56,
+σm = 6.4, σU = 0.01.
+
+
+6       Conclusion and Discussion
+Attractor networks, such as the Hopfield network, are neural models where information
+is encoded as stationary states in a dynamic system of interconnected neurons. While
+the Hopfield model effectively explains associative memory with discrete attractors, it
+falls short for correlated or continuous information representations. This led to the de-
+velopment of continuous attractor neural networks (CANNs), which form continuous
+subspaces for smooth tracking of information like orientation or spatial location. By
+studying CANNs, we gain insights into the balance between stability and mobility in
+
+                                                                             28
+neural representations, crucial for both reliable information encoding and efficient pro-
+cessing. Adaptive mechanisms, like neural adaptation, introduce necessary dynamics
+for this balance. In this research, ‘neural adaptation’ refers to the common phenomenon
+of decaying neuronal activities in response to repeated or prolonged stimulation in neu-
+ral networks.
+     Here we review and unify previous studies on adaptive CANNs, offering a compre-
+hensive theoretical framework and discussing the resulting rich dynamical behaviors
+and their biological implications.
+     Although the equations governing the dynamics of continuous attractor neural net-
+works (CANNs) seem complex due to their high dimensionality, their behavior is pri-
+marily influenced by a few dominant motion modes, such as changes in the bump’s
+height, position, and width (illustrated in Fig.2d). By focusing on these dominant
+modes, we can greatly simplify the analysis of the network behavior by turning the
+high-dimensional neurodynamic model into state space model.
+     The role of adaptation mainly manifests in enhancing the intrinsic mobility and
+expressing capabilities of the system. In summary, external input pattern and intrinsic
+parametric conditions together determine the dynamical behavior of the system.
+     Considering spontaneuous motion (without external input), A-CANN holds a static
+bump as its stationary state when both the inhibition and adaptation are sufficiently
+small, satisfying 0 < k < kc2 and m < τ /τv . These agree with our intuition, as strong
+inhibition will suppress neuronal activities. If m > τ /τv , the strong adaptation will drag
+and untimately destabilize the static bump, causing the bump to move spontaneously
+in the feature space in a traveling wave manner. The wave enables a neural system
+to progressively visit all stationary points. This could endows cognitive functions of
+memory retrieval and memory consolidation [23].
+     In a practical situation, the neural system receives external or upstream input all the
+time. If the adaptation is weak, the external input will drive the neural bump to move at
+its speed, realizing smooth tracking; if the adaptation is too strong, the neural bump will
+move spontaneously as if no external input, realizing previous travelling wave. When
+taking an intermediate value, oscillatory tracking occurs, in which the neural bump is
+attracted by the center of the external input and moves back and forth. Our bifurcation
+analysis explains the state transition principle of the aattractor neural network from
+the perspective of dynamic system, and the theoretical and simulation results fit well
+(Fig.3).
+     When noise is factored, the A-CANN exhibits novel dynamical behaviors. Specifi-
+cally, when the mean adaptation strength approaches the boundary value of the traveling
+wave, noise perturbations occasionally push the adaptation strength beyond the bound-
+ary. This causes the bump movement to switch between intermittent local Brownian
+motion and long-jump motion, demonstrating the characteristic of Lévy flights [46].
+This behavior enables efficient searching in neural landscape and can function as a pos-
+sible policy in information processing.
+     By responding to external stimuli and processing internal information, adaptation
+mechanisms enable systems to continuously adjust their structure and parameters to
+adapt to environmental changes and emerge more diverse dynamical states. This dy-
+namic adjustment ability is crucial for the survival and evolution of complex systems in
+complicated changing environments. The manifestation of adaptation in external phe-
+
+                                            29
+nomena is reflected in the enhancement of the stability, robustness, and self-organization
+of the system. Through adaptation mechanisms, systems can maintain stable states un-
+der external disturbances and possess a certain self-repair capability. The computational
+significance of adaptation mechanisms is self-evident.
+    The implementation foundation of adaptation mechanisms lies in the sensitivity to
+dynamically adjust information processing according to current state. In artificial neural
+networks, this is typically achieved through weight adjustments, gain modulation, etc.,
+while in biological neural networks, it involves spiking frequency adaptation, synaptic
+plasticity, and neuron alterations. Here we summarize the possible biological applica-
+tions of the dynamical properties of A-CANN in the various states mentioned earlier.
+    Adaptation causes suppression around network bump, destabilizing it and driving it
+to move. This spontaneous movement, aided by recurrent neural interactions, results in
+traveling wave behavior. Such waves could facilitate active retrieval of stored memories,
+supporting cognitive functions like memory search and consolidation [28, 29, 23].
+    CANNs track external moving inputs but typically lag behind. However, with strong
+adaptation, A-CANNs can track inputs anticipatively. The adaptation creates intrinsic
+mobility, causing the neural bump to move at an internal speed, competing with the
+speed of the external input. When the internal speed exceeds the external speed, the
+bump leads the input with a constant time. This mechanism could help compensate for
+neural signal transmission delays, ensuring timely perception and reaction, as seen in
+the head-direction system of rats [35].
+    A-CANNs exhibit oscillatory tracking when adaptation strength is intermediate.
+This may theta oscillations in hippocampal place cells during navigation, where the
+bump’s oscillation frequency matches the theta band. This results in theta sweeps and
+phase shifts in neuron firing, contributing to spatial information encoding and memory
+formation [39].
+    In the A-CANN, adaptation can cause the neural bump to move spontaneously, gen-
+erating traveling waves when adaptation strength is high. Near the threshold of this
+strength, noise can push the system into traveling wave states, resulting in intermit-
+tent long jumps and local Brownian motion, characteristic of Lévy flights [46]. Lévy
+flights are efficient for information search and have been observed in animal foraging
+and human memory recall. This model may explain the sequential activation patterns of
+hippocampal place cells during rest, providing insights into higher cognitive functions.
+    Overall, our study explores various dynamic behaviors of A-CANNs and their bio-
+logical implications. The traveling wave behavior supports memory retrieval and cogni-
+tive functions. Anticipative tracking compensates for neural delays. Oscillatory track-
+ing explains hippocampal theta rhythms. Lévy flights offer an efficient mechanism
+for information search and hippocampal place cell activation patterns. These findings
+provide a comprehensive understanding of how neural adaptation influences brain func-
+tions and cognition.
+    We highlights the key differences between A-CANNs and typical CANNs, empha-
+sizing the crucial role of adaptation. Neural adaptation mechanisms introduce dynamic
+flexibility to the otherwise stable attractor states. This extra flexibility allows A-CANNs
+to explain a broader range of experimental phenomena, such as traveling waves, an-
+ticipative tracking, oscillatory behavior, and Lévy flights, observed in various neural
+systems.
+
+                                            30
+    The ability of our network to align with these diverse neural encoding phenom-
+ena suggests that A-CANN may represent a general mechanism for neural information
+storage and processing. Specifically, neural system may combine attractor dynamics
+with adaptation, effectively balancing stability and flexibility. Attractor dynamics en-
+sure stable information storage, while adaptation facilitates flexible information search
+and retrieval. This dynamic interplay between stability and mobility enables the neural
+system to maintain robust representations while efficiently adapting to new experience
+and environmental changes.
+    In conclusion, adaptation mechanisms play an important and far-reaching role in
+abounding the dynamical properties of standard CANNs, with profound implications.
+This review not only contributes to a deeper understanding of the CANN but also pro-
+vides new ideas and methods for the development and application of adaptation mech-
+anism in neural networks under a unified analysis framework. It is hoped that the re-
+search in this paper can provide some reference and inspiration for further exploration
+and development in related fields.
+
+Acknowledgments
+This work was support by: Science and Technology Innovation 2030-Brain Science and
+Brain-inspired Intelligence Project (No. 2021ZD0200204, SW).
+
+
+Appendix A: Gaussian bump
+Considering the translational-invariant connection
+                                  J0
+                     J(x, x′ ) = √    exp[−(x − x′ )2 /(2a2 )]                        (114)
+                                  2πa
+and the Gaussian shape approximation of the bump
+                                      (                )
+                                           [x − z(t)]2
+                   U0 (x, t) = Au exp −                  ,                            (115)
+                                               4a2
+                                      (                         )
+                                           [x − z(t) + sv (t)]2
+                   V0 (x, t) = Av exp −                           ,                   (116)
+                                                   4a2
+                                      (                )
+                                           [x − z(t)]2
+                   r0 (x, t) = Ar exp −                  ,                            (117)
+                                               2a2
+
+then the network dynamics
+                                 Z ∞
+       dU (x, t)
+     τ           = −U (x, t) + ρ      J(x, x′ )r(x′ , t) dx′ − V (x, t) + I ext (x, t),(118)
+          dt                       −∞
+                            U (x, t)2
+         r(x, t) =        R∞                   ,                                      (119)
+                   1 + kρ −∞ U 2 (x′ , t), dx′
+         dV (x, t)
+    τv             = −V (x, t) + mU (x, t),                                           (120)
+            dt
+                                            31
+can be simplified as
+
+
+                                                                      A2u
+                                                          Ar =        √          ,                    (121)
+                                                                1 + kρ 2πaA2u
+                                                 (x − z)2                              (x − z)2
+                                        
+                         x − z dz dAu                                    ρJ0
+                  τ Au            +        exp[−            ] = (−Au +   √   Ar )exp[−             ]
+                          2a2 dt      dt            4a2                    2                4a2
+                                                                           (x − z + sv )2
+                                                                −Av exp[−                  ] + I ext (x, t),
+                                                                                 4a2
+                                                                                                      (122)
+                                                          2                              2
+                                   
+       x − z + sv d(z − sv ) dAv            (x − z + sv )                  (x − z + sv )
+τv A v       2
+                             +        exp[−         2
+                                                            ] = −Av exp[−                  ]
+          2a          dt         dt              4a                              4a2
+                                                                             (x − z)2
+                                                                +mAu exp[−            ],              (123)
+                                                                                4a2
+
+Appendix B: projection method
+For the bump U (x, t), the first two motion modes are,
+
+                                           [x − z(t)]2
+                                                      
+                    u0 (x, t) = exp −                    ,                          (124)
+                                               4a2
+                                                     [x − z(t)]2
+                                                                
+                    u1 (x, t) = [x − z(t)] exp −                   .                (125)
+                                                          4a2
+
+For the bump V (x, t), the first two motion modes are,
+
+                                     [x − z(t) + d(t)]2
+                                                       
+            v0 (x, t) = exp −                             ,                         (126)
+                                            4a2
+                                                      [x − z(t) + d(t)]2
+                                                                        
+            v1 (x, t) = [x − z(t) + d(t)] exp −                            .        (127)
+                                                             4a2
+
+Projecting
+ R∞        network dynamics Eqs. (8) onto the first two dominant motion modes of u
+( −∞ f (x)u(x)dx), we obtain
+
+
+                                             (x − z)2         √
+                                                   
+                 x − z dz dAu
+            Z
+                                                                    dAu
+Lef t =    τ Au            +        exp    −             dx =  2πaτ      ,                (128)
+                  2a2 dt      dt               2a2                    dt
+                                    (x − z)2                     (x − z + sv )2 + (x − z)2
+        Z                                          Z                                    
+                   ρJ0
+right =   (−Au + √ Ar )exp −                    dx − Av exp −                                dx
+                     2                2a2                                  4a2
+                         (x − z)2
+          Z                      
+             ext
+        + I exp −                    dx,
+                            4a2
+        √                         √                 sv (t)2                (x − z)2
+                                                            Z                     
+                       ρJ0                                        ext
+      =   2πa(−Au + √ Ar ) − 2πaAv exp −                     + I exp −                 dx,(129)
+                         2                            8a2                      4a2
+
+
+
+
+                                           32
+for u0 , and
+
+                                (x − z)2 dz                            (x − z)2
+                       Z                                                     
+                                                        dAu
+       Lef t =           τ Au                 + (x − z)        exp −              dx,
+                                  2a2 dt                 dt               2a2
+                               dz
+                   =   2a2 τ Au ,                                                      (130)
+                               dt
+                                                           (x − z)2
+                       Z                                           
+                                           ρJ0
+       right =           (x − z)(−Au + √ Ar )exp −                    dx
+                                              2                2a2
+                                                (x − z + sv )2 + (x − z)2
+                         Z                                               
+                       − (x − z)Av exp −                                    dx
+                                                           4a2
+                                                 (x − z)2
+                         Z                               
+                                    ext
+                       + (x − z)I exp −                     dx,
+                                                   4a2
+                                         s2v                            (x − z)2
+                                             Z                                
+                         2                                    ext
+                   =   2a sv Av exp − 2 + (x − z)I exp −                           dx, (131)
+                                        8a                                 4a2
+
+for u1 .
+    We can synthesize the above equations as
+
+                                            sv (t)2
+                                                    Z
+         dAu              ρJ0
+       τ      = (−Au + √ Ar ) − Av exp −              + I ext (x, t)u0 (x)dx,(132)
+          dt                2                8a2           x
+                               sv (t)2
+                                       Z
+           dz
+     τ Au     = sv (t)Av exp −          + I ext (x, t)u1 (x)dx.              (133)
+           dt                   8a2       x
+
+    Projecting network dynamics Eqs. (8) onto the first two dominant motion modes of
+u, we obtain
+
+                                           (x − z + sv )2                  (x − z + sv )2
+                                 
+       x − z + sv d(z − sv ) dAv
+τv A v                      +       exp[−                 ]  =  −A v exp[−                ]
+           2a2        dt       dt               4a2                             4a2
+                                                                             (x − z)2
+                                                                +mAu exp[−            ],
+                                                                                    (134)
+                                                                               4a2
+
+                                                                  (x − z + sv )2 + (x − z)2
+                                                                                         
+                         x − z + sv d(z − sv ) dAv
+               Z
+Lef t =           τv Av                        +          exp −                                dx,
+                            2a2         dt           dt                       4a2
+               √                                              s2v
+                                                               
+                             sv d(z − sv ) dAv
+        =        2πaτv Av 2                +          exp − 2 ,                              (135)
+                            4a      dt        dt             8a
+                               (x − z)2                          (x − z + sv )2 + (x − z)2
+               Z                               Z                                        
+right =           mAu exp −                dx − Av exp −                                     dx
+                                  2a2                                       4a2
+                                (x − z)2
+                 Z                      
+                     ext
+               + I exp −                    dx,
+                                   4a2
+               √             √                  s2v                      (x − z)2
+                                                     Z                         
+                                                             ext
+        =        2πamAu − 2πaAv exp − 2 + I exp −                                   dx,      (136)
+                                               8a                          4a2
+
+
+
+
+                                               33
+for u0 , and
+                                                                         (x − z + sv )2 + (x − z)2
+                                                                                                
+                         x − z + sv d(z − sv ) dAv
+               Z
+Lef t =           τv Av                          +        (x − z)exp −                               dx,
+                            2a2           dt        dt                             4a2
+               √
+                                          r
+                                  s2v                                   s2v
+                                                                         
+                       sv dAv                π      d(z − sv )
+        =        2πa          −( −             a)Av              exp − 2 ,                              (137)
+                       2 dt       8a         2          dt             8a
+                                        (x − z)2                               (x − z + sv )2 + (x − z)2
+               Z                                         Z                                            
+right =           mAu (x − z)exp −                  dx − Av (x − z)exp −                                   dx
+                                           2a2                                            4a2
+                                         (x − z)2
+                 Z                               
+                            ext
+               + (x − z)I exp −                      dx,
+                                            4a2
+               √                    s2v                             (x − z)2
+                                        Z                                 
+                        sv                                ext
+        =        2πaAv exp − 2 + (x − z)I exp −                                dx,                      (138)
+                         2         8a                                 4a2
+for u1 .
+    Combine these two equations and separate Av and sv using Eq. (133), we have
+
+                                    sv (t)2
+                                           
+      dAv
+   τv      = −Av + mAu exp −                  ,                                   (139)
+       dt                            8a2
+                           sv (t)2
+                                                            Z
+       dsv                               τv 2             τv Av
+τv A v     = sv (t) exp −                    A − mAu +            I ext (x, t)u1 (x)dx.
+                                                                                  (140)
+        dt                  8a2        τ Au v             τ Au x
+    To sum up, we get the original of Eqs. (14-17).
+
+
+Appendix C: travelling wave solution
+We further analyze the condition for the network holding a continuously moving bump
+(travelling wave) as its stationary state. In such a state, the bump moves at a constant
+speed and its position is expressed as,
+
+                                      z(t) = vint t,                                   (141)
+
+where vint is the intrinsic speed of the network explained in Sec.3. In the travelling state,
+the bump height and the discrepancy d is a constant. With these conditions, Eqs. (8,9)
+are simplified to be,
+                             
+                    x−z                                  ρJ0
+            τ Au        2
+                          vint N (z, 2a) = (−Au + √ Ar )N (z, 2a) − Av N (z − sv ,(142)        2a),
+                     2a                                    2
+                        
+       x − z + sv
+τv A v              vint N (z − sv , 2a) = −Av N (z − sv , 2a) + mAu N (z, 2a).               (143)
+            2a2
+
+Projecting both sides of Eq. (142) onto the motion mode u0 (x) (given by Eq. (10)), we
+obtain
+
+                   Lef t = 0,
+                                  ρJ0   √               s2 √
+                   Right = (−Au + √ Ar ) 2πa − Av exp(− v2 ) 2πa.
+                                    2                  8a
+
+                                             34
+Equating both sides, we have
+
+                               ρJ0             s2
+                         −Au + √ Ar − Av exp(− v2 ) = 0.                            (144)
+                                 2            8a
+
+Similarly, projecting Eq. (142) onto the motion mode u1 (x) (given by Eq. (11)) and
+equating both sides, we obtain
+
+                                                         s2v
+                              τ Au vint = sv Av exp(−        ).                     (145)
+                                                        8a2
+Again, projecting both sides of Eq. (143) onto the motion modes u0 (x) and u1 (x),
+respectively, and equating both sides, we obtain
+
+                sv                s2v                      s2v
+                   τ v A v exp(−      )v int = −A v exp(−      ) + mAu ,            (146)
+               4a2               8a2                      8a2
+                                  s2
+                          τv (1 − v2 )vint = sv .                                   (147)
+                                 4a
+Summarize the four equations above, overall we have
+
+                                                     sv (t)2
+                                                            
+                             ρJ0
+                     Au = √ Ar − Av exp −                      ,                    (148)
+                               2                       8a2
+                                               sv (t)2
+                                                      
+               τ Au vint = sv (t)Av exp −                 ,                         (149)
+                                                8a2
+                                           sv (t)2
+                                                  
+                     Av = mAu exp −                   ,                             (150)
+                                            8a2
+                                           sv (t)2
+                                                                  
+                 dsv (t)                                  τv 2
+           τv Av         = sv (t) exp −                       A − mAu ,             (151)
+                   dt                       8a2          τ Au v
+
+Combining the above equations with Eq. (7), we can analytically solve the five unknown
+parameters in travelling wave state:
+                       q            √
+               ρJ0 + ρ2 J02 − 8 2πkρa(1 + mτ
+                                                 p
+                                                   τv
+                                                      )2
+     Au =                  √                             ,                           (152)
+                         4 πkρa(1 + mτ
+                                       p
+                                          τv
+                                              )
+                       q            √
+               ρJ0 + ρ2 J02 − 8 2πkρa(1 + mτ
+                                                 p
+                                                   τv
+                                                      )2
+     Av =                       √                        ,                           (153)
+                              2 2πkρ2 aJ0
+                                                 q          √
+                                                  ρ2 J02 − 8 2πkρa(1 + mτ
+                                                                         p
+                                                                                )2
+                           "      p τ #
+               r
+                   mτ        1 − mτv    ρJ  0  +                             τv
+     Ar =              exp                          √                              , (154)
+                                                   4 πkρa(1 + mτ
+                                                                p
+                   τv              2                               τv
+                                                                      )
+                   s     r
+                              τ
+     sv = 2a 1 −                 ,                                                   (155)
+                            mτv
+                   s         r
+               2a mτv            mτv
+    vint =                 −         .                                               (156)
+                τv     τ           τ
+
+                                           35
+References
+ [1] John J Hopfield. Neural networks and physical systems with emergent collec-
+     tive computational abilities. Proceedings of the national academy of sciences,
+     79(8):2554–2558, 1982.
+
+ [2] Shun-ichi Amari. Dynamics of pattern formation in lateral-inhibition type neural
+     fields. Biological cybernetics, 27(2):77–87, 1977.
+
+ [3] Bard Ermentrout. Neural networks as spatio-temporal pattern-forming systems.
+     Reports on progress in physics, 61(4):353, 1998.
+
+ [4] Paul C Bressloff. Spatiotemporal dynamics of continuum neural fields. Journal
+     of Physics A: Mathematical and Theoretical, 45(3):033001, 2011.
+
+ [5] Rani Ben-Yishai, R Lev Bar-Or, and Haim Sompolinsky. Theory of orienta-
+     tion tuning in visual cortex. Proceedings of the National Academy of Sciences,
+     92(9):3844–3848, 1995.
+
+ [6] Francesco P Battaglia and Alessandro Treves. Attractor neural networks storing
+     multiple space representations: a model for hippocampal place fields. Physical
+     Review E, 58(6):7738, 1998.
+
+ [7] Simona Doboli, Ali A Minai, and Phillip J Best. Latent attractors: a model for
+     context-dependent place representations in the hippocampus. Neural Computa-
+     tion, 12(5):1009–1043, 2000.
+
+ [8] John Conklin and Chris Eliasmith. A controlled attractor network model of path
+     integration in the rat. Journal of computational neuroscience, 18:183–203, 2005.
+
+ [9] Mark C Fuhs and David S Touretzky. A spin glass model of path integration in rat
+     medial entorhinal cortex. Journal of Neuroscience, 26(16):4266–4276, 2006.
+
+[10] Boris Gutkin and Fleur Zeldenrust. Spike frequency adaptation. Scholarpedia,
+     9(2):30643, 2014.
+
+[11] Larry F Abbott, JA Varela, Kamal Sen, and SB Nelson. Synaptic depression and
+     cortical gain control. Science, 275(5297):221–224, 1997.
+
+[12] Misha Tsodyks, Klaus Pawelzik, and Henry Markram. Neural networks with dy-
+     namic synapses. Neural computation, 10(4):821–835, 1998.
+
+[13] Henry Markram, Yun Wang, and Misha Tsodyks. Differential signaling via
+     the same axon of neocortical pyramidal neurons. Proceedings of the National
+     Academy of Sciences, 95(9):5323–5328, 1998.
+
+[14] Yuanyuan Mi, CC Fung, KY Wong, and Si Wu. Spike frequency adaptation im-
+     plements anticipative tracking in continuous attractor neural networks. Advances
+     in neural information processing systems, 27, 2014.
+
+
+
+                                         36
+[15] CC Alan Fung, KY Michael Wong, He Wang, and Si Wu. Dynamical synapses en-
+     hance neural information processing: gracefulness, accuracy, and mobility. Neural
+     computation, 24(5):1147–1185, 2012.
+
+[16] Simon J Mitchell and R Angus Silver. Shunting inhibition modulates neuronal
+     gain during synaptic excitation. Neuron, 38(3):433–445, 2003.
+
+[17] CC Alan Fung, KY Michael Wong, and Si Wu. A moving bump in a continuous
+     manifold: a comprehensive study of the tracking dynamics of continuous attractor
+     neural networks. Neural Computation, 22(3):752–792, 2010.
+
+[18] Si Wu, Kosuke Hamaguchi, and Shun-ichi Amari. Dynamics and computation of
+     continuous attractors. Neural computation, 20(4):994–1025, 2008.
+
+[19] Aaron G Blankenship and Marla B Feller. Mechanisms underlying spontaneous
+     patterned activity in developing neural circuits. Nature Reviews Neuroscience,
+     11(1):18–29, 2010.
+
+[20] Chiayu Chiu and Michael Weliky. Spontaneous activity in developing ferret visual
+     cortex in vivo. Journal of Neuroscience, 21(22):8906–8914, 2001.
+
+[21] Lawrence M Ward. Synchronous neural oscillations and cognitive processes.
+     Trends in cognitive sciences, 7(12):553–559, 2003.
+
+[22] David Dupret, Joseph O’neill, Barty Pleydell-Bouverie, and Jozsef Csicsvari. The
+     reorganization and reactivation of hippocampal maps predict spatial memory per-
+     formance. Nature neuroscience, 13(8):995–1002, 2010.
+
+[23] Margaret F Carr, Shantanu P Jadhav, and Loren M Frank. Hippocampal replay
+     in the awake state: a potential substrate for memory consolidation and retrieval.
+     Nature neuroscience, 14(2):147–153, 2011.
+
+[24] Georg Northoff and Niall W Duncan. How do abnormalities in the brain’s sponta-
+     neous activity translate into symptoms in schizophrenia? from an overview of rest-
+     ing state activity findings to a proposed spatiotemporal psychopathology. Progress
+     in neurobiology, 145:26–45, 2016.
+
+[25] Miao Chang, Elliot K Edmiston, Fay Y Womer, Qian Zhou, Shengnan Wei, Xi-
+     aowei Jiang, Yifang Zhou, Yuting Ye, Haiyan Huang, Xi-Nian Zuo, et al. Spon-
+     taneous low-frequency fluctuations in the neural system for emotional perception
+     in major psychiatric disorders: amplitude similarities and differences across fre-
+     quency bands. Journal of Psychiatry and Neuroscience, 44(2):132–141, 2019.
+
+[26] Stephen Coombes, Peter beim Graben, Roland Potthast, and James Wright. Neural
+     fields: theory and applications. Springer, 2014.
+
+[27] Si Wu, KY Michael Wong, CC Alan Fung, Yuanyuan Mi, and Wenhao Zhang.
+     Continuous attractor neural networks: candidate of a canonical model for neural
+     information representation. F1000Research, 5, 2016.
+
+
+                                          37
+[28] Heiko J Luhmann, Anne Sinning, Jenq-Wei Yang, Vicente Reyes-Puerta, Maik C
+     Stüttgen, Sergei Kirischuk, and Werner Kilb. Spontaneous neuronal activity in de-
+     veloping neocortical networks: from single cells to large-scale interactions. Fron-
+     tiers in neural circuits, 10:40, 2016.
+
+[29] Anish Mitra and Marcus E Raichle. How networks communicate: propagation
+     patterns in spontaneous brain activity. Philosophical Transactions of the Royal
+     Society B: Biological Sciences, 371(1705):20150546, 2016.
+
+[30] Oscar Herreras, C Largo, Jo& M Ibarz, GG Somjen, and R Martin del Rio. Role
+     of neuronal synchronizing mechanisms in the propagation of spreading depression
+     in the in vivo hippocampus. Journal of Neuroscience, 14(11):7087–7098, 1994.
+
+[31] Martin Both, Florian Bähner, Oliver von Bohlen und Halbach, and Andreas
+     Draguhn. Propagation of specific network patterns through the mouse hippocam-
+     pus. Hippocampus, 18(9):899–908, 2008.
+
+[32] Si Wu and Shun-ichi Amari. Computing with continuous attractors: stability and
+     online aspects. Neural computation, 17(10):2215–2239, 2005.
+
+[33] K Wong, He Wang, Si Wu, and Chi Fung. Attractor dynamics with synaptic
+     depression. Advances in Neural Information Processing Systems, 23, 2010.
+
+[34] Alexei Samsonovich and Bruce L McNaughton. Path integration and cognitive
+     mapping in a continuous attractor neural network model. Journal of Neuroscience,
+     17(15):5900–5920, 1997.
+
+[35] Hugh T Blair and Patricia E Sharp. Anticipatory head direction signals in ante-
+     rior thalamus: evidence for a thalamocortical circuit that integrates angular head
+     motion to compute head direction. Journal of Neuroscience, 15(9):6260–6270,
+     1995.
+
+[36] Kechen Zhang. Representation of spatial orientation by the intrinsic dynamics of
+     the head-direction cell ensemble: a theory. Journal of Neuroscience, 16(6):2112–
+     2126, 1996.
+
+[37] David G Luenberger. Introduction to dynamic systems: theory, models, and ap-
+     plications, volume 1. Wiley New York, 1979.
+
+[38] Stefanos E Folias and Paul C Bressloff. Breathing pulses in an excitatory neural
+     network. SIAM Journal on Applied Dynamical Systems, 3(3):378–407, 2004.
+
+[39] Tianhao Chu, Zilong Ji, Junfeng Zuo, Wenhao Zhang, Tiejun Huang, Yuanyuan
+     Mi, and Si Wu. Oscillatory tracking of continuous attractor neural networks ac-
+     count for phase precession and procession of hippocampal place cells. Advances
+     in Neural Information Processing Systems, 35:33159–33172, 2022.
+
+[40] Gergő Orbán, Pietro Berkes, József Fiser, and Máté Lengyel. Neural variability
+     and sampling-based probabilistic representations in the visual cortex. Neuron,
+     92(2):530–543, 2016.
+
+                                          38
+[41] Yang Qi and Pulin Gong. Fractional neural sampling as a theory of spatiotemporal
+     probabilistic computations in neural circuits. Nature communications, 13(1):4572,
+     2022.
+
+[42] Ralf M Haefner, Pietro Berkes, and József Fiser. Perceptual decision-making as
+     probabilistic inference by neural sampling. Neuron, 90(3):649–660, 2016.
+
+[43] Frederic Bartumeus. Lévy processes in animal movement: an evolutionary hy-
+     pothesis. Fractals, 15(02):151–162, 2007.
+
+[44] George E Uhlenbeck and Leonard S Ornstein. On the theory of the brownian
+     motion. Physical review, 36(5):823, 1930.
+
+[45] RJ Rivers. Path integral methods in quantum field theory. Cambridge University
+     Press, 1988.
+
+[46] Xingsi Dong, Tianhao Chu, Tiejun Huang, Zilong Ji, and Si Wu. Noisy adaptation
+     generates lévy flights in attractor neural networks. Advances in Neural Informa-
+     tion Processing Systems, 34:16791–16804, 2021.
+
+[47] Gandhimohan M Viswanathan, Vsevolod Afanasyev, Sergey V Buldyrev, Eu-
+     gene J Murphy, Peter A Prince, and H Eugene Stanley. Lévy flight search patterns
+     of wandering albatrosses. Nature, 381(6581):413–415, 1996.
+
+[48] Frederic Bartumeus, M G E da Luz, Gandhimohan M Viswanathan, and Jordi
+     Catalan. Animal search strategies: a quantitative random-walk analysis. Ecology,
+     86(11):3078–3087, 2005.
+
+[49] Andrew M Reynolds. Scale-free animal movement patterns: Lévy walks outper-
+     form fractional brownian motions and fractional lévy motions in random search
+     scenarios. Journal of Physics A: Mathematical and Theoretical, 42(43):434006,
+     2009.
+
+[50] Theo Rhodes and Michael T Turvey. Human memory retrieval as lévy foraging.
+     Physica A: Statistical Mechanics and its Applications, 385(1):255–260, 2007.
+
+[51] Tommaso Costa, Giuseppe Boccignone, Franco Cauda, and Mario Ferraro. The
+     foraging brain: Evidence of lévy dynamics in brain networks. PloS one,
+     11(9):e0161702, 2016.
+
+[52] Brad E Pfeiffer and David J Foster. Autoassociative dynamics in the generation of
+     sequences of hippocampal place cells. Science, 349(6244):180–183, 2015.
+
+
+
+
+                                         39
+

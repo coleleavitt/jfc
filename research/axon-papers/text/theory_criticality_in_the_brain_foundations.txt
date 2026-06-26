@@ -1,0 +1,3223 @@
+                                                                                          Journal: NETWORK NEUROSCIENCE
+
+
+
+                                           REVIEW
+
+
+
+                                                           Theoretical foundations of studying criticality in the brain
+
+
+
+
+arXiv:2306.05635v1 [q-bio.NC] 9 Jun 2023
+                                              Yang Tian1,2 and Zeren Tan3 and Hedong Hou4 and Guoqi Li5,6 and Aohua Cheng7 and Yike Qiu7 and Kangyu
+
+                                                                                                            Weng7 and Chun Chen1 and Pei Sun1
+
+
+
+                                                                   1
+                                                                       Department of Psychology & Tsinghua Laboratory of Brain and Intelligence, Tsinghua University, Beijing, 100084, China.
+
+                                                   2
+                                                       Laboratory of Advanced Computing and Storage, Central Research Institute, 2012 Laboratories, Huawei Technologies Co. Ltd., Beijing, 100084, China.
+
+                                                                                  3
+                                                                                      Institute for Interdisciplinary Information Science, Tsinghua University, Beijing, 100084, China.
+
+                                                                                                     4
+                                                                                                         UFR de Mathématiques, Université de Paris, Paris, 75013, France.
+
+                                                                                             5
+                                                                                                 Institute of Automation, Chinese Academy of Science, Beijing, 100190, China.
+
+                                                                                                    6
+                                                                                                        University of Chinese Academy of Science, Beijing, 100049, China.
+
+                                                                   7
+                                                                       Tsien Excellence in Engineering Program, School of Aerospace Engineering, Tsinghua University, Beijing, 100084, China.
+
+
+
+
+                                           Keywords: Non-equilibrium criticality, Neural avalanches, Neural dynamics, Directed percolation
+
+
+                                           ABSTRACT
+                                           Criticality is hypothesized as a physical mechanism underlying efficient transitions between cortical
+                                           states and remarkable information processing capacities in the brain. While considerable evidence
+                                           generally supports this hypothesis, non-negligible controversies persist regarding the ubiquity of
+                                           criticality in neural dynamics and its role in information processing. Validity issues frequently arise
+                                           during identifying potential brain criticality from empirical data. Moreover, the functional benefits
+                                           implied by brain criticality are frequently misconceived or unduly generalized. These problems stem
+                                           from the non-triviality and immaturity of the physical theories that analytically derive brain criticality
+                                           and the statistic techniques that estimate brain criticality from empirical data. To help solve these
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    problems, we present a systematic review and reformulate the foundations of studying brain criticality,
+    i.e., ordinary criticality (OC), quasi-criticality (qC), self-organized criticality (SOC), and self-organized
+    quasi-criticality (SOqC), using the terminology of neuroscience. We offer accessible explanations of the
+    physical theories and statistic techniques of brain criticality, providing step-by-step derivations to
+    characterize neural dynamics as a physical system with avalanches. We summarize error-prone details
+    and existing limitations in brain criticality analysis and suggest possible solutions. Moreover, we present
+    a forward-looking perspective on how optimizing the foundations of studying brain criticality can deepen
+    our understanding of various neuroscience questions.
+
+
+
+    AUTHOR SUMMARY
+    Brain criticality hypothesis is one of the most focused and controversial topics in neuroscience and
+    biophysics. This research develops a unified framework to reformulate the physics theories of four basic
+    types of brain criticality, i.e., ordinary criticality (OC), quasi-criticality (qC), self-organized criticality
+    (SOC), and self-organized quasi-criticality (SOqC), into more accessible and neuroscience-related forms.
+    For the statistic techniques used to validate brain criticality hypothesis, we also present comprehensive
+    explanations of them, summarize their error-prone details, and suggest possible solutions. This
+    framework may help resolve potential controversies in studying brain criticality hypothesis, especially
+    those arising from the misconceptions about the theoretical foundations of brain criticality.
+
+
+
+    INTRODUCTION
+    Neuroscience is dawning upon revealing physics foundations of the brain Abbott (2008). Ever since the
+    1970s, the term neurophysics has been suggested as a term to indicate the essential role of physics in
+    understanding the brain Scott and Alwyn (1977). More recently, substantial progress has been
+    accomplished in studying brain connectivity and brain functions with statistical physics theories Lynn
+    and Bassett (2019).
+
+    For brain connectivity, physics provides insights for its emergence, organization, and evolution. Random
+    graphs Betzel et al. (2016); Betzel and Bassett (2017a), percolation Breskin, Soriano, Moses, and Tlusty
+    (2006); Guo et al. (2021), and other physics theories of correlated systems Haimovici, Tagliazucchi,
+    Balenzuela, and Chialvo (2013); Wolf (2005) are applied to reveal the underlying mechanisms
+
+                                                                –2–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    accounting for the origins of brain network properties. Complex network theories act as the foundation of
+    characterizing brain connectivity organizational features (e.g., community Betzel and Bassett (2017b);
+    Betzel, Medaglia, and Bassett (2018); Khambhati, Sizemore, Betzel, and Bassett (2018), hub Deco,
+    Tononi, Boly, and Kringelbach (2015); Gong et al. (2009), and small-world Bullmore and Sporns (2012);
+    Deco et al. (2015) structures) and embedding attributes into physical space Bassett et al. (2010); Kaiser
+    and Hilgetag (2006). Network evolution driven by neural plasticity helps to explain the dynamics of brain
+    connectivity structures during information processing Del Pozo et al. (2021); Galván (2010); Montague,
+    Dayan, and Sejnowski (1996); Robert and Vignoud (2021); Song, Miller, and Abbott (2000). For brain
+    functions, physics presents possible explanations for the origin of information processing capacities from
+    collective neural activities. From single neuron dynamics models Gerstner, Kistler, Naud, and Paninski
+    (2014), stochastic network models of neural populations and circuits Tian, Li, and Sun (2021); Tian and
+    Sun (2021), mean-field neural mass models of brain regions David and Friston (2003); Touboul,
+    Wendling, Chauvel, and Faugeras (2011), eventually to models of entire brain networks Hopfield (1982);
+    Schneidman, Berry, Segev, and Bialek (2006), important efforts have been devoted to characterize
+    information-processing-related neural dynamics across different scales. Networks with memory
+    capacities (e.g., Hopfield networks Tyulmankov, Fang, Vadaparty, and Yang (2021)), which are
+    equivalent to Ising models under specific conditions Lynn and Bassett (2019), have been applied to study
+    neural information storage and recall Haldeman and Beggs (2005); Krotov and Hopfield (2020),
+    adaptation to environment changes Shew et al. (2015), information transmission optimization Beggs and
+    Plenz (2003), dynamic range maximization Kinouchi and Copelli (2006); Shew, Yang, Petermann, Roy,
+    and Plenz (2009), and neural computation power Bertschinger and Natschläger (2004). These models are
+    further related to maximum entropy models (e.g., specific fine-tuned Ising models) that predict
+    long-range correlations observed among neurons Ganmor, Segev, and Schneidman (2011); Schneidman
+    et al. (2006). Moreover, general theories of free-energy principle Friston (2009, 2010); Guevara (2021)
+    and information thermodynamics Capolupo, Freeman, and Vitiello (2013); Collell and Fauquet (2015);
+    Sartori, Granger, Lee, and Horowitz (2014); Tian and Sun (2022) are suggested as the unified foundations
+    of perception, action, and learning in the brain.
+
+
+    If one needs to specify one of the most focused and controversial topics among all the works mentioned
+    above, brain criticality may be a potential candidate Beggs and Timme (2012). The hypothesis of the
+
+                                                                –3–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    critical brain has received increasing attention in recent decades, serving as a possible mechanism
+    underlying various intriguing but elusive phenomena in the brain. In light of our limited understanding of
+    the complex nature of collective neural dynamics, these phenomena include, to name a few, efficient
+    transitions between cortical states Fontenele et al. (2019), maximal dynamic ranges of neural responses
+    Antonopoulos (2016); Gautam, Hoang, McClanahan, Grady, and Shew (2015); Kinouchi and Copelli
+    (2006); Shew et al. (2009), optimized information transmission and representation Antonopoulos (2016);
+    X. Li and Small (2012); Shew, Yang, Yu, Roy, and Plenz (2011), and numerous other issues concerning
+    brain functions that we have mentioned above. One can see Beggs (2007); Chialvo (2010); Cocchi,
+    Gollo, Zalesky, and Breakspear (2017); Hesse and Gross (2014); Shew and Plenz (2013) for systematic
+    reviews of the diverse function advantages implied by brain criticality and their experimental
+    demonstrations. From a Darwinian perspective, one potential reason for the brain to feature criticality lay
+    in that the most informative parts of external world principally occur at a borderline between purely
+    ordered and purely disordered states (information would be trivial in a purely ordered world while it
+    would be incomprehensible in a purely disordered world). Becoming critical may be a potential way for
+    the brain to adapt to the complex world, where non-trivial information has a finite opportunity to occur
+    Bak (2013); Chialvo (2010). To date, generic features of a critical brain with the characteristics discussed
+    above, such as divergent correlation length, neuronal avalanches with power-law behaviours, and
+    long-range correlations on the microscopic scale (e.g., neural populations), have been extensively
+    observed in mathematical models in conjunction with experimental data (e.g., Beggs and Plenz (2003);
+    Dalla Porta and Copelli (2019); Fosque, Williams-Garcı́a, Beggs, and Ortiz (2021); Gireesh and Plenz
+    (2008); Hardstone, Mansvelder, and Linkenkaer-Hansen (2014); Petermann et al. (2009); Poil,
+    Hardstone, Mansvelder, and Linkenkaer-Hansen (2012); Poil, van Ooyen, and Linkenkaer-Hansen
+    (2008); Ponce-Alvarez, Jouary, Privat, Deco, and Sumbre (2018); G. Scott et al. (2014); Shew et al.
+    (2009); Shriki et al. (2013); Tagliazucchi, Balenzuela, Fraiman, and Chialvo (2012); Tkačik et al. (2015)).
+
+
+    Our work does not aim at repeatedly reviewing experimental advances concerning brain criticality and its
+    biological significance, given that they have been comprehensively summarized by existing reviews
+    Beggs (2007); Chialvo (2010); Cocchi et al. (2017); Hesse and Gross (2014); Munoz (2018); Shew and
+    Plenz (2013). On the contrary, our motivation is to present a systematic and accessible review of the
+    theoretical methods applied to achieve these advances, which have not received necessary attention yet.
+
+                                                                –4–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    These theoretical foundations are initially thought to be incomprehensible and irrelevant to neuroscience.
+    However, practice suggests that omitting these physical and mathematical backgrounds does not
+    significantly improve the accessibility of studies on brain criticality. Instead, the lack of detailed
+    explanations of theoretical foundations has frequently misled neuroscientists, leading to diverse
+    confusions about the precise meaning, identification criteria, and biological corollaries of brain criticality.
+    As a result, criticality, an analytic statistical physics theory with solid foundations, unnecessarily
+    becomes an elusive black box for neuroscientists. To address this issue, we use the terminology of
+    neuroscience to present a self-contained framework of brain criticality, reviewing and reformulating (1)
+    physical theories that analytically derive brain criticality and (2) statistic techniques that computationally
+    estimate brain criticality from empirical data. Given the frequent misunderstanding of neural avalanches,
+    our discussions primarily focus on brain criticality analysis on the microscopic scale of the brain. The
+    objectives guiding through our review are tripartite: (1) explaining why brain criticality matters in the
+    brain, (2) understanding what is brain criticality and what it conveys about the brain, and (3) confirming
+    how to identify potential brain criticality and ensure the validity of analyses.
+
+    BRAIN CRITICALITY: GENERAL CONCEPTS
+    Overview of brain criticality
+    Brain criticality frequently confuses neuroscientists since too many distinct phenomena are studied under
+    this name without being properly classified. In this review, brain criticality refers to a family of critical
+    processes in neural dynamics where erratic fluctuations appear to reduce dynamic stability. To present a
+    systematic classification framework, we discuss three fundamental perspectives concerning brain
+    criticality. Table 1 provides all the necessary glossaries in comprehensible forms.
+
+
+    Being non-equilibrium        First, the brain, similar to other biological systems, generally exhibits temporal
+    evolution from initial states that are far away from equilibrium Gnesotto, Mura, Gladrow, and Broedersz
+    (2018); Lynn, Cornblath, Papadopoulos, Bertolero, and Bassett (2021). These departures from
+    equilibrium arise due to diverse endogenous causes Gnesotto et al. (2018); Perl et al. (2021) to break the
+    detailed balance to support consciousness, sensing, and adaptation Lynn et al. (2021); Perl et al. (2021).
+    Therefore, potential critical phenomena underlying neural dynamics, at least in most neural dynamics
+    models and empirical data sets, are basically non-equilibrium and can not be characterized by
+
+
+
+
+                                                                –5–
+                                                            == D R A F T             ==
+                  Journal: NETWORK NEUROSCIENCE             /      Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+                                               Table 1.   Key concepts in describing brain criticality
+
+
+    Concept              Meaning
+
+                         A case where the system maximizes entropy and conserves energy simultaneously. The stationary
+
+                         probability distribution Peq (·) of system states of a system at equilibrium is the Boltzmann distribution.
+    Equilibrium
+                         At equilibrium, the transition dynamics between system states c and c′ satisfies the detailed balance
+
+                         condition Peq (c) W (c → c′ ) = Peq (c′ ) W (c′ → c), where W (· → ·) denotes the transition probability.
+
+                         A case where the system is out of equilibrium because the transition dynamics between system states
+
+    Non-equilibrium      breaks the detailed balance condition. In other words, the transition dynamics between states becomes
+
+                         directional rather than symmetric.
+
+                         A process where the internal complexity of a system increases without being tuned by any external
+
+    Self-organization    mechanism. All potentially emergent properties are created by endogenous feedback processes or other
+
+                         internal factors inside the system.
+
+                         A kind of phenomena where the systems is generally close to specific critical points separating between
+
+    Criticality          multiple system states. Small disturbances are sufficient to make the system experience dramatic and
+
+                         sharp transitions between system states.
+
+                         A kind of phenomena where all statistical physics relations required by criticality are principally adhered
+
+    Quasi-criticality    by the system but slight and inconstant deviations from perfect criticality can be seen on the actual values
+
+                         of characteristic variables. These deviations robustly exist and are generally independent of data noises.
+
+                         A kind of system states below criticality. They occur when the order parameter (i.e., the macroscopic
+
+    Sub-criticality      observable used to describe system states) remains at zero even with the addition of derives, corresponding
+
+                         to disordered system dynamics.
+
+                         A kind of system states above criticality. They occur when the order parameter is positive, corresponding
+    Super-criticality
+                         to ordered system dynamics.
+
+
+
+
+    equilibrium statistic mechanics. In Fig. 1A, we illustrate the difference between equilibrium and
+    non-equilibrium dynamics.
+
+                                                                        –6–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    Fine tuning versus self-organization       Second, there exist two types of general mechanisms underlying the
+    existence of brain criticality. One type of mechanisms either arise from the external manipulations
+    outside the brain (e.g., researchers manipulate the tonic dopamine D1-receptor stimulation Stewart and
+    Plenz (2006, 2008) or adjust network topology Kaiser and Hilgetag (2010); Rubinov, Sporns, Thivierge,
+    and Breakspear (2011); S. Wang and Zhou (2012)) or belong to the top-down biological processes that
+    globally function on neural dynamics inside the brain (e.g., anesthesia effects Fontenele et al. (2019);
+    Hahn et al. (2017); Ribeiro et al. (2010) as well as sleep restoration effects Meisel, Olbrich, Shriki, and
+    Achermann (2013)). Neural dynamics is passively fine tuned towards or away from ordinary criticality
+    (OC) by these exogenous mechanisms, similar to ordinary critical phenomena that require the fine tuning
+    of order parameters.
+
+    Another type of mechanisms includes all endogenous factors of neural dynamics (e.g., neural plasticity
+    mechanisms such as spike-timing dependent synaptic plasticity Effenberger, Jost, and Levina (2015);
+    Meisel and Gross (2009); Shin and Kim (2006), short-term synaptic plasticity Levina, Herrmann, and
+    Geisel (2007, 2009), retro-synaptic signals Hernandez-Urbina and Herrmann (2017) and Hebbian rules
+    de Arcangelis and Herrmann (2010); De Arcangelis, Perrone-Capano, and Herrmann (2006)), which
+    locally function on neural dynamics as drive and dissipation components. The interactions between these
+    components naturally form feedback control loops to support the self-organization of neural dynamics
+    towards the critical point Beggs (2007); Chialvo (2010). This spontaneously emerged brain criticality,
+    distinct from ordinary critical phenomena, is conjectured as a kind of self-organized criticality (SOC)
+    Chialvo (2010). In Fig. 1B, we present conceptual illustrations of ordinary criticality and self-organized
+    criticality in the brain.
+
+
+    Standard versus non-standard        Third, brain criticality frequently occurs in non-standard forms due to
+    stimulus derives or endogenous factors. On the one hand, slight and inconstant deviations from perfect
+    brain criticality can be seen on the actual values of characteristic variables, differentiating the
+    characterized phenomena from the standard criticality Fosque et al. (2021); Williams-Garcı́a, Moore,
+    Beggs, and Ortiz (2014). On the other hand, all statistical physics relations required by perfect brain
+    criticality are still adhered by these actual characteristic variables, distinguishing the brain from being
+    non-critical Fosque et al. (2021); Williams-Garcı́a et al. (2014).
+
+
+
+                                                                –7–
+                                                        == D R A F T            ==
+               Journal: NETWORK NEUROSCIENCE             /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+                                             Figure 1. Please see the caption on the next page.
+
+
+
+
+                                                                   –8–
+                                                                         == D R A F T              ==
+                  Journal: NETWORK NEUROSCIENCE                          /      Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    Figure 1. Conceptual illustrations of brain criticality. A, Difference between equilibrium and non-equilibrium dynamics in a three-state brain (upper parallel).
+
+    Brain states are characterized by three system components. We illustrate an instance of non-equilibrium dynamics between these states (bottom parallel). B,
+
+    Fine tuning with exogenous mechanisms (represented by animated hands) makes the brain evolve from a non-critical state (upper left) to the critical state
+
+    (upper right). Endogenous mechanisms enable the brain to self-organize from a non-critical state (bottom left) to the critical state (bottom right). C Increasing
+
+    stimulus intensity enlarges the quasi-critical region around the perfect critical point in a quasi-critical system. D The approaching process to a critical point in a
+
+    self-organized quasi-critical system consists of two stages. In the first stage, the brain self-organizes from a non-critical state to a quasi-critical region based on
+
+    certain endogenous mechanisms. In the second stage, additional exogenous mechanisms are necessary to fine tune the brain to the critical point. Otherwise, the
+
+    brain just hovers within the quasi-critical region. E The difference between four types of brain criticality from the perspective of susceptibility. For standard
+
+    brain criticality (e.g., ordinary criticality and self-organized criticality), susceptibility becomes divergent (i.e., infinite) at the critical point. For non-standard
+
+    brain criticality (e.g., quasi-criticality and self-organized quasi-criticality), susceptibility is always non-divergent (i.e., finite). The quasi-critical region is
+
+    defined as a set of all control parameters where susceptibility values are no less than a specific threshold (e.g., half-maximum value). F The commonness and
+
+    difference between four types of brain criticality.
+
+
+
+
+    For ordinary criticality, its non-standard form is referred to as quasi-criticality (qC) Fosque et al. (2021);
+    Williams-Garcı́a et al. (2014). Diverse mechanisms can force the brain to depart from perfect ordinary
+    criticality and exhibit quasi-critical neural dynamics, among which, stimulus derive may be the most
+    common one Fosque et al. (2021); Williams-Garcı́a et al. (2014). In general, sufficiently strong stimulus
+    drives can capture or even govern neural dynamics. Similar to the situation where external inputs
+    suppress irregular neural dynamics Molgedey, Schuchhardt, and Schuster (1992), the stimuli that are too
+    strong may evoke intense but less changeable neural dynamics to make the brain depart from the perfect
+    critical point Fosque et al. (2021); Williams-Garcı́a et al. (2014). Let us take the qC phenomenon
+    introduced by Fosque et al. (2021); Williams-Garcı́a et al. (2014) as an instance. Under specific
+    conditions, the actual brain state may be close to a Widom line in the three-dimensional space defined by
+    the stimulus intensity υ, refractory period length τ , and branching ratio κ (i.e., the time-dependent
+    average number of subsequent neural activities caused by a single neuron activation event Haldeman and
+    Beggs (2005)). The Widom line is a line of all the combinations of (υ, τ, κ) where the susceptibility of
+    neural dynamics is maximized Fosque et al. (2021); Williams-Garcı́a et al. (2014). The susceptibility is
+                      ∂y
+    defined by limx→0 ∂x , where y is the neural dynamics state and x denotes a factor that affects y. In
+
+
+                                                                                     –9–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    general, one can understand susceptibility as the degree to which fluctuations in the state of each neuron
+    can propagate to neighbored neurons Williams-Garcı́a et al. (2014). Being close to the Widom line
+    suggests the existence of quasi-criticality in the brain. Moving along the Widom line as the stimulus
+    intensity increases, the susceptibility of neural dynamics decreases, and the branching ratio at maximal
+    susceptibility will decrease as well Fosque et al. (2021); Williams-Garcı́a et al. (2014). Significant
+    deviations from the Widom line suggest non-criticality (i.e., the sub-criticality where neural dynamics is
+    disordered and the super-criticality where neural dynamics is ordered Williams-Garcı́a et al. (2014)). In
+    Fig. 1C, we conceptually illustrate how stimuli imply qC in the brain. In Fig. 2D, the qC phenomenon in
+    Fosque et al. (2021); Williams-Garcı́a et al. (2014) is shown in details.
+
+
+    As for self-organized criticality (SOC), its non-standard form is defined according to statistical physics
+    criteria. Perfect self-organized criticality only exists in conserved neural dynamics (e.g., see
+    integrate-and-fire neurons analyzed by Levina et al. (2007)), where system energy (i.e., neural activities)
+    either conserves within the system and only dissipates at the system boundary, or dissipates inside the
+    system (i.e., bulk dissipation) with a dissipation rate vanishing in the system size limit Malcai, Shilo, and
+    Biham (2006). Under more general conditions where neural dynamics is not conserved (e.g., see leaky
+    integrate-and-fire neurons analyzed by Levina et al. (2007); Millman, Mihalas, Kirkwood, and Niebur
+    (2010); Rubinov et al. (2011); Stepp, Plenz, and Srinivasa (2015), where neural dynamics dissipates
+    within the system due to voltage leak), perfect self-organized criticality can be broken by any rate of bulk
+    dissipation Bonachela, De Franciscis, Torres, and Munoz (2010); Bonachela and Munoz (2009);
+    Buendı́a, di Santo, Villegas, Burioni, and Muñoz (2020); de Andrade Costa, Copelli, and Kinouchi
+    (2015). Stronger bulk dissipation implies larger deviations from perfect self-organized criticality
+    De Arcangelis et al. (2006). Consequently, the self-organization process of non-conserved neural
+    dynamics only make the brain hover around the critical point. Any further closeness towards the critical
+    point requires the fine tuning of order parameter by additional exogenous mechanisms, which is different
+    from pure self-organized criticality Bonachela et al. (2010); Bonachela and Munoz (2009); Buendı́a, di
+    Santo, et al. (2020); de Andrade Costa et al. (2015). This non-conserved self-organization process is
+    termed as self-organized quasi-criticality (SOqC) Bonachela and Munoz (2009). Similar to SOC in
+    conserved dynamics, neural plasticity mechanisms, such as spike-timing-dependent synaptic plasticity
+    Rubinov et al. (2011), Hebbian rules De Arcangelis et al. (2006), short-term synaptic depression in
+
+                                                               –10–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    conjunction with spike-dependent threshold increase Girardi-Schappo et al. (2021), and inhibitory
+    plasticity in conjunction with network topology Ma, Turrigiano, Wessel, and Hengen (2019), can serve as
+    underlying self-organization mechanisms of SOqC. Because purely conserved neural dynamics is
+    relatively rare in empirical data (e.g., neural dynamics is conserved for integrate-and-fire neurons Levina
+    et al. (2007) and leaky integrate-and-fire neurons whose pre-synaptic inputs are exactly equal to the sum
+    of voltage leak and potential costs during neural spiking Bonachela et al. (2010)), we suggest that SOqC
+    may be more common in the brain than SOC. In Fig. 1D, we present conceptual instances of the
+    two-stage approaching process towards the critical point in the brain with SOqC.
+
+
+    Classification of brain criticality    The above discussion has presented a classification framework of brain
+    criticality, i.e., ordinary criticality (OC), quasi-criticality (qC), self-organized criticality (SOC), and
+    self-organized quasi-criticality (SOqC). In Fig. 1E, we compare between these four types of brain
+    criticality in term of susceptibility. In general, susceptibility diverges at the critical point in a brain with
+    standard criticality (e.g., OC and SOC) while it does not diverge in the quasi-critical region of a brain
+    with non-standard criticality (e.g., qC and SOqC). In Fig. 1F, we summarize the commonness and
+    difference between these four types of brain criticality discussed in our review. From a neuroscience
+    perspective, a brain with critical neural dynamics is expected to be near the critical point and prepared for
+    tremendous changes in cortical states during a short duration. This intriguing property coincides with the
+    experimentally observed efficient transitions between cortical states (e.g., Cardin (2019); Holcman and
+    Tsodyks (2006); Jercog et al. (2017); H. Lee, Wang, and Hudetz (2020); Reimer et al. (2014)) and,
+    therefore, interests researchers for the potential existence of brain criticality. The importance of
+    identifying brain criticality in neural dynamics is beyond brain criticality itself because it implies an
+    opportunity to explain and predict brain function characteristics by various statistical physics theories
+    built on non-equilibrium criticality.
+
+    Neural avalanches and their phases
+    To identify potential non-equilibrium criticality in the brain, researchers actually characterize neural
+    dynamics as a physical system with absorbing states and avalanche behaviors Hinrichsen (2000);
+    Larremore, Carpenter, Ott, and Restrepo (2012); Lübeck (2004). In general, one need to consider the
+    propagation of neural dynamics where neurons are either activated (“on” state) or silent (”off” state)
+    Dalla Porta and Copelli (2019). An silent neuron may be activated with a probability defined by the
+
+
+                                                               –11–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    number of activated pre-synaptic neurons and the coupling strength θ among neurons (e.g., neural
+    correlation Franke et al. (2016)). An activated neuron spontaneously becomes silent at a constant rate
+    (e.g., after the refractory period Kinouchi and Copelli (2006); Squire et al. (2012)). These definitions
+    naturally support to distinguish between different phases of neural dynamics. Here we review two kinds
+    of phase partition that are active in neuroscience.
+
+
+    Absorbing versus active       The first group of phases are absorbing and active phases Larremore et al.
+    (2012). The absorbing phase refers to cases where couplings between neurons are weak and all neurons
+    eventually become silent (neural dynamics vanishes). Once a neural dynamics process vanishes, it can
+    not reappear by itself. The brain requires new drives (e.g., neurons activated spontaneously or by stimuli)
+    to trigger new neural dynamics. The active phase, on the other hand, correspond to cases where “on”
+    state propagates among neurons with strong couplings, leading to stable self-sustained neural dynamics
+    (e.g., non-zero time- and ensemble-averaged density of active neurons in the brain). In Fig. 2A, we show
+    conceptual instances of neural avalanches, self-sustained neural dynamics, and vanished neural
+    dynamics. Denoting ρ (t) as the density of active neurons at moment t, we can simply represent the
+    absorbing (Eq. (1)) and active (Eq. (2)) phases of a neural dynamics process triggered by an active
+    neuron at moment 0 as
+
+
+                                                       ρ (t) = 0, ∃t > 0,                                                         (1)
+
+                                                       ρ (t) > 0, ∀t > 0.                                                         (2)
+
+
+
+    Synchronous versus asynchronous          The second group of phases are synchronous and asynchronous
+    phases Di Santo, Villegas, Burioni, and Muñoz (2018); Fontenele et al. (2019); Girardi-Schappo et al.
+    (2021). As their names suggest, these two phases correspond to the situations where synchronization
+    emerges or disappears in neural activities, respectively. Synchronization refers to the cases where “on”
+    states appear in an oscillatory, although not strictly periodic, manner. To quantify its potential existence,
+    we can measure the variability of neural dynamics using the coefficient of variation (CV) Di Santo et al.
+    (2018); Fontenele et al. (2019); Girardi-Schappo et al. (2021) or the Kuramoto order parameter Acebrón,
+    Bonilla, Pérez Vicente, Ritort, and Spigler (2005); Arenas, Dı́az-Guilera, Kurths, Moreno, and Zhou
+    (2008). CV can be defined from diverse perspectives, yet the most common definition is the ratio
+
+                                                               –12–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    between the standard deviation and the mean of the inter-spike interval length Di Santo et al. (2018);
+    Fontenele et al. (2019); Girardi-Schappo et al. (2021). A higher value of CV implies the reduction of
+    synchronization. For most neural dynamics data, an empirical choice of the CV threshold that separates
+    between synchronous and asynchronous phases may be ≃ 1 Fontenele et al. (2019) or ≃ 32 Fontenele et
+    al. (2019). The Kuramoto order parameter ω ∈ [0, 1] measures the coherent degree of neural dynamics
+    based on the Kuramoto model of oscillators (see Acebrón et al. (2005); Arenas et al. (2008) for detailed
+    definitions). Perfect synchronization emerges when ω = 1 and vanishes when ω = 0 Acebrón et al.
+    (2005); Arenas et al. (2008).
+
+
+    Critical point or quasi-critical region     The boundary between these two phases is the critical point, at
+    which the brain is on the edge of exhibiting self-sustained (for absorbing and active phases) or
+    synchronous (for synchronous and asynchronous phases) neural dynamics. Perturbations (e.g., the
+    propagation of “on” state among neurons) to the absorbing or asynchronous phase do not have
+    characteristic lifetime and size. These perturbations, referred to as neural avalanches, are expected to
+    exhibit power-law properties in their lifetime (time difference between the first and last activation of
+    neurons in between complete quiescent epochs) and size (number of active neurons along with the
+    excursion) distributions Hesse and Gross (2014); Hinrichsen (2000); Larremore et al. (2012); Lübeck
+    (2004). In general, the emergence of neural avalanches implies the slowing down of neural dynamics,
+    i.e., the brain state recovery process towards the baseline state after fluctuations changes from fast
+    (exponential) to slow (power-law) Cocchi et al. (2017); Hesse and Gross (2014). The dynamic stability of
+    neural dynamics is limited by the slow recovery and, therefore, can not robustly counteract perturbations.
+    Consequently, small perturbations initiated on the microscopic scale may still make the brain change
+    sharply on the macroscopic scale Cocchi et al. (2017); Hesse and Gross (2014). In Fig. 2B, we
+    conceptually illustrate how the recovery process slows down when the brain is close to the critical point
+    or the quasi-critical region.
+
+    General relations between neural avalanches and brain criticality
+    The relation between neural avalanches and brain criticality is frequently neglected or misunderstood.
+    Neural avalanche data alone is not sufficient to determine the concrete type of brain criticality (i.e., OC,
+    qC, SOC, and SOqC) unless additional information about the mechanisms underlying neural avalanche
+    emergence is provided (e.g., if neural dynamics is conserved or self-organizing). To explore a concrete
+
+
+                                                               –13–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    type of brain criticality, researchers need to explicitly present its definition depending on different control
+    parameters (e.g., the balance between excitatory and inhibitory neurons in CROS models Hardstone et al.
+    (2014); Poil et al. (2012)) and order parameters (e.g., active neuron density and synchronous degree
+    Dalla Porta and Copelli (2019)). A brain criticality hypothesis without strict definitions of control and
+    order parameters is not informative Cocchi et al. (2017); Girardi-Schappo (2021). To present conceptual
+    instances, we illustrate four possible critical phenomena in Fig. 2, each of which corresponds to a
+    concrete brain criticality type.
+
+
+    Instance of ordinary criticality     To produce ordinary criticality (OC), we can control neural dynamics and
+    manipulate ⟨θ⟩, the expectation of coupling strength θ among all neurons (e.g., averaged neural
+    correlation), by some top-down and global biological effects. These effects, for instance, may be
+    anesthesia effects (e.g., by ketamine-xylazine Ribeiro et al. (2010) and isoflurane Hahn et al. (2017)) or
+    sleep restoration effects Meisel et al. (2013). We use the Kuramoto order parameter ω Acebrón et al.
+    (2005); Arenas et al. (2008) as the order parameter to define synchronous and asynchronous phases
+    Di Santo et al. (2018); Fontenele et al. (2019). As ⟨θ⟩ increases, we may see transitions from
+    asynchronous to synchronous phase in some situations (see a similar instance in Villegas, Moretti, and
+    Munoz (2014)). One can see Fig. 2C for conceptual illustrations.
+
+
+
+
+                                                               –14–
+                                                        == D R A F T            ==
+               Journal: NETWORK NEUROSCIENCE             /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+                                             Figure 2. Please see the caption on the next page.
+
+
+
+
+                                                                   –15–
+                                                                       == D R A F T              ==
+                  Journal: NETWORK NEUROSCIENCE                         /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    Figure 2. Conceptual illustrations of the relations between neural avalanches and brain criticality. A, Instances of neural avalanche, self-sustained neural
+
+    dynamics, and vanished neural dynamics. B, The recovery processes of brain states after the same perturbation in the space of absorbing and active phases
+
+    (upper parallel) and the space of synchronous and asynchronous phases (bottom parallel). The recovery processes after perturbations are relatively fast when
+
+    the brain is far from the critical point or the quasi-critical region, These recovery processes slow down when the brain is close to the critical point or the
+
+    quasi-critical region. C The conceptual illustrations of neural dynamics when the brain state is asynchronous, synchronous, or at ordinary criticality. D Without
+
+    stimuli, there initially exist disordered (gray), ordered but asynchronous (light blue), synchronous (green) phases in the phase space of the brain. Stimulus inputs
+
+    imply quasi-criticality in the brain. An increasing stimulus intensity enlarges the quasi-critical region (purple) around the Widom line (purple dashed line). E
+
+    The conceptual illustrations of how endogenous mechanisms in conserved neural dynamics can function as drive or dissipation terms to create self-organized
+
+    criticality between absorbing and active phases in the brain. F In the self-organized quasi-critical brain, endogenous mechanisms in non-conserved neural
+
+    dynamics only support the self-organization towards a quasi-critical region between asynchronous and synchronous phases. Extra exogenous mechanisms are
+
+    required to fine tune the brain towards the critical point.
+
+
+
+
+    Instance of quasi-criticality                 To produce quasi-criticality (qC), we can manipulate refractory period
+    length τ , branching ratio κ, and stimulus intensity υ as control parameters (e.g., control τ and κ by
+    pharmacological perfusion or ionic concentration adjustment Chiappalone et al. (2003); Shew et al.
+    (2011)). There exist a disordered phase (sub-critical), an ordered but asynchronous phase (super-critical),
+    and a synchronous (quasi-periodic) phase in the space of (υ, τ, κ) Fosque et al. (2021); Williams-Garcı́a
+    et al. (2014). These phases can be characterized by specific order parameters related to synchronization.
+    As υ increases, a qC phenomenon emerges in the space, where the quasi-critical region is defined by all
+    combinations of (υ, τ, κ) whose susceptibility values are at least half-maximum. Cross-over behaviours
+    (i.e., a generalization of phase transition with finite susceptibility) emerge when the quasi-critical region
+    has overlaps with at least two phases Fosque et al. (2021); Williams-Garcı́a et al. (2014). In Fig. 2D, we
+    show this qC phenomenon in details.
+
+
+    Instance of self-organized criticality                    To study self-organized criticality (SOC), we consider the conserved
+    neural dynamics generated by integrate-and-fire neurons Levina et al. (2007). The order parameter is
+    active neuron density ρ, whose dynamics is controlled by parameter ⟨θ⟩A , the averaged coupling strength
+    θ between activated neurons and their post-synaptic neurons (here A denotes the set of activated
+
+                                                                                  –16–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    neurons). In specific cases, the considered neural dynamics may self-organize to the critical point under
+    the joint effects of excitatory and inhibitory neurons, neural spiking processes (activation and silence), as
+    well as neural plasticity. In Fig. 2E, we conceptually illustrate a case where these endogenous
+    mechanisms enable the brain to self-organize to the criticality between absorbing and active phases.
+
+
+    Instance of self-organized quasi-criticality     To analyze self-organized quasi-criticality (SOqC), we
+    consider the non-conserved neural dynamics affected by two homeostatic adaptation processes, i.e., the
+    short-term depression of inhibition and the spike-dependent threshold increase. These processes are
+    controlled by yb, the maximum inhibitory coupling strength, as well as τx and τy , the decay time scales of
+    neural activation threshold increase and synaptic depression. These control parameters affect neural
+    activation threshold x and inhibition strength y to shape neural dynamics states (e.g., the active neuron
+    density ρ). With appropriate x, y, and ρ, neural avalanches with power-law behaviours will occur to
+    indicate the criticality between an asynchronous phase (stochastic oscillations) and a synchronous phase
+    (periodic oscillations). According to Girardi-Schappo et al. (2021), x and ρ self-organize to their
+    appropriate values through quasi-critical fluctuations under biologically reasonable conditions (i.e.,
+    τx ≫ 1) while y hovers around the expected value. Additional fine tuning of y based on exogenous
+    mechanisms are necessary to place neural dynamics at the perfect criticality. Meanwhile, synaptic
+    homeostasis is discovered as constantly canceled by the variation of the activation threshold, impeding
+    neural dynamics from self-organizing to perfect criticality. In Fig. 2F, we conceptually illustrate the
+    defined SOqC phenomenon in a similar manner of Fig. 2D and Fig. 2E. As for the precise description of
+    quasi-critical fluctuations, one can see Girardi-Schappo et al. (2021) for details.
+
+
+
+    To this point, we have conceptually introduced the phenomenological properties of brain criticality. To
+    verify the hypothetical brain criticality, one need to learn about analytic brain criticality theories and the
+    properties of neural avalanche predicted by them. Below, we present accessible expositions of these
+    theoretical foundations.
+
+    BRAIN CRITICALITY: PHYSICAL THEORIES
+    Mean field and stochastic field theories of brain criticality
+    One of the main challenges faced by neuroscientists in studying ordinary criticality (OC),
+    quasi-criticality (qC), self-organized criticality (SOC), and self-organized quasi-criticality (SOqC) is how
+
+                                                               –17–
+                                                       == D R A F T         ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    to understand their theoretical relations Girardi-Schappo (2021). Overcoming this challenge is crucial for
+    understanding why we can verify the existence of different types of brain criticality with certain
+    theoretical tools. To present a concise and thorough review, we first focus on brain criticality between
+    absorbing and active phases, where we generalize the idea in Bonachela and Munoz (2009); Buendı́a,
+    Di Santo, Bonachela, and Muñoz (2020) to present a possible framework for unification.
+
+
+    Langevin formulation of ordinary criticality        In general, brain criticality in the space of absorbing and
+    active phases are related to directed percolation Dalla Porta and Copelli (2019), a universality class of
+    continuous phase transitions into absorbing states Hinrichsen (2000); Lübeck (2004). Here a universality
+    class can be understood as the set of all systems with the same scaling properties Hinrichsen (2000);
+    Lübeck (2004); Sethna, Dahmen, and Myers (2001). Directed percolation theory initially covers OC
+    phenomena Hinrichsen (2000); Lübeck (2004). Let us begin with a variant of the classic Reggeon field
+    theory, the simplest description of absorbing phase transitions Henkel, Hinrichsen, Lübeck, and
+    Pleimling (2008). The Langevin equation of the activity neuron field ρ (⃗x, t) is defined as
+
+
+                  ∂                                                                          p
+                     ρ (⃗x, t) = (a + bν (⃗x, t)) ρ (⃗x, t) − cρ2 (⃗x, t) + d∇2 ρ (⃗x, t) + e ρ (⃗x, t)σ (⃗x, t) ,                (3)
+                  ∂t
+                  ∂
+                     ν (⃗x, t) = ∇2 ν (⃗x, t) + f (⃗x, t) − g (⃗x, t) ρ (⃗x, t) ,                                                 (4)
+                  ∂t
+
+
+    where ⃗x represents spatial coordinates, a ∈ R, b ∈ (0, ∞), c ∈ (0, ∞), d ∈ R is the diffusion factor, and
+    e ∈ R is the noise factor. Function σ (·, ·) defines a zero-mean Gaussian noise with a spatio-temporal
+    correlation ⟨ρ (⃗x, t) ρ (⃗x′ , t′ )⟩ = δ (⃗x − ⃗x′ ) δ (t − t′ ), where δ (·) is the delta function. In general, σ (·, ·)
+    reflects the collective fluctuations in neural activities that vanish in the absorbing phase ρ (⃗x, t) = 0 under
+                          p
+    the effects of factor ρ (⃗x, t). The term ∇2 ρ (⃗x, t) reflects the propagation of neural dynamics. The
+    function ν (⃗x, t) defines the energy (i.e., membrane potential) that propagates according to ∇2 ν (⃗x, t),
+    increases with external drives f (⃗x, t), and decreases with bulk dissipation g (⃗x, t). Please note that
+    ρ (⃗x, t) ≥ 0 and ν (⃗x, t) ≥ 0 always hold. The initial active neuron density and energy are assumed as
+    non-zero. It is clear that a + bν (⃗x, t) < 0 makes the neural dynamics eventually vanish (i.e., absorbing
+    phase) while a + bν (⃗x, t) > 0 does not (i.e., active phase). Therefore, we can fine tune the control
+    parameter ν (⃗x, t) to make the brain exhibit OC dynamics at a + bνc (⃗x, t) = 0, a critical point defined by
+    νc . The fine tuning relies on manipulating f (⃗x, t) and g (⃗x, t) by exogenous mechanisms.
+
+                                                                –18–
+                                                       == D R A F T         ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    Langevin formulation of quasi-criticality        Then we turn to analyzing qC, whose mean field approximation
+    is initially derived based on the cortical branching model Fosque et al. (2021); Williams-Garcı́a et al.
+    (2014). A cortical branching model with no stimulus input belongs to directed percolation universality
+    class according to the Janssen-Grassberger conjecture Williams-Garcı́a et al. (2014). Non-zero stimulus
+    inputs make the cortical branching model depart from directed percolation universality class to create qC
+    Williams-Garcı́a et al. (2014). Nevertheless, the above mean field theory is defined in the space of
+    synchronous and asynchronous phases. To derive a qC phenomenon between absorbing and active
+    phases, we can provisionally analyze a mean field approximation of Eqs. (3-4)
+
+                                      ∂
+                                         ρ (⃗x, t) = (a + bν (⃗x, t)) ρ (⃗x, t) − cρ2 (⃗x, t) ,                                    (5)
+                                      ∂t
+                                      ∂
+                                         ν (⃗x, t) = f (⃗x, t) − g (⃗x, t) ρ (⃗x, t) ,                                             (6)
+                                      ∂t
+
+    where ∇2 ρ (⃗x, t), ∇2 ν (⃗x, t), and σ (⃗x, t) in Eqs. (3-4) are neglected under the mean field assumption.
+    We consider the cases where stimulus inputs vanish, i.e., f (⃗x, t) ≡ 0. The critical point between active
+    and absorbing phase becomes νc = − ab . The steady state solutions of Eqs. (5-6) are
+
+
+                                                     ρ (⃗x, t) = 0,                                                                (7)
+
+                                                     ν (⃗x, t) = r ∈ (0, ∞) ,                                                      (8)
+
+
+    respectively. Therefore, OC is one of the steady states of neural dynamics when there is no stimulus. In
+    the cases where stimulus inputs become increasingly strong, there exists no steady state solution of Eqs.
+    (5-6) unless fg(⃗
+                   (⃗
+                    x,t)
+                    x,t)
+                         → r ∈ (0, ∞). If fg(⃗
+                                            (⃗
+                                             x,t)
+                                             x,t)
+                                                  → r ∈ (0, ∞) holds, we can derive
+
+                                                   f (⃗x, t)
+                                       ρ (⃗x, t) =            → r,                                                                 (9)
+                                                   g (⃗x, t)
+                                                                      
+                                                   1      f (⃗x, t)      1
+                                       ν (⃗x, t) =      c           − a → (cr − a) .                                              (10)
+                                                   b      g (⃗x, t)      b
+
+    Because the critical point νc = − ab is not necessarily a steady state, it can be disturbed by diverse factors
+    (e.g., by stimuli). Unless there exist certain ideal exogenous mechanisms that persistently enlarge g (⃗x, t)
+    whenever f (⃗x, t) increases, the fine tuning of neural dynamics can not cancel the effects of f (⃗x, t).
+    Consequently, the fine tuning process may only enable the brain to reach a quasi-critical region where the
+    susceptibility of neural dynamics is relatively large. The initial OC vanishes and is replaced by qC.
+
+                                                               –19–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    Langevin formulation of self-organized criticality       Although SOC is treated as a rather isolated concept
+    after its first discovery in statistical physics Bak, Tang, and Wiesenfeld (1987), subsequent analyses
+    demonstrate SOC as relevant with ordinary continuous phase transitions into infinitely many absorbing
+    states Dickman, Muñoz, Vespignani, and Zapperi (2000); Dickman, Vespignani, and Zapperi (1998);
+    Narayan and Middleton (1994); Sornette, Johansen, and Dornic (1995). Specifically, SOC models can be
+    subdivided into two families, which we refer to as external dynamics family (e.g., Bak-Sneppen model
+    Bak and Sneppen (1993)) and conserved field family (e.g., sandpile models such as Manna model Manna
+    (1991) and Bak-Tang- Wiesenfeld model Bak et al. (1987)). The second family, being the main
+    theoretical source of studying SOC in neural dynamics, corresponds to absorbing-state transitions since it
+    can represent any system with conserved local dynamics and continuous transitions to absorbing states
+    Dickman et al. (2000); Lübeck (2004). Although the universality class of the second family should be
+    precisely referred to as conserved directed percolation, the explicit behaviours (e.g., avalanche exponents
+    and scaling relations) of conserved directed percolation are similar to those of directed percolation in
+    high-dimensional systems (e.g., neural dynamics) Bonachela and Muñoz (2008); Bonachela and Munoz
+    (2009); Buendı́a, Di Santo, et al. (2020). Therefore, SOC and OC share some identification criteria in
+    practice. To understand the connections between SOC and OC more precisely, we can consider the cases
+    where f (⃗x, t) → 0 such that fg(⃗
+                                    (⃗
+                                     x,t)
+                                     x,t)
+                                          → 0 (i.e., infinite separation of timescales). The steady state solutions
+    of Eqs. (5-6) become
+
+                                                        f (⃗x, t)
+                                             ρ (⃗x, t) =           → 0,                                                           (11)
+                                                        g (⃗x, t)
+                                                                           
+                                                        1      f (⃗x, t)
+                                            ν (⃗x, t) =      c           − a → νc ,                                               (12)
+                                                        b      g (⃗x, t)
+
+    respectively. Self-organization properties are reflected by the following processes: if the brain is in the
+    absorbing phase because neural dynamics vanishes, i.e, ρ (⃗x, t) → 0, Eq. (6) becomes
+     ∂
+     ∂t
+        ν (⃗x, t) = f (⃗x, t) to shift the brain towards the active phase; if the brain is in the active phase, Eq. (6)
+            ∂
+    becomes ∂t ν (⃗x, t) ≃ −g (⃗x, t) ρ (⃗x, t) to reduce neural dynamics since f (⃗x, t) ≪ g (⃗x, t). These
+    feedback-control loops drive the brain to the critical point. One may be curious about why energy
+    conservation, i.e., g (⃗x, t) → 0, is necessary for SOC since the above derivations seem to be independent
+    of g (⃗x, t) → 0. Later we show that the absence of g (⃗x, t) → 0 in Eq. (14) makes the active phase no
+    longer exist. In other words, the non-conserved energy implies a kind of continuous phase transition that
+
+                                                               –20–
+                                                       == D R A F T         ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    does not belong to conserved directed percolation or directed percolation when the infinite separation of
+    timescales is satisfied. Therefore, energy conservation is necessary for SOC.
+
+
+    Langevin formulation of self-organized quasi-criticality         As for SOqC, non-zero bulk dissipation breaks the
+    conservation law to generate non-Markovian components in neural dynamics Bonachela and Munoz
+    (2009); Buendı́a, Di Santo, et al. (2020). In the ideal cases where the drive terms (e.g., stimulus inputs) of
+    a sufficiently large neural dynamics system occur at an arbitrarily slow timescale (i.e., only occur in the
+    interval between neural avalanches), the brain exhibits pure dynamical percolation behaviours Buendı́a,
+    Di Santo, et al. (2020). To understand this property, let us consider a variant of Eqs. (5-6) where the
+    dissipation term g (⃗x, t) is non-negligible
+
+                                      ∂
+                                         ρ (⃗x, t) = (a + bν (⃗x, t)) ρ (⃗x, t) − cρ2 (⃗x, t) ,                                   (13)
+                                      ∂t
+                                      ∂
+                                         ν (⃗x, t) = −g (⃗x, t) ρ (⃗x, t) .                                                       (14)
+                                      ∂t
+
+    By integrating Eq. (14) and plugging the integral into Eq. (13), we can derive
+                                                                                            Z t
+                   ∂
+                      ρ (⃗x, t) = (a + bν (⃗x, 0)) ρ (⃗x, t) − cρ2 (⃗x, t) − bρ (⃗x, t)           g (⃗x, t) ρ (⃗x, τ ) dτ,        (15)
+                   ∂t                                                                        0
+
+                                      Rt
+    The non-Markovian term −bρ (⃗x, t) 0 g (⃗x, t) ρ (⃗x, τ ) dτ in Eq. (15) makes the regions already visited by
+    neural dynamics become more unlikely to be activated Bonachela and Munoz (2009); Buendı́a, Di Santo,
+    et al. (2020). Therefore, the pure self-sustained active phase vanishes and is replaced by a spreading
+    phase, where local perturbations can transiently propagate across the whole system without reaching a
+    self-sustained state, and a non-spreading phase, where local perturbations can never span the entire
+    system Bonachela and Munoz (2009); Buendı́a, Di Santo, et al. (2020). The phase transition and
+    corresponding critical point νd > νc between spreading and non-spreading phases belong to the
+    universality class of dynamical percolation rather than conserved directed percolation Bonachela and
+    Munoz (2009); Buendı́a, Di Santo, et al. (2020). The initial neural dynamics can be created by random
+    shifts at moment 0 Bonachela and Munoz (2009); Buendı́a, Di Santo, et al. (2020)
+
+
+                                              ρ (⃗x∗ , 0) → ϵ,                                                                    (16)
+
+                                              ν (⃗x∗ , 0) → ν (⃗x∗ , 0) + h (⃗x∗ , 0) ,                                           (17)
+
+
+                                                                 –21–
+                                                       == D R A F T         ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    where ⃗x∗ is a randomly selected coordinate, and function h (·, ·) is a driving function of energy at
+    moment 0. Every time a neural avalanche occurs after random shifts, the strong dissipation term g (⃗x, t)
+    pushes the brain towards the sub-critical phase. Consequently, the brain can not exactly self-organize to
+    the perfect criticality. Instead, the brain just hovers around the critical point νd to form a quasi-critical
+    region, exhibiting finite fluctuations to the both sides of νd . In the more realistic cases where the drive
+    terms do not necessarily occur at an arbitrarily slow timescale (i.e., can occur at an arbitrary moment),
+    however, neural dynamics may be phenomenology controlled by conserved directed percolation
+    transitions and hover around the critical point. Let us add a drive term in Eq. (14)
+
+                                           ∂
+                                              ν (⃗x, t) = f (⃗x, t) − g (⃗x, t) ρ (⃗x, t) .                                       (18)
+                                           ∂t
+
+    Then Eq. (15) becomes
+                                                                                 Z t
+         ∂
+            ρ (⃗x, t) = (a + bν (⃗x, 0)) ρ (⃗x, t) − cρ2 (⃗x, t) − bρ (⃗x, t)          (f (⃗x, τ ) − g (⃗x, τ ) ρ (⃗x, τ )) dτ,   (19)
+         ∂t                                                                       0
+
+
+    If we can ideally fine tune the drive term f (⃗x, t) to ensure that fg(⃗
+                                                                          (⃗
+                                                                           x,t)
+                                                                           x,t)
+                                                                                → r ∈ (0, ∞), the steady state
+    solutions of Eqs. (18-19) are
+
+                                    f (⃗x, t)
+                         ρ (⃗x, t) =           → r,                                                                               (20)
+                                    g (⃗x, t)
+                                                        
+                                    1      f (⃗x, t)              1
+                        ν (⃗x, 0) =      c           − a → (cr − a) ,                                                             (21)
+                                    b      g (⃗x, t)              b
+                                                  Z t
+                                                                                               1
+                        ν (⃗x, t) = ν (⃗x, 0) +       (f (⃗x, τ ) − g (⃗x, τ ) ρ (⃗x, τ )) dτ → (cr − a) .                        (22)
+                                                   0                                           b
+
+    Eqs. (20-22) correspond to a steady state of the brain with ρ (⃗x, t) → r and conserved energy, which is
+    similar to SOC. Therefore, the brain may self-organize to a quasi-critical region around νc , the critical
+    point of SOC. Reaching the critical point requires ideal fine tuning. These emerged
+    conserved-directed-percolation behaviours enable scientists to recognize SOqC in a similar manner of
+    SOC in practice (i.e., when stimulus inputs can occur at any moment) Bonachela and Munoz (2009);
+    Buendı́a, Di Santo, et al. (2020).
+
+
+    Summary of theoretical relations       Taken together, neuroscientists can approximately verify the existence
+    of brain criticality in the space of absorbing and active phases with specific tools coming from directed
+    percolation theory. This is because OC, qC, SOC, and SOqC exhibit or approximately exhibit directed
+
+                                                                –22–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    percolation behaviours under certain conditions. The verification may be inaccurate since the
+    approximation holds conditionally. As for the brain criticality between asynchronous and synchronous
+    phases, however, the universality class properties become rather elusive because an analytic and complete
+    theory of synchronous phase transitions in the brain remains absent yet (see Buendı́a, Villegas, Burioni,
+    and Munoz (2021); Di Santo et al. (2018) for early attempts). Although some behaviours of absorbing
+    phase transitions can be observed in synchronous phase transitions (e.g., see Buendı́a et al. (2021);
+    Di Santo et al. (2018); Fontenele et al. (2019); Girardi-Schappo et al. (2021)), there also exist numerous
+    differences between them (e.g., see Buendı́a et al. (2021); Fontenele et al. (2019); Girardi-Schappo et al.
+    (2021)). As suggested by Dalla Porta and Copelli (2019), it remains elusive if directed percolation
+    properties are applicable, at least conditionally applicable, to analyzing synchronous phase transitions.
+    More explorations are necessary in the future.
+
+
+    There are numerous properties of brain criticality predicted by directed percolation theory, among which,
+    neural avalanche exponents (the power-law exponents of lifetime and size distributions), scaling relation,
+    universal collapse shape, and slow decay of auto-correlation are applicable in both analytic derivations
+    and statistical estimations from empirical data. These properties are our main focuses. For convenience,
+    we summarize important glossaries and symbol conventions before we discuss theoretical details (Table
+    2).
+
+    Neural avalanche exponents
+    As we have mentioned above, neural avalanches are expected to exhibit power-law properties in their
+    lifetime and size distributions when the brain is at the critical point Hinrichsen (2000); Larremore et al.
+    (2012); Lübeck (2004). Therefore, it is pivotal to confirm the detailed values of neural avalanche
+    exponents. To analytically derive these exponents, one can consider critical branching process di Santo,
+    Villegas, Burioni, and Muñoz (2017); Garcı́a-Pelayo, Salazar, and Schieve (1993); Gros (2010); Harris
+    and Edward (1963); Otter (1949), neural field theory Robinson (2021), mean-field Abelian sandpile
+    models Janowsky and Laberge (1993); D. S. Lee, Goh, Kahng, and Kim (2004), and avalanches in
+    networks Larremore et al. (2012). The key idea to derive neural avalanche exponents shared by these
+    existing theories is to confirm the explicit forms of PT (t) and PS (s), the probability distributions of the
+    lifetime and size of neural avalanches, under ideal conditions (e.g., when the maximum lifetime and size
+    are unlimited and can be infinitely large). In real cases where lifetime and size are restricted because the
+
+                                                               –23–
+                                                                    == D R A F T            ==
+                     Journal: NETWORK NEUROSCIENCE                  /      Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+    Table 2.    Glossaries and symbol conventions. Please note that Table 2 mainly contains important glossaries with fixed symbol definitions. There are many
+
+    symbols uncovered by Table 2 since they are only used for mathematical derivations.
+
+
+           Variable                                                                 Meaning
+
+                 T                                                  The lifetime of the neural avalanche
+
+                 S                                                      The size of the neural avalanche
+
+                 A                                                      The area of the neural avalanche
+
+            ⟨S (T )⟩                                    The averaged size of neural avalanches with lifetime T
+
+          ⟨S (t | T )⟩      The averaged time-dependent avalanche size at moment t during neural avalanches with the lifetime T
+
+               PT (t)                                   The probability distribution of neural avalanche lifetime
+
+               PS (s)                                     The probability distribution of neural avalanche size
+
+                 α                        Power-law exponent of the neural avalanche lifetime distribution PT (t) ∝ t−α
+
+                 β                          Power-law exponent of the neural avalanche size distribution PS (s) ∝ s−β
+
+                 γ                                       Power exponent of the neural avalanche area A ∝ T γ
+
+               H (·)                                                       Universal scaling function
+
+           Cov (·, ·)                                                      Auto-correlation function
+
+                 χ                                               Power-law decay rate of auto-correlation
+
+                 ξ                                              Exponential decay rate of auto-correlation
+
+
+
+
+    brain is a finite system, slight deviations from idea values may be observed but theoretical derivations of
+    neural avalanche exponents principally hold.
+
+
+
+
+    To present accessible expositions, we consider a critical branching process in Eqs. (23-34) to describe
+    related backgrounds. More importantly, we present a novel and simple idea to calculate target exponents
+    in the context of neuroscience in Box 1. Abstractly, one can define P (n, t) as the probability for an
+    active neuron at moment t to activate n post-synaptic neurons subsequently and define Z (n, t) as the
+
+                                                                              –24–
+                                                          == D R A F T           ==
+               Journal: NETWORK NEUROSCIENCE              /      Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    probability of finding n active neurons at moment t. Meanwhile, one denote
+
+                                                                    ∞
+                                                                    X
+                                                  F (x, t) =              P (n, t) xn ,                                                (23)
+                                                                    n=0
+                                                                    X∞
+                                                      G (x, t) =           Z (n, t) xn                                                 (24)
+                                                                     n=0
+
+
+    as the corresponding generating functions Fristedt and Gray (2013); Rao and Swift (2006). Then, one can
+    readily see the recursion relation
+
+                                                       ∞
+                                                       X
+                                        G (x, t) =            Z (n, t − δt) F (x, t − δt)n ,                                           (25)
+                                                        n=0
+
+                                                  = G (F (x, t − δt) , t − δt) ,                                                       (26)
+
+
+    where δt denotes the minimum time step. Eq. (26) implies that branching processes are Markovian.
+    Similarly, one can measure the expectations
+
+                                                              ∂
+                                                      µ (t) =    F (x, t)     ,                                                        (27)
+                                                              ∂x          x=1
+                                                              ∂
+                                                      ϕ (t) =    G (x, t)                                                              (28)
+                                                              ∂x          x=1
+
+
+
+    to derive another recursion relation
+
+                                               ∂                   ∂
+                                     ϕ (t) =      F (x, t − 1)        G (x, t − 1)     ,                                               (29)
+                                               ∂x              x=1 ∂x              x=1
+
+                                           = ϕ (t − δ) µ (t − δ) ,                                                                     (30)
+                                               t−δ
+                                               Y
+                                           =          µ (τ ) .                                                                         (31)
+                                               τ =0
+
+
+    Note that Eq. (31) is derived from the fact that ϕ (0) = 1 (one neuron is activated at moment 0 to trigger
+    neural avalanches). Please see Marković and Gros (2014) for more explanations of Eqs. (25-31).
+    Assuming that ϕ (t) scales as exp (λt) for large t, we know that ϕ (t) converges to 0 given a negative
+    Lyapunov exponent λ (the branching process is sub-critical di Santo et al. (2017); Garcı́a-Pelayo et al.
+    (1993); Gros (2010); Harris and Edward (1963); Otter (1949)) and diverges with a positive Lyapunov
+    exponent λ (the branching process is super-critical di Santo et al. (2017); Garcı́a-Pelayo et al. (1993);
+
+                                                                    –25–
+                                                                  == D R A F T           ==
+                Journal: NETWORK NEUROSCIENCE                     /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+     Gros (2010); Harris and Edward (1963); Otter (1949)). Here λ can be defined according to Eq. (32)
+                                                              t−δ
+                                              1               1X
+                                λ = lim ln      ϕ (t) = lim          ln (µ (τ )) .                     (32)
+                                     t→∞      t           t→∞ t
+                                                                τ =0
+
+     If the branching process is homogeneous, namely P (n, t) = P (n), Z (n, t) = Z (n), µ (τ ) = µ, and
+     ϕ (τ ) = ϕ for every moment τ , then µ = 1 is the condition for the branching process to be critical. To
+                                                                                                    P
+     relate these results with neural avalanches, one only need to consider the avalanche size S = t z (t),
+     where z (t) ∼ Z denotes the number of active neurons at moment t, and the avalanche life time
+     T = min{t | z (t) > 0 and z (t + δt) = 0}. It has been analytically proved that in terms of fixed
+     environments and a Poisson generating function F one can derive Otter (1949)
+
+                                                     PS (s) ∼ s−3/2 µs−1 exp [s (1 − µ)] ,                                                           (33)
+
+                                                     PT (t) ∼ t−2 µt−1 exp [t (1 − µ)] .                                                             (34)
+
+     In the case with µ = 1, one can obtain PS (s) ∼ s−3/2 and PT (t) ∼ t−2 , the power-law distributions of
+     neural avalanche size and neural avalanche life time di Santo et al. (2017); Garcı́a-Pelayo et al. (1993);
+     Gros (2010); Harris and Edward (1963); Janowsky and Laberge (1993); Jung, Le, Lee, and Lee (2020);
+     Larremore et al. (2012); D. S. Lee et al. (2004); Lombardi, Herrmann, and de Arcangelis (2017); Otter
+     (1949); Robinson (2021), from Eqs. (33-34).
+
+     The derivations of avalanche exponents α = 2 and β = 32 are non-trivial. However, few neuroscience
+     studies elaborate on these details, impeding researchers from understanding the theoretical foundations of
+     brain criticality in the brain. The importance of these derivations is beyond the detailed values of
+     avalanche exponents since they reveal the fundamental properties of neural dynamics Cocchi et al.
+     (2017); di Santo et al. (2017); Girardi-Schappo (2021). In Box 1, we sketch an original idea to derive
+     these avalanche exponents in the terminology of neuroscience. In Fig. 3A, we present graphical
+     illustrations of our idea in Box 1.
+
+
+
+       Box 1. Derivations of neural avalanche exponents
+
+       Consider a time-continuous neural dynamics process, where an active neuron implies three possibilities: becoming absorbed with
+
+
+       probability ς, activating another neuron with probability η, or remaining effect-free with probability 1 − (ς + η). In critical states, we have
+
+
+
+
+                                                                            –26–
+                                                                   == D R A F T                 ==
+                 Journal: NETWORK NEUROSCIENCE                     /      Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+       ς = η Garcı́a-Pelayo et al. (1993). We define An (t) as the probability for n active neurons to exist at t∗ + t given that 1 active neuron
+
+
+       exists at t∗ . Assuming the independence of neuron activation, we have
+
+                                                                         X
+                                                        An (t) =                    An1 (t) . . . Ank (t) .                                        (35)
+                                                                   n1 +...+nk =n
+
+
+       If An (t), n ∈ N+ admits a Maclaurin expansion An (t) = an t + o t2 (when n ̸= 1) or An (t) = an t + 1 + o t2 (when n = 1) where
+                                                                                                                   
+
+
+       an = dAn (0) /dt, we can readily derive a0 = a2 = ς and a1 = −2ς Garcı́a-Pelayo et al. (1993). Meanwhile, we can know
+
+                                                                                     ∞
+                                                                                     X
+                                                        An (t + dt) − An (t) =             ak An−k (t) dt.                                         (36)
+                                                                                     k=0
+
+
+       Eqs. (15-16) readily lead to
+                                                                                       
+                                                     ∞      ∞                 k                 ∞
+                                      ∂             X      X         X       Y                 X
+                                         W (x, t) =     ak                      Ani (t) xn =     ak W (x, t)k ,                                  (37)
+                                      ∂t            k=0    n=0 n +...+n =n−k i=1               k=0
+                                                                   1         k
+
+                          P∞               n , x ∈ [0, 1] denotes the generating function. Applying a trick introduced in Garcı́a-Pelayo et al. (1993),
+       where W (x, t) =     n=0 An (t) x
+
+
+                         ∂
+       we define H (x) = ∂t                                    ∂
+                            W (x, 0), which naturally leads to ∂t W (x, t) = H (W (x, t)). Meanwhile, H (x) = ς (1 − x)2 can be derived
+
+
+       based on a0 , a1 , and a2 Garcı́a-Pelayo et al. (1993). Taken together, we have
+
+
+                                                              ∂
+                                                                 W (x, t) = ς (1 − W (x, t))2 .                                                    (38)
+                                                              ∂t
+
+
+       Note that the initial condition is W (x, 0) = x since one neuron is activated at t∗ . Solving Eq. (38), we derive that
+
+
+                                                                                    ς (1 − x) t
+                                                                 W (x, t) =                      .                                                 (39)
+                                                                                 ς (1 − x) t + 1
+
+                                               ςt
+       Therefore, we have A0 (t) = W (0, t) = ςt+1 , supporting a calculation of lifetime distribution PT (t)
+
+
+                                                                                    d
+                                                           lim PT (t) = lim             W (0, t) ∼ t−2 .                                           (40)
+                                                           t→∞               t→∞ dt
+
+
+
+       Following Garcı́a-Pelayo et al. (1993); Harris and Edward (1963); Otter (1949), one can similarily calculate
+
+
+                                                                                            3
+                                                                       lim PS (s) ∼ s− 2 .                                                         (41)
+                                                                       s→∞
+
+
+
+
+    There are three important things to remind. First, the lifetime exponent α = 2 and size exponent β = 32
+    can only be treated as ideal exponents under mean field assumptions of directed percolation. There are
+    numerous factors, such as granularity, network topology, and neural dynamics variability, can be
+    considered in derivations to affect the detailed values of avalanche exponents Bonachela and Munoz
+
+                                                                                 –27–
+                                                      == D R A F T            ==
+               Journal: NETWORK NEUROSCIENCE           /      Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    (2009); Girardi-Schappo (2021). In Table 3, we summarize the possible intervals of α and β in empirical
+    neural data. Second, α and β alone are not sufficient to verify the existence of brain criticality. Even
+    when the actual values of α and β in empirical data are exactly equal to theoretical predictions, they may
+    still not satisfy the scaling relation and universal collapse. Meanwhile, as we shall discuss later,
+    estimating α and β in practice is statistically error-pone. Third, one can not confirm or disprove a detail
+    type of brain criticality based on α and β unless additional information is provided. Although four types
+    of brain criticality exhibit (e.g., OC) or approximatively exhibit (e.g., qC, SOC, and SOqC) directed
+    percolation behaviours under certain conditions, these preconditions are difficult to verify in practice.
+
+    Scaling relation
+    In the previous section, we discuss how the neural avalanche lifetime and size distributions exhibit
+    power-law properties when the brain is at the critical point Hinrichsen (2000); Larremore et al. (2012);
+    Lübeck (2004). Apart from lifetime T and size S, there are several other quantities that characterize
+    neural avalanches, such as area A (number of distinct active neurons, measured as A ≃ ⟨S (T )⟩ where
+    the expectation ⟨·⟩ is averaged across all neural avalanches with the same lifetime T ) and radius exponent
+    R (radius of gyration) Lübeck (2004); Lübeck and Heger (2003). In general, the corresponding
+    probability distributions of these four quantities decay algebraically
+
+                                                           PX (x) ∝ x−λX ,                                                          (42)
+
+    where random variable X ∈ {S, T, A, R} can be an arbitrary quantity to characterize neural avalanches.
+    The avalanche exponent λX is defined according to the selected meaning of X (e.g., λT = 2 and λT = 23
+    under mean filed assumptions). Assuming that variables {S, T, A, R} scale as a power of each other
+
+                                          X ′ ∝ X ψX ′ X , ∀X, X ′ ∈ {S, T, A, R},                                                  (43)
+
+    we can derive the scaling relation from Eqs. (42-43)
+
+                                                                    λX − 1
+                                                       ψX ′ X =              .                                                      (44)
+                                                                    λX ′ − 1
+
+    If we let X ′ = A and X = T , we can specify Eq. (44) as
+
+                                                                   α−1
+                                                             γ=        ,                                                            (45)
+                                                                   β−1
+
+
+                                                                 –28–
+                                                                      == D R A F T              ==
+                  Journal: NETWORK NEUROSCIENCE                        /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    where PT (t) ∝ t−α , PS (s) ∝ s−β , and A ∝ T γ . Eq. (45) leads to γ = 2 in the mean field theory of
+    directed percolation. In Table 3, one can see the possible interval of γ in empirical neural data. Eq. (45)
+    is widely used as a criterion to verify if the brain is at the critical point in neuroscience studies (e.g.,
+    Dalla Porta and Copelli (2019); Fontenele et al. (2019); N. Friedman et al. (2012); Ponce-Alvarez et al.
+    (2018)). Once the scaling relation is confirmed among observed neural avalanche exponents, it indicates
+    key features of the universality class (please note that α, β, and γ should be derived independently). For
+    neuroscientists, the importance of Eq. (45) lies in that it provides extra verification of the validity of
+    estimated neural avalanche exponents. This verification is necessary given that neural avalanche
+    exponent estimation is frequently inaccurate Fontenele et al. (2019). In Fig. 3B, we illustrate the scaling
+    relation in Eq. (45) under mean field assumptions.
+
+    In Lübeck (2004), one can further learn about how brain criticality is mapped to an directed percolation
+    transition characterized by ordinary critical exponents. Meanwhile, one can see how to connect these
+    neural avalanche exponents with second order phase transition exponents Lübeck and Heger (2003).
+
+    Universal collapse shape
+
+
+
+    Table 3. Neural avalanche exponents with scaling relation in empirical data. The data is acquired from Girardi-Schappo (2021), where 45 experimental
+
+    observations of neuronal avalanches reported by 30 studies are summarized. These observations can be classified according to the recording techniques of
+
+    neural avalanches. Detailed data classification criteria (e.g., details of spike sorting and thresholding) can be seen in Girardi-Schappo (2021). We only include
+
+    the data where α, β, and γ are all recorded and satisfy the scaling relation in Eq. (45). For LFP recordings filtered by spike sorting, included observations
+
+    are reported by Carvalho et al. (2021); Fontenele et al. (2019); Fosque et al. (2021); Ma et al. (2019); Mariani et al. (2021); Senzai et al. (2019). For LFP
+
+    recordings with thresholding, included observations come from Mariani et al. (2021); Shew et al. (2015). For Ca and voltage imaging, observations are provided
+
+    by Ponce-Alvarez et al. (2018); Yaghoubi et al. (2018). Although numerous studies report neural avalanches in whole-brain imaging (e.g., MEG, M/EEG, and
+
+    invasive ECoG), these studies either do not report three exponents together Palva et al. (2013); Shriki et al. (2013); Zhigalov et al. (2015) or have not observed
+
+    the scaling relation in Eq. (45) Varley et al. (2020). One can see Girardi-Schappo (2021) for a summary of these results.
+
+
+      Data type                                             Observed interval of α           Observed interval of β           Observed interval of γ
+
+      LFP recordings filtered by spike sorting              α ∈ [1.35, 2.67]                 β ∈ [1.3, 2.5]                   γ ∈ [1.16, 1.48]
+
+      LFP recordings with thresholding                      α ∈ [1.82, 2.84]                 β ∈ [1.57, 2.59]                 γ ∈ [1.12, 1.39]
+
+      Ca and voltage imaging                                α ∈ [2.15, 3.5]                  β ∈ [1.5, 2.3]                   γ ∈ [1.75, 2.5]
+
+
+
+                                                                                 –29–
+                                                                              == D R A F T              ==
+                  Journal: NETWORK NEUROSCIENCE                               /      Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    Figure 3.    Conceptual illustrations of the neural avalanche properties predicted by analytic theories of brain criticality. A, Illustrations of the framework to
+
+    derive neural avalanche exponents in Box 3. B, Illustrations of the scaling relation satisfied by neural avalanches under mean field assumptions. C, Illustrations
+
+    of the universal collapse shape of neural avalanches. The un-scaled plot of t vs. ⟨S (t | T )⟩ (upper left) and the scaled plot ⟨S (t | T )⟩T 1−γ vs. Tt (upper
+
+    right) are shown for comparison. Here terms T1 and T 1−γ respectively serve as scale factors on x-axis and y-axis to create a universal collapse shape.
+
+    Meanwhile, the symmetric collapse shape in Eq. (51) (bottom left) and the asymmetric collapse shape controlled by skewness c in Eq. (52) (bottom right)
+
+    are also presented. D, Auto-correlations and their decays in critical (left) and non-critical (right) cases are shown. Auto-correlations are calculated after a
+
+    ti ∈ [0, T ) is randomly selected as a reference (upper left and right). Meanwhile, the auto-correlation decays measured on tj ∈ [ti , T ] is fitted to derive the
+
+                                                   tj −ti                                        tj −ti
+                                                           
+    coefficients χ (x-axis corresponds to ln          T
+                                                                ) and ξ (x-axis corresponds to      T
+                                                                                                        ) in Eq. (53) and Eq. (55) (bottom left and right). One can see that
+
+    auto-correlations in the critical case have slower decays (smaller χ and ξ) than those in the non-critical case.
+
+
+
+
+                                                                                         –30–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    Universal collapse with an implicit scaling function        Apart from the scaling relation discussed above, the
+    average temporal shape of bursts, a fundamental signature of avalanches Baldassarri, Colaiori, and
+    Castellano (2003); Laurson et al. (2013); Papanikolaou et al. (2011), can also be used to verify the
+    existence of brain criticality in a more precise manner. This approach has been previously applied on
+    diverse physical systems, such as plastically deforming crystals Laurson and Alava (2006) and
+    Barkhausen noise Mehta, Mills, Dahmen, and Sethna (2002); Papanikolaou et al. (2011), and is recently
+    introduced into neuroscience Dalla Porta and Copelli (2019); Fontenele et al. (2019); N. Friedman et al.
+    (2012); Pausch, Garcia-Millan, and Pruessner (2020); Ponce-Alvarez et al. (2018). To understand this
+    approach, let us step back to the power relation in Eq. (43) and specify that X ′ = A and X = T . These
+    settings naturally lead to
+                                                             Z T
+                                          A ≃ ⟨S (T )⟩ ≡           ⟨S (t | T )⟩dt ∝ T γ ,                                         (46)
+                                                               0
+
+    where ⟨S (t | T )⟩ measures the averaged time-dependent avalanche size during an avalanche and the
+    expectation ⟨·⟩ is averaged across all neural avalanches with the same lifetime T . Eq. (46) can be readily
+    reformulated as
+
+                                                      ⟨S (t | T )⟩ ∝ T γ−1 .                                                      (47)
+
+    The general form of Eq. (47) is usually given by Baldassarri et al. (2003); Laurson et al. (2013);
+    Papanikolaou et al. (2011)
+                                                                             
+                                                                    γ−1      t
+                                                 ⟨S (t | T )⟩ = T         H     ,                                                 (48)
+                                                                             T
+
+    where H (·) denotes a universal scaling function. When the brain is at the critical point, all data of
+    ⟨S (t | T )⟩T 1−γ is expected to collapse onto H (·) with reasonable errors Baldassarri et al. (2003);
+    Laurson et al. (2013); Papanikolaou et al. (2011). Here the terminology “collapse onto” means that all
+    data generally exhibits a similar pattern in a plot of ⟨S (t | T )⟩T 1−γ vs. Tt (e.g., all data follows function
+    H (·)). Meanwhile, scaling function H (·) is expected to be a parabolic function Baldassarri et al. (2003);
+    Laurson et al. (2013); Papanikolaou et al. (2011). By testing these properties, neuroscientists can verify
+    whether the brain is at criticality (e.g., Dalla Porta and Copelli (2019); Fontenele et al. (2019);
+    N. Friedman et al. (2012); Ponce-Alvarez et al. (2018)). In Fig. 3C, we graphically illustrate these
+    properties.
+
+                                                               –31–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    Universal collapse with an explicit scaling function        Under specific conditions, researchers can further
+    consider an explicit form of scaling function H (·) Laurson et al. (2013). Assuming that the early-time
+    growth of neural avalanches averagely follows a power-law of time, one can derive that ⟨S (t | T )⟩ ∝ tκ
+    for certain Tt ≤ ε ≪ 1. Meanwhile, one knows that ⟨S (εT | T )⟩ ∝ T γ−1 should hold according to Eq.
+    (28). To ensure these two properties, one needs to have ⟨S (εT | T )⟩ ∝ (εT )κ ∝ T γ−1 , which readily
+    leads to κ = γ − 1. Based on these derivations, one can know
+
+
+                                                 ⟨S (t | T )⟩ ∝ tγ−1 , t ≪ T.                                                      (49)
+
+
+    To find an explicit form of H (·) that satisfies Eqs. (48-49), one can consider a possible answer Laurson
+    et al. (2013)
+                                                         γ−1
+                                                  t   t    t
+                                               H    =   1−         ,                                                               (50)
+                                                  T   T    T
+
+                                                                                         γ−1                     γ−1
+    which can be analytically derived by multiplying Eq. (49) by 1 − Tt                         . Here 1 − Tt             is a term to
+    characterize the deceleration at the ends of neural avalanches Laurson et al. (2013). Because γ = 2 is
+    expected for critical neural avalanches under mean field assumptions, Eq. (48) and Eq. (50) imply that
+                                                                        
+                                                                       t
+                                                  ⟨S (t | T )⟩ ∝ t 1 −     .                                                       (51)
+                                                                       T
+
+    This result is consistent with the prediction by the ABBM model in the limit of vanishing drive rate and
+    demagnetizing factor N. Friedman et al. (2012); Laurson et al. (2013).
+
+
+    A potential limitation of Eq. (51) in applications lies in its internal symmetry property Laurson et al.
+    (2013). Although avalanches under mean-field frameworks have a symmetric average shape N. Friedman
+    et al. (2012), it does not mean that symmetry generally holds in real complex systems Laurson et al.
+    (2013). Applying Eq. (48) on neural data, researchers may observe a nonstandard parabolic function
+    H (·) with specific skewness. This does not necessarily mean that neural dynamics is not at criticality.
+    When neural avalanches are time-irreversible (this is generally true in the brain since the detailed balance
+    of neural dynamics is frequently broken Lynn et al. (2021)), one can consider small temporal asymmetry
+    in the collapse shape Laurson et al. (2013). To characterize potential asymmetry, one can add a correction
+
+                                                               –32–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    term controlled by skewness degree c into Eq. (51)
+                                                                   
+                                                       t         t   1
+                                ⟨S (t | T )⟩ ∝ t 1 −       1−c     −      .                                                       (52)
+                                                       T         T   2
+
+    If c = 0, then Eq. (52) reduces to Eq. (51). Otherwise, neural avalanches can have a temporally
+    asymmetric collapse shape with a positive (c > 0) or negative (c < 0) skewness Laurson et al. (2013). We
+    suggest that Eq. (52) may be more applicable to real data of neural dynamics. In Fig. 3C, we show
+    examples of Eqs. (51-52).
+
+    Slow decay of auto-correlation
+    In applications, researchers can also consider a more practical verification of the potential brain criticality.
+    When the brain is at the critical point, a slow decay of auto-correlation is expected to occur in neural
+    avalanches, corresponding to long-range correlations Dalla Porta and Copelli (2019); Erdos, Kruger, and
+    Renfrew (2018); Schaworonkow, Blythe, Kegeles, Curio, and Nikulin (2015); Smit et al. (2011). This
+    slow decay property is initially derived from the power-law decay of auto-correlation, which can be
+    analytically derived as a part of the scaling relation if ordinary critical exponents of directed percolation
+    transition are considered (see Girardi-Schappo (2021) for details). The power-law decay is expressed as
+                                                                                  
+                                 Cov (S (ti | T ) , S (tj | T ))             tj − ti
+                            ln                                     = −χ ln             + r,             (53)
+                                 Cov (S (ti | T ) , S (ti | T ))                T
+
+    where ti ∈ [0, T ) is used as a reference and tj ∈ [ti , T ] traverses the entire interval Schaworonkow et al.
+    (2015); Smit et al. (2011). According to the Wiener–Khinchin theorem, coefficient χ is related to S (f ),
+    the power spectrum of neural avalanches (notion f denotes frequency) Bak et al. (1987); Girardi-Schappo
+    (2021); Linkenkaer-Hansen, Nikouline, Palva, and Ilmoniemi (2001). One may expect S (f ) ∼ f −υ at
+    the critical point, where χ = 1 − υ Bak et al. (1987); Girardi-Schappo (2021); Linkenkaer-Hansen et al.
+    (2001). The power-law decay of auto-correlation in Eq. (53) breaks down when υ = 1, leading to
+    infinitely long temporal correlations. Therefore, χ ∈ [0, ∞) in Eq. (53) is expected to be sufficiently
+    small. Certainly, the actual value of χ may not be perfectly zero in empirical data. For instance,
+    χ ∈ [0.58 ± 0.23, 0.73 ± 0.31] and χ ∈ [0.52 ± 0.35, 0.81 ± 0.32] are observed in spontaneous alpha
+    oscillations in MEG and EEG data, respectively Linkenkaer-Hansen et al. (2001).
+
+    Apart from verifying power-law decay directly, one can also consider the exponential decay, which is
+    active in neuroscience as well Miller and Wang (2006); Pausch et al. (2020); Wilting and Priesemann
+
+                                                               –33–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    (2019). The exponential decay can described by
+
+                            ∂
+                               Cov (S (ti | T ) , S (tj | T )) = −ξ Cov (S (ti | T ) , S (tj | T )) .                             (54)
+                            ∂t
+
+    Eq. (54) directly leads to
+                                                                                  
+                                    Cov (S (ti | T ) , S (tj | T ))          tj − ti
+                                 ln                                   = −ξ             + r.                                       (55)
+                                    Cov (S (ti | T ) , S (ti | T ))             T
+
+    The exponential decay can be seen in the dynamics with short-term correlations (i.e., correlations have a
+    characteristic time scale). Mathematically, the exponential decay can be related to power-law decay in a
+                          R∞
+    form of x−y = Γ (y) 0 z y−1 exp (−xz) dz, where Γ (·) denotes the Gamma function. When ξ ∈ [0, ∞)
+    is sufficiently small, Eq. (55) can be treated as a looser criterion that approximately verifies the slow
+    decay of auto-correlation and may be more applicable to non-standard brain criticality (e.g., qC and
+    SOqC) Wilting and Priesemann (2019). Despite of its practicality, this looser criterion should be used
+    with cautions since it is not analytically derived from criticality theories.
+
+
+    In Fig. 3D, we illustrate examples of auto-correlation slow decay in critical cases and compare them with
+    non-critical cases. Compared with other properties previously discussed, a slow auto-correlation decay
+    can be readily verified by conventional data fitting. However, we need to note that one should not confirm
+    or reject the possibility of brain criticality only based on the decay characteristic of auto-correlation in
+    Eqs. (53-55). This is because Eqs. (53-55) only serve as the approximate descriptions of long-range
+    correlations at criticality. The strict criterion χ, ξ → 0 is rarely seen in empirical data while the
+    determination of whether χ and ξ are sufficiently small in the looser criterion is relatively subjective.
+
+
+    In summary, we have reviewed the physical foundations of identifying and characterizing criticality in the
+    brain. Based on these analytic derivations, we attempt to present systematic explanations of what is brain
+    criticality and how to identify potential criticality in neural dynamics. Nevertheless, physical theories
+    alone are not sufficient to support neuroscience studies because the implementation of these theories on
+    empirical data is even more challenging than the theories themselves. To overcome these challenges, one
+    needs to learn about statistic techniques to computationally estimate brain criticality from empirical data.
+
+
+    BRAIN CRITICALITY: STATISTIC TECHNIQUES
+
+                                                               –34–
+                                                      == D R A F T              ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    While most properties of neural avalanches analytically predicted by the physical theories of brain
+    criticality can be estimated by conventional statistic techniques, there exist several properties that
+    frequently imply serious validity issues and deserve special attention. Below, we discuss them in detail.
+
+    Estimating neural avalanche exponents
+    Perhaps the estimation of neural avalanche exponents from empirical data is the most error-prone step in
+    brain criticality analysis. The least-square approach is abused in fitting power-law data and frequently
+    derives highly inaccurate results Clauset, Shalizi, and Newman (2009); Virkar and Clauset (2014). To
+    derive neural avalanche exponents α and β in Eq. (25) with reasonable errors, one need to consider the
+    maximum likelihood estimation (MLE) approach and corresponding statistic tests (see MLE on
+    un-binned data Clauset et al. (2009) and binned data Virkar and Clauset (2014)). Taking the avalanche
+    size distribution as an instance, the estimator βb of distribution exponent β is expected to maximize the
+    log-likelihood function
+                                                                          n
+                                                                          X
+                                                             ′
+                                    L (β) = −n ln [ζ (β, s )] − β               ln (si ) ,                                        (56)
+                                                                          i=1
+                                                                   k
+                                                                   X                                  
+                                    L (β) = n (β − 1) ln b +  ′
+                                                                          hi ln          b1−β
+                                                                                          i
+                                                                                                 1−β
+                                                                                              − bi+1       .                      (57)
+                                                                    i=1
+
+    Here Eq. (56) and Eq. (57) denote the log-likelihood functions on un-binned and binned data,
+    respectively. Function ζ (·, ·) is the generalized zeta function Bauke (2007); Clauset et al. (2009). Notion
+    s denotes avalanche size samples in Eq. (33) and Eq. (41) Clauset et al. (2009). Notion b denotes bin
+    boundaries defined on these samples and h counts the number of samples within each bin Virkar and
+    Clauset (2014). Notions s′ and b′ are the lower cutoffs of un-binned and binned power-law distributions
+    Clauset et al. (2009); Virkar and Clauset (2014). They are necessary because few empirical data exhibits
+    power-law properties on the entire distribution Clauset et al. (2009). Notions n and k measure the
+    numbers of samples and bins above cutoffs, respectively Clauset et al. (2009); Virkar and Clauset (2014).
+    To estimate βb precisely, researchers are suggested to follow several indispensable steps Clauset et al.
+    (2009); Virkar and Clauset (2014): (1) for each potential choice of s′ or b′ , estimate the power-law model
+    on the distribution tail above the cutoff. Compute the Kolmogorov–Smirnov (KS) goodness-of-fit
+    statistic between the cumulative probability distributions of power-law model and empirical data. Find
+    the ideal choice of s′ or b′ that minimizes KS statistic; (2) derive the corresponding estimator βb and KS
+    statistic based on the chosen cutoff; (3) use the semi-parametric bootstrap to generate numerous synthetic
+
+                                                                  –35–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    data distributions that follow the estimated power-law model above the cutoff but follow the empirical
+    data distribution below the cutoff. Estimate new power-law models on these synthetic data distributions
+    and measure the goodness-of-fit by KS statistic. Define a p-value, the fraction of these KS statistics in
+    step (3) that are no less than the KS statistic in step (2). Rule out the estimated power-law model in steps
+    (1-2) if p < 0.1 (conservative criterion). Apart from these necessary steps, one can further consider
+    Vuong’s likelihood ratio test for alternative distribution checking Clauset et al. (2009); Virkar and Clauset
+    (2014); Vuong (1989) and information loss measurement of binning approach Virkar and Clauset (2014).
+    During the above process, we measure the goodness-of-fit by KS statistic instead of the well-known χ2
+    statistic because the latter has less statistic power Bauke (2007); Clauset et al. (2009); Virkar and Clauset
+    (2014). Meanwhile, KS statistic is measured on cumulative probability distributions rather than
+    probability distributions to control the effects of extreme values in empirical data Clauset et al. (2009);
+    Virkar and Clauset (2014). Except for the above approach Clauset et al. (2009); Virkar and Clauset
+    (2014), one can also consider the BIC method (for un-binned data) Schwarz (1978) and the RT method
+    (for binned data) Reiss and Thomas (2007) for comparisons. In practice, the approaches proposed by
+    Clauset et al. are more robust Clauset et al. (2009); Virkar and Clauset (2014) and have attracted
+    numerous follow-up studies for improvements (e.g., Deluca and Corral (2013); Marshall et al. (2016);
+    Yu, Klaus, Yang, and Plenz (2014)).
+
+    Estimating universal collapse shape
+    Another error-prone step is the calculation and evaluation of the universal collapse shape, which is
+    closely related to scaling relation analysis. Deriving the collapse shape from empirical data may be
+    problematic because the goodness evaluation of collapse shape is rather subjective (e.g., depends on
+    personal opinions about whether all data follows function H (·) in Eq. (48)) in most cases Marshall et al.
+    (2016). Although important efforts have been devoted to quantify if a given data set exhibits shape
+    collapse Bhattacharjee and Seno (2001); Shaukat and Thivierge (2016), common approaches in practice
+    still depend on specific shape collapse algorithms that search potential scaling parameters (e.g., γ in Eq.
+    (48)) in a data-driven manner Marshall et al. (2016). In these algorithms, thresholding on neural
+    avalanches before analyzing the shape collapse is a standard pre-processing scheme to control noises
+    (e.g., set an avalanche size threshold and remove all data below the threshold) Marshall et al. (2016);
+    Papanikolaou et al. (2011). While experimental noises are partly limited, unexpected excursions of
+
+
+
+                                                               –36–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    scaling parameters away from theoretical predictions may occur after thresholding as well Laurson, Illa,
+    and Alava (2009). To our best knowledge, the effects of thresholding on brain criticality analysis are
+    non-negligible. Although being highly practical, thresholding may lead to significant transient effects to
+    cloud the true scaling property Villegas, di Santo, Burioni, and Muñoz (2019). Therefore, any qualitative
+    evaluation of collapse shape after thresholding is questionable regardless of its practicability. Although
+    an ideal approach requires further explorations, we suggest researchers to consider following methods:
+    (1) estimate γ by area fitting (e.g., follow Eq. (47) in scaling relation analysis) and collapse shape fitting
+    (e.g., follow Eq. (48) in collapse shape analysis), respectively; (2) compare between γ derived by these
+    two kinds of fitting and measure the difference. Search for a threshold that minimizes the difference (e.g.,
+    makes variation amplitude < 1%) and maintains a reasonable sample size (e.g., maintains > 80%
+    samples); (3) Given the chosen threshold and corresponding γ, measure the difference (e.g., the dynamic
+    time warping Keogh and Pazzani (2001)) between ⟨S (t | T )⟩T 1−γ derived on neural avalanches with
+    different lifetime T in the plot of ⟨S (t | T )⟩T 1−γ vs. Tt . Denote the shape collapse error as the averaged
+    difference. Combining these three steps, researchers may partly avoid the errors implied by subjective
+    judgment. Similar ideas can be seen in Marshall et al. (2016).
+
+    Estimating the slow decay of auto-correlation
+    Finally, the analysis of slow decay of auto-correlation is also error-prone in practice. Although this
+    approach is practical and has been extensively applied (e.g., Pausch et al. (2020); Wilting and Priesemann
+    (2019)), the criterion to determine if the decay is truly slow (e.g., χ > 0 in Eq. (54) and ξ > 0 in Eq. (54)
+    are sufficiently small) remains ambiguous. A fixed criterion (e.g., χ, ξ < 0.5) may serve as an explicit
+    condition of a slow decay. However, this presupposed criterion may deviate from real situations. For
+    instance, the baseline of decay rate in a non-critical brain may be essentially high (e.g., χ, ξ > 10). Even
+    though the decay rate drops significantly when the brain becomes critical (e.g., χ, ξ ≃ 1), the
+    presupposed criterion is still unsatisfied and leads to unnecessary controversies on criticality hypothesis.
+    Given that ξ is principally independent from spatial sub-sampling on neurons or brain regions at
+    criticality Pausch et al. (2020), we suggest researchers to consider the following approaches: (1) do
+    spatial sub-sampling in both critical and non-critical brains to derive two groups of χ or ξ (one group for
+    criticality and another group for non-criticality); (2) use appropriate statistic tests (e.g., choose t-test
+    Kanji (2006), Kolmogorov-Smirnov test Berger and Zhou (2014), or Wilcoxon-Mann-Whitney test Fay
+
+
+
+                                                               –37–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    and Proschan (2010) according to sample distribution properties) to verify if two groups of χ or ξ belong
+    to different distributions. Test if the expectation and variance of χ or ξ drops significantly from the
+    non-critical group to the critical group according to certain effect sizes.
+
+
+
+    In summary, statistic techniques bridge between brain criticality theory and empirical data. However,
+    misconception and misuse of statistic analyses of neural avalanche properties still occasionally appear in
+    practice. Although existing techniques remain imperfect in brain criticality analysis, we wish that our
+    discussion may inspire future studies.
+
+
+    BRAIN CRITICALITY AND OTHER NEUROSCIENCE THEORIES
+    Ever since brain criticality is introduced into neuroscience, it is frequently speculated as contradictory
+    with other traditional neuroscience hypotheses, such as the conjectured hierarchical processing
+    characteristic of neural information Felleman and Van Essen (1991) and the asynchronous-irregular
+    characteristic of neural dynamics (e.g., neurons spike independently in Poisson manners Burns and Webb
+    (1976); Softky and Koch (1993); Stein, Gossen, and Jones (2005)). Meanwhile, the differences between
+    brain criticality and scale-free neural dynamics Chialvo (2010); He (2014); Martinello et al. (2017) are
+    frequently neglected. Before we put an end to our review, we discuss the relations between brain
+    criticality and these neuroscience theories.
+
+    Brain criticality and hierarchical processing
+    The hierarchical processing of neural information Felleman and Van Essen (1991) is initially speculated
+    to contradict critical neural dynamics since hierarchical topology has not been used as a explicit
+    condition to analytically derive criticality (e.g., see derivations in di Santo et al. (2017); Garcı́a-Pelayo et
+    al. (1993); Gros (2010); Harris and Edward (1963); Janowsky and Laberge (1993); Larremore et al.
+    (2012); D. S. Lee et al. (2004); Otter (1949); Robinson (2021)). On the contrary, random graphs without
+    strict hierarchical structures seem to be more widespread in criticality derivations. Recently, this
+    speculation has been challenged by numerous discoveries of the facilitation effects of hierarchical
+    modular structures on critical dynamics E. J. Friedman and Landsberg (2013); Kaiser and Hilgetag
+    (2010); Rubinov et al. (2011); S. Wang and Zhou (2012). Meanwhile, computational analysis suggests
+    that information transmission in standard feed-forward networks is maximized by critical neural
+    dynamics Beggs and Plenz (2003). Parallel to neuroscience, a recent machine learning study empirically
+
+                                                               –38–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    observes and analytically demonstrates that artificial neural networks, a kind of hierarchical structure,
+    self-organize to criticality during learning Katsnelson, Vanchurin, and Westerhout (2021). Therefore,
+    brain criticality is not necessarily contradictory with hierarchical information processing, yet more
+    analyses are required to understand how brain criticality affects hierarchical processing schemes.
+
+    Brain criticality and asynchronous-irregular characteristic
+    Brain criticality and the asynchronous-irregular (AI) characteristic may correspond to distinct encoding
+    schemes in the brain Girardi-Schappo et al. (2021); Wilting and Priesemann (2019). While AI
+    characteristic can minimize redundancy Atick (1992); Barlow et al. (1961); Bell and Sejnowski (1997);
+    Van Hateren and van der Schaaf (1998) to improve neural encoding Van Vreeswijk and Sompolinsky
+    (1996), brain criticality may optimize encoding performance utilizing a series of reverberations of neural
+    activities Bertschinger and Natschläger (2004); Boedecker, Obst, Lizier, Mayer, and Asada (2012);
+    Del Papa, Priesemann, and Triesch (2017); Haldeman and Beggs (2005); Kinouchi and Copelli (2006);
+    Shew and Plenz (2013); X. R. Wang, Lizier, and Prokopenko (2011). The coexistence of empirical
+    evidence of AI and brain criticality characteristics initially confuses researchers since these
+    characteristics are hypothesized as contradictory with each other Girardi-Schappo et al. (2021); Wilting
+    and Priesemann (2019). In experiments, AI characteristic is supported by small correlations between the
+    spike rates of different neurons in cortical microcircuits Cohen and Kohn (2011); Ecker et al. (2010) and
+    exponential distributions of inter-spike intervals Carandini and Stevens (2004); Kara, Reinagel, and Reid
+    (2000) while brain criticality characteristic is observed in neural dynamics recorded from multiple
+    species (e.g., awake monkeys Petermann et al. (2009), anesthetized rats Gireesh and Plenz (2008), slices
+    of rat cortices Beggs and Plenz (2003); Shew et al. (2009), and humans Poil et al. (2008)). A recent study
+    demonstrates that cortical spikes may propagate at somewhere between perfect criticality (e.g., OC or
+    SOC depending on whether underlying mechanisms are exogenous or endogenous) and full irregularity
+    Wilting and Priesemann (2019), similar to the cases of qC and SOqC. Meanwhile, it is known that
+    stimulus drives suppress irregularity in neural activities Molgedey et al. (1992). These results imply that
+    brain criticality may not necessarily contradict AI characteristic. On the contrary, they may coexist when
+    stimulus drives are too weak to disturb brain criticality (e.g., OC or SOC) and suppress AI characteristic.
+    In our previous discussions, we have analytically proven that neural avalanche exponents, the
+    fundamental properties of brain criticality, can still be derived under the condition of independent neuron
+
+
+
+                                                               –39–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    activation, a key feature of AI characteristic Wilting and Priesemann (2019). This result suggests that
+    brain criticality and AI characteristic do not contradict each other. As for the case where stimulus drives
+    are non-negligible, a recent study presents an elegant theory to prove that two homeostatic adaptation
+    mechanisms (i.e., the short-term depression of inhibition and the spike-dependent threshold increase)
+    enable synaptic excitation/inhibition balance, AI characteristic, and SOqC to appear simultaneously in
+    the same neural dynamics Girardi-Schappo et al. (2021). Similarly, it is suggested that neural dynamics
+    with criticality or with AI characteristic can be generated by the same neural populations if the synaptic
+    excitation/inhibition balance is fine tuned appropriately J. Li and Shew (2020).
+
+    Brain criticality and power-law behaviours in neural dynamics
+    Neural dynamics with power-law behaviours is a necessary but insufficient condition of brain criticality.
+    This property is frequently neglected in practice. Power-law behaviours are widespread in the nature
+    because it can be generated by diverse mechanisms, such as exponential curve summation and
+    preferential attachment Mitzenmacher (2004); Reed and Hughes (2002). It has been reported that the
+    aggregate behaviours of non-critical stochastic systems may also create scale-free dynamics within a
+    limited range Touboul and Destexhe (2010, 2017). In the brain, the generic scale-free properties can be
+    implied by neutral dynamics, a kind of dynamics where the population size of neutral individuals (or
+    dynamically homogeneous individuals) does not tend to increase or decrease after adding a new
+    individual that is neutral to existing ones (see neutral theories for further explanations Blythe and
+    McKane (2007); Liggett (2006)). This generic property can generate power-law neural avalanches
+    without criticality Martinello et al. (2017). Meanwhile, bistability phenomena, a kind of fine tuned or
+    self-organized discontinuous phase transitions with limit cycles rather than critical points, can also create
+    neural dynamics with power-law properties Buendı́a, Di Santo, et al. (2020); Cocchi et al. (2017); di
+    Santo, Burioni, Vezzani, and Munoz (2016). Consequently, we emphasize that neural avalanches
+    exponents alone are insufficient to prove or disprove any brain criticality hypothesis. These power-law
+    exponents are meaningless for brain criticality hypothesis unless they satisfy the scaling relation.
+
+    BRAIN CRITICALITY: CONCLUSIONS ON CURRENT PROGRESSES AND LIMITATIONS
+    Given what have been reviewed above, we arrive at a point to conclude on the current progresses and
+    limitations in establishing theoretical foundations of different types of brain criticality, i.e., ordinary
+    criticality (OC), quasi-criticality (qC), self-organized criticality (SOC), and self-organized
+
+
+                                                               –40–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    quasi-criticality (SOqC). As we have suggested, an inescapable cause of various controversies is the
+    non-triviality of physical theories that analytically derive brain criticality and statistic techniques that
+    estimate brain criticality from empirical data. Immoderate omitting of these theoretical foundations,
+    especially their imperfection, in practice may lead to confusions on the precise meaning, identification
+    criteria, and biological corollaries of brain criticality. To address these problems, we have introduced
+    mainstream theoretical foundations of brain criticality, reformulated them in the terminology of
+    neuroscience, and discussed their mistakable details.
+
+
+    Thanks to the increasing efforts devoted to improving theoretical frameworks of criticality in the brain,
+    researchers have seen substantial progresses in explaining various important neuroscience problems,
+    including but not limited to efficient cortical state transitions Fontenele et al. (2019), dynamic range
+    maximization in neural responses Kinouchi and Copelli (2006); Shew et al. (2009), and optimization of
+    information transmission and representation Shew et al. (2011). These advances have been
+    comprehensively reviewed by existing works Beggs (2007); Chialvo (2010); Cocchi et al. (2017); Hesse
+    and Gross (2014); Munoz (2018); Shew and Plenz (2013) and are no longer discussed in details in our
+    review. The benefits of studying brain criticality, as we have suggested, lay in the possibility to analyze
+    brain function characteristics with numerous statistical physics theories relevant to brain criticality, such
+    as directed percolation Hinrichsen (2000); Lübeck (2004), conserved directed percolation Bonachela et
+    al. (2010); Bonachela and Muñoz (2008), and dynamical percolation theories Bonachela et al. (2010);
+    Steif (2009). These theories characterize the brain as a physical system with avalanche behaviors,
+    enabling researchers to analyze various propagation, synchronization, and correlation properties of neural
+    dynamics (e.g., continuous phase transitions). These properties intrinsically shape neural information
+    processing (e.g., encoding Bertschinger and Natschläger (2004); Boedecker et al. (2012); Del Papa et al.
+    (2017); Haldeman and Beggs (2005); Kinouchi and Copelli (2006); Shew and Plenz (2013); X. R. Wang
+    et al. (2011), transmission Shew et al. (2011), and memory Haldeman and Beggs (2005); Krotov and
+    Hopfield (2020)) and can be readily recorded in neuroscience experiments. Therefore, the
+    non-equilibrium dynamic processes and potential criticality defined by statistical physics theories are
+    highly applicable to characterizing brain functions. As we have discussed in Fig. 2, researchers can
+    consider diverse brain criticality phenomena in neural dynamics by defining different control (e.g., the
+    balance between excitatory and inhibitory neurons Hardstone et al. (2014); Poil et al. (2012)) and order
+
+                                                               –41–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    (e.g., active neuron density Dalla Porta and Copelli (2019)) parameters, corresponding to multifarious
+    biological mechanisms underlying neural dynamics (e.g., synaptic depression Levina et al. (2007)).
+    Meanwhile, the definition of neural avalanches can flexibly change from neural spikes, local field
+    potentials, to global cortical oscillations. The flexibility of brain criticality and neural avalanche
+    definitions enables researchers to analyze different functional properties on distinct organizational levels
+    in the brain.
+
+
+    The limited theoretical foundations of brain criticality in the brain, however, have become irreconcilable
+    with their increasingly widespread applications. Although the analytic theories of brain criticality have
+    solid physics backgrounds, they needlessly become black boxes for neuroscientists in practice. On the
+    one hand, the details of brain criticality theory frequently experience immoderate neglecting in
+    neuroscience studies. On the other hand, to our best knowledge, there is no accessible and systematic
+    introduction of the statistical physics foundations of brain criticality in the terminology of neuroscience
+    yet. These obstacles severely impede neuroscientists from comprehensively understanding brain
+    criticality, eventually motivating us to present this review. When we turn to bridging between brain
+    criticality theories and experiments, one can find non-negligible gaps separating between theories and
+    experiments. Although numerous biological factors (e.g., neural plasticity De Arcangelis et al. (2006);
+    Levina et al. (2007, 2009), membrane potential leakage Levina et al. (2007); Millman et al. (2010);
+    Rubinov et al. (2011); Stepp et al. (2015), retro-synaptic signals Hernandez-Urbina and Herrmann
+    (2017), spatial heterogeneity Girardi-Schappo, Bortolotto, Gonsalves, Pinto, and Tragtenberg (2016);
+    Moretti and Munoz (2013), and refractory period Fosque et al. (2021); Williams-Garcı́a et al. (2014))
+    have been considered in brain criticality characterization, existing theories more or less suffer from
+    deviations from actual neural system properties. For instance, the requirements of conserved neural
+    dynamics and an infinite time scale separation between the dissipation and drive processes required by
+    SOC may not be biologically realistic Munoz (2018). The implicit requirement of a sufficiently large
+    system size by the mean field theories of brain criticality may not always be satisfied during neural
+    avalanche recording, implying non-negligible finite size effects Girardi-Schappo (2021). Meanwhile,
+    precisely verify the existence of a detailed type of brain criticality (e.g., confirm the actual universality
+    class) in empirical neural data is principally infeasible. As we have explained, the common criteria used
+    for brain criticality hypothesis verification, such as neural avalanche exponents Bauke (2007); Clauset et
+
+                                                               –42–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    al. (2009); Deluca and Corral (2013); Marshall et al. (2016); Yu et al. (2014), scaling relation Lübeck
+    (2004); Lübeck and Heger (2003), universal collapse shape Bhattacharjee and Seno (2001); Laurson et al.
+    (2009); Marshall et al. (2016); Papanikolaou et al. (2011), and slow decay of auto-correlation Pausch et
+    al. (2020); Wilting and Priesemann (2019), are derived according to directed percolation theory under
+    mean field assumptions. Among four types of brain criticality in absorbing phase transitions, only OC
+    originally belongs to directed percolation universality class while qC, SOC, and SOqC conditionally
+    exhibit directed percolation behaviours. In most cases, one can only verify if the brain is plausibly at
+    criticality (e.g., whether neural avalanches obey universal collapse and have the power-law exponents that
+    satisfy the scaling relation). When observed neural avalanche exponents depart from their mean field
+    approximation results but still satisfy the scaling relation, there may exist an OC phenomenon affected by
+    non-mean-field factors (e.g., network topology Girardi-Schappo (2021)) or exist a certain qC, SOC, or
+    SOqC phenomenon caused by diverse mechanisms. Additional information of neural dynamics
+    properties is inevitably required to determine the category belonging of the hypothesized brain criticality,
+    which poses daunting challenges to neuroscience experiment designs. Moreover, the potential validity
+    issues of applying the theoretical tools derived from directed percolation theory to verify brain criticality
+    in synchronous phase transitions deserve special attention (see Dalla Porta and Copelli (2019) for similar
+    opinions). It remains controversial if absorbing and synchronous phase transitions robustly share specific
+    features (see reported similarities Buendı́a et al. (2021); Di Santo et al. (2018); Fontenele et al. (2019);
+    Girardi-Schappo et al. (2021) and differences Buendı́a et al. (2021); Fontenele et al. (2019);
+    Girardi-Schappo et al. (2021)). Any speculated relations between these two kinds of critical phenomena
+    should be tested with cautions. Furthermore, statistic techniques to estimate and verify brain criticality
+    from empirical data are yet imperfect. The estimation of some properties of neural avalanches is
+    error-prone in practice and may lead to serious validity issues. Although we suggest compromised
+    solutions to these issues, more optimal approaches are required in future studies.
+
+    BRAIN CRITICALITY: SUGGESTIONS OF FUTURE DIRECTION
+    We pursue that this review not only summarizes latest developments in the field of studying criticality in
+    the brain, but also serves as a blueprint for further explorations. Below, we offer concrete
+    recommendations of future directions.
+
+
+
+
+                                                               –43–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    First, we suggest researchers to carefully rethink the theoretical foundations of criticality in the brain.
+    Immoderately omitting these foundations in neuroscience needlessly muddies an already complex
+    scientific field and leads to potential validity issues. While we have presented a self-contained framework
+    of brain criticality to characterize neural dynamics as a physical system with avalanches, plentiful details
+    are uncovered in this article (e.g., the Landau–Ginzburg theory Di Santo et al. (2018)) because the
+    statistical physics theories of brain criticality are essentially grand. We recommend researchers to further
+    improve our work and explore a more accessible and systematic reformulation of related physics theories,
+    such as directed percolation, conserved directed percolation, dynamic percolation, non-equilibrium
+    dynamics, in the context of neuroscience. Moreover, we note that these theories are not initially proposed
+    for brain analysis. It is normal to see gaps between these theories and real situations of the brain. We urge
+    researchers to develop new variants of criticality formalism that is more applicable to the brain or even
+    explore new universality classes of continuous phase transitions.
+
+
+
+
+    Second, neuroscience is in urgent need of new physical theories and statistic techniques to bridge
+    between brain criticality hypotheses and experiments. Although existing theories and techniques have
+    become increasingly booming and covered most of the pivotal details of brain criticality, there remain
+    various limitations as we have suggested. Specifically, we suggest five potential directions to resolve
+    these problems: (1) combine brain criticality theories with large-scale neural dynamics recording or
+    computation to include more realistic biological details into brain criticality theories and establish a
+    closer connection with experimental observations; (2) try to summarize, standardize, and subdivide these
+    theories according to the concrete biological meanings of brain criticality phenomena, prerequisites of
+    model definitions, and scopes of application. Try to avoid abusing or misusing of different brain
+    criticality theories; (3) develop open-source toolboxes of theoretical models and statistic techniques to
+    routinize brain criticality analysis in neuroscience studies (one can see existing efforts to achieve this
+    objective Marshall et al. (2016)); (4) establish open-source, multi-species, and large-scale data sets of
+    neural dynamics recorded from both critical and non-critical brains. Validate different statistic techniques
+    of brain criticality estimation and testing on these data sets and, more importantly, confirm appropriate
+    baselines to define the criteria of brain criticality identification (see notable contributions in
+    Girardi-Schappo (2021)); (5) explore new non-equilibrium statistical physics theories for synchronous
+
+                                                               –44–
+                                                      == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+    phase transitions or analytically verify the theoretical validity of directed percolation formulation of
+    synchronous phase transitions.
+
+    Third, parallel to neuroscience, the discoveries of critical phenomena in other learning and computation
+    systems also merit attention. Learning or computing at the edge of chaos has been proven as a mechanism
+    to optimize the performance of learners (e.g., recurrent neural networks Bertschinger and Natschläger
+    (2004)). The well-known residual connections can control the performance degradation of artificial
+    neural networks because they enable networks to self-organize to criticality between stability and chaos
+    to preserve gradient information flows Yang and Schoenholz (2017). It is recently demonstrated that any
+    artificial neural network generally self-organizes to criticality during the learning process Katsnelson et
+    al. (2021). In the future, it would be interesting to explore whether information processing processes in
+    brains and artificial neural networks can be universally characterized by a unified criticality theory.
+
+    Overall, we anticipate the potential of well-validated studies of criticality in the brain to greatly deepen
+    our understanding of neural dynamics characteristics and their roles in neural information processing.
+    Laying solid theoretical foundations of studies is the most effective and indispensable path to
+    contributing to this booming research area.
+
+    ACKNOWLEDGMENTS
+    Correspondence of this paper should be addressed to P.S. Author Y.T. conceptualizes the idea, develops
+    theoretical frameworks, and writes the manuscript. Authors Z.R.T. and H.D.H. contribute equally to
+    developing mathematics of neural avalanche exponents. Author G.Q.L. contributes to reviewing and
+    revising the manuscript. Authors A.H.C., Y.K.Q., and K.Y.W. contribute equally to the proof reading of
+    Langevin formulation. Author C.C. contributes to literature collection and summarizing. Author P.S.
+    contributes to idea conceptualization, manuscript writing, and project supervision. This project is
+    supported by the Artificial and General Intelligence Research Program of Guo Qiang Research Institute
+    at Tsinghua University (2020GQG1017) as well as the Tsinghua University Initiative Scientific Research
+    Program. Authors are grateful for discussions and assistance of Drs. Yaoyuan Wang and Ziyang Zhang
+    from the Laboratory of Advanced Computing and Storage, Central Research Institute, 2012 Laboratories,
+    Huawei Technologies Co. Ltd., Beijing, 100084, China.
+
+
+
+
+                                                               –45–
+                                                         == D R A F T         ==
+                Journal: NETWORK NEUROSCIENCE            /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+                                                             REFERENCES
+
+
+
+      Abbott, L. F. (2008). Theoretical neuroscience rising. Neuron, 60(3), 489–495.
+
+
+      Acebrón, J. A., Bonilla, L. L., Pérez Vicente, C. J., Ritort, F., & Spigler, R. (2005). The kuramoto model: A simple
+
+         paradigm for synchronization phenomena. Rev. Mod. Phys., 77, 137–185. Retrieved from
+
+         https://link.aps.org/doi/10.1103/RevModPhys.77.137 doi: 10.1103/RevModPhys.77.137
+
+
+      Antonopoulos, C. G. (2016). Dynamic range in the c. elegans brain network. Chaos: An Interdisciplinary Journal of
+
+         Nonlinear Science, 26(1), 013102.
+
+
+      Arenas, A., Dı́az-Guilera, A., Kurths, J., Moreno, Y., & Zhou, C. (2008). Synchronization in complex networks. Physics
+
+         reports, 469(3), 93–153.
+
+
+      Atick, J. J. (1992). Could information theory provide an ecological theory of sensory processing? Network: Computation in
+
+         neural systems, 3(2), 213–251.
+
+
+      Bak, P. (2013). How nature works: the science of self-organized criticality. Springer Science & Business Media.
+
+
+      Bak, P., & Sneppen, K. (1993). Punctuated equilibrium and criticality in a simple model of evolution. Physical review
+
+         letters, 71(24), 4083.
+
+
+      Bak, P., Tang, C., & Wiesenfeld, K. (1987). Self-organized criticality: An explanation of the 1/f noise. Physical review
+
+         letters, 59(4), 381.
+
+
+      Baldassarri, A., Colaiori, F., & Castellano, C. (2003). Average shape of a fluctuation: Universality in excursions of
+
+         stochastic processes. Physical review letters, 90(6), 060601.
+
+
+      Barlow, H. B., et al. (1961). Possible principles underlying the transformation of sensory messages. Sensory
+
+         communication, 1(01).
+
+
+      Bassett, D. S., Greenfield, D. L., Meyer-Lindenberg, A., Weinberger, D. R., Moore, S. W., & Bullmore, E. T. (2010).
+
+         Efficient physical embedding of topologically complex information processing networks in brains and computer circuits.
+
+         PLoS computational biology, 6(4), e1000748.
+
+
+                                                                  –46–
+                                                         == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE             /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Bauke, H. (2007). Parameter estimation for power-law distributions by maximum likelihood methods. The European
+
+         Physical Journal B, 58(2), 167–173.
+
+
+      Beggs, J. M. (2007). How to build a critical mind. Nature Physics, 3(12), 835–835.
+
+
+      Beggs, J. M., & Plenz, D. (2003). Neuronal avalanches in neocortical circuits. Journal of neuroscience, 23(35),
+
+         11167–11177.
+
+
+      Beggs, J. M., & Timme, N. (2012). Being critical of criticality in the brain. Frontiers in physiology, 3, 163.
+
+
+      Bell, A. J., & Sejnowski, T. J. (1997). The “independent components” of natural scenes are edge filters. Vision research,
+
+         37(23), 3327–3338.
+
+
+      Berger, V. W., & Zhou, Y. (2014). Kolmogorov–smirnov test: Overview. Wiley statsref: Statistics reference online.
+
+
+      Bertschinger, N., & Natschläger, T. (2004). Real-time computation at the edge of chaos in recurrent neural networks.
+
+         Neural computation, 16(7), 1413–1436.
+
+
+      Betzel, R. F., Avena-Koenigsberger, A., Goñi, J., He, Y., De Reus, M. A., Griffa, A., . . . others (2016). Generative models of
+
+         the human connectome. Neuroimage, 124, 1054–1064.
+
+
+      Betzel, R. F., & Bassett, D. S. (2017a). Generative models for network neuroscience: prospects and promise. Journal of The
+
+         Royal Society Interface, 14(136), 20170623.
+
+
+      Betzel, R. F., & Bassett, D. S. (2017b). Multi-scale brain networks. Neuroimage, 160, 73–83.
+
+
+      Betzel, R. F., Medaglia, J. D., & Bassett, D. S. (2018). Diversity of meso-scale architecture in human and non-human
+
+         connectomes. Nature communications, 9(1), 1–14.
+
+
+      Bhattacharjee, S. M., & Seno, F. (2001). A measure of data collapse for scaling. Journal of Physics A: Mathematical and
+
+         General, 34(33), 6375.
+
+
+      Blythe, R. A., & McKane, A. J. (2007). Stochastic models of evolution in genetics, ecology and linguistics. Journal of
+
+         Statistical Mechanics: Theory and Experiment, 2007(07), P07018.
+
+
+                                                                  –47–
+                                                          == D R A F T          ==
+                Journal: NETWORK NEUROSCIENCE             /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Boedecker, J., Obst, O., Lizier, J. T., Mayer, N. M., & Asada, M. (2012). Information processing in echo state networks at
+
+         the edge of chaos. Theory in Biosciences, 131(3), 205–213.
+
+
+      Bonachela, J. A., De Franciscis, S., Torres, J. J., & Munoz, M. A. (2010). Self-organization without conservation: are
+
+         neuronal avalanches generically critical? Journal of Statistical Mechanics: Theory and Experiment, 2010(02), P02015.
+
+
+      Bonachela, J. A., & Muñoz, M. A. (2008). Confirming and extending the hypothesis of universality in sandpiles. Physical
+
+         Review E, 78(4), 041102.
+
+
+      Bonachela, J. A., & Munoz, M. A. (2009). Self-organization without conservation: true or just apparent scale-invariance?
+
+         Journal of Statistical Mechanics: Theory and Experiment, 2009(09), P09009.
+
+
+      Breskin, I., Soriano, J., Moses, E., & Tlusty, T. (2006). Percolation in living neural networks. Physical review letters,
+
+         97(18), 188102.
+
+
+      Buendı́a, V., Di Santo, S., Bonachela, J. A., & Muñoz, M. A. (2020). Feedback mechanisms for self-organization to the
+
+         edge of a phase transition. Frontiers in physics, 8, 333.
+
+
+      Buendı́a, V., di Santo, S., Villegas, P., Burioni, R., & Muñoz, M. A. (2020). Self-organized bistability and its possible
+
+         relevance for brain dynamics. Physical Review Research, 2(1), 013318.
+
+
+      Buendı́a, V., Villegas, P., Burioni, R., & Munoz, M. A. (2021). Hybrid-type synchronization transitions: Where incipient
+
+         oscillations, scale-free avalanches, and bistability live together. Physical Review Research, 3(2), 023224.
+
+
+      Bullmore, E., & Sporns, O. (2012). The economy of brain network organization. Nature reviews neuroscience, 13(5),
+
+         336–349.
+
+
+      Burns, B. D., & Webb, A. (1976). The spontaneous activity of neurones in the cat’s cerebral cortex. Proceedings of the
+
+         Royal Society of London. Series B. Biological Sciences, 194(1115), 211–223.
+
+
+      Capolupo, A., Freeman, W. J., & Vitiello, G. (2013). Dissipation of ‘dark energy’by cortex in knowledge retrieval. Physics
+
+         of life reviews, 10(1), 85–94.
+
+
+      Carandini, M., & Stevens, C. (2004). Amplification of trial-to-trial response variability by neurons in visual cortex. PLoS
+
+         biology, 2(9), e264.
+
+
+                                                                     –48–
+                                                          == D R A F T          ==
+                Journal: NETWORK NEUROSCIENCE              /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Cardin, J. A. (2019). Functional flexibility in cortical circuits. Current opinion in neurobiology, 58, 175–180.
+
+
+      Carvalho, T. T., Fontenele, A. J., Girardi-Schappo, M., Feliciano, T., Aguiar, L. A., Silva, T. P., . . . Copelli, M. (2021).
+
+         Subsampled directed-percolation models explain scaling relations experimentally observed in the brain. Frontiers in
+
+         neural circuits, 83.
+
+
+      Chialvo, D. R. (2010). Emergent complex neural dynamics. Nature physics, 6(10), 744–750.
+
+
+      Chiappalone, M., Vato, A., Marcoli, M., Davide, F., Martinoia, S., et al. (2003). Networks of neurons coupled to
+
+         microelectrode arrays: a neuronal sensory system for pharmacological applications. Biosensors and Bioelectronics,
+
+         18(5-6), 627–634.
+
+
+      Clauset, A., Shalizi, C. R., & Newman, M. E. (2009). Power-law distributions in empirical data. SIAM review, 51(4),
+
+         661–703.
+
+
+      Cocchi, L., Gollo, L. L., Zalesky, A., & Breakspear, M. (2017). Criticality in the brain: A synthesis of neurobiology, models
+
+         and cognition. Progress in neurobiology, 158, 132–152.
+
+
+      Cohen, M. R., & Kohn, A. (2011). Measuring and interpreting neuronal correlations. Nature neuroscience, 14(7), 811–819.
+
+
+      Collell, G., & Fauquet, J. (2015). Brain activity and cognition: a connection from thermodynamics and information theory.
+
+         Frontiers in psychology, 6, 818.
+
+
+      Dalla Porta, L., & Copelli, M. (2019). Modeling neuronal avalanches and long-range temporal correlations at the emergence
+
+         of collective oscillations: Continuously varying exponents mimic m/eeg results. PLoS computational biology, 15(4),
+
+         e1006924.
+
+
+      David, O., & Friston, K. J. (2003). A neural mass model for meg/eeg:: coupling and neuronal dynamics. NeuroImage,
+
+         20(3), 1743–1755.
+
+
+      de Andrade Costa, A., Copelli, M., & Kinouchi, O. (2015). Can dynamical synapses produce true self-organized criticality?
+
+         Journal of Statistical Mechanics: Theory and Experiment, 2015(6), P06004.
+
+
+      de Arcangelis, L., & Herrmann, H. J. (2010). Learning as a phenomenon occurring in a critical state. Proceedings of the
+
+         National Academy of Sciences, 107(9), 3977–3981.
+
+
+                                                                   –49–
+                                                         == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE             /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      De Arcangelis, L., Perrone-Capano, C., & Herrmann, H. J. (2006). Self-organized criticality model for brain plasticity.
+
+         Physical review letters, 96(2), 028107.
+
+
+      Deco, G., Tononi, G., Boly, M., & Kringelbach, M. L. (2015). Rethinking segregation and integration: contributions of
+
+         whole-brain modelling. Nature Reviews Neuroscience, 16(7), 430–439.
+
+
+      Del Papa, B., Priesemann, V., & Triesch, J. (2017). Criticality meets learning: Criticality signatures in a self-organizing
+
+         recurrent neural network. PloS one, 12(5), e0178683.
+
+
+      Del Pozo, S. M., Laufs, H., Bonhomme, V., Laureys, S., Balenzuela, P., & Tagliazucchi, E. (2021). Unconsciousness
+
+         reconfigures modular brain network dynamics. Chaos: An Interdisciplinary Journal of Nonlinear Science, 31(9), 093117.
+
+
+      Deluca, A., & Corral, Á. (2013). Fitting and goodness-of-fit test of non-truncated and truncated power-law distributions.
+
+         Acta Geophysica, 61(6), 1351–1394.
+
+
+      Dickman, R., Muñoz, M. A., Vespignani, A., & Zapperi, S. (2000). Paths to self-organized criticality. Brazilian Journal of
+
+         Physics, 30(1), 27–41.
+
+
+      Dickman, R., Vespignani, A., & Zapperi, S. (1998). Self-organized criticality as an absorbing-state phase transition.
+
+         Physical Review E, 57(5), 5095.
+
+
+      di Santo, S., Burioni, R., Vezzani, A., & Munoz, M. A. (2016). Self-organized bistability associated with first-order phase
+
+         transitions. Physical review letters, 116(24), 240601.
+
+
+      di Santo, S., Villegas, P., Burioni, R., & Muñoz, M. A. (2017). Simple unified view of branching process statistics: Random
+
+         walks in balanced logarithmic potentials. Physical Review E, 95(3), 032115.
+
+
+      Di Santo, S., Villegas, P., Burioni, R., & Muñoz, M. A. (2018). Landau–ginzburg theory of cortex dynamics: Scale-free
+
+         avalanches emerge at the edge of synchronization. Proceedings of the National Academy of Sciences, 115(7),
+
+         E1356–E1365.
+
+
+      Ecker, A. S., Berens, P., Keliris, G. A., Bethge, M., Logothetis, N. K., & Tolias, A. S. (2010). Decorrelated neuronal firing
+
+         in cortical microcircuits. science, 327(5965), 584–587.
+
+
+                                                                   –50–
+                                                            == D R A F T          ==
+                Journal: NETWORK NEUROSCIENCE               /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Effenberger, F., Jost, J., & Levina, A. (2015). Self-organization in balanced state networks by stdp and homeostatic
+
+         plasticity. PLoS computational biology, 11(9), e1004420.
+
+
+      Erdos, L., Kruger, T., & Renfrew, D. (2018). Power law decay for systems of randomly coupled differential equations.
+
+         SIAM Journal on Mathematical Analysis, 50(3), 3271–3290.
+
+
+      Fay, M. P., & Proschan, M. A. (2010). Wilcoxon-mann-whitney or t-test? on assumptions for hypothesis tests and multiple
+
+         interpretations of decision rules. Statistics surveys, 4, 1.
+
+
+      Felleman, D. J., & Van Essen, D. C. (1991). Distributed hierarchical processing in the primate cerebral cortex. Cerebral
+
+         cortex (New York, NY: 1991), 1(1), 1–47.
+
+
+      Fontenele, A. J., de Vasconcelos, N. A., Feliciano, T., Aguiar, L. A., Soares-Cunha, C., Coimbra, B., . . . others (2019).
+
+         Criticality between cortical states. Physical review letters, 122(20), 208101.
+
+
+      Fosque, L. J., Williams-Garcı́a, R. V., Beggs, J. M., & Ortiz, G. (2021). Evidence for quasicritical brain dynamics. Physical
+
+         Review Letters, 126(9), 098101.
+
+
+      Franke, F., Fiscella, M., Sevelev, M., Roska, B., Hierlemann, A., & da Silveira, R. A. (2016). Structures of neural
+
+         correlation and how they favor coding. Neuron, 89(2), 409–422.
+
+
+      Friedman, E. J., & Landsberg, A. S. (2013). Hierarchical networks, power laws, and neuronal avalanches. Chaos: An
+
+         Interdisciplinary Journal of Nonlinear Science, 23(1), 013135.
+
+
+      Friedman, N., Ito, S., Brinkman, B. A., Shimono, M., DeVille, R. L., Dahmen, K. A., . . . Butler, T. C. (2012). Universal
+
+         critical dynamics in high resolution neuronal avalanche data. Physical review letters, 108(20), 208102.
+
+
+      Fristedt, B. E., & Gray, L. F. (2013). A modern approach to probability theory. Springer Science & Business Media.
+
+
+      Friston, K. (2009). The free-energy principle: a rough guide to the brain? Trends in cognitive sciences, 13(7), 293–301.
+
+
+      Friston, K. (2010). The free-energy principle: a unified brain theory? Nature reviews neuroscience, 11(2), 127–138.
+
+
+      Galván, A. (2010). Neural plasticity of development and learning. Human brain mapping, 31(6), 879–890.
+
+
+                                                                        –51–
+                                                         == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE              /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Ganmor, E., Segev, R., & Schneidman, E. (2011). Sparse low-order interaction network underlies a highly correlated and
+
+         learnable neural population code. Proceedings of the National Academy of sciences, 108(23), 9679–9684.
+
+
+      Garcı́a-Pelayo, R., Salazar, I., & Schieve, W. C. (1993). A branching process model for sand avalanches. Journal of
+
+         statistical physics, 72(1), 167–187.
+
+
+      Gautam, S. H., Hoang, T. T., McClanahan, K., Grady, S. K., & Shew, W. L. (2015). Maximizing sensory dynamic range by
+
+         tuning the cortical state to criticality. PLoS computational biology, 11(12), e1004576.
+
+
+      Gerstner, W., Kistler, W. M., Naud, R., & Paninski, L. (2014). Neuronal dynamics: From single neurons to networks and
+
+         models of cognition. Cambridge University Press.
+
+
+      Girardi-Schappo, M. (2021). Brain criticality beyond avalanches: open problems and how to approach them. Journal of
+
+         Physics: Complexity.
+
+
+      Girardi-Schappo, M., Bortolotto, G. S., Gonsalves, J. J., Pinto, L. T., & Tragtenberg, M. H. (2016). Griffiths phase and
+
+         long-range correlations in a biologically motivated visual cortex model. Scientific reports, 6(1), 1–12.
+
+
+      Girardi-Schappo, M., Galera, E. F., Carvalho, T. T., Brochini, L., Kamiji, N. L., Roque, A. C., & Kinouchi, O. (2021). A
+
+         unified theory of e/i synaptic balance, quasicritical neuronal avalanches and asynchronous irregular spiking. Journal of
+
+         Physics: Complexity, 2(4), 045001.
+
+
+      Gireesh, E. D., & Plenz, D. (2008). Neuronal avalanches organize as nested theta-and beta/gamma-oscillations during
+
+         development of cortical layer 2/3. Proceedings of the National Academy of Sciences, 105(21), 7576–7581.
+
+
+      Gnesotto, F. S., Mura, F., Gladrow, J., & Broedersz, C. P. (2018). Broken detailed balance and non-equilibrium dynamics in
+
+         living systems: a review. Reports on Progress in Physics, 81(6), 066601.
+
+
+      Gong, G., He, Y., Concha, L., Lebel, C., Gross, D. W., Evans, A. C., & Beaulieu, C. (2009). Mapping anatomical
+
+         connectivity patterns of human cerebral cortex using in vivo diffusion tensor imaging tractography. Cerebral cortex,
+
+         19(3), 524–536.
+
+
+      Gros, C. (2010). Complex and adaptive dynamical systems. Springer.
+
+
+      Guevara, R. (2021). Synchronization, free energy and the embryogenesis of the cortex. Physics of Life Reviews, 36, 5–6.
+
+
+                                                                  –52–
+                                                          == D R A F T         ==
+                  Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Guo, S., Chen, X., Liu, Y., Kang, R., Liu, T., & Li, D. (2021). Percolation analysis of brain structural network. Frontiers in
+
+         Physics, 9, 345.
+
+
+      Hahn, G., Ponce-Alvarez, A., Monier, C., Benvenuti, G., Kumar, A., Chavane, F., . . . Frégnac, Y. (2017). Spontaneous
+
+         cortical activity is transiently poised close to criticality. PLoS computational biology, 13(5), e1005543.
+
+
+      Haimovici, A., Tagliazucchi, E., Balenzuela, P., & Chialvo, D. R. (2013). Brain organization into resting state networks
+
+         emerges at criticality on a model of the human connectome. Physical review letters, 110(17), 178101.
+
+
+      Haldeman, C., & Beggs, J. M. (2005). Critical branching captures activity in living neural networks and maximizes the
+
+         number of metastable states. Physical review letters, 94(5), 058101.
+
+
+      Hardstone, R., Mansvelder, H. D., & Linkenkaer-Hansen, K. (2014). The neuronal network oscillation as a critical
+
+         phenomenon. Criticality in Neural Systems. Wiley, 293–316.
+
+
+      Harris, & Edward, T. (1963). The theory of branching processes (Vol. 6). Springer Berlin.
+
+
+      He, B. J. (2014). Scale-free brain activity: past, present, and future. Trends in cognitive sciences, 18(9), 480–487.
+
+
+      Henkel, M., Hinrichsen, H., Lübeck, S., & Pleimling, M. (2008). Non-equilibrium phase transitions (Vol. 1). Springer.
+
+
+      Hernandez-Urbina, V., & Herrmann, J. M. (2017). Self-organized criticality via retro-synaptic signals. Frontiers in Physics,
+
+         4, 54.
+
+
+      Hesse, J., & Gross, T. (2014). Self-organized criticality as a fundamental property of neural systems. Frontiers in systems
+
+         neuroscience, 8, 166.
+
+
+      Hinrichsen, H. (2000). Non-equilibrium critical phenomena and phase transitions into absorbing states. Advances in
+
+         physics, 49(7), 815–958.
+
+
+      Holcman, D., & Tsodyks, M. (2006). The emergence of up and down states in cortical networks. PLoS computational
+
+         biology, 2(3), e23.
+
+
+      Hopfield, J. J. (1982). Neural networks and physical systems with emergent collective computational abilities. Proceedings
+
+         of the national academy of sciences, 79(8), 2554–2558.
+
+
+                                                                  –53–
+                                                          == D R A F T           ==
+               Journal: NETWORK NEUROSCIENCE              /      Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Janowsky, S. A., & Laberge, C. A. (1993). Exact solutions for a mean-field abelian sandpile. Journal of Physics A:
+
+         Mathematical and General, 26(19), L973.
+
+
+      Jercog, D., Roxin, A., Bartho, P., Luczak, A., Compte, A., & de la Rocha, J. (2017). Up-down cortical dynamics reflect state
+
+         transitions in a bistable network. Elife, 6, e22425.
+
+
+      Jung, N., Le, Q. A., Lee, K.-E., & Lee, J. W. (2020). Avalanche size distribution of an integrate-and-fire neural model on
+
+         complex networks. Chaos: An Interdisciplinary Journal of Nonlinear Science, 30(6), 063118.
+
+
+      Kaiser, M., & Hilgetag, C. C. (2006). Nonoptimal component placement, but short processing paths, due to long-distance
+
+         projections in neural systems. PLoS computational biology, 2(7), e95.
+
+
+      Kaiser, M., & Hilgetag, C. C. (2010). Optimal hierarchical modular topologies for producing limited sustained activation of
+
+         neural networks. Frontiers in neuroinformatics, 4, 8.
+
+
+      Kanji, G. K. (2006). 100 statistical tests. Sage.
+
+
+      Kara, P., Reinagel, P., & Reid, R. C. (2000). Low response variability in simultaneously recorded retinal, thalamic, and
+
+         cortical neurons. Neuron, 27(3), 635–646.
+
+
+      Katsnelson, M. I., Vanchurin, V., & Westerhout, T. (2021). Self-organized criticality in neural networks. arXiv preprint
+
+         arXiv:2107.03402.
+
+
+      Keogh, E. J., & Pazzani, M. J. (2001). Derivative dynamic time warping. In Proceedings of the 2001 siam international
+
+         conference on data mining (pp. 1–11).
+
+
+      Khambhati, A. N., Sizemore, A. E., Betzel, R. F., & Bassett, D. S. (2018). Modeling and interpreting mesoscale network
+
+         dynamics. NeuroImage, 180, 337–349.
+
+
+      Kinouchi, O., & Copelli, M. (2006). Optimal dynamical range of excitable networks at criticality. Nature physics, 2(5),
+
+         348–351.
+
+
+      Krotov, D., & Hopfield, J. (2020). Large associative memory problem in neurobiology and machine learning. arXiv preprint
+
+         arXiv:2008.06996.
+
+
+                                                                    –54–
+                                                         == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE              /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Larremore, D. B., Carpenter, M. Y., Ott, E., & Restrepo, J. G. (2012). Statistical properties of avalanches in networks.
+
+         Physical Review E, 85(6), 066131.
+
+
+      Laurson, L., & Alava, M. J. (2006). 1/ f noise and avalanche scaling in plastic deformation. Physical Review E, 74(6),
+
+         066106.
+
+
+      Laurson, L., Illa, X., & Alava, M. J. (2009). The effect of thresholding on temporal avalanche statistics. Journal of
+
+         Statistical Mechanics: Theory and Experiment, 2009(01), P01019.
+
+
+      Laurson, L., Illa, X., Santucci, S., Tore Tallakstad, K., Måløy, K. J., & Alava, M. J. (2013). Evolution of the average
+
+         avalanche shape with the universality class. Nature communications, 4(1), 1–6.
+
+
+      Lee, D. S., Goh, K. I., Kahng, B., & Kim, D. (2004). Branching process approach to avalanche dynamics on complex
+
+         networks. JOURNAL-KOREAN PHYSICAL SOCIETY, 44(1), 633–637.
+
+
+      Lee, H., Wang, S., & Hudetz, A. G. (2020). State-dependent cortical unit activity reflects dynamic brain state transitions in
+
+         anesthesia. Journal of Neuroscience, 40(49), 9440–9454.
+
+
+      Levina, A., Herrmann, J. M., & Geisel, T. (2007). Dynamical synapses causing self-organized criticality in neural networks.
+
+         Nature physics, 3(12), 857–860.
+
+
+      Levina, A., Herrmann, J. M., & Geisel, T. (2009). Phase transitions towards criticality in a neural system with adaptive
+
+         interactions. Physical review letters, 102(11), 118110.
+
+
+      Li, J., & Shew, W. L. (2020). Tuning network dynamics from criticality to an asynchronous state. PLOS Computational
+
+         Biology, 16(9), e1008268.
+
+
+      Li, X., & Small, M. (2012). Neuronal avalanches of a self-organized neural network with active-neuron-dominant structure.
+
+         Chaos: An Interdisciplinary Journal of Nonlinear Science, 22(2), 023104.
+
+
+      Liggett, T. M. (2006). Interacting particle systems. Springer Science & Business Media.
+
+
+      Linkenkaer-Hansen, K., Nikouline, V. V., Palva, J. M., & Ilmoniemi, R. J. (2001). Long-range temporal correlations and
+
+         scaling behavior in human brain oscillations. Journal of Neuroscience, 21(4), 1370–1377.
+
+
+                                                                   –55–
+                                                         == D R A F T         ==
+                 Journal: NETWORK NEUROSCIENCE           /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Lombardi, F., Herrmann, H. J., & de Arcangelis, L. (2017). Balance of excitation and inhibition determines 1/f power
+
+         spectrum in neuronal networks. Chaos: An Interdisciplinary Journal of Nonlinear Science, 27(4), 047402.
+
+
+      Lübeck, S. (2004). Universal scaling behavior of non-equilibrium phase transitions. International Journal of Modern
+
+         Physics B, 18(31n32), 3977–4118.
+
+
+      Lübeck, S., & Heger, P. (2003). Universal finite-size scaling behavior and universal dynamical scaling behavior of
+
+         absorbing phase transitions with a conserved field. Physical Review E, 68(5), 056102.
+
+
+      Lynn, C. W., & Bassett, D. S. (2019). The physics of brain network structure, function and control. Nature Reviews Physics,
+
+         1(5), 318–332.
+
+
+      Lynn, C. W., Cornblath, E. J., Papadopoulos, L., Bertolero, M. A., & Bassett, D. S. (2021). Broken detailed balance and
+
+         entropy production in the human brain. Proceedings of the National Academy of Sciences, 118(47).
+
+
+      Ma, Z., Turrigiano, G. G., Wessel, R., & Hengen, K. B. (2019). Cortical circuit dynamics are homeostatically tuned to
+
+         criticality in vivo. Neuron, 104(4), 655–664.
+
+
+      Malcai, O., Shilo, Y., & Biham, O. (2006). Dissipative sandpile models with universal exponents. Physical Review E, 73(5),
+
+         056125.
+
+
+      Manna, S. S. (1991). Two-state model of self-organized criticality. Journal of Physics A: Mathematical and General, 24(7),
+
+         L363.
+
+
+      Mariani, B., Nicoletti, G., Bisio, M., Maschietto, M., Oboe, R., Suweis, S., & Vassanelli, S. (2021). Beyond resting state
+
+         neuronal avalanches in the somatosensory barrel cortex. bioRxiv.
+
+
+      Marković, D., & Gros, C. (2014). Power laws and self-organized criticality in theory and nature. Physics Reports, 536(2),
+
+         41–74.
+
+
+      Marshall, N., Timme, N. M., Bennett, N., Ripp, M., Lautzenhiser, E., & Beggs, J. M. (2016). Analysis of power laws, shape
+
+         collapses, and neural complexity: new techniques and matlab support via the ncc toolbox. Frontiers in physiology, 7, 250.
+
+
+      Martinello, M., Hidalgo, J., Maritan, A., Di Santo, S., Plenz, D., & Munoz, M. A. (2017). Neutral theory and scale-free
+
+         neural dynamics. Physical Review X, 7(4), 041071.
+
+
+                                                                 –56–
+                                                        == D R A F T          ==
+                Journal: NETWORK NEUROSCIENCE           /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Mehta, A. P., Mills, A. C., Dahmen, K. A., & Sethna, J. P. (2002). Universal pulse shape scaling function and exponents:
+
+         Critical test for avalanche models applied to barkhausen noise. Physical Review E, 65(4), 046139.
+
+
+      Meisel, C., & Gross, T. (2009). Adaptive self-organization in a realistic neural network model. Physical Review E, 80(6),
+
+         061917.
+
+
+      Meisel, C., Olbrich, E., Shriki, O., & Achermann, P. (2013). Fading signatures of critical brain dynamics during sustained
+
+         wakefulness in humans. Journal of Neuroscience, 33(44), 17363–17372.
+
+
+      Miller, P., & Wang, X.-J. (2006). Power-law neuronal fluctuations in a recurrent network model of parametric working
+
+         memory. Journal of neurophysiology, 95(2), 1099–1114.
+
+
+      Millman, D., Mihalas, S., Kirkwood, A., & Niebur, E. (2010). Self-organized criticality occurs in non-conservative neuronal
+
+         networks during ‘up’states. Nature physics, 6(10), 801–805.
+
+
+      Mitzenmacher, M. (2004). A brief history of generative models for power law and lognormal distributions. Internet
+
+         mathematics, 1(2), 226–251.
+
+
+      Molgedey, L., Schuchhardt, J., & Schuster, H. G. (1992). Suppressing chaos in neural networks by noise. Physical review
+
+         letters, 69(26), 3717.
+
+
+      Montague, P. R., Dayan, P., & Sejnowski, T. J. (1996). A framework for mesencephalic dopamine systems based on
+
+         predictive hebbian learning. Journal of neuroscience, 16(5), 1936–1947.
+
+
+      Moretti, P., & Munoz, M. A. (2013). Griffiths phases and the stretching of criticality in brain networks. Nature
+
+         communications, 4(1), 1–10.
+
+
+      Munoz, M. A. (2018). Colloquium: Criticality and dynamical scaling in living systems. Reviews of Modern Physics, 90(3),
+
+         031001.
+
+
+      Narayan, O., & Middleton, A. A. (1994). Avalanches and the renormalization group for pinned charge-density waves.
+
+         Physical Review B, 49(1), 244.
+
+
+      Otter, R. (1949). The multiplicative process. The Annals of Mathematical Statistics, 20(2), 206–224.
+
+
+                                                                 –57–
+                                                           == D R A F T         ==
+               Journal: NETWORK NEUROSCIENCE               /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Palva, J. M., Zhigalov, A., Hirvonen, J., Korhonen, O., Linkenkaer-Hansen, K., & Palva, S. (2013). Neuronal long-range
+
+         temporal correlations and avalanche dynamics are correlated with behavioral scaling laws. Proceedings of the National
+
+         Academy of Sciences, 110(9), 3585–3590.
+
+
+      Papanikolaou, S., Bohn, F., Sommer, R. L., Durin, G., Zapperi, S., & Sethna, J. P. (2011). Universality beyond power laws
+
+         and the average avalanche shape. Nature Physics, 7(4), 316–320.
+
+
+      Pausch, J., Garcia-Millan, R., & Pruessner, G. (2020). Time-dependent branching processes: a model of oscillating neuronal
+
+         avalanches. Scientific Reports, 10(1), 1–17.
+
+
+      Perl, Y. S., Bocaccio, H., Pallavicini, C., Pérez-Ipiña, I., Laureys, S., Laufs, H., . . . Tagliazucchi, E. (2021). Nonequilibrium
+
+         brain dynamics as a signature of consciousness. Physical Review E, 104(1), 014411.
+
+
+      Petermann, T., Thiagarajan, T. C., Lebedev, M. A., Nicolelis, M. A., Chialvo, D. R., & Plenz, D. (2009). Spontaneous
+
+         cortical activity in awake monkeys composed of neuronal avalanches. Proceedings of the National Academy of Sciences,
+
+         106(37), 15921–15926.
+
+
+      Poil, S.-S., Hardstone, R., Mansvelder, H. D., & Linkenkaer-Hansen, K. (2012). Critical-state dynamics of avalanches and
+
+         oscillations jointly emerge from balanced excitation/inhibition in neuronal networks. Journal of Neuroscience, 32(29),
+
+         9817–9823.
+
+
+      Poil, S.-S., van Ooyen, A., & Linkenkaer-Hansen, K. (2008). Avalanche dynamics of human brain oscillations: relation to
+
+         critical branching processes and temporal correlations. Human brain mapping, 29(7), 770–777.
+
+
+      Ponce-Alvarez, A., Jouary, A., Privat, M., Deco, G., & Sumbre, G. (2018). Whole-brain neuronal activity displays crackling
+
+         noise dynamics. Neuron, 100(6), 1446–1459.
+
+
+      Rao, M. M., & Swift, R. J. (2006). Probability theory with applications (Vol. 582). Springer Science & Business Media.
+
+
+      Reed, W. J., & Hughes, B. D. (2002). From gene families and genera to incomes and internet file sizes: Why power laws are
+
+         so common in nature. Physical Review E, 66(6), 067103.
+
+
+      Reimer, J., Froudarakis, E., Cadwell, C. R., Yatsenko, D., Denfield, G. H., & Tolias, A. S. (2014). Pupil fluctuations track
+
+         fast switching of cortical states during quiet wakefulness. neuron, 84(2), 355–362.
+
+
+                                                                    –58–
+                                                         == D R A F T         ==
+               Journal: NETWORK NEUROSCIENCE             /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Reiss, R.-D., & Thomas, M. (2007). Statistical analysis of extreme values: With applications to insurance, finance,
+
+         hydrology and other fields. Springer Science & Business Media.
+
+
+      Ribeiro, T. L., Copelli, M., Caixeta, F., Belchior, H., Chialvo, D. R., Nicolelis, M. A., & Ribeiro, S. (2010). Spike
+
+         avalanches exhibit universal dynamics across the sleep-wake cycle. PloS one, 5(11), e14129.
+
+
+      Robert, P., & Vignoud, G. (2021). Stochastic models of neural synaptic plasticity: A scaling approach. SIAM Journal on
+
+         Applied Mathematics, 81(6), 2362–2386.
+
+
+      Robinson, P. (2021). Neural field theory of neural avalanche exponents. Biological cybernetics, 115(3), 237–243.
+
+
+      Rubinov, M., Sporns, O., Thivierge, J.-P., & Breakspear, M. (2011). Neurobiologically realistic determinants of
+
+         self-organized criticality in networks of spiking neurons. PLoS computational biology, 7(6), e1002038.
+
+
+      Sartori, P., Granger, L., Lee, C. F., & Horowitz, J. M. (2014). Thermodynamic costs of information processing in sensory
+
+         adaptation. PLoS computational biology, 10(12), e1003974.
+
+
+      Schaworonkow, N., Blythe, D. A., Kegeles, J., Curio, G., & Nikulin, V. V. (2015). Power-law dynamics in neuronal and
+
+         behavioral data introduce spurious correlations. Human brain mapping, 36(8), 2901–2914.
+
+
+      Schneidman, E., Berry, M. J., Segev, R., & Bialek, W. (2006). Weak pairwise correlations imply strongly correlated network
+
+         states in a neural population. Nature, 440(7087), 1007–1012.
+
+
+      Schwarz, G. (1978). Estimating the dimension of a model. The annals of statistics, 461–464.
+
+
+      Scott, & Alwyn. (1977). Neurophysics. John Wiley & Sons Incorporated.
+
+
+      Scott, G., Fagerholm, E. D., Mutoh, H., Leech, R., Sharp, D. J., Shew, W. L., & Knöpfel, T. (2014). Voltage imaging of
+
+         waking mouse cortex reveals emergence of critical neuronal dynamics. Journal of Neuroscience, 34(50), 16611–16620.
+
+
+      Senzai, Y., Fernandez-Ruiz, A., & Buzsáki, G. (2019). Layer-specific physiological features and interlaminar interactions in
+
+         the primary visual cortex of the mouse. Neuron, 101(3), 500–513.
+
+
+      Sethna, J. P., Dahmen, K. A., & Myers, C. R. (2001). Crackling noise. Nature, 410(6825), 242–250.
+
+
+                                                                  –59–
+                                                           == D R A F T        ==
+                  Journal: NETWORK NEUROSCIENCE            /   Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Shaukat, A., & Thivierge, J.-P. (2016). Statistical evaluation of waveform collapse reveals scale-free properties of neuronal
+
+         avalanches. Frontiers in computational neuroscience, 10, 29.
+
+
+      Shew, W. L., Clawson, W. P., Pobst, J., Karimipanah, Y., Wright, N. C., & Wessel, R. (2015). Adaptation to sensory input
+
+         tunes visual cortex to criticality. Nature Physics, 11(8), 659–663.
+
+
+      Shew, W. L., & Plenz, D. (2013). The functional benefits of criticality in the cortex. The neuroscientist, 19(1), 88–100.
+
+
+      Shew, W. L., Yang, H., Petermann, T., Roy, R., & Plenz, D. (2009). Neuronal avalanches imply maximum dynamic range in
+
+         cortical networks at criticality. Journal of neuroscience, 29(49), 15595–15600.
+
+
+      Shew, W. L., Yang, H., Yu, S., Roy, R., & Plenz, D. (2011). Information capacity and transmission are maximized in
+
+         balanced cortical networks with neuronal avalanches. Journal of neuroscience, 31(1), 55–63.
+
+
+      Shin, C.-W., & Kim, S. (2006). Self-organized criticality and scale-free properties in emergent functional neural networks.
+
+         Physical Review E, 74(4), 045101.
+
+
+      Shriki, O., Alstott, J., Carver, F., Holroyd, T., Henson, R. N., Smith, M. L., . . . Plenz, D. (2013). Neuronal avalanches in the
+
+         resting meg of the human brain. Journal of Neuroscience, 33(16), 7079–7090.
+
+
+      Smit, D. J., de Geus, E. J., van de Nieuwenhuijzen, M. E., van Beijsterveldt, C. E., van Baal, G. C. M., Mansvelder, H. D.,
+
+         . . . Linkenkaer-Hansen, K. (2011). Scale-free modulation of resting-state neuronal oscillations reflects prolonged brain
+
+         maturation in humans. Journal of Neuroscience, 31(37), 13128–13136.
+
+
+      Softky, W. R., & Koch, C. (1993). The highly irregular firing of cortical cells is inconsistent with temporal integration of
+
+         random epsps. Journal of neuroscience, 13(1), 334–350.
+
+
+      Song, S., Miller, K. D., & Abbott, L. F. (2000). Competitive hebbian learning through spike-timing-dependent synaptic
+
+         plasticity. Nature neuroscience, 3(9), 919–926.
+
+
+      Sornette, D., Johansen, A., & Dornic, I. (1995). Mapping self-organized criticality onto criticality. Journal de Physique I,
+
+         5(3), 325–335.
+
+
+      Squire, L., Berg, D., Bloom, F. E., Du Lac, S., Ghosh, A., & Spitzer, N. C. (2012). Fundamental neuroscience. Academic
+
+         press.
+
+
+                                                                   –60–
+                                                         == D R A F T          ==
+               Journal: NETWORK NEUROSCIENCE             /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Steif, J. E. (2009). A survey of dynamical percolation. In Fractal geometry and stochastics iv (pp. 145–174). Springer.
+
+
+      Stein, R. B., Gossen, E. R., & Jones, K. E. (2005). Neuronal variability: noise or part of the signal? Nature Reviews
+
+         Neuroscience, 6(5), 389–397.
+
+
+      Stepp, N., Plenz, D., & Srinivasa, N. (2015). Synaptic plasticity enables adaptive self-tuning critical networks. PLoS
+
+         computational biology, 11(1), e1004043.
+
+
+      Stewart, C. V., & Plenz, D. (2006). Inverted-u profile of dopamine–nmda-mediated spontaneous avalanche recurrence in
+
+         superficial layers of rat prefrontal cortex. Journal of neuroscience, 26(31), 8148–8159.
+
+
+      Stewart, C. V., & Plenz, D. (2008). Homeostasis of neuronal avalanches during postnatal cortex development in vitro.
+
+         Journal of neuroscience methods, 169(2), 405–416.
+
+
+      Tagliazucchi, E., Balenzuela, P., Fraiman, D., & Chialvo, D. R. (2012). Criticality in large-scale brain fmri dynamics
+
+         unveiled by a novel point process analysis. Frontiers in physiology, 3, 15.
+
+
+      Tian, Y., Li, G., & Sun, P. (2021). Bridging the information and dynamics attributes of neural activities. Physical Review
+
+         Research, 3(4), 043085.
+
+
+      Tian, Y., & Sun, P. (2021). Characteristics of the neural coding of causality. Physical Review E, 103(1), 012406.
+
+
+      Tian, Y., & Sun, P. (2022). Information thermodynamics of encoding and encoders. Chaos: An Interdisciplinary Journal of
+
+         Nonlinear Science, 32(6), 063109.
+
+
+      Tkačik, G., Mora, T., Marre, O., Amodei, D., Palmer, S. E., Berry, M. J., & Bialek, W. (2015). Thermodynamics and
+
+         signatures of criticality in a network of neurons. Proceedings of the National Academy of Sciences, 112(37),
+
+         11508–11513.
+
+
+      Touboul, J., & Destexhe, A. (2010). Can power-law scaling and neuronal avalanches arise from stochastic dynamics? PloS
+
+         one, 5(2), e8982.
+
+
+      Touboul, J., & Destexhe, A. (2017). Power-law statistics and universal scaling in the absence of criticality. Physical Review
+
+         E, 95(1), 012413.
+
+
+                                                                  –61–
+                                                         == D R A F T          ==
+                Journal: NETWORK NEUROSCIENCE            /     Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Touboul, J., Wendling, F., Chauvel, P., & Faugeras, O. (2011). Neural mass activity, bifurcations, and epilepsy. Neural
+
+         computation, 23(12), 3232–3286.
+
+
+      Tyulmankov, D., Fang, C., Vadaparty, A., & Yang, G. R. (2021). Biological key-value memory networks. Advances in
+
+         Neural Information Processing Systems, 34.
+
+
+      Van Hateren, J. H., & van der Schaaf, A. (1998). Independent component filters of natural images compared with simple
+
+         cells in primary visual cortex. Proceedings of the Royal Society of London. Series B: Biological Sciences, 265(1394),
+
+         359–366.
+
+
+      Van Vreeswijk, C., & Sompolinsky, H. (1996). Chaos in neuronal networks with balanced excitatory and inhibitory activity.
+
+         Science, 274(5293), 1724–1726.
+
+
+      Varley, T. F., Sporns, O., Puce, A., & Beggs, J. (2020). Differential effects of propofol and ketamine on critical brain
+
+         dynamics. PLoS computational biology, 16(12), e1008418.
+
+
+      Villegas, P., di Santo, S., Burioni, R., & Muñoz, M. A. (2019). Time-series thresholding and the definition of avalanche size.
+
+         Physical Review E, 100(1), 012133.
+
+
+      Villegas, P., Moretti, P., & Munoz, M. A. (2014). Frustrated hierarchical synchronization and emergent complexity in the
+
+         human connectome network. Scientific reports, 4(1), 1–7.
+
+
+      Virkar, Y., & Clauset, A. (2014). Power-law distributions in binned empirical data. The Annals of Applied Statistics, 8(1),
+
+         89–119.
+
+
+      Vuong, Q. H. (1989). Likelihood ratio tests for model selection and non-nested hypotheses. Econometrica: Journal of the
+
+         Econometric Society, 307–333.
+
+
+      Wang, S., & Zhou, C. (2012). Hierarchical modular structure enhances the robustness of self-organized criticality in neural
+
+         networks. New Journal of Physics, 14(2), 023005.
+
+
+      Wang, X. R., Lizier, J. T., & Prokopenko, M. (2011). Fisher information at the edge of chaos in random boolean networks.
+
+         Artificial life, 17(4), 315–329.
+
+
+                                                                  –62–
+                                                           == D R A F T         ==
+                Journal: NETWORK NEUROSCIENCE              /    Title: Theoretical foundations of studying criticality in the brain
+Authors: Yang Tian and Zeren Tan and Hedong Hou and Guoqi Li and Aohua Cheng and Yike Qiu and Kangyu Weng and Chun Chen and Pei Sun
+
+
+
+
+      Williams-Garcı́a, R. V., Moore, M., Beggs, J. M., & Ortiz, G. (2014). Quasicritical brain dynamics on a nonequilibrium
+
+         widom line. Physical Review E, 90(6), 062714.
+
+
+      Wilting, J., & Priesemann, V. (2019). Between perfectly critical and fully irregular: A reverberating model captures and
+
+         predicts cortical spike propagation. Cerebral Cortex, 29(6), 2759–2770.
+
+
+      Wolf, F. (2005). Symmetry, multistability, and long-range interactions in brain development. Physical review letters, 95(20),
+
+         208701.
+
+
+      Yaghoubi, M., de Graaf, T., Orlandi, J. G., Girotto, F., Colicos, M. A., & Davidsen, J. (2018). Neuronal avalanche dynamics
+
+         indicates different universality classes in neuronal cultures. Scientific reports, 8(1), 1–11.
+
+
+      Yang, G., & Schoenholz, S. (2017). Mean field residual networks: On the edge of chaos. Advances in neural information
+
+         processing systems, 30.
+
+
+      Yu, S., Klaus, A., Yang, H., & Plenz, D. (2014). Scale-invariant neuronal avalanche dynamics and the cut-off in size
+
+         distributions. PloS one, 9(6), e99761.
+
+
+      Zhigalov, A., Arnulfo, G., Nobili, L., Palva, S., & Palva, J. M. (2015). Relationship of fast-and slow-timescale neuronal
+
+         dynamics in human meg and seeg. Journal of Neuroscience, 35(13), 5385–5396.
+
+
+
+
+                                                                    –63–
+

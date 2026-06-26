@@ -506,6 +506,388 @@ fn serialized_message_search_text(
         .join("\n")
 }
 
+/// Extract the chain-of-thought (reasoning) text persisted in a session
+/// message's `meta` JSON (the structured [`crate::session::serialization::SerializedMessage`]).
+///
+/// Reasoning is already persisted on every assistant turn (as
+/// `SerializedPart::Reasoning` inside `meta`), but it's interleaved with text +
+/// tool I/O in the searchable `content`. This is the clean read-back primitive
+/// the self-improvement / RSI critique passes use to evaluate the assistant's
+/// own reasoning — not just its tool outcomes. Returns `None` when the message
+/// has no reasoning parts or `meta` can't be parsed.
+pub fn session_message_reasoning(meta: Option<&str>) -> Option<String> {
+    use crate::session::serialization::{SerializedMessage, SerializedPart};
+    let parsed: SerializedMessage = serde_json::from_str(meta?).ok()?;
+    let reasoning = parsed
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            SerializedPart::Reasoning { content } => {
+                let trimmed = content.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_owned())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    (!reasoning.is_empty()).then(|| reasoning.join("\n"))
+}
+
+/// Build self-critique [`TurnSample`](jfc_learn::self_critique::TurnSample)s from
+/// a persisted transcript: each assistant turn paired with its reasoning (CoT),
+/// its output, and whether a user correction or an unrecovered tool error
+/// followed. This is the bridge that lets the content-aware self-critique run
+/// over real past sessions ("Claude improves Claude").
+pub fn self_critique_samples(
+    session_id: &str,
+    messages: &[jfc_knowledge::SessionMessage],
+) -> Vec<jfc_learn::self_critique::TurnSample> {
+    use jfc_learn::self_critique::TurnSample;
+    let mut samples = Vec::new();
+    for (i, m) in messages.iter().enumerate() {
+        if m.role != "assistant" {
+            continue;
+        }
+        let reasoning = session_message_reasoning(m.meta.as_deref());
+        let thinking_chars = reasoning.as_deref().map_or(0, str::len);
+        let followed_by_correction = messages
+            .get(i + 1)
+            .filter(|next| next.role == "user")
+            .is_some_and(|next| looks_like_correction(&next.content));
+        let had_unrecovered_error = meta_has_failed_tool(m.meta.as_deref());
+        samples.push(TurnSample {
+            session_id: session_id.to_owned(),
+            seq: m.seq,
+            reasoning,
+            output: m.content.clone(),
+            followed_by_correction,
+            had_unrecovered_error,
+            thinking_chars,
+        });
+    }
+    samples
+}
+
+/// Heuristic: does a user message read like a correction of the prior turn?
+fn looks_like_correction(text: &str) -> bool {
+    let t = text.trim().to_lowercase();
+    if t.is_empty() {
+        return false;
+    }
+    const STARTS: &[&str] = &["no,", "no ", "nope", "actually", "stop", "don't", "wrong"];
+    const CONTAINS: &[&str] = &[
+        "that's wrong",
+        "thats wrong",
+        "incorrect",
+        "you didn't",
+        "you didnt",
+        "not what i",
+        "you hallucina",
+        "you broke",
+    ];
+    STARTS.iter().any(|p| t.starts_with(p)) || CONTAINS.iter().any(|p| t.contains(p))
+}
+
+/// Heuristic: did this assistant turn contain a tool call that failed? Cheap
+/// substring check over the serialized `meta` (tool parts carry a `status`).
+fn meta_has_failed_tool(meta: Option<&str>) -> bool {
+    meta.is_some_and(|m| m.contains("\"status\":\"failed\"") || m.contains("\"status\":\"error\""))
+}
+
+/// Convert self-critique [`ImprovementProposal`](jfc_learn::self_critique::ImprovementProposal)s
+/// into [`MinedLesson`](jfc_knowledge::session_mine::MinedLesson)s so they flow
+/// through the SAME persistence + dedup + recall path as error/preference
+/// mining. Recorded as `Finding`s (actionable blind-spots), `Unverified` until a
+/// later proof pass confirms them, deduped by a stable `norm_key`.
+pub fn self_critique_proposals_to_lessons(
+    proposals: &[jfc_learn::self_critique::ImprovementProposal],
+) -> Vec<jfc_knowledge::session_mine::MinedLesson> {
+    proposals
+        .iter()
+        .map(|p| jfc_knowledge::session_mine::MinedLesson {
+            kind: jfc_knowledge::Kind::Finding,
+            trigger: p.title.clone(),
+            claim: p.body.clone(),
+            outcome: jfc_knowledge::Outcome::Unverified,
+            norm_key: format!("critique:{}:{}", p.kind.slug(), norm_slug(&p.title)),
+            session_id: p.source_session_id.clone(),
+        })
+        .collect()
+}
+
+/// Stable dedup slug: lowercase, non-alphanumerics collapsed to single dashes.
+fn norm_slug(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut prev_dash = true; // trims leading dashes
+    for ch in text.to_lowercase().chars() {
+        if ch.is_alphanumeric() {
+            out.push(ch);
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    out.trim_end_matches('-').to_owned()
+}
+
+/// Namespace for self-critique RSI definitions (lets promotion reconstruct ids).
+const SELF_CRITIQUE_NS: &str = "self_critique";
+
+/// The definition name for a self-critique proposal (shared by staging +
+/// promotion so the stable `definition_id` matches).
+fn self_critique_definition_name(title: &str) -> String {
+    format!("self-critique-{}", norm_slug(title))
+}
+
+/// Stage self-critique proposals as RSI definition CANDIDATES — the actual
+/// self-mutation pipeline for skills / tool defs / system prompts / reasoning
+/// policies. `Global` scope (self-improvements are cross-project) + `Candidate`
+/// status: they land where the request assembler looks, but it only injects
+/// `status = 'active'`, so they stay inert until evidence promotes them.
+/// `MemoryRule`-style proposals (no definition kind) are skipped — they ride the
+/// knowledge/recall path instead.
+pub fn self_critique_proposals_to_definitions(
+    proposals: &[jfc_learn::self_critique::ImprovementProposal],
+) -> Vec<jfc_knowledge::NewDefinition> {
+    proposals
+        .iter()
+        .filter_map(|p| {
+            let kind = p.kind.definition_kind()?; // None for MemoryRule
+            Some(jfc_knowledge::NewDefinition {
+                kind: kind.to_owned(),
+                scope: jfc_knowledge::DefinitionScope::Global,
+                project_key: None,
+                namespace: Some(SELF_CRITIQUE_NS.to_owned()),
+                name: self_critique_definition_name(&p.title),
+                title: Some(p.title.clone()),
+                description: Some(p.evidence.clone()),
+                body: p.body.clone(),
+                metadata_json: serde_json::json!({
+                    "rsi": {
+                        "source": "self_critique",
+                        "session_id": p.source_session_id,
+                        "confidence": p.confidence,
+                    }
+                })
+                .to_string(),
+                source_path: Some(format!("rsi:definition:self_critique:{}", p.kind.slug())),
+                source_hash: None,
+                status: jfc_knowledge::DefinitionStatus::Candidate,
+                created_by: "self_critique".to_owned(),
+            })
+        })
+        .collect()
+}
+
+/// Convert self-critique proposals into trackable `scope="self"` backlog items
+/// (JFC improving JFC). The backlog is the single queryable ledger of what the
+/// system suggested for itself, with status proposed → proven → applied — so
+/// improvement is measurable, not prose.
+pub fn self_critique_proposals_to_backlog(
+    proposals: &[jfc_learn::self_critique::ImprovementProposal],
+) -> Vec<jfc_knowledge::BacklogItem> {
+    proposals
+        .iter()
+        .map(|p| jfc_knowledge::BacklogItem {
+            scope: "self".to_owned(),
+            project_key: None,
+            // The DEFINITION kind (so promotion can reconstruct the definition
+            // id); falls back to the candidate slug for non-definition kinds.
+            category: p
+                .kind
+                .definition_kind()
+                .unwrap_or(p.kind.slug())
+                .to_owned(),
+            title: p.title.clone(),
+            body: p.body.clone(),
+            evidence: p.evidence.clone(),
+            confidence: p.confidence,
+            source_session_id: Some(p.source_session_id.clone()),
+        })
+        .collect()
+}
+
+/// One self-improvement pass over a finished session: critique the assistant's
+/// own reasoning + outputs (not just tool errors), fold the proposals into the
+/// knowledge store as recallable `Finding` lessons (immediate, advisory), stage
+/// prompt/skill/tool/reasoning proposals as `Candidate` definitions (the
+/// self-mutation pipeline, pending proof), AND record them on the trackable
+/// self-improvement backlog. This is the closed "Claude improves Claude" loop
+/// for outputs/CoT. Returns `(proposals, lessons_inserted, definitions_staged)`.
+/// Best-effort; logs and continues on store error.
+pub async fn run_self_critique_pass(
+    store: &jfc_knowledge::KnowledgeStore,
+    project_key: &str,
+    session_id: &str,
+    messages: &[jfc_knowledge::SessionMessage],
+) -> (usize, usize, usize) {
+    let samples = self_critique_samples(session_id, messages);
+    // Record an error-pattern SIGNATURE for each failed turn under the `live`
+    // variant. Over time this is the distribution of *how* real sessions fail
+    // (perception / reasoning / verification / …), not just how often — the
+    // comparison surface the eval harness reads to tell variants apart.
+    for s in &samples {
+        if let Some(kind) = jfc_learn::self_critique::classify_failure(s) {
+            let _ = store
+                .record_eval_error_signature("live", session_id, kind.signature())
+                .await;
+        }
+    }
+    let proposals = jfc_learn::self_critique::critique_turns(
+        &jfc_learn::self_critique::HeuristicJudge,
+        &samples,
+    );
+    if proposals.is_empty() {
+        return (0, 0, 0);
+    }
+    let lessons = self_critique_proposals_to_lessons(&proposals);
+    let inserted = match store.ingest_mined(project_key, &lessons).await {
+        Ok((inserted, _compounded)) => inserted,
+        Err(err) => {
+            tracing::debug!(target: "jfc::learn::self_critique", error = %err, "self-critique ingest failed");
+            0
+        }
+    };
+    let definitions = self_critique_proposals_to_definitions(&proposals);
+    let mut staged = 0usize;
+    for def in &definitions {
+        if store.upsert_definition(def).await.is_ok() {
+            staged += 1;
+        }
+    }
+    for item in &self_critique_proposals_to_backlog(&proposals) {
+        let _ = store.upsert_backlog_item(item).await;
+    }
+    tracing::info!(
+        target: "jfc::learn::self_critique",
+        proposals = proposals.len(),
+        lessons = inserted,
+        definitions_staged = staged,
+        session_id,
+        "self-critique: folded reasoning/output lessons + staged prompt/skill/tool candidates + backlog"
+    );
+    (proposals.len(), inserted, staged)
+}
+
+/// Recurrence threshold to auto-promote a self-critique candidate to live. A
+/// pattern independently re-flagged across this many sessions is treated as
+/// proven enough for these conservative, additive, prompt-safe instructions.
+pub const SELF_CRITIQUE_PROMOTE_MIN_RECURRENCE: i64 = 8;
+
+/// Evidence-gated PROMOTION: graduate well-evidenced self-critique candidates to
+/// `Active`, so the request assembler injects them into the LIVE system prompt.
+/// "Proof" here is RECURRENCE — the pattern was re-flagged across many
+/// independent sessions (the backlog's evidence weight). A conservative
+/// threshold plus the assembler's own guards (RSI-tagged, prompt-safe, char
+/// capped, Active-only) keep it safe; promotion stamps the backlog `applied` for
+/// auditability/rollback. Returns the number promoted. A stronger A-B replay
+/// proof can raise the bar later without changing this surface.
+pub async fn promote_evidenced_self_critique(
+    store: &jfc_knowledge::KnowledgeStore,
+    min_recurrence: i64,
+) -> usize {
+    let items = store
+        .list_backlog(Some("self"), Some("proposed"), 10_000)
+        .await
+        .unwrap_or_default();
+    let mut promoted = 0usize;
+    for item in items {
+        if item.recurrence < min_recurrence {
+            continue;
+        }
+        // Only definition-backed categories can be applied to the prompt/tools.
+        if !matches!(
+            item.category.as_str(),
+            "system_prompt"
+                | "reasoning_policy"
+                | "skill"
+                | "tool_definition"
+                | "context_playbook"
+                | "budget_policy"
+                | "harness_patch"
+        ) {
+            continue;
+        }
+        let def_id = jfc_knowledge::definitions::definition_id(
+            &item.category,
+            jfc_knowledge::DefinitionScope::Global.slug(),
+            None,
+            Some(SELF_CRITIQUE_NS),
+            &self_critique_definition_name(&item.title),
+        );
+        // Only mark applied if a real staged definition actually flipped to
+        // Active (skill *suggestions* have no definition → no-op, stay proposed).
+        if store
+            .set_definition_status(&def_id, "active")
+            .await
+            .unwrap_or(0)
+            > 0
+        {
+            let _ = store.set_backlog_status(&item.id, "applied").await;
+            promoted += 1;
+            tracing::info!(
+                target: "jfc::learn::self_critique",
+                category = %item.category,
+                recurrence = item.recurrence,
+                title = %item.title,
+                "promoted self-critique candidate to ACTIVE — now injected into the live prompt"
+            );
+        }
+    }
+    promoted
+}
+
+/// Mine recurring user-prompt intents across all sessions and record the
+/// frequent ones as `skill` suggestions on the self-improvement backlog ("you
+/// keep asking this — make it a skill"). Clusters any wording of the same
+/// request together. Returns the number of suggestions written.
+pub async fn mine_user_prompt_skills_from_store(
+    store: &jfc_knowledge::KnowledgeStore,
+    min_count: usize,
+) -> usize {
+    let sessions = store.list_sessions(None, 1_000_000).await.unwrap_or_default();
+    let mut prompts: Vec<String> = Vec::new();
+    for s in &sessions {
+        if let Ok(messages) = store.load_transcript(&s.id).await {
+            for m in messages {
+                if m.role == "user" {
+                    prompts.push(m.content);
+                }
+            }
+        }
+    }
+    let clusters = jfc_learn::prompt_miner::mine_user_prompt_skills(&prompts, min_count);
+    let mut written = 0usize;
+    for cluster in &clusters {
+        let intent = cluster.signature.join(" ");
+        let item = jfc_knowledge::BacklogItem {
+            scope: "self".to_owned(),
+            project_key: None,
+            category: "skill".to_owned(),
+            title: format!("Recurring request → make a skill: {intent}"),
+            body: format!(
+                "This request recurs ~{} times across sessions (reworded). Consider a skill or \
+                 slash-command for it. Examples: {}",
+                cluster.count,
+                cluster.examples.join(" | ")
+            ),
+            evidence: format!("{} occurrences", cluster.count),
+            confidence: (cluster.count as f64 / (cluster.count as f64 + 5.0)).min(0.95),
+            source_session_id: None,
+        };
+        if store.upsert_backlog_item(&item).await.is_ok() {
+            written += 1;
+        }
+    }
+    tracing::info!(
+        target: "jfc::learn::prompt_miner",
+        clusters = clusters.len(),
+        written,
+        "mined recurring user-prompt intents into skill suggestions"
+    );
+    written
+}
+
 /// Write a session's full transcript into the DB. Best-effort and silent on
 /// error because the caller should keep the chat loop alive, but the DB is the
 /// only runtime transcript store.
@@ -807,6 +1189,113 @@ pub mod types {
 #[cfg(test)]
 mod knowledge_maintenance_tests {
     use super::*;
+
+    #[test]
+    fn session_message_reasoning_extracts_cot_from_meta_normal() {
+        // Reasoning is persisted as a tagged `{"type":"reasoning",...}` part in
+        // the message `meta`; the accessor pulls just the CoT back out.
+        let meta = r#"{"role":"assistant","parts":[
+            {"type":"reasoning","content":"Check the file's exact bytes first."},
+            {"type":"text","content":"Done."},
+            {"type":"reasoning","content":"Then verify with cargo check."}
+        ]}"#;
+        assert_eq!(
+            super::session_message_reasoning(Some(meta)).as_deref(),
+            Some("Check the file's exact bytes first.\nThen verify with cargo check.")
+        );
+        // No reasoning / unparsable / absent → None.
+        assert_eq!(
+            super::session_message_reasoning(Some(r#"{"role":"user","parts":[{"type":"text","content":"hi"}]}"#)),
+            None
+        );
+        assert_eq!(super::session_message_reasoning(Some("not json")), None);
+        assert_eq!(super::session_message_reasoning(None), None);
+    }
+
+    #[test]
+    fn self_critique_samples_pairs_reasoning_with_correction_normal() {
+        use jfc_knowledge::SessionMessage;
+        let messages = vec![
+            SessionMessage {
+                seq: 0,
+                role: "assistant".into(),
+                content: "I'll edit the file.".into(),
+                meta: Some(
+                    r#"{"role":"assistant","parts":[{"type":"reasoning","content":"assuming camelCase"}]}"#
+                        .into(),
+                ),
+            },
+            SessionMessage {
+                seq: 1,
+                role: "user".into(),
+                content: "no, that's wrong".into(),
+                meta: None,
+            },
+        ];
+        let samples = super::self_critique_samples("ses_x", &messages);
+        assert_eq!(samples.len(), 1); // only the assistant turn
+        assert_eq!(samples[0].reasoning.as_deref(), Some("assuming camelCase"));
+        assert!(samples[0].followed_by_correction);
+
+        // End to end: the heuristic judge turns this into a proposal.
+        let props = jfc_learn::self_critique::critique_turns(
+            &jfc_learn::self_critique::HeuristicJudge,
+            &samples,
+        );
+        assert!(!props.is_empty(), "hedge + correction should yield a proposal");
+    }
+
+    #[test]
+    fn correction_and_failed_tool_heuristics_normal() {
+        assert!(super::looks_like_correction("no, that's wrong"));
+        assert!(super::looks_like_correction("actually you broke the build"));
+        assert!(!super::looks_like_correction("thanks, looks great"));
+        assert!(super::meta_has_failed_tool(Some(
+            r#"{"parts":[{"type":"tool","tool":{"status":"failed"}}]}"#
+        )));
+        assert!(!super::meta_has_failed_tool(Some(r#"{"status":"complete"}"#)));
+        assert!(!super::meta_has_failed_tool(None));
+    }
+
+    #[test]
+    fn self_critique_proposals_to_definitions_stage_as_candidates_regression() {
+        use jfc_learn::rsi_curator::CandidateKind;
+        use jfc_learn::self_critique::ImprovementProposal;
+        let proposals = vec![
+            ImprovementProposal {
+                kind: CandidateKind::ReasoningPolicy,
+                title: "Verify assumptions".into(),
+                body: "check first".into(),
+                evidence: "ev".into(),
+                source_session_id: "s".into(),
+                source_seq: 1,
+                confidence: 0.6,
+            },
+            ImprovementProposal {
+                kind: CandidateKind::MemoryRule, // no definition kind → skipped
+                title: "x".into(),
+                body: "y".into(),
+                evidence: String::new(),
+                source_session_id: "s".into(),
+                source_seq: 2,
+                confidence: 0.5,
+            },
+        ];
+        let defs = super::self_critique_proposals_to_definitions(&proposals);
+        assert_eq!(defs.len(), 1, "MemoryRule has no definition kind");
+        assert_eq!(defs[0].kind, "reasoning_policy");
+        // SAFETY INVARIANT: staged as Candidate, never Active — so an unproven
+        // self-critique never auto-mutates the live prompt/tools.
+        assert_eq!(defs[0].status, jfc_knowledge::DefinitionStatus::Candidate);
+        assert!(
+            defs[0]
+                .source_path
+                .as_deref()
+                .unwrap()
+                .starts_with("rsi:definition:"),
+            "must be recognized as an RSI definition"
+        );
+    }
 
     #[test]
     fn session_db_rows_include_reasoning_and_tool_io_normal() {

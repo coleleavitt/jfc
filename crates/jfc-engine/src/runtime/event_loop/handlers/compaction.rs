@@ -263,6 +263,7 @@ pub async fn handle_done(
         && state.pending_approval.is_none()
         && state.approval_queue.is_empty()
         && state.pending_tool_calls.is_empty()
+        && state.pending_question.is_none()
         && !state
             .interrupt_flag
             .load(std::sync::atomic::Ordering::SeqCst)
@@ -295,6 +296,7 @@ pub async fn handle_done(
         && state.pending_approval.is_none()
         && state.approval_queue.is_empty()
         && state.pending_tool_calls.is_empty()
+        && state.pending_question.is_none()
     {
         // Compaction landed at end of turn (no pending
         // tool results). Drain queued prompts so they
@@ -356,6 +358,7 @@ pub async fn handle_failed(
     if state.pending_approval.is_none()
         && state.approval_queue.is_empty()
         && state.pending_tool_calls.is_empty()
+        && state.pending_question.is_none()
         && !state
             .interrupt_flag
             .load(std::sync::atomic::Ordering::SeqCst)

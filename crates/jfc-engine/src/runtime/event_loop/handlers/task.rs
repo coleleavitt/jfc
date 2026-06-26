@@ -707,6 +707,7 @@ pub async fn maybe_resume_after_background(state: &mut EngineState, tx: &EventSe
             && state.approval_queue.is_empty()
             && !state.is_streaming
             && state.compacting_started_at.is_none()
+            && state.pending_question.is_none()
             && stream::should_continue_loop(&state.messages)
         {
             if state.queued_prompts.iter().any(|queued| !queued.is_meta) {
@@ -774,6 +775,9 @@ pub async fn maybe_resume_after_background(state: &mut EngineState, tx: &EventSe
         || state.pending_approval.is_some()
         || !state.approval_queue.is_empty()
         || !state.pending_tool_calls.is_empty()
+        // An open AskUserQuestion modal means the leader is mid-flight waiting on
+        // the user — a background-task auto-wake must not force a turn now.
+        || state.pending_question.is_some()
     {
         return;
     }

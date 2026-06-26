@@ -76,6 +76,23 @@ pub struct NetworkSandboxConfig {
     pub denied_domains: Vec<String>,
     /// When true, only managed (admin-configured) domains are allowed.
     pub allow_managed_domains_only: bool,
+    /// Local HTTP egress proxy port that enforces the per-domain allowlist.
+    /// When set (with `socks_proxy_port`), it is the *only* signal that host
+    /// networking may be kept for allowlist mode (CS-JFC-003).
+    pub http_proxy_port: Option<u16>,
+    /// Local SOCKS egress proxy port that enforces the allowlist.
+    pub socks_proxy_port: Option<u16>,
+}
+
+impl NetworkSandboxConfig {
+    /// Whether an egress proxy is configured to enforce the domain allowlist.
+    ///
+    /// Without an enforcing proxy, a non-empty allowlist must NOT keep host
+    /// networking — bwrap would otherwise grant full unrestricted egress while
+    /// the `EgressPolicy` is never consulted per-connection.
+    pub fn has_egress_proxy(&self) -> bool {
+        self.http_proxy_port.is_some() || self.socks_proxy_port.is_some()
+    }
 }
 
 /// Filesystem isolation for sandboxed Bash commands.
@@ -204,13 +221,34 @@ pub fn build_bwrap_argv(cfg: &BashSandboxConfig, cwd: &std::path::Path) -> Optio
         argv.push(path.clone());
         argv.push(path.clone());
     }
-    // Network: resolve the egress policy. When outbound is disabled (no
-    // allowlisted domains) the network namespace is unshared so the command
-    // gets no network at all. When an allowlist is present, bwrap keeps the
-    // network and a host-level egress proxy/guard enforces the per-domain
-    // [`egress::EgressPolicy`] (wildcards, deny-precedence, default-deny).
+    // Network (CS-JFC-003): fail closed. The command gets no network at all
+    // UNLESS outbound is enabled (a non-empty allowlist) AND an egress proxy is
+    // configured to actually enforce the per-domain allowlist. Previously an
+    // allowlist alone kept full host networking while nothing applied
+    // [`egress::EgressPolicy`] per-connection — i.e. an allowlist silently
+    // granted unrestricted egress. We only keep host networking when a proxy
+    // port is present, and we then route traffic through it via proxy env vars
+    // so the allowlist is genuinely enforced.
     let egress = egress::EgressPolicy::from_network_config(&cfg.network);
-    if !egress.outbound_enabled {
+    let proxy_enforced = egress.outbound_enabled && cfg.network.has_egress_proxy();
+    if proxy_enforced {
+        if let Some(port) = cfg.network.http_proxy_port {
+            let http = format!("http://127.0.0.1:{port}");
+            for var in ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"] {
+                argv.push("--setenv".into());
+                argv.push(var.into());
+                argv.push(http.clone());
+            }
+        }
+        if let Some(port) = cfg.network.socks_proxy_port {
+            let socks = format!("socks5://127.0.0.1:{port}");
+            for var in ["ALL_PROXY", "all_proxy"] {
+                argv.push("--setenv".into());
+                argv.push(var.into());
+                argv.push(socks.clone());
+            }
+        }
+    } else {
         argv.push("--unshare-net".into());
     }
     // Apply deny-read paths.
@@ -238,6 +276,8 @@ pub fn bash_sandbox_config_from_settings(
                 .network
                 .allow_managed_domains_only
                 .unwrap_or(false),
+            http_proxy_port: settings.network.http_proxy_port,
+            socks_proxy_port: settings.network.socks_proxy_port,
         },
         filesystem: FilesystemSandboxConfig {
             allow_write: settings.filesystem.allow_write.clone(),
@@ -288,6 +328,50 @@ pub fn rsi_curator_worker_config(cwd: &Path) -> Option<jfc_learn::RsiCuratorWork
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn allowlist_cfg(proxy_port: Option<u16>) -> BashSandboxConfig {
+        BashSandboxConfig {
+            enabled: true,
+            fail_if_unavailable: false,
+            auto_allow_bash_if_sandboxed: true,
+            // Force a bwrap path so the test doesn't depend on bwrap install.
+            bwrap_path: Some("/usr/bin/bwrap".into()),
+            network: NetworkSandboxConfig {
+                allowed_domains: vec!["example.com".into()],
+                denied_domains: vec![],
+                allow_managed_domains_only: false,
+                http_proxy_port: proxy_port,
+                socks_proxy_port: None,
+            },
+            filesystem: FilesystemSandboxConfig::default(),
+        }
+    }
+
+    // CS-JFC-003: a non-empty allowlist with NO enforcing egress proxy must
+    // still unshare the network (fail closed), not silently keep host networking.
+    #[test]
+    fn allowlist_without_proxy_unshares_net_regression() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let argv = build_bwrap_argv(&allowlist_cfg(None), temp.path()).expect("argv");
+        assert!(
+            argv.iter().any(|a| a == "--unshare-net"),
+            "allowlist without proxy must fail closed with --unshare-net: {argv:?}"
+        );
+    }
+
+    // With an enforcing proxy configured, host networking is kept and traffic is
+    // routed through the proxy so the allowlist is actually applied.
+    #[test]
+    fn allowlist_with_proxy_keeps_net_and_sets_proxy_env_normal() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let argv = build_bwrap_argv(&allowlist_cfg(Some(8888)), temp.path()).expect("argv");
+        assert!(
+            !argv.iter().any(|a| a == "--unshare-net"),
+            "proxy mode should keep networking: {argv:?}"
+        );
+        assert!(argv.iter().any(|a| a == "HTTP_PROXY"));
+        assert!(argv.iter().any(|a| a == "http://127.0.0.1:8888"));
+    }
 
     #[test]
     fn rsi_external_worker_sandbox_uses_bwrap_unshare_net_when_available_normal() {

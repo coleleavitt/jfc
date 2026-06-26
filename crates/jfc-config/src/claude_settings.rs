@@ -479,23 +479,63 @@ impl ClaudeAttributionConfig {
 }
 
 pub fn settings_paths(project_root: &Path) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
+    settings_sources(project_root)
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect()
+}
+
+/// Settings files in precedence order, each tagged with whether it is
+/// repository-controlled (`true`) or user-level (`false`).
+fn settings_sources(project_root: &Path) -> Vec<(PathBuf, bool)> {
+    let mut sources = Vec::new();
     if let Some(home) = dirs::home_dir() {
-        paths.push(home.join(".claude").join("settings.json"));
+        sources.push((home.join(".claude").join("settings.json"), false));
     }
-    paths.push(project_root.join(".claude").join("settings.json"));
-    paths.push(project_root.join(".claude").join("settings.local.json"));
-    paths
+    sources.push((project_root.join(".claude").join("settings.json"), true));
+    sources.push((
+        project_root.join(".claude").join("settings.local.json"),
+        true,
+    ));
+    sources
+}
+
+/// CS-JFC-006: whether repo-local `.claude` shell hooks may be activated.
+///
+/// Repository-controlled config must not gain shell execution before the user
+/// has trusted the project. The only trust signal we honor comes from *outside*
+/// the repository (an environment opt-in), so a malicious checkout cannot
+/// self-trust by shipping a marker file.
+pub fn project_hooks_trusted() -> bool {
+    std::env::var("JFC_TRUST_PROJECT_HOOKS")
+        .ok()
+        .is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
 }
 
 pub fn load_merged(project_root: &Path) -> ClaudeCompatibilityConfig {
+    let trust_project_hooks = project_hooks_trusted();
     let mut merged = ClaudeCompatibilityConfig::default();
-    for path in settings_paths(project_root) {
+    for (path, is_project) in settings_sources(project_root) {
         let Ok(raw) = std::fs::read_to_string(&path) else {
             continue;
         };
         match serde_json::from_str::<ClaudeCompatibilityConfig>(&raw) {
-            Ok(settings) => merged.merge_from(settings),
+            Ok(mut settings) => {
+                // Never auto-activate repository-controlled shell hooks. A
+                // project `.claude/settings*.json` that ships hooks would
+                // otherwise reach `sh -c` on setup/prompt events before the
+                // user has trusted the project.
+                if is_project && !trust_project_hooks && settings.hooks.is_some() {
+                    tracing::warn!(
+                        target: "jfc::config::claude_settings",
+                        path = %path.display(),
+                        "ignoring repo-local .claude shell hooks for an untrusted project; \
+                         set JFC_TRUST_PROJECT_HOOKS=1 to enable them"
+                    );
+                    settings.hooks = None;
+                }
+                merged.merge_from(settings);
+            }
             Err(error) => {
                 tracing::warn!(
                     target: "jfc::config::claude_settings",
@@ -1488,6 +1528,37 @@ mod tests {
             Some("local-model"),
             "settings.local.json must override settings.json"
         );
+    }
+
+    // CS-JFC-006: repo-local .claude shell hooks must not be activated for an
+    // untrusted project. Non-hook settings (e.g. model) still apply.
+    #[test]
+    fn project_local_hooks_are_dropped_when_untrusted_regression() {
+        // This test asserts default (untrusted) behavior; skip if a developer
+        // has opted into trusting project hooks in their environment.
+        if project_hooks_trusted() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let claude_dir = root.join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.json"),
+            r#"{
+                "model": "project-model",
+                "hooks": { "SessionStart": [{ "command": "touch /tmp/pwned" }] }
+            }"#,
+        )
+        .unwrap();
+
+        let merged = load_merged(root);
+        assert!(
+            merged.hooks.is_none(),
+            "repo-local shell hooks must be ignored for an untrusted project"
+        );
+        // Non-hook project settings still apply.
+        assert_eq!(merged.model.as_deref(), Some("project-model"));
     }
 
     #[test]

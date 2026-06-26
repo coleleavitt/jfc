@@ -439,6 +439,87 @@ const MIGRATIONS: &[&str] = &[
         );
     END;
     "#,
+    // v11 — self-improvement BACKLOG. A single trackable ledger of suggestions /
+    // optimizations the system proposes — for ITSELF (`scope='self'`, JFC's own
+    // reasoning/prompt/skill/tool) and for OTHER projects (`scope='project'`,
+    // `project_key` = target). Status moves proposed → proven → applied (or
+    // rejected/superseded). `impact_json` records measured before/after metrics
+    // so improvement is queryable as numbers, not prose. This is the durable
+    // home for what the self-critique loop generates.
+    r#"
+    CREATE TABLE improvement_backlog (
+        id                TEXT PRIMARY KEY,
+        scope             TEXT NOT NULL,                       -- 'self' | 'project'
+        project_key       TEXT,                                -- target project (NULL for self)
+        category          TEXT NOT NULL,                       -- reasoning_policy|system_prompt|skill|tool_definition|optimization|...
+        title             TEXT NOT NULL,
+        body              TEXT NOT NULL,
+        evidence          TEXT NOT NULL DEFAULT '',
+        status            TEXT NOT NULL DEFAULT 'proposed',    -- proposed|proven|applied|rejected|superseded
+        confidence        REAL NOT NULL DEFAULT 0.5,
+        impact_json       TEXT,                                -- measured before/after metrics
+        source_session_id TEXT,
+        recurrence        INTEGER NOT NULL DEFAULT 1,          -- distinct times re-proposed (evidence weight)
+        created_at_ms     INTEGER NOT NULL,
+        updated_at_ms     INTEGER NOT NULL,
+        applied_at_ms     INTEGER
+    );
+    CREATE INDEX idx_backlog_scope_status ON improvement_backlog(scope, status);
+    CREATE INDEX idx_backlog_project ON improvement_backlog(project_key);
+    CREATE INDEX idx_backlog_category ON improvement_backlog(category);
+    "#,
+    // v12 — EVAL HARNESS (the ground-truth signal). `eval_cases` is a held-out
+    // suite of regression scenarios (seeded from real corrections/failures);
+    // `eval_runs` records pass/score per case per variant (control vs a
+    // candidate self-mutation) over time. This is what turns "I think it's
+    // better" into a NUMBER, and what lets promotion verify a fix actually helps
+    // (vs. merely recurring) + the watchdog detect a regression.
+    r#"
+    CREATE TABLE eval_cases (
+        id                TEXT PRIMARY KEY,
+        source            TEXT NOT NULL,                  -- correction|tool_failure|manual
+        prompt            TEXT NOT NULL,                  -- the request / scenario
+        failure_mode      TEXT,                           -- what went wrong (to avoid)
+        expected          TEXT,                           -- correct behavior / fix
+        project_key       TEXT,
+        source_session_id TEXT,
+        weight            REAL NOT NULL DEFAULT 1.0,       -- recurrence-weighted importance
+        created_at_ms     INTEGER NOT NULL
+    );
+    CREATE INDEX idx_eval_cases_source ON eval_cases(source);
+
+    CREATE TABLE eval_runs (
+        id            TEXT PRIMARY KEY,
+        eval_id       TEXT NOT NULL,
+        variant       TEXT NOT NULL,                       -- control | candidate:<def_id>
+        passed        INTEGER,                             -- 1 | 0 | NULL
+        score         REAL,
+        detail        TEXT,
+        run_at_ms     INTEGER NOT NULL
+    );
+    CREATE INDEX idx_eval_runs_eval ON eval_runs(eval_id, run_at_ms);
+    CREATE INDEX idx_eval_runs_variant ON eval_runs(variant, run_at_ms);
+    "#,
+    // v13 — ERROR-PATTERN SIGNATURES. Pass-rate is a scalar; two variants with
+    // the SAME pass-rate can fail in completely different ways. This table
+    // records WHICH failure bucket (the shared FailureKind taxonomy:
+    // perception|reasoning|knowledge_gap|verification|other) each failed run
+    // hit, so promotion/regression decisions compare error *distributions*, not
+    // just a single number — and a failure localizes to a capability instead of
+    // "it was wrong". `signature` is `<kind>` or `<kind>:<step>` for finer
+    // grain; `count` aggregates recurrences of the same signature per variant.
+    r#"
+    CREATE TABLE eval_error_signatures (
+        id            TEXT PRIMARY KEY,
+        variant       TEXT NOT NULL,
+        eval_id       TEXT NOT NULL,
+        signature     TEXT NOT NULL,                       -- <FailureKind>[:<step>]
+        count         INTEGER NOT NULL DEFAULT 1,
+        first_seen_ms INTEGER NOT NULL,
+        last_seen_ms  INTEGER NOT NULL
+    );
+    CREATE INDEX idx_eval_errsig_variant ON eval_error_signatures(variant, signature);
+    "#,
 ];
 
 /// The schema version this build expects (== number of migrations).

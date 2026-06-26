@@ -1,0 +1,905 @@
+                                                                                                             TYPE Hypothesis and Theory
+                                                                                                             PUBLISHED 02 April 2026
+                                                                                                             DOI 10.3389/fnhum.2026.1778271
+
+
+
+
+                                          Executive dysfunction as a
+OPEN ACCESS
+                                          transdiagnostic mechanism of
+EDITED BY
+Michael K. Yeung,
+                                          psychopathology: a
+The Education University of Hong Kong,
+Hong Kong SAR, China                      neurocognitive framework for
+REVIEWED BY
+Vojislava Bugarski Ignjatović,
+University of Novi Sad, Serbia
+                                          diagnosis and intervention
+Yongqing Hou,
+Zhejiang University, China
+                                          Sandra Carvalho *
+*CORRESPONDENCE
+Sandra Carvalho                           Psychological Neuroscience Laboratory, Psychology Research Centre (CIPsi), Department of Basic
+  sandrarc@psi.uminho.pt                  Psychology, School of Psychology, University of Minho, Braga, Portugal
+
+RECEIVED 30 December 2025
+REVISED 05 March 2026
+ACCEPTED 06 March 2026
+PUBLISHED 02 April 2026                   Psychiatric disorders are typically classified using categorical diagnostic systems
+CITATION
+                                          based on symptom clusters. However, these frameworks often fail to capture the
+Carvalho S (2026) Executive dysfunction   cognitive and neurobiological mechanisms that transcend diagnostic boundar-
+as a transdiagnostic mechanism of         ies and influence everyday functioning. Executive dysfunction, encompassing
+psychopathology: a neurocognitive
+framework for diagnosis and               impairments in inhibitory control, working memory, cognitive flexibility, planning,
+intervention.                             and emotion regulation, was historically linked to focal damage in prefrontal brain
+Front. Hum. Neurosci. 20:1778271.         regions. Converging evidence from neuropsychology, cognitive neuroscience,
+doi: 10.3389/fnhum.2026.1778271
+                                          genetics, and clinical research indicates that executive dysfunction is prevalent
+COPYRIGHT
+                                          across multiple psychiatric conditions and closely linked to functional impair-
+© 2026 Carvalho. This is an
+open-access article distributed under     ment. This theory-driven article proposes that executive dysfunction represents
+the terms of the Creative Commons         a transdiagnostic dimension of psychopathology reflecting a shared neurocog-
+Attribution License (CC BY). The use,     nitive vulnerability. Disruptions in both “cool” executive processes (e.g., cogni-
+distribution or reproduction in other
+forums is permitted, provided the         tive control and working memory) and “hot” executive processes (e.g., emotion
+original author(s) and the copyright      regulation and motivational control) may constitute a common pathway through
+owner(s) are credited and that the        which diverse psychiatric disorders impair adaptive functioning. Executive dys-
+original publication in this journal is
+cited, in accordance with accepted        function is further conceptualized as an intermediate phenotype linking genetic
+academic practice. No use, distribution   liability, distributed neural circuit disruption, and everyday behavioral regulation.
+or reproduction is permitted which does   This perspective supports a shift toward transdiagnostic, mechanism-based
+not comply with these terms.
+                                          mental health interventions that prioritize executive functioning as a central
+                                          target for improving real-world functioning and long-term recovery.
+
+                                          KEYWORDS
+
+                                          cognitive control, executive dysfunction, hot and cold executive functions,
+                                          neurocognitive mechanisms, personalized intervention, transdiagnostic
+                                          psychopathology
+
+
+
+
+                                          1 Introduction
+                                              Mental health conditions have traditionally been classified using categorical diagnostic sys-
+                                          tems, most notably the Diagnostic and Statistical Manual of Mental Disorders (DSM) of the
+                                          American Psychiatric Association and the International Classification of Diseases (ICD) of the
+                                          World Health Organization. These frameworks define disorders based on clusters of observable
+                                          symptoms, offering important advantages for clinical communication, service organization, and
+                                          diagnostic standardization. However, such classification systems do not fully align with the under-
+                                          lying cognitive and neurobiological mechanisms that often cut across diagnostic boundaries.
+
+
+Frontiers in Human Neuroscience                                 01                                                            frontiersin.org
+Carvalho                                                                                                                      10.3389/fnhum.2026.1778271
+
+
+
+
+     In everyday clinical practice, categorical diagnostic systems                 control (McTeague et al., 2017). Within dimensional frameworks such
+often struggle with high comorbidity, substantial heterogeneity                    as the RDoC, these findings suggest that shared biological vulnerability
+within diagnoses, and persistent difficulties in real-world function-              may partly manifest through alterations in core neurocognitive systems
+ing. These limitations have stimulated growing interest in transdi-                rather than through mechanisms unique to specific disorders (Insel et
+agnostic and dimensional perspectives, such as the Research                        al., 2010). Despite growing evidence for shared biological vulnerability,
+Domain Criteria (RDoC) framework, which emphasizes core neu-                       the cognitive mechanisms through which these vulnerabilities translate
+rocognitive systems rather than focusing solely on symptom clus-                   into persistent functional impairment remain incompletely understood.
+ters. At the same time, the development of treatments has largely                  Neural executive control systems therefore represent a strong candidate
+remained diagnosis-driven, raising questions about whether cur-                    mechanism linking biological risk to real-world functional outcomes.
+rent intervention models adequately target the mechanisms under-                         However, understanding the role of executive control systems in
+lying functional impairment.                                                       psychopathology also requires clarifying the internal organization of
+     Consistent with this concern, many existing treatments continue               executive functions themselves. Executive function models have tradi-
+to produce only modest effects. An extensive umbrella review by                    tionally been conceptualized as reflecting stable, domain-general cog-
+Leichsenring et al. (2022) analyzed more than 100 meta-analyses                    nitive constructs. However, emerging evidence suggests that observed
+including over 650,000 participants and reported small effect sizes for            executive function structures may partly reflect characteristics of the
+both psychotherapies (standardized mean difference of approximately                tasks used to measure them, including methodological similarities and
+0.34) and pharmacotherapies (approximately 0.36) compared with                     task-specific variance (Sambol et al., 2023). For example, Sambol et al.
+placebo or treatment as usual. Importantly, these effects primarily                (2023) report that traditional unity/diversity models may not fully cap-
+reflect symptom reduction rather than sustained improvements in                    ture the empirical structure of executive functioning, instead support-
+everyday functioning. Moreover, interpretation of these findings is                ing an alternative organization characterized by expanded working
+complicated by methodological limitations, including weak control                  memory, integrated cognitive flexibility, and substantial task-specific
+conditions, variable risk of bias, and publication bias. Together, these           variance. These findings highlight the need for frameworks that more
+results suggest that current treatment models may be approaching                   closely capture how executive capacities operate in real-world contexts
+their limits and underscore the need for mechanism-focused, func-                  and how they relate to functional outcomes. Across theoretical per-
+tionally oriented approaches that address the processes constraining               spectives, executive functions are widely regarded as essential for adap-
+patients’ daily lives.                                                             tive, goal-directed behavior (Diamond, 2013; Friedman and Miyake,
+     Executive functions (EF) refer to a set of higher-order cognitive pro-        2017; Miller and Cohen, 2001). Consistent with this view, impairments
+cesses that support the regulation of thought and behavior in the service          in executive functioning are reported across a wide range of psychiatric
+of goal-directed action. Core components include inhibitory control,               conditions, including ADHD, schizophrenia, autism spectrum disor-
+working memory, and cognitive flexibility, which enable individuals to             der, mood disorders, and substance use disorders (Insel et al., 2010;
+organize behavior, adapt to environmental demands, and function effec-             Snyder et al., 2015). Such deficits are strongly associated with long-
+tively in everyday contexts (Diamond, 2013; Friedman and Miyake,                   term academic, occupational, and social outcomes and often predict
+2017). More broadly, executive functioning reflects the capacity to                functional impairment more reliably than symptom severity alone
+deploy these processes in accordance with internal goals and contextual            (Millan et al., 2012; Romer and Pizzagalli, 2021).
+demands (Doebel, 2020), whereas the term “executive control” is often                    At the neural level, executive processes are supported by distrib-
+used to refer to the neural mechanisms and distributed control systems,            uted prefrontal and fronto-subcortical circuits. The dorsolateral pre-
+particularly within prefrontal networks, that coordinate these processes           frontal cortex (dlPFC) plays a central role in working memory,
+across the brain (Miller and Cohen, 2001; Niendam et al., 2012). The               cognitive control, and the maintenance of goal representations that
+organization of executive functioning has been described in several                guide behavior (Miller and Cohen, 2001), while other regions such as
+theoretical models, including the Unity/Diversity framework, which                 the anterior cingulate cortex and ventrolateral prefrontal cortex con-
+conceptualizes inhibition, shifting, and updating as distinct but inter-           tribute to conflict monitoring, error detection, response inhibition,
+related components (Miyake et al., 2000; Friedman and Miyake, 2017),               and cognitive flexibility (Niendam et al., 2012; Stuss, 2011). Evidence
+and hierarchical models emphasizing higher-order regulatory processes              from lesion studies and functional neuroimaging further indicates
+such as energization, task setting, and monitoring in the coordination of          that executive functioning emerges from the coordinated activity of
+goal-directed behavior (Stuss and Alexander, 2007; Stuss, 2011).                   distributed neural systems, including the frontoparietal control net-
+     Recent findings from genetics and neuroimaging increasingly chal-             work, the cingulo-opercular network, and subcortical structures such
+lenge strictly categorical models of psychopathology. Large-scale cross-           as the basal ganglia and cerebellum (Bostan et al., 2013; Duncan, 2010;
+disorder genomic studies reveal substantial genetic overlap across                 Seeley et al., 2007). Taken together, these findings suggest that neural
+psychiatric conditions previously considered distinct. Analyses from the           executive control systems may represent a key neurocognitive mecha-
+Psychiatric Genomics Consortium indicate that shared genetic liability             nism through which shared biological vulnerabilities translate into
+across major disorders is better captured by a small number of latent              functional impairment across psychiatric disorders.
+dimensions, accompanied by a higher-order general factor of psycho-
+pathology (Grotzinger et al., 2026). These genetic dimensions appear to
+show stronger associations with cognitive and functional traits than
+with traditional symptom-based diagnostic categories. Evidence from                2 Hypothesis: executive dysfunction as
+neuroimaging studies points in a similar direction. Meta-analytic inves-           a transdiagnostic core
+tigations of cognitive control across psychiatric disorders identify over-
+lapping disruptions in large-scale brain networks, particularly within                 Mental disorders differ widely in their clinical presentation and
+frontoparietal and cingulo-opercular systems involved in executive                 diagnostic criteria, yet converging evidence suggests that executive
+
+
+Frontiers in Human Neuroscience                                               02                                                             frontiersin.org
+Carvalho                                                                                                                     10.3389/fnhum.2026.1778271
+
+
+
+
+dysfunction represents a shared cognitive vulnerability across psychi-            not merely as a consequence of psychiatric illness but as a transdiag-
+atric conditions (Diamond, 2013; Snyder et al., 2015). Difficulties in            nostic cognitive phenotype contributing to vulnerability, chronicity,
+sustaining goal-directed behavior, regulating attention and emotion,              and functional outcomes.
+organizing actions over time, inhibiting impulsive responses, and flex-                In the present article, executive dysfunction is therefore proposed
+ibly adjusting behavior are repeatedly observed across diagnoses, indi-           as a central cognitive dimension spanning multiple mental health con-
+cating disruptions in executive functioning and in the executive                  ditions, including ADHD, schizophrenia, mood disorders, autism
+control systems that support it, rather than disorder-specific deficits.          spectrum disorder, and substance use disorders. Both “cool” executive
+These difficulties should not be interpreted solely as secondary conse-           processes (e.g., working memory, inhibitory control, and planning)
+quences of disorder-specific symptoms. Instead, they may reflect a                and “hot” executive processes (e.g., emotion regulation and motiva-
+fundamental mechanism through which psychopathology disrupts                      tional control) may contribute to functional impairment when these
+adaptive functioning, contributing to disorganization, impulsivity,               systems are compromised. This perspective is also consistent with
+emotional dysregulation, and difficulties in social and occupational              clinical observations: across diverse diagnoses, individuals frequently
+contexts (McTeague et al., 2016; Snyder et al., 2015).                            experience similar difficulties in planning, decision-making, task ini-
+     Conceptualizing executive dysfunction as a “core” feature of psy-            tiation, sustaining effort, and regulating behavior in everyday contexts.
+chopathology does not imply that it represents the sole causal mecha-             Taken together, empirical evidence and clinical observations suggest
+nism underlying all mental disorders. Rather, it refers to a central              that executive dysfunction represents not merely a secondary feature
+regulatory process within the broader architecture of behavior and                of psychopathology but a key mechanism shaping both symptom
+self-regulation. Executive functions coordinate attention, goal main-             expression and recovery trajectories. Viewing executive functioning
+tenance, action selection, emotion regulation, and adaptive decision-             as a central diagnostic and therapeutic target may therefore support
+making across contexts. Because of this integrative role, disruptions             more personalized and ecologically valid models of psychiatric care.
+in executive functioning can influence multiple cognitive, emotional,                  Genetic and environmental risk factors are proposed to converge
+and behavioral processes simultaneously. In this sense, executive dys-            on shared neurobiological systems, particularly prefrontal–subcortical
+function may operate as a hub-like mechanism linking shared biologi-              control networks involved in executive functioning. Disruptions
+cal vulnerabilities, disruptions in distributed neural circuits, and              within these systems may produce transdiagnostic executive dysfunc-
+impairments in real-world functioning across diagnostic categories.               tion, measurable through behavioral, neurophysiological, and neuro-
+Consistent with this interpretation, executive functioning is among               imaging indicators. Variations in executive functioning are
+the most reliable predictors of real-world outcomes across psychiatric            hypothesized to influence symptom expression and real-world func-
+conditions, including academic and occupational functioning, treat-               tional outcomes across diagnostic categories. The model is organized
+ment engagement, and illness course (Millan et al., 2012; Romer and               around three propositions: (H1) shared etiological risk converges on
+Pizzagalli, 2021; Snyder et al., 2015).                                           executive systems, leading to transdiagnostic executive dysfunction;
+     Within a transdiagnostic framework, a process may be considered              (H2) executive functioning predicts functional outcomes beyond
+“core” when several criteria are met. It should be observable across              symptom severity; and (H3) executive dysfunction reflects disruption
+multiple diagnostic categories, demonstrate a consistent relationship             in distributed prefrontal–subcortical control networks. The frame-
+with real-world functioning, and reflect alterations in shared neural             work is illustrated across several psychiatric conditions, including
+systems rather than mechanisms unique to specific diagnoses. In addi-             mood, obsessive-compulsive and related, attention-deficit/hyperactiv-
+tion, the process should be modifiable through intervention, allowing             ity, psychotic, personality, and addictive disorders.
+it to serve as a meaningful target for treatment. Executive dysfunction
+satisfies many of these criteria: it is consistently documented across            2.1 Core propositions of the hypothesis
+psychiatric conditions, closely associated with everyday functioning,
+linked to distributed control networks in the brain, and increasingly                  First, executive dysfunction is a common feature observed across
+targeted in cognitive and behavioral interventions. Evidence from                 multiple psychiatric conditions, transcending traditional diagnostic
+meta-analyses and population-based studies further indicates that                 boundaries. Despite significant differences in how symptoms may
+executive impairments are prevalent and clinically significant across             present, disorders such as ADHD, mood and psychotic disorders,
+disorders including ADHD, major depressive disorder, bipolar disor-               obsessive-compulsive disorder, autism spectrum disorder, personality
+der, obsessive-compulsive disorder, post-traumatic stress disorder,               disorders, and substance use disorders frequently show impairments
+borderline personality disorder, schizophrenia, and substance use                 in key executive functions. These impairments include difficulties in
+disorders (Kessler et al., 2007; Martel et al., 2016). Across these condi-        cognitive control, planning, impulse regulation, working memory, and
+tions, deficits in executive functioning are consistently associated with         flexible adaptation. These challenges often result in similar cognitive
+reduced academic and occupational performance, impaired interper-                 and behavioral patterns across different diagnoses. This suggests that
+sonal functioning, diminished self-regulatory capacity, and poorer                executive dysfunction should be viewed as a shared vulnerability
+long-term outcomes (Millan et al., 2012; Snyder et al., 2015).                    rather than a deficit specific to any one disorder.
+     Dimensional research frameworks, particularly the Research                        Second, executive functioning is a significant and clinically
+Domain Criteria (RDoC), highlight the importance of executive func-               important predictor of real-world functioning, often providing greater
+tioning as a central component of cognitive control and self-regulation           insight than the severity of symptoms. Deficits in executive function-
+within broader functional systems. These perspectives encourage a                 ing are consistently associated with difficulties in academic and occu-
+shift away from strictly categorical models of psychopathology toward             pational performance, social integration, independent living, and
+an understanding of shared neurocognitive processes that cut across               overall autonomy. Furthermore, executive dysfunction has been
+diagnostic boundaries (Insel et al., 2010; McTeague et al., 2016).                linked to factors such as treatment engagement, adherence, the risk of
+Within this framework, executive dysfunction can be conceptualized                relapse, and long-term psychosocial outcomes. This highlights its
+
+
+Frontiers in Human Neuroscience                                              03                                                             frontiersin.org
+Carvalho                                                                                                                     10.3389/fnhum.2026.1778271
+
+
+
+
+importance as a key focus for both assessment and intervention                   disorders. Although the clinical presentation of these conditions varies
+(Romer and Pizzagalli, 2021). Thus, executive functioning serves as a            considerably, a recurring pattern of impairments is observed in core
+critical factor in everyday functioning, addressing aspects of mental            executive processes such as inhibitory control, cognitive flexibility
+health issues that symptom-based measures typically do not capture.              (set-shifting), planning, working memory, and the regulation of emo-
+     Third, recent neurobiological research suggests that shared neural          tion and behavior. These impairments are not only prevalent but also
+circuits contribute to executive dysfunction across various psychiatric          clinically consequential, as executive deficits have been repeatedly
+conditions. Disruptions in areas such as the dorsolateral and ventro-            associated with functional outcomes, treatment responsiveness, and
+lateral prefrontal regions, the anterior cingulate cortex, and fronto-           the long-term course of psychiatric illness. Across conditions includ-
+subcortical control loops have consistently been linked to executive             ing ADHD, mood and anxiety disorders, obsessive-compulsive disor-
+impairments across various diagnostic categories. These findings sug-            der, psychotic disorders, personality disorders, and substance use
+gest that changes in distributed control networks serve as a common              disorders, such deficits can limit the capacity to organize behavior
+mechanism for transdiagnostic executive dysfunction. This implies                over time, regulate emotions, respond adaptively to environmental
+that difficulties in goal-directed behavior and self-regulation result           demands, and sustain engagement in goal-directed activity (McTeague
+from similar disruptions in neural systems, rather than being limited            et al., 2016; Millan et al., 2012; Snyder et al., 2015).
+to specific disorders (Miller and Cohen, 2001; Niendam et al., 2012;                   Evidence further indicates that executive dysfunction is often a
+Stuss, 2011).                                                                    stronger predictor of real-world functioning than measures focused
+     An important implication of this framework is that interventions            exclusively on symptom severity. Executive impairments have been
+targeting executive functioning and the neural executive control sys-            closely linked to outcomes such as academic performance, occupa-
+tems that support it may offer benefits across various conditions.               tional success, social functioning, and independent living (Barkley,
+Approaches that combine executive function training with noninva-                2012; Romer and Pizzagalli, 2021). This pattern suggests that executive
+sive brain stimulation targeting prefrontal control networks represent           dysfunction may operate as a proximal determinant of adaptive capac-
+a promising strategy to enhance functional outcomes in psychiatric               ity, influencing how individuals manage everyday cognitive and emo-
+disorders. By strengthening core executive processes, such as working            tional demands. In this sense, executive dysfunction can be
+memory, inhibitory control, cognitive flexibility, and emotion regula-           conceptualized as a transdiagnostic neurocognitive constraint on
+tion, these interventions may increase self-regulatory capacity,                 adaptive functioning, contributing to functional difficulties across a
+improve engagement with psychotherapy and medication treatments,                 wide range of psychiatric conditions.
+and reduce the risk of relapse. This hypothesis does not suggest that                  Personality disorders provide substantial evidence for the trans-
+these interventions are disorder-specific; rather, it proposes that              diagnostic relevance of executive dysfunction. A systematic review by
+improvements in executive functioning may act as a common mecha-                 Garcia-Villamisar et al. (2017) identified consistent patterns of execu-
+nism through which symptoms, behavior, and adaptive functioning                  tive impairments across several personality disorders, including bor-
+can be positively influenced across conditions. Conceptualizing execu-           derline, obsessive-compulsive, antisocial, narcissistic, and schizotypal
+tive dysfunction as a transdiagnostic cognitive mechanism therefore              personality disorders. Across these conditions, deficits were most
+provides a coherent framework for integrating clinical, cognitive, and           consistently observed in decision-making, working memory, inhibi-
+neuroscientific evidence. Within this perspective, executive dysfunc-            tory control, and cognitive flexibility, core executive processes that
+tion links neural circuitry, behavior, and real-world functioning, high-         support behavioral regulation and adaptive responding. Such impair-
+lighting executive capacity and adaptive control as central targets for          ments likely reflect disruptions in prefrontal executive control mecha-
+assessment and intervention. Emphasizing these processes extends                 nisms and contribute to characteristic features of personality
+beyond symptom-based models and offers a framework for under-                    pathology, including behavioral dysregulation, impulsivity, cognitive
+standing vulnerability, persistence, and recovery across psychiatric             rigidity, and interpersonal difficulties. The substantial overlap of exec-
+conditions (Insel et al., 2010).                                                 utive deficits across different personality disorders therefore suggests
+                                                                                 that executive dysfunction represents a common neurocognitive vul-
+                                                                                 nerability rather than a disorder-specific abnormality.
+                                                                                       Empirical studies further support the relevance of executive
+3 Supporting evidence: shared                                                    impairment in personality pathology. In a cross-sectional investiga-
+executive function deficits across                                               tion, Shankar et al. (2025) reported strong associations between exec-
+                                                                                 utive dysfunction, reduced working memory capacity, and increased
+mental health conditions                                                         impulsivity in individuals with borderline personality disorder.
+                                                                                 Executive deficits were also related to the occurrence of deliberate self-
+    Evidence supporting the transdiagnostic role of executive dys-               harm behaviors. Specifically, perseverative errors on the Wisconsin
+function can be organized across several complementary dimensions,               Card Sorting Test and reduced working memory capacity were signifi-
+including its presence across multiple psychiatric conditions, its influ-        cant predictors of impulsivity severity. These findings illustrate how
+ence on the onset and course of psychopathology, its underlying neu-             disruptions in executive functioning and its underlying control mech-
+rocognitive and neural mechanisms, and the clinical implications of              anisms can translate into maladaptive behavioral outcomes. Moreover,
+targeting executive processes in intervention. Findings from neuro-              similar executive impairments observed across borderline personality
+psychological, longitudinal, and neuroscientific research converge in            disorder and substance use disorders further reinforce the notion that
+suggesting that executive dysfunction represents a shared mechanism              executive dysfunction extends across diagnostic boundaries.
+contributing to functional impairment across psychiatric disorders.                    Substance use disorders provide additional empirical support for
+    Across neuropsychological, and neuroscientific studies, executive            this perspective. A comprehensive synthesis by Brockett et al. (2018)
+dysfunction consistently emerges across a wide range of psychiatric              documented that chronic exposure to addictive substances is
+
+
+Frontiers in Human Neuroscience                                             04                                                              frontiersin.org
+Carvalho                                                                                                                   10.3389/fnhum.2026.1778271
+
+
+
+
+associated with impairments in several key executive functions,                      In sum, these findings indicate that impairments in executive
+including reversal learning, delay discounting, and response inhibi-             functioning are not confined to any single diagnostic category but
+tion. These deficits are particularly pronounced during acute with-              instead reflect shared cognitive mechanisms that cut across multiple
+drawal and craving periods and are linked to reduced regulatory                  psychiatric conditions. Difficulties in regulating behavior, emotions,
+capacity within the prefrontal cortex, increased behavioral impulsivity,         and goal-directed activity appear to represent a central pathway
+and elevated relapse risk. At the neural level, these alterations involve        through which diverse forms of psychopathology disrupt everyday
+disruptions in prefrontal and cortico-striatal circuits, including the           functioning. This convergence of evidence supports the conceptualiza-
+orbitofrontal cortex, anterior cingulate cortex, and striatum. Similar           tion of executive dysfunction as a fundamental transdiagnostic
+prefrontal abnormalities are reported across multiple psychiatric con-           dimension of mental disorders.
+ditions, suggesting that executive dysfunction may represent a shared
+neurobiological pathway linking substance use disorders with broader             3.1 Working memory
+psychiatric vulnerability through impaired cognitive control and
+behavioral regulation.                                                                Working memory refers to the capacity to maintain and manipu-
+     Longitudinal research further clarifies the functional role of exec-        late goal-relevant information over short periods in order to guide
+utive dysfunction in addictive behaviors. In a prospective study of              behavior and support the coordination of complex cognitive opera-
+young adults, Kräplin et al. (2022) found that baseline executive func-          tions. This system plays a central role in planning, decision-making,
+tioning did not strongly differentiate individuals with substance-               and the regulation of goal-directed behavior, as it allows individuals
+related or behavioral addictions from controls. However, lower                   to keep task goals active while integrating incoming information.
+executive functioning predicted the progression of maladaptive use               Across psychiatric conditions, impairments in working memory rep-
+patterns over time, including greater increases in consumption and               resent one of the most consistently documented cognitive deficits and
+slower reductions in frequency of use. Executive functioning was                 are strongly associated with functional outcomes in everyday life.
+more closely associated with the escalation and persistence of addic-                 Disruptions in working memory capacity can therefore contribute
+tive behaviors, particularly with the loss of behavioral control, than           directly to a range of cognitive and behavioral difficulties. When indi-
+with the categorical presence of DSM-5 addiction diagnoses. These                viduals have limited ability to maintain and update goal-relevant
+findings suggest that executive dysfunction may influence behavioral             information, planning efficiency is reduced and the pursuit of goals
+trajectories and regulatory capacity rather than serving as a categorical        becomes more effortful and unstable. In clinical contexts such as
+vulnerability marker for addiction.                                              depression, constraints on working memory resources may hinder the
+     Evidence from mood and anxiety disorders also highlights the                ability to keep task goals active while simultaneously processing emo-
+role of executive dysfunction, although its direction of influence may           tional or contextual information. This imbalance can lead to slowed
+vary depending on the clinical context. Using cross-lagged panel net-            decision-making, indecisiveness, and difficulties initiating or complet-
+work analysis in a large community sample of older adults, Zainal and            ing tasks. As a result, working memory deficits are closely linked to
+Newman (2023) found that elevated levels of anxious and depressed                impairments in everyday functioning, including occupational perfor-
+mood predicted subsequent declines in executive functioning, includ-             mance, problem-solving capacity, and persistence in goal-directed
+ing working memory, attention, and processing speed. In contrast,                activities (Barch and Ceaser, 2012; Bowie and Harvey, 2006).
+executive functioning showed limited predictive influence on later               Emotional context can substantially interfere with working memory
+mood symptoms. These findings are consistent with scar models of                 processes. During negative emotional states, working memory
+psychopathology, which propose that prolonged emotional distress                 resources may become occupied by mood-congruent thoughts, reduc-
+may progressively compromise neural executive control systems                    ing the capacity available to maintain task goals and organize behavior.
+through mechanisms such as chronic stress exposure, inflammatory                 This competition for cognitive resources can promote maladaptive
+processes, and vulnerability in fronto-cortical networks. Within this            patterns such as rumination and weaken executive functioning.
+framework, executive dysfunction appears as a key outcome linking                Consequently, executive functioning may appear relatively intact
+emotional symptoms to broader cognitive and functional decline.                  under low cognitive or emotional demands but deteriorate when indi-
+     Experimental studies in non-clinical populations provide addi-              viduals must sustain goal-directed control while simultaneously regu-
+tional insight into which components of executive functioning are                lating emotional responses (Joormann and D’Avanzato, 2010).
+most closely involved in emotion regulation. A two-study investiga-                   Evidence across diagnostic groups supports the transdiagnostic
+tion by Rodas et al. (2024) examined the contributions of working                relevance of these mechanisms. In schizophrenia and related disor-
+memory, inhibitory control, and cognitive flexibility to emotional               ders, impairments in working memory and goal maintenance are
+downregulation using performance-based measures. Across both                     among the strongest predictors of functional outcomes and are closely
+studies, cognitive flexibility—specifically the ability to shift between         associated with difficulties in planning, problem-solving, and every-
+mental strategies—emerged as the only consistent predictor of suc-               day task execution (Barch and Ceaser, 2012; Bowie and Harvey, 2006).
+cessful emotional downregulation. In contrast, working memory and                Large-scale reviews similarly identify working memory deficits as one
+inhibitory control did not show robust associations with regulation              of the most consistent cognitive abnormalities across psychiatric con-
+outcomes. These findings suggest that effective emotion regulation               ditions, contributing to disability independently of symptom severity
+may depend particularly on the capacity to flexibly adapt cognitive              (Millan et al., 2012). Comparable patterns are observed in ADHD,
+strategies in response to changing emotional contexts. This pattern              where working memory capacity strongly predicts organizational
+aligns with transdiagnostic frameworks proposing that impairments                skills, task planning, and the ability to sustain goal-directed behavior
+in cognitive flexibility represent a key mechanism linking executive             beyond the influence of core symptoms (Kofler et al., 2018).
+dysfunction to emotional dysregulation and broader functional                    Neuroimaging findings further indicate reduced functional connectiv-
+impairment.                                                                      ity during working memory tasks across fronto-parietal,
+
+
+Frontiers in Human Neuroscience                                             05                                                             frontiersin.org
+Carvalho                                                                                                                        10.3389/fnhum.2026.1778271
+
+
+
+
+fronto-striatal, cerebellar, and subcortical networks, with the degree              IFG contributes to anticipating, suppressing, and modulating prepo-
+of hypoconnectivity correlating with difficulties in sustained attention            tent responses within a broader network involving the basal ganglia
+and inhibitory control (Tolonen et al., 2024).                                      and other prefrontal regions. Causal evidence from non-invasive brain
+    Similar findings have also been reported in obsessive-compulsive                stimulation further supports this role. In our work, transcranial direct
+disorder. A systematic review by Tubío Fungueiriño et al. (2020)                    current stimulation targeting the IFG modulated proactive inhibition
+showed that working memory impairments become particularly evi-                     depending on electrode montage: unihemispheric stimulation over
+dent under conditions of high cognitive load or increased executive                 the right IFG shifted the speed–accuracy trade-off toward greater
+demands, suggesting that these deficits reflect limitations in cognitive            response caution, whereas bihemispheric stimulation abolished this
+capacity rather than generalized cognitive decline. Overall, this body              effect, highlighting the importance of interhemispheric balance in
+of evidence indicates that working memory plays a central role in                   inhibitory control mechanisms (Tubío Fungueiriño et al., 2020).
+maintaining goal-directed behavior across psychiatric conditions.                        Developmental evidence also indicates that inhibitory control
+When working memory capacity is compromised, individuals experi-                    deficits may arise from early vulnerabilities in prefrontal systems. In
+ence greater difficulty sustaining attention to goals, integrating con-             adolescents with early-onset schizophrenia, Teigset et al. (2020) found
+textual information, and coordinating complex behavior over time.                   that exposure to perinatal obstetric complications, particularly shorter
+                                                                                    gestational length, was associated with increased perseveration,
+3.2 Inhibitory control                                                              reduced cognitive inhibition, and impaired problem-solving perfor-
+                                                                                    mance. These associations were present in patients but not in healthy
+     Impaired response inhibition is among the most consistently                    controls exposed to similar perinatal conditions, suggesting height-
+observed markers of executive dysfunction across psychiatric condi-                 ened neurodevelopmental susceptibility of executive control systems
+tions. Clinical and neuropsychological studies show recurrent deficits              in early psychosis. Lower Apgar scores were also associated with later
+in suppressing dominant motor responses, filtering irrelevant infor-                executive dysfunction in both groups, indicating that early compro-
+mation, and regulating maladaptive thought patterns. Such impair-                   mise of neonatal physiological integrity may constitute a general risk
+ments have been documented in ADHD, mood disorders, OCD,                            factor for later inhibitory control difficulties.
+personality disorders, psychotic disorders, and substance use disor-                     Taken together, evidence from behavioral, clinical, neurobiologi-
+ders. The recurrence of this phenotype across diagnostic categories                 cal, and neuromodulation research indicates that inhibitory control
+suggests disruption of shared prefrontal–striatal circuits responsible              represents a central component of executive dysfunction across psy-
+for behavioral suppression rather than disorder-specific pathophysi-                chiatric disorders. Its strong association with functional decline, treat-
+ological mechanisms.                                                                ment response, and relapse highlights its relevance not only as a
+     ADHD provides one of the clearest examples of the functional                   cognitive marker but also as a potential therapeutic target.
+relevance of inhibitory control deficits. In Barkley’s influential model,           Interventions aimed at strengthening inhibitory control, through cog-
+impaired behavioral inhibition is conceptualized as the central mecha-              nitive remediation, neuromodulation techniques, or multimodal
+nism underlying broader disturbances in executive self-regulation,                  treatment approaches, may therefore offer benefits across diagnostic
+including deficits in working memory, attentional persistence, and                  boundaries by engaging shared neural executive control circuitry.
+goal-directed behavior (Barkley, 1997). Meta-analytic evidence con-
+firms robust impairments in inhibitory control and working memory                   3.3 Cognitive flexibility
+in ADHD, and these deficits predict functional outcomes in academic,
+occupational, and social domains beyond the severity of core symp-                       Impairments in cognitive flexibility, often operationalized in neu-
+toms (Kofler et al., 2017; Willcutt et al., 2005). Similar patterns are             ropsychological tasks as set-shifting, reflect reduced capacity to adapt
+observed in mood disorders, where inhibitory control deficits contrib-              behavior and switch between rules, strategies, or mental representa-
+ute to cognitive disturbances such as rumination, psychomotor slow-                 tions, and represent a core transdiagnostic feature of executive dys-
+ing, and reduced processing efficiency. These impairments often                     function. Across various psychiatric conditions, deficits in set-shifting
+persist even during remission phases, suggesting that they reflect a                manifest as cognitive rigidity, perseveration, and difficulties in updat-
+trait-like vulnerability rather than transient state effects (Snyder, 2013).        ing rules, strategies, or goals in response to new information. These
+     Failures of inhibitory control are also central to disorders charac-           impairments have been consistently observed in conditions such as
+terized by maladaptive repetitive behavior. In obsessive-compulsive                 OCD, mood disorders, schizophrenia-spectrum disorders, personality
+disorder, intrusive thoughts are difficult to suppress and habitual                 disorders, and substance use disorders. This suggests a common vul-
+behavioral responses become difficult to disengage once initiated. A                nerability in adaptive cognitive control, rather than anomalies that are
+related mechanism appears in substance use disorders, where weak-                   specific to each disorder.
+ened prefrontal inhibitory control fails to counteract the salience of                   In individuals with OCD, research shows significant impairments
+reward-related dopaminergic signals, increasing vulnerability to crav-              in cognitive flexibility and set-shifting. These deficits are believed to
+ing and relapse despite explicit intentions to abstain (Bickel et al.,              contribute directly to behavioral rigidity, compulsive repetition, and
+2012; Goldstein and Volkow, 2011). Across these conditions, similar                 challenges in disengaging from habitual action patterns (Abramovitch
+failures of behavioral inhibition manifest as compulsive actions, loss              et al., 2013; Snyder et al., 2015). Similarly, people with mood disorders,
+of control, or progressive functional decline.                                      particularly major depressive disorder and bipolar disorder, also show
+     At the neurobiological level, inhibitory control depends on a dis-             reduced cognitive flexibility. This is evident through impaired prob-
+tributed fronto-subcortical network. The inferior frontal gyrus (IFG),              lem-solving abilities, diminished sensitivity to feedback, and difficulty
+particularly in the right hemisphere, plays a central role in both proac-           adjusting behavior in response to emotional or contextual changes.
+tive and reactive inhibitory processes. Converging evidence from neu-               Executive deficits in mood disorders are often observed even during
+roimaging, lesion studies, and brain stimulation demonstrates that the              periods of remission or when symptoms are not present, suggesting
+
+
+Frontiers in Human Neuroscience                                                06                                                              frontiersin.org
+Carvalho                                                                                                                       10.3389/fnhum.2026.1778271
+
+
+
+
+that these cognitive challenges may be more of a stable trait rather               interpretation is consistent with converging evidence from neuroim-
+than purely linked to the current mood state.                                      aging, lesion, and electrophysiological studies demonstrating that suc-
+     A large-scale meta-analysis conducted by Cotrena et al. (2020)                cessful set-shifting depends on dynamic interactions between cortical
+found that both types of bipolar disorder (type I and type II) are linked          and subcortical systems, particularly basal ganglia circuits involved in
+to significant impairments in various executive functions, such as cog-            updating and switching task representations.
+nitive flexibility and set-shifting. These deficits persist regardless of               There is increasing evidence that impairments in cognitive flexi-
+acute mood symptoms, indicating that executive dysfunction is a                    bility are influenced by emotional context, especially in disorders
+stable aspect of the neurocognitive profile for individuals with bipolar           characterized by compulsivity and emotional dysregulation. For
+disorder, rather than a temporary condition associated with mood                   instance, in obsessive-compulsive disorder, Tubío Fungueiriño et al.
+episodes. In the case of borderline personality disorder, meta-analytic            (2020) demonstrated that deficits in set-shifting and inhibitory control
+evidence shows impairments in several executive functions, including               were more pronounced when tasks involved negative emotional
+cognitive flexibility and planning. In a comprehensive meta-analysis,              valence or aversive stimuli. These findings highlight the close relation-
+Ruocco (2005) found that individuals with borderline personality dis-              ship between executive functioning and emotional processing, sug-
+order performed significantly worse than healthy controls across tasks             gesting that rigidity in cognitive flexibility is more about the influence
+involving attention, cognitive flexibility, learning and memory, plan-             of motivational and emotional states rather than simply a “cold” exec-
+ning, and processing speed. While the effect sizes for cognitive flexibil-         utive limitation. Similar interactions are likely to occur across condi-
+ity were smaller compared to planning, the consistent pattern of                   tions marked by rigidity, compulsivity, and difficulties in emotion
+deficits suggests that compromised executive functioning is likely                 regulation.
+linked to prefrontal systems. These impairments may lead to difficul-                   From a transdiagnostic perspective, deficits in cognitive flexibility
+ties in revising goals, adapting behavior to changing circumstances,               serve as a key mechanism by which psychiatric disorders limit adap-
+and regulating behavior in complex interpersonal situations.                       tive behavior. Difficulty in moving away from outdated rules, strate-
+     This collection of research suggests that difficulties with set-shift-        gies, or emotional states hinders learning, promotes perseveration,
+ing reflect a broader limitation in executive functioning, impacting               and may restrict the effectiveness of therapeutic interventions. In this
+individual behavior across emotional, cognitive, and social domains.               context, cognitive flexibility, especially set-shifting, represents a fun-
+This interpretation is bolstered by evidence from transdiagnostic stud-            damental executive function that connects various clinical presenta-
+ies. Specifically, comparative analyses of substance use disorders and             tions through common neurocognitive and neurobiological pathways.
+behavioral addictions consistently highlight deficits in key components
+of executive functioning. These deficits manifest as impulsive actions             3.4 Planning and goal management
+(indicating poor response inhibition) and impulsive choices (favoring
+immediate gratification) (Grant and Chamberlain, 2014). Such deficits                   Planning and goal management refer to higher-order executive
+are observed in both substance-related and non-substance-related                   processes that allow individuals to organize sequences of actions,
+addictive behaviors, implying shared disruptions in the top-down                   maintain long-term objectives, and monitor progress toward desired
+regulation of habitual and reward-driven actions. Although much of                 outcomes. These processes enable the translation of intentions into
+the literature focuses primarily on inhibitory control and decision-               structured behavior and support the maintenance of goal-directed
+making—rather than on set-shifting in a narrow sense—the consistent                activity despite distractions or competing demands. They rely on sus-
+presence of executive dysfunction across various compulsive and                    tained engagement of prefrontal control systems that coordinate
+addictive conditions supports a broader understanding of executive                 behavior across time, allowing individuals to integrate contextual
+vulnerability. From this perspective, cognitive rigidity, perseveration,           information, anticipate future consequences, and adjust actions in
+and maladaptive repetition may stem from common limitations in                     pursuit of abstract goals. Disruptions in these processes contribute
+executive systems that go beyond traditional diagnostic categories.                substantially to functional impairment across psychiatric conditions.
+     Cognitive flexibility and set-shifting are supported by a distrib-            In mood disorders, for example, individuals with major depressive
+uted neural network involving the dorsolateral prefrontal cortex, ante-            disorder frequently experience difficulties organizing actions over
+rior cingulate cortex, and basal ganglia. Disruptions within this                  time and maintaining engagement with long-term goals. Such impair-
+circuitry have been consistently associated with conditions character-             ments can persist beyond acute mood episodes and interfere with the
+ized by behavioral rigidity and compulsivity. Converging causal evi-               ability to translate intentions into effective behavior, adapt to changing
+dence further supports the functional relevance of this network. In our            circumstances, and sustain effort toward meaningful objectives. From
+neuromodulation study, transcranial direct current stimulation                     a control systems perspective, these patterns reflect weakened engage-
+(tDCS) applied to prefrontal and motor regions modulated set-shift-                ment of prefrontal mechanisms responsible for maintaining goal rep-
+ing performance in a task-specific manner (Coelho et al., 2025).                   resentations and coordinating behavior over extended time scales.
+Changes in cortical excitability influenced the speed with which indi-             When executive functioning is compromised, behavior tends to
+viduals switched between cognitive and motor sets, while error rates               become more reactive and less flexibly directed toward long-term
+and shift costs remained largely unaffected. These findings suggest that           goals, increasing vulnerability to behavioral inertia and reducing the
+set-shifting performance primarily reflects the efficiency and coordi-             capacity to initiate or sustain adaptive actions, including those
+nation of executive control networks rather than simple accuracy                   required for therapeutic change.
+measures (Feeser et al., 2014). Moreover, the observation that stimula-                 Hierarchical models of prefrontal cortex organization provide a
+tion of both prefrontal and motor regions influenced set-shifting per-             useful framework for understanding these difficulties. According to
+formance indicates that cognitive flexibility is not strictly localized to         these models, the prefrontal cortex maintains abstract goals and task
+discrete cortical sites. Instead, it appears to emerge from the coordi-            rules that guide processing across distributed neural systems (Miller
+nated activity of distributed task-relevant networks. This                         and Cohen, 2001). Rostro–caudal accounts further propose that
+
+
+Frontiers in Human Neuroscience                                               07                                                              frontiersin.org
+Carvalho                                                                                                                   10.3389/fnhum.2026.1778271
+
+
+
+
+progressively anterior regions of the prefrontal cortex support increas-         supports the maintenance of regulatory goals and the implementation
+ingly abstract levels of control, coordinating behavior across longer            of cognitive strategies such as reappraisal, whereas ventromedial and
+time horizons and more complex contextual demands (Badre and                     medial prefrontal regions contribute to affective valuation and contex-
+D'Esposito, 2009). Disruptions within these hierarchical control sys-            tual integration (Etkin et al., 2011; Miller and Cohen, 2001).
+tems therefore impair the capacity to structure behavior around long-            Neuroimaging studies further indicate that emotionally salient stimuli
+term objectives.                                                                 recruit distributed networks linking prefrontal regions with limbic
+    Such impairments also influence behavioral regulation over time.             and motivational systems (Gonçalves et al., 2015). Emotional dysregu-
+When executive functioning is weakened, individuals may rely more                lation can therefore be conceptualized as a failure of executive systems
+heavily on habitual or stimulus-driven responses rather than flexible,           to modulate limbic and reward-related reactivity, resulting in height-
+goal-directed strategies. This shift from goal-directed control to habit-        ened emotional responses, impulsive behavior, and maladap-
+ual responding has been implicated in the persistence and relapse of             tive coping.
+maladaptive behaviors in conditions such as addiction and compulsive                  Hot executive functions extend beyond emotion regulation to
+disorders (Everitt and Robbins, 2016). Across psychiatric disorders,             include processes related to reward sensitivity and emotional decision-
+including mood disorders, schizophrenia, ADHD, OCD, and sub-                     making. Emotional decision-making refers to the selection of actions
+stance use disorders, difficulties in planning and goal management               under conditions in which affective signals influence the evaluation of
+therefore reflect shared constraints in executive functioning that               potential outcomes. This form of decision-making relies on interac-
+extend beyond specific diagnostic categories. These deficits contribute          tions between executive control systems and neural circuits involved
+directly to functional impairment, interact with emotional and moti-             in reward valuation, particularly the orbitofrontal cortex, ventrome-
+vational processes, and highlight planning and goal management as                dial prefrontal cortex, and ventral striatum (Bechara, 2005; Rolls,
+important targets for assessment and intervention within transdiag-              2019). Converging evidence indicates that the ventromedial prefrontal
+nostic models of executive dysfunction.                                          cortex functions as a key hub linking value representation, emotional
+                                                                                 regulation, and social–affective processing through its interactions
+3.5 Emotion regulation and other forms of                                        with limbic and striatal systems (Hiser and Koenigs, 2018). Alterations
+“hot” executive function                                                         in these mechanisms have been documented across several psychiatric
+                                                                                 conditions. For instance, individuals with addiction frequently show
+     Emotion regulation is widely conceptualized as a central compo-             impairments in reward evaluation and delay discounting, reflecting a
+nent of hot executive functioning, referring to the regulation of behav-         shift toward immediate reward seeking at the expense of long-term
+ior when cognition interacts with emotionally or motivationally                  goal-directed behavior (Everitt and Robbins, 2016).
+salient information (Zelazo and Carlson, 2012). In addition to emo-                   Consistent with dimensional models of psychopathology, recent
+tion regulation, hot executive functions also encompass processes                evidence suggests that reward dysfunction is associated not only with
+involved in emotional decision-making, reward evaluation, and socio-             specific psychiatric disorders but also with general psychopathology.
+affective processing that guide behavior in motivationally relevant              Using a large transdiagnostic sample of children and adults, Saxena et
+contexts. In such contexts, executive systems must maintain goal-                al. (2024) showed that multiple reward-processing measures—includ-
+directed control while interacting with affective and motivational pro-          ing delay discounting, reward responsiveness, and effort-based deci-
+cesses that can bias attention, disrupt goal maintenance, or override            sion-making—were significantly associated with both the general
+planned behavior. Contemporary models therefore conceptualize hot                psychopathology factor (P-factor) and specific symptom domains.
+executive functions as regulatory processes that guide behavior when             Within the RDoC framework, such processes fall within the Positive
+emotional or reward-related signals compete with long-term goals,                Valence Systems, which encompass constructs such as reward valua-
+relying on interactions between prefrontal control systems and valu-             tion, reward learning, and reward responsiveness that guide behavior
+ation-related circuits including the orbitofrontal cortex, ventromedial          in motivationally relevant contexts (Cuthbert, 2014).
+prefrontal cortex, and ventral striatum (Bechara, 2005; Bechara and                   Taken together, these findings indicate that hot executive func-
+Damasio, 2005; Rolls, 2019; Lin et al., 2025).                                   tions encompass a broader set of processes than emotion regulation
+     Within this framework, emotion regulation represents a central              alone, integrating emotional control with reward-related and emo-
+manifestation of hot executive functioning, reflecting the ability to            tional decision-making mechanisms, as well as other socio-affective
+maintain and implement regulatory goals despite heightened emo-                  processes that guide behavior in motivationally salient contexts.
+tional demands (Ochsner and Gross, 2005; Zelazo and Carlson, 2012).
+Evidence from dimensional and highly comorbid samples indicates
+that emotion dysregulation is widely distributed across psychiatric
+conditions. For example, studies using the Difficulties in Emotion               4 Discussion
+Regulation Scale (DERS) show that impairments in emotional regula-
+tion occur across multiple diagnostic groups, often differing in sever-              A growing body of evidence from neuropsychology, clinical psy-
+ity rather than in qualitatively distinct profiles (Aldao et al., 2010).         chiatry, and cognitive neuroscience indicates that executive dysfunc-
+Disorders characterized by impulsivity and reduced self-regulatory               tion represents a significant dimension of psychopathology rather
+capacity, such as ADHD, frequently present pronounced emotion                    than a minor or disorder-specific feature. Across many psychiatric
+regulation difficulties (Barkley, 2015; Shaw et al., 2014), suggesting           conditions, impairments in executive processes, including inhibitory
+that emotional dysregulation reflects disruptions in executive–affec-            control, cognitive flexibility, working memory, planning, emotion
+tive coordination rather than disorder-specific deficits.                        regulation, and other forms of hot executive functioning such as emo-
+     At the neural level, emotion regulation depends on coordinated              tional decision-making and reward-related control, are consistently
+activity across prefrontal, limbic, and autonomic systems. The dlPFC             associated with difficulties in everyday functioning. These findings
+
+
+Frontiers in Human Neuroscience                                             08                                                             frontiersin.org
+Carvalho                                                                                                                     10.3389/fnhum.2026.1778271
+
+
+
+
+challenge diagnostic models based primarily on symptom clusters and               dysfunction in this way provides a unifying framework for under-
+support the view that alterations in executive functioning may reflect            standing how diverse biological and environmental risk factors may
+a shared neurocognitive vulnerability across mental disorders.                    converge on common cognitive mechanisms that influence function-
+Conceptualizing executive dysfunction as a transdiagnostic dimen-                 ing across diagnostic categories. Disruptions in executive functioning
+sion may therefore help integrate insights from cognitive neurosci-               may act as a functional bridge between biological processes, such as
+ence, clinical psychiatry, and dimensional models of                              neurotransmitter imbalance, neuroinflammatory activity, and altered
+psychopathology.                                                                  neuroplasticity, and variability in symptoms, severity, and daily func-
+     At the same time, executive dysfunction is unlikely to be present            tioning. Differences in clinical presentation may therefore reflect
+in all individuals or to play the same role across psychiatric conditions.        variations in how executive control systems are disrupted or compen-
+Its expression may vary depending on the interaction between genetic              sated for, rather than fundamentally distinct underlying mechanisms.
+vulnerability, environmental influences, and illness trajectories. In             An important implication of this model is that functional impairment
+some cases, executive impairments may also emerge as downstream                   cannot be understood solely in terms of symptom profiles. Limitations
+consequences of chronic emotional distress, prolonged illness, medi-              in executive functioning, such as difficulties sustaining goals, regulat-
+cation effects, or neurodevelopmental factors. Longitudinal evidence              ing emotions, integrating reward signals into decision-making, adapt-
+further suggests that the relationship between executive functioning              ing behavior to changing demands, or initiating purposeful action,
+and psychopathology may be bidirectional, with emotional symptoms                 often represent key constraints on everyday functioning across psy-
+sometimes predicting subsequent declines in executive functioning.                chiatric conditions. As illustrated in Figure 1, executive control sys-
+These observations indicate that executive dysfunction should not be              tems link brain-based vulnerabilities with real-world adaptation.
+interpreted as a uniform causal factor but rather as a dynamic process                Consistent with this view, executive functioning is often more
+that may both contribute to, and result from, psychopathological                  strongly associated with functional outcomes than symptom severity
+processes.                                                                        alone. Deficits in planning, cognitive flexibility, inhibitory control,
+     The framework proposed here accommodates this complexity by                  working memory, and emotion regulation are closely related to aca-
+conceptualizing executive dysfunction as a convergent pathway                     demic and occupational performance, social functioning, autonomy,
+through which diverse etiological influences—genetic, developmental,              and long-term prognosis across diagnostic groups and stages of ill-
+and environmental—translate into impairments in goal-directed                     ness. These findings align with dimensional frameworks such as the
+behavior and real-world functioning. As illustrated in Figure 1, the              RDoC, which emphasize core neurocognitive systems in understand-
+model integrates the evidence reviewed in this article into a multilevel          ing disability and recovery.
+account of psychopathology. Rather than assuming that specific risk                   At the neural level, executive dysfunction appears to reflect disrup-
+factors map directly onto diagnostic categories, the framework                    tions in distributed control networks rather than isolated abnormalities
+emphasizes convergence: genetic predisposition and environmental                  in single brain regions. Across disorders characterized by executive
+challenges are proposed to influence shared neurobiological pathways,             impairments, converging evidence implicates alterations in dorsolat-
+particularly those involving prefrontal–subcortical control systems,              eral, ventromedial, and cingulate prefrontal regions, together with
+which in turn shape executive functioning and clinical outcomes.                  fronto-subcortical and limbic circuits. These systems support goal
+From this perspective, executive functioning emerges as a key domain              maintenance, self-regulation, and adaptive decision-making, and they
+for assessment, theoretical investigation, and intervention in mental             interact with reward- and valuation-related networks that shape emo-
+health research and clinical practice. Conceptualizing executive                  tional decision-making and motivational control. From this
+
+
+
+
+   FIGURE 1
+   Transdiagnostic framework of executive dysfunction in psychopathology.
+
+
+
+
+Frontiers in Human Neuroscience                                              09                                                             frontiersin.org
+Carvalho                                                                                                                       10.3389/fnhum.2026.1778271
+
+
+
+
+perspective, executive dysfunction can be understood as a disturbance                   Emerging evidence further indicates that executive functioning
+in the coordinated neural architecture that organizes behavior across              can be modified through cognitive training, behavioral interventions,
+time and context.                                                                  and neuromodulation targeting prefrontal networks. These approaches
+                                                                                   have shown transfer effects beyond trained tasks, leading to broader
+4.1 Toward new paradigms of intervention                                           improvements in cognitive control and functional outcomes (Millan
+                                                                                   et al., 2012; Teixeira-Santos et al., 2022). These findings support a shift
+     From a clinical perspective, the framework proposed here suggests             toward intervention models that target executive systems as core
+reconsidering how psychiatric interventions are conceptualized and                 mechanisms underlying adaptive functioning. Aligning treatment
+evaluated. If executive dysfunction represents a shared mechanism                  strategies with the cognitive processes that support goal-directed
+underlying functional impairment across disorders, interventions target-           behavior may improve long-term outcomes, reduce relapse risk, and
+ing executive processes may have broad therapeutic relevance beyond                enhance quality of life across psychiatric conditions.
+diagnosis-specific treatments. Most current treatments are organized
+around diagnostic categories and focus primarily on symptom reduction.             4.2 Bridging cognition and biology:
+However, growing evidence, particularly from schizophrenia research,               emerging genetic evidence
+shows that symptom improvement does not consistently translate into
+better everyday functioning. In contrast, cognitive and executive func-                Over the past decade, advances in psychiatric genetics have
+tioning are more strongly associated with real-world outcomes such as              reshaped understanding of the biological basis of mental disorders.
+work performance, social functioning, and independent living (Bowie                Rather than supporting disorder-specific genetic causes, large-scale
+and Harvey, 2006; Harvey et al., 2019). Clinically, it is common to                genomic studies consistently show substantial overlap in genetic risk
+observe individuals who meet criteria for symptomatic remission but                across psychiatric conditions. Analyses including hundreds of thou-
+continue to experience persistent difficulties in planning, organization,          sands to over 1 million individuals indicate that disorders such as
+emotional regulation, and goal-directed behavior. If executive dysfunc-            schizophrenia, bipolar disorder, major depression, ADHD, and anxi-
+tion represents a shared vulnerability across psychiatric disorders, execu-        ety disorders cluster along partially overlapping dimensions of genetic
+tive processes should be considered primary therapeutic targets rather             liability rather than forming distinct biological categories (Cross-
+than secondary concerns. This perspective shifts the focus of interven-            Disorder Group of the Psychiatric Genomics Consortium, 2019;
+tion from disorder-specific symptoms to the cognitive systems that sup-            Selzam et al., 2018).
+port adaptive functioning across contexts.                                             This pattern parallels evidence for a general psychopathology
+     A growing body of research supports transdiagnostic, function-                factor, or p-factor, reflecting a broad vulnerability to mental illness
+oriented interventions aimed at strengthening executive capacities.                that cuts across diagnoses and may help explain high levels of comor-
+Cognitive remediation and executive skills training have been shown                bidity (Allegrini et al., 2019; Caspi et al., 2014). Many genetic variants
+to improve functional outcomes in conditions such as schizophrenia,                associated with this shared risk influence biological processes involved
+mood disorders, and ADHD, even when symptom changes are modest                     in brain development, synaptic plasticity, and neural circuit matura-
+(Bowie and Harvey, 2006; Kofler et al., 2018; Snyder et al., 2015).                tion (Smoller et al., 2019; Sullivan and Geschwind, 2019). These pro-
+Interventions targeting emotion regulation—including cognitive reap-               cesses are particularly relevant for prefrontal and fronto-subcortical
+praisal training, mindfulness-based approaches, and acceptance-based               networks that support executive control systems. Within this frame-
+strategies—have demonstrated effectiveness across diagnostic catego-               work, executive dysfunction may represent a cognitive expression of
+ries (Joormann and D’Avanzato, 2010). These approaches tend to be                  shared genetic vulnerability. Rather than arising solely as a conse-
+most effective when tailored to individuals’ executive profiles and real-          quence of illness or treatment, difficulties in executive functioning
+world functional demands rather than guided solely by diagnostic                   may constitute a pathway through which genetic risk affects behavior
+labels. In this framework, treatment success is defined not only by                and everyday functioning. This interpretation aligns with clinical
+symptom reduction but also by improvements in self-regulation,                     observations that individuals with different diagnoses often show
+autonomy, and everyday functioning. This perspective aligns with evi-              similar difficulties in planning, organization, emotional regulation,
+dence indicating that executive functioning predicts occupational                  and persistence (Harvey et al., 2019; Snyder et al., 2015).
+performance, social integration, and independent living more reliably                  In sum, genetic and cognitive evidence supports a multilevel
+than symptom severity across psychiatric conditions (Barch and                     model in which broad genetic risk influences the development of
+Ceaser, 2012; Millan et al., 2012).                                                neural circuits supporting executive control systems. In this view,
+     Executive dysfunction also has important implications for treat-              executive dysfunction may serve as a key mechanism linking shared
+ment engagement. Many psychotherapeutic approaches implicitly                      biological vulnerability to functional impairment across psychiatric
+assume intact executive capacities for planning, maintaining goals,                disorders.
+monitoring behavior, and implementing learned strategies in everyday
+contexts. When these abilities are compromised, even evidence-based                4.3 Implications for mental health systems
+treatments may show limited effectiveness (Harvey and Strassnig,
+2012). For example, difficulties in working memory, inhibitory con-                     Conceptualizing executive dysfunction as a transdiagnostic pro-
+trol, or cognitive flexibility may interfere with the ability to apply             cess has important implications for how mental health care is orga-
+therapeutic strategies, sustain behavioral change, or integrate feedback           nized and evaluated. This perspective highlights the potential value of
+across sessions. Interventions targeting executive functioning may                 incorporating executive-function-informed assessment and interven-
+therefore serve a dual role: directly addressing functional impairments            tion strategies into routine mental health care. In clinical practice,
+while also enhancing individuals’ capacity to benefit from other thera-            difficulties in inhibition, planning, working memory, and emotion
+peutic approaches.                                                                 regulation are often treated as secondary issues, with the expectation
+
+
+Frontiers in Human Neuroscience                                               10                                                               frontiersin.org
+Carvalho                                                                                                                   10.3389/fnhum.2026.1778271
+
+
+
+
+that they will improve once symptoms decrease. However, many indi-               clinical presentations with shared functional outcomes. If supported
+viduals continue to experience substantial functional difficulties               by future empirical research, this framework has important implica-
+despite symptomatic improvement. Problems with organizing daily                  tions for both theory and practice. It encourages a move beyond
+routines, sustaining effort, regulating emotions, or maintaining goal-           symptom-centered models toward a neurocognitively informed,
+directed behavior often remain major sources of disability. When                 function-oriented approach to mental health. By linking genetic vul-
+executive limitations are not directly addressed, functional recovery            nerability, neural circuit disruption, cognitive processes, and inter-
+may stall. Targeting executive and self-regulatory processes therefore           vention strategies within a unified framework, this perspective may
+represents an important opportunity for improving long-term out-                 support the development of more personalized, scalable, and effec-
+comes. Interventions that strengthen executive capacity may support              tive approaches to assessment and treatment. Ultimately, focusing
+greater functional stability, reduce relapse risk, and improve adapta-           on executive functioning and its underlying control systems may
+tion, particularly in individuals with recurrent, comorbid, or clinically        provide a practical pathway toward improving the outcomes that
+complex presentations. From this perspective, executive dysfunction              matter most in mental health care: sustained functioning, autonomy,
+can be understood as a key bottleneck that limits recovery across diag-          and quality of life.
+nostic categories.
+    Focusing on executive processes also offers practical advantages
+for mental health systems. Patients are frequently treated sequentially
+across diagnostic frameworks, often receiving interventions that pro-            Data availability statement
+duce modest symptom improvements without substantially improving
+everyday functioning. An executive-focused perspective may help                       The original contributions presented in the study are included in
+bridge these gaps by targeting shared mechanisms that influence                  the article/supplementary material, further inquiries can be directed
+engagement, learning, and behavioral change across conditions. Such              to the corresponding author.
+an approach supports more mechanism-informed models of care,
+where assessment and intervention are guided not only by diagnostic
+categories but also by an individual’s capacity for planning, emotional
+regulation, and goal maintenance. This perspective does not replace              Author contributions
+existing diagnostic systems but complements them by embedding
+diagnosis within a broader neurocognitive and functional framework.                  SC: Writing – review & editing, Writing – original draft.
+Integrating executive-function-informed assessment and intervention
+may also support more efficient allocation of resources by prioritizing
+treatments that improve functional capacity. Ultimately, approaching
+executive dysfunction as a transdiagnostic organizing principle may              Funding
+contribute to more personalized, scalable, and functionally meaning-
+ful mental health care.                                                              The author(s) declared that financial support was received for this
+                                                                                 work and/or its publication. This work was conducted at the
+                                                                                 Psychology Research Centre (CIPsi; PSI/01662), School of Psychology,
+                                                                                 University of Minho, and was supported by the Portuguese Foundation
+5 Conclusion                                                                     for Science and Technology (FCT; UID/01662/2025) through the
+                                                                                 Portuguese State Budget. The Centre is registered under the DOI:
+     This article advances the hypothesis that executive dysfunc-                https://doi.org/10.54499/UID/01662/2025.
+tion represents a transdiagnostic core dimension of mental disor-
+ders. Rather than viewing executive difficulties as secondary
+consequences of specific diagnoses or symptoms, the framework
+proposed here conceptualizes them as a central mechanism                         Conflict of interest
+through which shared biological vulnerability manifests in every-
+day functioning. By integrating evidence from cognitive neurosci-                    The author(s) declared that this work was conducted in the
+ence, neuropsychology, genetics, and clinical research, the model                absence of any commercial or financial relationships that could be
+provides a framework for understanding why diverse psychiatric                   construed as a potential conflict of interest.
+conditions converge on similar patterns of functional impairment                     The author SC declared that they were an editorial board member
+and highlights executive functioning as a potential target for                   of Frontiers at the time of submission. This had no impact on the peer
+transdiagnostic research and intervention.                                       review process and the final decision.
+     Examining psychopathology through the lens of executive func-
+tioning shifts attention from isolated symptom clusters toward the
+cognitive systems that support goal-directed behavior, emotional
+regulation, and adaptive emotional and motivational decision-mak-                Generative AI statement
+ing. This perspective reflects a common clinical observation: indi-
+viduals with different diagnoses frequently experience similar                        The author(s) declared that Generative AI was used in the creation
+difficulties in domains such as autonomy, persistence, emotional                 of this manuscript. The author acknowledges the use of generative
+control, and effective self-management. In this context, executive               artificial intelligence tools (ChatGPT, OpenAI, GPT-5.2) for language
+dysfunction may represent a key pathway linking heterogeneous                    editing, stylistic refinement, and clarity improvement during
+
+
+Frontiers in Human Neuroscience                                             11                                                            frontiersin.org
+Carvalho                                                                                                                                                      10.3389/fnhum.2026.1778271
+
+
+
+
+manuscript preparation. The intellectual content, conceptual frame-                                 Publisher’s note
+work, interpretation of evidence, and final text are the sole responsibil-
+ity of the author.                                                                                       All claims expressed in this article are solely those of the
+     Any alternative text (alt text) provided alongside figures in this                             authors and do not necessarily represent those of their affiliated
+article has been generated by Frontiers with the support of artificial                              organizations, or those of the publisher, the editors and the review-
+intelligence and reasonable efforts have been made to ensure accuracy,                              ers. Any product that may be evaluated in this article, or claim that
+including review by the authors wherever possible. If you identify any                              may be made by its manufacturer, is not guaranteed or endorsed
+issues, please contact us.                                                                          by the publisher.
+
+
+
+
+References
+Abramovitch, A., Abramowitz, J. S., and Mittelman, A. (2013). The neuropsychology of                Diamond, A. (2013). Executive functions. Annu. Rev. Psychol. 64, 135–168. doi: 10.1146/
+adult obsessive-compulsive disorder: a meta-analysis. Clin. Psychol. Rev. 33, 1163–1171.            annurev-psych-113011-143750
+doi: 10.1016/j.cpr.2013.09.004
+                                                                                                    Doebel, S. (2020). Rethinking executive function and its development. Perspect. Psychol.
+Aldao, A., Nolen-Hoeksema, S., and Schweizer, S. (2010). Emotion-regulation strategies              Sci. 15, 942–956. doi: 10.1177/1745691620904771
+across psychopathology: a meta-analytic review. Clin. Psychol. Rev. 30, 217–237. doi:
+                                                                                                    Duncan, J. (2010). The multiple-demand (MD) system of the primate brain: mental pro-
+10.1016/j.cpr.2009.11.004
+                                                                                                    grams for intelligent behaviour. Trends Cogn. Sci. 14, 172–179. doi: 10.1016/j.
+Allegrini, A. G., Selzam, S., Rimfeld, K., von Stumm, S., Pingault, J. B., and Plomin, R.           tics.2010.01.004
+(2019). Genomic prediction of cognitive traits in childhood and adolescence. Mol.
+                                                                                                    Etkin, A., Egner, T., and Kalisch, R. (2011). Emotional processing in anterior cingulate
+Psychiatry 24, 819–827. doi: 10.1038/s41380-019-0394-4
+                                                                                                    and medial prefrontal cortex. Trends Cogn. Sci. 15, 85–93. doi: 10.1016/j.tics.2010.11.004
+Badre, D., and D'Esposito, M. (2009). Is the rostro-caudal axis of the frontal lobe hierar-
+                                                                                                    Everitt, B. J., and Robbins, T. W. (2016). Drug addiction: updating actions to habits to
+chical? Nat. Rev. Neurosci. 10, 659–669. doi: 10.1038/nrn2667
+                                                                                                    compulsions ten years on. Annu. Rev. Psychol. 67, 23–50. doi: 10.1146/
+Barch, D. M., and Ceaser, A. (2012). Cognition in schizophrenia: core psychological and             annurev-psych-122414-033457
+neural mechanisms. Trends Cogn. Sci. 16, 27–34. doi: 10.1016/j.tics.2011.11.015
+                                                                                                    Feeser, M., Prehn, K., Kazzer, P., Mungee, A., and Bajbouj, M. (2014). Transcranial direct
+Barkley, R. A. (1997). Behavioral inhibition, sustained attention, and executive functions:         current stimulation enhances cognitive control during emotion regulation. Brain Stimul.
+constructing a unifying theory of ADHD. Psychol. Bull. 121, 65–94. doi:                             7, 105–112. doi: 10.1016/j.brs.2013.08.006
+10.1037/0033-2909.121.1.65
+                                                                                                    Friedman, N. P., and Miyake, A. (2017). Unity and diversity of executive functions: indi-
+Barkley, R. A. (2012). Executive functions: what they are, how they work, and why they              vidual differences as a window on cognitive structure. Cortex 86, 186–204. doi: 10.1016/j.
+evolved. New York: Guilford Press.                                                                  cortex.2016.04.023
+Barkley, R. A. (2015). “Emotional dysregulation is a core component of ADHD,” in                    Garcia-Villamisar, D., Dattilo, J., and Garcia-Martinez, M. (2017). Executive functioning
+Attention-deficit hyperactivity disorder: a handbook for diagnosis and treatment, ed. R. A.         in people with personality disorders. Curr. Opin. Psychiatry 30, 36–44. doi: 10.1097/
+Barkley. 4th ed (New York: The Guilford Press), 81–115.                                             YCO.0000000000000299
+Bechara, A. (2005). Decision making, impulse control and loss of willpower to resist                Goldstein, R. Z., and Volkow, N. D. (2011). Dysfunction of the prefrontal cortex in addic-
+drugs: a neurocognitive perspective. Nat. Neurosci. 8, 1458–1463. doi: 10.1038/nn1584               tion: neuroimaging findings and clinical implications. Nat. Rev. Neurosci. 12, 652–669.
+Bechara, A., and Damasio, A. R. (2005). The somatic marker hypothesis: A neural theory              doi: 10.1038/nrn3119
+of economic decision. Games Econ. Behav. 52, 336–372. doi: 10.1016/j.geb.2004.06.010                Gonçalves, Ó. F., Soares, J. M., Carvalho, S., Leite, J., Ganho, A., Fernandes-Gonçalves, A.,
+Bickel, W. K., Jarmolowicz, D. P., Mueller, E. T., Koffarnus, M. N., and Gatchalian, K. M.          et al. (2015). Brain activation of the defensive and appetitive survival systems in obses-
+(2012). Excessive discounting of delayed reinforcers as a trans-disease process contribut-          sive compulsive disorder. Brain Imaging Behav. 9, 255–263. doi: 10.1007/
+ing to addiction and other disease-related vulnerabilities: emerging evidence. Pharmacol.           s11682-014-9303-2
+Ther. 134, 287–297. doi: 10.1016/j.pharmthera.2012.02.004                                           Grant, J. E., and Chamberlain, S. R. (2014). Impulsive action and impulsive choice across
+Bostan, A. C., Dum, R. P., and Strick, P. L. (2013). Cerebellar networks with the cerebral          substance and behavioral addictions: cause or consequence? Addict. Behav. 39, 1632–1639.
+cortex and basal ganglia. Trends Cogn. Sci. 17, 241–254. doi: 10.1016/j.tics.2013.03.003            doi: 10.1016/j.addbeh.2014.04.022
+
+Bowie, C. R., and Harvey, P. D. (2006). Cognitive deficits and functional outcome in                Grotzinger, A. D., Werme, J., Peyrot, W. J., Frei, O., de Leeuw, C., Bicks, L. K., et al. (2026).
+schizophrenia. Neuropsychiatr. Dis. Treat. 2, 531–536. doi: 10.2147/nedt.2006.2.4.531               Mapping the genetic landscape across 14 psychiatric disorders. Nature 649, 406–415. doi:
+                                                                                                    10.1038/s41586-025-09820-3
+Bowie, C. R., McGurk, S. R., Mausbach, B., Patterson, T. L., and Harvey, P. D. (2012).
+Combined cognitive remediation and functional skills training for schizophrenia: effects            Harvey, P. D., and Strassnig, M. (2012). Predicting the severity of everyday func-
+on cognition, functional competence, and real-world behavior. Am J Psychiatry. 169,                 tional disability in people with schizophrenia: cognitive deficits, functional capacity,
+710–718. doi: 10.1176/appi.ajp.2012.11091337                                                        symptoms, and health status. World Psychiatry 11, 73–79. doi: 10.1016/j.
+                                                                                                    wpsyc.2012.05.004
+Brockett, A. T., Pribut, H. J., Vázquez, D., and Roesch, M. R. (2018). The impact of drugs
+of abuse on executive function: characterizing long-term changes in neural correlates               Harvey, P. D., Strassnig, M. T., and Silberstein, J. (2019). Prediction of disability in schizo-
+following chronic drug exposure and withdrawal in rats. Learn. Mem. (Cold Spring Harb.              phrenia: symptoms, cognition, and self-assessment. J. Exp. Psychopathol.
+N.Y.) 25, 461–473. doi: 10.1101/lm.047001.117                                                       10:2043808719865693. doi: 10.1177/2043808719865693
+Caspi, A., Houts, R. M., Belsky, D. W., Goldman-Mellor, S. J., Harrington, H., Israel, S.,          Hiser, J., and Koenigs, M. (2018). The multifaceted role of the ventromedial prefrontal
+et al. (2014). The p factor: one general psychopathology factor in the structure of psychi-         cortex in emotion, decision making, social cognition, and psychopathology. Biol.
+atric disorders? Clin. Psychol. Sci. 2, 119–137. doi: 10.1177/2167702613497473                      Psychiatry 83, 638–647. doi: 10.1016/j.biopsych.2017.10.030
+Coelho, C. G., Leite, J., Pinto, R., Machado, P. P. P., and Carvalho, S. (2025). From cortex        Insel, T., Cuthbert, B., Garvey, M., Heinssen, R., Pine, D. S., Quinn, K., et al. (2010).
+to cardiac response: tDCS of the prefrontal cortex improves autonomic markers of emo-               Research domain criteria (RDoC): toward a new classification framework for research on
+tion regulation. Brain Sci. 15:898. doi: 10.3390/brainsci15090898                                   mental disorders. Am. J. Psychiatry 167, 748–751. doi: 10.1176/appi.ajp.2010.09091379
+Cotrena, C., Damiani Branco, L., Ponsoni, A., Samamé, C., Milman Shansis, F., and Paz               Joormann, J., and D’Avanzato, C. (2010). Emotion regulation in depression: examining
+Fonseca, R. (2020). Executive functions and memory in bipolar disorders I and II: new               the role of cognitive processes: Cognition & Emotion lecture at the 2009 ISRE meeting.
+insights from meta-analytic results. Acta Psychiatr. Scand. 141, 110–130. doi: 10.1111/             Cogn. Emot. 24, 913–939. doi: 10.1080/02699931003784939
+acps.13121
+                                                                                                    Kessler, R. C., Angermeyer, M., Anthony, J. C., DE Graaf, R., Demyttenaere, K.,
+Cross-Disorder Group of the Psychiatric Genomics Consortium (2019). Genomic rela-                   Gasquet, I., et al. (2007). Lifetime prevalence and age-of-onset distributions of mental
+tionships, novel loci, and pleiotropic mechanisms across eight psychiatric disorders. Cell          disorders in the World Health Organization’s world mental health survey initiative. World
+179:e11, 1469–1482. doi: 10.1016/j.cell.2019.11.020                                                 Psychiatry 6, 168–176
+Cuthbert, B. N. (2014). The RDoC framework: facilitating transition from ICD/DSM to                 Kofler, M. J., Sarver, D. E., Harmon, S. L., Moltisanti, A., Aduen, P. A., Soto, E. F., et al.
+dimensional approaches that integrate neuroscience and psychopathology. World                       (2018). Working memory and organizational skills problems in ADHD. J. Child Psychol.
+Psychiatry 13, 28–35. doi: 10.1002/wps.20087                                                        Psychiatry 59, 57–67. doi: 10.1111/jcpp.12773
+
+
+
+
+Frontiers in Human Neuroscience                                                                12                                                                                 frontiersin.org
+Carvalho                                                                                                                                                           10.3389/fnhum.2026.1778271
+
+
+
+Kofler, M. J., Sarver, D. E., Spiegel, J. A., Day, T. N., Harmon, S. L., and Wells, E. L. (2017).         Seeley, W. W., Menon, V., Schatzberg, A. F., Keller, J., Glover, G. H., Kenna, H., et al.
+Heterogeneity in ADHD: neurocognitive predictors of peer, family, and academic func-                      (2007). Dissociable intrinsic connectivity networks for salience processing and executive
+tioning. Child Neuropsychol. 23, 733–759. doi: 10.1080/09297049.2016.1205010                              control. J. Neurosci. 27, 2349–2356. doi: 10.1523/JNEUROSCI.5587-06.2007
+Kräplin, A., Joshanloo, M., Wolff, M., Krönke, K. M., Goschke, T., Bühringer, G., et al.                  Selzam, S., Coleman, J. R. I., Caspi, A., Moffitt, T. E., and Plomin, R. (2018). A polygenic
+(2022). The relationship between executive functioning and addictive behavior: new                        p factor for major psychiatric disorders. Transl. Psychiatry 8:205. doi: 10.1038/
+insights from a longitudinal community study. Psychopharmacology 239, 3507–3524. doi:                     s41398-018-0217-4
+10.1007/s00213-022-06224-3
+                                                                                                          Shankar, S., Shyamprakash, J., Ravishankar, K. S., and Rahamathulla, M. M. I. (2025).
+Leichsenring, F., Steinert, C., Rabung, S., and Ioannidis, J. P. A. (2022). The efficacy of               Executive dysfunction and working memory in borderline personality disorder and their
+psychotherapies and pharmacotherapies for mental disorders in adults: an umbrella                         association with impulsivity and self-injurious behavior: a cross-sectional study. Indian
+review and meta-analytic evaluation of recent meta-analyses. World Psychiatry 21,                         J. Psychol. Med. 2025:4096. doi: 10.1177/02537176251364096
+133–145. doi: 10.1002/wps.20941
+                                                                                                          Shaw, P., Stringaris, A., Nigg, J., and Leibenluft, E. (2014). Emotion dysregulation in atten-
+Lin, H. Y., Fung, H., Wang, Y., Ho, R. C., and Chen, S. A. (2025). A functional magnetic                  tion deficit hyperactivity disorder. Am. J. Psychiatry 171, 276–293. doi: 10.1176/appi.
+resonance imaging investigation of hot and cool executive functions in reward and com-                    ajp.2013.13070966
+petition. Sensors (Basel) 25:806. doi: 10.3390/s25030806
+                                                                                                          Smoller, J. W., Andreassen, O. A., Edenberg, H. J., Faraone, S. V., Glatt, S. J., and
+Martel, M. M., Levinson, C. A., Langer, J. K., and Nigg, J. T. (2016). A network analysis of              Kendler, K. S. (2019). Psychiatric genetics and the structure of psychopathology. Mol.
+developmental change in ADHD symptom structure from preschool to adulthood. Clin.                         Psychiatry 24, 409–420. doi: 10.1038/s41380-017-0010-4
+Psychol. Sci. 4, 988–1001. doi: 10.1177/2167702615618664
+                                                                                                          Snyder, H. R. (2013). Major depressive disorder is associated with broad impairments on
+McTeague, L. M., Goodkind, M. S., and Etkin, A. (2016). Transdiagnostic impairment of
+                                                                                                          neuropsychological measures of executive function: a meta-analysis and review. Psychol.
+cognitive control in mental illness. J. Psychiatr. Res. 83, 37–46. doi: 10.1016/j.
+                                                                                                          Bull. 139, 81–132. doi: 10.1037/a0028727
+jpsychires.2016.08.001
+McTeague, L. M., Huemer, J., Carreon, D. M., Jiang, Y., Eickhoff, S. B., and Etkin, A. (2017).            Snyder, H. R., Miyake, A., and Hankin, B. L. (2015). Advancing understanding of execu-
+Identification of common neural circuit disruptions in cognitive control across psychiatric               tive function impairments and psychopathology: bridging the gap between clinical and
+disorders. Am. J. Psychiatry 174, 676–685. doi: 10.1176/appi.ajp.2017.16040400                            cognitive approaches. Front. Psychol. 6:328. doi: 10.3389/fpsyg.2015.00328
+
+Millan, M. J., Agid, Y., Brüne, M., Bullmore, E. T., Carter, C. S., Clayton, N. S., et al. (2012).        Stuss, D. T. (2011). Functions of the frontal lobes: relation to executive functions. J. Int.
+Cognitive dysfunction in psychiatric disorders: characteristics, causes and the quest for                 Neuropsychol. Soc. 17, 759–765. doi: 10.1017/S1355617711000695
+improved therapy. Nat. Rev. Drug Discov. 11, 141–168. doi: 10.1038/nrd3628                                Stuss, D. T., and Alexander, M. P. (2007). Is there a dysexecutive syndrome? Philos. Trans.
+Miller, E. K., and Cohen, J. D. (2001). An integrative theory of prefrontal cortex function.              R. Soc. Lond. Ser. B Biol. Sci. 362, 901–915. doi: 10.1098/rstb.2007.2096
+Annu. Rev. Neurosci. 24, 167–202. doi: 10.1146/annurev.neuro.24.1.167                                     Sullivan, P. F., and Geschwind, D. H. (2019). Defining the genetic, genomic, cellular, and
+Miyake, A., Friedman, N. P., Emerson, M. J., Witzki, A. H., Howerter, A., and Wager, T. D.                diagnostic architectures of psychiatric disorders. Cell 177, 162–183. doi: 10.1016/j.
+(2000). The unity and diversity of executive functions and their contributions to complex                 cell.2019.01.015
+"frontal lobe" tasks: a latent variable analysis. Cogn. Psychol. 41, 49–100. doi: 10.1006/                Teigset, C. M., Mohn, C., and Rund, B. R. (2020). Perinatal complications and executive
+cogp.1999.0734                                                                                            dysfunction in early-onset schizophrenia. BMC Psychiatry 20:103. doi: 10.1186/
+Niendam, T. A., Laird, A. R., Ray, K. L., Dean, Y. M., Glahn, D. C., and Carter, C. S. (2012).            s12888-020-02517-z
+Meta-analytic evidence for a superordinate cognitive control network subserving diverse
+                                                                                                          Teixeira-Santos, A. C., Moreira, C. S., Pereira, D. R., Pinal, D., Fregni, F., Leite, J., et al.
+executive functions. Cogn. Affect. Behav. Neurosci. 12, 241–268. doi: 10.3758/
+                                                                                                          (2022). Working memory training coupled with transcranial direct current stimulation
+s13415-011-0083-5
+                                                                                                          in older adults: a randomized controlled experiment. Front. Aging Neurosci. 14:827188.
+Ochsner, K. N., and Gross, J. J. (2005). The cognitive control of emotion. Trends Cogn. Sci.              doi: 10.3389/fnagi.2022.827188
+9, 242–249. doi: 10.1016/j.tics.2005.03.010
+                                                                                                          Tolonen, T., Leppämäki, S., Roine, T., Alho, K., Tani, P., Koski, A., et al. (2024). Working
+Rodas, J. A., Leon-Rojas, J., and Rooney, B. (2024). Mind over mood: exploring the execu-                 memory related functional connectivity in adult ADHD and its amenability to training: a
+tive function's role in downregulation. Front. Psychol. 15:1322055. doi: 10.3389/                         randomized controlled trial. Neuroimage Clin. 44:103696. doi: 10.1016/j.nicl.2024.103696
+fpsyg.2024.1322055
+                                                                                                          Tubío Fungueiriño, M., Fernández Prieto, M., Carvalho, S., Leite, J., Carracedo, Á., and
+Rolls, E. T. (2019). The orbitofrontal cortex and emotion in health and disease, including                Gonçalves, Ó. F. (2020). Executive impairments in obsessive compulsive disorder: a sys-
+depression. Neuropsychol. 128, 14–43. doi: 10.1016/j.neuropsychologia.2017.09.021                         tematic review with emotional and non-emotional paradigms. Psicothema 1, 24–32. doi:
+Romer, A. L., and Pizzagalli, D. A. (2021). Is executive dysfunction a risk marker or con-                10.7334/psicothema2019.187
+sequence of psychopathology? A test of executive function as a prospective predictor and                  Willcutt, E. G., Doyle, A. E., Nigg, J. T., Faraone, S. V., and Pennington, B. F. (2005).
+outcome of general psychopathology in the adolescent brain cognitive development                          Validity of the executive function theory of attention-deficit/hyperactivity disorder: a
+      ®
+study . Dev. Cogn. Neurosci. 51:100994. doi: 10.1016/j.dcn.2021.100994                                    meta-analytic review. Biol. Psychiatry 57, 1336–1346. doi: 10.1016/j.
+                                                                                                          biopsych.2005.02.006
+Ruocco, A. C. (2005). The neuropsychology of borderline personality disorder: a meta-
+analysis and review. Psychiatry Res. 137, 191–202. doi: 10.1016/j.psychres.2005.07.004                    Zainal, N. H., and Newman, M. G. (2023). Elevated anxious and depressed mood relates
+Sambol, S., Suleyman, E., Scarfo, J., and Ball, M. (2023). A true reflection of executive                 to future executive dysfunction in older adults: a longitudinal network analysis of psy-
+functioning or a representation of task-specific variance? Re-evaluating the unity/diver-                 chopathology and cognitive functioning. Clin. Psychol. Sci. 11, 218–238. doi:
+sity framework. Acta Psychol. 236:103934. doi: 10.1016/j.actpsy.2023.103934                               10.1177/21677026221114076
+Saxena, A., Hartman, C. A., Blatt, S. D., Fremont, W. P., Glatt, S. J., Faraone, S. V., et al.            Zelazo, P. D., and Carlson, S. M. (2012). Hot and cool executive function in childhood
+(2024). Reward functioning in general and specific psychopathology in children and                        and adolescence: development and plasticity. Child Dev. Perspect. 6, 354–360. doi:
+adults. J. Atten. Disord. 28, 77–88. doi: 10.1177/10870547231201867                                       10.1111/j.1750-8606.2012.00246.x
+
+
+
+
+Frontiers in Human Neuroscience                                                                      13                                                                                frontiersin.org
+

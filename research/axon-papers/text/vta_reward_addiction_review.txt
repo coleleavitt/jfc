@@ -1,0 +1,1111 @@
+NEUROSCIENCES JOURNAL 2026;31:108–126                                                                                Scan the QR to view
+                                                                                                                    the full-text article on
+                                                                                                                      the journal website
+
+
+
+REVIEW ARTICLE
+
+The Role of the Ventral Tegmental Area in Reward
+and Addiction: A Comprehensive Review
+
+Emad Ali Albadawi, MSc, PhD
+
+Department of Basic Medical Sciences, College of Medicine, Taibah University, Madinah, Kingdom of Saudi Arabia
+
+
+
+ ABSTRACT
+
+    The ventral tegmental area (VTA) is a central hub in reward and motivation, integrating heterogeneous neuronal
+ populations and projection-deﬁned circuits to regulate learning, decision-making, and addiction. This review synthesizes
+ anatomical organization and cellular diversity (dopaminergic, GABAergic, and glutamatergic neurons, including multi-
+ transmitter co-release), and maps major eﬀerent pathways constituting the mesolimbic and mesocortical systems. We
+ highlight computational roles of VTA activity, including reward prediction errors, incentive salience, and context mem-
+ ory integration, and summarize drug class-speciﬁc mechanisms that perturb VTA output. We then outline time-dependent
+ neuroadaptations across mesocorticolimbic networks and discuss therapeutic implications spanning pharmacological,
+ behavioral, and emerging circuit-targeted interventions. Together, these perspectives frame the VTA as a projection- and
+ state-dependent controller whose dysfunction underlies core features of substance use disorders and other reward-related
+ psychopathologies, pointing toward precision, circuit-informed treatments.
+
+
+Keywords: Ventral tegmental area (VTA), Mesolimbic pathway, Mesocortical pathway, Neuromodulation
+
+
+
+Introduction                                                                      various cognitive processes. Its dysfunction has been
+                                                                                  implicated in numerous psychiatric and neurological
+  The ventral tegmental area (VTA) is one of the most                             conditions, including depression, schizophrenia, at-
+intensively studied brain regions in neuroscience,                                tention deﬁcit hyperactivity disorder, and Parkinson’s
+serving as a critical component of the brain’s reward                             disease. The VTA’s complex anatomy and diverse
+system and playing a central role in the pathophys-                               cellular composition enable it to integrate multi-
+iology of addiction [1]. Located in the midbrain,                                 ple types of information and modulate behavior in
+the VTA has been recognized for over ﬁve decades                                  sophisticated ways [3–5]. This review comprehen-
+as a key structure mediating the rewarding eﬀects                                 sively examines the VTA’s anatomical organization,
+of natural stimuli and drugs of abuse. The signif-                                neural connections, and functional roles in reward
+icance of this region was ﬁrst highlighted by the                                 processing and addiction. We explore the cellular and
+pioneering work of James Olds and Peter Milner in                                 molecular mechanisms that underlie VTA function,
+the 1950s, who demonstrated that electrical stim-                                 discuss how these processes become dysregulated in
+ulation of the VTA and related areas could serve                                  addiction, and consider the therapeutic implications
+as a powerful reinforcer of instrumental behavior,                                of current research ﬁndings.
+driving animals to repeatedly perform actions (such                                 Terminology note: Throughout this review, we use
+as lever pressing) to obtain the stimulation in lab-                              the term “addiction” to refer to the human clini-
+oratory animals [2]. The VTA’s importance extends                                 cal syndrome, typically operationalized as substance
+beyond addiction research, as it plays fundamental                                use disorders in diagnostic classiﬁcations. In con-
+roles in motivation, learning, decision-making, and                               trast, when we discuss preclinical studies in rodents
+
+
+
+Received 27 August 2025; accepted 13 December 2025.
+Available online 30 April 2026
+
+E-mail address: ebadawi@taibahu.edu.sa, dr-albadawi@hotmail.com (E. A. Albadawi).
+
+https://doi.org/10.17712/1658-3183.2787
+1658-3183/© 2026 Neurosciences Journal. All rights reserved. This is an open access article under the CC BY-NC 4.0 Licence
+(https://creativecommons.org/licenses/by-nc/4.0/).
+                                                NEUROSCIENCES JOURNAL 2026;31:108–126                                                  109
+
+
+
+
+Fig. 1. Schematic representation of the ventral tegmental area (VTA) and its major dopaminergic projection pathways. The VTA (green dot)
+gives rise to the mesolimbic pathway (green) to the nucleus accumbens (NAc) and the mesocortical pathway (magenta) to cortical targets.
+For comparison, the figure also depicts the nigrostriatal pathway (blue), which originates primarily from the adjacent substantia nigra pars
+compacta (SNc) and innervates the dorsal striatum. The relative positions of the cortex, striatum, nucleus accumbens (NAc), and midbrain
+structures are shown for anatomical context.
+
+
+and other animals, we refer to “drug dependence”                        studies deﬁning it based on cytoarchitecture, im-
+or “dependence-like”/“addiction-like” behaviors, be-                    munohistochemistry, and connectivity patterns. The
+cause these paradigms model speciﬁc components of                       VTA can be subdivided into several distinct subnuclei,
+the disorder (such as escalation of intake, withdrawal,                 each with unique anatomical and functional char-
+and relapse-like responding) rather than the whole                      acteristics [10]. The para-nigral nucleus (PN) forms
+phenomenology of human addiction.                                       the medial portion and contains the highest concen-
+                                                                        tration of dopaminergic neurons. The parabrachial
+                                                                        pigmented nucleus (PBP) occupies the central region
+Anatomical organization of the ventral                                  and shows intermediate dopamine neuron density
+tegmental area                                                          [11, 12]. The rostral VTA (VTAR) and caudal VTA
+Location and boundaries                                                 also represent distinct subdivisions with diﬀerent pro-
+                                                                        jection patterns and functional roles (Fig. 1) [13].
+  The VTA is situated in the ventral midbrain, medial
+to the substantia nigra and dorsal to the interpedun-                   Cellular composition
+cular nucleus. In humans, it extends approximately
+from the level of the posterior commissure to the                         The VTA contains a heterogeneous population of
+mammillary bodies, spanning roughly 5–6 millime-                        neurons broadly classiﬁed into three major types
+ters in the rostrocaudal dimension as presented in                      based on their neurotransmitter phenotype: dopamin-
+Fig. 1 [6–9]. The VTA’s boundaries have been reﬁned                     ergic neurons, GABAergic neurons, and glutamatergic
+over decades of research, with modern anatomical                        neurons. This cellular diversity underlies the VTA’s
+110                                    NEUROSCIENCES JOURNAL 2026;31:108–126
+
+
+
+
+complex functional properties and its ability to modu-     and long-range modulatory roles [20]. As the pri-
+late behavior in a nuanced manner [8, 11]. Critically,     mary inhibitory cells of the VTA, they play a crucial
+these subtypes form a local microcircuit in which          role in maintaining the excitatory-inhibitory balance
+dopaminergic neurons drive reward-related signal-          and in regulating dopamine output [20]. Canoni-
+ing, GABAergic neurons provide inhibitory control          cal VTA GABAergic neurons are deﬁned by their
+essential for aversive processing and for regulating       robust expression of the glutamate decarboxylase iso-
+dopamine output, and glutamatergic neurons con-            forms GAD1 (GAD67) and GAD2 (GAD65), whereas
+tribute excitatory drive that inﬂuences behavioral         subsets of VTA dopamine neurons can also express
+valence. The interplay of these distinct populations       GAD65 and thereby engage GABA co-transmission
+allows the VTA to compute motivational value and           [21]. Electrophysiologically, GABAergic neurons are
+guide adaptive behavior [13].                              distinct from DA cells, with typically faster ﬁring
+                                                           rates and shorter-duration action potentials [22, 23].
+                                                           Within the VTA, GABAergic neurons act as local
+Neuronal subtypes in the ventral tegmental
+                                                           interneurons, regulating the excitability of nearby
+area
+                                                           DA through inhibitory synapses [24]. This inhibi-
+Dopaminergic neurons (DA)                                  tion is crucial in controlling dopamine neuron burst
+                                                           ﬁring and dopamine release in target regions. Ad-
+  DA represent the predominant neuronal population         ditionally, GABAergic projection neurons from the
+in the VTA, comprising approximately 65–70% of its         VTA extend to structures such as the nucleus accum-
+cells [14]. These neurons are critically involved in       bens, prefrontal cortex, and central amygdala (CeA),
+reward processing, motivational salience, learning,        inﬂuencing motivation, emotional reactivity, and be-
+and goal-directed behavior [8]. They are identiﬁed by      havioral ﬂexibility [24]. The functional relevance of
+their tyrosine hydroxylase (TH) expression, the rate-      VTA GABA neurons has been increasingly recognized
+limiting enzyme in dopamine synthesis. They exhibit        in both reward and aversion paradigms [20, 25, 26].
+distinct electrophysiological characteristics, includ-     For example, optogenetic activation of these neurons
+ing slow, pacemaker-like ﬁring and broad action            can suppress reward-seeking behavior [25] and mod-
+potentials with prominent after-hyperpolarizations         ulate responses to aversive stimuli [26]. Importantly,
+[15]. Anatomically, VTA DA can be categorized based        these neurons are also involved in the feedforward
+on their projection targets and molecular signatures.      inhibition circuit from the lateral habenula (LHb) via
+Those projecting to the Nucleus accumbens (NAc),           the rostromedial tegmental nucleus (RMTg), which
+particularly the core and shell regions, form the          plays a pivotal role in aversive learning and stress-
+mesolimbic dopamine pathway, essential for reinforc-       induced modulation of reward processing [27, 28].
+ing behavior and encoding reward prediction errors.
+Another major subpopulation targets the prefrontal         Glutamatergic neurons
+cortex (PFC), creating the mesocortical pathway im-
+plicated in executive function, working memory, and          Although comprising only 5–10% of the total
+value-based decision-making. Additional projections        VTA population, glutamatergic neurons play indis-
+extend to the amygdala, hippocampus, and lateral           pensable roles in local excitation and long-range
+septum, supporting emotional regulation, stress re-        signaling [29]. These neurons provide a critical exci-
+sponsivity, and contextual information integration         tatory counterpart to dopamine and GABA signaling,
+[16, 17]. Importantly, DA are not homogeneous.             directly exciting target regions and inﬂuencing be-
+Recent studies employing single-cell transcriptomics       havioral valence [1]. These neurons express vesicular
+and electrophysiological proﬁling have revealed dis-       glutamate transporter 2 (VGLUT2) and can activate
+tinct subtypes with specialized roles. Moreover, some      local VTA neurons and distant targets through ex-
+VTA DA corelease glutamate or GABA, expand-                citatory transmission. Glutamatergic VTA neurons
+ing their functional repertoire beyond classical DA        project to the prefrontal cortex, lateral habenula,
+signaling. These co-transmission modalities allow          and nucleus accumbens, contributing to the encod-
+bidirectional modulation of target regions, particu-       ing of rewarding and aversive stimuli. Recent studies
+larly under stress, learning, or substance exposure        have demonstrated that selective activation of VTA
+conditions [18, 19].                                       glutamate neurons can reinforce behavior or induce
+                                                           aversive responses depending on the projection target
+GABAergic neurons                                          and ﬁring pattern. This dual functionality emphasizes
+                                                           their importance in valence processing and behav-
+  GABAergic neurons constitute approximately 20–           ioral ﬂexibility [1, 30]. Moreover, glutamatergic VTA
+30% of the VTA and serve local inhibitory functions        neurons often participate in co-release mechanisms,
+                                              NEUROSCIENCES JOURNAL 2026;31:108–126                                                 111
+
+
+
+
+Table 1. Characteristics of VTA Neuronal Populations.
+                                                                                      Projection
+ Neuron Type                    Neurotransmitter(s)            Molecular Markers      Targets             Functional Roles   Ref.
+ DA                             Dopamine                       TH, GCH1, DAT          Nucleus             Reward             [32, 33]
+                                                                                      accumbens           processing,
+                                                                                      (NAc),              motivation, and
+                                                                                      prefrontal cortex   learning
+                                                                                      (PFC), amygdala
+ GABAergic                      GABA                           GAD1, GAD2             Local               Inhibition of DA   [34]
+                                                                                      interneurons,       neurons,
+                                                                                      PFC, NAc            modulation of
+                                                                                                          reward circuits
+ Glutamatergic                  Glutamate                      VGLUT2                 PFC, lateral        Excitation of      [1]
+                                                                                      habenula (LHb)      target neurons,
+                                                                                                          involvement in
+                                                                                                          aversion and
+                                                                                                          reward
+ DA-Glutamate Co-releasing      Dopamine & Glutamate           TH, VGLUT2             NAc, PFC            Modulation of      [35]
+                                                                                                          reward and
+                                                                                                          aversive
+                                                                                                          behaviors
+ DA-GABA Co-releasing           Dopamine & GABA                TH, GAD2               NAc, PFC            Fine-tuning of     [35, 36]
+                                                                                                          reward circuits,
+                                                                                                          behavioral
+                                                                                                          ﬂexibility
+ GABA-Glutamate Co-releasing    GABA & Glutamate               GAD2, VGLUT2           Local circuits      Balance of         [37]
+                                                                                                          excitation and
+                                                                                                          inhibition
+                                                                                                          within the VTA
+ Triple Co-releasing            Dopamine, GABA & Glutamate     TH, GAD2, VGLUT2       Various targets     Complex            [35]
+                                                                                                          modulation of
+                                                                                                          neural circuits
+
+
+
+especially in DA glutamate co-releasing neurons                   nucleus accumbens (NAc), prefrontal cortex (PFC),
+expressing both TH and VGLUT2 [31]. These hy-                     and the central amygdala (CeA), while receiving
+brid neurons allow for rapid excitatory transmission              modulatory input from structures such as (LHb) and
+alongside modulatory DA signaling, enhancing the                  the rostromedial tegmental nucleus (RMTg) [39].
+dynamic range of VTA output during motivationally                 The following subsections outline these key circuits’
+relevant events. Table 1 provides a detailed clas-                anatomical and functional relevance.
+siﬁcation of VTA neuronal subtypes, including DA,
+GABAergic, and glutamatergic populations, as well as
+co-releasing phenotypes, based on their neurotrans-               VTA–NAc circuitry
+mitter proﬁles, molecular markers, projection targets,
+and roles in modulating reward-related behaviors.                   The mesolimbic dopamine pathway, extending
+                                                                  from the VTA to the NAc, forms the neurobiologi-
+                                                                  cal core of reinforcement learning and motivational
+Afferent connections of the ventral                               behavior. While the VTA DA project to the NAc,
+tegmental area                                                    this circuit is also modulated by GABAergic feed-
+                                                                  back arising primarily from D1 receptor-expressing
+  VTA is a central integrative node within the                    medium spiny neurons (MSNs) within the NAc [8].
+brain’s reward and motivation circuits. Its ability               These reciprocal connections diﬀer across NAc sub-
+to orchestrate various behaviors, including reward                regions: lateral shell (NAcLat) MSNs preferentially
+processing, executive function, aﬀect regulation,                 target VTA GABAergic neurons, resulting in disinhi-
+and learning, depends on a complex matrix of                      bition of dopamine neurons, whereas medial shell
+reciprocal and feedforward connections [38]. This                 (NAcMed) MSNs exert more selective inhibition.
+intricate input-output architecture enables the VTA               Speciﬁcally, they suppress dopamine neurons pro-
+to dynamically regulate activity across limbic,                   jecting to NAcMed via GABAA receptors and those
+cortical, and subcortical regions. Major aﬀerent                  projecting to NAcLat via GABAB receptors. This dual
+and eﬀerent connections include projections to the                inhibitory mechanism ﬁnely calibrates motivational
+112                                    NEUROSCIENCES JOURNAL 2026;31:108–126
+
+
+
+
+drive and action selection, as demonstrated by op-         dopaminergic, glutamatergic, and GABAergic
+togenetic manipulation studies [40, 41]. In addition       projections, highlighting the multimodal nature of
+to its role in reinforcement, the VTA-NAc pathway          this connection [50]. This circuit has been implicated
+is integral to feeding behavior. Exposure to palatable     in various alcohol-related behaviors. For example, in
+food elevates dopamine release in the NAc, while           alcohol-preferring rodent models, increased activity
+optogenetic activation of VTA dopamine neurons has         of CeA-projecting VTA dopamine neurons during
+been shown to suppress feeding, even under caloric         withdrawal reinforces alcohol-seeking. Orexinergic
+deprivation. This anorexigenic eﬀect is mediated           signaling in the VTA further ampliﬁes ﬂavor
+through D1 receptor activation in the NAc and can          preference through CeA D1 receptor activation [51].
+be reversed by blocking NAc–VTA projections. Fur-          Beyond reward, this pathway also contributes to
+thermore, hypothalamic neuropeptides such as orexin        pain modulation and defensive behavior. Dopamine
+and neurotensin modulate this circuitry by acting di-      release in the CeA is associated with analgesia, which
+rectly on VTA dopamine neurons, integrating energy         is reversed by D2 receptor activation. Moreover,
+homeostasis with reward-driven behavior [42, 43].          VTA GABAergic neurons mediate aversive responses,
+                                                           while glutamatergic projections have been linked
+VTA-PFC circuitry                                          to arousal and wakefulness. These ﬁndings position
+                                                           the VTA-CeA axis as vital for integrating sensory,
+  The mesocortical pathway, linking the VTA to the         aﬀective, and motivational cues [52, 53].
+PFC, is essential for cognitive ﬂexibility, emotional
+regulation, and behavioral control domains often           VTA–LHb and RMTg circuitry
+disrupted in psychiatric disorders such as depres-
+sion and addiction. VTA dopamine neurons modulate             The (LHb) is a major aversive input to the VTA,
+prefrontal function through dopamine release and co-       largely mediated through the rostromedial tegmental
+release of glutamate and GABA, adding a layer of           nucleus (RMTg), a GABAergic relay structure. Ac-
+temporal and synaptic speciﬁcity [44]. Short bursts of     tivation of LHb neurons stimulates RMTg outputs,
+VTA activity enhance excitability in both pyramidal        which in turn inhibit VTA dopamine neurons. This tri-
+neurons and parvalbumin-positive (PV+) interneu-           synaptic inhibitory circuit plays a central role in en-
+rons in the PFC through glutamatergic transmission.        coding reward prediction errors, regulating aversive
+However, sustained stimulation recruits additional         learning, and modulating stress responsiveness [54].
+neuromodulators: dopamine promotes transient ex-           Chronic stress enhances glutamatergic drive from the
+citation of pyramidal neurons, while GABAergic             LHb to the RMTg, potentiating inhibition of VTA
+co-release prolongs interneuron activation. This bidi-     dopamine neurons and contributing to depressive-
+rectional modulation contributes to the dynamic            like phenotypes [55]. In contrast, acute stress may
+excitatory/inhibitory (E/I) balance required for com-      transiently suppress LHb D-neuron activity via trace
+plex cognitive operations. Notably, the PFC exerts         amine signaling, disinhibiting dopamine neurons and
+top-down control over VTA function [45]. Anatom-           facilitating adaptive arousal. Importantly, LHb inputs
+ical and tracing studies indicate that medial PFC          exhibit projection-speciﬁc modulation, preferentially
+pyramidal neurons send both ipsilateral and decus-         targeting VTA neurons projecting to the medial PFC
+sating projections to the VTA, including synapses          [56]. This topography underlies aversive decision-
+onto dopamine neurons, although the density of these       making and is particularly relevant in models of
+direct inputs is modest relative to other major af-        cocaine relapse during extinction phases. Given its
+ferents [46, 47]. In parallel, indirect glutamatergic      dual role in reward suppression and aﬀective reg-
+input via intermediary circuits can signiﬁcantly ele-      ulation, the LHb–VTA axis represents a promising
+vate dopamine release in the NAc. Functional studies       therapeutic target for mood and substance use dis-
+reveal heterogeneous responses in VTA neurons to           orders [57–59].
+PFC stimulation, including enhanced burst ﬁring and
+inhibition, suggesting the involvement of relay in-
+hibitory networks. These mechanisms underscore the         Efferent connections of the ventral
+nuanced role of PFC–VTA interactions in behavioral         tegmental area
+adaptation and stress resilience [8, 48, 49].
+                                                             The eﬀerent projections of the ventral tegmental
+VTA–CeA circuitry                                          area (VTA) form the anatomical and functional
+                                                           substrate through which it exerts widespread
+  Projections from the VTA to the (CeA) form a             inﬂuence on behavior, cognition, and aﬀective states.
+critical interface between emotional valence and           These output pathways primarily originate from
+motivated behavior. VTA output to the CeA includes         DA, GABAergic, and glutamatergic neurons, often
+                                                   NEUROSCIENCES JOURNAL 2026;31:108–126                                         113
+
+
+
+
+Table 2. Major efferent projections of the VTA.
+Target region           Principal VTA
+(examples)              neuron type(s)            Transmitter(s)   Representative functional roles                            Ref.
+Nucleus accumbens       DA; DA–Glu                Dopamine,        Reward processing, motivation, reinforcement learning;     [8, 69]
+(core/shell)            co-releasing;             glutamate,       VTA→NAc glutamate can suppress psychostimulant seeking
+                        GABAergic                 GABA
+Prefrontal cortex       DA (mesocortical)         Dopamine         Cognitive control, decision-making, emotion regulation;    [70]
+(mPFC, OFC, ACC)                                                   VTA→mPFC DA required for rapid threat-avoidance learning
+Amygdala (BLA,          DA; (some)                Dopamine,        Emotion/fear and reward valence; VTA→BLA DA controls       [71, 72]
+CeA)                    glutamatergic             glutamate        anxiety-related behavior
+Hippocampus             DA; (reports of           Dopamine         Contextual memory, novelty signals; VTA→Hip DA triggers    [65]
+(ventral/dorsal)        VTA Glu inputs)           (± glutamate)    LTP and supports contextual learning
+Lateral septum          DA; Glutamatergic         Dopamine,        Social behavior, aggression, reward modulation             [73]
+                                                  glutamate
+Hypothalamus            DA                        Dopamine         Arousal, energy balance, feeding regulation; VTA→LHA DA    [74]
+(LHA, ARC, PVN)                                                    release during cue-driven feeding
+
+
+
+displaying complex co-release proﬁles that ﬁne-tune                       gions, including the medial prefrontal cortex (mPFC),
+neural signaling (Table 2). Rather than reiterating                       orbitofrontal cortex (OFC), and anterior cingulate
+functions detailed in earlier circuit sections, this part                 cortex (ACC). This pathway is critically involved
+emphasizes how projection-deﬁned VTA outputs dif-                         in executive function, working memory, decision-
+ferentially engage downstream targets to coordinate                       making, and emotional regulation [63]. In contrast to
+reward learning, executive control, and emotional                         the more phasic, event-locked dynamics of mesolim-
+regulation across multiple brain regions [60, 61].                        bic dopamine, mesocortical dopamine transmission is
+                                                                          generally more tonic and projection-speciﬁc, provid-
+Mesolimbic pathway                                                        ing sustained modulatory input that shapes prefrontal
+                                                                          network activity over longer timescales [63]. Impor-
+  The mesolimbic dopamine pathway is the most ex-                         tantly, these projections exhibit projection-speciﬁc
+tensively studied VTA output system and constitutes                       modulation of local circuits: dopamine enhances the
+the brain’s reward circuitry core. It projects predom-                    excitability of pyramidal neurons and modulates the
+inantly to the nucleus accumbens (NAc), including                         recruitment of interneurons, thereby shaping the bal-
+core and shell subregions and adjacent ventral striatal                   ance of cortical excitation and inhibition. Alterations
+structures. VTA neurons projecting to the NAc are                         in mesocortical signaling have been implicated in var-
+primarily DA, although subpopulations exhibit                             ious psychiatric disorders, including schizophrenia,
+co-release of glutamate or GABA, adding complexity                        depression, and attention-deﬁcit/hyperactivity disor-
+to the modulation of postsynaptic targets. In addition                    der (ADHD) [64].
+to these dopaminergic and co-releasing projections,
+VTA GABA projection neurons also innervate nucleus
+accumbens cholinergic interneurons, providing an                          Extended limbic and hypothalamic
+additional route by which VTA output can shape                            projections
+accumbal microcircuit excitability and plasticity
+[24]. Together, these DA-only, co-releasing, and                            Beyond the striatum and cortex, the VTA sends
+purely GABAergic eﬀerents allow the VTA to regulate                       projections to several limbic and hypothalamic re-
+NAc microcircuits through multiple neurochemical                          gions, supporting its role in integrating motivational
+channels, complementing the functional roles of                           and homeostatic signals. Key targets include the:
+this pathway in reward prediction, motivational                           Amygdala: VTA outputs to the central and baso-
+salience, and reinforcement learning described                            lateral amygdala contribute to emotional learning,
+earlier. Dysregulation of the mesolimbic projection,                      fear conditioning, and aﬀective modulation. Both DA
+particularly under chronic drug exposure, underlies                       and non-DA projections are involved, with complex
+key features of addiction such as craving, compulsive                     eﬀects depending on neuronal subtype and recep-
+seeking, and sensitization [62].                                          tor expression. Hippocampus: Although less dense
+                                                                          than cortical or striatal projections, VTA innerva-
+Mesocortical pathway                                                      tion of the ventral hippocampus enhances contextual
+                                                                          memory formation, particularly under emotionally
+  The mesocortical pathway comprises DA projec-                           salient or rewarding conditions [65]. Lateral sep-
+tions from the VTA to various prefrontal cortical re-                     tum: DA projections to the septal area are involved
+114                                    NEUROSCIENCES JOURNAL 2026;31:108–126
+
+
+
+
+in social behavior, reward modulation, and stress              1. Reward prediction and cue learning
+reactivity [66]. Hypothalamic nuclei: VTA projec-                With experience, the phasic dopamine response
+tions to the lateral hypothalamus, arcuate nucleus,            shifts from the reward itself to the cue that reliably
+and paraventricular nucleus mediate interactions be-           predicts the reward. This anticipatory activity
+tween energy balance, arousal, and reward valuation.           reﬂects the formation of a learned association
+These connections integrate metabolic and hedonic              between the cue and the expected outcome.
+drives, particularly in feeding and drug-seeking con-
+                                                               2. Negative prediction error signaling
+texts [41].
+                                                                 If an expected reward is omitted, dopamine
+                                                               neurons exhibit a pause or dip below baseline
+Neurochemical diversity and                                    activity, signaling a negative prediction error.
+Co-transmission                                                This teaches the brain that a prior expectation
+                                                               was incorrect, reducing the value assigned to that
+  A hallmark of VTA eﬀerent organization is the pres-          cue or behavior.
+ence of co-transmission, where neurons can release            These bidirectional reward prediction error signals
+combinations of dopamine, GABA, and glutamate              positive when outcomes are better than expected and
+onto distinct or overlapping targets [13]. This ar-        negative when they are worse serve as teaching sig-
+rangement allows a single VTA projection to convey         nals that drive plasticity in downstream structures
+excitatory, inhibitory, and neuromodulatory signals        such as the nucleus accumbens (NAc) and prefrontal
+in a temporally and spatially coordinated manner.          cortex (PFC). Through this mechanism, the VTA con-
+For instance, VTA glutamate neurons that co-release        tributes to adaptive decision-making, learning, and
+GABA can promote positive reinforcement and exert          habit formation. The dynamics of DA prediction error
+rapid inhibitory–excitatory control over downstream        signaling are illustrated in Fig. 2, which shows the
+targets [67], while dopamine–glutamate co-releasing        shift in VTA ﬁring from unpredicted reward to pre-
+neurons targeting mesolimbic regions such as the NAc       dictive cue and the suppression of activity following
+can rapidly excite postsynaptic neurons and concur-        omitted rewards [75–77].
+rently modulate plasticity via dopamine [18]. Triple-
+transmitting neurons identiﬁed in recent single-cell
+and single-nucleus RNA-sequencing studies suggest          Motivation and incentive salience
+even greater computational complexity within VTA
+output channels [68]. This neurochemical hetero-             VTA is a central hub in the neural circuitry of
+geneity underlies the functional diversity of VTA          motivation, orchestrating the attribution of incentive
+outputs, allowing the region to participate ﬂexibly in     salience to environmental cues that predict biolog-
+reward, aversion, stress adaptation, and learning.         ically relevant outcomes [78]. This process enables
+                                                           organisms to selectively direct attention and behavior
+                                                           toward goal-relevant stimuli. Crucially, the VTA me-
+Neural circuitry and functional organization               diates this transformation through phasic dopamine
+                                                           release to downstream regions, notably the nucleus
+Reward prediction and associative learning
+                                                           accumbens (NAc), prefrontal cortex (PFC), and amyg-
+                                                           dala [68, 79].
+  Through DA prediction error signaling, VTA neu-
+rons encode the discrepancy between expected and
+actual outcomes an essential process for reinforce-        Incentive salience: From neutral cue to
+ment learning and adaptive behavior. Seminal work          motivational target
+by Wolfram Schultz and others has revealed that VTA
+dopamine neurons exhibit phasic changes in ﬁring             Incentive salience refers to the motivational “want-
+that reﬂect the value and timing of rewards. These         ing” of a stimulus, distinct from its hedonic “liking.”
+changes in activity can be categorized into three          Phasic activation of VTA dopamine neurons imbues
+canonical phases:                                          previously neutral cues with motivational signiﬁ-
+                                                           cance, thereby driving cue-triggered approach behav-
+Phasic response to unexpected reward                       iors [80]. This mechanism is adaptive in contexts such
+  When a reward occurs unexpectedly, VTA                   as food seeking, social bonding, and reward learn-
+dopamine neurons ﬁre a brief burst of action               ing, but can become maladaptive under conditions
+potentials, signaling the occurrence and magnitude         of pathological salience attribution, such as in sub-
+of a positive outcome. This reinforces recently            stance use disorders [81]. In addiction, for example,
+performed actions that led to the reward [75–77].          drug-paired cues acquire abnormally high incentive
+                                        NEUROSCIENCES JOURNAL 2026;31:108–126                                        115
+
+
+
+
+                        Fig. 2. DA signaling and neural circuitry underlying reward prediction error.
+
+
+salience, triggering compulsive craving and drug-                  • VTA→Amygdala: Contributes to emotionally va-
+seeking even in the absence of the substance. This                   lenced salience, particularly in threat-related con-
+aberrant learning is mediated by hyper-responsive                    texts.
+VTA dopamine signaling to conditioned stimuli and
+drug-evoked synaptic plasticity in the NAc and PFC,                This speciﬁcity is further enhanced by neurochem-
+including long-term potentiation and recruitment of              ical co-release. DA neurons capable of co-releasing
+calcium-permeable AMPA receptors at corticostriatal              glutamate or GABA provide dual modulatory con-
+synapses [82, 83].                                               trol exciting or inhibiting target circuits based on
+                                                                 behavioral demands [15, 84]. Additionally, aﬀerent
+Circuit-specific DA modulation                                   inputs from the lateral hypothalamus, laterodor-
+                                                                 sal tegmentum (LDT), and paraventricular thalamus
+  Motivational processing by the VTA is not                      (PVT) shape VTA activity in response to internal
+monolithic. Rather, functionally heterogeneous                   physiological states (e.g., hunger, arousal) and envi-
+populations of dopamine neurons exhibit projection-              ronmental contingencies, ensuring a state-dependent
+speciﬁc roles:                                                   encoding of motivational relevance.
+
+
+ • VTA→NAc medial shell: Encodes cue-triggered                   Contextual processing and memory
+   motivation and goal-directed action.                          integration
+ • VTA→PFC: Modulates executive oversight over
+   motivational impulses, allowing for behavioral                  VTA functions as a hub that binds spatiotemporal
+   ﬂexibility.                                                   context with goals and rules to shape behavior
+116                                    NEUROSCIENCES JOURNAL 2026;31:108–126
+
+
+
+
+in a state-dependent manner by integrating                 Role in addiction
+convergent hippocampal and prefrontal inputs [85].
+                                                           Acute drug effects
+Hippocampal inputs convey contextual (space–time)
+information, while prefrontal inputs provide task
+                                                             All major drugs of abuse directly or indirectly
+rules, goals, and abstract associations; together they
+                                                           increase dopamine levels in the VTA and its target re-
+enable the VTA to modulate its output to downstream
+                                                           gions, particularly the nucleus accumbens. Diﬀerent
+targets according to current contingencies and
+                                                           classes of drugs achieve this eﬀect through distinct
+internal state. Notably, both hippocampus and pre-
+                                                           mechanisms in animal models of drug dependence:
+frontal cortex receive DA innervation from the VTA,
+forming reciprocal loops through which prediction,
+context, and action selection are coordinated [86].        Stimulants
+Within this loop, dopamine signaling in the ventral
+hippocampus–medial         prefrontal    (vHip–mPFC)          Psychostimulants such as cocaine, methyl-
+circuit provides a mechanistic bridge from context         phenidate, and amphetamine acutely elevate
+to memory [87]. VTA projections to ventral                 mesolimbic dopamine by acting as monoamine
+hippocampus can enhance contextual memory                  transporters, with two separable components: a
+formation under emotionally salient or rewarding           canonical dopamine-transporter (DAT) mechanism
+conditions, positioning dopamine as a facilitator          and a DAT-independent circuit mechanism. At
+of consolidation for behaviorally signiﬁcant events        the synapse, cocaine and methylphenidate bind
+[85, 88]. Consistent with this, opiate paradigms           DAT and inhibit reuptake, whereas amphetamine
+demonstrate phase- and receptor-speciﬁc gating of          both interferes with reuptake and drives reverse
+contextual memory within the vHip–mPFC pathway:            transport of dopamine through DAT, boosting
+acquisition of drug–context associations engages           extracellular levels. Crucially, multiple lines of
+a D1 receptor (D1R)–ERK–CREB pathway in both               evidence show that the acute behavioral and
+vHip and mPFC, whereas retrieval or reinstatement          neurochemical eﬀects of psychostimulants cannot
+depends on D2 receptor (D2R)–Akt–GSK3 signaling            be explained by DAT alone. In DAT knockout mice,
+in the same circuit [87]. This phase speciﬁcity is         nucleus accumbens (NAc) dopamine still rises, and
+mirrored in circuit physiology. During morphine            cocaine or amphetamine remains rewarding in
+conditioned place preference (CPP), plasticity in the      rodent dependence-like paradigms, while a selective
+vHip→mPFC pathway is altered, high-frequency               DAT blocker (GBR12909) is ineﬀective, implicating
+stimulation fails to induce LTP in morphine-paired         non-DAT routes. These non-DAT contributions
+animals, and manipulating D1R or D2R signaling             likely arise from psychostimulant actions at
+bidirectionally rescues or impairs memory depending        norepinephrine (NET) and serotonin transporters,
+on exposure state [87]. In morphine-naïve animals,         which can inﬂuence dopamine signaling even when
+D1R-driven ERK–CREB activity supports contextual           DAT is absent [90, 91]. The mPFC initiates a key
+memory formation; after chronic exposure and               DAT-independent pathway. Systemic d-amphetamine
+withdrawal,     D2R-linked      Akt–GSK3     signaling     elevates NAc dopamine and drives locomotion via
+becomes the dominant substrate for retrieval.              NET-dependent norepinephrine release in mPFC and
+Overactivation of D1R (during acquisition) or              subsequent activation of α1-adrenergic receptors;
+D2R (during reinstatement) is associated with              blocking α1 receptors with prazosin systemically
+deﬁcits in hippocampus-dependent spatial memory,           or directly in mPFC largely prevents both the
+which are alleviated by blocking the corresponding         dopamine rise and locomotor activation. These
+receptor within the vHip–mPFC pathway. Together,           ﬁndings support two forms of NAc dopamine release:
+these ﬁndings position the VTA as a dynamic                a “functional” form, generated distally via mPFC
+integrator that (i) reads contextual states from the       α1 signaling (DAT-independent) that correlates with
+hippocampus, (ii) incorporates goal and rule signals       behavior, and a “non-functional” local form within
+from the prefrontal cortex, and (iii) writes back          NAc driven by direct DAT interaction that lacks
+dopamine-dependent teaching signals to vHip and            behavioral impact. Consistently, very high intra-NAc
+mPFC to shape consolidation and retrieval according        psychostimulant concentrations can massively raise
+to behavioral relevance [85, 87]. This closed-loop         extracellular dopamine yet fail to recapitulate the
+architecture helps explain how pathological salience       robust locomotion seen with modest systemic dosing,
+in addiction can co-opt normal contextual processing       underscoring that the magnitude of dopamine alone
+via receptor- and phase-speciﬁc modulation within          is insuﬃcient without the appropriate circuit context
+the vHip–mPFC–VTA network [89].                            [91, 92]. At the level of VTA output dynamics,
+                                      NEUROSCIENCES JOURNAL 2026;31:108–126                                 117
+
+
+
+
+psychostimulants also reshape the temporal pattern-       retards acquisition consistent with an opiate-driven
+ing of dopamine neuron activity. They increase a slow     disinhibition of VTA DA neurons. Genetic loss of
+oscillation (∼0.5–1.5 Hz) in VTA dopamine neurons         MORs reduces cocaine self-administration and is
+that is tightly coupled to prefrontal activity; this      accompanied by higher frequencies of spontaneous
+oscillatory drive can selectively gate glutamatergic      inhibitory postsynaptic currents (sIPSCs) onto
+inputs in NAc depending on timing, potentially            identiﬁed VTA DA neurons, indicating increased
+explaining why mPFC-dependent, DAT-independent            GABAergic drive when MOR-mediated inhibition of
+signaling has outsized behavioral consequences [91].      GABA neurons is removed. By contrast, spontaneous
+Behaviorally, mPFC norepinephrine is therefore            glutamatergic input to DA cells is largely unchanged
+pivotal for the acute stimulant phenotype. Depleting      in MOR knockouts, highlighting the primacy of the
+mPFC norepinephrine or antagonizing adrenergic            GABA pathway in the acute opioid modulation of DA
+receptors attenuates stimulant-evoked NAc dopamine        output [95, 97]. Taken together, these data support
+increases, locomotor activation, and reward (e.g.,        an updated “GABA-gate” model in which opioids act
+conditioned place preference). Pharmacologically,         at MORs on both RMTg and local VTA GABA neurons
+α1-adrenergic antagonists (prazosin; longer-acting        to relieve inhibition of DA neurons, producing the
+doxazosin) blunt sensitized locomotion and                rapid DA surge that underlies the acute reinforcing
+drug seeking across cocaine, amphetamine,                 eﬀects of opioids and potentiates the impact of other
+methamphetamine, and MDMA in preclinical rodent           drugs (e.g., psychostimulants) [95].
+models of drug dependence and addiction-like
+behavior, with early clinical signals that doxazosin      Cannabis CB1 modulation of VTA microcircuits and
+can reduce cocaine’s positive subjective eﬀects,          dopamine output
+highlighting this pathway as a translational target
+[91, 93]. In sum, acute stimulant eﬀects emerge             Cannabinoids elevate mesolimbic dopamine pre-
+from an interplay between local DAT actions and a         dominantly by activating CB1 receptors on GABAer-
+NET/α1-driven prefrontal control loop that shapes         gic, and to a lesser extent glutamatergic, terminals
+VTA ﬁring patterns and the temporal structure of          impinging on ventral tegmental area (VTA) dopamine
+dopamine release in NAc. This framework reconciles        (DA) neurons, thereby biasing local microcircuits to-
+why systemic psychostimulants produce stronger, be-       ward disinhibition rather than directly acting on DA
+haviorally relevant outcomes than isolated NAc DAT        somata [98]. In vivo single-unit recordings show
+manipulation and motivates α1-adrenergic strategies       that 19 -THC dose-dependently increases VTA DA-cell
+to modulate acute stimulant responses [91].               ﬁring and bursting; this excitation is prevented by
+                                                          the CB1-selective antagonist SR141716A but is unaf-
+Opioids disinhibition of VTA dopamine via µ-Opioid        fected by naloxone, demonstrating a CB1-dependent
+receptors                                                 and opioid-independent mechanism. Consistent with
+                                                          an impulse-dependent process, cannabinoids also en-
+  Opioids acutely increase mesolimbic dopamine            hance nucleus accumbens dopamine measured by
+by engaging µ-opioid receptors (MORs) located on          microdialysis and fast-scan voltammetry in rodent
+GABAergic interneurons within the ventral tegmental       models of drug dependence [99]. Together, these
+area (VTA). MOR activation hyperpolarizes these           ﬁndings support a circuit model in which CB1 recep-
+interneurons and suppresses GABA release onto             tor activation primarily relieves GABAergic inhibition
+dopamine (DA) cells, thereby disinhibiting VTA            and modulates excitatory drive within VTA micro-
+DA neurons and elevating DA output to nucleus             circuits, mechanistically similar to opioid-induced
+accumbens and prefrontal targets [94, 95]. More           disinhibition, thereby facilitating dopamine output to
+recent work has reﬁned this view by showing that          limbic targets. Table 3 summarizes the eﬀects of ma-
+a major MOR-sensitive inhibitory input arises from        jor drug classes on the ventral tegmental area (VTA)
+GABAergic neurons in the rostromedial tegmental           dopamine system, detailing primary targets, circuit
+nucleus (RMTg), which densely innervate VTA               loci, neuronal responses, and behavioral outcomes in
+DA neurons and encode aversive signals; opioids           rodent models of drug dependence, as well as, where
+potently inhibit RMTg GABA cells, thereby relieving       available, human addiction studies.
+tonic inhibition of midbrain DA neurons [96, 97].
+Several converging observations support this circuit      Alcohol and multiple actions in the VTA
+mechanism. Intra-VTA pharmacology shows that a
+MOR agonist (e.g., DAMGO) enhances stimulant self-          Ethanol engages the VTA’s circuit-level and cell-
+administration in rodent models of drug dependence,       intrinsic mechanisms to elevate mesolimbic
+whereas VTA opioid antagonism (e.g., naltrexone)          dopamine. Systemically, it increases dopamine
+118                                             NEUROSCIENCES JOURNAL 2026;31:108–126
+
+
+
+
+Table 3. Drug effects on VTA dopamine system.
+                     Primary                    Dominant VTA/circuit      Acute eﬀect on VTA      Acute eﬀect on NAc
+Drug/class           receptor/target(s)         site                      DA neurons              DA/behavior                 Ref.
+Psychostimulants     DAT blockade               Local NAc DAT action;     ↑ Firing and altered    ↑ NAc DA;                   [91]
+(cocaine,            (cocaine, MPH); DAT        distal mPFC→VTA           temporal patterning;    locomotion/reward
+amphetamine,         reverse transport          loop via NET/α1           systemic eﬀects         depend on mPFC α1
+methylphenidate)     (amphetamine); plus                                  exceed isolated         signaling; α1 antagonists
+                     NET/α1 circuit                                       intra-NAc DAT action    blunt DA rise and
+                     mechanism                                                                    locomotion
+Opioids (e.g.,       µ-opioid receptor          MORs on RMTg and          Disinhibition           ↑ Mesolimbic DA;            [95]
+morphine)            (MOR)                      VTA GABA neurons          increases DA neuron     intra-VTA MOR agonism
+                                                → disinhibit DA           ﬁring                   facilitates, and VTA
+                                                neurons                                           opioid blockade reduces,
+                                                                                                  reinforcement
+Alcohol (ethanol)    Direct ion-channel         Direct action on DA       Net excitation of       ↑ DA release in NAc and     [100]
+                     eﬀects (↑ h-current; ↓     neuron membrane;          identiﬁed VTA DA        PFC; intra-VTA ethanol
+                     M-current; ↑               modulatory eﬀects via     neurons even with       supports
+                     barium-sensitive K+ );     aﬀerents                  broad synaptic          self-administration
+                     modulation of GABA,                                  receptor blockade
+                     glutamate, ACh,
+                     glycine inputs
+Nicotine             High-aﬃnity nAChRs         VTA DA                    ↑ Firing and phasic     ↑ NAc DA; genetic loss of   [101]
+                     on DA neurons              somata/dendrites;         bursting;               α4/β2/α5 blunts DA
+                     (β2-containing; α4/α6      local GABA and            synchronized DA         bursting and
+                     with α5 accessories);      glutamate aﬀerents        output                  reinforcement; α6
+                     desensitization on                                                           contributes to
+                     GABA cells; α7 on                                                            reinforcement
+                     glutamate terminals
+Cannabis             CB1 cannabinoid            CB1-dependent             ↑ DA-cell ﬁring and     ↑ NAc DA                    [98, 99]
+(19 -THC; CB1        receptors on GABA          modulation within         bursting via reduced    (impulse-dependent) and
+agonists)            (and some glutamate)       VTA; disinhibition of     GABAergic inhibition;   reinforcement-related
+                     aﬀerents                   DA neurons and            eﬀects blocked by CB1   activity in dependence
+                                                modulation of             antagonist              paradigms
+                                                excitatory input          (SR141716A)
+
+
+
+release in the nucleus accumbens and prefrontal                         initial impact on VTA output. At the receptor level,
+cortex and supports intra-VTA self-administration                       these synaptic inﬂuences are modulatory rather than
+in rodent dependence-like paradigms, establishing a                     obligatory ethanol’s excitation of identiﬁed VTA
+direct link to reinforcement [102]. Ethanol also acts                   dopamine neurons persists after dissociation from lo-
+directly on VTA dopamine neurons by enhancing the                       cal circuitry and during broad blockade of GABA_A/B,
+hyperpolarization-activated current (h-current) and                     NMDA/AMPA/mGlu,           and    muscarinic/nicotinic
+suppressing the M-current, changes that increase ex-                    receptors [107], underscoring a bona ﬁde direct
+citability; conversely, it can boost a barium-sensitive                 action on dopamine-neuron membranes. Finally,
+K+ current, an opposing inﬂuence that helps explain                     ethanol perturbs dopamine autoregulation by
+dose- and state-dependent eﬀects [102]. Repeated                        impairing D2 -receptor desensitization in VTA neurons
+exposure augmented the net excitatory response to                       and alters synaptic plasticity (LTP/LTD) in both
+acute ethanol, consistent with VTA-level neuroad-                       dopamine and GABA cells, changes thought to shift
+aptation. Beyond intrinsic conductances, ethanol                        the reward/aversion balance during the transition
+reshapes aﬀerent control of VTA neurons: gluta-                         from use to dependence in preclinical models [100].
+matergic [103] and cholinergic [104] drives tend to
+be increased, while GABAergic [105] and glycinergic                     Nicotine and direct activation of nAChRs on VTA
+inputs [106] are reduced, collectively biasing                          dopamine neurons
+the network toward dopamine-neuron activation.
+Importantly, many of these synaptic eﬀects emerge                         Nicotine    engages     high-aﬃnity      nicotinic
+at low, behaviorally relevant ethanol concentrations,                   acetylcholine receptors (nAChRs) expressed on
+where ethanol preferentially suppresses VTA GABA                        VTA dopamine (DA) neurons predominantly
+neuron excitability and GABAergic transmission                          β2-containing assemblies (e.g., α4β2, α6β2 with
+onto dopamine cells [105], highlighting that GABA                       α5/β3 accessories) to increase ﬁring rate, promote
+microcircuits make a critical contribution to ethanol’s                 phasic bursting, and enhance synchrony across DA
+                                        NEUROSCIENCES JOURNAL 2026;31:108–126                                  119
+
+
+
+
+populations. In parallel, nicotine modulates local          [111]. With repeated use and withdrawal, plasticity
+aﬀerents: rapid desensitization of α4β2 nAChRs              consolidates downstream in the nucleus accumbens
+on VTA GABA neurons favors disinhibition, while             (NAc): PFC→NAc and other inputs acquire silent
+α7 nAChRs facilitate glutamatergic drive, together          synapses that later “mature,” and CP-AMPARs accu-
+yielding a net rise in DA neuron excitability and           mulate during protracted abstinence, cellular changes
+dopamine release in nucleus accumbens. Genetic              causally linked to incubating cue-evoked drug seek-
+and circuit evidence underscore this mechanism.             ing in dependence-like paradigms. Ensemble activity
+Mice lacking the β2 subunit failed to show                  in the NAc shell increases across withdrawal and
+nicotine-evoked DA activation or self-administration        biases relapse propensity [112, 113]. Over longer
+in dependence-like paradigms, and these deﬁcits             timescales, addiction and chronic drug dependence
+are rescued by β2 re-expression in the VTA; α4              reshape corticostriatal loops: direct (D1) and indirect
+deletion blunts nicotine-induced bursting and               (D2) medium spiny neuron pathways adopt cell-type–
+limits self-administration, whereas loss of α5              speciﬁc gene programs and synaptic rules that favor
+shifts dose–response to require higher nicotine for         drug seeking and blunt aversion/suppression, and be-
+comparable DA activation [108, 109]. Regionally,            havioral control shifts from ventral (NAc) to dorsal
+posterior VTA (rich in α4/α6/β3 expression) exhibits        striatal circuits that encode habits and compulsion
+stronger nicotine-evoked increases in DA ﬁring              in rodent models and human neuroimaging stud-
+and bursting than anterior VTA, aligning with               ies [114]. In parallel with these dopamine-centered
+the posterior VTA’s greater reinforcing sensitivity         changes, drugs of abuse also induce distinct but
+to intra-VTA nicotine, as illustrated in Fig. 2.            complementary plasticity within VTA GABA microcir-
+Collectively, these data establish that nicotine’s acute    cuits. Distinct GABAergic inputs onto VTA dopamine
+reinforcing actions arise from direct nAChR-mediated        neurons undergo drug- and stress-induced alter-
+excitation of DA neurons, complemented by                   ations in synaptic strength and ﬁring that reshape
+nAChR-dependent control of local inhibitory and             their inhibitory control over dopamine output and
+excitatory inputs, as illustrated in Fig. 3 [101].          learning-related behavior in rodent models [97, 105].
+                                                            Together with the better-characterized adaptations
+                                                            in VTA dopamine neurons, these inhibitory-circuit
+Neuroadaptations in addiction                               changes position VTA GABA plasticity as an inte-
+                                                            gral component of the mesocorticolimbic “addiction
+  Addictive drugs leave enduring “traces” across            engram,” rather than a secondary consequence of
+mesocorticolimbic circuits that progressively shift         dopamine-centered signaling [20, 24].
+behavior from goal-directed use to compulsive
+seeking and taking. These adaptations unfold
+over time from rapid synaptic changes after                 Glial, neuroimmune, and epigenetic “Scar”
+initial exposure to circuit- and gene-regulatory            mechanisms
+remodeling during abstinence, ultimately altering
+motivation, stress responsivity, and executive control.       Neuroadaptations are not restricted to neurons.
+A complementary clinical framework is the allostatic        During withdrawal in rodent models of cocaine de-
+model, in which negative aﬀect and hyperkatifeia            pendence, microglia are required for CP-AMPAR
+drive drug seeking via negative reinforcement as            buildup at NAc synapses, and astrocytes show
+dependence develops [110].                                  abstinence- and sex-dependent alterations in gluta-
+                                                            mate handling and synaptic coverage, pointing to
+                                                            glia as active drivers, not mere bystanders, of persis-
+Synaptic and circuit plasticity in VTA–NAc–                 tent plasticity [115, 116]. In parallel, drug exposure
+striatal networks                                           engages epigenetic programs that stabilize drug
+                                                            memories and vulnerability over weeks to months.
+  Early exposures to drugs of abuse rapidly re-             Chromatin remodeling, DNA methylation, histone
+model glutamatergic synapses onto VTA dopamine              modiﬁcations, and noncoding RNAs reconﬁgure tran-
+neurons, providing a “teaching signal” that seeds           scriptional landscapes in the NAc and related regions.
+longer-term circuit changes. Within hours of a ﬁrst         Time-dependent DNA methylation increases in the
+cocaine exposure in rodent models, VTA DA neurons           NAc have been linked to incubated cocaine seeking in
+show an increased AMPA/NMDA ratio and inser-                rodent dependence-like paradigms, and broader work
+tion of calcium-permeable, GluA2-lacking AMPARs;            catalogs histone/DNA modiﬁcations (e.g., acetyla-
+mGluR1 signaling can reverse this state, highlight-         tion, methylation, dopaminylation) across various
+ing a labile early memory trace of drug exposure            substances [112, 117]. These glial and epigenetic
+120                                             NEUROSCIENCES JOURNAL 2026;31:108–126
+
+
+
+
+Fig. 3. The distribution of nicotinic acetylcholine receptor (nAChR) subunits on VTA DA, GABAergic, and glutamatergic neurons shows key
+afferent inputs and projection targets. DA neurons (green) receive glutamatergic input (yellow) from cortex/LDTg and GABAergic input (blue)
+from VP/NAc, while cholinergic afferents (purple) from PPTg/LDTg activate distinct nAChR subtypes. Outputs to NAc, PFC, and striatum
+mediate reward, motivation, and reinforcement.
+
+
+mechanisms together act as “molecular and cellular                      tations with stress-system engagement, contemporary
+scars” that maintain high relapse risk long after drug                  models view addiction as a distributed network dis-
+clearance, providing a substrate for persistent sensi-                  order with multiple interlocking intervention points.
+tivity to cues and stress.
+                                                                        Therapeutic implications: Current treatment
+Stress, Anti-reward systems, and                                        approaches
+translational targets                                                   Pharmacological interventions
+
+   A further layer of adaptation involves recruitment                     Medications that modulate mesolimbic dopamine
+of stress and anti-reward systems. Chronic exposure                     often act on receptors that gate VTA output and
+to drugs recruits corticotropin-releasing factor and                    remain ﬁrst-line when approved for substance
+dynorphin/κ-opioid signaling in extended amygdala                       use disorders (SUDs). For alcohol use disorder
+circuits, producing hyperkatifeia and dysphoria; drug                   (AUD), opioid antagonism with naltrexone reduces
+seeking is then maintained partly to relieve this                       alcohol’s ability to recruit β-endorphin–mediated
+negative state, reinforcing the cycle of dependence                     disinhibition of VTA dopamine neurons and
+[118]. These insights have motivated translational                      lowers accumbal dopamine, contributing to
+strategies that target plasticity mechanisms rather                     reduced drinking; across head-to-head reviews,
+than only acute drug eﬀects, for example, restoring                     naltrexone shows consistent, moderate eﬃcacy
+mGluR1/5 tone, normalizing CP-AMPARs, or modu-                          [120]. Glutamate and GABA-directed agents also
+lating gene-regulatory programs to reduce incubated                     leverage VTA-linked circuitry: acamprosate mitigates
+craving and relapse [119]. By integrating synap-                        withdrawal-related glutamatergic hyperexcitability
+tic/circuit, glial–neuroimmune, and epigenetic adap-                    (with debated molecular targets) and improves
+                                       NEUROSCIENCES JOURNAL 2026;31:108–126                                   121
+
+
+
+
+abstinence outcomes. In contrast, topiramate (mixed        In particular, resting-state and task-based connec-
+GABAergic/glutamatergic actions) shows moderate            tivity within mesocorticolimbic networks (including
+evidence for reducing drinking days and heavy              VTA–striatal–prefrontal links) are being used as pre-
+drinking [121, 122]. A GABA _B-receptor approach           dictive features and mechanistic readouts, while early
+(baclofen) likely increases abstinent days and reduces     trials relate medication eﬀects (e.g., naltrexone or
+relapse, particularly in detoxiﬁed patients though         topiramate) to changes in reward-network connectiv-
+eﬀects on heavy drinking are less consistent [123].        ity. Genetic variation in receptors and channels that
+For nicotine, the α4β2-partial agonist varenicline         shape VTA function (e.g., CHRNA5 aﬀecting nAChR
+dampens nicotine-evoked VTA ﬁring and striatal             physiology on VTA DA neurons) provides plausible
+dopamine, supporting its clinical eﬃcacy for               pharmacogenomic levers for dosing, drug choice, and
+cessation [124]. For stimulant use disorders, no medi-     relapse risk models [132].
+cations are yet approved; circuit-informed adrenergic
+strategies (e.g., α1-adrenergic antagonists such as        Circuit-specific interventions
+doxazosin) have shown human laboratory signals but
+mixed/limited clinical data to date [93, 125].               Projection-deﬁned studies in preclinical rodent
+                                                           models continue to map the most eﬀective con-
+Behavioral interventions                                   trol points within VTA microcircuits. Optogenetic
+                                                           and chemogenetic manipulations reveal that in-
+   Behavioral therapies capitalize on reward learning      puts from ventral pallidum, nucleus accumbens, and
+to strengthen non-drug reinforcement and executive         rostromedial tegmental nucleus bidirectionally regu-
+control. Contingency management (CM) produces re-          late reward seeking and cocaine-evoked adaptations,
+liable, objective improvements in abstinence (urine-       nominating these nodes and their synapses onto iden-
+veriﬁed) with beneﬁts that can persist months after        tiﬁed VTA cell types as translational targets for neu-
+treatment; recent syntheses and federal guidance now       romodulation or targeted pharmacology [133, 134].
+endorse CM as an evidence-based standard [126,
+127]. Cognitive-behavioral therapy (CBT) remains a         Epigenetic therapies
+core modality with small-to-moderate eﬀects across
+alcohol and other drugs, and it pairs well with CM            Drug exposure drives durable gene-regulatory
+and pharmacotherapy [128].                                 changes across VTA- striatal circuits (histone acety-
+                                                           lation/methylation, DNA methylation, noncoding
+Neuromodulation (emerging)                                 RNAs). Recent reviews argue for “epidrugs” (e.g.,
+                                                           histone deacetylase and DNA-methyltransferase in-
+   Noninvasive brain stimulation aimed at top-down         hibitors) as adjuncts to reverse drug dependence–
+control of mesolimbic circuits shows promise: meta-        linked transcriptional states observed in preclinical
+analyses report medium-to-large reductions in crav-        models and associated with substance use disorders
+ing and substance use with repetitive TMS, par-            in humans; preclinical data show normalization of
+ticularly when targeting left dorsolateral prefrontal      synaptic plasticity and reduced drug seeking after
+cortex over multiple sessions [129]. Deep brain            such interventions [135].
+stimulation (DBS) of VTA-connected nodes (most
+commonly nucleus accumbens/ventral capsule) is             Neurofeedback and brain-computer interfaces
+under active investigation for treatment-refractory
+cases; an exploratory randomized trial in AUD and            Real-time fMRI neurofeedback (rt-fMRI-NF) is be-
+recent reviews suggest feasibility and potential ben-      ing tested to down- or up-regulate activity within
+eﬁt, but evidence remains preliminary and not yet          reward circuits, including studies that explicitly train
+practice-changing [130, 131].                              VTA regulation and report reductions in craving-
+                                                           related measures. Emerging reviews synthesize grow-
+                                                           ing evidence for NF as a circuit-informed behavioral
+Future therapeutic directions                              tool, and early trials explore closed-loop paradigms
+Precision medicine                                         that detect craving-related patterns and deliver con-
+                                                           tingent feedback or stimulation [136].
+  Advances in imaging and genomics are enabling
+individualized treatment selection for substance use       Combination and algorithm-guided care
+disorders (SUDs). Systematic frameworks now in-
+tegrate behavioral, environmental, and biological           Converging work suggests the greatest beneﬁt
+markers to stratify patients and forecast outcomes.        will come from rational combinations integrating
+122                                    NEUROSCIENCES JOURNAL 2026;31:108–126
+
+
+
+
+pharmacotherapies with behavioral treatments and           Consent for publication
+neuromodulation selected by individual biomarker
+proﬁles (connectivity ﬁngerprints, cue-reactivity sig-        Not applicable.
+natures, genotype). Imaging-guided TMS programs
+illustrate how biomarkers can steer target selection
+                                                           Availability of data and materials
+and scheduling; similar algorithms are developed for
+integrating medications and behavioral plans around
+                                                              Not applicable to this article.
+a patient’s VTA-centric dysfunctions [137].
+
+                                                           Authors’ contributions
+Conclusion
+                                                             The author conceptualized the study, performed the
+   The VTA exerts wide-ranging control over motiva-        analysis, wrote the original draft, reviewed and edited
+tion and learning through heterogeneous cell types         the manuscript, and is the corresponding author. The
+and projection-speciﬁc signaling to limbic and cor-        author read and approved the ﬁnal manuscript.
+tical targets. Multi-transmitter co-release (dopamine,
+GABA, and glutamate) endows VTA outputs with
+fast synaptic and slower modulatory control, en-           Acknowledgment
+abling ﬂexible encoding of reward, aversion, and
+context. In parallel, closed-loop interactions with the      The authors gratefully acknowledge Ayman A.
+hippocampus and prefrontal cortex bind spatiotem-          Fayek for providing the medical illustrations for this
+poral context to task rules, allowing state-dependent      manuscript. Also the author would like to acknowl-
+gating of behavior. These architectural and compu-         edge Scribendi Company for editing the manuscript.
+tational features explain how VTA activity confers
+incentive salience and generates prediction-error sig-     Disclosure
+nals that train downstream circuits. Addictive drugs
+and drugs producing dependence-like states in pre-           The author has no conﬂicts of interest, and the
+clinical models perturb these same motifs through          work was not supported or funded by any company
+class-speciﬁc actions on VTA neurons and aﬀer-             or organization.
+ents, seeding rapid synaptic changes that consolidate
+into enduring mesocorticolimbic adaptations. Rec-
+ognizing addiction as a circuit-level disorder mani-       References
+festing clinically as substance use disorders (SUDs)
+and informed by mechanistic insights from rodent              1. Cai J, Tong Q. Anatomy and function of ventral tegmen-
+models of drug dependence motivates multifaceted                 tal area glutamate neurons. Front Neural Circuits. 2022;
+                                                                 16:867053.
+treatment strategies. Alongside established phar-             2. Zaharia C. Strain electricity. J Appl Phys. 1973;44(11):
+macological and behavioral approaches, emerging                  5198–5199.
+interventions such as biomarker-guided neuromodu-             3. Saleh Y, Jarratt-Barnham I, Fernandez-Egea E, Husain
+lation, projection-informed circuit targets, epigenetic          M. Mechanisms underlying motivational dysfunction in
+therapies, and neurofeedback aim to normalize dys-               schizophrenia. Front Behav Neurosci. 2021;15:709753.
+                                                              4. Döbrössy MD, Ramanathan C, Ashouri Vajari D, Tong Y,
+regulated network dynamics. Future work should                   Schlaepfer T, Coenen VA. Neuromodulation in psychiatric
+prioritize projection- and cell-type resolved biomark-           disorders: experimental and clinical evidence for reward and
+ers, longitudinal tracking of circuit function, and              motivation network deep brain stimulation: focus on the me-
+combinatorial, algorithm-guided care to match inter-             dial forebrain bundle. Eur J Neurosci. 2021;53(1):89–113.
+ventions to individual circuit phenotypes. Precision          5. Valenti O, Rekawek KA, Wieser S, Bulut H, Scholze P, Boehm
+                                                                 S. Plasticity of ventral tegmental area disturbance during ab-
+frameworks promise more durable remission by                     stinence after repeated amphetamine exposure: restoration
+restoring balanced VTA-centered computation across               by selective activation of group II metabotropic glutamate
+reward, control, and context networks.                           receptors. Front Pharmacol. 2025;16:1–17.
+                                                              6. Huang D, Grady FS, Peltekian L, Geerling JC. Eﬀerent pro-
+                                                                 jections of Vglut2, Foxp2, and Pdyn parabrachial neurons in
+Declarations                                                     mice. J Comp Neurol 2021;529(4):657–693.
+                                                              7. Huang D, Grady FS, Peltekian L, Laing JJ, Geerling JC.
+                                                                 Eﬀerent projections of CGRP/Calca-expressing parabrachial
+Ethics approval and consent to participate                       neurons in mice. J Comp Neurol 2021;529(11):2911–2957.
+                                                              8. Hou G, Hao M, Duan J, Han MH. The formation and function
+  Not applicable as this study did not involve human             of the VTA dopamine system. Int J Mol Sci. 2024;25(7):
+participants, human data, or human tissue.                       3875.
+                                              NEUROSCIENCES JOURNAL 2026;31:108–126                                              123
+
+
+
+
+ 9. Trutti AC, Fontanesi L, Mulder MJ, Bazin PL, Hommel B,          28. Zhou K, Xu H, Lu S, Jiang S, Hou G, Deng X, et al. Reward
+    Forstmann BU. A probabilistic atlas of the human ventral            and aversion processing by input-deﬁned parallel nucleus
+    tegmental area (VTA) based on 7 Tesla MRI data. Brain Struct        accumbens circuits in mice. Nat Commun. 2022;13(1):6244.
+    Funct. 2021;226(4):1155–1167.                                   29. Taylor SR, Badurek S, Dileone RJ, Nashmi R, Minichiello
+10. Prasad AA, Wallén-Mackenzie Å. Architecture of the subtha-          L, Picciotto MR. GABAergic and glutamatergic eﬀerents
+    lamic nucleus. Commun Biol. 2024;7(1):78.                           of the mouse ventral tegmental area. J Comp Neurol.
+11. Lu X, Xue J, Lai Y, Tang X. Heterogeneity of mesen-                 2014;522(14):3308–3334.
+    cephalic dopaminergic neurons: From molecular classiﬁca-        30. McGovern DJ, Polter AM, Prévost ED, Ly A, McNulty CJ,
+    tions, electrophysiological properties to functional connec-        Rubinstein B, et al. Ventral tegmental area glutamate neurons
+    tivity. FASEB J. 2024;38(3):1–14.                                   establish a mu-opioid receptor gated circuit to mesolimbic
+12. Salmani bY, lahti l, gillberg l, Jacobsen jk, Mantas I, Sven-       dopamine neurons and regulate opioid–seeking behavior.
+    ningsson P, et al. Transcriptomic atlas of midbrain dopamine        Neuropsychopharmacology. 2023;48(13):1889–1900.
+    neurons uncovers diﬀerential vulnerability in a Parkinson-      31. Hnasko TS, Hjelmstad GO, Fields HL, Edwards RH. Ven-
+    ism lesion model. Elife. 2024;12:1–32.                              tral tegmental area glutamate neurons: electrophysiological
+13. Morales M, Margolis EB. Ventral tegmental area: cellular het-       properties and projections. J Neurosci. 2012;32(43):15076–
+    erogeneity, connectivity and behaviour. Nat Rev Neurosci.           15085.
+    2017;18(2):73–85.                                               32. Fitzgerald ND, Day JJ. Neuronal heterogeneity in the ventral
+14. Holly EN, Miczek KA. Ventral tegmental area dopamine                tegmental area: distinct contributions to reward circuitry and
+    revisited: eﬀects of acute and repeated stress. Psychophar-         motivated behavior. Addict Neurosci. 2025;14:100191.
+    macology (Berl). 2016;233(2):163–186.                           33. Jiang Q, Bakhurin KI, Hughes RN, Lu B, Ruan S, Yin HH.
+15. Soares-Cunha C, Heinsbroek JA. Ventral pallidal regulation          GABAergic neurons in the ventral tegmental area represent
+    of motivated behaviors and reinforcement. Front Neural Cir-         and regulate force vectors. Cell Rep. 2025;44(2):115313.
+    cuits. 2023;17:1086053.                                         34. Oriol L, Chao M, Kollman GJ, Dowlat DS, Singhal SM,
+16. Han Y, Ai L, Song S, Zhou Y, Chen D, Sha S, et al.                  Steinkellner T, et al. Ventral tegmental area interneurons re-
+    Midbrain glutamatergic circuit mechanism of resilience to           visited: GABA and glutamate projection neurons make local
+    socially transferred allodynia in male mice. Nat Commun.            synapses. Elife. 2025;13:1–24.
+    2024;15(1):4947.                                                35. Srinivasan S, Limani F, Hanzlova M, La Batide-Alanore S,
+17. Basso V, Döbrössy MD, Thompson LH, Kirik D, Fuller HR,              Klotz S, Hnasko TS, et al. Evidence for low aﬃnity of GABA
+    Gates MA. State of the art in sub-phenotyping midbrain              at the vesicular monoamine transporter VMAT2 – Impli-
+    dopamine neurons. Biology (Basel). 2024;13(9):690.                  cations for transmitter co-release from dopamine neurons.
+18. Eskenazi D, Malave L, Mingote S, Yetnikoﬀ L, Ztaou S,               Neuropharmacology. 2025;270:110367.
+    Velicu V, et al. Dopamine neurons that cotransmit glutamate,    36. Patel JC, Sherpa AD, Melani R, Witkovsky P, Wiseman MR,
+    from synapses to circuits to behavior. Front Neural Circuits.       O’Neill B, et al. GABA co-released from striatal dopamine
+    2021;15:665386.                                                     axons dampens phasic dopamine release through autoreg-
+19. Michel L, Molina P, Mameli M. The behavioral relevance              ulatory GABAA receptors. Cell Rep. 2024;43(3):113834.
+    of a modular organization in the lateral habenula. Neuron.      37. Miranda-Barrientos J, Chambers I, Mongia S, Liu B, Wang
+    2024;112(16):2669–2685.                                             HL, Mateo-Semidey GE, et al. Ventral tegmental area GABA,
+20. Bouarab C, Thompson B, Polter AM. VTA GABA neurons                  glutamate, and glutamate-GABA neurons are heterogeneous
+    at the interface of stress and reward. Front Neural Circuits.       in their electrophysiological and pharmacological proper-
+    2019;13:78.                                                         ties. Eur J Neurosci. 2021;54(1):4061–4084.
+21. Merrill CB, Friend LN, Newton ST, Hopkins ZH, Edwards           38. Oliva I, Wanat MJ. Ventral tegmental area aﬀerents and
+    JG. Ventral tegmental area dopamine and GABA neurons:               drug-dependent behaviors. Front Psychiatry. 2016;7:30.
+    Physiological properties and expression of mRNA for en-         39. Elum JE, Szelenyi ER, Juarez B, Murry AD, Loginov G,
+    docannabinoid biosynthetic elements. Sci Rep. 2015;5(1):            Zamorano CA, et al. Distinct dynamics and intrinsic prop-
+    16176.                                                              erties in ventral tegmental area populations mediate reward
+22. Urrutia-Piñones J, Morales-Moraga C, Sanguinetti-González           association and motivation. Cell Rep. 2024;43(9):114668.
+    N, Escobar AP, Chiu CQ. Long-range GABAergic projections        40. Xu Y, Lin Y, Yu M, Zhou K. The nucleus accumbens in reward
+    of cortical origin in brain function. Front Syst Neurosci.          and aversion processing: insights and implications. Front
+    2022;16:841869.                                                     Behav Neurosci. 2024;18:1420028.
+23. Wallace ML, Sabatini BL. Synaptic and circuit functions of      41. Marinescu AM, Labouesse MA. The nucleus accumbens shell:
+    multitransmitter neurons in the mammalian brain. Neuron.            a neural hub at the interface of homeostatic and hedonic
+    2023;111(19):2969–2983.                                             feeding. Front Neurosci. 2024;18:1437210.
+24. Creed MC, Ntamati NR, Tan KR. VTA GABA neurons mod-             42. King N, Dafny N. The ventral tegmental area (VTA), the
+    ulate speciﬁc learning behaviors through the control of             nucleus accumbens (NAc), the caudate nucleus (CN) and the
+    dopamine and cholinergic systems. Front Behav Neurosci.             prefrontal cortex (PFC) role in the response to acute and
+    2014;8:8.                                                           chronic methylphenidate. J Exp Neurol. 2023;4(1):21–36.
+25. van Zessen R, Phillips JL, Budygin EA, Stuber GD. Activation    43. Ebrahimi MN, Banazadeh M, Alitaneh Z, Suha AJ, Esmaeili
+    of VTA GABA neurons disrupts reward consumption. Neu-               A, Hasannejad-Asl B, et al. The distribution of neurotrans-
+    ron. 2012;73(6):1184–1194.                                          mitters in the brain circuitry: Mesolimbic pathway and
+26. Tan KR, Yvon C, Turiault M, Mirzabekov JJ, Doehner                  addiction. Physiol Behav. 2024;284:114639.
+    J, Labouèbe G, et al. GABA neurons of the VTA drive             44. Zhong P, Qin L, Yan Z. Dopamine diﬀerentially regulates re-
+    conditioned place aversion. Neuron. 2012;73(6):1173–                sponse dynamics of prefrontal cortical principal neurons and
+    1183.                                                               interneurons to optogenetic stimulation of inputs from ven-
+27. Yu YH, Tsai AC, Ou CY, Cheng CN, Chang FC, Shyu BC, et              tral tegmental area. Cereb Cortex. 2020;30(8):4402–4409.
+    al. Optogenetic stimulation in the medial prefrontal cortex     45. Tritsch NX, Sabatini BL. Dopaminergic modulation of synap-
+    modulates stimulus valence from rewarding and aversive to           tic transmission in cortex and striatum. Neuron. 2012;76(1):
+    neutral states. Front Psychiatry. 2023;14:1119803.                  33–50.
+124                                              NEUROSCIENCES JOURNAL 2026;31:108–126
+
+
+
+
+46. Carr DB, Sesack SR. Projections from the rat prefrontal cor-        64. Hui M, Beier KT. Deﬁning the interconnectivity of the medial
+    tex to the ventral tegmental area: target speciﬁcity in the             prefrontal cortex and ventral midbrain. Front Mol Neurosci.
+    synaptic associations with mesoaccumbens and mesocortical               2022;15:971349.
+    neurons. J Neurosci. 2000;20(10):3864–3873.                         65. Sayegh FJ, Mouledous L, Macri C, Macedo JP, Lejards C,
+47. Geisler S, Zahm DS. Aﬀerents of the ventral tegmental area              Rampon C. Ventral tegmental area dopamine projections to
+    in the rat-anatomical substratum for integrative functions. J           the hippocampus trigger long-term potentiation and contex-
+    Comp Neurol. 2005;490(3):270–294.                                       tual learning. Nat Commun. 2024;15(1):4100.
+48. Li M, Yang G. A mesocortical glutamatergic pathway modu-            66. Rizzi-Wise CA, Wang DV. Putting together pieces of the lat-
+    lates neuropathic pain independent of dopamine co-release.              eral septum: multifaceted functions and its neural pathways.
+    Nat Commun. 2024;15(1):643.                                             eNeuro. 2021;8(6). ENEURO.0315-21.2021.
+49. Li Y, Zhang B, Pan X, Wang Y, Xu X, Wang R, et al. Dopamine-        67. Yoo JH, Zell V, Gutierrez-Reed N, Wu J, Ressler R, Shenasa
+    mediated major depressive disorder in the neural circuit of             MA, et al. Ventral tegmental area glutamate neurons co-
+    ventral tegmental area-nucleus accumbens-medial prefrontal              release GABA and promote positive reinforcement. Nat
+    cortex: From biological evidence to computational models.               Commun. 2016;7(1):13697.
+    Front Cell Neurosci. 2022;16:923039.                                68. Phillips RA, Tuscher JJ, Black SL, Andraka E, Fitzgerald
+50. Kong MS, Zweifel LS. Central amygdala circuits in valence               ND, Ianov L, et al. An atlas of transcriptionally deﬁned
+    and salience processing. Behav Brain Res. 2021;410:113355.              cell populations in the rat ventral tegmental area. Cell Rep.
+51. Avegno EM, Gilpin NW. Reciprocal midbrain-extended                      2022;39(1):110616.
+    amygdala circuit activity in preclinical models of alcohol use      69. Barbano MF, Qi J, Chen E, Mohammad U, Espinoza O,
+    and misuse. Neuropharmacology. 2022;202:108856.                         Candido M, et al. VTA glutamatergic projections to the nu-
+52. Sladky R, Kargl D, Haubensak W, Lamm C. An active infer-                cleus accumbens suppress psychostimulant-seeking behav-
+    ence perspective for the amygdala complex. Trends Cogn Sci.             ior. Neuropsychopharmacology. 2024;49(12):1905–1915.
+    2024;28(3):223–236.                                                 70. Zeidler Z, Gomez MF, Gupta TA, Shari M, Wilke SA,
+53. Liu A, Cheng Y, Huang J. Neurons innervating both the                   DeNardo LA. Dopaminergic projections to the prefrontal cor-
+    central amygdala and the ventral tegmental area encode                  tex are critical for rapid threat avoidance learning. Curr Biol.
+    diﬀerent emotional valences. Front Neurosci. 2023;17:1178               2025;35(17):4259–4269.
+    693.                                                                71. Smith DM, Torregrossa MM. The ventral tegmental area
+54. Xin J, Shan W, Li J, Yu H, Zuo B. Activation of the lateral             dopamine to basolateral amygdala projection supports ac-
+    habenula-ventral tegmental area neural circuit contributes              quisition of cocaine self-administration. Neuropharmacol-
+    to postoperative cognitive dysfunction in mice. Adv Sci.                ogy. 2024;261:110160.
+    2022;9(22):2202228.                                                 72. Morel C, Montgomery SE, Li L, Cuttoli RD, Teichman EM,
+55. Cerniauskas I, Winterer J, W de Jong J, Lukacsovich D, Yang             Juarez B, et al. Midbrain projection to the basolateral amyg-
+    H, Fawwad Khan F, et al. Chronic stress induces activity,               dala encodes anxiety-like but not depression-like behaviors.
+    synaptic, and transcriptional remodeling of the lateral habe-           Nat Commun. 2022;13(1):1532.
+    nula associated with deﬁcits in motivated behaviors. Neuron.        73. Mahadevia D, Saha R, Manganaro A, Chuhma N, Annette
+    2019;104(5):899–915.                                                    Ziolkowski-Blake AZ, Morgan AA, et al. Dopamine promotes
+56. Hones VI, Mizumori SJY. Response ﬂexibility: the role of the            aggression in mice via ventral tegmental area to lateral sep-
+    lateral habenula. Front Behav Neurosci. 2022;16:852235.                 tum projections. Nat Commun. 2021;12(1):6796.
+57. Sun Y, Cao J, Xu C, Sun J, Liu X, Shi Z, et al. Lateral habenula-   74. Grove JCR, Gray LA, La Santa Medina N, Sivakumar N, Ahn
+    rostromedial tegmental nucleus circuit mediates inﬂamma-                JS, Corpuz TV, et al. Dopamine subsystems that track internal
+    tory pain in mice. J Headache Pain. 2025;26(1):105.                     states. Nature. 2022;608(7922):374–380.
+58. Godfrey N, Qiao M, Borgland SL. Activation of LH GABAergic          75. Deng Y, Song D, Ni J, Qing H, Quan Z. Reward predic-
+    inputs counteracts fasting-induced changes in tVTA/RMTG                 tion error in learning-related behaviors. Front Neurosci.
+    neurons. J Physiol. 2022;600(9):2203–2224.                              2023;17:1171612.
+59. Liu Y, Wu K, Dong Y, Jia R, Chen X, Ge A, et al. Lateral habe-      76. Solié C, Girard B, Righetti M, Tapparel M, Bellone C. VTA
+    nula induces cognitive and aﬀective dysfunctions in mice                dopamine neuron activity encodes social interaction and
+    with neuropathic pain via an indirect pathway to the ven-               promotes reinforcement learning through social prediction
+    tral tegmental area. Neuropsychopharmacology. 2025;50(7):               error. Nat Neurosci. 2022;25(1):86–97.
+    1039–1050.                                                          77. Kaushik P, Naudé J, Raju SB, Alexandre F. A VTA GABAer-
+60. Vincent KF, Zhang ER, cho AJ, Kato-Miyabe R, Mallari                    gic computational model of dissociated reward prediction
+    OG, Moody OA, et al. Electrical stimulation of the ventral              error computation in classical conditioning. Neurobiol Learn
+    tegmental area restores consciousness from sevoﬂurane-,                 Mem. 2022;193:107653.
+    dexmedetomidine-, and fentanyl-induced unconsciousness in           78. Bromberg-Martin ES, Matsumoto M, Hikosaka O. Dopamine
+    rats. Brain Stimul. 2024;17(3):687–697.                                 in motivational control: rewarding, aversive, and alerting.
+61. Bracht T, Mertse N, Walther S, Lüdi K, Breit S, Federspiel              Neuron. 2010;68(5):815–834.
+    A, et al. Link between structural connectivity of the me-           79. Salamone JD, Correa M. The mysterious motivational func-
+    dial forebrain bundle, functional connectivity of the ventral           tions of mesolimbic dopamine. Neuron. 2012;76(3):470–
+    tegmental area, and anhedonia in unipolar depression. Neu-              485.
+    roImage Clin. 2022;34:102961.                                       80. Berridge KC. Motivation concepts in behavioral neuro-
+62. Blum K, Bowirrat A, Sunder K, Thanos PK, Hanna C, Gold                  science. Physiol Behav. 2004;81(2):179–209.
+    MS, et al. Dopamine dysregulation in reward and autism              81. Robinson T. The neural basis of drug craving: an
+    spectrum disorder. Brain Sci. 2024 Jul;14(7):733.                       incentive-sensitization theory of addiction. Brain Res Rev.
+63. Vander Weele CM, Siciliano CA, Tye KM. Dopamine tunes                   1993;18(3):247–291.
+    prefrontal outputs to orchestrate aversive processing. Brain        82. Wolf ME. Synaptic mechanisms underlying persistent co-
+    Res. 2019;1713:16–31.                                                   caine craving. Nat Rev Neurosci. 2016;17:351–365.
+                                              NEUROSCIENCES JOURNAL 2026;31:108–126                                                125
+
+
+
+
+83. Lüscher C, Malenka RC. Drug-evoked synaptic plasticity in       100. You C, Vandegrift B, Brodie MS. Ethanol actions on
+    addiction: from molecular changes to circuit remodeling.             the ventral tegmental area: novel potential targets on
+    Neuron. 2011;69(4):650–663.                                          reward pathway neurons. Psychopharmacology (Berl).
+84. Ramirez-Mejia G, Gil-Lievana E, Urrego-Morales O, Galvez-            2018;235(6):1711–1726.
+    Marquez D, Hernández-Ortiz E, Carrillo-Lorenzo JA, et al.       101. Faure P, Tolu S, Valverde S, Naudé J. Role of nicotinic acetyl-
+    Salience to remember: VTA-IC dopaminergic pathway activ-             choline receptors in regulating dopamine neuron activity.
+    ity is necessary for object recognition memory formation.            Neuroscience. 2014;282:86–100.
+    Neuropharmacology. 2023;228:109464.                             102. Di Chiara G, Imperato A. Drugs abused by humans prefer-
+85. Lisman JE, Grace AA. The hippocampal-VTA loop: con-                  entially increase synaptic dopamine concentrations in the
+    trolling the entry of information into long-term memory.             mesolimbic system of freely moving rats. Proc Natl Acad Sci
+    Neuron. 2005;46(5):703–713.                                          U S A. 1988;85(14):5274–5278.
+86. Flores-García M, Rizzo A, Garçon-Poca MZ, Fernández-            103. Deng C, Li KY, Zhou C, Ye JH. Ethanol enhances glu-
+    Dueñas V, Bonaventura J. Converging circuits between pain            tamate transmission by retrograde dopamine signaling in
+    and depression: the ventral tegmental area as a therapeutic          a postsynaptic neuron/synaptic bouton preparation from
+    hub. Front Pharmacol. 2023;14:1278023.                               the ventral tegmental area. Neuropsychopharmacology.
+87. Wang Y, Zhang H, Cui J, Zhang J, Yin F, Guo H, et al. Opiate-        2009;34(5):1233–1244.
+    associated contextual memory formation and retrieval are        104. Larsson A, Edström L, Svensson L, Söderpalm B, Engel
+    diﬀerentially modulated by dopamine D1 and D2 signaling              JA. Voluntary ethanol intake increases extracellular acetyl-
+    in hippocampal–prefrontal connectivity. Neuropsychophar-             choline levels in the ventral tegmental area in the rat.
+    macology. 2019;44(2):334–343.                                        Alcohol Alcohol. 2005;40(5):349–358.
+88. Yu TH, Wu YJ, Chien ME, Hsu KS. Transcranial direct current     105. Stobbs SH, Ohran AJ, Lassen MB, Allison DW, Brown
+    stimulation induces hippocampal metaplasticity mediated              JE, Steﬀensen SC. Ethanol suppression of ventral tegmen-
+    by brain-derived neurotrophic factor. Neuropharmacology.             tal area GABA neuron electrical transmission involves
+    2019;144(1):358–367.                                                 N-methyl-D-aspartate receptors. J Pharmacol Exp Ther.
+89. Pereira AR, Alemi M, Cerqueira-Nunes M, Monteiro C,                  2004;311(1):282–289.
+    Galhardo V, Cardoso-Cruz H. Dynamics of lateral habenula–       106. Ye JH, Tao L, Zhu L, Krnjević K, McArdle JJ. Ethanol
+    ventral tegmental area microcircuit on pain-related cognitive        inhibition of glycine-activated responses in neurons of
+    dysfunctions. Neurol Int. 2023;15(4):1303–1319.                      ventral tegmental area of neonatal rats. J Neurophysiol.
+90. Howell LL, Kimmel HL. Monoamine transporters and psy-                2001;86(5):2426–2434.
+    chostimulant addiction. Biochem Pharmacol. 2008;75(1):          107. Brodie MS, Shefner SA, Dunwiddie TV. Ethanol increases the
+    196–217.                                                             ﬁring rate of dopamine neurons of the rat ventral tegmental
+91. dela Peña I, Gevorkiana R, Shi WX. Psychostimulants aﬀect            area in vitro. Brain Res. 1990;508(1):65–69.
+    dopamine transmission through both dopamine transporter-        108. Mathon DS, Lesscher HMB, Gerrits MAF, Kamal A, Pintar JE,
+    dependent and independent mechanisms. Eur J Pharmacol.               Schuller AG, et al. Nicotine reinforcement and cognition re-
+    2015;764:562–570.                                                    stored by targeted expression of nicotinic receptors. Nature.
+92. Ventura R, Cabib S, Alcaro A, Orsini C, Puglisi-Allegra              2005;436(7047):103–107.
+    S. Norepinephrine in the prefrontal cortex is critical          109. Picciotto MR, Zoli M, Rimondini R, Léna C, Marubio LM, Pich
+    for amphetamine-induced reward and mesoaccumbens                     EM, et al. Acetylcholine receptors containing the β2 subunit
+    dopamine release. J Neurosci. 2003;23(5):1879–1885.                  are involved in the reinforcing properties of nicotine. Nature.
+93. Newton TF, De La Garza R, Brown G, Kosten TR, Mahoney JJ,            1998;391(6663):173–177.
+    Haile CN. Noradrenergic α1 receptor antagonist treatment        110. Poisson CL, Engel L, Saunders BT. Dopamine circuit mech-
+    attenuates positive subjective eﬀects of cocaine in humans:          anisms of addiction-like behaviors. Front Neural Circuits.
+    a randomized trial. PLoS One. 2012;7(2):e30854.                      2021;15:752420.
+94. Johnson S, North R. Opioids excite dopamine neurons             111. Luscher C. Cocaine-evoked synaptic plasticity of excitatory
+    by hyperpolarization of local interneurons. J Neurosci.              transmission in the ventral tegmental area. Cold Spring Harb
+    1992;12(2):483–488.                                                  Perspect Med. 2013;3(5):a012013.
+95. Mathon DS, Lesscher HMB, Gerrits MAF, Kamal A, Pintar           112. He G, Huai Z, Jiang C, Huang B, Tian Z, Le Q, et al. Per-
+    JE, Schuller AG, et al. Increased GABAergic input to ventral         sistent increase of accumbens cocaine ensemble excitability
+    tegmental area dopaminergic neurons associated with de-              induced by IRK downregulation after withdrawal medi-
+    creased cocaine reinforcement in µ-opioid receptor knockout          ates the incubation of cocaine craving. Mol Psychiatry.
+    mice. Neuroscience. 2005;130(2):359–367.                             2023;28(1):448–462.
+96. Jhou TC, Fields HL, Baxter MG, Saper CB, Holland PC.            113. Zinsmaier AK, Dong Y, Huang YH. Cocaine-induced
+    The rostromedial tegmental nucleus (RMTg), a GABAergic               projection-speciﬁc and cell type-speciﬁc adaptations in the
+    aﬀerent to midbrain dopamine neurons, encodes aversive               nucleus accumbens. Mol Psychiatry. 2022;27(1):669–686.
+    stimuli and inhibits motor responses. Neuron. 2009;61(5):       114. Lipton DM, Gonzales BJ, Citri A. Dorsal striatal circuits for
+    786–800.                                                             habits, compulsions and addictions. Front Syst Neurosci.
+97. Matsui A, Jarvie BC, Robinson BG, Hentges ST, Williams JT.           2019;13:28.
+    Separate GABA aﬀerents to dopamine neurons mediate acute        115. Kim R, Testen A, Harder EV, Brown NE, Witt EA, Bellinger
+    action of opioids, development of tolerance, and expression          TJ, et al. Abstinence-dependent eﬀects of long-access cocaine
+    of withdrawal. Neuron. 2014;(82):1346–1356.                          self-administration on nucleus accumbens astrocytes are ob-
+98. Maldonado R, Valverde O, Berrendero F. Involvement of the            served in male, but not female, rats. eNeuro. 2022;9(5).
+    endocannabinoid system in drug addiction. Trends Neurosci.           ENEURO.0310-22.2022.
+    2006;29(4):225–232.                                             116. Reverte I, Marchetti C, Pezza S, Zenoni SF, Scaringi G, Fer-
+99. Cheer JF, Wassum KM, Heien MLAV, Phillips PEM, Wight-                rucci L, et al. Microglia-mediated calcium-permeable AMPAR
+    man RM. Cannabinoids enhance subsecond dopamine re-                  accumulation in the nucleus accumbens drives hyperloco-
+    lease in the nucleus accumbens of awake rats. J Neurosci.            motion during cocaine withdrawal. Brain Behav Immun.
+    2004;24(18):4393–4400.                                               2024;115:535–542.
+126                                            NEUROSCIENCES JOURNAL 2026;31:108–126
+
+
+
+
+117. Liu M, Si Z. An update: epigenetic mechanisms under-            129. Mehta DD, Praecht A, Ward HB, Sanches M, Sorkhou M,
+     lying methamphetamine addiction. Front Cell Dev Biol.                Tang VM, et al. A systematic review and meta-analysis of
+     2024;12:1494557.                                                     neuromodulation therapies for substance use disorders. Neu-
+118. Koob GF. Drug addiction: hyperkatifeia/negative reinforce-           ropsychopharmacology. 2024;49(4):649–680.
+     ment as a framework for medications development. Pharma-        130. Zammit Dimech D, Zammit Dimech AA, Hughes M, Zrinzo L.
+     col Rev. 2021;73(1):163–201.                                         A systematic review of deep brain stimulation for substance
+119. Wolf ME. Targeting neuroplasticity in substance use dis-             use disorders. Transl Psychiatry. 2024;14(1):361.
+     orders: implications for therapeutics. Annu Rev Pharmacol       131. Bach P, Luderer M, Müller UJ, Jakobs M, Baldermann JC, Vo-
+     Toxicol. 2025;65(1):259–280.                                         ges J, et al. Deep brain stimulation of the nucleus accumbens
+120. Hood LE, Leyrer-Jackson JM, Olive MF. Pharmacotherapeu-              in treatment-resistant alcohol use disorder: a double-blind
+     tic management of co-morbid alcohol and opioid use. Expert           randomized controlled multi-center trial. Transl Psychiatry.
+     Opin Pharmacother. 2020;21(7):823–839.                               2023;13(1):49.
+121. Spanagel R, Vengeliene V, Jandeleit B, Fischer W, Grind-        132. Logge WB, Haber PS, Hurzeler T, Gallagher H, Kranzler
+     staﬀ K, Zhang X, et al. Acamprosate produces its anti-               H, Morley KC. Neural cue reactivity and intrinsic func-
+     relapse eﬀects via calcium. Neuropsychopharmacology.                 tional connectivity in individuals with alcohol use disorder
+     2014;39(4):783–791.                                                  following treatment with topiramate or naltrexone. Psy-
+122. Kalk NJ, Lingford-Hughes AR. The clinical pharmacology of            chopharmacology (Berl). 2025;242(7):1641–1652.
+     acamprosate. Br J Clin Pharmacol. 2014;77(2):315–323.           133. Palmer D, Cayton CA, Scott A, Lin I, Newell B, Paulson A,
+123. Agabio R, Saulle R, Rösner S, Minozzi S. Baclofen for al-            et al. Ventral pallidum neurons projecting to the ventral
+     cohol use disorder. Cochrane Database Syst Rev. 2023;1:              tegmental area reinforce but do not invigorate reward-
+     CD012557.                                                            seeking behavior. Cell Rep. 2024;43(1):113669.
+124. Goldstein N, Carty JRE, Betley JN. Speciﬁcity of varenicline    134. Khayat A, Yaka R. Activation of RMTg projections to the VTA
+     in blocking mesolimbic circuit activation to natural and drug        reverse cocaine-induced molecular adaptation in the reward
+     rewards. Neuroscience. 2022;483:40–51.                               system. Transl Psychiatry. 2024;14(1):40.
+125. Shorter D, Lindsay JA, Kosten TR. The alpha-1 adrener-          135. Anderson EM, Taniguchi M. Epigenetic eﬀects of addic-
+     gic antagonist doxazosin for treatment of cocaine depen-             tive drugs in the nucleus accumbens. Front Mol Neurosci.
+     dence: a pilot study. Drug Alcohol Depend. 2013;131(1–2):            2022;15:828055.
+     66–70.                                                          136. Gu A, Chan CL, Xu X, Dexter JP, Becker B, Zhao Z. Real-time
+126. Beaumont J. Clinical neuropsychology in rehabilitation. In:          fMRI neurofeedback modulation of dopaminergic midbrain
+     Stokes M, editor. Physical management in neurological reha-          activity in young adults with elevated internet gaming dis-
+     bilitation. 2nd ed. Oxford: Elsevier;2004. p. 461–468.               order risk: randomized controlled trial. J Med Internet Res.
+127. Petry NM. Contingency management treatments: con-                    2025;27:e64687.
+     troversies and challenges. Addiction. 2010;105(9):1507–         137. Sahay S, Reddy MVSRR, Lennox C, Wolinsky E, McCul-
+     1509.                                                                lumsmith RE, Singh T. Harnessing neuroimaging-guided
+128. McHugh RK, Hearon BA, Otto MW. Cognitive behavioral                  transcranial magnetic stimulation for precision therapy
+     therapy for substance use disorders. Psychiatr Clin North            in substance use disorders. Mol Psychiatry. 2025;30(8):
+     Am. 2010;33(3):511–525.                                              3804–3816.
+

@@ -8,6 +8,17 @@ pub fn execute_cron_create(
     description: &str,
 ) -> ExecutionResult {
     use crate::daemon::{Daemon, DaemonPaths, parse_schedule};
+    // CS-JFC-004: a cron command is later executed by the daemon as `bash -c`
+    // without the interactive Bash approval path. Run the same catastrophic
+    // classifier the live Bash tool uses *before* persistence so the model
+    // cannot schedule an effectively-unrecoverable command for later, unattended
+    // execution. (`JFC_ALLOW_CATASTROPHIC_BASH` still overrides for power users.)
+    if let Some(reason) = crate::app::shell_safety::catastrophic_bash_reason(command) {
+        return ExecutionResult::failure(format!(
+            "CronCreate refused: scheduled command is {reason}. \
+             Catastrophic commands cannot be persisted for unattended execution."
+        ));
+    }
     let schedule = match parse_schedule(schedule_expr) {
         Ok(s) => s,
         Err(e) => {
@@ -221,5 +232,30 @@ pub async fn execute_monitor(command: &str, until: &str, cwd: &Path) -> Executio
                 return ExecutionResult::failure(body);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod cron_safety_tests {
+    use super::*;
+
+    // CS-JFC-004: catastrophic commands must be rejected at CronCreate time,
+    // before they are ever persisted for unattended `bash -c` execution. The
+    // rejection path returns before touching daemon state, so this is filesystem-safe.
+    #[test]
+    fn cron_create_rejects_catastrophic_command_regression() {
+        let result = execute_cron_create("0 0 * * *", "rm -rf /", "nightly cleanup");
+        assert!(result.is_error(), "catastrophic cron must be rejected");
+        assert!(
+            result.output.contains("CronCreate refused"),
+            "unexpected message: {}",
+            result.output
+        );
+    }
+
+    #[test]
+    fn cron_create_rejects_disk_wipe_robust() {
+        let result = execute_cron_create("0 0 * * *", "mkfs.ext4 /dev/sda", "format");
+        assert!(result.is_error());
     }
 }

@@ -183,6 +183,15 @@ fn permission_mode_plan_allows_codegraph_mcp_tools_normal() {
 }
 
 #[test]
+fn permission_mode_plan_allows_codegraph_alias_after_parsing_regression() {
+    let tool = make_tool(ToolKind::from_name("codegraph_arch"), "cg-short");
+    assert_eq!(
+        PermissionMode::Plan.auto_approves(&tool),
+        PermissionDecision::Approved
+    );
+}
+
+#[test]
 fn permission_mode_plan_denies_non_codegraph_mcp_tools_robust() {
     let tool = make_tool(ToolKind::Mcp("mcp__filesystem__write_file".into()), "mcp1");
     assert!(matches!(
@@ -1182,7 +1191,7 @@ async fn compaction_done_repins_scroll_to_bottom_robust() {
     )
     .await;
     // The handler queues an effect; the frontend's drain applies it.
-    crate::runtime::event_loop::apply_engine_effects(&mut app);
+    crate::runtime::event_loop::apply_engine_effects(&mut app, None);
 
     assert!(
         app.follow_bottom,
@@ -1215,7 +1224,7 @@ async fn compaction_done_while_streaming_does_not_repin_edge() {
     )
     .await;
 
-    crate::runtime::event_loop::apply_engine_effects(&mut app);
+    crate::runtime::event_loop::apply_engine_effects(&mut app, None);
     assert_eq!(
         app.engine.messages.len(),
         before,

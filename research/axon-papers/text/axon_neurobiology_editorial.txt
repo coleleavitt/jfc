@@ -1,0 +1,144 @@
+                                                                                                                 TYPE Editorial
+                                                                                                                 PUBLISHED 17 April 2026
+                                                                                                                 DOI 10.3389/fncel.2026.1838278
+
+
+
+
+                                            Editorial: Axon neurobiology:
+OPEN ACCESS
+                                            updates in functional and
+EDITED AND REVIEWED BY
+Arianna Maffei,
+                                            structural dynamics
+Stony Brook University, United States
+
+*CORRESPONDENCE
+                                            Haruyuki Kamiya1* and Dominique Debanne2*
+Haruyuki Kamiya
+  kamiya@med.hokudai.ac.jp                  1
+                                                Department of Neurobiology, Graduate School of Medicine, Hokkaido University, Sapporo, Japan,
+Dominique Debanne                           2
+                                                Adhesion and Inﬂammation, INSERM, Aix-Marseille University, CNRS, Marseille, France
+  dominique.debanne@univ-amu.fr
+
+RECEIVED 25 March 2026                      KEYWORDS
+REVISED 25 March 2026
+ACCEPTED 01 April 2026                      action potential, axon, axon initial segment, excitability, glia, node of Ranvier, potassium
+PUBLISHED 17 April 2026                     channel, sodium channel
+CITATION
+Kamiya H and Debanne D (2026)
+Editorial: Axon neurobiology: updates in
+functional and structural dynamics.
+Front. Cell. Neurosci. 20:1838278.                 Editorial on the Research Topic
+doi: 10.3389/fncel.2026.1838278
+                                                   Axon neurobiology: updates in functional and structural dynamics
+COPYRIGHT
+© 2026 Kamiya and Debanne. This is an
+open-access article distributed under the
+terms of the Creative Commons
+Attribution License (CC BY). The use,           Axons are essential for the long-distance propagation of action potentials across
+distribution or reproduction in other
+                                            neural networks. Traditionally, axonal signaling was considered a faithful, all-or-none
+forums is permitted, provided the
+original author(s) and the copyright        process (Debanne et al., 2011). However, recent studies have fundamentally revised
+owner(s) are credited and that the          this view (Debanne et al., 2013; Ohura and Kamiya, 2016), demonstrating that axons
+original publication in this journal is
+                                            exhibit pronounced functional and structural tuning depending on neuronal activity
+cited, in accordance with accepted
+academic practice. No use, distribution     (Ohura and Kamiya, 2018), developmental stage, and microenvironmental conditions
+or reproduction is permitted which does     (Debanne and Rama, 2011; Sasaki et al., 2011). These dynamic properties allow axons to
+not comply with these terms.
+                                            actively shape synaptic transmission and neural circuit integration rather than simply relay
+                                            electrical signals. Advances in imaging, molecular biology, and electrophysiology have been
+                                            crucial to revealing these forms of axonal plasticity. This Research Topic highlights recent
+                                            progress in axon neurobiology, focusing on functional and structural dynamics under
+                                            physiological and pathological conditions.
+                                                Neuronal communication relies on axonal polarity and specialized excitable domains,
+                                            particularly the axon initial segment (AIS) and nodes of Ranvier. Several studies in this
+                                            Research Topic address how the regulation of these domains modulates axonal excitability.
+                                            In myelinated axons, saltatory conduction depends on the precise clustering of ion channels
+                                            at nodes of Ranvier. Using high-speed fluorescence imaging in cortical layer five pyramidal
+                                            neurons, Kotler et al. characterized action potential-evoked Na+ and Ca2+ signals at
+                                            nodes. Both signals were spatially restricted to nodal regions. Na+ transients peaked
+                                            rapidly during the action potential upstroke and decayed by diffusion into internodes, with
+                                            kinetics dependent on nodal length. In contrast, Ca2+ transients peaked later, decayed via
+                                            active clearance, and recovered rapidly in a temperature-independent manner, suggesting
+                                            minimal channel inactivation during single spikes.
+                                                The molecular basis of axonal excitability is further examined by Escobedo and
+                                            Rasband, who reviewed potassium channel clustering at the AIS and nodes of Ranvier.
+                                            At the AIS, voltage-gated Kv channels, such as Kv7 and Kv1, regulate the action potential
+                                            threshold and repolarization. At nodes, recent evidence indicates that two-pore domain
+                                            K2P channels, particularly TRAAK and TREK-1, play a dominant role in membrane
+                                            repolarization. Precise localization of these channels is mediated by interactions with
+                                            scaffolding proteins, and disruption of Kv or K2P channel organization is associated with
+                                            epilepsy and neurodevelopmental disorders.
+
+
+
+Frontiers in Cellular Neuroscience                                   01                                                            frontiersin.org
+Kamiya and Debanne                                                                                                                              10.3389/fncel.2026.1838278
+
+
+
+
+     Beyond neuron-intrinsic mechanisms, glial cells are emerging                           Funding
+as important regulators of axonal excitable domains. Garrido
+summarized the evidence that astrocytes and microglia                                           The author(s) declared that financial support was received
+interact with the AIS and nodes of Ranvier to support                                       for this work and/or its publication. This study was supported
+neuronal excitability, structural plasticity, and homeostasis.                              by KAKENHI from the JSPS (24H02336, 25K09842) to HK, the
+These interactions involve the regulation of the local ionic                                Cooperative Research Project Program of the Research Institute of
+environment and secretion of signaling factors. Disruption of                               Electrical Communication at Tohoku University to HK, Agence
+glia-axon interactions by injury or disease can significantly impair                        Nationale de la Recherche (ANR-23-CE16-0020), and A∗ Midex
+central nervous system function, highlighting their relevance in                            (AMX-22-RE-AB-187 and AMX-22-V2-007) to DD.
+axonal pathology.
+     Dynamic modulation of action potential propagation
+is further illustrated by Furukawa and Kawaguchi, who
+demonstrated that β-adrenergic receptor activation reduces                                  Conﬂict of interest
+action potential amplitude and conduction velocity in cerebellar
+Purkinje cell axons via cAMP-dependent suppression of                                           The author(s) declared that this work was conducted in the
+Na+ currents, with effects dependent on axonal length.                                      absence of any commercial or financial relationships that could be
+Despite reduced axonal excitability, β-adrenergic signaling                                 construed as a potential conflict of interest.
+increased presynaptic release probability, revealing a                                          The author DD declared that they were an editorial board
+complex relationship between axonal conduction and                                          member of Frontiers, at the time of submission. This had no impact
+synaptic output.                                                                            on the peer review process and the final decision.
+     Finally, Egawa et al. address axonal structural refinement
+during development. Using single-axon tracing in the chick
+ciliary ganglion, they showed that activity-dependent presynaptic
+mechanisms drive the maturation of calyx-type terminals and                                 Generative AI statement
+axonal branch pruning, resulting in one-to-one connectivity.
+Silencing presynaptic activity delayed terminal maturation,                                      The author(s) declared that generative AI was not used in the
+indicating that presynaptic activity restricts the number of                                creation of this manuscript.
+post-synaptic targets innervated by each axon.                                                   Any alternative text (alt text) provided alongside figures in
+     Together, these studies emphasize that axons are dynamic                               this article has been generated by Frontiers with the support of
+structures whose functional and structural plasticity are central                           artificial intelligence and reasonable efforts have been made to
+to neural circuit operation and dysfunction. By integrating                                 ensure accuracy, including review by the authors wherever possible.
+cutting-edge electrophysiology, molecular biology, and imaging                              If you identify any issues, please contact us.
+approaches, this Research Topic advances our understanding of
+how axonal dynamics shape brain function in health and disease.
+                                                                                            Publisher’s note
+Author contributions                                                                            All claims expressed in this article are solely those of the
+                                                                                            authors and do not necessarily represent those of their affiliated
+    HK: Conceptualization, Validation, Writing – review &                                   organizations, or those of the publisher, the editors and the
+editing, Funding acquisition, Writing – original draft. DD:                                 reviewers. Any product that may be evaluated in this article, or
+Conceptualization, Writing – review & editing, Writing – original                           claim that may be made by its manufacturer, is not guaranteed or
+draft, Funding acquisition, Validation.                                                     endorsed by the publisher.
+
+
+
+
+References
+Debanne, D., Bialowas, A., and Rama, S. (2013). What are the mechanisms for analogue        Ohura, S., and Kamiya, H. (2016). Excitability tuning of axons in the central nervous
+and digital signalling in the brain? Nat. Rev. Neurosci. 14, 63–69. doi: 10.1038/n          system. J. Physiol. Sci. 66, 189–196. doi: 10.1007/s12576-015-0415-2
+rn3361
+                                                                                            Ohura, S., and Kamiya, H. (2018). Short-term depression of axonal spikes at the
+Debanne, D., Campanac, E., Bialowas, A., Carlier, E., and Alcaraz, G. (2011). Axon          mouse hippocampal mossy fibers and sodium channel-dependent modulation. eNeuro
+physiology. Physiol. Rev. 91, 555–602. doi: 10.1152/physrev.00048.2009                      5:ENEURO.0415-17.2018. doi: 10.1523/ENEURO.0415-17.2018
+Debanne, D., and Rama, S. (2011). Astrocytes shape axonal signaling. Sci. Signal.           Sasaki, T., Matsuki, N., and Ikegaya, Y. (2011). Action-potential modulation during
+4:pe11. doi: 10.1126/scisignal.2001884                                                      axonal conduction. Science 331, 599–601. doi: 10.1126/science.1197598
+
+
+
+
+Frontiers in Cellular Neuroscience                                                     02                                                                       frontiersin.org
+

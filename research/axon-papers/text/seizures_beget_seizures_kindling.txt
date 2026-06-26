@@ -1,0 +1,1527 @@
+                                                                                                                  TYPE Review
+                                                                                                                  PUBLISHED 20 May 2026
+                                                                                                                  DOI 10.3389/fneur.2026.1793970
+
+
+
+
+                                             The cumulative impact of
+OPEN ACCESS
+                                             seizures: the science underlying
+EDITED BY
+Sandipan Pati,
+                                             how seizures beget seizures
+University of Minnesota Medical Center,
+United States
+                                             Richard M. Gustin 1*, Taha Gholipour 2 and Jurriaan M. Peters 3
+REVIEWED BY
+Ali Izadi,                                   1
+                                              Neurelis, Inc., San Diego, CA, United States, 2Department of Neurosciences, University of California
+University of California, Davis, United      San Diego, La Jolla, CA, United States, 3Department of Neurology, Division of Epilepsy and
+States                                       Neurophysiology, Boston Children's Hospital and Harvard Medical School, Boston, MA, United States
+José Luis Castañeda-Cabral,
+University of Guadalajara, Mexico
+
+*CORRESPONDENCE                              Seizures are symptoms of epilepsy but spontaneous seizure recurrence can also be
+Richard M. Gustin                            considered a biomarker of disease progression. The temporary imbalance between
+   Rgustin@neurelis.com
+                                             excitatory and inhibitory drive that culminates in a hyperexcitable, hypersynchro-
+RECEIVED 22 January 2026                     nous state clinically observed as seizure, initiates an insidious cascade of neuro-
+REVISED 26 March 2026
+ACCEPTED 06 May 2026                         chemical, structural, genetic, epigenetic, and neuroinflammatory processes that
+PUBLISHED 20 May 2026                        increases seizure frequency, duration, and severity. As seizure activity increases, the
+CITATION                                     hyperexcitable and hypersynchronous states entrain neuronal networks, leading to
+Gustin RM, Gholipour T and                   a further reduction in seizure threshold and further increases in seizure frequency,
+Peters JM (2026) The cumulative impact
+of seizures: the science underlying how      duration, and severity over time. The pathological circuitry generated and sustained
+seizures beget seizures.                     by epileptic events not only drive hyperexcitable states within the seizure circuit
+Front. Neurol. 17:1793970.                   but also can affect wider network connections. These effects lead to altered net-
+doi: 10.3389/fneur.2026.1793970
+                                             work physiology, which is associated with neuropsychiatric comorbidities, such as
+COPYRIGHT
+                                             cognitive decline and psychiatric disorders, and can impact the operation of other
+© 2026 Gustin, Gholipour and Peters.
+This is an open-access article distributed   organ systems. Here, we review the current understanding of how seizures can
+under the terms of the Creative              hijack normal brain function and set off a cascade of pathobiological events that
+Commons Attribution License (CC BY).         support continued seizure activity and epilepsy progression. Understanding the
+The use, distribution or reproduction in
+other forums is permitted, provided the      neurobiology of seizure progression is fundamental to building comprehensive
+original author(s) and the copyright         treatment strategies and developing new pharmacotherapies that aim to retrain
+owner(s) are credited and that the           seizure circuitry, with the goal of reducing overall seizure burden, improving quality
+original publication in this journal is
+cited, in accordance with accepted           of life, and limiting disease progression.
+academic practice. No use, distribution
+or reproduction is permitted which does      KEYWORDS
+not comply with these terms.
+                                             drug-resistant epilepsy, epilepsy treatment, hyperexcitability, quality of life, seizure
+                                             progression, seizure timeline
+
+
+
+
+                                             1 Introduction
+                                                  In the late 19th century, Sir William Gowers described a phenomenon in some patients with
+                                             epilepsy as “seizures beget seizures” (1). That is, epilepsy and its seizure burden seem to progress
+                                             over time. What evidence do we have today for that observation? Kwan and Brodie reported the
+                                             rate of drug-resistant epilepsy (DRE) in newly diagnosed patients with epilepsy (2). Their semi-
+                                             nal research demonstrated that 64% of patients were able to become seizure free for a minimum
+                                             of 12 months on a regimen of antiseizure medications (ASMs), while the remaining patients
+                                             continued to have seizures despite receiving treatment (2). Unfortunately, even with over 30
+                                             ASMs available today, the rate of DRE has not changed since that initial report (3). In fact, if
+                                             seizure freedom is not achieved with a single ASM, the likelihood of achieving seizure freedom
+                                             further declines with each additional ASM (2, 3). In this article, we review the cascade of events
+                                             that occur after an initial seizure and how recurrent seizures lead to structural and functional
+                                             changes that promote seizure-generating networks in patients with DRE. We review the dynamic
+
+
+Frontiers in Neurology                                              01                                                               frontiersin.org
+Gustin et al.                                                                                                                   10.3389/fneur.2026.1793970
+
+
+
+
+processes that drive the pathological circuitry underlying DRE that               and learning and memory must be considered. This provides a foun-
+may be clinically leveraged to improve patient outcomes.                          dational understanding of how hyperexcitable and hypersynchronous
+     Sustained structural changes and aging nomograms suggest that                states are reinforced, leading to increased seizure burden. This is not
+the cumulative impact of seizures leads to neuronal injury and is det-            intended to be a comprehensive review of neuronal plasticity and
+rimental to brain health, even in the absence of detectable permanent             learning and memory; however, there are several critically conserved
+brain damage from a single seizure event (e.g., status epilepticus) (4,           mechanisms that should be discussed prior to examining the mecha-
+5). Although seizure freedom remains unattainable for many patients               nisms underlying seizure progression.
+with DRE, what insights from decades of scientific research can                         The Neurophysiological Postulate, posed by Hebb in 1949, is a
+inform clinical treatment strategies to reduce seizure burden, improve            fundamental principle of neuroscience that influenced our under-
+patient outcomes, and improve quality of life (QoL) for those living              standing of how activity-dependent molecular and morphological
+with DRE? In addition to optimizing ASM regimen, effective acute                  changes in the brain are critical for normal development, information
+treatment of seizure episodes with immediate-use seizure medica-                  processing and storage, and learning and memory (10–12). The idea
+tions, implantable neuromodulation devices, or surgery can limit total            that “neurons that fire together, wire together,” is the foundation for
+seizure activity, but for many patients seizure recurrence remains an             what we know today as use-dependent plasticity (10–12).
+issue (6–9). By understanding the neurobiology underlying seizure                       How can a brain that is predisposed to seizure (i.e., hyperexcitability
+progression, we may be able to better understand how treatments can               and hypersynchronization) initiate and propagate epileptiform activity?
+be used or developed to retain pathological seizure circuits and restore          According to the Neurophysiologic Postulate, a cascade of events begins
+normal function. We will explore how this approach may improve                    as transient fluctuations transitioning to sustained long-term changes
+patient outcomes, after reviewing the neural processes following an               that drive a pattern of activity across a neuronal ensemble, or groups of
+initial seizure and the cascade of events that leads to DRE.                      neurons exhibiting coordinated activity in a recurrent fashion that are
+                                                                                  broadly distributed across the brain, which connect brain regions and
+                                                                                  drive learning, memory, and behavior (12, 13). Figure 1 briefly reviews
+                                                                                  long-term potentiation (LTP) and memory formation.
+2 Methods                                                                               The structural and functional cellular correlates of learning and
+                                                                                  memory can be thought of as the neural synapse and LTP, respectively.
+     The authors conducted comprehensive literature searches in                   The synapse is composed of the pre- and postsynaptic neurons, and the
+PubMed for peer-reviewed scientific and medical literature on seizure             strengthening of their connection can be recorded as LTP, which is criti-
+and epilepsy published through 2025, using the following search                   cal to the dynamic functioning of neuronal circuitry. The postsynaptic
+terms: “hyperexcitability,” “hypersynchronization,” “neuroinflamma-               density (PSD) of an excitatory neuron actively engages in the learning
+tion,” “extracellular matrix,” “genetic and epigenetic factors,” “struc-          process. The activation of postsynaptic neurons leads to a transient
+tural and functional changes,” “cell death,” “quality of life,” “cognitive        increase in postsynaptic Ca2+ (Figure 1A) (13, 14). Ca2+/calmodulin-
+impairment,” “mental health,” and “mortality and morbidity.” More                 dependent protein kinase II (CaMKII), along with additional signaling
+refined searches expanding each topic were performed as needed, and               pathways, integrate these localized Ca2+ transients to induce a cascade of
+the bibliographies of relevant articles were searched as well. Literature         downstream effects in the dendritic spines, including enhanced traffick-
+was included if it was published in a peer-reviewed journal, published            ing of α-aminio-3-hydroxy-5-methyl-4-isoxazolepropoinic acid (AMPA)
+in English, and focused on the topics of seizure, epilepsy, and neuronal          and N-methyl-D-aspartate (NMDA) receptors, thus increasing glutama-
+mechanism. Literature was excluded if it consisted of only abstracts or           tergic transmission (13–16). The strengthening of these neuronal con-
+editorials lacking any peer-reviewed referenced studies. Titles and               nections is archived by the longer-lasting morphological changes in these
+abstracts were evaluated for relevance, followed by a full-text review            excitatory synapses (13, 17). This structural synaptic plasticity is a fun-
+of the relevant articles. A qualitative analysis of the selected articles         damental feature of LTP. Following theta-burst induction of LTP, there is
+was carried out to identify areas of consensus and contradiction in the           an increased ratio of excitatory/inhibitory (E/I) synapses that emerges
+current research, and to summarize the current understanding of the               within the first 30 min, which continues to increase over several hours
+neurobiology underlying seizure progression across animal and clini-              (18). Additionally, within the first 30 min after LTP induction, there is an
+cal studies. The information collected in the review was synthesized              increase in synaptogenesis leading to an increase in mature synapses, and
+into a timeline that most accurately reflected the cascade of neurobio-           by 2 h after LTP induction, there is pruning of immature spines (18).
+logical events that occur following a seizure. This review article is             Protein synthesis is required to maintain LTP, as polyribosomes are traf-
+based on previously published studies and does not present any new                ficked from dendritic shafts into the dendritic spines in larger PSDs and
+or original data generated or collected by the authors. All data cited in         are associated with mature synapses (18). These data are consistent with
+this review article are available in the public domain and sourced from           learning and memory models (i.e., water maze, passive avoidance, con-
+the works cited in the References section. Figures in this review were            textual fear conditioning, spatial training, and trace eyeblink condition-
+created using BioRender, a scientific image and illustration software.            ing) that demonstrate a transient increase in synaptogenesis within the
+                                                                                  first 6 h after training, proceeded by an increase in PSD volume 24 h after
+                                                                                  training (17). Taken together, the available evidence indicates that
+                                                                                  increased neuronal activity leads to significant changes in synaptic mor-
+3 Transition from normal function to                                              phology that impact how the involved neuronal ensemble or neuronal
+seizure generation                                                                circuits function, leading to increased neuronal firing frequency and
+                                                                                  reduced latency to fire (17, 19).
+    Before reviewing the neurobiology underlying seizure progres-                       These molecular and structural changes also induce local tran-
+sion, the canonical neuronal mechanisms that drive normal behavior                scriptional changes, which strengthen the connectivity within the
+
+
+Frontiers in Neurology                                                       02                                                                 frontiersin.org
+Gustin et al.                                                                                                                  10.3389/fneur.2026.1793970
+
+
+
+
+    FIGURE 1
+    Long-term potentiation (LTP) and memory formation. Neural mechanisms underlying LTP (A) and memory formation (B). Figure created in BioRender.
+    AMPAR, α-amino-3-hydroxy-5-methyl-4-isoxazolepropionic acid receptor; BDNF, brain-derived neurotrophic factor; Ca2+, calcium ion; CaMKII,
+    calcium/calmodulin-dependent protein kinase II; CREB, cAMP-responsive element–binding protein; ERK, extracellular signal-regulated kinase; Glu,
+    glutamate; GRIP1, glutamate receptor interacting protein 1; H3, histone H3; Homer2, homer scaffold protein 2; MEK, mitogen-activated protein kinase
+    kinase; mRNA, messenger RNA; MSK1, mitogen- and stress-activated protein kinase 1; NMDAR, N-methyl-D-aspartate receptor; P, phosphorylation;
+    Pick1, protein interacting with C kinase 1; Raf, rapidly accelerated fibrosarcoma; RNA, ribonucleic acid; SAP97 synapse-associated protein 97; TrkB,
+    tropomyosin receptor kinase B; TRPC3, transient receptor potential cation channel subfamily C member 3.
+
+
+
+
+neuronal ensemble to reinforce and maintain activity throughout the               coding for proteins present in the dendrites and axons, from multiple
+circuit (13). Central to the regulation of synaptic transmission, LTP,            protein families (22). This includes rapid upregulation of AMPA
+synaptic strengthening, and memory formation is the function of                   receptors, NMDA receptors, CaMKIIα, and the PSD scaffolding pro-
+brain-derived neurotrophic factor (BDNF) (20). During the develop-                teins homer scaffold protein 2 (Homer2), synapse-associated protein
+ment of memories, the transcription factor cyclic AMP response ele-               97 (SAP97), glutamate receptor interacting protein 1 (GRIP1), and
+ment–binding protein (CREB) is selectively expressed in neurons of                protein interacting with C kinase 1 (Pick1) within dendrites, promot-
+the activated ensemble (Figure 1B) (13, 16). The phosphorylation and              ing synaptic transmission and synaptic strengthening (23–27).
+expression of CREB increases within the first 15 min of neuronal acti-                 The repetitive stimulation and activation of neurochemical and
+vation, and subsequently increases BDNF expression in these neurons               second messenger signaling pathways by learning behavior lead to
+within hours after activation (12). BDNF plays a number of roles                  longer-lasting changes within activated neurons. Sustained changes
+within both the pre- and postsynaptic neurons, from short-term                    and long-term synaptic enhancement are driven by the coupling of
+effects induced by BDNF protein phosphorylation at the synapse to                 neuronal excitability to gene transcription (16). These activity-
+long-term regulation of messenger RNA (mRNA) translation at the                   dependent acute changes stimulate longer-term changes at the epi-
+synapse and changes in transcription (20).                                        genetic level that maintain the strength and connectivity of the
+    The role of BDNF in synaptic plasticity was reviewed by Leal et al.           neuronal ensemble (13, 18). Long-term regulation of neuronal activ-
+(20). In brief, phosphorylation of BDNF increases binding and activa-             ity and morphology involves homeostatic synaptic plasticity, which
+tion of tropomyosin-related kinase B (TrkB) receptors (20, 21). At the            is the mechanism that controls synaptic communication (28). This
+presynaptic terminal, BDNF activation of TrkB receptors increases                 synaptic scaling provides balance between synaptic excitability and
+synaptic transmission by trafficking synaptic vesicles to the active zone         inhibition across all synapses, thus providing a mechanism to pre-
+for synaptic release (20). In addition, the BDNF/TrkB complex is                  vent unconstrained activity and the flexibility to establish new
+internalized and trafficked to the cell body, where it is able to alter           homeostatic set points depending on the E/I activity experienced (28,
+gene expression and mRNA translation (20). Postsynaptically, BDNF                 29). Critical to this long-term regulation is the role of mitogen- and
+activation of TrkB receptors leads to phosphorylation of NMDA                     stress-activated protein kinase 1 (MSK1), which following activity-
+receptors, increasing NMDA receptor activity and synaptic transmis-               dependent stimulation, facilitates longitudinal changes in synaptic
+sion, in addition to promoting the release of internal Ca2+ stores and            structure and function, gene expression, and learning and memory
+activation of transient receptor potential cation channel subfamily C             (30). MSK1 is activated by BDNF and able to translate activity-
+member 3 (TRPC3), which increase postsynaptic Ca2+ concentrations,                dependent stimulation into enduring cellular, molecular, and genetic
+thus activating CaMKII and enhancing glutamatergic signaling                      effects through phosphorylation of CREB and histone H3, thus regu-
+through AMPA and NMDA receptor trafficking (14–16, 20). Along                     lating gene transcription and leading to both enhanced LTP and
+with playing a role in the postsynaptic signaling cascades, BDNF also             long-term depression (LTD) (16, 28–31). MSK1 regulates expression
+regulates dendritic mRNA translation at free polysomes and endoplas-              of an array of genes and proteins, including (1) the AMPA receptor
+mic reticulum–associated ribosomes (20). Local translation of mRNA                subunit GluA1; (2) AMPA receptor trafficking protein; (3) activity-
+is critical to synaptic regulation, with an estimated 2,550 mRNAs                 regulated cytoskeleton-associated protein (Arc), an AMPA receptor
+
+
+Frontiers in Neurology                                                       03                                                               frontiersin.org
+Gustin et al.                                                                                                                10.3389/fneur.2026.1793970
+
+
+
+
+binding protein; (4) the immediate early genes FOS and Pick1; (5) the            factors including, but not limited to, neurochemical changes and
+scaffold proteins PSD-95 and PSD-93; (6) the transcription factors               altered receptor dynamics, synaptic morphological changes, genetic
+Erg1 and FOS; (7) CaMKII; (8) the cytokine tumor necrosis factor                 and epigenetic factors, neuroinflammatory responses, and extracel-
+alpha (TNFα); and (9) BDNF (through a positive feedback loop). All               lular matrix (ECM) changes (36).
+of these play a role in homeostatic and activity-dependent plasticity,                E/I imbalances can themselves lead to further molecular
+allowing for an increased synaptic dynamic range and enhanced                    changes that further increase excitatory drive and/or reduce inhibi-
+information processing (28–31). Although this review focuses pri-                tory drive. For example, changes at the cellular level that increase
+marily on the roles of BDNF and CREB due to their involvement in                 Na+ channel activity, glutamatergic signaling, or network connectiv-
+seizure propagation, there are many other receptor systems and sig-              ity can enhance overall excitatory drive; whereas reduction in K+
+naling pathways that contribute to LTP, LTD, homeostatic plasticity,             channel or GABAergic activity lowers overall inhibition and can
+and learning and memory, including multiple signaling cascades that              create E/I imbalance that may increase seizure activity (Figure 2).
+lead to differential CREB phosphorylation (31).                                  These molecular changes can increase seizure susceptibility, dura-
+    Finally, long-term memory conservation and preservation can be               tion, and severity.
+achieved through epigenetic regulation, encoded by differential DNA                   The majority of seizures are self-limiting, resolving in a matter of
+methylation and histone modifications that are passed on from one                seconds to minutes; however, seizures can evolve over the course of
+generation to the next (32). This encoding allows for appropriate and            minutes to become self-sustaining, increasing the risk of treatment
+sustained transcriptional regulation that underlies functional changes           intractability, predisposition to spontaneous seizures, and duration
+associated learning and memory (32). Guan et al. posit that these cel-           of both the current and subsequent seizure(s) (37, 38). As pathologi-
+lular memory events within individual neurons may translate to the               cal neuronal circuits strengthen, the chance of future seizure occur-
+larger neuronal ensemble, and this is the mechanism by which sensory             rence increases, and vice versa, which has been modeled using in
+information is stored in these neuronal circuits (32).                           vitro neuronal cultures (39). Animal models support the idea that
+                                                                                 hyperexcitability-related dysregulation of neuronal ensembles can
+                                                                                 occur rapidly and may precede seizure onset, with a loss of synaptic
+                                                                                 inhibition through desensitization and alterations in kinetic proper-
+4 Seizure and maladaptive                                                        ties of the γ-aminobutyric acid type A (GABAA) receptors (37, 38).
+reinforcement of brain circuits                                                  Internalization of synaptic GABAA receptors during sustained hyper-
+                                                                                 activity leads to a reduction in receptor availability and contributes
+     The brain’s structural-functional relationship can also be hijacked         to loss of benzodiazepine sensitivity and therapeutic response (37,
+by an epileptogenic mechanism, leading to a maladaptive reinforce-               38). The rapid trafficking of synaptic NMDA receptors to the cell
+ment of a propagation or reverberating circuit (13). Homeostatic                 surface enhances synaptic excitability by increasing postsynaptic Ca2+
+imbalance from repeated seizures alter synaptic structure and func-              and subsequent activation of CaMKII (37, 38). The increased activa-
+tion, and continued activation reinforces the hyperexcitable state that          tion of CaMKII leads to further downregulation of GABAergic sig-
+predisposes the neuronal circuitry to additional seizure activity.               naling and increases AMPA receptor trafficking to the synapse and
+     Serial imaging studies have demonstrated the long-term impact of            AMPA receptor conductance (37–40). In addition, NMDA recep-
+continued seizure over time at the individual and group levels (33).             tor–mediated increases in Ca2+ and subsequent activation of protein
+Jackson et al. described a series of changes in new-onset temporal lobe          phosphatase 1 (PPI) leads to the dephosphorylation of KCC2, thus
+epilepsy (TLE) that began with a transient and isolated increase in T2           eliminating the GABAergic hyperpolarization mediated by KCC2
+hyperintensity in the neuronal layer of the hippocampus on initial               (41). Positron emission tomography studies have demonstrated that
+magnetic resonance imaging (MRI), followed eight months later by                 patients with focal epilepsy have significant increases in surface
+MRI evidence of unilateral hippocampal sclerosis with loss of hippo-             expression of NMDA receptors, which could contribute to synergistic
+campal internal architecture and abnormalities in both T2- and                   increases in excitatory drive and reduction in synaptic inhibition (42)
+T1-weighted sequences, signaling gliosis and cell loss (34). The                 (Figure 2). Receptor dynamics leading to E/I imbalance are complex,
+FEBSTAT (febrile status epilepticus) study also demonstrated how an              yet we can evaluate the change in hyperexcitability using MRI tech-
+initial seizure event can have long-term negative effects on brain devel-        niques to calculate the Hurst exponent (43). Patients with TLE dem-
+opment (35). Following an episode of complex febrile seizures with               onstrate a reduced Hurst exponent for the whole brain and significant
+status epilepticus, acute hippocampal injury, as evidenced by an abnor-          clusters, indicating a significant increase in E/I imbalance (43).
+mal T2 signal, was noted in 11.5% of patients (n = 22/191), which was            Additionally, excitatory neuronal firing rates are increased in resected
+not seen in any of the control patients (n = 96) (35). Extrahippocampal          tissue from patients with DRE versus tissue from patients without
+abnormalities were also more frequent in the patients with febrile status        epilepsy (44). Taken together, these cellular mechanisms aid in creat-
+epilepticus (temporal level, amygdala, and insula), suggesting more              ing an E/I imbalance that supports self-sustaining seizure activ-
+extensive brain injury that may impact further progression and propa-            ity (37).
+gation of seizures and the development of comorbidities (35).
+                                                                                 4.2 The seizure scar develops
+4.1 Acute seizure: hyperexcitability and
+hypersynchronization                                                                 The memory of a seizure can be conceptualized as a functional
+                                                                                 and microstructural “scar” that undergoes structural remodeling to
+     A seizure reflects hyperexcitability and hypersynchronization               stabilize hyperexcitable circuits and lower the threshold for future
+driven by E/I imbalance (36). Whether due to a preexisting vulnerabil-           events. The brain remembers seizure activity through mechanisms
+ity or seizure-induced plasticity, seizures can be initiated by numerous         similar to those that drive LTP and LTD. The seizure ensemble’s
+
+
+Frontiers in Neurology                                                      04                                                             frontiersin.org
+Gustin et al.                                                                                                                     10.3389/fneur.2026.1793970
+
+
+
+
+    FIGURE 2
+    Excitatory/inhibitory (E/I) imbalance. Increased excitation and reduced inhibition supports neuronal network hyperexcitability and hypersynchronization,
+    leading to E/I imbalance and reduced seizure threshold. (A) Depolarization of presynaptic glutamatergic neurons increases influx of calcium ion (Ca2+)
+    through Ca2+ channels within the presynaptic terminals, leading to increased vesicular release of glutamate. Glutamate-mediated activation of
+    N-methyl-D-aspartate receptors (NMDARs) increases postsynaptic Ca2+, activating second messengers that increase trafficking of NMDAR and
+    α-amino-3-hydroxy-5-methyl-4-isoxazolepropionic acid receptors (AMPAs) to the postsynaptic terminal, strengthening glutamatergic signaling, and
+    increasing the overall excitability of the neuron. (B) Within seconds to minutes of seizure-induced hyperexcitability, dysregulation of neuronal networks
+    through desensitization of gamma-aminobutyric acid (GABAergic) interneurons can occur. Internalization of GABA type A (GABAA) receptors on
+    postsynaptic neurons reduces the inhibitory control of the neuronal network. (C) The combination of increased excitation and reduced inhibition leads
+    to an E/I imbalance that reduces the seizure threshold, increasing the probability of spontaneous, recurrent seizures. Figure created in BioRender. EEG,
+    electroencephalogram; Cl−, chloride; GABA-T, GABA transaminase; GAD, glutamate decarboxylase; GAT1, GABA transporter 1; KAR, kainate receptor;
+    Na+, sodium ion; VGAT, vesicular GABA transporter; VGLUT, vesicular glutamate transporter.
+
+
+
+
+hyperexcitable and hypersynchronous state leads to a rapid increase                 4.3 The seizure scar deepens: reinforcing
+in dendritic spine number (45, 46). When a circuit is overwhelmed                   circuitry hyperexcitability and
+with hyperexcitability, as seen during a seizure, there is a subsequent             hypersynchronization
+increase in dendritic spines, and these spines form mature synapses,
+as evidenced by an increase in spine density and a concurrent increase                   Activity-dependent myelination plays a critical role in fine-tuning
+and colocation of presynaptic (vGLUT-1) and postsynaptic (PSD-95)                   neuronal network dynamics (50, 51). Within hours of the neuronal
+elements (45).                                                                      activity associated with learning and memory or experiential stimuli,
+     As seizure activity continues, additional morphological changes                oligodendrocyte progenitor cells (OPCs) proliferate and differentiate
+occur in the ultrastructure of affected neurons (45–47). In addition                to mature oligodendrocytes, and axonal myelination of activated neu-
+to the increased number of mature synapses, seizures leave a scar                   ronal networks increases (52). Evidence suggests that myelin dysregu-
+across the neuronal ensemble in the form of structural changes that                 lation plays a role in epilepsy, with an overall reduction in myelin
+functionally lead to sustained enhancement of synaptic gain and                     content with progressive disease (53–57). Imaging studies have dem-
+hyperexcitability (45, 48). Several additional structural changes con-              onstrated that in later stages of disease, significant gliosis, oligoden-
+tribute to this enhanced synaptic gain. When neurons continue to                    drocyte loss, myelin reduction, and myelin dysregulation occur in
+experience repetitive glutamatergic stimulation, they need to adapt                 patients with epilepsy (53–57). However, these studies typically evalu-
+to the overstimulation; significant changes in the dendritic arbors are             ated patients who have progressed significantly in their disease, and
+required to be able to receive and efficiently process the inputs.                  few studies evaluated the role of myelination in epileptogenesis and
+Hyperexcitability leads to bifurcation of postsynaptic densities (i.e.,             patients with less severe epilepsies or earlier stages of disease (58, 59).
+perforated synapses), adding synapses to the seizure ensemble (45,                  Growing evidence in both animal models and clinical studies suggests
+48). Seizure activity also increases the number of spinules that grow               that in certain epilepsies and certain brain regions, maladaptive
+from spines, forming even more synapses within the maladaptive                      myelin plasticity and enhanced myelination may increase seizure sus-
+circuit (45). The remodeling of individual synapses, neurons and neu-               ceptibility and progression (50–52, 60, 61). Notably, there are techni-
+ronal networks leads to an increase in overall synaptic gain in human               cal limitations when conducting myelin mapping studies, as well as
+pathology (44, 49). Resected tissue from patients with progressive                  potential differences in brain region or cortical depths that may go
+focal seizures and focal-to-bilateral tonicclonic seizures have shown               unresolved (61, 62). Recent research suggests that myelin reduction is
+increased mossy fiber sprouting, asymmetric synapse formation, and                  not the only mechanism that leads to network dysregulation in epi-
+a greater number of perforated synapses (44, 49). All of these changes              lepsy, and based on the temporal nature of the disease and the pro-
+lead to enhanced synaptic gain and significantly reduce the seizure                 gression of seizures, hypermyelination may also contribute to
+threshold, thus promoting a more hyperexcitable neuronal ensemble                   reinforcing the seizure circuitry, leading to disease progression
+(45, 48).                                                                           (50, 63).
+
+
+Frontiers in Neurology                                                         05                                                                frontiersin.org
+Gustin et al.                                                                                                                   10.3389/fneur.2026.1793970
+
+
+
+
+     The aberrant pattern of neuronal activity in seizures is required                  Taken together, these findings indicate that myelin changes may
+for the maladaptive myelination that occurs after epilepsy onset (51).              be progressive over time, with increased myelin plasticity leading to
+Moreover, the changes in OPC differentiation and myelination are                    seizure susceptibility and progression, gliosis, myelin content reduc-
+specific to the neurons within the seizure neuronal ensemble (64).                  tions, and disease progression leading to dysregulation and continued
+     Normal neuronal function also depends on neuron-to-OPC and                     seizure vulnerability.
+GABAergic interneuron-to-OPC synapses (50). Aberrant seizure
+activity increases glutamate release, activating AMPA receptors on                  4.4 The injury emerges
+OPCs and increasing oligodendrocyte survival and myelination of
+neurons within the seizure network (51, 64). Increased myelination                       The complement system acts as a sensor of tissue distress (72, 73).
+throughout the seizure neuronal ensemble has been shown to be                       In the central nervous system (CNS), the complement system prolifer-
+AMPA receptor and BDNF–TrKB dependent (51). The maladaptive                         ates to protect the brain from neuronal cell injury, damage, and/or
+hypermyelination that occurs with seizure activity reinforces the rapid             death (72). Moreover, neuroinflammatory proteins can function as
+transmission of aberrant neuronal activity, leading to continued net-               neuromodulators and can directly impact neuronal function, plastic-
+work dysfunction and increasing seizure susceptibility (50). This mal-              ity, and excitability (72, 73).
+adaptive myelination is able to temporally and spatially integrate                       Elevations in neuroinflammatory proteins can begin during the
+synaptic inputs and synchronize activity across the seizure network                 seizure and persist for days to months after a seizure event, which may
+(50, 52). This establishes a positive feedback loop where the seizure               explain the degree of injury over time and increased seizure suscepti-
+activity stimulates myelination throughout the network, and the aber-               bility (73–75). Hence, inflammatory proteins have an expanded role
+rant myelination increases the conductance velocity through impacted                in the CNS; in addition to responding to injury, these proteins main-
+neuronal axons that further promotes hypersynchronicity (50, 52).                   tain normal brain function (76–82). Proinflammatory cytokines and
+     Due to its impact on the thalamocortical circuitry, maladaptive                proteins associated with the innate and adaptive immune systems
+myelination is also implicated in generalized seizures and seizure pro-             contribute to brain development, synapse formation, activity-depen-
+gression (50). Thalamic nuclei are involved in disease progression in both          dent synapse morphological changes, neural stem cell regulation, and
+generalized–onset seizures and focal-to-bilateral tonic–clonic seizures             adult neurogenesis, regulating synaptic transmission and plasticity, as
+(65). Neuronal projections from the corpus callosum connect cortical                well as homeostatic plasticity (76–82).
+neurons across the hemispheres, which allows for seizures to propagate                   As reviewed in Figure 3, numerous neuroinflammatory modula-
+throughout the brain via myelinated tracts that interconnect the thala-             tors are upregulated during or after a seizure (73). Specific neuroin-
+mus and cortex (51, 52, 65). In rodent models of generalized seizures,              flammatory pathways that are upregulated during seizures in several
+increases in oligodendrogenesis and pathological myelination are present            cell types (i.e., neurons, microglia, astrocytes, and endothelial cells,
+in temporal and anatomical patterns that parallel seizure activity (51).            blood–brain barrier) can affect synaptic function and plasticity via
+Seizure-induced myelination contributes to network hypersynchrony                   direct effects on receptor systems and ion channels (73). Here we focus
+across the thalamocortical circuitry, which is dependent on BDNF-                   on several neuroinflammatory molecules that increase the risk of sei-
+mediated activation of TrkB, linking the contralateral hemisphere and               zure progression, frequency, and duration, which have been shown to
+leading to seizure progression (51, 52). Advanced neuroimaging studies,             increase with severity of disease in patients with epilepsy (83).
+including diffusion MRI and connectomic analyses, provide evidence for                   TNFα is a proinflammatory cytokine known for its role in the
+early white matter alterations in epilepsy (66), as well as structural reor-        innate immune response (84). During injury or infection, TNFα
+ganization following surgery and seizure control (67). These findings               expression is increased, and contributes to inflammation, apoptosis,
+support the hypothesis that remodeling at the level of structural connec-           and cell death (84).
+tions may play a role in seizure propagation. Changes in myelination are                 In the CNS, TNFα mediates normal synaptic plasticity and syn-
+dynamic in epilepsy and vary by syndrome, duration, and affected                    aptic responses due to injury (79, 80). TNFα released by astrocytes
+regions. Nevertheless, spatial–temporal mapping alone may miss impor-               activates TNF receptors on postsynaptic neurons that increase AMPA
+tant disease-related nuances (61, 68–70). Evidence suggests that axonal             receptor trafficking, leading to increased spontaneous mini excitatory
+loss within seizure circuits may follow demyelination or abnormal                   synaptic currents (80). In addition, TNFα is required for maintaining
+myelination (70). In high-field MRI and histology studies of TLE,                   the surface expression of AMPA receptors and synaptic strength (80).
+Garbelli et al. found that patients with gray–white matter blurring (a pos-              During seizure, there is a rapid induction of TNFα both in glial
+sible indicator of disease progression in the absence of dysplasia) had             cells and within the endothelium of the blood–brain barrier, and TNFα
+earlier onset, longer duration, and reduced fractional anisotropy com-              expression can remain elevated for up to 3 days following seizure (73,
+pared with those without blurring, reflecting greater axonal loss or injury         85–88). Along with the increased surface expression of AMPA recep-
+(4, 61, 70, 71). Although myelin thickness did not differ, blurring was             tors, TNFα reduces GABAA receptor surface expression through endo-
+associated with nonhomogeneous myelin staining and markedly reduced                 cytosis (79). Overall, TNFα can shift the E/I balance in neurons
+axon number and density (70). These findings suggest that demyelination             through changes in glutamatergic and GABAergic receptor trafficking,
+may precede axonal damage and that increased myelination of select                  which strengthens the excitatory synapse (79, 80, 89). If maladaptive,
+fiber pathways may contribute to seizure-related hyperexcitability.                 this function could lead to overexcitation and subsequently cause neu-
+     Quantitative T1 mapping revealed that compared with healthy                    ronal damage or cell death (79). In addition, the presence of TNFα
+controls, patients with TLE had increased intracortical myelination,                during seizure onset increases seizure susceptibility and frequency (87).
+especially in upper cortical layers, independent of cortical thinning                    The interaction between TNFα and both the glutamatergic and
+(62). These changes were more pronounced in early-onset epilepsy                    GABAergic receptor systems may contribute to reinforcing and main-
+and linked to reduced connectivity with prefrontal networks, suggest-               taining seizure susceptibility and progression by the activity-depen-
+ing widespread network-specific hyperexcitability (62).                             dent increase in AMPA receptor surface expression and GABAA
+
+
+Frontiers in Neurology                                                         06                                                             frontiersin.org
+Gustin et al.                                                                                                                      10.3389/fneur.2026.1793970
+
+
+
+
+    FIGURE 3
+    Neuroinflammatory mediators of epilepsy. Many different cell types are involved in the neuroinflammatory response initiated by seizure activity,
+    including microglia, neurons, astrocytes, and endothelial cells. Changes in the expression of certain neuroinflammatory proteins can occur within
+    minutes to hours after a seizure event and can lead to the progression of epilepsy by increasing excitatory drive and loss of inhibitory control neuronal
+    networks. Neuroinflammatory mediators of epilepsy are listed in the figure and reviewed in van Vliet et al. (73). Figure created in BioRender. BBB, blood–
+    brain barrier; COX-2, cyclooxygenase-2; HMGB1, high-mobility group box 1 protein; IL-1β, interleukin-1-beta; IL-1R1, interleukin-1 receptor type 1;
+    TLR4, toll-like receptor 4; TNFα, tumor necrosis factor alpha; TNFR1, tumor necrosis factor receptor 1; TNFR2, tumor necrosis factor receptor 2.
+
+
+
+
+receptor internalization, thus priming neurons for hyperexcitability                These effects are evident in patients with TLE and can be counteracted
+(73, 79, 87).                                                                       by increasing IL-1Ra or administering intravenous immunoglobulin,
+     Interleukin-1 beta (IL-1β) is a proinflammatory cytokine known                 which inhibit IL-1β/IL-1R1 signaling, highlighting the role of this
+for its role in the innate immune response to injury and/or infection               pathway in seizure progression (97–99).
+(73, 82, 90, 91). Although IL-1β plays a role in CNS inflammation, and                   High-mobility group box protein 1 (HMGB1) is a ubiquitous
+its expression during chronic disease can exacerbate damage, it also                inflammatory protein found in nearly all cell types in the body (81,
+modulates neuronal function (73, 82, 91, 92).                                       100). HMGB1 is present in the nucleus, where it acts as a transcription
+     IL-1β expression is induced during seizure and seizure recurrence              regulator, and also in the cytoplasm, where it can act as second mes-
+and may be a biomarker for epileptogenesis, epileptic foci, and seizure             senger; it also has a role in extracellular activation of toll-like receptor
+progression (73, 92). In a healthy brain, IL-1β mRNA and protein                    4 (TLR4) (73, 81, 100). As HMGB1 activity is ubiquitous, administra-
+expression is barely detectable; however, its expression is rapidly                 tion of the protein leads to systemic inflammatory responses, and
+upregulated within ≤30 min of seizure activity (73, 85, 92–95).                     HMGB1 antagonists can reduce the severity of inflammatory disease
+Depending on seizure severity, increased IL-1β expression may be                    and lethality in animal models (81). HMGB1-mediated activation of
+transient during the acute phase of the seizure and returns to normal               TLR4 is the primary pathway supporting macrophage activation, cyto-
+levels over 48 to 72 h (95). Interestingly, in a model of febrile seizure,          kine release, and tissue damage, which is associated with the immune
+rodents that experienced febrile seizure–induced status epilepticus                 response (73, 81, 100).
+were at a higher risk for developing spontaneous seizure, which is                       Patients with DRE have increased activation of HMGB1/TLR4
+associated with a persistent increase in IL-1β (95). Furthermore,                   signaling (73, 101–103). During seizure, the HMGB1/TLR4 pathway
+patients with DRE due to focal cortical dysplasia or glioneuronal                   is activated, leading to downstream phosphorylation of NMDA recep-
+tumors had elevated levels of IL-1β and IL-1 receptor type 1 (IL-1R1)               tors, increased intracellular Ca2+, and reinforced hyperexcitable neu-
+in multiple cell types, including neurons and glial cells (94).                     ronal states (73, 97, 103). In addition, HMGB1 is associated with
+Differential IL-1β and IL-1R1 upregulation in aberrant neurons can                  reduced GABAergic signaling, increased glutamate release, and inhib-
+contribute to increased excitability in the seizure neuronal network,               ited glutamate reuptake, which increases extracellular glutamate and
+leading to seizure progression (85, 94–96).                                         contributes to E/I imbalance that reinforces hyperexcitability (73, 97,
+     The IL-1β/IL-1R1 pathway also enhances neuronal hyperexcit-                    103, 104). In animal models, antagonism of the HMGB1/TLR4 path-
+ability by increasing AMPA receptor expression, glutamate release,                  way can reduce seizure frequency and seizure duration, further impli-
+and NMDA receptor–mediated Ca2+ influx, leading to excitotoxicity                   cating this pathway in seizure progression (103, 105). It has been
+and cell death. Elevated IL-1β also drives astroglial activation and pro-           suggested that HMGB1 may be a biomarker for both epileptogenic
+longed glutamate elevation, while reducing GABAergic inhibition.                    and seizure progression (103).
+
+
+Frontiers in Neurology                                                         07                                                                 frontiersin.org
+Gustin et al.                                                                                                                 10.3389/fneur.2026.1793970
+
+
+
+
+     Cyclooxygenase-2 (COX-2) is an enzyme that synthesizes prosta-               interneurons, as increased expression and activity of matrix metallo-
+glandins involved in response to inflammation and other physiologi-               proteinases (MMPs), a disintegrin and metalloproteinase with throm-
+cal stimuli to mediate pain and inflammatory processes (73, 106, 107).            bospondin motifs (ADAMTs), and tissue inhibitors of
+Following brain injury and during seizure, increased COX-2 expres-                metalloproteinases (TIMPs) lead to PNN destruction, thus increasing
+sion in neurons leads to the production of prostaglandins, including              GABAergic interneuron membrane capacitance and prolonging
+prostaglandin E2 (PGE2) (73, 74, 107, 108). Elevations in COX-2 can               reduced GABA release (131). This reduced inhibitory tone increases
+last for hours to days following prolonged seizure, status epilepticus,           excitatory drive and hyperexcitability of glutamatergic neurons, pro-
+and repetitive seizures (73, 107, 109, 110). Interestingly, COX-2                 moting more seizures (131–134).
+expression is increased during the acute phase of seizure, returning to                In addition to its effects on the GABAergic system, the ECM
+baseline levels during the latent phase and increasing once again                 directly impacts the glutamatergic system, increasing hyperexcitable
+during the chronic phase, with the presentation of spontaneous recur-             states (125, 128, 129, 131, 134–138). Components of the ECM alter the
+rent seizures (73, 93, 108, 109, 111).                                            localization of AMPA and NMDA receptors in dendritic spines and
+     COX-2 expression is normally upregulated by increased neuronal               on dendritic shafts (128, 136). The ECM can also alter AMPA receptor
+activity. During a seizure, rapid upregulation of COX-2 results from              properties, increasing burst firing duration, decreasing interburst
+increased NMDA receptor–dependent seizure activity (73, 109, 112).                intervals, and prolonging the open state of these channels by 3 to 5
+COX-2 upregulation leads to the production of PGE2, which binds to                fold, thus promoting hyperexcitability (128, 137, 138).
+the prostaglandin E (EP) family of receptors, enhancing the neuroin-                   Several developmental epilepsies are characterized by malforma-
+flammatory response, neuronal injury, and presynaptic glutamate release,          tions and associated with overexpression of ECM proteins (e.g., tuber-
+thus supporting the hyperexcitability of postsynaptic neurons (107–110).          ous sclerosis complex, gangliogliomas, and focal cortical dysplasia)
+     COX-2 contributes to epilepsy comorbidities, including sudden                (126). In addition, patients with intractable mesial TLE (MTLE) show
+unexpected death in epilepsy (SUDEP), by regulating sleep–wake cycles             changes in ECM protein expression and reductions in PNNs, which
+and promoting vasoconstriction through prostaglandin-mediated activa-             positively correlate with seizure episodes (133).
+tion of L-type calcium channels, leading to postictal hypoperfusion and                When evaluating the clinical progression of MTLE and consider-
+hypoxia (110, 113). Its expression also enhances fever responses, linking         ing age at epilepsy onset, duration of epilepsy, number of ASMs, and
+it to febrile seizures (110, 114, 115). Beyond seizure activity, COX-2 has        frequency of seizures, patients with lower seizure frequency showed
+been associated with depression, anxiety, and cognitive deficits, suggest-        less diffuse staining of ECM proteins (133). To maintain functional
+ing a broader role in long-term consequences of DRE (108, 110).                   connectivity (FC) and appropriately modulate excitability, specific pat-
+                                                                                  terns of ECM protein expression are both condensed and diffuse
+4.5 Treatments implicating the                                                    (133). In patients with MTLE, both condensed and diffuse ECM struc-
+neuroinflammatory system in epilepsy                                              tural organizations are disrupted (133). This changes the composition
+progression                                                                       and distribution of PNNs, which reinforces E/I imbalance and seizure
+                                                                                  progression (131–134). The continuation of spontaneous seizures over
+     Several preclinical and clinical studies showed that targeting neu-          time reinforces the maladaptive reorganization of the ECM and break-
+roinflammation can reduce seizure burden (73, 74, 107). Aspirin may               down of PNNs, supporting progression of disease (133).
+decrease seizures in focal epilepsy and Sturge–Weber syndrome,                         The ECM has been targeted as a potential treatment option for
+whereas ibuprofen shows no benefit in febrile seizures (116–118).                 certain epilepsies due to its contribution to E/I imbalance in seizure
+Modulation of cytokine pathways, such as IL-1β blockade with                      circuitry (134, 139, 140). It is reasonable to think that restoring ECM
+anakinra or ICE inhibitors and TNFα inhibition with adalimumab,                   volume, reorganizing PNNs, and stabilizing GABAergic interneuron
+reduced seizure frequency in febrile infection–related epilepsy syn-              function may help reduce seizure burden (134).
+drome (FIRES), refractory status epilepticus, and Rasmussen’s enceph-
+alitis (119–123). Overall, these findings implicate neuroinflammation
+in seizure development and progression (123).
+                                                                                  5 Reinforcing the continuation of
+4.6 Remodeling of the ECM                                                         seizure and treatment intractability
+     The ECM provides critical structural support for neurons and con-
+tributes to overall brain function: it is involved in neuronal develop-           5.1 Genetic and epigenetic factors
+ment, cell migration, neurite outgrowth and neuronal morphology,                  underlying seizure and epilepsy
+signal transduction, and synaptic plasticity (124–130). As a dynamic
+lattice, the ECM regulates the microenvironment around cells, playing                  Additional factors contribute to the phenotypic expression of sei-
+roles in both normal brain activity and pathophysiology (124–126,                 zure and epilepsy (141–144). Genetic mutations can precipitate or
+130–133). The major structural components of the ECM found in the                 initiate neurochemical, structural, functional, or circuitry changes that
+brain include perineuronal nets (PNNs), basement membranes (BMs),                 lead to seizure progression by reducing seizure threshold by creating
+and axonal coats (124, 125). PNNs play a critical role regulating                 an E/I imbalance, which promotes hyperexcitability and hypersyn-
+GABAergic inhibitory signaling, which in turn regulates glutamatergic             chronicity. To date, more than 1,000 genes have been associated with
+firing (124, 128, 129, 131). Under normal physiological conditions,               epilepsy, which are reviewed elsewhere (https://github.com/bahlolab/
+PNNs can decrease the membrane capacitance of GABAergic interneu-                 genes4epilepsy) (141, 144).
+rons, increasing both the release of GABA and inhibitory control of                    The conversion of experience into genetic modifications that
+glutamatergic neurons (131). PNNs lose control over GABAergic                     influence cellular events, or epigenetics, plays an important role in the
+
+
+Frontiers in Neurology                                                       08                                                             frontiersin.org
+Gustin et al.                                                                                                                 10.3389/fneur.2026.1793970
+
+
+
+
+initial presentation and progression of seizure and has a long-term,               histone deacetylases (HDACs) could impact the expression of other
+cumulative impact on the patient (145–147). Several common pro-                    genes critical to hyperexcitability or the development of comorbidities
+cesses define epigenetics, including DNA methylation, histone acetyla-             associated with epilepsy (147, 166, 167). Interestingly, with repetitive
+tion, and non-coding RNA (ncRNA) expression changes, which have                    electroconvulsive seizure, upregulation of HDAC2 in the frontal
+all been associated with the development and progression of seizures               cortex led to a reduction in acetylation and expression of the NR2A
+(148–150).                                                                         and NR2B subunits of NMDA receptors, along with a reduction in
+     Although the methylation of promoter regions of genes is typically            CaMKIIα expression (166, 167). This is a critical finding, as it could
+associated with gene silencing, considered very stable, and can prevent            provide evidence for dysregulation of impacted neuronal circuitry and
+transcription, DNA methylation at alternative sites within the                     provide a basis for the learning and memory deficits experienced by
+sequence is associated with increased transcription, demonstrating                 patients with epilepsy (151, 168). Notably, patients with TLE have
+that DNA methylation is a dynamic process that modulates gene                      increased HDAC2 expression, which is proposed to disrupt synaptic
+expression (149, 151, 152). Furthermore, DNA methylation is modu-                  plasticity through dysregulation of gene expression and long-term
+lated by neuronal activity (149, 153). Experience-dependent, neuronal              chromatin remodeling (167).
+activity–induced DNA methylation changes in the mature brain can                        ncRNA has also been implicated in epilepsy (149, 150). ncRNA,
+be dependent on NMDA signaling (153). Additionally, the changes in                 consisting of microRNAs, long ncRNAs (lncRNAs), and circular
+methylation status are long-acting, suggesting that activity-induced               RNAs (circRNAs), have been shown to play important roles in regulat-
+changes in methylation may influence epileptogenesis and seizure                   ing gene transcription and neuronal function, including development
+progression (149, 150, 153).                                                       of neuronal circuitry and plasticity (169, 170). Soutschek and Schratt
+     Changes in DNA methylation patterns have been identified in                   reviewed the role of ncRNA in neuronal function and neuronal circuit
+patients with epilepsy (149, 154–156). The link between an initial sei-            remodeling (170). The development and stability of neuronal function
+zure and long-lasting changes in DNA methylation patterns that pro-                has been shown through loss-of-function experiments in which loss
+mote further or spontaneous seizure activity has been investigated                 of function of certain microRNAs leads to reduced miniature excit-
+(157). AMPA receptors that include heterodimer structures integrat-                atory postsynaptic currents (mEPSCs), pointing to a reduction in
+ing GluA2 subunits are impermeable to Ca2+, whereas Glu1A subunits                 overall excitatory synapses (170). Loss of other microRNAs impacted
+are inwardly rectifying and promote Ca2+ permeability (157–159).                   GABAergic system maturation, leading to structural changes in neu-
+Studies have demonstrated that rodents exposed to kainic acid to                   rons that increase spontaneous, synchronous excitatory activity (170).
+induce epileptiform activity have a long-lasting increase in DNA                   Additionally, microRNAs can impact genes required for synaptic
+methylation, leading to silencing of GRIA2 and a subsequent reduc-                 vesicle release and AMPA receptor trafficking, demonstrating their
+tion in gria2 mRNA expression, thus increasing AMPA receptor Ca2+                  role in regulating excitatory synaptic strength (170). Overall, ncRNAs
+permeability and neuronal burst firing and promoting spontaneous                   are critical in the development and maintenance of neuronal integrity
+seizure activity (157). Changes in DNA methylation patterns due to                 and regulate the expression of multiple genes involved in synaptic
+seizure activity have been seen with other genes that contribute to E/I            transmission, synaptic plasticity, and long-term homeostatic plasticity
+imbalance, including GRIN2B (NMDA receptor subunit) and BDNF,                      maintenance (170).
+and contribute to the progression of seizure activity (160). This is                    The involvement of ncRNAs in neuronal structure and function
+translatable to humans, as there is a shift in AMPA receptor subunit               suggests that ncRNAs could play a role in epileptogenesis, as well as
+expression in patients with epilepsy, including downregulation of                  long-term seizure progression. Notably, 2 months following a seizure,
+GluA2 and upregulation of AMPA receptor subunits that promote                      levels of over 100 microRNAs either increased or decreased in patients
+Ca2+ permeability and increase susceptibility to epileptiform activ-               with epilepsy (171). The expression of several core ncRNAs are con-
+ity (161).                                                                         sistently altered with seizure and epilepsy, including miR-34a, miR-
+     Similar to DNA methylation, posttranslational modification                    132, and miR-188, which are associated with neuronal death following
+(PTM) of histones (i.e., acetylation, phosphorylation, methylation,                status epilepticus (149, 150, 171).
+ubiquitylation, and sumoylation) influences gene transcription, lead-                   Increased levels of miR-134 reduces seizure threshold through
+ing to increased or decreased gene expression (149, 150, 162, 163).                modulation of dendritic spine proteins (149, 171, 172). In addition,
+Histones are proteins that organize DNA and provide structural sup-                antagonism of miR-134 reduces the development of epilepsy or spon-
+port to chromosomes (146, 147, 164, 165). Histone PTMs play critical               taneous seizure following status epilepticus (149, 171, 172). Moreover,
+roles in gene transcription, replication, repair, and changes in genetic           in animal models, pretreatment with miR-134 antagonists prior to
+architecture through chromatin remodeling (164, 165).                              initiation of status epilepticus reduced seizure duration, leading to
+     Both acute and chronic seizures have been shown to impact his-                reduced neuronal damage (172). Loss of miRNA-128 increased overall
+tone PTM (145). Histone acetylation alters gene transcription follow-              spine density, enhanced neuronal excitability, and led to fatal epilepsy
+ing neuronal activity: increases in histone acetylation can be observed            in rodent models, whereas ectopic expression of miR-128 in postsyn-
+30 min following an acute seizure event and can last hours before                  aptic, excitatory neurons reduced seizure frequency (149, 173).
+returning to baseline levels (145). In the chronic seizure state, a seizure        lncRNAs can also influence the development and progression of sei-
+can initially increase histone acetylation, followed by a marked reduc-            zures (149). For instance, increased expression of metastasis-associ-
+tion 24 h post-seizure, indicating the longer-term structural changes              ated lung adenocarcinoma transcript 1 (Malat1) increased mature
+and chromatin remodeling that occur with chronic seizures (145).                   synapse formation, promoting hyperexcitability (174). Reduced sei-
+Specific to neuronal hyperexcitability, following a seizure, the hyper-            zure threshold and increased seizure frequency are associated with
+acetylation of BDNF leads to increased expression, whereas histone                 reduced brain cytoplasmic 1 (BC1) RNA (175). BC1 RNA is critical
+deacetylation of GluA2 precedes a reduction in the expression of the               for neuronal excitatory suppression, and loss of BC1 RNA leads to
+AMPA receptor subunit (145–147). Seizure-induced upregulation of                   increased prolonged spontaneous burst firing of glutamatergic
+
+
+Frontiers in Neurology                                                        09                                                             frontiersin.org
+Gustin et al.                                                                                                                10.3389/fneur.2026.1793970
+
+
+
+
+neurons, increasing hyperexcitability and continued propensity for               highly connected regions central to distributed networks (e.g., hip-
+prolonged spontaneous burst firing (175). Taken together, these data             pocampus, amygdala, striatum, and thalamic nuclei). The DMN is
+suggest that alterations in ncRNA expression can have structural and             critical to executive functioning, working memory, and attention;
+functional impacts on neuronal circuitry that lead to a reduction in             DMN dysfunction can lead to cognitive impairment, anxiety, and
+seizure threshold and continuation of seizures. Additionally, following          depression and can contribute to seizure progression, demonstrating
+an initial insult leading to seizure, ncRNAs may be useful to suppress           that the widespread impact of epilepsy to distal brain networks outside
+the underlying epileptogenesis processes during the latent phase,                the seizure foci (177, 182, 187). Several neurocognitive deficits have
+reducing or eliminating the development of spontaneous seizure                   been linked to alterations in FC across the DMN that contribute to
+activity (chronic phase). Increasing research is focused on developing           attention, language, visuospatial working memory, and executive
+ncRNA as biomarkers and treatment for epilepsy (176).                            functioning (162, 177, 179, 185, 186, 188–190).
+                                                                                      When assessing SC and FC in patients with epilepsy, possible con-
+                                                                                 founds due to the ASMs being administered should be considered
+                                                                                 (188, 191, 192). Furthermore, as abnormal functional connections are
+6 Long-term consequences of                                                      reinforced through continued seizure activity, a reduction in distal
+continued seizure and brain health                                               normal functional connections may occur as the connections become
+                                                                                 less active, leading to additional neuropathology (178). There is grow-
+    The brain is organized into large-scale networks whose structural            ing evidence on the utility of SC and FC as a potential biomarker as a
+and functional relationships are altered in disease (162). The structural        measure for treatment responsiveness (193, 194). Patients whose sei-
+and functional characteristics of human brain networks and their con-            zures are not controlled with ASMs have significant differences in FC
+nections can be studied in vivo using imaging techniques, namely dif-            measures compared with both healthy controls and patients whose
+fusion tensor tractography and blood oxygen level–dependent                      seizures are well controlled by ASMs, which could potentially help
+(BOLD) signal in functional MRI (fMRI).                                          forecast DRE and allow for earlier changes in treatment strategy and
+    Widespread structural and FC alterations are detectable in both              disease management (193, 194).
+generalized and focal epilepsy, beyond the epileptogenic zone and
+across cortical and subcortical regions (163, 177–182). In patients              6.1 Cell death and atrophy
+with TLE, resting-state fMRI revealed an imbalance between local
+and long-range connections, in which aberrant local connectivity and                   In addition to structural and functional changes that occur with
+reductions in long-range projections led to network segregation; the             ongoing seizures, the continuous increase in seizure frequency and
+structural organization of white matter architecture is independent              duration can activate programmed cell death pathways, which in turn
+of cortical atrophy and reduces seizure threshold (181–183). For                 alters cellular function well before neuronal death occurs (195, 196).
+example, although there is a reduction in intrahemispheric FC in                 Based on imaging studies, neurocognitive testing, and functional defi-
+patients with TLE, local ipsilateral FC is increased, with higher nodal          cits, repeated seizures impact brain structure and lead to neuronal loss
+centrality in the thalamus, anterior cingulate cortex, and fusiform              (196–198). There are several hypotheses on how seizure-induced neu-
+gyrus (182).                                                                     ronal cell death can lead to increased hyperexcitability, further
+    The functional network can be explained in part by monosynaptic              increasing susceptibility to recurrent seizures (i.e., the recapitulation
+and oligosynaptic structural connections, and changes in this relation-          of development hypothesis and the neuronal death pathway hypoth-
+ship between structural connectivity (SC) and FC, or SC-FC coupling              esis) (195). The recapitulation of development hypothesis suggests that
+abnormalities, have been described in both focal and generalized epi-            neuronal death triggers the formation of new excitatory synapses by
+lepsy (162, 178, 181, 184). Moreover, SC-FC coupling abnormalities               preserved neurons in the area impacted by the seizure; the resulting
+are thought to worsen with increased epilepsy curation and disease               maladaptive circuitry maintains E/I imbalance via the loss of
+progression (163, 177, 178, 181). Patients with generalized epilepsy             GABAergic interneurons and an increase in newly formed glutama-
+have an overall reduction in SC-FC coupling compared with healthy                tergic synapses (195, 199, 200). However, acute brain injury that
+controls, and the strength of the SC-FC coupling negatively correlates           causes neuronal death does not always lead to the development of
+with the duration of epilepsy (162). This suggests that SC-FC decou-             epilepsy, and epileptogenesis and seizure progression can occur prior
+pling may contribute to long-term progression of disease (162).                  to neuronal death. This has led to the development of the neuronal
+Similar changes in SC-FC coupling have been described in patients                death pathway hypothesis, which postulates that seizure events can
+with TLE (178, 181, 184). Studies have demonstrated that changes in              activate neurodegenerative processes that precede neuronal death and
+SC-FC coupling are dynamic and change throughout disease progres-                contribute to the worsening of seizures and non-seizure symptoms
+sion (181, 184).                                                                 (i.e., progression of epilepsy) (195, 196).
+    Due to network connections between brain regions, each network                     Seizures may initiate apoptosis through glutamatergic mecha-
+“node” can influence other nodes; continued seizures impact local                nisms (196, 197). Excessive glutamate release causes overexcitation of
+networks within an epileptogenic foci and can cause widespread neu-              NMDA receptors that increases intracellular Ca2+ concentrations,
+ropathologies, depending on epilepsy duration and the affected nodes             which in turn activates excitotoxicity pathways (196, 197, 201). In
+and brain regions (43, 162, 181, 182, 184–186). In addition to seizures,         addition to NMDA receptor–mediated cell death, TNFα plays a role
+the main manifestation of the epileptic network, the development of              in seizure-induced apoptosis, as seizure-dependent TNFα-mediated
+comorbid cognitive impairments and psychiatric illnesses has been of             activation of TNFR1 induces antiapoptotic genes in impacted neurons
+outmost interest. Central to the distributed network are the main                (197). After seizure, the cascade of neurochemical, neuroinflamma-
+default mode network (DMN) “hubs”: the medial prefrontal cortex,                 tory, and genetic events can lead to the continuous change and rein-
+posterior cingulate, precuneus, and angular gyrus, as well as other              forcement of neuronal structure and cell death (197, 202).
+
+
+Frontiers in Neurology                                                      10                                                             frontiersin.org
+Gustin et al.                                                                                                                   10.3389/fneur.2026.1793970
+
+
+
+
+    Seizure-associated changes are dynamic rather than static, and the             associated with interictal epileptiform activity and recurrent or pro-
+underlying cascade of events triggered by an initial seizure can evolve            longed seizures (168, 214, 216). Cognitive impairment in patients with
+throughout the latent period to strengthen the E/I imbalance, leading              epilepsy is in part due to the neurochemical, morphological, genetic,
+to a chronic increase in spontaneous seizures (4, 203). Following the              and functional changes discussed above, with frequent prolonged sei-
+evolution of epilepsy through the latent period, the spontaneous                   zures and duration of illness most significantly impacting cognitive
+recurrent seizures increase seizure burden, reinforce the pathological             function (168, 214).
+neuronal circuitry, and begin to impact wider neuronal networks,                        Epilepsy and ongoing seizures can impact several areas of cogni-
+which may contribute to comorbidities (163, 177–182, 203).                         tion, including working memory, attention, processing speed, visuo-
+                                                                                   spatial memory, language, learning, and long-term memory (168,
+                                                                                   177, 181, 214, 215). Many of the over 1,000 genes associated with
+                                                                                   epilepsy are also associated with cognitive impairment (141, 144,
+7 Overall impact on patient health and                                             168, 214, 216). For example, Dravet syndrome (DS) is a developmen-
+QoL                                                                                tal epileptic encephalopathy associated with multiple seizure types
+                                                                                   and neurodevelopmental impairments that lead to cognitive deficits
+    Epilepsy extends beyond recurrent seizures, and treatment should               typically beginning in the second year of life (217). The majority of
+include a multidisciplinary team that does not solely focus on reduc-              DS cases are caused by a de novo mutation in the SCNA1 gene, lead-
+tion in seizure burden. Comorbidities are common in patients dealing               ing to decreased Nav1.1 voltage-gated Na+ channel function (216,
+with epilepsy and negatively impact patient QoL (204–210). Common                  218). The reduced sodium currents in GABAergic interneurons leads
+comorbidities experienced by patients with epilepsy are shown in                   to reduced inhibitory activity, leading to further E/I imbalance
+Figure 4. As with any complex disease, the cause-and-effect relation-              (217). Although the ongoing seizures experienced by patients with
+ship between epilepsy and specific comorbidities is uncertain as epi-              DS can lead to further damage and cognitive issues, the loss of
+lepsy or the comorbid condition could cause the other but may also                 Nav1.1 function due to continued seizure contributes to the develop-
+coincide, as they share common underlying mechanisms or mutual                     ment and progression of cognitive impairment (219).
+causes. Comorbid conditions could result from seizures or from the                 Communication between the prefrontal cortex and hippocampus is
+treatment of seizures (206, 207).                                                  critical for normal cognitive and emotional processing (219). Loss
+                                                                                   of function of Nav1.1 voltage-gated Na+ channels leads to altered
+7.1 Cognitive impairment associated with                                           network activity in the prefrontal cortex in both the active and rest-
+epilepsy                                                                           ing states, which in turn leads to impaired working memory, reduced
+                                                                                   sociability, and resistance to fear extinction (219). Catterall et al.
+    Cognitive impairment and decline are common in epilepsy, and                   proposed that severity of illness is based on the extent of Nav1.1
+the impact of epilepsy on cognition has been well studied (168, 211–               function loss, with mild loss of function predisposing patients to
+216). Cognitive impairments in patients with epilepsy are linked to the            familial febrile seizures, further loss of function predisposing
+underlying disease etiology, and further cognitive decline has been                patients to generalized epilepsy with febrile seizures, and complete
+
+
+
+
+    FIGURE 4
+    Common comorbidities with epilepsy. Epilepsy is a neuronal network disorder, with pathology often extending past the epileptogenic focus and
+    impacting other areas of the brain that play a role in the central regulation of other systems, which contributes to the development of comorbid
+    conditions. This figure shows common comorbidities associated with epilepsy, highlighting the fact that epilepsy is much more insidious than just
+    seizures, and thoughtful treatment strategies need to be adopted in order to mitigate the progression of seizure and other comorbidities (204–210).
+    Figure created in BioRender. ADHD, attention deficit hyperactivity disorder; SUDEP, sudden unexpected death in epilepsy.
+
+
+
+
+Frontiers in Neurology                                                        11                                                               frontiersin.org
+Gustin et al.                                                                                                                  10.3389/fneur.2026.1793970
+
+
+
+
+loss of function leading to intractable seizures and more severe                  compared with those whose epilepsy is controlled without seizure
+comorbidities (217). Further support of this hypothesis was demon-                (233–235). An estimated 20 to 30% of patients with epilepsy have a
+strated in human studies showing that changes in allelic expression               psychiatric comorbidity, with approximately 51 to 70% of patients
+of SCNA1 alter working memory performance and brain activity                      experiencing a psychiatric disorder in their lifetime (205, 236). The
+measured by MRI (220).                                                            most common psychiatric comorbidities are mood disorder and anxi-
+    Many genetic mutations leading to epilepsies are associated with              ety (35 and 26%, respectively), and the most common mood disorder
+underlying changes in synaptic plasticity, including other channelopa-            is major depressive disorder (MDD; 24%, depending on the popula-
+thies that impact voltage-gated K+ channels, nicotinic acetylcholine              tion evaluated) (205, 215, 236).
+receptors, calcium channels, and GABA receptors; these all contribute                  Mood disorder and anxiety are reciprocal comorbidities, meaning
+to structural and functional changes at the synaptic level that have              that having either epilepsy or these psychiatric disorders increases the
+long-term impacts on cognition and neuronal networks beyond the                   risk of developing the other (205–207, 233). The neuronal networks
+epileptogenic foci (221–225).                                                     and brain regions impacted by epilepsy often overlap with those impli-
+    Recurrent epileptic seizures also significantly impact cognition              cated in mood disorders and anxiety (206, 233). Whether directly
+(168, 226). The cognitive effects due to seizure are not static but               impacted by the seizure within the epileptogenic foci or widespread
+evolve over time (226). For instance, during an acute seizure event,              network dysregulation, disruption within neuronal circuitry in the
+brief alterations in network excitability and synchronous activity                frontal lobe, temporal lobe, or limbic region can lead to comorbid
+interfere with neuronal coding, memory retrieval, and memory                      mood or anxiety disorders (206, 233, 237–242).
+maintenance (226, 227). Moreover, interictal epileptiform dis-                         Epilepsy and depression share common mechanisms that involve
+charges (IEDs) can lead to transient cognitive impairment in                      the dysregulation of specific receptor systems, including decreases in
+patients with epilepsy. Depending on the location and timing of                   serotonergic, noradrenergic, dopaminergic, and GABAergic activity
+IEDs, patients can experience impairments in short-term memory,                   (243). Several imaging studies aimed to elucidate the influence of the
+free recall, short-term verbal memory, and reaction times (227–                   serotonergic system, specifically serotonin-1A (5-HT1A) receptor
+229). Increased IEDs outside the seizure onset zone have been dem-                activity, on the progression of epilepsy and depression (244–246). A
+onstrated to impact memory encoding in simple recall tasks (228).                 recent meta-analysis examined changes in 5-HT1A binding in patients
+IEDs can also impact memory retrieval and maintenance, with                       with TLE (246). This analysis confirmed 5-HT1A receptor binding is
+increased spike activity reducing recall (228, 229).                              reduced in the hippocampus, temporal cortex, amygdala, and frontal
+    During the ictal period, spontaneous repetitive seizures lead to              lobe ipsilateral to the seizure foci (246). Patients with comorbid TLE
+persistent changes, which lead to alterations in cellular function that           and MDD had a further reduction in 5-HT1A binding in the anterior
+underlie longer-term, evolving cognitive deficiencies in patients with            cingulate cortex, hippocampus, and medial and superior temporal
+DRE. Holmes reviewed the maladaptive neurophysiological patterns                  lobe, which extended to limbic areas outside the seizure focus (244).
+that emerge due to recurrent seizure, which lead to cognitive impair-                  Reduction in 5-HT1A receptor activity is not only associated with
+ment, namely a reduction in GABAergic inhibitory signaling, impair-               epilepsy and MDD but may also reduce seizure threshold, promoting
+ment in spike frequency adaptation, reductions in the                             hyperexcitation (247). Activation of 5-HT1A receptors reduces gluta-
+hyperpolarization potentials that follow spike trains, impairments in             matergic signaling by blocking NMDA receptor trafficking via a
+LTP, alterations in theta power, and alterations in the precision and             CaMKII- and ERK-dependent mechanism that destabilizes microtu-
+timing of place cell firing and stability (226). Of course, there are also        bules (248).
+seizure events (i.e., status epilepticus) that promote acute neuronal                  Thus, by reducing 5-HT1A receptor activity, glutamatergic receptor
+death, cell damage, and synaptic changes that negatively impact cogni-            trafficking is disrupted, increasing the surface expression of NMDA
+tion, which can lead to further spontaneous recurrent seizure and                 receptors and reducing the seizure threshold (247). Although this is
+continued cognitive decline (230–232).                                            one example of how the serotonergic system can influence excitatory
+    The cascade of structural and functional changes that occur with              states, the family of serotonergic receptors has become an attractive
+recurrent seizures impact both local and distal neuronal networks,                target for the development of ASMs that may have additional thera-
+creating altered and maladaptive information processing that impact               peutic effects on neuropsychiatric and cognitive comorbidities (249).
+cognition in patients with DRE. However, ASMs can also contribute                 Sourbron and Lagae (249) reviewed the therapeutic potential of sero-
+to cognitive impairment, and a higher number of ASMs is also associ-              tonergic receptors in the treatment of epilepsy.
+ated with worse cognitive outcomes. Nevertheless, disrupted SC and                     As with depression, anxiety and epilepsy share common biological
+FC due to continued seizure activity is a significant factor contributing         mechanisms and are thought to be reciprocal comorbidities involving
+to cognitive impairment in patients with epilepsy (168, 177, 181, 213,            the amygdala, hippocampus, and hypothalamic–pituitary–adrenal
+214, 216, 226). Regardless of the etiology of cognitive impairment,               (HPA) axis, among other brain networks (233, 241, 242, 250).
+improved seizure control will benefit cognition over time (214,                   Depending on the patient, epilepsy type, and seizure focus, anxiety
+216, 226).                                                                        can have preictal, ictal, postictal, or interictal presentation or could be
+                                                                                  a long-term comorbidity associated with a common underlying etiol-
+7.2 The impact of epilepsy on mental health                                       ogy (250). In epilepsy, the reduction in GABAergic inhibition
+                                                                                  increases excitatory discharge that activates fear and anxiety circuitry
+    Patients with epilepsy also commonly experience mental health                 within the amygdala, causing E/I imbalance (233, 250–252). Due to
+comorbidities, such as depression and anxiety (205–207, 233).                     reciprocal connections throughout the brain, alterations in brain
+Notably, neuropsychiatric symptoms and lower scores on neuropsy-                  regions outside of the amygdala can influence the development of dif-
+chiatric assessments are predictors of future pharmacoresistance, and             ferent forms of anxiety. Neuronal connections between the amygdala
+patients with DRE have higher rates of anxiety and depression                     and the medial prefrontal cortex and hippocampus can drive different
+
+
+Frontiers in Neurology                                                       12                                                               frontiersin.org
+Gustin et al.                                                                                                                  10.3389/fneur.2026.1793970
+
+
+
+
+forms of anxiety including generalized anxiety, fear-based anxiety,               patients and care partners understand these risks and how to reduce
+novelty-based fear, and social anxiety (240). As with epilepsy, anxiety           them (261, 265, 266).
+is a dysfunction of neuronal networks that span multiple brain                         Extremely concerning are the respiratory and cardiovascular
+regions; irrespective of the seizure foci, epilepsy can lead to the devel-        comorbidities that contribute to SUDEP (208, 210, 265–268).
+opment of anxiety whether impacting neurons within the epilepto-                  Although not well understood, there have been attempts to gain
+genic zone or outside the seizure foci (253).                                     insight into the sequence of events that trigger SUDEP (265, 266). The
+     The HPA axis is a common link between epilepsy and anxiety                   structural changes at the neuronal level discussed above also play a
+(253–255). Stress is a common trigger for seizures, and anxiety can               role in interrupting homeostatic maintenance in the peri-ictal period,
+manifest during an acute seizure episode (250, 254). In general, the              with cellular changes in brain regions involved in autonomic control
+HPA axis becomes hyperactive in response to stress to drive an appro-             leading to E/I imbalance and loss of autonomic control, ultimately
+priate behavioral response.                                                       culminating with the cardiorespiratory dysfunction that is thought to
+     Epilepsy can lead to hyperactivity of the HPA axis, leading to               underly SUDEP (208, 265, 267).
+increased cortisol levels (253). In addition to acute increases in corti-              Due to the involvement of limbic structures in regulating the auto-
+sol levels following a seizure, persistent HPA axis hyperactivity and             nomic nervous system, alterations in autonomic control are more pro-
+increased circulating cortisol occur over time with increased seizure             nounced in TLE, especially when associated with focal-to-bilateral
+burden. This reduces seizure threshold and can further promote spon-              tonic–clonic seizures (265). However, due to the widespread structural
+taneous recurrent seizure (253, 256). Adrenocorticotrophin hormone                and functional changes occurring in larger neuronal networks due to
+(ACTH) and corticosteroids have been used to treat certain epilepsies             seizure, the accumulation of these changes can increase risk of SUDEP
+and infantile spasms, but due to the common underlying mechanism                  regardless of epileptogenic foci (265, 266). Several receptor systems
+of seizures and anxiety, HPA axis regulation has become an interesting            have been implicated in SUDEP, including the catecholamine, adenos-
+target for drug development that may have therapeutic potential for               ine, and serotonergic systems (208, 210, 265–268). Increased catechol-
+epilepsy, anxiety, and mood disorders (255, 256).                                 amine release during seizures has been linked to myocardial damage
+                                                                                  (208). Catecholamine surge and strong sympathetic activation may
+7.3 Increased risk of mortality                                                   explain the sudden onset of focal or generalized tonic–clonic seizure-
+                                                                                  dependent ventricular tachycardia and ventricular fibrillation (265). In
+     People with epilepsy carry more than two-fold higher risk for pre-           line with this hypothesis, catecholamine-mediated activation of both
+mature death than the general population; furthermore, patients with              beta-adrenoreceptors and alpha-adrenoreceptors is linked to increased
+DRE are at a higher risk of premature death compared with patients                Ca2+ release, coronary spasm, myocardial ischemia, platelet activation,
+who are seizure free (257). This underscores the fact that all seizures           and auto-oxidation, impacting cardiovascular health (266). In addition
+have an impact, no matter the frequency or duration of an individual              to catecholamine release, adenosine release is increased following sei-
+event, and the cumulative impact over time can have dire conse-                   zure, and adenosine can accumulate with continued seizure, leading to
+quences for patients and families. The most common causes of death                spreading depolarization in the amygdala and brainstem and subse-
+in patients with epilepsy are SUDEP, injury, or suicide (257). This fur-          quent respiratory depression and respiratory collapse, contributing to
+ther underscores the urgency to reduce seizure burden (both fre-                  the respiratory mechanisms associated with SUDEP (266–268). The
+quency and duration of seizure episodes) in patients with DRE and to              serotonergic system also plays an important role in respiratory regula-
+effectively manage comorbidities.                                                 tion and has been implicated in risk of SUDEP (265–267). Increased
+     SUDEP is defined as sudden, unexpected, witnessed or unwit-                  serotonergic activity is associated with seizure suppression; moreover,
+nessed, nontraumatic, and non-drowning death in patients with epi-                following seizures, patients with central apnea had reduced postictal
+lepsy with or without evidence of a seizure, and excluding documented             serotonin compared with patients without central apnea (267, 269). It
+status epilepticus ≥30 min in duration, in which postmortem exami-                is thought that the blunted serotonergic activity following seizures
+nation does not reveal a structural or toxicological cause for death              leads to an impaired arousal response and to increased CO2 levels,
+(258). Numerous studies have examined the risk factors associated                 which causes hypoventilation and respiratory collapse (265, 266).
+with SUDEP (257, 259–261). Patients with DRE are at a higher risk of                   Fighting for reduced seizure burden and improved seizure control
+SUDEP than patients who are seizure free on ASM therapy, so achiev-               is paramount for patients at risk for SUDEP. Several treatment strate-
+ing seizure control can reduce the risk of SUDEP (259–261).                       gies can significantly reduce a patient’s overall risk for SUDEP. The
+Additionally, SUDEP has been linked to ASM nonadherence and sub-                  primary strategy is ensuring patients are well aware of risk factors asso-
+therapeutic concentrations of ASMs at the time of SUDEP, and                      ciated with SUDEP and that they are educated about treatment options
+improved seizure control, ASM polypharmacy, and vagus nerve stim-                 that reduce their overall risk is highly important (261, 265, 266, 270).
+ulation (VNS) significantly reduce SUDEP risk (262–264). Other fac-               Due to the significantly increased risk of SUDEP in patients who have
+tors that significantly increase risk of SUDEP are generalized                    even a single convulsive seizure, it is extremely important to continu-
+tonic–clonic seizure episode(s) during the last year, nocturnal sei-              ally attempt to reduce the overall number of generalized tonic–clonic
+zures, living alone, and not sharing a bedroom (257, 259–261). For                seizures or focal-to-bilateral tonic–clonic seizures (261, 265, 266, 270).
+patients experiencing tonic–clonic seizures, the risk of SUDEP signifi-           As such, the risk of SUDEP is reduced in patients on multiple ASMs
+cantly increases as the frequency of these seizures increases (259–261).          and those who are adherent to their ASM regimen (261, 265, 266, 270).
+Patients who experience one to three generalized tonic–clonic seizures            As nocturnal seizures are associated with a higher risk of SUDEP,
+in one year are associated with a 22-fold increased risk of SUDEP,                nighttime monitoring is another treatment approach that significantly
+while patients who experience four to ten generalized tonic–clonic                reduces the risk of SUDEP (261, 265, 266, 270). Wearable devices and
+seizures at a 32-fold increased risk. Mitigating the risk of SUDEP is             monitors that alert to seizure or cardiorespiratory distress, as well as
+critical when treating patients with DRE, and it is important that                the use of safety pillows, are recommended for patients at high risk of
+
+
+Frontiers in Neurology                                                       13                                                              frontiersin.org
+Gustin et al.                                                                                                                        10.3389/fneur.2026.1793970
+
+
+
+
+SUDEP (222, 265). In addition, it is important for care partners to                          preventive neurology, which aims to identify individuals at high
+understand first aid, so that they can address hypoventilation and                           risk of brain disorders and other neurologic conditions and offer
+administer oxygen as needed (266, 270).                                                      strategies to mitigate disease emergence or progression (204).
+
+7.4 People with epilepsy and QoL                                                              The question remains, how can we develop treatment strategies
+                                                                                         to reduce or eliminate the cascade of events following a seizure to
+     Patients and care partners can report disease progression and often                 prevent the establishment of seizure networks or reduce or prevent
+express concern about what that means for themselves and their loved                     the ongoing progression of disease? Although we have yet to find a
+ones. Directly related to the pathophysiology discussed above, patients                  panacea that can alter epileptogenesis or the underlying mecha-
+present with many concerns regarding how cognitive impairment will                       nisms responsible for disease progression, understanding the tem-
+impact their concentration, ability to work, and ability to remember (271).              poral nature of events that initiate these processes is important to
+Following disease progression, patients on more than three ASMs report                   identify treatment approaches that directly interfere with the disease
+more reductions in QoL than patients on fewer chronic daily medications                  process.
+(271). The perceived stigma becomes very socially isolating and burden-                       To gain an understanding of the temporal progression of ill-
+some and has significant impacts on social engagement, social cognition,                 ness, we have created a seizure timeline that outlines the temporal
+and patients’ mental health (271, 272). In addition, daily living activities             nature of seizures and specifically the timing of the cascade of neu-
+are impacted; patients can lose not only the ability to drive but also the               rological events that occur following an acute seizure and are
+ability to carry out typical daily activities, such as cleaning, climbing stairs,        involved in epileptogenesis and ongoing seizure progression.
+and engaging in hobbies or exercising, which further impacts mental and                  Figure 5 summarizes the cascade of neurochemical, structural,
+physical health (271). Treatment strategies that augment daily ASM treat-                neuroinflammatory, genetic, and epigenetic events following sei-
+ment and mitigate concerns regarding the unpredictability of spontane-                   zure that impact overall brain function and support the reinforce-
+ous, recurrent seizures can positively impact patients’ QoL by increasing                ment of seizure activity characteristic of DRE. As Vezzani et al. (74)
+social functioning and reducing seizure worry (273). It is critical from                 point out, the pathophysiological mechanisms that underly the
+both a QoL and a long-term brain health perspective that no spontaneous,                 onset and recurrence of epileptic seizures and comorbidities are
+recurrent seizures are considered benign and that we continually work to                 still mostly unresolved. However, distilling what we know about
+reduce overall seizure burden in patients with DRE (214, 274).                           seizure processes and the cascade of events that leads to disease
+                                                                                         progression is an important first step in determining what we can
+                                                                                         do with our current treatment strategies in order to maximize the
+                                                                                         reduction in seizure frequency, duration, and severity for each
+8 Summary                                                                                patient.
+
+8.1 Seizure timeline                                                                     8.2 Retraining seizure networks
+
+    In 2023, the American Academy of Neurology (AAN) published                               The processes underlying the function of neuronal circuits are
+a call to action, stating that:                                                          dynamic. Seizure activity can overwhelm normal function and
+                                                                                         entrain circuits to be hyperexcitable and hypersynchronous, as seen
+     Neurologists are uniquely positioned to serve as specialists in                     in individuals with epilepsy. The underlying neurobiology driving
+     brain health and to advance the newly evolving field of                             increased neuronal excitation and reduced inhibition has led to the
+
+
+
+
+    FIGURE 5
+    Seizure timeline: how seizures beget seizures. This timeline outlines the cascade of events initiated and reinforced by continued seizures that lead to
+    pathological structural and functional changes that support disease progression. This is an attempt to synthesize the temporal changes that occur with
+    a seizure that underly increases in seizure frequency, duration, and severity, and establishes the basis of why “seizures beget seizures.” Figure created in
+    BioRender. ECM, extracellular matrix; E/I, excitatory/inhibitory; GABA, gamma-aminobutyric acid; PNN, perineuronal net.
+
+
+
+
+Frontiers in Neurology                                                              14                                                               frontiersin.org
+Gustin et al.                                                                                                               10.3389/fneur.2026.1793970
+
+
+
+
+development of over 30 ASMs that aim to provide E/I balance and                Author contributions
+achieve seizure freedom (3). Yet, approximately 40% of patients with
+epilepsy develop DRE and continue to suffer with the consequences                   RG: Funding acquisition, Writing – original draft, Formal analy-
+associated with ongoing seizures (4). Can seizure networks be                  sis, Writing – review & editing, Resources, Methodology, Visualization,
+retrained to promote longer-term reduction in associated burden?               Project administration, Conceptualization. TG: Writing – review &
+Emerging data with responsive neurostimulation (RNS) devices sug-              editing, Writing – original draft, Formal analysis, Resources. JP:
+gest this is possible. Designed to continuously monitor neural activ-          Writing – review & editing, Resources, Writing – original draft,
+ity, RNS devices deliver electrical stimulation through electrodes in          Formal analysis.
+response to specific patterns of brain activity that precede a seizure,
+with the aim of disrupting seizure onset and reducing the frequency,
+duration, and severity of seizures (275). RNS in response to these             Funding
+epileptiform discharges disrupts epileptogenic excitatory networks
+and increases inhibitory activity patterns, thereby promoting healthy               The author(s) declared that financial support was received for
+network reorganization and increasing seizure threshold (275, 276).            this work and/or its publication. This work was supported by
+The long-term effects of retraining these neuronal networks are dem-           Neurelis, Inc. The funder was not involved in the study design, col-
+onstrated by continued seizure burden reduction over 9 years with              lection, analysis, interpretation of data, the writing of this article, or
+RNS utilization (8). Electrical stimulation that modulates the                 the decision to submit it for publication.
+GABAergic system is a critical component of the underlying mecha-
+nism of the antiseizure effects of RNS (9, 276). RNS stimulation and
+modulation of the GABAergic system have been shown to be involved              Acknowledgments
+in seizure cessation and prevention, which strengthens the inhibitory
+networks that increase seizure threshold (9, 276).                                Figure creation and formatting support was provided by Johnson
+     Evidence from the RNS literature suggests that, over time, sei-           Ying, of Red Nucleus.
+zure-induced physiological changes result in increased inhibitory
+network influences that can render the brain less susceptible to sei-
+zure. Based on receptor dynamics and the cascade of events follow-
+ing a seizure, timely and effective seizure management can increase            Conflict of interest
+inhibitory drive to alter or disrupt the seizure cascade and limit its
+overall impact on E/I imbalance. Furthermore, by increasing the                    RG is an employee of Neurelis, Inc., and holds stock options
+inhibitory drive associated with each seizure episode, neuronal net-           in the company. JP has served on advisory boards and as a consul-
+works may be retrained in a similar manner to that observed with               tant for Neurelis, Inc., Acadia Pharmaceuticals, Clouds of Care,
+RNS, leading to E/I rebalancing and a potential increase in the sei-           UCB Pharma, and Jazz Pharmaceuticals.
+zure threshold. As novel pharmacotherapies targeting the underly-                  The remaining author declared that this work was conducted in
+ing cause of seizures continue to be developed, it may become                  the absence of any commercial or financial relationships that could be
+possible to leverage the dynamic properties of neural networks to              construed as a potential conflict of interest.
+pharmacologically retrain pathological seizure circuits toward a
+more balanced state and restore proper inhibitory control.
+
+                                                                               Generative AI statement
+9 Conclusion                                                                       The author(s) declared that Generative AI was not used in the
+                                                                               creation of this manuscript.
+     Understanding the seizure timeline and the cascade of neuro-                  Any alternative text (alt text) provided alongside figures
+physiological changes that lead to spontaneous, recurrent seizures is          in this article has been generated by Frontiers with the
+critically important for managing patients with DRE. Equally impor-            support of artificial intelligence and reasonable efforts
+tant is understanding how to identify patients with DRE who could              have been made to ensure accuracy, including review by the
+benefit from a comprehensive treatment approach that aims to maxi-             authors wherever possible. If you identify any issues, please
+mize the reduction in seizure frequency, duration, and severity. Risk          contact us.
+factors can suggest that a patient is dealing with frequent episodes of
+seizures, and augmenting their chronic ASM treatment with neuro-
+modulation implantables, pro re nata immediate-use seizure medica-
+tions, or surgery could significantly benefit patient outcomes                 Publisher’s note
+and QoL.
+     With the emphasis that AAN has put on brain health and creat-                  All claims expressed in this article are solely those of the
+ing mitigation strategies to prevent the progression of disease, a             authors and do not necessarily represent those of their affiliated
+comprehensive treatment approach to combat spontaneous, recur-                 organizations, or those of the publisher, the editors and the review-
+rent, frequent episodes of seizures may improve the long-term clini-           ers. Any product that may be evaluated in this article, or claim that
+cal outcomes and QoL of patients and care partners dealing                     may be made by its manufacturer, is not guaranteed or endorsed
+with DRE.                                                                      by the publisher.
+
+
+Frontiers in Neurology                                                    15                                                              frontiersin.org
+Gustin et al.                                                                                                                                                   10.3389/fneur.2026.1793970
+
+
+
+
+References
+1. Jiruska P, Freestone D, Gnatkovsky V, Wang Y. An update on the seizures beget seizures             27. Jourdi H, Iwakura Y, Narisawa-Saito M, Ibaraki K, Xiong H, Watanabe M, et al. Brain-
+theory. Epilepsia. (2023) 64:S13–24. doi: 10.1111/epi.17721                                           derived neurotrophic factor signal enhances and maintains the expression of AMPA
+                                                                                                      receptor-associated PDZ proteins in developing cortical neurons. Dev Biol. (2003)
+2. Kwan P, Brodie MJ. Early identification of refractory epilepsy. N Engl J Med. (2000)
+                                                                                                      263:216–30. doi: 10.1016/j.ydbio.2003.07.008
+342:314–9. doi: 10.1056/NEJM200002033420503
+                                                                                                      28. Cooper DD, Frenguelli BG. The influence of sensory experience on the glutamatergic
+3. Chen Z, Brodie MJ, Liew D, Kwan P. Treatment outcomes in patients with newly diag-
+                                                                                                      synapse. Neuropharmacology. (2021) 193:108620. doi: 10.1016/j.neuropharm.2021.108620
+nosed epilepsy treated with established and new antiepileptic drugs: a 30-year longitudi-
+nal cohort study. JAMA Neurol. (2018) 75:279–86. doi: 10.1001/jamaneurol.2017.3949                    29. Privitera L, More L, Cooper DD, Richardson P, Tsogka M, Hebenstreit D, et al.
+                                                                                                      Experience recruits MSK1 to expand the dynamic range of synapses and enhance cogni-
+4. Briellmann RS, Wellard RM, Jackson GD. Seizure-associated abnormalities in epilepsy: evi-
+                                                                                                      tion. J Neurosci. (2020) 40:4644–60. doi: 10.1523/JNEUROSCI.2765-19.2020 32376781
+dence from MR imaging. Epilepsia. (2005) 46:760–6. doi: 10.1111/j.1528-1167.2005.47604.x
+                                                                                                      30. Correa SA, Hunter CJ, Palygin O, Wauters SC, Martin KJ, McKenzie C, et al. MSK1
+5. Galovic M, de Tisi J, McEvoy AW, Miserocchi A, Vos SB, Borzi G, et al. Resective sur-
+                                                                                                      regulates homeostatic and experience-dependent synaptic plasticity. J Neurosci. (2012)
+gery prevents progressive cortical thinning in temporal lobe epilepsy. Brain. (2020)
+                                                                                                      32:13039–51. doi: 10.1523/JNEUROSCI.0930-12.2012
+143:3262–72. doi: 10.1093/brain/awaa284
+                                                                                                      31. Ma H, Khaled HG, Wang X, Mandelberg NJ, Cohen SM, He X, et al. Excitation-
+6. Wheless JW, Miller I, Hogan RE, Dlugos D, Biton V, Cascino GD, et al. Final results from
+                                                                                                      transcription coupling, neuronal gene expression and synaptic plasticity. Nat Rev
+a phase 3, long-term, open-label, repeat-dose safety study of diazepam nasal spray for seizure
+                                                                                                      Neurosci. (2023) 24:672–92. doi: 10.1038/s41583-023-00742-5
+clusters in patients with epilepsy. Epilepsia. (2021) 62:2485–95. doi: 10.1111/epi.17041
+                                                                                                      32. Guan JS, Xie H, Ding X. The role of epigenetic regulation in learning and memory.
+7. Detyniecki K, Van Ess PJ, Sequeira DJ, Wheless JW, Meng TC, Pullman WE. Safety and
+                                                                                                      Exp Neurol. (2015) 268:30–6. doi: 10.1016/j.expneurol.2014.05.006
+efficacy of midazolam nasal spray in the outpatient treatment of patients with seizure
+clusters: a randomized, double-blind, placebo-controlled trial. Epilepsia. (2019)                     33. Lopez SM, Aksman LM, Oxtoby NP, Vos SB, Rao J, Kaestner E, et al. Event-based
+60:1797–808. doi: 10.1111/epi.15159                                                                   modeling in temporal lobe epilepsy demonstrates progressive atrophy from cross-sec-
+                                                                                                      tional data. Epilepsia. (2022) 63:2081–95. doi: 10.1111/epi.17316
+8. Nair DR, Laxer KD, Weber PB, Murro AM, Park YD, Barkley GL, et al. Nine-year
+prospective efficacy and safety of brain-responsive neurostimulation for focal epilepsy.              34. Jackson GD, Chambers BR, Berkovic SF. Hippocampal sclerosis: development in adult
+Neurology. (2020) 95:e1244–56. doi: 10.1212/WNL.0000000000010154                                      life. Dev Neurosci. (1999) 21:207–14. doi: 10.1159/000017400
+9. Thomas GP, Jobst BC. Critical review of the responsive neurostimulator system for                  35. Shinnar S, Bello JA, Chan S, Hesdorffer DC, Lewis DV, Macfall J, et al. MRI abnor-
+epilepsy. Med Devices. (2015) 8:405–11. doi: 10.2147/MDER.S62853                                      malities following febrile status epilepticus in children: the FEBSTAT study. Neurology.
+                                                                                                      (2012) 79:871–7. doi: 10.1212/WNL.0b013e318266fcc5
+10. Morris RG. D.O. Hebb: the organization of behavior, Wiley: New York; 1949. Brain
+Res Bull. (1999) 50:437. doi: 10.1016/s0361-9230(99)00182-3                                           36. Shao LR, Habela CW, Stafstrom CE. Pediatric epilepsy mechanisms: expanding the para-
+                                                                                                      digm of excitation/inhibition imbalance. Children. (2019) 6:23. doi: 10.3390/
+11. Park JM, Jung SC, Eun SY. Long-term synaptic plasticity: circuit perturbation and
+                                                                                                      children6020023
+stabilization. Korean J Physiol Pharmacol. (2014) 18:457–60. doi: 10.4196/
+kjpp.2014.18.6.457                                                                                    37. Naylor DE. Treating acute seizures with benzodiazepines: does seizure duration
+                                                                                                      matter? Epileptic Disord. (2014) 16:S69–83. doi: 10.1684/epd.2014.0691
+12. Langille JJ, Brown RE. The synaptic theory of memory: a historical survey and rec-
+onciliation of recent opposition. Front Syst Neurosci. (2018) 12:52. doi: 10.3389/                    38. Niquet J, Baldwin R, Suchomelova L, Lumley L, Naylor D, Eavey R, et al.
+fnsys.2018.00052                                                                                      Benzodiazepine-refractory status epilepticus: pathophysiology and principles of treat-
+                                                                                                      ment. Ann N Y Acad Sci. (2016) 1378:166–73. doi: 10.1111/nyas.13147
+13. Josselyn SA, Kohler S, Frankland PW. Finding the engram. Nat Rev Neurosci. (2015)
+16:521–34. doi: 10.1038/nrn4000                                                                       39. Guetg N, Abdel Aziz S, Holbro N, Turecek R, Rose T, Seddik R, et al. NMDA receptor-
+                                                                                                      dependent GABAB receptor internalization via CaMKII phosphorylation of serine 867
+14. Colbran RJ, Brown AM. Calcium/calmodulin-dependent protein kinase II and syn-
+                                                                                                      in GABAB1. Proc Natl Acad Sci USA. (2010) 107:13924–9. doi: 10.1073/pnas.1000909107
+aptic plasticity. Curr Opin Neurobiol. (2004) 14:318–27. doi: 10.1016/j.conb.2004.05.008
+                                                                                                      40. Bayer KU, De Koninck P, Leonard AS, Hell JW, Schulman H. Interaction with the
+15. Gustin RM, Shonesy BC, Robinson SL, Rentz TJ, Baucum AJ 2nd, Jalan-Sakrikar N,
+                                                                                                      NMDA receptor locks CaMKII in an active conformation. Nature. (2001) 411:801–5. doi:
+et al. Loss of Thr286 phosphorylation disrupts synaptic CaMKIIα targeting, NMDAR
+                                                                                                      10.1038/35081080
+activity and behavior in pre-adolescent mice. Mol Cell Neurosci. (2011) 47:286–92. doi:
+10.1016/j.mcn.2011.05.006                                                                             41. Lee HH, Deeb TZ, Walker JA, Davies PA, Moss SJ. NMDA receptor activity down-
+                                                                                                      regulates KCC2 resulting in depolarizing GABAA receptor-mediated currents. Nat
+16. Turrigiano G. Homeostatic synaptic plasticity: local and global mechanisms for sta-
+                                                                                                      Neurosci. (2011) 14:736–43. doi: 10.1038/nn.2806
+bilizing neuronal function. Cold Spring Harb Perspect Biol. (2012) 4:a005736. doi: 10.1101/
+cshperspect.a005736                                                                                   42. McGinnity CJ, Riano Barros DA, Trigg W, Brooks DJ, Hinz R, Duncan JS, et al.
+                                                                                                      Simplifying [(18)F]GE-179 PET: are both arterial blood sampling and 90-min acquisi-
+17. Borczyk M, Radwanska K, Giese KP. The importance of ultrastructural analysis of
+                                                                                                      tions essential? EJNMMI Res. (2018) 8:46. doi: 10.1186/s13550-018-0396-2
+memory. Brain Res Bull. (2021) 173:28–36. doi: 10.1016/j.brainresbull.2021.04.019
+                                                                                                      43. Xie K, Royer J, Rodriguez-Cruces R, Horwood L, Ngo A, Arafat T, et al. Temporal
+18. Bourne JN, Harris KM. Coordination of size and number of excitatory and inhibitory
+                                                                                                      lobe epilepsy perturbs the brain-wide excitation-inhibition balance: associations with
+synapses results in a balanced structural plasticity along mature hippocampal CA1 den-
+                                                                                                      microcircuit organization, clinical parameters, and cognitive dysfunction. Adv Sci. (2025)
+drites during LTP. Hippocampus. (2011) 21:354–73. doi: 10.1002/hipo.20768
+                                                                                                      12:e2406835. doi: 10.1002/advs.202406835
+19. Magee JC, Johnston D. Plasticity of dendritic function. Curr Opin Neurobiol. (2005)
+                                                                                                      44. Bod R, Toth K, Essam N, Toth EZ, Eross L, Entz L, et al. Synaptic alterations and
+15:334–42. doi: 10.1016/j.conb.2005.05.013
+                                                                                                      neuronal firing in human epileptic neocortical excitatory networks. Front Synaptic
+20. Leal G, Comprido D, Duarte CB. BDNF-induced local protein synthesis and synaptic                  Neurosci. (2023) 15:1233569. doi: 10.3389/fnsyn.2023.1233569
+plasticity. Neuropharmacology. (2014) 76:639–56. doi: 10.1016/j.neuropharm.2013.04.005
+                                                                                                      45. Janz P, Savanthrapadian S, Haussler U, Kilias A, Nestel S, Kretz O, et al. Synaptic
+21. Tao X, Finkbeiner S, Arnold DB, Shaywitz AJ, Greenberg ME. Ca2+ influx regulates                  remodeling of entorhinal input contributes to an aberrant hippocampal network in tem-
+BDNF transcription by a CREB family transcription factor-dependent mechanism.                         poral lobe epilepsy. Cereb Cortex. (2017) 27:2348–64. doi: 10.1093/cercor/bhw093
+Neuron. (1998) 20:709–26. doi: 10.1016/s0896-6273(00)81010-7
+                                                                                                      46. Wong M, Guo D. Dendritic spine pathology in epilepsy: cause or consequence?
+22. Cajigas IJ, Tushev G, Will TJ, tom Dieck S, Fuerst N, Schuman EM. The local tran-                 Neuroscience. (2013) 251:141–50. doi: 10.1016/j.neuroscience.2012.03.048
+scriptome in the synaptic neuropil revealed by deep sequencing and high-resolution
+                                                                                                      47. Cavarsan CF, Malheiros J, Hamani C, Najm I, Covolan L. Is mossy fiber sprouting a poten-
+imaging. Neuron. (2012) 74:453–66. doi: 10.1016/j.neuron.2012.02.036
+                                                                                                      tial therapeutic target for epilepsy? Front Neurol. (2018) 9:1023. doi: 10.3389/fneur.2018.01023
+23. Caldeira MV, Melo CV, Pereira DB, Carvalho R, Correia SS, Backos DS, et al. Brain-
+                                                                                                      48. Leite JP, Neder L, Arisi GM, Carlotti CG Jr, Assirati JA, Moreira JE. Plasticity, synaptic
+derived neurotrophic factor regulates the expression and synaptic delivery of alpha-
+                                                                                                      strength, and epilepsy: what can we learn from ultrastructural data? Epilepsia. (2005)
+amino-3-hydroxy-5-methyl-4-isoxazole propionic acid receptor subunits in hippocampal
+                                                                                                      46:134–41. doi: 10.1111/j.1528-1167.2005.01021.x
+neurons. J Biol Chem. (2007) 282:12619–28. doi: 10.1074/jbc.M700607200
+                                                                                                      49. Puhahn-Schmeiser B, Leicht K, Gessler F, Freiman TM. Aberrant hippocampal mossy
+24. Caldeira MV, Melo CV, Pereira DB, Carvalho RF, Carvalho AL, Duarte CB. BDNF
+                                                                                                      fibers in temporal lobe epilepsy target excitatory and inhibitory neurons. Epilepsia. (2021)
+regulates the expression and traffic of NMDA receptors in cultured hippocampal neurons.
+                                                                                                      62:2539–50. doi: 10.1111/epi.17035
+Mol Cell Neurosci. (2007) 35:208–19. doi: 10.1016/j.mcn.2007.02.019
+                                                                                                      50. Knowles JK, Batra A, Xu H, Monje M. Adaptive and maladaptive myelination in
+25. Aakalu G, Smith WB, Nguyen N, Jiang C, Schuman EM. Dynamic visualization of
+                                                                                                      health and disease. Nat Rev Neurol. (2022) 18:735–46. doi: 10.1038/s41582-022-00737-3
+local protein synthesis in hippocampal neurons. Neuron. (2001) 30:489–502. doi: 10.1016/
+s0896-6273(01)00295-1                                                                                 51. Knowles JK, Xu H, Soane C, Batra A, Saucedo T, Frost E, et al. Maladaptive myelina-
+                                                                                                      tion promotes generalized epilepsy progression. Nat Neurosci. (2022) 25:596–606. doi:
+26. Schratt GM, Nigh EA, Chen WG, Hu L, Greenberg ME. BDNF regulates the translation of
+                                                                                                      10.1038/s41593-022-01052-2
+a select group of mRNAs by a mammalian target of rapamycin-phosphatidylinositol 3-kinase-
+dependent pathway during neuronal development. J Neurosci. (2004) 24:7366–77. doi: 10.1523/           52. Gibson EM, Geraghty AC, Monje M. Bad wrap: myelin and myelin plasticity in health
+JNEUROSCI.1739-04.2004                                                                                and disease. Dev Neurobiol. (2018) 78:123–35. doi: 10.1002/dneu.22541
+
+
+
+
+Frontiers in Neurology                                                                           16                                                                                frontiersin.org
+Gustin et al.                                                                                                                                               10.3389/fneur.2026.1793970
+
+
+
+53. Gross DW, Concha L, Beaulieu C. Extratemporal white matter abnormalities in mesial                77. Carpentier PA, Palmer TD. Immune influence on adult neural stem cell regulation
+temporal lobe epilepsy demonstrated with diffusion tensor imaging. Epilepsia. (2006)                  and function. Neuron. (2009) 64:79–92. doi: 10.1016/j.neuron.2009.08.038
+47:1360–3. doi: 10.1111/j.1528-1167.2006.00603.x
+                                                                                                      78. Vezzani A, Viviani B. Neuromodulatory properties of inflammatory cytokines and
+54. Rodriguez-Cruces R, Concha L. White matter in temporal lobe epilepsy: clinico-                    their impact on neuronal excitability. Neuropharmacology. (2015) 96:70–82. doi:
+pathological correlates of water diffusion abnormalities. Quant Imaging Med Surg. (2015)              10.1016/j.neuropharm.2014.10.027
+5:264–78. doi: 10.3978/j.issn.2223-4292.2015.02.06
+                                                                                                      79. Stellwagen D, Beattie EC, Seo JY, Malenka RC. Differential regulation of AMPA recep-
+55. Drenthen GS, Backes WH, Aldenkamp AP, Vermeulen RJ, Klinkenberg S, Jansen JFA.                    tor and GABA receptor trafficking by tumor necrosis factor-alpha. J Neurosci. (2005)
+On the merits of non-invasive myelin imaging in epilepsy, a literature review. J Neurosci             25:3219–28. doi: 10.1523/JNEUROSCI.4486-04.2005
+Methods. (2020) 338:108687. doi: 10.1016/j.jneumeth.2020.108687
+                                                                                                      80. Beattie EC, Stellwagen D, Morishita W, Bresnahan JC, Ha BK, Von Zastrow M, et al.
+56. Winston GP, Vos SB, Caldairou B, Hong SJ, Czech M, Wood TC, et al. Microstructural                Control of synaptic strength by glial TNF alpha. Science. (2002) 295:2282–5. doi: 10.1126/
+imaging in temporal lobe epilepsy: diffusion imaging changes relate to reduced neurite                science.1067859
+density. Neuroimage Clin. (2020) 26:102231. doi: 10.1016/j.nicl.2020.102231
+                                                                                                      81. Yang H, Antoine DJ, Andersson U, Tracey KJ. The many faces of HMGB1: molecular
+57. Jiang Y, Li W, Qin Y, Zhang L, Tong X, Xiao F, et al. In vivo characterization of mag-            structure-functional activity in inflammation, apoptosis, and chemotaxis. J Leukoc Biol.
+netic resonance imaging-based T1w/T2w ratios reveals myelin-related changes in tem-                   (2013) 93:865–73. doi: 10.1189/jlb.1212662
+poral lobe epilepsy. Hum Brain Mapp. (2023) 44:2323–35. doi: 10.1002/hbm.26212
+                                                                                                      82. Tsai SJ. Effects of interleukin-1beta polymorphisms on brain function and behavior
+58. Ballerini A, Arienzo D, Stasenko A, Schadler A, Vaudano AE, Meletti S, et al. Spatial             in healthy and psychiatric disease conditions. Cytokine Growth Factor Rev. (2017)
+patterns of gray and white matter compromise relate to age of seizure onset in temporal               37:89–97. doi: 10.1016/j.cytogfr.2017.06.001
+lobe epilepsy. Neuroimage Clin. (2023) 39:103473. doi: 10.1016/j.nicl.2023.103473
+                                                                                                      83. Kamasak T, Dilber B, Yaman SO, Durgut BD, Kurt T, Coban E, et al. HMGB-1, TLR4,
+59. Chen J, Ngo A, Rodriguez-Cruces R, Royer J, Caligiuri ME, Gambardella A, et al. A                 IL-1R1, TNF-alpha, and IL-1beta: novel epilepsy markers? Epileptic Disord. (2020)
+worldwide ENIGMA study on epilepsy-related gray and white matter compromise across the                22:183–93. doi: 10.1684/epd.2020.1155
+adult lifespan. bioRxiv. [Preprint] (2024). 6:2024.03.02.58073. doi: 10.1101/2024.03.02.583073        84. Zelova H, Hosek J. TNF-alpha signalling and inflammation: interactions between old
+60. Danis O, Demir S, Gunel A, Aker RG, Gulcebi M, Onat F et al Changes in intracellular              acquaintances. Inflamm Res. (2013) 62:641–51. doi: 10.1007/s00011-013-0633-0
+protein expression in cortex, thalamus and hippocampus in a genetic rat model of absence              85. De Simoni MG, Perego C, Ravizza T, Moneta D, Conti M, Marchesi F, et al.
+epilepsy. Brain Res Bull (2011) 84:381–388. doi: 10.1016/j.brainresbull.2011.02.002.                  Inflammatory cytokines and related genes are induced in the rat hippocampus by limbic
+61. Bernhardt BC, Fadaie F, Vos de Wael R, Hong SJ, Liu M, Guiot MC, et al. Preferential              status     epilepticus.   Eur     J    Neurosci.      (2000)      12:2623–33.     doi:
+susceptibility of limbic cortices to microstructural damage in temporal lobe epilepsy: a              10.1046/j.1460-9568.2000.00140.x
+quantitative T1 mapping study. NeuroImage. (2018) 182:294–303. doi: 10.1016/j.                        86. Vezzani A, Moneta D, Richichi C, Aliprandi M, Burrows SJ, Ravizza T, et al.
+neuroimage.2017.06.002                                                                                Functional role of inflammatory cytokines and antiinflammatory molecules in seizures
+62. Denis C, Dabbs K, Nair VA, Mathis J, Almane DN, Lakshmanan A, et al. T1−/                         and epileptogenesis. Epilepsia. (2002) 43:30–5. doi: 10.1046/j.1528-1157.43.s.5.14.x
+T2-weighted ratio reveals no alterations to gray matter myelination in temporal lobe                  87. Shandra AA, Godlevsky LS, Vastyanov RS, Oleinik AA, Konovalenko VL, Rapoport
+epilepsy. Ann Clin Transl Neurol. (2023) 10:2149–54. doi: 10.1002/acn3.51653                          EN, et al. The role of TNF-alpha in amygdala kindled rats. Neurosci Res. (2002) 42:147–53.
+63. Deleo F, Thom M, Concha L, Bernasconi A, Bernhardt BC, Bernasconi N. Histological                 doi: 10.1016/s0168-0102(01)00309-1
+and MRI markers of white matter damage in focal epilepsy. Epilepsy Res. (2018)                        88. Turrin NP, Rivest S. Innate immune reaction in response to seizures: implications for
+140:29–38. doi: 10.1016/j.eplepsyres.2017.11.010                                                      the neuropathology associated with epilepsy. Neurobiol Dis. (2004) 16:321–34. doi:
+64. Chau Loo Kung G, Knowles JK, Batra A, Ni L, Rosenberg J, McNab JA. Quantitative                   10.1016/j.nbd.2004.03.010
+MRI reveals widespread, network-specific myelination change during generalized epi-                   89. Isaac JT, Ashby MC, McBain CJ. The role of the GluR2 subunit in AMPA receptor
+lepsy   progression.    NeuroImage.     (2023)    280:120312.    doi:   10.1016/j.                    function and synaptic plasticity. Neuron. (2007) 54:859–71. doi: 10.1016/j.
+neuroimage.2023.120312                                                                                neuron.2007.06.001
+65. Brodovskaya A, Kapur J. Circuits generating secondarily generalized seizures. Epilepsy            90. Dinarello CA. Biologic basis for interleukin-1 in disease. Blood. (1996) 87:2095–147.
+Behav. (2019) 101:106474. doi: 10.1016/j.yebeh.2019.106474                                            doi: 10.1182/blood.v87.6.2095.bloodjournal8762095
+66. Kreilkamp BAK, McKavanagh A, Alonazi B, Bryant L, Das K, Wieshmann UC, et al.                     91. Lopez-Castejon G, Brough D. Understanding the mechanism of IL-1beta secretion.
+Altered structural connectome in non-lesional newly diagnosed focal epilepsy: relation                Cytokine Growth Factor Rev. (2011) 22:189–95. doi: 10.1016/j.cytogfr.2011.10.001
+to pharmacoresistance. Neuroimage Clin. (2021) 29:102564. doi: 10.1016/j.
+nicl.2021.102564                                                                                      92. Vezzani A, Friedman A. Brain inflammation as a biomarker in epilepsy. Biomark Med.
+                                                                                                      (2011) 5:607–14. doi: 10.2217/bmm.11.61
+67. Lariviere S, Park BY, Royer J, DeKraker J, Ngo A, Sahlas E, et al. Connectome reorga-
+nization associated with temporal lobe pathology and its surgical resection. Brain. (2024)            93. Gorter JA, van Vliet EA, Aronica E, Breit T, Rauwerda H, Lopes da Silva FH, et al.
+147:2483–95. doi: 10.1093/brain/awae141                                                               Potential new antiepileptogenic targets indicated by microarray analysis in a rat model
+                                                                                                      for temporal lobe epilepsy. J Neurosci. (2006) 26:11083–110. doi: 10.1523/
+68. Demerath T, Donkels C, Reisert M, Heers M, Rau A, Schroter N, et al. Gray-white                   JNEUROSCI.2766-06.2006
+matter blurring of the temporal pole associated with hippocampal sclerosis: a microstruc-
+tural study involving 3 T MRI and ultrastructural histopathology. Cereb Cortex. (2022)                94. Ravizza T, Boer K, Redeker S, Spliet WG, van Rijen PC, Troost D, et al. The IL-1beta
+32:1882–93. doi: 10.1093/cercor/bhab320                                                               system in epilepsy-associated malformations of cortical development. Neurobiol Dis.
+                                                                                                      (2006) 24:128–43. doi: 10.1016/j.nbd.2006.06.003
+69. Lam HW, Patodia S, Zeicu C, Lim YM, Mrzyglod A, Scott C, et al. Quantitative cel-
+lular pathology of the amygdala in temporal lobe epilepsy and correlation with magnetic               95. Dube CM, Ravizza T, Hamamura M, Zha Q, Keebaugh A, Fok K, et al. Epileptogenesis
+resonance imaging volumetry, tissue microstructure, and sudden unexpected death in                    provoked by prolonged experimental febrile seizures: mechanisms and biomarkers. J
+epilepsy risk factors. Epilepsia. (2024) 65:2368–85. doi: 10.1111/epi.18033                           Neurosci. (2010) 30:7484–94. doi: 10.1523/JNEUROSCI.0551-10.2010
+
+70. Garbelli R, Milesi G, Medici V, Villani F, Didato G, Deleo F, et al. Blurring in patients         96. Virta M, Hurme M, Helminen M. Increased plasma levels of pro- and anti-inflam-
+with temporal lobe epilepsy: clinical, high-field imaging and ultrastructural study. Brain.           matory cytokines in patients with febrile seizures. Epilepsia. (2002) 43:920–3. doi:
+(2012) 135:2337–49. doi: 10.1093/brain/aws149                                                         10.1046/j.1528-1157.2002.02002.x
+
+71. Cendes F, Theodore WH, Brinkmann BH, Sulc V, Cascino GD. Neuroimaging of                          97. Devinsky O, Vezzani A, Najjar S, De Lanerolle NC, Rogawski MA. Glia and epilepsy:
+epilepsy. Handb Clin Neurol. (2016) 136:985–1014. doi: 10.1016/                                       excitability and inflammation. Trends Neurosci. (2013) 36:174–84. doi: 10.1016/j.
+B978-0-444-53486-6.00051-X                                                                            tins.2012.11.008
+
+72. Bohlson SS, Tenner AJ. Complement in the brain: contributions to neuroprotection,                 98. Mikati MA, Kurdi R, El-Khoury Z, Rahi A, Raad W. Intravenous immunoglobulin
+neuronal plasticity, and neuroinflammation. Annu Rev Immunol. (2023) 41:431–52. doi:                  therapy in intractable childhood epilepsy: open-label study and review of the literature.
+10.1146/annurev-immunol-101921-035639                                                                 Epilepsy Behav. (2010) 17:90–4. doi: 10.1016/j.yebeh.2009.10.020
+
+73. van Vliet EA, Aronica E, Vezzani A, Ravizza T. Review: neuroinflammatory pathways                 99. Crow AR, Song S, Semple JW, Freedman J, Lazarus AH. A role for IL-1 receptor
+as treatment targets and biomarker candidates in epilepsy: emerging evidence from pre-                antagonist or other cytokines in the acute therapeutic effects of IVIg? Blood. (2007)
+clinical and clinical studies. Neuropathol Appl Neurobiol. (2018) 44:91–111. doi: 10.1111/            109:155–8. doi: 10.1182/blood-2006-05-023796
+nan.12444                                                                                             100. Yang H, Wang H, Andersson U. Targeting inflammation driven by HMGB1. Front
+74. Vezzani A, Balosso S, Ravizza T. Neuroinflammatory pathways as treatment targets                  Immunol. (2020) 11:484. doi: 10.3389/fimmu.2020.00484
+and biomarkers in epilepsy. Nat Rev Neurol. (2019) 15:459–72. doi: 10.1038/                           101. Aronica E, Crino PB. Inflammation in epilepsy: clinical observations. Epilepsia.
+s41582-019-0217-x                                                                                     (2011) 52:26–32. doi: 10.1111/j.1528-1167.2011.03033.x
+75. Vila Verde D, Zimmer T, Cattalini A, Pereira MF, van Vliet EA, Testa G, et al. Seizure            102. Aronica E, Crino PB. Epilepsy related to developmental tumors and malformations
+activity and brain damage in a model of focal non-convulsive status epilepticus.                      of cortical development. Neurotherapeutics. (2014) 11:251–68. doi: 10.1007/
+Neuropathol Appl Neurobiol. (2021) 47:679–93. doi: 10.1111/nan.12693                                  s13311-013-0251-0
+76. Boulanger LM. Immune proteins in brain development and synaptic plasticity.                       103. Paudel YN, Shaikh MF, Chakraborti A, Kumari Y, Aledo-Serrano A, Aleksovska K,
+Neuron. (2009) 64:93–109. doi: 10.1016/j.neuron.2009.09.001                                           et al. HMGB1: a common biomarker and potential target for TBI, neuroinflammation,
+
+
+
+Frontiers in Neurology                                                                           17                                                                           frontiersin.org
+Gustin et al.                                                                                                                                                 10.3389/fneur.2026.1793970
+
+
+
+epilepsy, and cognitive dysfunction. Front Neurosci. (2018) 12:628. doi: 10.3389/                   129. Dankovich TM, Rizzoli SO. The synaptic extracellular matrix: long-lived, stable, and
+fnins.2018.00628                                                                                    still remarkably dynamic. Front Synaptic Neurosci. (2022) 14:854956. doi: 10.3389/
+                                                                                                    fnsyn.2022.854956
+104. Pedrazzi M, Raiteri L, Bonanno G, Patrone M, Ledda S, Passalacqua M, et al.
+Stimulation of excitatory amino acid release from adult mouse brain glia subcellular par-           130. Bandtlow CE, Zimmermann DR. Proteoglycans in the developing brain: new con-
+ticles by high mobility group box 1 protein. J Neurochem. (2006) 99:827–38. doi:                    ceptual insights for old proteins. Physiol Rev. (2000) 80:1267–90. doi: 10.1152/
+10.1111/j.1471-4159.2006.04120.x                                                                    physrev.2000.80.4.1267
+105. Maroso M, Balosso S, Ravizza T, Liu J, Aronica E, Iyer AM, et al. Toll-like receptor           131. Chaunsali L, Tewari BP, Sontheimer H. Perineuronal net dynamics in the patho-
+4 and high-mobility group box-1 are involved in ictogenesis and can be targeted to reduce           physiology of epilepsy. Epilepsy Curr. (2021) 21:273–81. doi: 10.1177/15357597211018688
+seizures. Nat Med. (2010) 16:413–9. doi: 10.1038/nm.2127
+                                                                                                    132. Blondiaux A, Jia S, Annamneedi A, Caliskan G, Nebel J, Montenegro-Venegas C,
+106. Simon LS. Role and regulation of cyclooxygenase-2 during inflammation. Am J Med.               et al. Linking epileptic phenotypes and neural extracellular matrix remodeling signatures
+(1999) 106:37S–42S. doi: 10.1016/s0002-9343(99)00115-1                                              in mouse models of epilepsy. Neurobiol Dis. (2023) 188:106324. doi: 10.1016/j.
+                                                                                                    nbd.2023.106324
+107. Rawat C, Kukal S, Dahiya UR, Kukreti R. Cyclooxygenase-2 (COX-2) inhibitors:
+future therapeutic strategies for epilepsy management. J Neuroinflammation. (2019)                  133. Sitas B, Bobic-Rasonja M, Mrak G, Trnski S, Krbot Skoric M, Oreskovic D, et al.
+16:197. doi: 10.1186/s12974-019-1592-3                                                              Reorganization of the brain extracellular matrix in hippocampal sclerosis. Int J Mol Sci.
+                                                                                                    (2022) 23:8197. doi: 10.3390/ijms23158197
+108. Rojas A, Jiang J, Ganesh T, Yang MS, Lelutiu N, Gueorguieva P, et al.
+Cyclooxygenase-2 in epilepsy. Epilepsia. (2014) 55:17–25. doi: 10.1111/epi.12461                    134. Perkins KL, Arranz AM, Yamaguchi Y, Hrabetova S. Brain extracellular space, hyal-
+                                                                                                    uronan, and the prevention of epileptic seizures. Rev Neurosci. (2017) 28:869–92. doi:
+109. Jiang J, Yang MS, Quan Y, Gueorguieva P, Ganesh T, Dingledine R. Therapeutic
+                                                                                                    10.1515/revneuro-2017-0017
+window for cyclooxygenase-2 related anti-inflammatory therapy after status epilepticus.
+Neurobiol Dis. (2015) 76:126–36. doi: 10.1016/j.nbd.2014.12.032                                     135. McRae PA, Porter BE. The perineuronal net component of the extracellular matrix
+                                                                                                    in plasticity and epilepsy. Neurochem Int. (2012) 61:963–72. doi: 10.1016/j.
+110. Takemiya T, Suzuki K, Sugiura H, Yasuda S, Yamagata K, Kawakami Y, et al. Inducible
+                                                                                                    neuint.2012.08.007
+brain COX-2 facilitates the recurrence of hippocampal seizures in mouse rapid kindling.
+Prostaglandins Other Lipid Mediat. (2003) 71:205–16. doi: 10.1016/s1098-8823(03)00040-6             136. Mi R, Tang X, Sutter R, Xu D, Worley P, O'Brien RJ. Differing mechanisms for glu-
+                                                                                                    tamate receptor aggregation on dendritic spines and shafts in cultured hippocampal
+111. Holtman L, van Vliet EA, van Schaik R, Queiroz CM, Aronica E, Gorter JA. Effects
+                                                                                                    neurons. J Neurosci. (2002) 22:7606–16. doi: 10.1523/JNEUROSCI.22-17-07606.2002
+of SC58236, a selective COX-2 inhibitor, on epileptogenesis and spontaneous seizures in
+a rat model for temporal lobe epilepsy. Epilepsy Res. (2009) 84:56–66. doi: 10.1016/j.              137. Hall RA, Vodyanoy V, Quan A, Sinnarajah S, Suppiramaniam V, Kessler M, et al.
+eplepsyres.2008.12.006                                                                              Effects of heparin on the properties of solubilized and reconstituted rat brain AMPA
+                                                                                                    receptors. Neurosci Lett. (1996) 217:179–83. doi: 10.1016/0304-3940(96)12984-0
+112. Yamagata K, Andreasson KI, Kaufmann WE, Barnes CA, Worley PF. Expression of
+a mitogen-inducible cyclooxygenase in brain neurons: regulation by synaptic activity and            138. Sinnarajah S, Suppiramaniam V, Kumar KP, Hall RA, Bahr BA, Vodyanoy V. Heparin
+glucocorticoids. Neuron. (1993) 11:371–86. doi: 10.1016/0896-6273(93)90192-t                        modulates the single channel kinetics of reconstituted AMPA receptors from rat brain.
+                                                                                                    Synapse. (1999) 31:203–9.
+113. Farrell JS, Colangeli R, Wolff MD, Wall AK, Phillips TJ, George A, et al. Postictal
+hypoperfusion/hypoxia provides the foundation for a unified theory of seizure-induced               139. de Jong JM, Broekaart DWM, Bongaarts A, Muhlebner A, Mills JD, van Vliet EA,
+brain abnormalities and behavioral dysfunction. Epilepsia. (2017) 58:1493–501. doi:                 et al. Altered extracellular matrix as an alternative risk factor for epileptogenicity in brain
+10.1111/epi.13827                                                                                   tumors. Biomedicine. (2022) 10:2475. doi: 10.3390/biomedicines10102475
+114. Vidensky S, Zhang Y, hand T, Goellner J, Shaffer A, Isakson P, et al. Neuronal over-           140. Lukasiuk K, Lason W. Emerging molecular targets for anti-epileptogenic and epi-
+expression of COX-2 results in dominant production of PGE2 and altered fever response.              lepsy modifying drugs. Int J Mol Sci. (2023) 24:2928. doi: 10.3390/ijms24032928
+NeuroMolecular Med. (2003) 3:15–28. doi: 10.1385/NMM:3:1:15
+                                                                                                    141. Perucca P, Bahlo M, Berkovic SF. The genetics of epilepsy. Annu Rev Genomics Hum
+115. Hung KL, Liang JS, Wang JS, Chen HJ, Lin LJ, Lu JF. Association of a novel GABRG2              Genet. (2020) 21:205–30. doi: 10.1146/annurev-genom-120219-074937
+splicing variation and a PTGS2/COX-2 single nucleotide polymorphism with Taiwanese
+                                                                                                    142. International League Against Epilepsy Consortium on Complex Epilepsies. Genome-
+febrile seizures. Epilepsy Res. (2017) 129:1–7. doi: 10.1016/j.eplepsyres.2016.11.004
+                                                                                                    wide mega-analysis identifies 16 loci and highlights diverse biological mechanisms in the
+116. Godfred RM, Parikh MS, Haltiner AM, Caylor LM, Sepkuty JP, Doherty MJ. Does                    common epilepsies. Nat Commun. (2018) 9:5269. doi: 10.1038/s41467-018-07524-z
+aspirin use make it harder to collect seizures during elective video-EEG telemetry?
+                                                                                                    143. International League Against Epilepsy Consortium on Complex Epilepsies. GWAS
+Epilepsy Behav. (2013) 27:115–7. doi: 10.1016/j.yebeh.2012.12.031
+                                                                                                    meta-analysis of over 29,000 people with epilepsy identifies 26 risk loci and subtype-
+117. Lance EI, Sreenivasan AK, Zabel TA, Kossoff EH, Comi AM. Aspirin use in Sturge-                specific genetic architecture. Nat Genet. (2023) 55:1471–82. doi: 10.1038/
+Weber syndrome: side effects and clinical outcomes. J Child Neurol. (2013) 28:213–8. doi:           s41588-023-01485-w
+10.1177/0883073812463607
+                                                                                                    144. Oliver KL, Scheffer IE, Bennett MF, Grinton BE, Bahlo M, Berkovic SF.
+118. van Stuijvenberg M, Derksen-Lubsen G, Steyerberg EW, Habbema JD, Moll HA.                      Genes4Epilepsy: an epilepsy gene resource. Epilepsia. (2023) 64:1368–75. doi: 10.1111/
+Randomized, controlled trial of ibuprofen syrup administered during febrile illnesses to            epi.17547
+prevent febrile seizure recurrences. Pediatrics. (1998) 102:E51. doi: 10.1542/peds.102.5.e51
+                                                                                                    145. Tsankova NM, Kumar A, Nestler EJ. Histone modifications at gene promoter regions
+119. Dilena R, Mauri E, Aronica E, Bernasconi P, Bana C, Cappelletti C, et al. Therapeutic          in rat hippocampus after acute and chronic electroconvulsive seizures. J Neurosci. (2004)
+effect of Anakinra in the relapsing chronic phase of febrile infection-related epilepsy             24:5603–10. doi: 10.1523/JNEUROSCI.0589-04.2004
+syndrome. Epilepsia Open. (2019) 4:344–50. doi: 10.1002/epi4.12317
+                                                                                                    146. Huang Y, Doherty JJ, Dingledine R. Altered histone acetylation at glutamate receptor
+120. Kenney-Jung DL, Vezzani A, Kahoud RJ, LaFrance-Corey RG, Ho ML, Muskardin                      2 and brain-derived neurotrophic factor genes is an early event triggered by status epilep-
+TW, et al. Febrile infection-related epilepsy syndrome treated with anakinra. Ann Neurol.           ticus. J Neurosci. (2002) 22:8422–8. doi: 10.1523/JNEUROSCI.22-19-08422.2002
+(2016) 80:939–45. doi: 10.1002/ana.24806
+                                                                                                    147. Huang Y, Myers SJ, Dingledine R. Transcriptional repression by REST: recruitment
+121. Bialer M, Johannessen SI, Levy RH, Perucca E, Tomson T, White HS. Progress report              of Sin3A and histone deacetylase to neuronal genes. Nat Neurosci. (1999) 2:867–72. doi:
+on new antiepileptic drugs: a summary of the eleventh EILAT conference (EILAT XI).                  10.1038/13165
+Epilepsy Res. (2013) 103:2–30. doi: 10.1016/j.eplepsyres.2012.10.001
+                                                                                                    148. Peixoto P, Cartron PF, Serandour AA, Hervouet E. From 1957 to nowadays: a brief
+122. Jyonouchi H, Geng L. Intractable epilepsy (IE) and responses to anakinra, a human              history of epigenetics. Int J Mol Sci. (2020) 21:7571. doi: 10.3390/ijms21207571
+recombinant IL-1 receptor agonist (IL-1ra): case reports. J Clin Cell Immunol. (2016)
+                                                                                                    149. Henshall DC, Kobow K. Epigenetics and epilepsy. Cold Spring Harb Perspect Med.
+7:1–5. doi: 10.4172/2155-9899.1000456
+                                                                                                    (2015) 5:a022731. doi: 10.1101/cshperspect.a022731
+123. Lagarde S, Villeneuve N, Trebuchon A, Kaphan E, Lepine A, McGonigal A, et al.
+                                                                                                    150. Van Loo KMJ, Carvill GL, Becker AJ, Conboy K, Goldman AM, Kobow K, et al.
+Anti-tumor necrosis factor alpha therapy (adalimumab) in Rasmussen's encephalitis: an
+                                                                                                    Epigenetic genes and epilepsy: emerging mechanisms and clinical applications. Nat Rev
+open pilot study. Epilepsia. (2016) 57:956–66. doi: 10.1111/epi.13387
+                                                                                                    Neurol. (2022) 18:530–43. doi: 10.1038/s41582-022-00693-y
+124. Soles A, Selimovic A, Sbrocco K, Ghannoum F, Hamel K, Moncada EL, et al.
+                                                                                                    151. Laurent L, Wong E, Li G, Huynh T, Tsirigos A, Ong CT, et al. Dynamic changes in
+Extracellular matrix regulation in physiology and in brain disease. Int J Mol Sci. (2023)
+                                                                                                    the human methylome during differentiation. Genome Res. (2010) 20:320–31. doi:
+24:7049. doi: 10.3390/ijms24087049
+                                                                                                    10.1101/gr.101907.109
+125. Pinter P, Alpar A. The role of extracellular matrix in human neurodegenerative dis-
+                                                                                                    152. Ball MP, Li JB, Gao Y, Lee JH, LeProust EM, Park IH, et al. Targeted and genome-
+eases. Int J Mol Sci. (2022) 23:11085. doi: 10.3390/ijms231911085
+                                                                                                    scale strategies reveal gene-body methylation signatures in human cells. Nat Biotechnol.
+126. Jovanov Milosevic N, Judas M, Aronica E, Kostovic I. Neural ECM in laminar orga-               (2009) 27:361–8. doi: 10.1038/nbt.1533
+nization and connectivity development in healthy and diseased human brain. Prog Brain
+                                                                                                    153. Guo JU, Ma DK, Mo H, Ball MP, Jang MH, Bonaguidi MA, et al. Neuronal activity
+Res. (2014) 214:159–78. doi: 10.1016/B978-0-444-63486-3.00007-4
+                                                                                                    modifies the DNA methylation landscape in the adult brain. Nat Neurosci. (2011)
+127. Long KR, Huttner WB. How the extracellular matrix shapes neural development.                   14:1345–51. doi: 10.1038/nn.2900
+Open Biol. (2019) 9:180216. doi: 10.1098/rsob.180216
+                                                                                                    154. Jabari S, Kobow K, Pieper T, Hartlieb T, Kudernatsch M, Polster T, et al. DNA meth-
+128. Dityatev A, Schachner M. Extracellular matrix molecules and synaptic plasticity. Nat           ylation-based classification of malformations of cortical development in the human brain.
+Rev Neurosci. (2003) 4:456–68. doi: 10.1038/nrn1115                                                 Acta Neuropathol. (2022) 143:93–104. doi: 10.1007/s00401-021-02386-0
+
+
+
+Frontiers in Neurology                                                                         18                                                                               frontiersin.org
+Gustin et al.                                                                                                                                               10.3389/fneur.2026.1793970
+
+
+
+155. Kobow K, Jeske I, Hildebrandt M, Hauke J, Hahnen E, Buslei R, et al. Increased reelin          181. Chen Z, Fan B, Pang L, Wei M, Lv C, Zheng J. Longitudinal alterations of cortical
+promoter methylation is associated with granule cell dispersion in human temporal lobe              structural-functional coupling in temporal lobe epilepsy. J Neuroimaging. (2023)
+epilepsy. J Neuropathol Exp Neurol. (2009) 68:356–64. doi: 10.1097/                                 33:156–66. doi: 10.1111/jon.13046
+NEN.0b013e31819ba737
+                                                                                                    182. Feng X, Piper RJ, Prentice F, Clayden JD, Baldeweg T. Functional brain connectivity
+156. Belhedi N, Perroud N, Karege F, Vessaz M, Malafosse A, Salzmann A. Increased                   in children with focal epilepsy: a systematic review of functional MRI studies. Seizure.
+CPA6 promoter methylation in focal epilepsy and in febrile seizures. Epilepsy Res. (2014)           (2024) 117:164–73. doi: 10.1016/j.seizure.2024.02.021
+108:144–8. doi: 10.1016/j.eplepsyres.2013.10.007
+                                                                                                    183. Lariviere S, Weng Y, Vos de Wael R, Royer J, Frauscher B, Wang Z, et al.
+157. Machnes ZM, Huang TC, Chang PK, Gill R, Reist N, Dezsi G, et al. DNA methyla-                  Functional connectome contractions in temporal lobe epilepsy: microstructural
+tion mediates persistent epileptiform activity in vitro and in vivo. PLoS One. (2013)               underpinnings and predictors of surgical outcome. Epilepsia. (2020) 61:1221–33. doi:
+8:e76299. doi: 10.1371/journal.pone.0076299                                                         10.1111/epi.16540
+158. Lu W, Shi Y, Jackson AC, Bjorgan K, During MJ, Sprengel R, et al. Subunit composi-             184. Huang X, Du Y, Guo D, Xie F, Zhou C. Structural-functional coupling abnormalities
+tion of synaptic AMPA receptors revealed by a single-cell genetic approach. Neuron.                 in temporal lobe epilepsy. Front Neurosci. (2023) 17:1272514. doi: 10.3389/
+(2009) 62:254–68. doi: 10.1016/j.neuron.2009.02.027                                                 fnins.2023.1272514
+159. Guo C, Ma YY. Calcium permeable-AMPA receptors and excitotoxicity in neurologi-                185. Liang X, Pang X, Liu J, Zhao J, Yu L, Zheng J. Comparison of topological properties
+cal disorders. Front Neural Circuits. (2021) 15:711564. doi: 10.3389/fncir.2021.711564              of functional brain networks with graph theory in temporal lobe epilepsy with different
+                                                                                                    duration of disease. Ann Transl Med. (2020) 8:1503. doi: 10.21037/atm-20-6823
+160. Ryley Parrish R, Albertson AJ, Buckingham SC, Hablitz JJ, Mascia KL, Davis
+Haselden W, et al. Status epilepticus triggers early and late alterations in brain-                 186. Stanley ML, Moussa MN, Paolini BM, Lyday RG, Burdette JH, Laurienti PJ. Defining
+derived neurotrophic factor and NMDA glutamate receptor Grin2b DNA methyla-                         nodes in complex brain networks. Front Comput Neurosci. (2013) 7:169. doi: 10.3389/
+tion levels in the hippocampus. Neuroscience. (2013) 248:602–19. doi: 10.1016/j.                    fncom.2013.00169
+neuroscience.2013.06.029                                                                            187. Raichle ME. The brain's default mode network. Annu Rev Neurosci. (2015)
+161. Pfisterer U, Petukhov V, Demharter S, Meichsner J, Thompson JJ, Batiuk MY, et al.              38:433–47. doi: 10.1146/annurev-neuro-071013-014030
+Identification of epilepsy-associated neuronal subtypes and gene expression underlying              188. Vannest J, Radhakrishnan R, Gutierrez-Colina AM, Wade SL, Maloney T, Combs A,
+epileptogenesis. Nat Commun. (2020) 11:5038. doi: 10.1038/s41467-020-18752-7                        et al. Altered functional network connectivity and working memory dysfunction in ado-
+162. Zhang Z, Liao W, Chen H, Mantini D, Ding JR, Xu Q, et al. Altered functional-                  lescents with epilepsy. Brain Imaging Behav. (2021) 15:2513–23. doi: 10.1007/
+structural coupling of large-scale brain networks in idiopathic generalized epilepsy. Brain.        s11682-021-00452-5
+(2011) 134:2912–28. doi: 10.1093/brain/awr223                                                       189. Qin L, Jiang W, Zheng J, Zhou X, Zhang Z, Liu J. Alterations functional connectivity
+163. van den Heuvel M, Mandl R, Luigjes J, Hulshoff Pol H. Microstructural organization             in temporal lobe epilepsy and their relationships with cognitive function: a longitudinal
+of the cingulum tract and the level of default mode functional connectivity. J Neurosci.            resting-state fMRI study. Front Neurol. (2020) 11:625. doi: 10.3389/fneur.2020.00625
+(2008) 28:10844–51. doi: 10.1523/JNEUROSCI.2964-08.2008                                             190. Lv ZX, Huang DH, Ye W, Chen ZR, Huang WL, Zheng JO. Alteration of functional
+164. Millan-Zambrano G, Burton A, Bannister AJ, Schneider R. Histone post-transla-                  connectivity within visuospatial working memory-related brain network in patients with
+tional modifications: cause and consequence of genome function. Nat Rev Genet. (2022)               right temporal lobe epilepsy: a resting-state fMRI study. Epilepsy Behav. (2014) 35:64–71.
+23:563–80. doi: 10.1038/s41576-022-00468-7                                                          doi: 10.1016/j.yebeh.2014.04.001
+165. Tessarz P, Kouzarides T. Histone core modifications regulating nucleosome structure            191. Haneef Z, Levin HS, Chiang S. Brain graph topology changes associated with anti-
+and dynamics. Nat Rev Mol Cell Biol. (2014) 15:703–8. doi: 10.1038/nrm3890                          epileptic drug use. Brain Connect. (2015) 5:284–91. doi: 10.1089/brain.2014.0304
+166. Park HG, Yu HS, Park S, Ahn YM, Kim YS, Kim SH. Repeated treatment with elec-                  192. Sankar R, Holmes GL. Mechanisms of action for the commonly used antiepileptic
+troconvulsive seizures induces HDAC2 expression and down-regulation of NMDA                         drugs: relevance to antiepileptic drug-associated neurobehavioral adverse effects. J Child
+receptor-related genes through histone deacetylation in the rat frontal cortex. Int J               Neurol. (2004) 19 Suppl 1:S6–S14. doi: 10.1177/088307380401900102
+Neuropsychopharmacol. (2014) 17:1487–500. doi: 10.1017/S1461145714000248                            193. Wang H, Tan G, Li X, Chen D, An D, Gong Q, et al. Aberrant functional connectivity
+167. Huang Y, Zhao F, Wang L, Yin H, Zhou C, Wang X. Increased expression of histone                associated with drug response in patients with newly diagnosed epilepsy. Neurol Sci.
+deacetylases 2 in temporal lobe epilepsy: a study of epileptic patients and rat models.             (2024) 45:4973–82. doi: 10.1007/s10072-024-07529-1
+Synapse. (2012) 66:151–9. doi: 10.1002/syn.20995                                                    194. Park KM, Cho KH, Lee HJ, Heo K, Lee BI, Kim SE. Predicting the antiepileptic drug
+168. Novak A, Vizjak K, Rakusa M. Cognitive impairment in people with epilepsy. J Clin              response by brain connectivity in newly diagnosed focal epilepsy. J Neurol. (2020)
+Med. (2022) 11:267. doi: 10.3390/jcm11010267                                                        267:1179–87. doi: 10.1007/s00415-020-09697-4
+
+169. Panni S, Lovering RC, Porras P, Orchard S. Non-coding RNA regulatory networks.                 195. Dingledine R, Varvel NH, Dudek FE. When and how do seizures kill neurons, and
+Biochim Biophys Acta Gene Regul Mech. (2020) 1863:194417. doi: 10.1016/j.                           is cell death relevant to epileptogenesis? Adv Exp Med Biol. (2014) 813:109–22. doi:
+bbagrm.2019.194417                                                                                  10.1007/978-94-017-8914-1_9
+
+170. Soutschek M, Schratt G. Non-coding RNA in the wiring and remodeling of neural                  196. Vajda FJ. Neuroprotection and neurodegenerative disease. J Clin Neurosci. (2002)
+circuits. Neuron. (2023) 111:2140–54. doi: 10.1016/j.neuron.2023.04.031                             9:4–8. doi: 10.1054/jocn.2001.1027
+
+171. Henshall DC. MicroRNA and epilepsy: profiling, functions and potential clinical                197. Henshall DC, Murphy BM. Modulators of neuronal cell death in epilepsy. Curr Opin
+applications. Curr Opin Neurol. (2014) 27:199–205. doi: 10.1097/WCO.0000000000000079                Pharmacol. (2008) 8:75–81. doi: 10.1016/j.coph.2007.07.005
+
+172. Jimenez-Mateos EM, Engel T, Merino-Serrais P, McKiernan RC, Tanaka K, Mouri                    198. Stauner L, Bao H, Delazer L, Kirsch I, Christmann T, Noachtar S, et al. Longitudinal
+G, et al. Silencing microRNA-134 produces neuroprotective and prolonged seizure-sup-                evaluation of retinal neuroaxonal loss in epilepsy using optical coherence tomography.
+pressive effects. Nat Med. (2012) 18:1087–94. doi: 10.1038/nm.2834                                  Epilepsia. (2024) 65:3644–54. doi: 10.1111/epi.18139
+
+173. Tan CL, Plotkin JL, Veno MT, von Schimmelmann M, Feinberg P, Mann S, et al.                    199. Dudek FE, Sutula TP. Epileptogenesis in the dentate gyrus: a critical perspective. Prog
+MicroRNA-128 governs neuronal excitability and motor behavior in mice. Science. (2013)              Brain Res. (2007) 163:755–73. doi: 10.1016/S0079-6123(07)63041-6
+342:1254–8. doi: 10.1126/science.1244193                                                            200. Sutula TP, Dudek FE. Unmasking recurrent excitation generated by mossy fiber
+174. Bernard D, Prasanth KV, Tripathi V, Colasse S, Nakamura T, Xuan Z, et al. A long               sprouting in the epileptic dentate gyrus: an emergent property of a complex system. Prog
+nuclear-retained non-coding RNA regulates synaptogenesis by modulating gene expres-                 Brain Res. (2007) 163:541–63. doi: 10.1016/S0079-6123(07)63029-5
+sion. EMBO J. (2010) 29:3082–93. doi: 10.1038/emboj.2010.199                                        201. Fujikawa DG. Prolonged seizures and cellular injury: understanding the connection.
+175. Zhong J, Chuang SC, Bianchi R, Zhao W, Lee H, Fenton AA, et al. BC1 regulation of              Epilepsy Behav. (2005) 7 Suppl 3:S3–S11. doi: 10.1016/j.yebeh.2005.08.003
+metabotropic glutamate receptor-mediated neuronal excitability. J Neurosci. (2009)                  202. Wang L, Liu YH, Huang YG, Chen LW. Time-course of neuronal death in the mouse
+29:9977–86. doi: 10.1523/JNEUROSCI.3893-08.2009                                                     pilocarpine model of chronic epilepsy using Fluoro-jade C staining. Brain Res. (2008)
+176. Manna I, Fortunato F, De Benedittis S, Sammarra I, Bertoli G, Labate A, et al. Non-            1241:157–67. doi: 10.1016/j.brainres.2008.07.097
+coding RNAs: new biomarkers and therapeutic targets for temporal lobe epilepsy. Int J               203. Dudek FE, Staley KJ. The time course of acquired epilepsy: implications for thera-
+Mol Sci. (2022) 23:3063. doi: 10.3390/ijms23063063                                                  peutic intervention to suppress epileptogenesis. Neurosci Lett. (2011) 497:240–6. doi:
+                                                                                                    10.1016/j.neulet.2011.03.071
+177. Tracy JI, Doucet GE. Resting-state functional connectivity in epilepsy: growing rel-
+evance for clinical decision making. Curr Opin Neurol. (2015) 28:158–65. doi: 10.1097/              204. Rost NS, Salinas J, Jordan JT, Banwell B, Correa DJ, Said RR, et al. The brain health
+WCO.0000000000000178                                                                                imperative in the 21st century-a call to action: the AAN brain health platform and posi-
+                                                                                                    tion statement. Neurology. (2023) 101:570–9. doi: 10.1212/WNL.0000000000207739
+178. Chiang S, Stern JM, Engel J Jr, Haneef Z. Structural-functional coupling changes in
+temporal lobe epilepsy. Brain Res. (2015) 1616:45–57. doi: 10.1016/j.brainres.2015.04.052           205. Boro A, Haut S. Medical comorbidities in the treatment of epilepsy. Epilepsy Behav.
+                                                                                                    (2003) 4:S2–S12. doi: 10.1016/j.yebeh.2003.07.002
+179. Xiao F, An D, Zhou D. Functional MRI-based connectivity analysis: a promising tool
+for the investigation of the pathophysiology and comorbidity of epilepsy. Seizure. (2017)           206. Seidenberg M, Pulsipher DT, Hermann B. Association of epilepsy and comorbid
+44:37–41. doi: 10.1016/j.seizure.2016.10.003                                                        conditions. Future Neurol. (2009) 4:663–8. doi: 10.2217/fnl.09.32
+180. Lee HJ, Park KM. Structural and functional connectivity in newly diagnosed juvenile            207. Mula M. The comorbidities of epilepsy explained. Expert Rev Neurother. (2020)
+myoclonic epilepsy. Acta Neurol Scand. (2019) 139:469–75. doi: 10.1111/ane.13079                    20:1207–9. doi: 10.1080/14737175.2020.1840979
+
+
+
+Frontiers in Neurology                                                                         19                                                                             frontiersin.org
+Gustin et al.                                                                                                                                               10.3389/fneur.2026.1793970
+
+
+
+208. Vilella L, Miyake CY, Chaitanya G, Hampson JP, Omidi SJ, Ochoa-Urrea M, et al.                  236. Lu E, Pyatka N, Burant CJ, Sajatovic M. Systematic literature review of psychiatric
+Incidence and types of cardiac arrhythmias in the peri-ictal period in patients having a             comorbidities in adults with epilepsy. J Clin Neurol. (2021) 17:176–86. doi: 10.3988/
+generalized convulsive seizure. Neurology. (2024) 103:e209501. doi: 10.1212/                         jcn.2021.17.2.176
+WNL.0000000000209501
+                                                                                                     237. Sheline YI, Wang PW, Gado MH, Csernansky JG, Vannier MW. Hippocampal atro-
+209. Gaitatzis A, Sisodiya SM, Sander JW. The somatic comorbidity of epilepsy: a weighty             phy in recurrent major depression. Proc Natl Acad Sci USA. (1996) 93:3908–13. doi:
+but often unrecognized burden. Epilepsia. (2012) 53:1282–93. doi:                                    10.1073/pnas.93.9.3908
+10.1111/j.1528-1167.2012.03528.x
+                                                                                                     238. Bremner JD, Narayan M, Anderson ER, Staib LH, Miller HL, Charney DS.
+210. Khan MA, Dev S, Kumari M, Mahak F, Umair A, Rasool M, et al. Respiratory dys-                   Hippocampal volume reduction in major depression. Am J Psychiatry. (2000) 157:115–8.
+function in epileptic encephalopathies: insights and challenges. Cureus. (2023) 15:e46216.           doi: 10.1176/ajp.157.1.115
+doi: 10.7759/cureus.46216
+                                                                                                     239. Hermann BP, Seidenberg M, Haltiner A, Wyler AR. Mood state in unilateral
+211. Helmstaedter C, Witt JA. Epilepsy and cognition: a bidirectional relationship?                  temporal lobe epilepsy. Biol Psychiatry. (1991) 30:1205–18. doi:
+Seizure. (2017) 49:83–9. doi: 10.1016/j.seizure.2017.02.017                                          10.1016/0006-3223(91)90157-h
+212. Helmstaedter C, Witt JA. Clinical neuropsychology in epilepsy: theoretical and practical        240. Meisner OC, Nair A, Chang SWC. Amygdala connectivity and implications for social
+issues. Handb Clin Neurol. (2012) 107:437–59. doi: 10.1016/B978-0-444-52898-8.00036-7                cognition and disorders. Handb Clin Neurol. (2022) 187:381–403. doi: 10.1016/
+                                                                                                     B978-0-12-823493-8.00017-1
+213. Witt JA, Helmstaedter C. Cognition in epilepsy: current clinical issues of interest.
+Curr Opin Neurol. (2017) 30:174–9. doi: 10.1097/WCO.0000000000000430                                 241. Li Q, Wang W, Hu Z. Amygdala's T1-weighted image radiomics outperforms volume
+                                                                                                     for differentiation of anxiety disorder and its subtype. Front Psych. (2023) 14:1091730.
+214. Operto FF, Pastorino GMG, Viggiano A, Dell'Isola GB, Dini G, Verrotti A, et al.
+                                                                                                     doi: 10.3389/fpsyt.2023.1091730
+Epilepsy and cognitive impairment in childhood and adolescence: a mini-review. Curr
+Neuropharmacol. (2023) 21:1646–65. doi: 10.2174/1570159X20666220706102708                            242. Stahl SM. Brainstorms: symptoms and circuits, part 2: anxiety disorders. J Clin
+                                                                                                     Psychiatry. (2003) 64:1408–9. doi: 10.4088/jcp.v64n1201
+215. Hermann BP, Zhao Q, Jackson DC, Jones JE, Dabbs K, Almane D, et al. Cognitive
+phenotypes in childhood idiopathic epilepsies. Epilepsy Behav. (2016) 61:269–74. doi:                243. Kanner AM, Balabanov A. Depression and epilepsy: how closely related are they?
+10.1016/j.yebeh.2016.05.013                                                                          Neurology. (2002) 58:S27–39. doi: 10.1212/wnl.58.8_suppl_5.s27
+216. Nickels KC, Wirrell EC. Cognitive and social outcomes of epileptic encephalopathies.            244. Hasler G, Bonwetsch R, Giovacchini G, Toczek MT, Bagic A, Luckenbaugh
+Semin Pediatr Neurol. (2017) 24:264–75. doi: 10.1016/j.spen.2017.10.001                              DA, et al. 5-HT1A receptor binding in temporal lobe epilepsy patients with and
+217. Catterall WA, Kalume F, Oakley JC. NaV1.1 channels and epilepsy. J Physiol. (2010)              without major depression. Biol Psychiatry. (2007) 62:1258–64. doi: 10.1016/j.
+588:1849–59. doi: 10.1113/jphysiol.2010.187484                                                       biopsych.2007.02.015
+
+218. Strzelczyk A, Lagae L, Wilmshurst JM, Brunklaus A, Striano P, Rosenow F, et al.                 245. Martinez A, Finegersh A, Cannon DM, Dustin I, Nugent A, Herscovitch P, et al. The
+Dravet syndrome: a systematic literature review of the illness burden. Epilepsia Open.               5-HT1A receptor and 5-HT transporter in temporal lobe epilepsy. Neurology. (2013)
+(2023) 8:1256–70. doi: 10.1002/epi4.12832                                                            80:1465–71. doi: 10.1212/WNL.0b013e31828cf809
+
+219. Riga MS, Perez-Fernandez M, Miquel-Rio L, Paz V, Campa L, Martinez-Losa M,                      246. Cai L, Xu Z, Luo H, He Q, Diao L, Gui X, et al. The association between 5-HT1A
+et al. Scn1a haploinsufficiency in the prefrontal cortex leads to cognitive impairment and           binding and temporal lobe epilepsy: a meta-analysis of molecular imaging studies.
+depressive phenotype. Brain. (2024) 147:4169–84. doi: 10.1093/brain/awae167                          Epilepsy Behav. (2023) 145:109354. doi: 10.1016/j.yebeh.2023.109354
+
+220. Papassotiropoulos A, Henke K, Stefanova E, Aerni A, Muller A, Demougin P, et al.                247. Gharedaghi MH, Seyedabadi M, Ghia JE, Dehpour AR, Rahimian R. The role of
+A genome-wide survey of human short-term memory. Mol Psychiatry. (2011) 16:184–92.                   different serotonin receptor subtypes in seizure susceptibility. Exp Brain Res. (2014)
+doi: 10.1038/mp.2009.133                                                                             232:347–67. doi: 10.1007/s00221-013-3757-0
+
+221. George AL Jr. Inherited channelopathies associated with epilepsy. Epilepsy Curr.                248. Yuen EY, Jiang Q, Chen P, Gu Z, Feng J, Yan Z. Serotonin 5-HT1A receptors regulate
+(2004) 4:65–70. doi: 10.1111/j.1535-7597.2004.42010.x                                                NMDA receptor channels through a microtubule-dependent mechanism. J Neurosci.
+                                                                                                     (2005) 25:5488–501. doi: 10.1523/JNEUROSCI.1187-05.2005
+222. Brager DH, Johnston D. Channelopathies and dendritic dysfunction in fragile X
+syndrome. Brain Res Bull. (2014) 103:11–7. doi: 10.1016/j.brainresbull.2014.01.002                   249. Sourbron J, Lagae L. Serotonin receptors in epilepsy: novel treatment targets?
+                                                                                                     Epilepsia Open. (2022) 7:231–46. doi: 10.1002/epi4.12580
+223. Hogg RC, Raggenbass M, Bertrand D. Nicotinic acetylcholine receptors: from struc-
+ture to brain function. Rev Physiol Biochem Pharmacol. (2003) 147:1–46. doi: 10.1007/                250. Kimiskidis VK, Valeta T. Epilepsy and anxiety: epidemiology, classification, aetiol-
+s10254-003-0005-1                                                                                    ogy, and treatment. Epileptic Disord. (2012) 14:248–56. doi: 10.1684/epd.2012.0524
+
+224. Alves VS, Alves-Silva HS, Orts DJB, Ribeiro-Silva L, Arcisio-Miranda M, Oliveira                251. Wu LJ, Ko SW, Toyoda H, Zhao MG, Xu H, Vadakkan KI, et al. Increased anxiety-like
+FA. Calcium signaling in neurons and glial cells: role of Cav1 channels. Neuroscience.               behavior and enhanced synaptic efficacy in the amygdala of GluR5 knockout mice. PLoS
+(2019) 421:95–111. doi: 10.1016/j.neuroscience.2019.09.041                                           One. (2007) 2:e167. doi: 10.1371/journal.pone.0000167
+
+225. Mody I. Aspects of the homeostaic plasticity of GABAA receptor-mediated inhibi-                 252. Tasan RO, Bukovac A, Peterschmitt YN, Sartori SB, Landgraf R, Singewald N, et al.
+tion. J Physiol. (2005) 562:37–46. doi: 10.1113/jphysiol.2004.077362                                 Altered GABA transmission in a mouse model of increased trait anxiety. Neuroscience.
+                                                                                                     (2011) 183:71–80. doi: 10.1016/j.neuroscience.2011.03.051
+226. Holmes GL. Cognitive impairment in epilepsy: the role of network abnormalities.
+Epileptic Disord. (2015) 17:101–16. doi: 10.1684/epd.2015.0739                                       253. Wulsin AC, Solomon MB, Privitera MD, Danzer SC, Herman JP. Hypothalamic-
+                                                                                                     pituitary-adrenocortical axis dysfunction in epilepsy. Physiol Behav. (2016) 166:22–31.
+227. Landi S, Petrucco L, Sicca F, Ratto GM. Transient cognitive impairment in epilepsy.             doi: 10.1016/j.physbeh.2016.05.015
+Front Mol Neurosci. (2018) 11:458. doi: 10.3389/fnmol.2018.00458
+                                                                                                     254. Tafet GE, Nemeroff CB. Pharmacological treatment of anxiety disorders: the role of
+228. Kleen JK, Scott RC, Holmes GL, Roberts DW, Rundle MM, Testorf M, et al.                         the HPA axis. Front Psych. (2020) 11:443. doi: 10.3389/fpsyt.2020.00443
+Hippocampal interictal epileptiform activity disrupts cognition in humans. Neurology.
+(2013) 81:18–24. doi: 10.1212/WNL.0b013e318297ee50                                                   255. Basu T, Maguire J, Salpekar JA. Hypothalamic-pituitary-adrenal axis targets for the
+                                                                                                     treatment of epilepsy. Neurosci Lett. (2021) 746:135618. doi: 10.1016/j.neulet.2020.135618
+229. Postnikova TY, Zubareva OE, Kovalenko AA, Kim KK, Magazanik LG, Zaitsev AV.
+Status epilepticus impairs synaptic plasticity in rat hippocampus and is followed by                 256. O'Toole KK, Hooper A, Wakefield S, Maguire J. Seizure-induced disinhibition of the
+changes in expression of NMDA receptors. Biochemistry (Mosc). (2017) 82:282–90. doi:                 HPA axis increases seizure susceptibility. Epilepsy Res. (2014) 108:29–43. doi: 10.1016/j.
+10.1134/S0006297917030063                                                                            eplepsyres.2013.10.013
+230. Giovagnoli AR, Avanzini G. Learning and memory impairment in patients with                      257. Trinka E, Rainer LJ, Granbichler CA, Zimmermann G, Leitinger M. Mortality, and
+temporal lobe epilepsy: relation to the presence, type, and location of brain lesion.                life expectancy in epilepsy and status epilepticus-current trends and future aspects. Front
+Epilepsia. (1999) 40:904–11. doi: 10.1111/j.1528-1157.1999.tb00797.x                                 Epidemiol. (2023) 3:1081757. doi: 10.3389/fepid.2023.1081757
+231. Bosque Varela P, Machegger L, Steinbacher J, Oellerer A, Pfaff J, McCoy M, et al.               258. Nashef L. Sudden unexpected death in epilepsy: terminology and definitions.
+Brain damage caused by status epilepticus: a prospective MRI study. Epilepsy Behav.                  Epilepsia. (1997) 38:S6–8. doi: 10.1111/j.1528-1157.1997.tb06130.x
+(2024) 161:110081. doi: 10.1016/j.yebeh.2024.110081
+                                                                                                     259. Sveinsson O, Andersson T, Mattsson P, Carlsson S, Tomson T. Clinical risk factors
+232. Walker MC. Pathophysiology of status epilepticus. Neurosci Lett. (2018) 667:84–91.              in SUDEP: a nationwide population-based case-control study. Neurology. (2020)
+doi: 10.1016/j.neulet.2016.12.044                                                                    94:e419–29. doi: 10.1212/WNL.0000000000008741
+233. Kwon OY, Park SP. Depression and anxiety in people with epilepsy. J Clin Neurol.                260. Wicker E, Cole JW. Sudden unexpected death in epilepsy (SUDEP): a review of risk
+(2014) 10:175–88. doi: 10.3988/jcn.2014.10.3.175                                                     factors and possible interventions in children. J Pediatr Pharmacol Ther. (2021) 26:556–64.
+                                                                                                     doi: 10.5863/1551-6776-26.6.556
+234. Petrovski S, Szoeke CE, Jones NC, Salzberg MR, Sheffield LJ, Huggins RM, et al.
+Neuropsychiatric symptomatology predicts seizure recurrence in newly treated patients.               261. Mesraoua B, Tomson T, Brodie M, Asadi-Pooya AA. Sudden unexpected death in
+Neurology. (2010) 75:1015–21. doi: 10.1212/WNL.0b013e3181f25b16                                      epilepsy (SUDEP): definition, epidemiology, and significance of education. Epilepsy
+                                                                                                     Behav. (2022) 132:108742. doi: 10.1016/j.yebeh.2022.108742
+235. Gugala-Iwaniuk M, Slawinska K, Bochynska A, Konopko M, Rola R, Ryglewicz D,
+et al. The prevalence of depressive and anxiety symptoms in Polish epilepsy patients: the            262. Sveinsson O, Andersson T, Mattsson P, Carlsson S, Tomson T. Pharmacologic treat-
+context of pharmaco-resistance. Epilepsy Behav. (2021) 114:107522. doi: 10.1016/j.                   ment and SUDEP risk: a nationwide, population-based, case-control study. Neurology.
+yebeh.2020.107522                                                                                    (2020) 95:e2509–18. doi: 10.1212/WNL.0000000000010874
+
+
+
+Frontiers in Neurology                                                                          20                                                                            frontiersin.org
+Gustin et al.                                                                                                                                          10.3389/fneur.2026.1793970
+
+
+
+263. Hughes JR. A review of sudden unexpected death in epilepsy: prediction of patients         270. Maguire MJ, Jackson CF, Marson AG, Nolan SJ. Treatments for the prevention of
+at risk. Epilepsy Behav. (2009) 14:280–7. doi: 10.1016/j.yebeh.2008.12.004                      sudden unexpected death in epilepsy (SUDEP). Cochrane Database Syst Rev. (2016)
+                                                                                                7:CD011792. doi: 10.1002/14651858.CD011792.pub2
+264. Ryvlin P, So EL, Gordon CM, Hesdorffer DC, Sperling MR, Devinsky O, et al. Long-
+term surveillance of SUDEP in drug-resistant epilepsy patients treated with VNS therapy.        271. Strzelczyk A, Aledo-Serrano A, Coppola A, Didelot A, Bates E, Sainz-Fuertes R, et al.
+Epilepsia. (2018) 59:562–72. doi: 10.1111/epi.14002                                             The impact of epilepsy on quality of life: findings from a European survey. Epilepsy Behav.
+                                                                                                (2023) 142:109179. doi: 10.1016/j.yebeh.2023.109179
+265. Thijs RD, Ryvlin P, Surges R. Autonomic manifestations of epilepsy: emerging
+pathways to sudden death? Nat Rev Neurol. (2021) 17:774–88. doi: 10.1038/                       272. Yogarajah M, Mula M. Social cognition, psychiatric comorbidities, and quality
+s41582-021-00574-w                                                                              of life in adults with epilepsy. Epilepsy Behav. (2019) 100:106321. doi: 10.1016/j.
+                                                                                                yebeh.2019.05.017
+266. Shlobin NA, Thijs RD, Benditt DG, Zeppenfeld K, Sander JW. Sudden death in epi-
+lepsy: the overlap between cardiac and neurological factors. Brain Commun. (2024)               273. Cramer JA, Faught E, Davis C, Misra SN, Carrazana E, Rabinowicz AL. Quality-of-
+6:fcae309. doi: 10.1093/braincomms/fcae309                                                      life results in adults with epilepsy using diazepam nasal spray for seizure clusters from a
+                                                                                                long-term, open-label safety study. Epilepsy Behav. (2022) 134:108811. doi: 10.1016/j.
+267. Patodia S, Somani A, Thom M. Review: neuropathology findings in autonomic brain
+                                                                                                yebeh.2022.108811
+regions in SUDEP and future research directions. Auton Neurosci. (2021) 235:102862. doi:
+10.1016/j.autneu.2021.102862                                                                    274. Avanzini G, Forcelli PA, Gale K. "Are there really “epileptogenic” mechanisms or
+                                                                                                only corruptions of “normal” plasticity?. Adv Exp Med Biol. (2014). 813:95–107. doi:
+268. Ryvlin P, Nashef L, Lhatoo SD, Bateman LM, Bird J, Bleasel A, et al. Incidence and
+                                                                                                10.1007/978-94-017-8914-1_8
+mechanisms of cardiorespiratory arrests in epilepsy monitoring units (MORTEMUS): a
+retrospective study. Lancet Neurol. (2013) 12:966–77. doi: 10.1016/S1474-4422(13)70214-X        275. Rao VR, Rolston JD. Unearthing the mechanisms of responsive neurostimulation
+                                                                                                for epilepsy. Commun Med. (2023) 3:166. doi: 10.1038/s43856-023-00401-x
+269. Murugesan A, Rani MRS, Vilella L, Lacuey N, Hampson JP, Faingold CL, et al.
+Postictal serotonin levels are associated with peri-ictal apnea. Neurology. (2019)              276. Toprani S, Durand DM. Mechanisms of neurostimulation for epilepsy. Epilepsy Curr.
+93:e1485–94. doi: 10.1212/WNL.0000000000008244                                                  (2023) 23:298–302. doi: 10.1177/15357597231191887
+
+
+
+
+Frontiers in Neurology                                                                     21                                                                            frontiersin.org
+

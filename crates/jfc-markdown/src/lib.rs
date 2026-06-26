@@ -23,6 +23,8 @@ use syntect::{
     util::LinesWithEndings,
 };
 
+pub mod diagram;
+
 /// Convert one syntect `(Style, &str)` range into a ratatui `Span`.
 /// Replaces the previous `as_24_bit_terminal_escaped` → `IntoText`
 /// round-trip, which was the dominant cost in markdown rendering
@@ -359,6 +361,19 @@ pub fn set_syntax_highlighting_disabled(disabled: bool) {
     if SYNTAX_HIGHLIGHTING_DISABLED.swap(disabled, Ordering::Relaxed) != disabled {
         clear_highlight_cache();
     }
+}
+
+/// When true, `mermaid`/`dot` fenced blocks render as ordinary (syntect) code
+/// blocks instead of being laid out as diagrams. Off by default; the TUI can
+/// toggle it so a user who prefers the raw source can opt out.
+static DIAGRAM_RENDERING_DISABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn diagram_rendering_disabled() -> bool {
+    DIAGRAM_RENDERING_DISABLED.load(Ordering::Relaxed)
+}
+
+pub fn set_diagram_rendering_disabled(disabled: bool) {
+    DIAGRAM_RENDERING_DISABLED.store(disabled, Ordering::Relaxed);
 }
 
 /// Drop every memoized highlight result. Call when something changes that the
@@ -740,6 +755,55 @@ pub fn strip_inline_tool_xml(text: &str) -> String {
     // `<tool_call>`; strip it too so it doesn't render as a raw JSON wall.
     let s = drop_block(&s, "<tool_use>", "</tool_use>", "⟪tool_call⟫");
     drop_block(&s, "<tool_result>", "</tool_result>", "⟪tool_result⟫")
+}
+
+/// Extract speakable prose from a markdown fragment for text-to-speech.
+///
+/// Keeps paragraph, heading, and list text plus link *text*; drops fenced and
+/// indented code blocks, inline code spans, tables, and images; and replaces
+/// bare URLs with the spoken word "link". Used by the voice read-aloud filter
+/// so TTS narrates the prose instead of reading source code and markup aloud.
+///
+/// Safe to call per line on streamed deltas: each call parses independently, so
+/// it never revises text it already returned (prefix-stable). Block-spanning
+/// constructs that need cross-line context (fenced code) are tracked by the
+/// caller; this handles inline markup and single-line/indented code robustly.
+pub fn speakable_prose(md: &str) -> String {
+    let mut opts = ParseOptions::empty();
+    opts.insert(ParseOptions::ENABLE_TABLES);
+    opts.insert(ParseOptions::ENABLE_STRIKETHROUGH);
+    let mut out = String::new();
+    // >0 while inside a code block / table / image whose text must not be spoken.
+    let mut mute = 0usize;
+    for event in Parser::new_ext(md, opts) {
+        match event {
+            Event::Start(Tag::CodeBlock(_) | Tag::Table(_) | Tag::Image { .. }) => {
+                mute += 1;
+            }
+            Event::End(TagEnd::CodeBlock | TagEnd::Table | TagEnd::Image) => {
+                mute = mute.saturating_sub(1);
+            }
+            Event::Text(t) if mute == 0 => out.push_str(&t),
+            Event::SoftBreak | Event::HardBreak if mute == 0 => out.push(' '),
+            Event::End(TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::Item) if mute == 0 => {
+                out.push(' ');
+            }
+            // Inline code (`Event::Code`), link URLs (carried on the tag, not as
+            // text), and everything else are dropped.
+            _ => {}
+        }
+    }
+    // Collapse whitespace and turn bare URLs into a spoken "link".
+    out.split_whitespace()
+        .map(|w| {
+            if w.contains("://") || w.starts_with("www.") {
+                "link"
+            } else {
+                w
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn to_lines(text: &str, theme: &Theme, width: usize) -> Vec<Line<'static>> {
@@ -1151,6 +1215,12 @@ struct MdWriter<'a, I> {
     code_wrap_width: usize,
     /// True while we're inside a `Tag::CodeBlock` — gates hard-wrapping.
     in_code_block: bool,
+    /// When `Some`, the active code block is a diagram (`mermaid`/`dot`): its
+    /// lang tag. Raw block text is buffered into `diagram_buf` instead of being
+    /// syntect-highlighted, then rendered at `TagEnd::CodeBlock`.
+    diagram_lang: Option<String>,
+    /// Accumulated raw source of the active diagram code block.
+    diagram_buf: String,
     /// When true, code blocks render as plain monospace text without invoking
     /// syntect. Used by `to_lines_streaming` to eliminate the dominant cost
     /// center (grammar-based highlighting) during per-chunk streaming renders.
@@ -1177,6 +1247,8 @@ where
             needs_newline: false,
             code_wrap_width: 0,
             in_code_block: false,
+            diagram_lang: None,
+            diagram_buf: String::new(),
             skip_syntect: false,
         }
     }
@@ -1266,6 +1338,20 @@ where
                     CodeBlockKind::Fenced(l) => l.as_ref(),
                     CodeBlockKind::Indented => "",
                 };
+
+                // Diagram blocks (mermaid/dot) are not highlighted: buffer the
+                // raw body and lay it out at TagEnd::CodeBlock. Skipped during
+                // per-chunk streaming renders (skip_syntect) so a half-written
+                // diagram doesn't flicker; the final to_lines pass draws it.
+                if !self.skip_syntect && !diagram_rendering_disabled() && diagram::is_diagram_lang(lang)
+                {
+                    self.diagram_lang = Some(lang.to_owned());
+                    self.diagram_buf.clear();
+                    self.needs_newline = false;
+                    self.in_code_block = true;
+                    return;
+                }
+
                 if !self.skip_syntect {
                     self.set_code_highlighter(lang);
                 }
@@ -1368,6 +1454,23 @@ where
                 self.needs_newline = true;
             }
             TagEnd::CodeBlock => {
+                if let Some(lang) = self.diagram_lang.take() {
+                    // Render the buffered diagram. `render` is self-framing
+                    // (emits its own ┌─/└─ chrome), so we don't add the code
+                    // block border here.
+                    let width = if self.code_wrap_width > 0 {
+                        self.code_wrap_width
+                    } else {
+                        80
+                    };
+                    let buf = std::mem::take(&mut self.diagram_buf);
+                    for line in diagram::render(&lang, &buf, self.theme, width) {
+                        self.text.lines.push(line);
+                    }
+                    self.needs_newline = true;
+                    self.in_code_block = false;
+                    return;
+                }
                 self.push_line(Line::from(Span::styled(
                     "└─".to_string(),
                     self.theme.style_border,
@@ -1446,6 +1549,12 @@ where
     }
 
     fn on_text(&mut self, text: CowStr<'a>) {
+        // Diagram code block: accumulate raw source for layout at block end.
+        if self.diagram_lang.is_some() {
+            self.diagram_buf.push_str(text.as_ref());
+            return;
+        }
+
         // If we're inside a table cell, accumulate into table state
         if let Some(ref mut table) = self.table {
             let style = self.inline_styles.last().copied().unwrap_or_default();
@@ -1816,6 +1925,32 @@ mod tests {
             .iter()
             .map(|s| s.content.as_ref())
             .collect::<String>()
+    }
+
+    #[test]
+    fn speakable_prose_drops_code_links_tables_normal() {
+        let md = "Here is **the** fix. See `foo()` at https://x.com and a [doc](https://y.io).\n\n\
+                  ```rust\nlet x = 5;\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n## Done\n- item one";
+        let spoken = speakable_prose(md);
+        assert!(spoken.contains("Here is the fix"), "{spoken:?}");
+        assert!(spoken.contains("doc"), "link text dropped: {spoken:?}");
+        assert!(spoken.contains("Done"), "heading dropped: {spoken:?}");
+        assert!(spoken.contains("item one"), "list text dropped: {spoken:?}");
+        assert!(!spoken.contains("foo()"), "inline code spoken: {spoken:?}");
+        assert!(!spoken.contains("let x"), "code block spoken: {spoken:?}");
+        assert!(!spoken.contains("x.com"), "url spoken: {spoken:?}");
+        assert!(!spoken.contains("y.io"), "link url spoken: {spoken:?}");
+        assert!(spoken.contains("link"), "url not replaced: {spoken:?}");
+    }
+
+    #[test]
+    fn speakable_prose_per_line_is_prefix_stable_robust() {
+        // Called per streamed line, the prose for a line never changes, so
+        // concatenating per-line output equals one combined render of the prose.
+        let a = speakable_prose("First sentence here.");
+        let b = speakable_prose("Second with `code` inline.");
+        assert_eq!(a, "First sentence here.");
+        assert_eq!(b, "Second with inline.");
     }
 
     // ── Plain text ────────────────────────────────────────────────────────

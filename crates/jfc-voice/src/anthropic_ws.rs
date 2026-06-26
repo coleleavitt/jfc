@@ -35,7 +35,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::Message;
-use tracing::debug;
+use tracing::{debug, trace};
 
 /// `{"type":"KeepAlive"}` control sentinel (`vZ9`).
 const KEEPALIVE: &str = r#"{"type":"KeepAlive"}"#;
@@ -51,6 +51,7 @@ const FINALIZE_NO_DATA: Duration = Duration::from_millis(1500);
 const KEYTERMS_MAX_LEN: usize = 1024;
 /// Coalesce buffered chunks into frames of up to this size on connect (`32e3`).
 pub const COALESCE_BYTES: usize = 32_000;
+const COMMAND_BUFFER: usize = 64;
 /// Overall safety timeout for the batch (`transcribe_pcm`) convenience path.
 const BATCH_OVERALL_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -65,6 +66,8 @@ pub struct StreamOpts {
     /// Request typed interim transcripts (`forward_interims=typed`). Gated by
     /// the caller (env / feature flag) — mirrors `isTypedInterimsEnabled`.
     pub forward_interims: bool,
+    pub allow_custom_auth_endpoint: bool,
+    pub allow_insecure_auth_endpoint: bool,
 }
 
 /// A message emitted by the voice stream to the orchestrator (the Rust analogue
@@ -147,14 +150,14 @@ impl BatchTranscript {
 /// Handle to a live voice-stream session. Cloning is intentionally not derived:
 /// a session has a single owner that drives `send`/`finalize`/`close`.
 pub struct VoiceStream {
-    cmd_tx: mpsc::UnboundedSender<Cmd>,
+    cmd_tx: mpsc::Sender<Cmd>,
 }
 
 impl VoiceStream {
     /// Stream a chunk of raw PCM. Dropped silently if the session has begun
     /// finalizing or the task has exited (mirrors the `send` guard).
-    pub fn send(&self, pcm: &[u8]) {
-        let _ = self.cmd_tx.send(Cmd::Audio(pcm.to_vec()));
+    pub async fn send(&self, pcm: &[u8]) -> bool {
+        self.cmd_tx.send(Cmd::Audio(pcm.to_vec())).await.is_ok()
     }
 
     /// Send `CloseStream` and await the finalize resolution (endpoint, no-data
@@ -162,7 +165,7 @@ impl VoiceStream {
     /// is promoted to a final transcript before this resolves.
     pub async fn finalize(&self) -> FinalizeReason {
         let (tx, rx) = oneshot::channel();
-        if self.cmd_tx.send(Cmd::Finalize(tx)).is_err() {
+        if self.cmd_tx.send(Cmd::Finalize(tx)).await.is_err() {
             return FinalizeReason::AlreadyClosed;
         }
         rx.await.unwrap_or(FinalizeReason::AlreadyClosed)
@@ -170,7 +173,7 @@ impl VoiceStream {
 
     /// Close the socket immediately without finalizing.
     pub fn close(&self) {
-        let _ = self.cmd_tx.send(Cmd::Close);
+        let _ = self.cmd_tx.try_send(Cmd::Close);
     }
 }
 
@@ -183,6 +186,13 @@ pub fn build_request(
     platform: &str,
     opts: &StreamOpts,
 ) -> Result<tokio_tungstenite::tungstenite::handshake::client::Request> {
+    crate::auth_endpoint::validate_auth_base_url_with_policy(
+        base_wss,
+        crate::auth_endpoint::AuthEndpointPolicy {
+            allow_custom: opts.allow_custom_auth_endpoint,
+            allow_insecure: opts.allow_insecure_auth_endpoint,
+        },
+    )?;
     let lang = if opts.language.is_empty() {
         "en"
     } else {
@@ -239,7 +249,7 @@ pub async fn connect_voice_stream(
         .await
         .context("voice_stream WebSocket connect/upgrade failed")?;
 
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<Cmd>();
+    let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(COMMAND_BUFFER);
     tokio::spawn(session_loop(ws, cmd_rx, events));
     Ok(VoiceStream { cmd_tx })
 }
@@ -249,7 +259,7 @@ pub async fn connect_voice_stream(
 /// CLI's `sg8` closure (`v10` last interim, `v12` closing, `v22` finalizing).
 async fn session_loop<S>(
     ws: tokio_tungstenite::WebSocketStream<S>,
-    mut cmd_rx: mpsc::UnboundedReceiver<Cmd>,
+    mut cmd_rx: mpsc::Receiver<Cmd>,
     events: mpsc::UnboundedSender<StreamMsg>,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
@@ -315,7 +325,15 @@ async fn session_loop<S>(
             },
 
             msg = stream.next() => match msg {
-                None | Some(Ok(Message::Close(_))) => break,
+                None | Some(Ok(Message::Close(_))) => {
+                    debug!(
+                        target: "jfc::voice::ws",
+                        closing,
+                        had_pending_interim = !last_interim.is_empty(),
+                        "server closed WS / stream ended"
+                    );
+                    break;
+                }
                 Some(Err(e)) => {
                     if waiter.is_none() {
                         let _ = events.send(StreamMsg::Error {
@@ -327,6 +345,7 @@ async fn session_loop<S>(
                     break;
                 }
                 Some(Ok(Message::Text(t))) => {
+                    trace!(target: "jfc::voice::ws", frame = %t, "server text frame");
                     match parse_server_frame(&t) {
                         ServerFrame::Interim(data) => {
                             // Data arrived after CloseStream — cancel the no-data timer.
@@ -399,6 +418,7 @@ fn resolve_finalize(
     *safety_at = None;
     *no_data_at = None;
     if let Some(w) = waiter.take() {
+        debug!(target: "jfc::voice::ws", ?reason, "finalize resolved");
         let _ = w.send(reason);
     }
 }
@@ -496,16 +516,39 @@ pub async fn transcribe_pcm(
         language: language.to_owned(),
         keyterms: Vec::new(),
         forward_interims: false,
+        allow_custom_auth_endpoint: false,
+        allow_insecure_auth_endpoint: false,
     };
+    transcribe_pcm_with_opts(pcm, token, base_wss, user_agent, &opts).await
+}
+
+pub async fn transcribe_pcm_with_opts(
+    pcm: &[u8],
+    token: &str,
+    base_wss: &str,
+    user_agent: &str,
+    opts: &StreamOpts,
+) -> Result<Option<String>> {
+    // The batch send is paced ~real-time (see `batch_session`), so the overall
+    // budget must cover the utterance's own duration plus connect + finalize
+    // headroom — a fixed 30s would abort replay of a long (45–90s) utterance.
+    let budget = batch_budget(pcm.len());
     let result = tokio::time::timeout(
-        BATCH_OVERALL_TIMEOUT,
-        batch_session(pcm, token, base_wss, user_agent, &opts),
+        budget,
+        batch_session(pcm, token, base_wss, user_agent, opts),
     )
     .await;
     match result {
         Ok(inner) => inner,
-        Err(_) => anyhow::bail!("voice_stream timed out after {BATCH_OVERALL_TIMEOUT:?}"),
+        Err(_) => anyhow::bail!("voice_stream timed out after {budget:?}"),
     }
+}
+
+/// Overall timeout budget for a paced batch transcription: a fixed connect /
+/// finalize headroom plus the utterance's own real-time replay duration.
+fn batch_budget(pcm_len: usize) -> Duration {
+    let pcm_secs = pcm_len as u64 / (16_000 * 2);
+    BATCH_OVERALL_TIMEOUT + Duration::from_secs(pcm_secs)
 }
 
 async fn batch_session(
@@ -519,10 +562,25 @@ async fn batch_session(
     let stream =
         connect_voice_stream(base_wss, token, user_agent, "claude_code_cli", opts, tx).await?;
 
-    // Wait for Ready, then flush the whole buffer coalesced to ~32 KB frames.
-    // (connect_async already completed the upgrade, so Ready is imminent.)
-    for frame in pcm.chunks(COALESCE_BYTES) {
-        stream.send(frame);
+    // Deliver the audio paced ~real-time. The voice_stream server (Deepgram
+    // conversation engine) transcribes in real time and DISCARDS a
+    // burst-then-close: dumping the whole utterance at once then `CloseStream`
+    // returns an EMPTY transcript — the server closes (`reason=WsClose`) without
+    // ever emitting a `TranscriptText` (confirmed via the `voice_debug`
+    // harness). Sending faster than real-time truncates ("…lazy dog" → "…lake"
+    // → "The quick"). Delivering it paced — exactly as the live streaming path
+    // does — makes the server transcribe in full and endpoint on the trailing
+    // silence. The cost is replay latency ≈ utterance duration; streaming during
+    // capture (instead of batch-after) would remove it (follow-up).
+    const PACE_FRAME_BYTES: usize = 640; // 20ms @ 16kHz mono s16le
+    const PACE_INTERVAL: Duration = Duration::from_millis(20);
+    for frame in pcm.chunks(PACE_FRAME_BYTES) {
+        if !stream.send(frame).await {
+            // Session ended early (server closed) — stop sending and collect
+            // whatever transcript arrived rather than erroring out.
+            break;
+        }
+        tokio::time::sleep(PACE_INTERVAL).await;
     }
 
     // Finalize and collect transcripts until the stream resolves/closes.
@@ -563,6 +621,18 @@ async fn batch_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batch_budget_scales_with_utterance_length_regression() {
+        // Paced (real-time) send: the batch timeout must grow with the
+        // utterance so a long one isn't aborted mid-replay (the fix sends audio
+        // over ~its own duration, where a fixed 30s would cut a 60s clip off).
+        assert_eq!(batch_budget(0), BATCH_OVERALL_TIMEOUT);
+        assert_eq!(
+            batch_budget(60 * 16_000 * 2),
+            BATCH_OVERALL_TIMEOUT + Duration::from_secs(60)
+        );
+    }
 
     #[test]
     fn parse_server_frame_normal() {
@@ -618,6 +688,8 @@ mod tests {
             language: "es".into(),
             keyterms: vec!["JFC".into(), "ratatui".into()],
             forward_interims: true,
+            allow_custom_auth_endpoint: false,
+            allow_insecure_auth_endpoint: false,
         };
         let req = build_request(
             "wss://api.anthropic.com",
@@ -649,12 +721,36 @@ mod tests {
             language: String::new(), // → default "en"
             keyterms: Vec::new(),
             forward_interims: false,
+            allow_custom_auth_endpoint: false,
+            allow_insecure_auth_endpoint: false,
         };
-        let req = build_request("wss://x", "t", "ua", "claude_code_cli", &opts).unwrap();
+        let req = build_request(
+            "wss://api.anthropic.com",
+            "t",
+            "ua",
+            "claude_code_cli",
+            &opts,
+        )
+        .unwrap();
         let url = req.uri().to_string();
         assert!(url.contains("language=en"));
         assert!(!url.contains("forward_interims"));
         assert!(!req.headers().contains_key("x-config-keyterms"));
+    }
+
+    #[test]
+    fn build_request_rejects_custom_auth_endpoint_without_opt_in_robust() {
+        let opts = StreamOpts {
+            language: String::new(),
+            keyterms: Vec::new(),
+            forward_interims: false,
+            allow_custom_auth_endpoint: false,
+            allow_insecure_auth_endpoint: false,
+        };
+        let err = build_request("wss://example.invalid", "t", "ua", "claude_code_cli", &opts)
+            .unwrap_err();
+
+        assert!(err.to_string().contains("non-Anthropic"));
     }
 
     #[test]

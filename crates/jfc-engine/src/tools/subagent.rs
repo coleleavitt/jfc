@@ -171,6 +171,30 @@ fn scoped_disallowed_tools(agent_disallowed: &[String], task_disallowed: &[Strin
     disallowed
 }
 
+/// The permission policy a subagent's tool calls are gated by (CS-JFC-005).
+///
+/// Subagents (including detached background workers) run tools without the
+/// interactive approval gate. We map the agent's declared `permissionMode` onto
+/// the engine permission policy and apply it per tool call. When an agent does
+/// not declare a mode it defaults to `BypassPermissions` — preserving existing
+/// autonomous-subagent behavior — but the catastrophic-bash backstop and any
+/// explicitly-declared restrictive mode are now honored instead of ignored.
+fn delegated_permission_mode(
+    agent_def: Option<&crate::agents::AgentDef>,
+) -> crate::app::PermissionMode {
+    use crate::app::PermissionMode as Engine;
+    use jfc_core::PermissionMode as Core;
+    match agent_def.and_then(|a| a.permission_mode) {
+        Some(Core::Default) => Engine::Default,
+        Some(Core::AcceptEdits) => Engine::AcceptEdits,
+        Some(Core::Plan) => Engine::Plan,
+        Some(Core::Auto) => Engine::Auto,
+        // `DontAsk` is an explicit "don't prompt" → bypass. No declared mode
+        // keeps the historical autonomous default.
+        Some(Core::BypassPermissions) | Some(Core::DontAsk) | None => Engine::BypassPermissions,
+    }
+}
+
 fn subagent_model_alias(model: &str, provider_name: &str) -> String {
     match (model.trim().to_ascii_lowercase().as_str(), provider_name) {
         ("haiku", "anthropic" | "anthropic-oauth") => {
@@ -639,6 +663,8 @@ async fn execute_task_inner(
     };
     let allowed = scoped_allowed_tools(agent_allowed, &task_input.allowed_tools);
     let disallowed = scoped_disallowed_tools(agent_disallowed, &task_input.disallowed_tools);
+    // CS-JFC-005: the permission policy gating this subagent's tool calls.
+    let permission_mode = delegated_permission_mode(agent_def);
     let schema_required = task_input.schema.is_some();
     if schema_required
         && disallowed
@@ -1081,6 +1107,46 @@ async fn execute_task_inner(
                     continue;
                 }
             };
+            // CS-JFC-005: gate high-impact tools through the delegated permission
+            // policy before dispatch. A detached/background subagent has no human
+            // to answer an approval prompt and no classifier wired in, so anything
+            // that would prompt or need classification fails closed. Internal
+            // control tools (StructuredOutput, nested Task) are exempt — they do
+            // not touch the host and are governed by their own depth/schema gates.
+            let exempt_from_gate = matches!(
+                input,
+                ToolInput::StructuredOutput { .. } | ToolInput::Task(_)
+            );
+            if !exempt_from_gate {
+                use crate::app::PermissionDecision;
+                match permission_mode.decide_parts(&kind, &input) {
+                    PermissionDecision::Approved => {}
+                    PermissionDecision::Denied(reason) => {
+                        tool_results.push(ProviderContent::ToolResult {
+                            tool_use_id: id.clone(),
+                            content: format!(
+                                "Tool '{name}' denied by the agent's permission policy: {reason}"
+                            ),
+                            is_error: true,
+                        });
+                        total_tool_uses = total_tool_uses.saturating_add(1);
+                        continue;
+                    }
+                    PermissionDecision::NeedsPrompt | PermissionDecision::NeedsClassifier => {
+                        tool_results.push(ProviderContent::ToolResult {
+                            tool_use_id: id.clone(),
+                            content: format!(
+                                "Tool '{name}' requires interactive approval and cannot run \
+                                 unattended in a background/subagent context. Grant it \
+                                 explicitly via the agent's permissionMode or allowedTools."
+                            ),
+                            is_error: true,
+                        });
+                        total_tool_uses = total_tool_uses.saturating_add(1);
+                        continue;
+                    }
+                }
+            }
             let structured_payload = match &input {
                 ToolInput::StructuredOutput { data } => Some(data.clone()),
                 _ => None,

@@ -1,0 +1,375 @@
+ISSN 0973-2063 (online) 0973-8894 (print)
+
+Bioinformation 22(3): 1673-1678 (2026)                                                                                    ©Biomedical Informatics (2026)
+
+
+
+
+                                                      www.bioinformation.net
+                                                                                                                                 Research Article
+                                                                Volume 22(3)
+Received March 1, 2026; Revised March 31, 2026; Accepted March 31, 2026, Published March 31, 2026
+                                                                                                                             DOI: 10.6026/973206300221673
+SJIF 2026 (Scientific Journal Impact Factor for 2026) = 8.478
+2022 Impact Factor (2023 Clarivate Inc. release) is 1.9
+
+Declaration on Publication Ethics:
+The author’s state that they adhere with COPE guidelines on publishing ethics as described elsewhere at https://publicationethics.org/. The authors
+also undertake that they are not associated with any other third party (governmental or non-governmental agencies) linking with any form of
+unethical issues connecting to this publication. The authors also declare that they are not withholding any information that is misleading to the
+publisher in regard to this article.
+
+Declaration on official E-mail:
+The corresponding author declares that lifetime official e-mail from their institution is not available for all authors
+
+License statement:
+This is an Open Access article which permits unrestricted use, distribution, and reproduction in any medium, provided the original work is properly
+credited. This is distributed under the terms of the Creative Commons Attribution License
+
+Comments from readers:
+Articles published in BIOINFORMATION are open for relevant post publication comments and criticisms, which will be published immediately
+linking to the original article without open access charges. Comments should be concise, coherent and critical in less than 1000 words.
+
+Disclaimer:
+Bioinformation provides a platform for scholarly communication of data and information to create knowledge in the Biological/Biomedical domain
+after adequate peer/editorial reviews and editing entertaining revisions where required. The views and opinions expressed are those of the author(s)
+and do not reflect the views or opinions of Bioinformation and (or) its publisher Biomedical Informatics. Biomedical Informatics remains neutral and
+allows authors to specify their address and affiliation details including territory where required.
+                                                                                                                                 Edited by Ritik Kashwani
+                                                                                                                     E-mail: docritikkashwani@yahoo.com
+                                                                                             Citation: Prasad et al. Bioinformation 22(3): 1673-1678 (2026)
+
+
+
+Blood - brain barrier breakdown and neurovascular
+unit failure in the progression of Alzheimer’s
+disease
+Suvarna Prasad1,*, Sangeeta Gupta2, Asha Premlata Omega Oraon1,*, Ana Paula Molina Recalde3,
+Jessica Julieta Cañarte Moreira4, Génesis Nathalie Moyano Salazar3, Paolo David Torres Cañarte3
+& Camila Inés Racines Navas3
+1Department of Biochemistry, AIIMS, Deoghar, Jharkhand, India; 2Department of Physiology, AIIMS, Gorakhpur, Gorakhpur, Uttar
+
+Pradesh, India; 3Department of Medicine, Universidad San Francisco de Quito, Ecuador; 4Department of Medicine, Centro
+Oncológico del Norte, Antofagasta, Chile; *Corresponding author
+
+
+
+                                                                            1673
+ISSN 0973-2063 (online) 0973-8894 (print)
+
+Bioinformation 22(3): 1673-1678 (2026)                                                               ©Biomedical Informatics (2026)
+
+
+Affiliation URL:
+https://www.aiimsdeoghar.edu.in/Departments/faculty/3?q=Biochemistry
+https://aiimsgorakhpur.edu.in/physiology/
+https://www.usfq.edu.ec/en/schools/school-medicine
+https://www.centrooncologicodelnorte.cl/
+
+Author contacts:
+Suvarna Prasad - E-mail: suvarnaprasad999@gmail.com
+Sangeeta Gupta - E-mail: drsangeeta77.65@rediffmail.com
+Asha Premlata Omega Oraon - E-mail: Ashaoraon84@gmail.com
+Ana Paula Molina Recalde - E-mail: anapmolinarecalde@gmail.com
+Jessica Julieta Cañarte Moreira - E-mail: jessi.canarte@gmail.com
+Génesis Nathalie Moyano Salazar - E-mail: genesismoyano1839@gmail.com
+Paolo David Torres Cañarte - E-mail: paotorrescanarte@gmail.com
+Camila Inés Racines Navas - E-mail: camilaracines98@gmail.com
+
+Abstract:
+Alzheimer’s disease (AD) is a progressive neurodegenerative disorder traditionally defined by amyloid-β deposition and tau
+pathology. Recent research highlights the role of blood–brain barrier (BBB) breakdown and neurovascular unit (NVU) dysfunction in
+disease initiation and progression. These factors contribute to neuroinflammation, cerebral hypoperfusion and impaired waste
+clearance. Despite this, the relationship between BBB integrity, NVU function and cognitive decline in AD remains inadequately
+understood. Data shows that blood–brain barrier disruption and neurovascular unit dysfunction are critical predictors of cognitive
+decline in Alzheimer’s disease.
+
+Keywords: Blood–brain barrier (BBB), neurovascular unit (NVU), Alzheimer’s disease (AD), cognitive impairment, cerebral perfusion
+
+Background:                                                         finely tuned system can have profound consequences for
+Alzheimer’s disease (AD) is the most common cause of dementia       neuronal health and cognitive function [4]. Growing
+worldwide and represents a growing public health challenge          experimental, imaging and post-mortem evidence indicates that
+due to aging populations and the absence of curative therapies.     BBB breakdown occurs early in the course of AD, often
+Clinically, AD is characterized by progressive memory               preceding overt neuronal loss and classical neuropathological
+impairment, cognitive decline and behavioral disturbances that      changes. Increased permeability of the BBB allows plasma
+ultimately lead to complete functional dependence. For decades,     proteins, inflammatory mediators and immune cells to enter the
+research on AD pathogenesis has been dominated by the               brain, triggering neuroinflammation, oxidative stress and
+amyloid cascade and tau hypotheses, which focus on the              synaptic dysfunction [5].
+accumulation of amyloid-β plaques and neurofibrillary tangles
+as the primary drivers of neuronal degeneration [1]. Although       Leakage of blood-derived components such as fibrinogen,
+these hallmarks remain central to disease pathology, increasing     thrombin and albumin has been shown to activate microglia and
+evidence suggests that AD is a multifactorial disorder involving    astrocytes, leading to chronic inflammatory responses that
+not only neurons but also vascular, glial and immune                exacerbate neuronal injury. These vascular insults may act
+components of the brain. Among these, dysfunction of the            synergistically with amyloid-β and tau pathology, amplifying
+blood–brain barrier (BBB) and failure of the neurovascular unit     neurodegenerative cascades rather than serving as mere
+(NVU) have emerged as critical contributors to disease initiation   downstream consequences of neuronal death [6]. Neurovascular
+and progression [2]. The BBB is a highly specialized, selectively   unit failure in AD extends beyond simple barrier leakage and
+permeable interface that separates the circulating blood from the   encompasses a broad spectrum of functional impairments.
+brain parenchyma. It is primarily formed by brain microvascular     Endothelial dysfunction reduces nitric oxide availability and
+endothelial cells connected by tight junctions, supported by        disrupts cerebral autoregulation, resulting in impaired
+pericytes, astrocytic end-feet, basement membrane components,       neurovascular coupling and reduced cerebral blood flow [7].
+neurons and microglia [3]. Together, these elements constitute      Pericyte loss or degeneration, frequently observed in aging and
+the neurovascular unit, which tightly regulates cerebral blood      AD brains, further destabilizes capillary integrity and
+flow, nutrient transport, waste clearance and immune                compromises BBB maintenance. Astrocytes, which normally
+surveillance. Under physiological conditions, the BBB maintains     regulate ion balance, neurotransmitter recycling and vascular
+brain homeostasis by restricting the entry of potentially           tone, undergo reactive changes that alter their supportive roles
+neurotoxic substances, pathogens and peripheral immune cells,       and contribute to metabolic dysregulation. Collectively, these
+while allowing the controlled passage of essential molecules        alterations lead to chronic cerebral hypoperfusion, energy
+such as glucose, amino acids and oxygen. Disruption of this         deficits and impaired clearance of metabolic waste products,
+
+                                                                1674
+ISSN 0973-2063 (online) 0973-8894 (print)
+
+Bioinformation 22(3): 1673-1678 (2026)                                                                   ©Biomedical Informatics (2026)
+
+
+including amyloid-β, thereby accelerating disease progression          (NVU) dysfunction in patients with Alzheimer’s disease and
+[8]. The interaction between BBB dysfunction and amyloid               cognitively normal controls.
+pathology represents a particularly important aspect of AD
+pathogenesis. Under normal conditions, amyloid-β is                    Study population and sample size:
+continuously cleared from the brain through multiple pathways,         A total sample size of 100 participants was included in the study.
+including enzymatic degradation, transport across the BBB and          The sample size was calculated based on previous literature
+perivascular drainage. BBB breakdown disrupts receptor-                reporting moderate effect sizes for BBB permeability differences
+mediated transport systems responsible for amyloid efflux while        between Alzheimer’s disease patients and controls, with a
+enhancing influx from the circulation, leading to net                  confidence level of 95% and a power of 80%. Participants were
+accumulation within the brain [9]. Furthermore, vascular               divided into two groups:
+amyloid deposition in cerebral vessels, known as cerebral              [1] Group A (n = 50): Patients diagnosed with Alzheimer’s
+amyloid angiopathy, directly damages endothelial cells and                 disease
+smooth muscle layers, creating a vicious cycle of vascular injury      [2] Group B (n = 50): Age- and sex-matched cognitively normal
+and amyloid accumulation. This bidirectional relationship                  controls
+underscores the central role of the neurovascular unit in
+maintaining amyloid homeostasis [10]. Inflammation and                 This equal allocation allowed adequate comparison between
+immune dysregulation also link BBB breakdown to                        groups while minimizing selection bias.
+neurodegeneration in AD. A compromised barrier permits
+peripheral immune cells and cytokines to access the brain,             Inclusion criteria:
+altering the normally immune-privileged environment of the             [1] Adults aged ≥60 years
+central nervous system. This heightened inflammatory milieu            [2] For Group A: Clinically diagnosed Alzheimer’s disease
+promotes synaptic pruning, neuronal dysfunction and                        based on standardized diagnostic criteria and cognitive
+ultimately cell death [11]. Importantly, such vascular-immune              assessment scores
+interactions may help explain why systemic vascular risk factors,      [3] For Group B: No history of cognitive impairment, normal
+including hypertension, diabetes mellitus, hyperlipidemia and              cognitive screening scores
+obesity, significantly increase the risk of developing AD. These       [4] Willingness to provide informed consent (by participant or
+conditions are known to impair vascular health and BBB                     legally authorized representative)
+integrity, suggesting that cerebrovascular dysfunction may serve
+as a mechanistic bridge between systemic disease and                   Exclusion criteria:
+neurodegeneration [12]. Recognizing BBB and neurovascular              [1] History of stroke, traumatic brain injury, or other
+unit dysfunction as integral components of AD has important                neurodegenerative disorders
+clinical and therapeutic implications. Vascular changes may            [2] Active central nervous system infections or inflammatory
+represent early biomarkers of disease, detectable before                   diseases
+irreversible neuronal damage occurs. Advanced neuroimaging             [3] Severe systemic illness (e.g., advanced renal, hepatic, or
+techniques and circulating biomarkers related to BBB integrity             cardiac disease)
+are increasingly being explored for early diagnosis and risk           [4] Current use of medications known to significantly affect
+stratification [13]. Moreover, targeting the neurovascular unit            BBB permeability
+offers novel therapeutic avenues that complement traditional           [5] Contraindications to neuroimaging or blood sampling
+anti-amyloid and anti-tau strategies. Interventions aimed at
+restoring endothelial function, stabilizing pericytes, reducing        Data collection procedures:
+inflammation and improving cerebral perfusion may slow or              Clinical and cognitive assessment:
+prevent cognitive decline by preserving brain homeostasis [14].        All participants underwent detailed clinical evaluation,
+Therefore, it is of interest to describe the critical role of blood-   including demographic data (age, sex, education), medical
+brain barrier dysfunction and neurovascular unit failure in            history and vascular risk factors such as hypertension, diabetes
+Alzheimer’s disease, as these factors may initiate and accelerate      mellitus and dyslipidemia. Cognitive function was assessed
+disease      progression     through     mechanisms        involving   using standardized neuropsychological tools appropriate for
+inflammation, hypoperfusion, and impaired waste clearance.             Alzheimer’s disease staging. Disease severity in Group A was
+                                                                       categorized into mild, moderate and severe stages based on
+Methodology:                                                           cognitive scores.
+Study design and setting:
+This original research was designed as an observational, cross-        Assessment of blood–brain barrier integrity:
+sectional analytical study conducted at a tertiary care teaching       BBB integrity was evaluated using a combination of biochemical
+hospital with facilities for neurology, neuroimaging and               and imaging-based markers. Venous blood samples were
+laboratory biomarker analysis. The study aimed to evaluate             collected under aseptic conditions to measure circulating
+blood–brain barrier (BBB) breakdown and neurovascular unit             biomarkers associated with BBB disruption and endothelial
+                                                                       dysfunction. In a subset or where feasible, neuroimaging
+                                                                       parameters indicative of BBB permeability and cerebral
+                                                                   1675
+ISSN 0973-2063 (online) 0973-8894 (print)
+
+Bioinformation 22(3): 1673-1678 (2026)                                                                                    ©Biomedical Informatics (2026)
+
+
+perfusion were assessed using standardized protocols. All                              demographic and clinical characteristics of the study population
+measurements were performed by trained personnel blinded to                            are summarized in (Table 1). There were no statistically
+group allocation.                                                                      significant differences between the AD and control groups with
+                                                                                       respect to age, sex distribution, or years of education (p > 0.05).
+Evaluation of neurovascular unit function:                                             However, vascular risk factors such as hypertension and
+Markers reflecting NVU components including endothelial cells,                         diabetes mellitus were significantly more prevalent in the AD
+astrocytes and pericyte-related dysfunction were analyzed using                        group compared with controls (p < 0.05). As shown in Table 1,
+laboratory assays and imaging-derived indices. These                                   the higher burden of vascular comorbidities in the AD group
+parameters were correlated with cognitive performance and                              supports the role of cerebrovascular dysfunction in disease
+disease severity to assess the relationship between NVU failure                        pathogenesis. Cognitive assessment revealed significantly lower
+and clinical progression of Alzheimer’s disease.                                       scores in the AD group compared with controls. The mean
+                                                                                       global cognitive score was markedly reduced among AD
+Ethical considerations:                                                                patients, with progressive decline observed across disease
+The study protocol was reviewed and approved by the                                    severity stages (Table 2). These findings confirm significant
+Institutional Ethics Committee. Written informed consent was                           cognitive impairment in the AD group and validate the clinical
+obtained from all participants or their legally authorized                             stratification used in subsequent analyses. Markers of BBB
+representatives prior to enrollment. Confidentiality of                                integrity differed significantly between groups. AD patients
+participant data was strictly maintained and all procedures                            demonstrated elevated circulating levels of BBB disruption
+adhered to the ethical principles outlined in the Declaration of                       markers compared with controls. These differences remained
+Helsinki.                                                                              statistically significant after adjustment for age and vascular risk
+                                                                                       factors. As presented in (Table 3), BBB permeability was
+Statistical analysis:                                                                  significantly increased in AD patients, indicating early and
+Data were entered and analyzed using statistical software.                             persistent barrier breakdown. Neuroimaging-based parameters
+Continuous variables were expressed as mean ± standard                                 reflecting NVU function showed significant impairment in the
+deviation or median with interquartile range, while categorical                        AD group. Reduced cerebral perfusion indices and altered
+variables were presented as frequencies and percentages.                               neurovascular coupling were observed among AD patients
+Comparisons between groups were performed using                                        compared with controls. These results, shown in Table 4,
+independent t-tests or Mann–Whitney U tests for continuous                             demonstrate significant NVU failure in Alzheimer’s disease. A
+variables and chi-square tests for categorical variables.                              multivariate linear regression analysis was performed using
+Correlation and regression analyses were conducted to explore                          STATA to evaluate the association between BBB disruption and
+associations between BBB/NVU markers and cognitive scores. A                           cognitive decline after adjusting for potential confounders. The
+p-value of <0.05 was considered statistically significant. This                        STATA-derived regression findings are summarized in (Table
+methodology ensured a systematic and reliable evaluation of                            5). The STATA regression model was statistically significant (F =
+BBB breakdown and neurovascular unit dysfunction in                                    18.7, p < 0.001; R² = 0.54), indicating that BBB disruption and
+Alzheimer’s disease within a well-defined sample of 100                                NVU dysfunction independently predicted lower cognitive
+participants.                                                                          scores. As shown in (Table 5), increased BBB permeability was
+                                                                                       the strongest negative predictor of cognitive performance.
+Results:                                                                               Overall, the results demonstrate that Alzheimer’s disease is
+A total of 100 participants were included in the final analysis,                       associated with significant BBB breakdown and neurovascular
+comprising 50 patients with Alzheimer’s disease (AD) and 50                            unit failure, which is strongly correlated with cognitive
+cognitively normal controls. All enrolled participants completed                       impairment and disease severity (Tables 1–5).
+clinical, cognitive, biochemical and imaging assessments and no
+data were missing for the primary outcome measures. The
+
+Table 1: Baseline demographic and clinical characteristics of study participants
+ Variable                         AD group (n = 50)        Control group (n = 50)   p-value
+ Age (years), mean ± SD           69.4 ± 6.8               68.1 ± 6.2               0.32
+ Male sex, n (%)                  28 (56)                  26 (52)                  0.69
+ Years of education, mean ± SD    9.2 ± 3.6                9.8 ± 3.4                0.41
+ Hypertension, n (%)              31 (62)                  18 (36)                  0.01
+ Diabetes mellitus, n (%)         27 (54)                  15 (30)                  0.02
+
+Table 2: Cognitive scores in Alzheimer’s disease and control groups
+ Cognitive measure                     AD group (n = 50)     Control group (n = 50)    p-value
+ Global cognitive score, mean ± SD     17.6 ± 4.9            27.8 ± 1.6                <0.001
+ Mild AD (n = 18)                      22.1 ± 2.3            –                         –
+ Moderate AD (n = 20)                  16.9 ± 2.1            –                         –
+ Severe AD (n = 12)                    11.8 ± 1.9            –                         –
+
+
+
+                                                                                    1676
+ISSN 0973-2063 (online) 0973-8894 (print)
+
+Bioinformation 22(3): 1673-1678 (2026)                                                                                   ©Biomedical Informatics (2026)
+
+
+Table 3: Blood–brain barrier biomarkers in study groups
+ Biomarker                                      AD group (n = 50)      Control group (n = 50)    p-value
+ Albumin quotient, mean ± SD                    7.9 ± 2.4              4.6 ± 1.3                 <0.001
+ Endothelial dysfunction marker, mean ± SD      312.5 ± 68.4           221.7 ± 55.9              <0.001
+ Inflammatory marker, mean ± SD                 6.8 ± 2.1              3.9 ± 1.4                 <0.001
+
+Table 4: Neurovascular unit and imaging-related parameters
+ Parameter                                   AD group (n = 50)       Control group (n = 50)     p-value
+ Cerebral perfusion index, mean ± SD         38.7 ± 6.2              45.9 ± 5.8                 <0.001
+ Neurovascular coupling score, mean ± SD     0.62 ± 0.14             0.81 ± 0.12                <0.001
+ Capillary integrity score, mean ± SD        2.1 ± 0.6               2.8 ± 0.5                  <0.001
+
+
+Table 5: Multivariate regression analysis of factors associated with cognitive score (STATA output)
+ Variable                      β coefficient    Std. Error    t-value   p-value     95% CI
+ BBB permeability marker       -0.48            0.09          -5.31     <0.001      -0.66 to -0.30
+ Cerebral perfusion index      0.36             0.08          4.50      <0.001      0.20 to 0.52
+ Age (years)                   -0.19            0.07          -2.71     0.008       -0.33 to -0.05
+ Hypertension                  -0.22            0.10          -2.20     0.03        -0.41 to -0.03
+
+
+Discussion:                                                                             (2017) [18] reviewed vascular contributions to AD, focusing on
+The findings of the present study demonstrate significant blood–                        the loss of BBB protective function leading to impaired amyloid
+brain barrier (BBB) breakdown and neurovascular unit (NVU)                              clearance and hypoperfusion.
+dysfunction in Alzheimer’s disease (AD) patients compared with
+cognitively normal controls; supporting the growing paradigm                            Their narrative emphasized the relationship between vascular
+that cerebrovascular dysfunction is integral to AD pathogenesis.                        risk factors, cerebral blood flow deficits and cognitive decline.
+These results are consistent with previous human studies that                           This conceptual framework supports the current study’s
+have implicated BBB disruption as an early pathological feature                         observation of increased vascular burden (e.g., hypertension and
+of cognitive decline and AD. Lin et al. (2021) [15] conducted a                         diabetes) in the AD group and suggests that systemic vascular
+cross-sectional study measuring BBB permeability in mild                                health may exacerbate BBB breakdown and neurodegeneration.
+cognitive impairment (MCI) compared to controls. They found                             Zenaro et al. (2017) [19] described the BBB within the
+increased permeability to small molecules in MCI patients,                              neurovascular unit and the role of immune cell trafficking in
+correlated with AD biomarkers, while large-molecule                                     perpetuating barrier dysfunction and inflammation in AD. They
+permeability was more linked to vascular risk factors. This                             highlighted how circulating leukocytes can migrate through
+suggests that BBB breakdown occurs early in the AD continuum                            activated endothelium, contributing to NVU disruption and
+and exerts differing effects depending on molecular size and                            further neurodegenerative processes. This mechanistic insight
+underlying pathology. These observations align with our                                 complements our findings of elevated inflammatory biomarkers
+findings of increased BBB permeability markers in AD patients,                          and supports the concept that BBB breakdown is both a cause
+reinforcing that barrier integrity impairment precedes and                              and consequence of AD-associated neuroinflammation.
+potentially contributes to cognitive dysfunction. Kurz et al.                           Collectively, these studies converge on the notion that BBB
+(2022) [16] performed a systematic review of human studies on                           breakdown and NVU failure are not mere epiphenomena of
+BBB dysfunction in AD, reporting that structural changes,                               Alzheimer’s pathology but are pivotal contributors to disease
+reduced transport protein expression, pericyte loss and                                 progression. Our data extend this body of work by
+proinflammatory mediators characterize barrier damage in AD                             quantitatively demonstrating significant associations between
+brains. BBB disruption was detectable via imaging in early                              barrier dysfunction, neurovascular impairment and cognitive
+stages of disease and was potentiated by small vessel disease                           decline within a well-characterized clinical cohort. The
+and ApoE genotype. The human evidence in their review                                   concordance between our findings and previous research
+mirrors our results showing significant NVU dysfunction and                             underscores the reproducibility and clinical relevance of
+emphasizes the interaction between vascular risk factors and AD                         cerebrovascular markers as potential early indicators of AD risk
+pathology. Huang et al. (2020) [17] reviewed the role of BBB                            and progression. However, differences in study designs should
+integrity in AD and highlighted how NVU component                                       be acknowledged. While Lin et al. (2021) [15] utilized CSF
+interactions maintain homeostasis and how their dysfunction                             albumin ratios and advanced imaging to assess small versus
+accelerates neurodegeneration. They underscored endothelial,                            large molecule BBB permeability, our study relied on circulating
+pericyte and glial cell contributions to barrier breakdown and                          BBB biomarkers and perfusion indices, which may reflect
+the consequent promotion of amyloid and tau pathology, which                            complementary but distinct aspects of barrier integrity.
+parallels our NVU imaging findings of reduced perfusion                                 Moreover, systematic reviews such as Kurz et al. (2022) [16] and
+indices and altered coupling in AD subjects. Thus, consistent                           Huang et al. (2020) [17] integrate findings across methodologies
+with our methodology and results, the breakdown of BBB                                  and populations, providing broader context but with inherent
+integrity in AD likely results from complex interactions among                          heterogeneity. In summary, the present findings support a
+NVU cells, not isolated endothelial failure. Chakraborty et al.                         growing consensus that BBB and NVU dysfunction are central to
+                                                                                   1677
+ISSN 0973-2063 (online) 0973-8894 (print)
+
+Bioinformation 22(3): 1673-1678 (2026)                                                                 ©Biomedical Informatics (2026)
+
+
+Alzheimer’s disease pathophysiology and correlate with                cognitive impairment to Alzheimer’s disease, highlighting the
+cognitive impairment severity. Continued integration of               need for future prospective studies.
+neurovascular biomarkers into clinical research may enhance
+early detection and inform vascular targeted therapeutic              References:
+strategies.                                                            [1] https://www.ncbi.nlm.nih.gov/books/NBK499922/
+                                                                       [2] Shimizu F & Nakamori M. Int J Mol Sci. 2024 25:10625.
+Conclusion:                                                                 [PMID: 39408955]
+This study demonstrates those blood–brain barrier breakdown            [3] Kadry H et al. Fluids Barriers CNS. 2020 17:69. [PMID:
+and neurovascular unit dysfunctions are significantly associated            33208141]
+with Alzheimer’s disease and correlate strongly with the severity      [4] Kim S et al. J Clin Med. 2025 14:386. [PMID: 39860392]
+of cognitive impairment. The findings suggest that                     [5] Neyra Chauca JM & Robles Martinez GG. Neurol Int. 2025
+cerebrovascular dysfunction is not merely a secondary                       17:166. [PMID: 41149787]
+consequence but a central contributor to disease progression.          [6] Petersen MA et al. Nat Rev Neurosci. 2018 19:283. [PMID:
+Impaired BBB integrity and reduced neurovascular coupling                   29618808]
+may exacerbate neuroinflammation, cerebral hypoperfusion and           [7] Atochin DN & Huang PL. Curr Pharm Biotechnol. 2011
+impaired waste clearance. These vascular abnormalities offer                12:1334. [PMID: 21235451]
+potential biomarkers for early detection of Alzheimer’s disease.       [8] Sweeney MD et al. Nat Rev Neurol. 2018 14:133. [PMID:
+Targeting the neurovascular unit may therefore represent a                  29377008]
+promising therapeutic strategy to slow cognitive decline.              [9] Lau K et al. Transl Neurodegener. 2024 13:37. [PMID:
+                                                                            39075566]
+Limitations:                                                           [10] Govindpani K et al. J Clin Med. 2019 8:651. [PMID:
+This study has several limitations that should be considered                31083442]
+when interpreting the findings. First, the cross-sectional design      [11] Kölliker-Frers R et al. Mediators Inflamm. 2021
+limits the ability to establish causal relationships between blood–         2021:9999146. [PMID: 34158806]
+brain barrier breakdown, neurovascular unit dysfunction and            [12] Mekala A & Qiu H. Biomolecules. 2025 15:712. [PMID:
+cognitive decline in Alzheimer’s disease, as temporal                       40427605]
+progression could not be assessed. Second, the relatively modest       [13] French SR et al. Alzheimers Dement. 2025 21:e70104. [PMID:
+sample size of 100 participants from a single center may restrict           40145342]
+the generalizability of the results to broader and more diverse        [14] Wu B et al. Heliyon. 2024 10:e38200. [PMID: 39386825]
+populations. Third, although multiple biomarkers and imaging           [15] Lin Z et al. Ann Neurol. 2021 90:227. [PMID: 34041783]
+parameters were used to assess BBB and NVU integrity, invasive         [16] Kurz C et al. Neuropathol Appl Neurobiol. 2022 48:e12782.
+cerebrospinal fluid markers and advanced molecular imaging                  [PMID: 34823269]
+were not uniformly available for all participants, which may           [17] Huang Z et al. Front Neuroendocrinol. 2020 59:100857.
+have limited the sensitivity of barrier dysfunction detection.              [PMID: 32781194]
+Fourth, potential residual confounding from unmeasured factors         [18] Chakraborty A et al. Vascul Pharmacol. 2017 89:12. [PMID:
+such as genetic predisposition, lifestyle variables and medication          27894893]
+effects cannot be completely excluded despite statistical              [19] Zenaro E et al. Neurobiol Dis. 2017 107:41. [PMID:
+adjustment for major vascular risk factors. Finally, the study did          27425887]
+not include longitudinal follow-up to evaluate how BBB and
+NVU changes evolve over time or predict conversion from early
+
+
+
+Caveat Emptor is applicable among the literate community where
+required and possible. The publisher, its journal, editors and the
+internal/external reviewers take adequate steps to check, evaluate, correct,
+edit, revise and improve content where possible and required.
+
+
+
+
+                                                                  1678
+

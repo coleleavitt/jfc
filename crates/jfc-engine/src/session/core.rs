@@ -133,6 +133,70 @@ pub async fn save_session(
         message_count: coalesced.len() as i64,
     };
     let db_messages = crate::to_session_messages(&serialized.messages);
+
+    // Autonomous self-critique ("Claude improves Claude"): critique this
+    // session's reasoning + outputs (not just tool errors) and fold any
+    // improvement proposals into the knowledge store so they shape FUTURE turns
+    // via recall. Built from `db_messages` before it moves into the writer; runs
+    // detached + best-effort so it never blocks or fails the save, and only
+    // touches the DB when there are actual proposals (dedup handles repeats).
+    let critique_samples = crate::self_critique_samples(&serialized.id, &db_messages);
+    if let Some(cwd) = serialized.cwd.as_deref()
+        && !critique_samples.is_empty()
+    {
+        let project_key = jfc_knowledge::project_key(std::path::Path::new(cwd));
+        tokio::spawn(async move {
+            let proposals = jfc_learn::self_critique::critique_turns(
+                &jfc_learn::self_critique::HeuristicJudge,
+                &critique_samples,
+            );
+            if proposals.is_empty() {
+                return;
+            }
+            let lessons = crate::self_critique_proposals_to_lessons(&proposals);
+            let definitions = crate::self_critique_proposals_to_definitions(&proposals);
+            if let Ok(store) = jfc_knowledge::KnowledgeStore::open_default().await {
+                let inserted = store
+                    .ingest_mined(&project_key, &lessons)
+                    .await
+                    .map(|(inserted, _)| inserted)
+                    .unwrap_or(0);
+                // Stage prompt/skill/tool/reasoning candidates (Candidate status:
+                // visible to the promotion machinery, NOT applied to the live
+                // prompt until proven).
+                let mut staged = 0usize;
+                for def in &definitions {
+                    if store.upsert_definition(def).await.is_ok() {
+                        staged += 1;
+                    }
+                }
+                // Track every suggestion on the queryable self-improvement
+                // backlog (status proposed → proven → applied; recurrence bumps
+                // on re-proposal as evidence accrues).
+                for item in &crate::self_critique_proposals_to_backlog(&proposals) {
+                    let _ = store.upsert_backlog_item(item).await;
+                }
+                // Evidence-gated promotion: graduate well-recurring candidates to
+                // ACTIVE so they actually take effect in the prompt (self-heals
+                // the per-save status reset; conservative threshold + assembler
+                // safety guards).
+                let promoted = crate::promote_evidenced_self_critique(
+                    &store,
+                    crate::SELF_CRITIQUE_PROMOTE_MIN_RECURRENCE,
+                )
+                .await;
+                tracing::info!(
+                    target: "jfc::learn::self_critique",
+                    proposals = proposals.len(),
+                    lessons = inserted,
+                    definitions_staged = staged,
+                    promoted_active = promoted,
+                    "autonomous self-critique: folded lessons + staged candidates + backlog + promoted"
+                );
+            }
+        });
+    }
+
     if tokio::task::spawn_blocking(move || {
         crate::save_session_transcript_to_db(row, db_messages);
     })

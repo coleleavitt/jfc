@@ -26,6 +26,7 @@ mod safe_tools;
 mod schema_tests;
 mod scratchpad;
 mod search;
+mod ssrf;
 pub mod structured_output;
 mod subagent;
 mod swarm;

@@ -1295,7 +1295,7 @@ fn working_activity_subject(app: &App) -> String {
         return format!("dispatching {count} tool call{}", plural_suffix(count));
     }
     if app.engine.in_flight_tool_batches > 0 {
-        let count = app.engine.in_flight_tool_batches as usize;
+        let count = app.engine.in_flight_tool_batches;
         return format!("running {count} tool batch{}", plural_suffix(count));
     }
     if !app.engine.in_progress_tool_use_ids.is_empty() {
@@ -1303,7 +1303,7 @@ fn working_activity_subject(app: &App) -> String {
         return format!("waiting on {count} tool result{}", plural_suffix(count));
     }
     if app.engine.in_flight_eager_dispatches > 0 {
-        let count = app.engine.in_flight_eager_dispatches as usize;
+        let count = app.engine.in_flight_eager_dispatches;
         return format!("dispatching {count} eager tool{}", plural_suffix(count));
     }
     let alive_agents = app

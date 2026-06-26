@@ -1,0 +1,608 @@
+Molecules and Cells                                                                                                          Minireview
+
+Brain-inspired strategies for efficient artificial intelligence
+                                                      ⁎
+Min-Seo Kim1,2 and Hyoung F. Kim1,2,3,
+1
+  School of Biological Sciences, College of Natural Sciences, Seoul National University (SNU), Seoul 08826, Republic of Korea,
+2
+  Interdisciplinary Program in Neuroscience, Seoul National University (SNU), Seoul 08826, Republic of Korea, 3Institute for Data
+Innovation in Science, Seoul National University (SNU), Seoul, Republic of Korea
+⁎
+  Corresponding author. hfkim@snu.ac.kr
+https://doi.org/10.1016/j.mocell.2026.100365
+
+
+ABSTRACT
+Despite being constrained by a rigid skull and a fixed number of neurons, the brain excels in processing diverse in­
+formation and making adaptive decisions with remarkable efficiency. This raises a central question at the intersection of
+neuroscience and artificial intelligence (AI): How does the brain achieve such high performance with limited physical
+resources? We addressed this question by examining the anatomical funneling architecture of the basal ganglia, a central
+hub for value-based decision-making. Through parallel processing, distinct circuits support cognitive flexibility and ha­
+bitual stability, enabling efficient allocation of neural resources and context-sensitive engagement in specialized compu­
+tations. In contrast, convergent processing compresses the input across circuits, allowing the efficient extraction of core
+information for decision-making, a form of quantitative efficiency that minimizes the number of neurons required. However,
+this compression can degrade the fidelity. To address this, the brain employs qualitative efficiency in which population-
+level neural patterns preserve fine-grained information and support generalization across similar contexts. Finally, we
+propose that the cortico-basal ganglia system achieves cognitive efficiency by funneling the anatomical structure and
+dimensionality reduction to optimize both performance and energy demands. These principles offer a biologically
+grounded framework for developing brain-inspired, resource-efficient artificial intelligence systems that balance gen­
+eralization with precision.
+         © 2026 The Author(s). Published by Elsevier Inc. on behalf of Korean Society for Molecular and Cellular Biology. This is an
+                                        open access article under the CC BY license (http://creativecommons.org/licenses/by/4.0/).
+
+Keywords: Brain efficiency, Brain-inspired artificial intelligence, Dimensionality reduction, Funneling architecture, Value-based
+decision-making
+
+
+INTRODUCTION                                                                convoluted shape of the primate cortex (Lee et al., 2023; Rakic,
+                                                                            1995). These structures are adapted to maximize the cortical
+The Brain: An Evolutionarily Advanced Information                           surface area within the confines of the skull, which restricts
+Processor and What We Can Learn From It                                     outward expansion (Welker, 1990). Consequently, the brain is
+One straightforward approach for enhancing the computational                limited by the number of neurons that it can house, which im­
+power of AI is to increase the number of servers. In other words,           poses a cap on its information-processing resources.
+AI systems can expand their resources to process information                    Despite these constraints, the human brain excels in pro­
+(Fig. 1A). However, unlike AI, which can scale its processing               cessing vast amounts of information, enabling optimal decision-
+capacity by adding more hardware, the brain is confined to the              making across various contexts (Bassett and Gazzaniga, 2011;
+skull, limiting its size and shape (Kaplan et al., 2020).                   Dosenbach et al., 2007). Our brain’s capability to achieve su­
+    The primary unit of information processing in the brain is the          perior processing efficiency despite its limitations in terms of
+neuron. A greater number of neurons per brain mass corre­                   neuron count, resource expansion, and energy availability is
+sponds to a higher capacity for information processing, em­                 remarkable, especially compared to current AI (Ren and Xia,
+phasizing the importance of the neuronal count (Herculano-                  2024). The brain’s effectiveness in information processing
+Houzel, 2009). To increase the number of neurons in the brain,              suggests the existence of mechanisms that allow it to process
+higher-level animals, such as primates, possess brain struc­                external information efficiently and make the best decisions
+tures that differ significantly from those of lower-level animals           using limited resources. This capability likely evolved early in
+like rodents (Zhang et al., 2023). For instance, in primates, an            life as organisms rely on information processing for survival.
+increase in the number of neurons leads to the formation of                 However, the precise mechanism through which the brain
+cortical sulci and temporal lobes, resulting in the characteristic          achieves this efficiency remains largely unknown.
+
+
+eISSN: 1016-8478 / © 2026 The Author(s). Published by Elsevier Inc. on behalf of Korean Society for Molecular and Cellular Biology. This is an open
+access article under the CC BY license (http://creativecommons.org/licenses/by/4.0/).
+
+www.sciencedirect.com/journal/molecules-and-cells                                                               Mol. Cells 2026; 49(7): 100365 1
+Brain-inspired strategies for efficient AI
+M.-S. Kim and H.F. Kim
+
+
+
+
+Fig. 1. Differences between artificial intelligence and natural intelligence. (A) Resource expansion in artificial intelligence (AI) versus the
+limited resources of natural intelligence (NI). AI systems can scale up their computational power (left panel). However, the human brain is
+limited by biological anatomical constraints (right panel). (B) The implication of brain mechanisms for efficient information processing in AI.
+Understanding how the brain efficiently processes information under resource constraints, such as a limited number of neurons, provides
+insights that can guide the development of more efficient and compact on-device AI systems.
+
+
+    Currently, more advanced AI requires larger infrastructure,          highly efficient for routine tasks (Kahneman, 2013, 2003; Kim,
+consumes more space, and demands more energy, which has led              2021). In stable environments, System 1 is employed to execute
+to the establishment of large data centers in unconventional loca­       optimal behavior with minimal energy consumption.
+tions, such as deep in the ocean or within cold mountain ranges              The crucial question is whether corresponding biological
+(Allan, 2023; Downie, 2024; Ansett, 2024). Achieving greater effi­       neural circuits exist in the brain. Recent studies have found that
+ciency in AI utilization is now critical not only for maximizing cor­    these systems are divided within the structures of the basal
+porate benefits but also for conserving natural resources.               ganglia along the rostral-caudal axis (Griggs et al., 2017;
+Moreover, as robotics advances, AI systems need to be sufficiently       Hikosaka et al., 1999; Hikosaka et al., 2014; Jiang and Kim,
+compact to be integrated into robots that operate independently of       2018; Kang et al., 2021; Kim and Hikosaka, 2013; Kim and
+network connections (Fig. 1B). While recent performance gains in         Hikosaka, 2015; Kim et al., 2014; Kim et al., 2017, 2015; Kim,
+AI systems largely stem from improved GPU architectures that             2021; Kim, 2025; Miyachi et al., 1997; Yamamoto et al., 2013).
+perform parallel computations, simply scaling these physical en­         To examine neural responses under conditions requiring con­
+gines is reaching its inherent limits. As AI continues to evolve, re­    tinuous monitoring and automatic responses, object reversal
+ducing its physical size and energy consumption becomes                  and visual habit tasks were used with macaque monkeys and
+increasingly important. Hence, improving the limitations of existing     human subjects, respectively (Fig. 2A and B).
+physical engines requires a fundamental understanding of the                 In the object reversal task, as illustrated in Figure 2A, 2
+brain’s neurophysiological information processing. We may find           objects were associated with different rewards, and the object-
+answers by studying the brain, which has evolutionarily developed        reward contingency was reversed across blocks, with each
+efficient information-processing strategies (Zhang et al., 2020).        block consisting of 20-30 trials (Izquierdo et al., 2017; Kim and
+Considering this, we explored how the structures of the cortico-         Hikosaka, 2013). For instance, in the first block, object A was
+basal ganglia system efficiently manage information processing           paired with a liquid reward, whereas object B was not. This
+using limited resources by drawing on recent findings.                   association was reversed in the next block without any explicit
+                                                                         instruction. The monkeys were required to monitor reward as­
+Efficient Resource Allocation in the Brain Through Parallel              sociations, detect changes, and determine which object would
+Circuits for Habitual Stability and Cognitive Flexibility                provide reward in each block.
+The dual-systems model popularized by Dr. Daniel Kahneman                    Notably, the rostral regions of the basal ganglia are selec­
+refers to 2 distinct systems in the brain (Kahneman, 2013, 2003).        tively involved in processing these flexible changes of value
+System 1 is characterized as automatic, fast, and often un­              (Kang et al., 2021; Kim and Hikosaka, 2015, 2013). Specifically,
+conscious and is primarily responsible for generating habits and         6 structures within the basal ganglia system (the caudate, pu­
+instinctual responses. In contrast, System 2 is deliberate, slow,        tamen, ventral striatum, globus pallidus externus, substantia
+and conscious and plays a crucial role in logical reasoning and          nigra pars compacta, and substantia nigra pars reticulata) have
+adapting to new situations. In terms of efficiency, System 2 is          been implicated in cognitive flexibility within their rostral regions
+generally considered to require more cognitive resources for             (An et al., 2024; Hikosaka et al., 2014; Kang et al., 2021; Kim
+continuous monitoring, flexibility, and overriding automatic re­         and Hikosaka, 2015, 2013; Kim et al., 2017, 2015; Yasuda and
+sponses when necessary, whereas System 1 enables automatic               Hikosaka, 2015). Neurons in these structures encode the flex­
+responses based on learned experiences, potentially making it            ibly changing value in each block, showing higher responses to
+2 Mol. Cells 2026; 49(7): 100365                                                             www.sciencedirect.com/journal/molecules-and-cells
+                                                                                                           Brain-inspired strategies for efficient AI
+                                                                                                                           M.-S. Kim and H.F. Kim
+
+
+
+
+Fig. 2. Achieving efficiency by separating circuits for habitual stability and cognitive flexibility. (A) The reversal task for examining cognitive
+flexibility mechanisms in the brain circuits. In this task, each fractal object is associated with either a reward or no reward within a block, and
+the object-reward association is reversed across blocks. Human or monkey subjects monitor object-reward associations and flexibly update
+the object’s value when the reward changes, allowing them to select the correct answer and make faster saccades toward the rewarded
+object. (B) The long-term value learning in the visual habit task. Human or monkey subjects learn a fixed object-reward association for more
+than 4 days. After a retention period of at least 1 day following the final learning session, habitual gaze patterns are examined using the
+visual habit task. (C) Parallel information processing in the separated brain circuits. Cognitive flexibility, which is essential for adaptive
+behavior in the reversal task, is selectively processed in the rostral brain circuits. In contrast, habitual stability, which underlies habitual
+behavior in the visual habit task, is selectively processed in the caudal brain circuits. (D) Ensuring efficiency in stable environments while
+preserving resources for cognitive flexibility. Habitual stability is processed separately by simple circuits in the caudal brain regions, thus
+preserving sufficient resources for cognitive flexibility and higher-order mental functions.
+
+
+reversed high-valued objects than to low-valued ones, or vice               nucleus are involved in processing long-term memories of vi­
+versa. Notably, these flexible value-coding neurons are broadly             sual habits and motor skills (Kang et al., 2021; Miyachi et al.,
+distributed across the rostral regions of these structures, sug­            1997; Seger, 2013; Choi et al., 2020; Farmani et al., 2024).
+gesting that more neurons are utilized to monitor and detect                Importantly, these neurons, which encode long-term value
+changes and encode optimal values in dynamic environments                   memory, are focally localized within the relatively smaller caudal
+(short-term memory module) (Fig. 2C).                                       regions of each basal ganglia structure, compared to the more
+    In the visual habit task, monkeys and humans were free to               widely distributed flexible value-coding neurons in the rostral
+view fractal objects that had been previously associated with               regions (Fig. 2C). These functional and anatomical findings in­
+different rewards stably over more than 4 days using the long-              dicate that habitual stability is efficiently achieved with fewer
+term value learning task (Fig. 2B). Notably, no outcome was                 neurons in the caudal regions of the basal ganglia structures
+provided during the free-viewing trials, which facilitated auto­            (long-term memory module).
+matic gazing at the objects based on stably sustained value                     Overall, under stable conditions, the caudal circuits of the
+memory (Kang et al., 2021; Kim and Hikosaka, 2013;                          basal ganglia efficiently process habitual behavior based on
+Yamamoto et al., 2013; Yasuda et al., 2012). Interestingly,                 long-term value memory using fewer neurons (System 1)
+monkeys and humans frequently gazed more at objects that                    (Fig. 2C and D). In contrast, under flexible conditions, the rostral
+were previously associated with rewards, even in the absence                circuits of the basal ganglia are engaged in processing adap­
+of any reward outcomes, demonstrating an automatic gaze                     table behavior, relying on updating memory and utilizing a
+bias, known as a visual habit (Fernandez-Ruiz et al., 2001;                 greater number of neurons (System 2) (Fig. 2C and D).
+Hwang et al., 2022; Kang et al., 2021; Kim and Hikosaka, 2015).                 Together, these 2 systems enable animals to efficiently uti­
+    Electrophysiological studies in macaque monkeys have re­                lize limited neural resources depending on environmental de­
+vealed that the long-term value memory of visual objects is                 mands. This functional distinction suggests that the brain may
+selectively encoded in neurons located in the caudal regions of             dynamically allocate neural resources between stable and
+the basal ganglia, including the caudate, putamen, ventral                  flexible control systems (Fig. 2D). In stable environments, pro­
+striatum, globus pallidus externus, substantia nigra pars com­              cessing can be concentrated within relatively compact caudal
+pacta, and substantia nigra pars reticulata (Kim, 2021; Kim and             circuits that support habitual responses, thereby minimizing
+Hikosaka, 2015). Additionally, human fMRI studies have shown                metabolic and computational costs. In contrast, when beha­
+that the caudal regions of the ventral striatum and the caudate             vioral flexibility and continuous monitoring are required, broader
+www.sciencedirect.com/journal/molecules-and-cells                                                               Mol. Cells 2026; 49(7): 100365 3
+Brain-inspired strategies for efficient AI
+M.-S. Kim and H.F. Kim
+
+rostral circuits are recruited, reflecting a redistribution of neural    Alexander and Crutcher, 1990). In this parallel processing ap­
+resources to sustain adaptive computation.                               proach, each piece of information is processed intact across the
+                                                                         circuits, ensuring that information is preserved at the single-
+Quantitatively Efficient Process Using Information                       neuron level. However, it requires more neurons than the con­
+Extraction and Convergence                                               vergent process. Therefore, it is crucial for the brain to optimize
+A key constraint of the brain arises from the limited number of          efficiency by utilizing fewer neurons while retaining the critical
+neurons within the skull, which challenges its ability to process        information necessary for movement and decision-making. This
+vast amounts of information (von Bartheld et al., 2016). The             necessity implies the existence of mechanisms within the brain
+number of neurons decreases as information flows from the                that allow for the extraction of crucial information and efficient
+cortex to successive structures in the basal ganglia (Bar-Gad            processing with fewer neurons.
+et al., 2003; Morris et al., 2003; Nambu, 2011; Oorschot, 1996;              This extraction, through a convergent process, has been
+Percheron et al., 1994; Yelnik, 2002). Figure 3A schematically           observed in the primate striatum of the basal ganglia when
+illustrates this anatomical convergence and the concept of               monkeys choose the most valuable objects (Hwang et al.,
+quantitative funneling across these regions. This leads to a             2024). To examine this value convergence process, monkeys
+critical question: How does the brain, with its layered cortico-         were trained to associate different rewards with visual and
+basal ganglia circuits, manage to process diverse information            tactile objects, and their neuronal responses to these objects
+and make decisions as the number of neurons progressively                were recorded as they identified the most rewarding object. Two
+decreases?                                                               possible outcomes emerge based on the convergent and par­
+    One plausible explanation for this anatomical funneling              allel process hypotheses. If the tactile and visual values con­
+structure is that information converges in single neurons                verge, a single neuron encodes both values, facilitating efficient
+(Bergman et al., 1998; Nambu, 2011). Previous studies by the             object choice with fewer neurons (Fig. 3B). Conversely, if the
+Nambu group demonstrated anatomically overlapping motor                  values are not abstracted, a single neuron encodes either tactile
+regions within basal ganglia structures (Iwamuro et al., 2017;           or visual values, thereby preserving both modality and value
+Nambu, 2011; Nambu et al., 2002). This supports the concept of           information (Fig. 3C).
+a convergent process. However, this convergent process has                   Single neurons in the primate striatum encode a converged
+the disadvantage of causing single neurons to lose specific              form of values from diverse sensory inputs (Fig. 3B). Notably,
+details of information, such as which part of the limb is moving,        more than half of the striatal neurons were identified as bimodal
+while retaining only general information about the movement              value-coding neurons (Hwang et al., 2024). This convergence
+itself. A parallel-process hypothesis was proposed to address            process enhances the efficiency of the value coding by utilizing
+the issue of information loss (Alexander et al., 1986, 1991;             a limited number of neurons. As the example in Figure 3B
+
+
+
+
+Fig. 3. Anatomical funneling architecture of the brain and its role in ensuring a quantitatively efficient process through information con­
+vergence. (A) Anatomical funneling architecture in the natural neural network. The number of neurons progressively decreases through each
+neural layer, from the cortex to the striatum and then to the globus pallidus or substantia nigra; ultimately, processing occurs in the motor
+output regions for decision-making. GPi: Globus pallidus internus. SNr: Substantia nigra pars reticulata. (B) Quantitatively efficient process
+through information convergence. In an example of tactile and visual value processing, neurons in the striatum converge visual and tactile
+object information, extracting the most essential feature, namely, the object value required to select the most valuable object. This con­
+vergence process allows the brain to process information more efficiently, using fewer neurons compared to the parallel processing de­
+scribed in C. VV: Visual value. TV: Tactile value. BV: Bimodal value. (C) Parallel information processing.
+
+
+4 Mol. Cells 2026; 49(7): 100365                                                            www.sciencedirect.com/journal/molecules-and-cells
+                                                                                                    Brain-inspired strategies for efficient AI
+                                                                                                                    M.-S. Kim and H.F. Kim
+
+depicts, if there are 50 bimodal value-coding neurons among            are grouped by value (good and bad), the brain will generate
+100 value-coding neurons, then 75 neurons are involved in              only 2 neural patterns, one shared representation for each
+processing visual values and 75 neurons in processing tactile          value, regardless of the modality (Fig. 4B, right diagram).
+values. In the parallel process, however, 75 modality-selective        Therefore, when neural geometry includes more shared re­
+value-coding neurons are required for each value process, re­          presentations, its dimensions decrease (Fig. 4B), suggesting
+sulting in a total of 150 neurons, 50 more than in the convergent      that both dimensionality and information discriminability may
+process (Fig. 3C). To make a choice based on the object value,         decrease (Ostojic and Fusi, 2024).
+such as grasping it or not, the brain may only need to use value           In the context of Shannon’s information theory, a greater
+information without modality details. This allows 50 additional        number of different neural patterns corresponds to a higher
+neurons to remain available for other tasks.                           entropy level, which typically requires higher energy consump­
+    As described in the example of making optimal decisions            tion (Amalric and Cantlon, 2023; Ostojic and Fusi, 2024;
+based on object value, the basal ganglia system extracts crucial       Rajaram and Castellani, 2016; Shannon, 1948). Considering
+data, specifically value information, from visual and tactile ob­      the energy consumption at the neuron level, generating a
+jects while disregarding their modality. Dopamine (Fig. 3B) may        greater number of different neural patterns may require more
+play a critical role in extracting value from both modality and        energy because transitioning from one brain state to another
+value information because dopamine neurons send reward                 necessitates synaptic changes and maintenance, such as
+prediction error signals and are involved in synaptic plasticity       phosphorylation-driven alterations in ion channel responses
+(Calabresi et al., 2007; Jay, 2003; Joshua et al., 2009; Kim           and translation-dependent structural changes in synapses, all of
+et al., 2015; Reynolds and Wickens, 2002; Schultz, 1998;               which demand ATP supply (Buffington et al., 2014; Costa-
+Yagishita et al., 2014). This convergent process minimizes the         Mattioli et al., 2009; Harris et al., 2012; Ismailov and Benos,
+use of limited neural resources and facilitates efficient value-       1995; Kandel, 2001; Lee, 2006; Schacher et al., 1988; Sweatt
+guided decision-making.                                                and Kandel, 1989). This differs from the condition in which the
+                                                                       brain reduces the number of neurons involved in information
+Qualitatively Efficient Information Process Using                      processing through redundancy reduction, as previously sug­
+Population Neural Patterns: The Dual Information                       gested (Lennie, 2003). As illustrated in Figure 4B (middle
+Encoding Strategy                                                      panel), neural representation patterns with an appropriate
+In the brain’s extraction of information using fewer neurons, we       number of neurons achieved good discrimination of information
+might ask whether a quantitatively efficient process through           details.
+convergence inevitably compromises the information quality.                Sharing neural representations could save energy compared
+Does the brain lose some information to achieve quantitative           with maintaining completely distinct neural representation pat­
+efficiency, or is all the information preserved in a different form    terns, as less energy is required to adjust synapses for different
+within the brain?                                                      situations when representations are shared (Bar-Gad et al.,
+    Recent studies analyzing neural ensembles have addressed           2003; Harris et al., 2012). However, while using shared re­
+this question under conditions of visual and tactile value pro­        presentations can conserve energy during information proces­
+cessing in macaque monkeys (Hwang et al., 2024). As de­                sing, it often compromises discriminability (Fig. 4B, right
+scribed in Figure 3B, bimodal value-coding neurons encoded             diagram). Therefore, the brain must find a balance between
+value information regardless of which modality was associated          efficient encoding, which conserves energy, and preserving in­
+at the single neuron level. However, at the population neuron          formation discriminability. However, the mechanisms underlying
+level, these bimodal value-coding neurons represent both               the energy-saving process remain unclear. Empirical evidence
+modality and value information (Fig. 4A) (Hwang et al., 2025).         is crucial for understanding how the brain navigates this trade-
+This example demonstrates that the brain extracts crucial in­          off and for providing insights into the fundamental principles of
+formation through convergence at the single-neuron level while         neural efficiency.
+preserving all relevant information at the population neuron
+level to maintain its quality (qualitatively efficient information     Dimensionality Dynamics in the Cortico-Basal Ganglia
+processing). This dual information-encoding strategy highlights        System: Models of Neural Representation
+how the brain, including the basal ganglia, balances efficiency        Notably, recent studies by the Fusi group have demonstrated
+by maintaining detailed information across different levels of         this shared representational geometry in higher-order brain re­
+neural processing.                                                     gions, including the cortical and limbic structures (Bernardi
+                                                                       et al., 2020; Courellis et al., 2024; Rigotti et al., 2013). Fur­
+Reducing the Dimensionality of Neural Geometry Through                 thermore, this shared representation was also observed in the
+Shared Representations for Efficient Information Process               primate basal ganglia (Hwang et al., 2025). As illustrated in
+Representing information through distinct neural population            Figure 5A, the 4 variables can be separately decoded with
+patterns can preserve the information quality, and a larger re­        distinct neural population patterns, but the patterns for good and
+pertoire of such patterns allows for the retention of finer details.   bad values are sufficiently similar to be shared across both the
+For example, 4 variables (tactile-good, tactile-bad, visual-good,      tactile and visual modalities. Specifically, this shared geometry
+and visual-bad) can be represented separately in the principal         demonstrates that neural populations do not merely contain
+component (PC) space through 4 distinct neural patterns in the         diverse information but organize it into a structured, low-di­
+brain (Fig. 4B, left diagram). However, if these representations       mensional manifold. The preservation of this representational
+www.sciencedirect.com/journal/molecules-and-cells                                                        Mol. Cells 2026; 49(7): 100365 5
+Brain-inspired strategies for efficient AI
+M.-S. Kim and H.F. Kim
+
+
+
+
+Fig. 4. Qualitatively efficient information process through neural population coding and dimensionality reduction. (A) Qualitatively efficient
+information process in the primate basal ganglia. Modality information discarded at the single-neuron level through value extraction and
+convergence is preserved at the neural population level, demonstrating qualitatively efficient information processing with fewer resources.
+N# indicates each individual neuron. (B) Dimensionality and efficiency. Greater shared representation reduces dimensionality and resource
+demands for information processing. N1, N2, and N3 represent the imaginary axes corresponding to the firing rates of individual neurons.
+
+
+6 Mol. Cells 2026; 49(7): 100365                                                            www.sciencedirect.com/journal/molecules-and-cells
+                                                                                                     Brain-inspired strategies for efficient AI
+                                                                                                                     M.-S. Kim and H.F. Kim
+
+
+
+
+Fig. 5. Plausible dimensionality reduction through the brain architecture. (A) Ensuring efficiency through shared representation. Principal
+component analysis (PCA) visualizes the representational geometry of neurons. PC: Principal component. (B) Four models of dimensionality
+transformations through anatomical funneling architecture. In the Funneling model, information dimensionality progressively decreases
+across successive neural layers, from the cortex to the striatum and then to the SNr or GPi. This enables compressed representations to
+guide cognitive behavior. In contrast, the Expansion model features a stepwise increase in dimensionality, with additional information such
+as modality or salience more incorporated at each stage. The Diamond model shows an initial expansion followed by a reduction in
+dimensionality downstream. Conversely, the Hourglass model begins with high-dimensional cortical input, compresses information at the
+level of the striatum, and re-expands it in downstream structures such as the SNr and GPi.
+
+
+
+geometry allows the brain to employ an internal, abstracted            representation allows the brain to achieve efficient information
+representation of value that remains invariant to whether it is        encoding by reducing the dimensionality of the neural geometry
+perceived through visual or tactile senses. This suggests a            while preserving information detail.
+possible strategy that brain structures, from the cortical to deep         However, we can also consider alternative models in which
+brain regions, employ dimensional reduction through partially          neural populations process information differently from the
+shared representations to achieve energy-efficient information         Funneling model described above. These models provide dis­
+processing (Fig. 5B, Funneling model). This partially shared           tinct frameworks for understanding how the dimensionality of
+www.sciencedirect.com/journal/molecules-and-cells                                                         Mol. Cells 2026; 49(7): 100365 7
+Brain-inspired strategies for efficient AI
+M.-S. Kim and H.F. Kim
+
+neural representations is transformed across successive stages              Second, the Expansion model considers the possibility that
+of the basal ganglia. For example, in the context of value and          representational dimensionality may increase at certain pro­
+modality information, the Expansion model proposes that value           cessing stages (Fig. 5B). While cortical inputs may initially en­
+signals are first introduced at the level of the striatum, while        code modality-specific signals, additional value-related
+more detailed information, such as modality and salience, is            dimensions could be incorporated within the striatum through
+subsequently encoded at downstream structures, including the            dopaminergic reward prediction error signals from the SNc.
+SNr and GPi (Fig. 5B, Expansion model). In this model, the              Furthermore, downstream nuclei such as the SNr and GPi may
+dimensionality of information increases progressively through           integrate additional task-relevant variables, including salience
+each stage of the cortico-basal ganglia circuit. The Diamond            or contextual inputs, through interactions with circuits such as
+model also posits that value information is initially represented       the hyperdirect cortico-subthalamic pathway. In this view, di­
+in the striatum. However, in this case, downstream structures           mensional expansion reflects the incorporation of additional
+such as the SNr and GPi do not further process additional               behaviorally relevant inputs, such as value, salience, or con­
+features like modality (Fig. 5B, Diamond model). As a result, the       textual signals, thereby enriching the representational space
+dimensionality of information first expands and then contracts          available for action selection. Such expansion may enhance the
+along the circuit. Lastly, the Hourglass model suggests that both       separability of competing action representations and improve
+value and modality information are initially processed in cortical      the accuracy and robustness of final action selection under
+areas. These signals are then funneled into a shared, lower-            complex or ambiguous conditions.
+dimensional representation in the striatum, similar to the Fun­             Third, the Diamond model posits a transient expansion of
+neling model. However, at the level of the SNr and GPi, addi­           dimensionality followed by downstream compression (Fig. 5B).
+tional information is reintroduced, leading to an expansion in          Here, intermediate structures may temporarily increase re­
+dimensionality beyond that seen in the striatum (Fig. 5B,               presentational richness to evaluate multiple features of value
+Hourglass model). Thus, in the Hourglass model, dimensionality          and modality. Such intermediate expansion may enhance the
+is first reduced and then expanded, reversing the pattern pro­          separability of competing action representations, thereby im­
+posed in the Diamond model.                                             proving classification and decision accuracy under complex
+    To elaborate on the functional implications of these re­            conditions. Subsequent compression at output nuclei such as
+presentational transformations, each model proposes distinct            the SNr and GPi may then retain only the decision-relevant
+computational principles that may operate under biological              components required for action selection, reducing redundancy
+constraints (Table 1). Importantly, these models are not pre­           and conserving neural resources. This transition from high- to
+sented as established mechanisms but as conceptual frame­               low-dimensional representations enables flexible feature eva­
+works for interpreting how dimensionality may be reorganized            luation while restoring efficiency at the motor output stage.
+across cortico-basal ganglia circuits.                                      Finally, the Hourglass model describes an initial reduction of
+    First, the Funneling model proposes that neural circuits may        dimensionality followed by re-expansion (Fig. 5B). Diverse
+progressively reduce representational dimensionality through            cortical inputs containing value and modality information may
+convergent projections (Fig. 5B). Anatomical convergence from           first converge into a compact, low-dimensional representation
+the cortex to the striatum and further to the SNr/GPi provides a        within the striatum, preserving only the core task-relevant fea­
+structural substrate for such compression. Rather than implying         tures. This compressed latent state can then be re-expanded in
+a strict quantitative relationship between neuron number and            downstream nuclei to support more detailed discrimination and
+hierarchy, this model suggests that shared representations can          context-specific action selection. In this framework, dimensional
+abstract value information across sensory modalities, enabling          re-expansion enables refined classification and flexible motor
+generalized value-based decision-making with reduced re­                implementation while maintaining efficiency at the intermediate
+dundancy.                                                               processing stage.
+
+Table 1. Conceptual models of dimensionality transformation in neural circuits and their implications for AI.
+ Model           Dimensionality change       External input     Information representation                      AI analogy
+                                             required
+ Funneling       Progressive reduction       Not necessarily    Information is progressively compressed         On-device inference
+                                                                from cortex → striatum → SNr/GPi into a         modules
+                                                                shared representation.
+ Expansion       Progressive increase        Yes                Modality (cortex) expands with value (via       Kernel methods; Random
+                                                                SNc) in striatum, and integrates context (via   feature expansion
+                                                                hyperdirect pathway) at SNr/GPi.
+ Diamond         Increase → reduction        Yes                Striatum initially expands dimensionality to    Deep feedforward
+                                                                evaluate features, but SNr/GPi compresses       networks
+                                                                it to finalize action choice.
+ Hourglass       Reduction → re-expansion    Yes                Funneled into a lower-dimensional               Encoder–decoder
+                                                                representation in striatum, then expanded at    architectures
+                                                                SNr/GPi to execute specific plans.
+
+
+
+8 Mol. Cells 2026; 49(7): 100365                                                          www.sciencedirect.com/journal/molecules-and-cells
+                                                                                                    Brain-inspired strategies for efficient AI
+                                                                                                                    M.-S. Kim and H.F. Kim
+
+    Taken together, these 4 models illustrate that cortico-basal       layers in the brain, including the cortex, striatum, and output
+ganglia circuits may employ multiple strategies of dimension­          structures such as the SNr and GPi, is crucial for understanding
+ality reduction and expansion, rather than relying exclusively on      processing within the basal ganglia (Fig. 5B).
+monotonic convergence. Such flexibility in representational or­            Importantly, beyond advancing biological understanding, the
+ganization may provide a broader computational repertoire for          4 models of dimensionality dynamics in the basal ganglia may
+balancing stability, adaptability, and energy efficiency.              offer conceptual guidance for the development of brain-inspired
+                                                                       AI architectures.
+CONCLUSION AND FUTURE RESEARCH                                             First, the Funneling model illustrates how progressive di­
+                                                                       mensionality reduction can support efficient computation by
+Previous studies have highlighted the ability of the brain to ef­      minimizing redundancy while preserving decision-relevant in­
+ficiently process information using 3 complementary mechan­            formation. Such an architecture may be particularly suitable for
+isms: parallel processing, convergent processing, and                  on-device AI systems, where computational resources and
+population encoding. Collectively, these mechanisms enable             energy budgets are strictly limited and efficient inference is
+the brain to manage complex information with limited resources,        essential.
+balancing efficiency and precision.                                        Second, the Expansion model demonstrates how low-di­
+    The basal ganglia utilize 2 distinct circuits along the rostral-   mensional value signals can be transformed into richer re­
+caudal axis to balance cognitive flexibility and habitual stability    presentational spaces through the integration of additional task-
+(Fig. 2). This dual-circuit organization enables animals to opti­      relevant inputs. In artificial systems, this parallels kernel
+mize energy use by selectively engaging the appropriate circuit        methods and random feature expansion, which project data into
+along the rostral-caudal axis of the brain in response to con­         higher-dimensional spaces to enhance separability (Boser
+textual demands (Kim, 2025). This mechanism highlights the             et al., 1992; Rahimi and Recht, 2007).
+central role of the basal ganglia in enabling adaptive and goal-           Third, the Diamond model describes a transient expansion of
+directed behavior by allocating neural resources to support            representational dimensionality followed by compression into a
+cognitive flexibility. Although the rostral–caudal axis provides a     decision-relevant output. This structure resembles deep feed­
+foundational framework for functional organization, our review         forward networks, where intermediate layers initially expand the
+extends this framework by linking it to specific efficiency stra­      dimensionality to evaluate complex features, and subsequent
+tegies that may sustain the relatively high resource demands of        layers compress the information to finalize the output (LeCun
+rostral circuits involved in cognitive flexibility. Understanding      et al., 2015; Goodfellow et al., 2016).
+how quantitative and qualitative efficiency are achieved within            Finally, the Hourglass model parallels encoder–decoder ar­
+the rostral system under intrinsic physical constraints provides       chitectures widely used in deep learning (Cho et al., 2014). By
+important insights into the neural principles underlying efficient     compressing inputs into a shared low-dimensional latent re­
+information processing during behavioral adaptation.                   presentation to extract core features and subsequently ex­
+    The convergent process observed in the basal ganglia               panding them to generate task-specific outputs, this structure
+quantitatively supports efficient information processing (Hwang        illustrates how complex outputs can be produced efficiently
+et al., 2024). By extracting crucial information such as values        without maintaining high dimensionality throughout the entire
+from different modalities through the convergent network, the          processing pipeline.
+system minimizes the total number of neurons required for                  Among the proposed models, the Funneling model appears
+decision-making, thereby conserving energy (Fig. 3). A critical        broadly consistent with the anatomical organization of cortico-
+question remains: what mechanisms does the brain use to                basal ganglia circuits. Such organization may support a gradual
+determine which information is necessary and which is not?             reduction in representational dimensionality while maintaining
+One plausible hypothesis is that heterosynaptic manipulation,          decision-relevant information at the population level, offering a
+primarily mediated by dopaminergic neurons from the SNc and            plausible interpretation of how neural systems balance in­
+ventral tegmental area (VTA), may regulate the weighting of            formation integration with metabolic and computational effi­
+information based on context (Figs. 3B and 5B) (Ambrosi and            ciency under biological constraints. However, it remains
+Lerner, 2022; Eyny and Horvitz, 2003; Haber et al., 2000; Joel         possible that additional inputs, such as those conveyed through
+and Weiner, 2000; Nakahara et al., 2004; Nakamura and                  the hyperdirect cortico-subthalamic pathway, introduce new
+Hikosaka, 2006; Shen et al., 2008).                                    task-relevant information that dynamically reshapes re­
+    Extracting essential information often results in the loss of      presentational dimensionality at certain processing stages.
+other information that may be relevant to decision-making. To          Further empirical investigation will be required to determine how
+address this limitation, neurons in the striatum retain non-es­        dimensionality is regulated across these interacting pathways
+sential information for decision-making within neural population       under varying behavioral demands.
+response patterns while preserving information quality (Fig. 4A).          Additionally, future studies are expected to raise other fun­
+Furthermore, these neural patterns are not randomly distributed        damental questions. Is there any functional advantage in en­
+in the PC space; rather, the neural representation is shared,          coding information in higher-dimensional spaces? What are the
+which reduces representational dimensionality (Fig. 4B). This          causal effects of impairments in these neural population pat­
+dimensionality reduction is a potential strategy for optimizing the    terns? What mechanisms regulate the balance between pro­
+limited resources in the brain. Investigating changes in the di­       cessing efficiency and information accuracy? Addressing these
+mensionality of information representation across natural neural       questions will not only deepen our understanding of neural
+www.sciencedirect.com/journal/molecules-and-cells                                                        Mol. Cells 2026; 49(7): 100365 9
+Brain-inspired strategies for efficient AI
+M.-S. Kim and H.F. Kim
+
+information processing in the brain but also reveal the efficient                Bar-Gad, I., Morris, G., and Bergman, H. (2003). Information proces­
+mechanisms underpinning natural intelligence. These insights                     sing, dimensionality reduction and reinforcement learning in the basal
+provide a foundation for developing efficient brain-inspired AI.                 ganglia. Prog Neurobiol, 71, 439-473.
+                                                                                 Bassett, D.S., and Gazzaniga, M.S. (2011). Understanding complexity
+CREDIT AUTHORSHIP CONTRIBUTION STATEMENT                                         in the human brain. Trends Cogn Sci, 15, 200-209.
+Min-Seo Kim: Writing – review & editing. Hyoung F. Kim:                          Bergman, H., et al. (1998). Physiological aspects of information pro­
+Writing – review & editing, Writing – original draft,                            cessing in the basal ganglia of normal and parkinsonian primates.
+Conceptualization.                                                               Trends Neurosci, 21, 32-38.
+                                                                                 Bernardi, S., et al. (2020). The geometry of abstraction in the hippo­
+DECLARATION OF COMPETING INTEREST                                                campus and prefrontal cortex. Cell, 183, 954-967.e21.
+The authors declare that they have no known competing fi­                        Boser, B.E., Guyon, I.M., and Vapnik, V.N. (1992). A training algorithm
+nancial interests or personal relationships that could have ap­                  for optimal margin classifiers. Proceedings of the Fifth Annual
+peared to influence the work reported in this paper.                             Workshop on Computational Learning Theory, 144-152.
+                                                                                 Buffington, S.A., Huang, W., and Costa-Mattioli, M. (2014).
+ACKNOWLEDGMENTS                                                                  Translational control in synaptic plasticity and cognitive dysfunction.
+Special thanks to Dr. Okihide Hikosaka for pioneering con­                       Annu Rev Neurosci, 37, 17-38.
+tributions to this field, and to Yun-Hyuk Kim and Ji-Woo Lee
+                                                                                 Calabresi, P., Picconi, B., Tozzi, A., and Di Filippo, M. (2007).
+from the Cognitive Circuitry Laboratory (CoCiLa) for their                       Dopamine-mediated regulation of corticostriatal synaptic plasticity.
+thoughtful discussions and insightful comments. This work was                    Trends Neurosci, 30, 211-219.
+supported by the Basic Science Research Program (RS-2024-
+                                                                                 Cho, K., et al. (2014). Learning phrase representations using RNN
+00339355), the Bio&Medical Technology Development Program                        encoder-decoder for statistical machine translation. Proceedings of the
+(RS-2025-02263832), the Global-LAMP program (RS-2023-                            2014 Conference on Empirical Methods in Natural Language
+00301976) and the IITP program (RS-2026-25507282) through                        Processing (EMNLP), 1724-1734.
+the National Research Foundation (NRF) of Korea.                                 Choi, Y., Shin, E.Y., and Kim, S. (2020). Spatiotemporal dissociation of
+                                                                                 fMRI activity in the caudate nucleus underlies human de novo motor
+ORCID                                                                            skill learning. Proc Natl Acad Sci U S A, 117, 23886-23897.
+Hyoung F. Kim https://orcid.org/0000-0002-5253-0981
+                                                                                 Costa-Mattioli, M., Sossin, W.S., Klann, E., and Sonenberg, N. (2009).
+                                                                                 Translational control of long-lasting synaptic plasticity and memory.
+Received October 16, 2025
+                                                                                 Neuron, 61, 10-26.
+Revised April 22, 2026
+                                                                                 Courellis, H.S., et al. (2024). Abstract representations emerge in human
+Accepted April 22, 2026
+                                                                                 hippocampal neurons during inference. Nature, 632, 841-849.
+Available online 24 April 2026.
+                                                                                 Dosenbach, N.U.F., et al. (2007). Distinct brain networks for adaptive
+                                                                                 and stable task control in humans. Proc Natl Acad Sci U S A, 104,
+REFERENCES
+                                                                                 11073-11078.
+Alexander, G.E., and Crutcher, M.D. (1990). Functional architecture of           Downie, C. (2024). How data centers can simultaneously enable AI growth
+basal ganglia circuits: neural substrates of parallel processing. Trends         and ESG progress. DCD. https://www.datacenterdynamics.com/en/
+Neurosci, 13, 266-271.                                                           opinions/how-data-centers-can-simultaneously-enable-ai-growth-and-esg-
+                                                                                 progress/.
+Alexander, G.E., Crutcher, M.D., and Delong, M.R. (1991). Chapter 6
+Basal ganglia-thalamocortical circuits: Parallel substrates for motor, ocu­      Eyny, Y.S., and Horvitz, J.C. (2003). Opposing roles of D1 and D2 re­
+lomotor, “prefrontal” and “limbic” functions. Prog Brain Res, 85, 119-146.       ceptors in appetitive conditioning. J Neurosci, 23, 1584-1587.
+Alexander, G.E., DeLong, M.R., and Strick, P.L. (1986). Parallel orga­           Farmani, S., Sharifi, K., and Ghazizadeh, A. (2024). Cortical and sub­
+nization of functionally segregated circuits linking basal ganglia and           cortical substrates of minutes and days-long object value memory in
+cortex. Annu Rev Neurosci, 9, 357-381.                                           humans. Cerebral Cortex, 34, Article bhae006.
+Allan, K. (2023). Delving into the deep with underwater data centres.            Fernandez-Ruiz, J., Wang, J., Aigner, T.G., and Mishkin, M. (2001).
+Norwich, UK: Data Centre Magazine.                                               Visual habit formation in monkeys with neurotoxic lesions of the ven­
+Amalric, M., and Cantlon, J.F. (2023). Entropy, complexity, and maturity in      trocaudal neostriatum. Proc Natl Acad Sci U S A, 98, 4196-4201.
+children’s neural responses to naturalistic video lessons. Cortex, 163, 14-25.   Goodfellow, I., Bengio, Y., and Courville, A. (2016). Deep Learning.
+Ambrosi, P., and Lerner, T.N. (2022). Striatonigrostriatal circuit archi­        Cambridge, MA: MIT Press164-220 Chapter 6.
+tecture for disinhibition of dopamine signaling. Cell Rep, 40.                   Griggs, W.S., et al. (2017). Flexible and stable value coding areas in
+                                                                                 caudate head and tail receive anatomically distinct cortical and sub­
+An, S., Hwang, S.H., Lee, K., and Kim, H.F. (2024). The primate pu­
+tamen processes cognitive flexibility alongside the caudate and ventral          cortical inputs. Front Neuroanat, 11, Article 302967.
+striatum with similar speeds of updating values. Prog Neurobiol, 243,            Haber, S.N., Fudge, J.L., and McFarland, N.R. (2000).
+Article 102651.                                                                  Striatonigrostriatal pathways in primates form an ascending spiral from
+                                                                                 the shell to the dorsolateral striatum. J Neurosci, 20, 2369-2382.
+Ansett E., AI and data centers - Why AI is so resource hungry, DCD,
+(2024), https://www.datacenterdynamics.com/en/opinions/ai-and-data-              Harris, J.J., Jolivet, R., and Attwell, D. (2012). Synaptic energy use and
+centers-why-ai-is-so-resource-hungry/.                                           supply. Neuron, 75, 762-777.
+
+
+
+10 Mol. Cells 2026; 49(7): 100365                                                                    www.sciencedirect.com/journal/molecules-and-cells
+                                                                                                                Brain-inspired strategies for efficient AI
+                                                                                                                                M.-S. Kim and H.F. Kim
+
+Herculano-Houzel, S. (2009). The human brain in numbers: a linearly           Kim, H.F., Ghazizadeh, A., and Hikosaka, O. (2015). Dopamine neurons
+scaled-up primate brain. Front Hum Neurosci, 3, 857.                          encoding long-term memory of object value for habitual behavior. Cell,
+Hikosaka, O., et al. (1999). Parallel neural networks for learning se­        163, 1165-1175.
+quential procedures. Trends Neurosci, 22, 464-471.                            Kim, H.F., and Hikosaka, O. (2013). Distinct basal ganglia circuits
+Hikosaka, O., Kim, H.F., Yasuda, M., and Yamamoto, S. (2014). Basal ganglia   controlling behaviors guided by flexible and stable values. Neuron, 79,
+circuits for reward value-guided behavior. Annu Rev Neurosci, 37, 289-306.    1001-1010.
+
+Hwang, S.H., Lee, J.W., Kim, S.P., and Kim, H.F. (2025). Efficient and        Kim, H.F., and Hikosaka, O. (2015). Parallel basal ganglia circuits for
+dynamic neural geometry of value and modality encoding in the primate         voluntary and automatic behaviour to reach rewards. Brain, 138,
+putamen for value-guided behavior. Nat Commun, 16, Article 8266.              1776-1800.
+
+Hwang, S.H., Park, D., Lee, J.W., Lee, S.H., and Kim, H.F. (2024).            LeCun, Y., Bengio, Y., and Hinton, G. (2015). Deep learning. Nature,
+Convergent representation of values from tactile and visual inputs for        521, 436-444.
+efficient goal-directed behavior in the primate putamen. Nat Commun,          Lee, H.K. (2006). Synaptic plasticity and phosphorylation. Pharmacol
+15, 8954.                                                                     Ther, 112, 810-832.
+Hwang, S.H., Ra, Y., Paeng, S., and Kim, H.F. (2022). Motivational            Lee, K., An, S.Y., Park, J., Lee, S., and Kim, H.F. (2023). Anatomical
+salience drives habitual gazes during value memory retention and fa­          and functional comparison of the caudate tail in primates and the tail of
+cilitates relearning of forgotten value. iScience, 25, Article 105104.        the striatum in rodents: implications for sensory information processing
+Ismailov, I.I., and Benos, D.J. (1995). Effects of phosphorylation on ion     and habitual behavior. Mol Cells, 46, 461-469.
+channel function. Kidney Int, 48, 1167-1179.                                  Lennie, P. (2003). The cost of cortical computation. Curr Biol, 13,
+Iwamuro, H., Tachibana, Y., Ugawa, Y., Saito, N., and Nambu, A. (2017).       493-497.
+Information processing from the motor cortices to the subthalamic nucleus     Miyachi, S., Hikosaka, O., Miyashita, K., Kárádi, Z., and Rand, M.K.
+and globus pallidus and their somatotopic organizations revealed electro­     (1997). Differential roles of monkey striatum in learning of sequential
+physiologically in monkeys. Eur J Neurosci, 46, 2684-2701.                    hand movement. Exp Brain Res, 115, 1-5.
+Izquierdo, A., Brigman, J.L., Radke, A.K., Rudebeck, P.H., and Holmes,        Morris, G., Nevet, A., and Bergman, H. (2003). Anatomical funneling,
+A. (2017). The neural basis of reversal learning: an updated perspec­         sparse connectivity and redundancy reduction in the neural networks of
+tive. Neuroscience, 345, 12-26.                                               the basal ganglia. J Physiol-Paris, 97, 581-589.
+Jay, T.M. (2003). Dopamine: a potential substrate for synaptic plasticity     Nakahara, H., Itoh, H., Kawagoe, R., Takikawa, Y., and Hikosaka, O.
+and memory mechanisms. Prog Neurobiol, 69, 375-390.                           (2004). Dopamine neurons can represent context-dependent prediction
+Jiang, H., and Kim, H.F. (2018). Anatomical inputs from the sensory and       error. Neuron, 41, 269-280.
+value structures to the tail of the rat striatum. Front Neuroanat, 12,        Nakamura, K., and Hikosaka, O. (2006). Role of dopamine in the pri­
+Article 350868.                                                               mate caudate nucleus in reward modulation of saccades. J Neurosci,
+Joel, D., and Weiner, I. (2000). The connections of the dopaminergic          26, 5360-5369.
+system with the striatum in rats and primates: an analysis with respect       Nambu, A. (2011). Somatotopic organization of the primate basal
+to the functional and compartmental organization of the striatum.             ganglia. Front Neuroanat, 5, 7477.
+Neuroscience, 96, 451-474.                                                    Nambu, A., Kaneda, K., Tokuno, H., and Takada, M. (2002).
+Joshua, M., Adler, A., and Bergman, H. (2009). The dynamics of do­            Organization of corticostriatal motor inputs in monkey putamen. J
+pamine in control of motor behavior. Curr Opin Neurobiol, 19, 615-620.        Neurophysiol, 88, 1830-1842.
+Kahneman, D. (2003). Maps of bounded rationality: psychology for              Oorschot, D.E. (1996). Total number of neurons in the neostriatal, pal­
+behavioral economics. Am Econom Rev, 93, 1449-1475.                           lidal, subthalamic, and substantia nigral nuclei of the rat basal ganglia. J
+Kahneman, D. (2013). Thinking, Fast and Slow (1st pbk. ed.). New York:        Comp Neurol, 366, 580-599.
+Farrar, Straus and Giroux.                                                    Ostojic, S., and Fusi, S. (2024). Computational role of structure in neural
+Kandel, E.R. (2001). The molecular biology of memory storage: a dia­          activity and connectivity. Trends Cogn Sci, 28, 677-690.
+logue between genes and synapses. Science, 294, 1030-1038.                    Percheron, G., McKenzie, J.S., and Féger, J. (1994). The basal ganglia
+Kang, J., et al. (2021). Primate ventral striatum maintains neural re­        IV: New ideas and data on structure and function. New York, NY:
+presentations of the value of previously rewarded objects for habitual        Plenum Press.
+seeking. Nat Commun, 12, 1-13.                                                Rahimi, A., and Recht, B. (2007). Random features for large-scale
+Kaplan, J., et al. (2020). Scaling laws for neural language models. arXiv     kernel machines. Adv Neural Inf Process Syst, 20, 1177-1184.
+2001.08361.                                                                   Rajaram, R., and Castellani, B. (2016). An entropy based measure for
+Kim, H.F. (2021). Brain substrates for automatic retrieval of value           comparing distributions of complexity. Phys A Stat Mech its Appl, 453, 35-43.
+memory in the primate basal ganglia. Mol Brain, 14, 1-8.                      Rakic, P. (1995). A small step for the cell, a giant leap for mankind: a
+Kim, H.F. (2025). Principal axis of primate basal ganglia in processing       hypothesis of neocortical expansion during evolution. Trends Neurosci,
+cognitive flexibility and habitual stability. Brain, 148, 4198-4209.          18, 383-388.
+
+Kim, H.F., Amita, H., and Hikosaka, O. (2017). Indirect Pathway of            Ren, J., and Xia, F. (2024). Brain-inspired artificial intelligence: a com­
+Caudal Basal Ganglia for Rejection of Valueless Visual Objects.               prehensive review. arXiv 2408.14811.
+Neuron, 94, 920-930.e3.                                                       Reynolds, J.N.J., and Wickens, J.R. (2002). Dopamine-dependent
+Kim, H.F., Ghazizadeh, A., and Hikosaka, O. (2014). Separate groups of        plasticity of corticostriatal synapses. Neural Netw, 15, 507-521.
+dopamine neurons innervate caudate head and tail encoding flexible            Rigotti, M., et al. (2013). The importance of mixed selectivity in complex
+and stable value memories. Front Neuroanat, 8, Article 117710.                cognitive tasks. Nature, 497, 585-590.
+
+www.sciencedirect.com/journal/molecules-and-cells                                                                   Mol. Cells 2026; 49(7): 100365 11
+Brain-inspired strategies for efficient AI
+M.-S. Kim and H.F. Kim
+
+Schacher, S., Castellucci, V.F., and Kandel, E.R. (1988). cAMP evokes         Yagishita, S., et al. (2014). A critical time window for dopamine ac­
+long-term facilitation in Aplysia sensory neurons that requires new           tions on the structural plasticity of dendritic spines. Science, 345,
+protein synthesis. Science, 240, 1667-1669.                                   1616-1620.
+Schultz, W. (1998). Predictive reward signal of dopamine neurons. J           Yamamoto, S., Kim, H.F., and Hikosaka, O. (2013). Reward value-
+Neurophysiol, 80, 1-27.                                                       contingent changes of visual responses in the primate caudate
+Seger, C.A. (2013). The visual corticostriatal loop through the tail of the   tail associated with a visuomotor skill. J Neurosci, 33,
+caudate: circuitry and function. Front Syst Neurosci, 7, 60363.               11227-11238.
+
+Shannon, C.E. (1948). A mathematical theory of communication. Bell            Yasuda, M., and Hikosaka, O. (2015). Functional territories in primate
+System Tech J, 27, 379-423.                                                   substantia nigra pars reticulata separately signaling stable and flexible
+                                                                              values. J Neurophysiol, 113, 1681-1696.
+Shen, W., Flajolet, M., Greengard, P., and Surmeier, D.J. (2008).
+Dichotomous dopaminergic control of striatal synaptic plasticity.             Yasuda, M., Yamamoto, S., and Hikosaka, O. (2012). Robust re­
+Science, 321, 848-851.                                                        presentation of stable object values in the oculomotor Basal Ganglia. J
+                                                                              Neurosci, 32, 16917-16932.
+Sweatt, J.D., and Kandel, E.R. (1989). Persistent and transcriptionally-
+dependent increase in protein phosphorylation in long-term facilitation       Yelnik, J. (2002). Functional anatomy of the basal ganglia. Mov Disord,
+of Aplysia sensory neurons. Nature, 339, 51-54.                               17(Suppl 3), S15-S21.
+
+von Bartheld, C.S., Bahney, J., and Herculano-Houzel, S. (2016). The          Zhang, R., Quan, H., Wang, Y., and Luo, F. (2023). Neurogenesis in
+search for true numbers of neurons and glial cells in the human brain: a      primates versus rodents and the value of non-human primate models.
+review of 150 years of cell counting. J Comp Neurol, 524, 3865-3895.          Natl Sci Rev, 10.
+
+Welker, W. (1990). Why does cerebral cortex fissure and fold? Cerebral        Zhang, Y., et al. (2020). A system hierarchy for brain-inspired com­
+Cortex, 3-136.                                                                puting. Nature, 586, 378-384.
+
+
+
+
+12 Mol. Cells 2026; 49(7): 100365                                                                 www.sciencedirect.com/journal/molecules-and-cells
+

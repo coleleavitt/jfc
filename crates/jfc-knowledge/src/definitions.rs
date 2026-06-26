@@ -141,6 +141,21 @@ fn row_to_definition(row: &sqlx::sqlite::SqliteRow) -> Result<DefinitionRecord> 
 }
 
 impl KnowledgeStore {
+    /// Update a definition's lifecycle status (Candidate → Active on promotion,
+    /// or Active → Candidate/Rejected on rollback). Returns the number of rows
+    /// changed — `0` means no such definition (so callers can tell a real
+    /// promotion from a no-op).
+    pub async fn set_definition_status(&self, id: &str, status: &str) -> Result<u64> {
+        let result =
+            sqlx::query("UPDATE definitions SET status = ?2, updated_at_ms = ?3 WHERE id = ?1")
+                .bind(id)
+                .bind(status)
+                .bind(now_ms())
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected())
+    }
+
     pub async fn upsert_definition(&self, def: &NewDefinition) -> Result<String> {
         let id = def.id();
         let now = now_ms();

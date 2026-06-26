@@ -93,7 +93,6 @@ fn open_definition_store(project_root: &std::path::Path) -> Option<jfc_knowledge
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let path = path.clone();
         jfc_knowledge::block_on_knowledge(async move {
             jfc_knowledge::KnowledgeStore::open(&path).await
         })

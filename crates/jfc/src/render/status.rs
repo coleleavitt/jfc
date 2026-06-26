@@ -273,6 +273,17 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
             }
         }
     }
+    if app.voice_read_aloud_active {
+        if spans.len() > 1 {
+            spans.push(Span::styled(" · ", muted));
+        }
+        let elapsed = app
+            .voice_read_aloud_started
+            .map(|t| t.elapsed().as_millis())
+            .unwrap_or(0);
+        let pulse = crate::render::voice_cursor::processing_pulse(elapsed);
+        spans.push(Span::styled("speaking", Style::default().fg(pulse)));
+    }
 
     let had_voice = spans.len() > 1;
     for (idx, s) in segs.into_iter().enumerate() {

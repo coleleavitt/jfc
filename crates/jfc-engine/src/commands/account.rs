@@ -351,35 +351,68 @@ pub(super) async fn cmd_logout(
         .copied()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    // Wipe the OAuth token + API-key stores under
-    // ~/.config/jfc/. We deliberately keep this contained to
-    // jfc's own state (opencode shares anthropic-accounts.json,
-    // so blindly nuking that file would also log them out of
-    // a sibling client).
+    // CS-JFC-009: logout must clear every *live* credential store, not just a
+    // stale hardcoded list. The active providers resolve their stores via
+    // `TokenStore::default_path()` (Anthropic/Codex OAuth `auth.json`) and
+    // `anthropic_oauth::default_store_path()` (`anthropic-accounts.json`), plus
+    // the legacy device-flow + early-build paths. `anthropic-accounts.json` is
+    // intentionally retained by default because sibling clients (e.g. opencode)
+    // share it; `/logout all` removes it too.
     let scope = arg.unwrap_or("jfc");
+    let remove_shared = matches!(scope, "all" | "shared");
     let home = std::env::var("HOME").unwrap_or_default();
-    let mut removed = Vec::new();
+
+    let mut targets: Vec<std::path::PathBuf> = vec![
+        // Live OAuth token store used by Anthropic + Codex providers.
+        jfc_auth::oauth_core::TokenStore::default_path(),
+        // Legacy device-flow store (now user-scoped) + repo-local migration path.
+        crate::auth::device_flow::credentials_path(),
+        crate::auth::device_flow::legacy_repo_credentials_path(),
+    ];
+    // Early-build / legacy hardcoded names kept for cleanup completeness.
     for relpath in [
-        ".config/jfc/credentials.json",
         ".config/jfc/anthropic-oauth.json",
         ".config/jfc/codex-tokens.json",
     ] {
-        let p = std::path::PathBuf::from(&home).join(relpath);
-        if p.exists() && std::fs::remove_file(&p).is_ok() {
+        targets.push(std::path::PathBuf::from(&home).join(relpath));
+    }
+    if remove_shared {
+        targets.push(crate::providers::anthropic_oauth::default_store_path());
+    }
+
+    // De-duplicate so the same resolved path is not reported twice.
+    targets.sort();
+    targets.dedup();
+
+    let mut removed = Vec::new();
+    for p in &targets {
+        if p.exists() && std::fs::remove_file(p).is_ok() {
             removed.push(p.display().to_string());
         }
     }
+
+    let shared_store = crate::providers::anthropic_oauth::default_store_path();
+    let shared_note = if !remove_shared && shared_store.exists() {
+        format!(
+            "\n\nKept shared store `{}` (used by sibling clients). Run `/logout all` to remove it too.",
+            shared_store.display()
+        )
+    } else {
+        String::new()
+    };
+
     let summary = if removed.is_empty() {
-        format!("No credential files found to remove (scope: `{scope}`).")
+        format!("No credential files found to remove (scope: `{scope}`).{shared_note}")
     } else {
         format!(
-            "Removed {} credential file(s):\n{}\nRun `/login` to authenticate again.",
+            "Removed {} credential file(s):\n{}\nRun `/login` to authenticate again.{}",
             removed.len(),
             removed
                 .iter()
                 .map(|p| format!("  - `{p}`"))
                 .collect::<Vec<_>>()
-                .join("\n")
+                .join("\n"),
+            shared_note
         )
     };
     state.messages.push(ChatMessage::assistant(summary));

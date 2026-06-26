@@ -1,0 +1,1091 @@
+Kara et al. Molecular Neurodegeneration Advances
+https://doi.org/10.1186/s44477-026-00019-y
+
+
+
+
+ RESEARCH
+
+Pretangle tau pathology accrual
+in the default mode network
+during the progression of Alzheimer’s disease
+Betul Kara1,2, Ian M. Kelly1, John S. Beck1, Nathan Kuhn1, Elliott J. Mufson3, Irving E. Vega1,2,4,
+Nicholas M. Kanaan1,2,4 and Scott E. Counts1,2,4,5,6*
+
+
+
+  Abstract
+  Alzheimer’s disease (AD) is a secondary tauopathy characterized by the accumulation of aggregated amyloid-beta
+  (Aβ) peptides as extracellular neuritic and diffuse plaques, alongside hyperphosphorylated tau aggregates form-
+  ing intracellular neurofibrillary tangles (NFTs). Although NFT pathology is strongly linked to neurodegeneration
+  and cognitive decline in AD, growing evidence suggests that soluble “pretangle” aggregates of tau, formed prior
+  to NFT development, are the primary neurotoxic species driving disease progression and cognitive impairment. We
+  quantified pretangle tau moieties in postmortem tissues of the default mode network (DMN), a resting state con-
+  nectome that mediates episodic memory and falters early in AD, to determine the association between DMN tau
+  pathology and antemortem cognitive status. To accomplish this, we assayed postmortem fixed and frozen tissue
+  from frontal cortex (FC), posterior cingulate cortex (PCC), and precuneus (PreC) DMN hubs obtained from participants
+  of the Rush Religious Orders Study (RROS). Immunohistochemical and biochemical quantification was performed
+  using site-specific tau antibodies recognizing pathological pretangle epitopes pS422 (phosphorylation at tau residue
+  serine 422), TOC1 (tau oligomers), and TNT2 (N-terminal tau misfolding), as well as the mid-stage NFT marker TauC3
+  (C-terminal tau truncation). Pretangle tau profiles included neuropil threads and neuronal inclusions as early as Braak
+  stage III, with significant increases from Braak stage IV to V across the DMN hubs. There was a step-wise increase
+  in the pretangle markers in subjects who died with no cognitive impairment (NCI) to mild cognitive impairment (MCI)
+  to AD. The increase in pretangle tau pathology accrual correlated with poorer antemortem neuropsychological tests,
+  including episodic memory, semantic memory, and a global cognitive z score calculated for each RROS participant.
+  Pretangle tau accrual also correlated with postmortem neuropathological diagnostic measures of AD severity. In addi-
+  tion, we found that the PCC displayed greater tau pathology compared to the PreC, suggesting selective vulnerability
+  within DMN hubs. Collectively, our findings are a first of its kind cellular and protein quantitative analysis to demon-
+  strate neurotoxic pre-tangle tau accumulation within the DMN connectome that highly correlated with cognitive
+  decline in MCI and AD, underscoring pretangle tau as a potential early driver of disease progression and a target
+  for therapeutic intervention.
+
+
+Keywords Tau, Alzheimer’s disease, Default mode network, Cognition, Pretangle, Oligomer
+
+
+
+*Correspondence:
+Scott E. Counts
+countssc@msu.edu
+Full list of author information is available at the end of the article
+
+
+                                             © The Author(s) 2026. Open Access This article is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0
+                                             International License, which permits any non-commercial use, sharing, distribution and reproduction in any medium or format, as long
+                                             as you give appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence, and indicate if
+                                             you modified the licensed material. You do not have permission under this licence to share adapted material derived from this article or
+                                             parts of it. The images or other third party material in this article are included in the article’s Creative Commons licence, unless indicated
+                                             otherwise in a credit line to the material. If material is not included in the article’s Creative Commons licence and your intended use is not
+                                             permitted by statutory regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder. To
+                                             view a copy of this licence, visit http://​creat​iveco​mmons.​org/​licen​ses/​by-​nc-​nd/4.​0/.
+Kara et al. Molecular Neurodegeneration Advances                                                              Page 2 of 23
+
+
+
+
+Introduction                                                   temporal lobe due to its crucial role in episodic memory
+Alzheimer’s disease (AD) is a progressive neurodegen-          coding and retrieval [33–35]. However, the default mode
+erative dementing disorder and the fifth leading cause of      network (DMN), a resting-state network that is active by
+death among those aged 65 and older [1]. The postmor-          default in the absence of an attention-demanding task, is
+tem presence of amyloid beta (Aβ) peptide-containing           a key memory connetome that requires investigation to
+plaques and neurofibrillary tangles (NFTs) composed            understand the role tau pathology plays in mild cognitive
+of aberrantly post-translationally modified tau proteins       impairment (MCI/prodromal AD) prior to the advanced
+defines AD pathologically. Tau is an intrinsically disor-      clinical representation of AD [36].
+dered protein that plays various roles in cellular func-         The DMN consists minimally of three hubs: frontal
+tion in its normal physiological state [2]. However, when      cortex (FC), posterior cingulate cortex (PCC), and pre-
+aberrant post-translational modifications accumulate,          cuneus (PreC) [37, 38]. The onset of Aβ-PET positivity
+tau undergoes conformational changes that lead to self-        within the DMN is associated with signs of hyperexcit-
+aggregation and fibrillization, ultimately coalescing as       ability [39] and hyperconnectivity [40–42]. By contrast,
+NFTs in AD and other tauopathies. In AD, NFTs accu-            during the onset of tau-PET positivity, DMN func-
+mulate in the transentorhinal cortex and hippocampus           tional connectivity shifts towards hypoconnectivity
+prior to spreading to limbic and neocortical regions,          [40], in addition to delayed task deactivation in amnes-
+thus guiding the Braak staging system [3]. Historically,       tic MCI patients. [43, 44]. Notably, reductions in DMN
+research on tau pathology in AD has focused on NFTs            connectivity were observed in individuals experiencing
+as the primary source of toxicity and neuronal death. By       subjective cognitive decline (SCD) [41] or newly diag-
+contrast, injections of recombinant tau fibrils into the       nosed with MCI [45]. Previous studies that combined
+hippocampus did not induce neuron loss or synaptic dys-        fMRI and tau PET imaging revealed that tau deposi-
+function in wild type mice [4], and two-photon imaging         tion in DMN regions correlates with aberrant network
+in transgenic tau mice revealed that NFT-bearing cortical      connectivity [46]. Other studies combining CSF tau
+neurons respond to sensory inputs and remain integrated        and fMRI demonstrated associations between DMN
+in local circuits [5]. Whereas turning off tau expression in   connectivity and CSF ptau levels, suggesting that the
+a transgenic tau mouse model rescued memory and pre-           accumulation of ptau impairs DMN connectivity [36].
+vented neuronal loss, even as NFT-like inclusions contin-      However, imaging and CFS biomarker studies do not
+ued to form [6]. Since these data suggest that frank NFTs      elucidate the role that pretangle tau pathology plays in
+are less toxic to neuronal function, research has increas-     cortical cellular degeneration and protein levels within
+ingly shifted towards investigating pretangle tau aggre-       hubs of the DMN during the progression of AD, which
+gates that arise from early aberrant phosphorylation,          remains a significant knowledge gap. Currently, there
+protein misfolding events, and oligomer formation.             is an absence of pretangle-specific PET ligands needed
+   In contrast to NFTs, soluble tau oligomers can seed         to track prefibrillar tau accumulation in living patients.
+tau pathology [7], disrupt mitochondrial homeostasis           Moreover, cross-sectional epitope-specific detection
+through impaired energy metabolism, increased reac-            of soluble pretangle tau within DMN hubs in subjects
+tive oxygen species, and calcium imbalances [4, 8–12],         with varying antemortem cognitive function and post-
+interfere with bidirectional axonal trafficking and micro-     mortem neuropathological diagnostic assessments has
+tubule assembly [9, 13–15], and diminish synaptic vesic-       yet to be explored.
+ular signaling and long-term potentiation (LTP) [9, 14,          This study aimed to quantify pretangle tau in post-
+16–19]. These oligomeric tau insults are postulated to         mortem DMN regions (FC, PCC, and PreC) obtained
+culminate in a toxic cellular environment promoting neu-       from Rush Religious Orders Study (RROS) subjects who
+rodegeneration, synaptic loss, disconnection, and cogni-       died with a clinical diagnosis of no cognitive impair-
+tive decline.                                                  ment (NCI), MCI, or AD that displayed a full range of
+   Clinically, cognitive decline in episodic and semantic      Braak NFT stages. Pretangle pathology was identified
+memory domains is an early phenomenon in AD progres-           using epitope-specific tau antibodies that recognize
+sion [20–22]. However, the relationship between patho-         early post-translational modifications related to soluble
+logical tau accrual and memory dysfunction might not be        tau aggregation and toxicity combined with quantitative
+linear due to individual differences in cognitive reserve      morphometrics and custom sandwich ELISA analysis of
+and AD-associated risk factors [23]. Increasing tau bur-       soluble brain fractions. We also tested for associations
+den (measured by PET imaging) correlates with reduced          between the abundance of specific pretangle markers
+resting-state functional connectivity (measured by func-       within each DMN region and antemortem neuropsy-
+tional MRI (fMRI)) and cognitive deterioration [24–32].        chological test performance and postmortem neuro-
+Most studies on tau pathology focus on the medial              pathological diagnostic criteria. Given the current lack
+Kara et al. Molecular Neurodegeneration Advances                                                                Page 3 of 23
+
+
+
+
+of pretangle tau-specific in vivo probes, this is the first      [58]. Braak scores for the staging of NFT pathology were
+comprehensive analysis of pretangle tau accrual within           established for each case [3]. Cases also received an NIA-
+the DMN during the progression of AD in a well-charac-           Reagan Likelihood-of-AD diagnosis based on neuritic
+terized, clinical pathologic cohort.                             plaque and NFT pathology [59]. Semi-quantitative esti-
+                                                                 mates of global NFT, neuritic plaque, and diffuse plaque
+Materials and methods                                            burden were also derived from summary evaluations of
+Subjects and clinical pathologic assessments                     the entorhinal cortex, hippocampus, and midtemporal,
+Case-matched fixed and frozen FC, PCC, and PreC tis-             inferior parietal, and midfrontal cortices [52]. The “ABC”
+sue samples were obtained from the RROS, a longitudinal          algorithm for the diagnosis of AD [60] was applied to all
+clinical pathological study of aging and dementia in elderly     cases.
+Catholic clergy [47–49] provided to our ongoing Program            For validation studies, frozen FC, PCC, and PreC tis-
+Project grant (AG014449). Subjects were classified ante-         sue blocks from low-Braak/nondemented aged controls
+mortem as NCI (n = 47), MCI (n = 36), or AD (n = 36).            (Braak stages I-II), mid-Braak (Braak stages III-IV), and
+Details of RROS clinical and neuropathologic evaluations         high-Braak (Braak stages V-VI) (n = 12/group, n = 36
+and diagnostic criteria are published extensively [47, 48, 50,   total) subjects were obtained postmortem from Michigan
+51]. Briefly, RROS participants undergo an annual neuro-         AD Center (MADC) clinical cohort [61]. These subjects
+logical examination and a battery of cognitive performance       underwent routine neuropathological diagnostic analysis
+tests that includes the Mini-Mental State Exam (MMSE)            [61]. MMSE scores were utilized to calculate correlations
+and 19 additional neuropsychological tests of five cogni-        between pre-tangle tau pathology and global cognition.
+tive domains: orientation, attention, memory, language,
+and perception [48]. Composite scores of episodic memory,        Immunohistochemistry
+semantic memory, working memory, perceptual speed, and           Forty micron-thick free-floating fixed tissue sections
+visuospatial ability, as well as a composite global cognitive    from each DMN region were washed in 0.1%Triton
+z-score (GCS), were derived from this test battery for each      X-100 in TBS (TBS-T) buffer, quenched with peroxidase
+subject within a year of death (Supplementary Table 1).          (3% in methanol), blocked using 10% NGS/2% bovine
+NCI subjects did not exhibit impairment in any of these          serum albumin in 1xTBS-T, and incubated with the
+domains after adjusting for age and education [48, 52]. The      following primary antibodies (Table 1), alone (for
+MCI subjects exhibited impairment in single or multiple          brightfield microscopy) or in combination (for confo-
+cognitive domains after adjusting for age and education,         cal microscopy): 1) pS422 rabbit monoclonal antibody
+but did not meet the criteria for AD or dementia [48, 52],       (Millipore AB79415, 1:2,500), which recognizes soluble
+which is consistent with criteria used by others in the field    tau phosphorylation at the serine 422 residue, an early
+[53–55]. The diagnosis of dementia due to AD followed the        event in NFT evolution [62, 63] that facilitates stable
+revised recommendations from the National Institute on           tau dimerization and impairs axonal transport [13]; 2)
+Aging-Alzheimer’s Association workgroups on diagnostic           TOC1 mouse monoclonal IgM antibody (1:20,000; RRID:
+guidelines for AD [56]. Exclusion criteria included a history    AB_2832939), which recognizes tau oligomers by binding
+of major depressive disorder, chronic alcoholism, and/or         to a continuous epitope within the proline-rich region
+neuropathological evidence of Lewy body diseases, exten-         (amino acids 209–224) formed by tau dimer antigen
+sive TDP-43 proteinopathy, hippocampal sclerosis, and/           [64, 65]; or 3) TNT2 mouse monoclonal IgG1 antibody
+or large strokes. Apolipoprotein E (APOE) genotyping was         (1:200,000; RRID: AB_2736931), which recognizes the
+performed as reported previously [57].                           exposed phosphatase-activating domain (PAD) in the
+   For postmortem neuropathological analysis, tissue             N-terminus as an early conformational change linked
+immersion fixed in 4% paraformaldehyde was embedded              to axonal transport impairment [66]. Neither TOC1
+in paraffin, sectioned at 8 µm and immunostained with            nor TNT2 epitopes colocalize with thiazine red in neu-
+antibodies against Aβ (6E10, 1:400 dilution) and phos-           rons displaying pretangle stages of tau accumulation
+phorylated tau (AT8, 1:250 dilution). A board-certified          [64, 66]. In addition, sections were also immunostained
+neuropathologist evaluated all cases while blinded to            using TauC3 mouse monoclonal antibody (1:6,000;
+clinical diagnosis [51]. Designations of “normal” (with          RRID: AB_2832930), which recognizes a truncation
+respect to AD or other dementing processes), “possi-             neoepitope at D421 in the C-terminus and serves as a
+ble AD”, “probable AD”, or “definite AD” were based on           marker for mid-stage NFT development [67, 68]. Finally,
+semi-quantitative estimation of neuritic plaque density,         the PHF-1 mouse monoclonal antibody (1:20,000; RRID:
+an age-related senile plaque score, and the presence or          AB_2315150), which detects phosphorylated serine res-
+absence of dementia as established by the Consortium             idues at positions 396 and 404, was used to detect fila-
+to Establish a Registry for Alzheimer’s Disease (CERAD)          mentous tau and NFTs [69]. In parallel experiments, we
+Kara et al. Molecular Neurodegeneration Advances                                                               Page 4 of 23
+
+
+
+
+Table 1 Antibodies and working concentrations
+Antibody                         Working concentrations            Isotype                             Epitopes
+
+Ps422                            IHC (1:2500)                      Rabbit polyclonal                   pS422
+                                 IF (1:500)
+                                 ELISA (1:500)
+TOCI                             IHC (1:20,000)                    Mouse IgM                           Amino acids 209–224
+                                 IF (1:2,000)
+                                 ELISA (1:500)
+TNT2                             IHC (1:200,000)                   Mouse IgG1                          Amino acids 2–18
+                                 IF (1:20,000)                                                         (Phosphatase-activat-
+                                 ELISA (1:100)                                                         ing domain)
+TauC3                            IHC (1:6,000)                     Mouse IgG1                          Amino acid 421
+                                 IF (1:500)                                                            (C-terminus trunca-
+                                 ELISA (1:500)                                                         tion)
+PHF-1                            IHC (1:20,000)                    Mouse IgG1                          Ps396/Ps404
+Tau5                             ELISA (1:1000)                    Mouse IgG1                          Amino acids 218–225
+MOAB-2                           IHC (1:5,000)                     Mouse IgG2b                         Amino acids 1–4
+
+
+
+used the MOAB-2 mouse monoclonal antibody (1:5,000;         Whole slide digital imaging and quantitative analysis
+RRID: AB_2313888), which detects oligomeric Aβ and          Tissue sections were digitally scanned using a Zeiss
+plaque pathology via binding residues 1–4 within the N      AxioScan7 with a TL LED lamp and a 20x/0.8 M27
+terminus [70].                                              plan-apochromatic objective. The images were then
+  For brightfield immunohistochemistry (IHC), sections      stitched into a single composite using Zen Blue soft-
+underwent three 10-min TBS-T washes before the second-      ware (version 3.7.97.07000) with a pixel resolution of
+ary incubation with either mouse or rabbit biotinylated     0.173 µm × 0.173 µm. Five sections per case per region
+secondary antibodies (1:500) for one hour at room tem-      and per antibody were used for quantification. The entire
+perature. After applying the ABC kit (Vector Laborato-      gray matter was analyzed as the region of interest. After
+ries PK-6100) for one hour and three more 10-min TBS-T      annotations were drawn, thresholds were adjusted for
+washes, 3,3′-Diaminobenzidine (Vector Laboratories          each antibody, and HALO (Area Quantification v2.1.11,
+SK-4105) was used to develop brown reaction products.       Indica Labs) machine learning software was used to
+Sections were then washed, mounted on slides, counter-      quantify the signal intensity and tissue area associated
+stained with cresyl violet (Sigma Aldrich C5042) and cov-   with the signal. For normalization purposes, the per-
+erslipped for digital imaging as described below.           centage of tissue area stained was used as the outcome
+  For immunofluorescence (IF) , sections were first         measure.
+exposed to a light-emitting diode (LED) light source for
+16 h to quench autofluorescence. On Day 1, the sections     Soluble tau extraction
+were blocked with normal goat serum and incubated           Frozen tissue (150 mg) from RROS and MADC cases
+overnight with the TNT2 primary antibody (1:20,000) or      was placed in a 10X volume of brain homogenization
+TauC3 (1:2,500). The following day, sections were washed    buffer (50 mM Tris, 275 mM NaCl, 5 mM KCl) supple-
+and incubated with Alexa568 anti-mouse IgG1-specific        mented with protease inhibitors (10 μg/ml of Pepstatin
+secondary antibody (1:500, Invitrogen A21124) for one       A, Leupeptin, Bestatin, Aprotinin, and 1 mM PMSF).
+hour. Before adding the other two primary antibodies        The tissue was homogenized on ice using a Tissue Tea-
+TOC1 (1:5,000) and pS422 (1:2,000), the sections were       ror rotor–stator probe (Biospec) and centrifuged at
+treated with mouse Fab fragments (1:20, Jackson Labora-     27,000 × g for 20 min at 4 °C to obtain the soluble pretan-
+tories, AB-2338476) for one hour to prevent non-specific    gle tau-enriched fraction for custom sandwich ELISAs.
+binding between the two mouse antibodies. On Day 3,         Protein concentrations were determined using the BCA
+sections were washed again and incubated with Alexa-        method (Thermo Fisher Scientific, A53226), and all sam-
+488 anti-mouse IgM-specific (Invitrogen, A21042, 1:500)     ples were stored at −80 °C.
+and Alexa-405 anti-rabbit IgG (Invitrogen, A31556,
+1:500) secondary antibodies for one hour before mount-      Custom sandwich ELISAs
+ing and coverslipping. Sections were imaged using a         Custom sandwich sELISAs were prepared using TOC1
+Nikon A1 laser scanning confocal microscope with a          (2 μg/ml), TNT2 (1 μg/ml), TauC3 (2 μg/ml), and Tau5
+40 × oil immersion objective.                               (total tau, 1 μg/ml) antibodies as capture antibodies [71–73],
+Kara et al. Molecular Neurodegeneration Advances                                                                 Page 5 of 23
+
+
+
+
+combined with R1 (1:10,000; RRID: AB_2832929), a pan-            among the NCI, MCI, and AD clinical groups. APOE ε4
+tau antibody, for detection [74]. Briefly, 96-well plates were   allele was present in 21.8% of the subjects, but its preva-
+coated with the capture antibodies in borate buffer (100 mM      lence did not differ across groups. Age was significantly
+borate acid, 25 mM sodium borate, 75 mM NaCl, 0.25 mM            lower in the NCI compared to the MCI and AD sub-
+thimerosal) and incubated for one hour at room tempera-          jects (p = 0.0002). However, age was not correlated with
+ture on a shaker. After two quick washes with wash buffer        select tau marker levels in most of the DMN regions, with
+(100 mM borate acid, 25 mM sodium borate, 75 mM NaCl,            the exception of TOC1 in the FC and TNT2 in the PreC
+0.25 mM thimerosal, 0.4% (w/v) bovine serum albumin,             in the sELISA analyses (Supplementary Table 2). Global
+0.05% (v/v) Tween-20), the wells were blocked with 5%            cognitive performance on both the MMSE and GCS was
+non-fat dry milk for one hour. Brain lysate samples were         significantly lower in the MCI compared to NCI group
+then added to the wells and incubated on the shaker for          (p < 0.0001); these scores were also significantly lower in
+90 min using predetermined concentrations from previ-            AD compared to MCI (p < 0.0001). Braak, CERAD, and
+ous titration experiments (Samples: TOC1&TauC3: 20ug/            Reagan neuropathological diagnostic scores were signif-
+well, TNT2&Tau5:10ug/well). Each assay included recombi-         icantly more severe in AD compared to NCI and MCI
+nant tau monomer and aggregate standards (1:3 serial dilu-       (Table 2).
+tion starting from: TOC1:200 nM, TNT2: 100 nM, Tauc3:
+100 nM, Tau5:55Nm) generated as previously described             Pathological tau accrual in the DMN in the RROS cohort
+[66, 75, 76] to estimate levels of tau species in the lysate     Fixed free-floating FC, PCC, and PreC tissue sections
+samples. Following four additional washes, the R1 detec-         (NCI = 19, MCI = 16, AD = 16, n = 51 total) were labeled
+tion antibody was added for a 90-min incubation, followed        separately with the select site-specific tau antibod-
+by a one-hour incubation with anti-rabbit horseradish per-       ies (pS422, TOC1, TNT2, and TauC3) for IHC quan-
+oxidase (HRP)-conjugated secondary antibody (1:5,000).           tification. PHF-1, a canonical NFT marker, was used in
+TMB solution (Sigma, T0440) was then added for color             the PCC samples to compare with the other markers
+development, allowing the reaction to proceed for 4–8 min        listed above. As shown in Fig. 1, pretangle markers of
+before terminating with the stop buffer (3.5% sulfuric acid).    tau pathology were observed only sparsely as neuropil
+Finally, plates were read with a plate reader at 450 nm. The     threads (NTs) in Braak stages III/IV, with an appreci-
+readout was transformed into the % light absorbed with the       able accumulation of NTs and the appearance of NFTs
+Y = 100-(100*10^(-Y)) formula (Y = absorbance).                  within cortical layers 2/3 and 5/6 by Braak stage V. Quali-
+                                                                 tatively, pS422 + NTs appeared to accumulate prior to
+Statistical analysis                                             the TOC1 + and TNT2 + NTs, whereas TauC3 appeared
+All datasets were subjected to the Shapiro–Wilk test for         more confined to NFTs in later Braak stages (Fig. 1). Mul-
+normality. Subject demographic, clinical, and pathologi-         tiplexed fluorescence microscopy of the pS422, TOC1,
+cal variables were compared by either one-way ANOVA              and TNT2 pretangle markers in higher Braak cases
+or the Kruskal–Wallis test with post hoc corrections for         revealed co-labeling in the cell bodies of both pretangle
+multiple comparisons. Chi-Square testing was used to             and NFT-bearing neurons, as well as within NTs (Fig. 2)
+compare sex and APOE ε4 allele distribution across the           and neuritic plaques (Supplementary Fig. 1 A). Interest-
+groups. Tau marker levels were compared within each              ingly, different distribution patterns of the markers were
+region across clinical diagnosis or Braak stage using the        noted within individual NTs (Fig. 2, Supplementary
+Kruskal–Wallis test with Dunn’s correction. The non-             Fig. 1 A). The mid-stage marker TauC3 [63] did not sig-
+parametric Friedman test with Dunn’s correction was              nificantly overlap with earlier pretangle markers within
+applied for interregional comparisons of markers as              cell bodies, but dual labeled with NTs immunostained by
+paired data. Spearman rank correlations were used to test        the other pretangle markers (Supplementary Fig. 1B).
+for associations between regional tau levels and antemor-           Quantitative morphometrics of the brightfield immu-
+tem neuropsychological test scores or postmortem vari-           nolabeled sections revealed that pS422 + profile lev-
+ables. Significance was set at α = 0.05.                         els were significantly increased from Braak stage IV to
+                                                                 V in all three regions (FC, p = 0.0245; PCC, p = 0.0214;
+Results                                                          PreC, p = 0.0111) (Fig. 3A, C, E; Supplementary Fig. 2A).
+RROS cohort demographics and clinical neuropathologic            TOC1 levels also began to rise between Braak stages
+characteristics                                                  IV and V in all three DMN hubs but reached statistical
+Detailed demographic, clinical, and neuropathologi-              significance only at Braak stage VI (FC, p = 0.025; PCC,
+cal data for the RROS participants (n = 119) are listed          p = 0.0154, PreC, p = 0.0171, Fig. 3A, C, E; Supplemen-
+in Table 2. No significant differences were observed in          tary Fig. 2 A). TNT2 labeling exhibited a significant
+sex, years of education, or postmortem interval (PMI)            increase by Braak stage V in FC and PCC (p = 0.0351
+Kara et al. Molecular Neurodegeneration Advances                                                                                                   Page 6 of 23
+
+
+
+
+Table 2 Demographic, clinical, and pathological profile of the RROS cohort
+                                                    Clinical diagnosis                                                                        Comparison
+                                                                                                                                              by diagnosis
+                                                                                                                                              group
+                                                    NCI                   MCI                    AD                    Total                  (P value)
+                                                    (n = 47)              (n = 36)               (n = 36)              (n = 119)
+
+Age at death(years)
+Mean ± SD                                           88.1 ± 5.1            92.2 ± 5.9             92.3 ± 4.5            90.6 ± 5.5             0.0003a
+(Range)                                             (70.5, 98.1)          (80.7,103.7)           (80.7,102.1)          (70.5,103.7)
+No. (%) Males                                       18 (37.5%)            13 (36.1%)             7 (19.4%)             38 (31.7%)             0.1535‡
+Years of Education
+Mean ± SD                                           18.6 ± 3.3            18.0 ± 2.8             17.6 ± 3.3            18.1 ± 3.2             0.2943a
+(Range)                                             (10, 27)              (12, 24)               (8, 27)               (8, 27)
+Postmortem Interval (hours)
+Mean ± SD                                           11.5 ± 6.5            9.8 ± 6.7              9.2 ± 7.1             10.3 ± 6.8             0.1062a
+(Range)                                             (3.2, 27.3)           (0.9, 24.0)            (2.7, 34.3)           (0.9, 34.3)
+No. (%) ApoE4 (≥ 1 allele)                          11 (23.4%)            7 (19.4%)              8 (22.2%)             26 (21.8%)             0.9023‡
+MMSE
+Mean ± SD                                           28.0 ± 1.8            24.2 ± 3.2             16.3 ± 6.6            23.4 ± 6.4             < 0.0001a
+(Range)                                             (21, 30)              (19, 30)               (0, 26)               (0, 30)
+Global Cognitive Score
+Mean ± SD                                           0.2 ± 0.4             −0.6 ± 0.4             −2.1 ± 0.9            −0.7 ± 1.1             < 0.0001b
+(Range)                                             (−0.7, 1.1)           (−1.6, 0.2)            (−4.1, −0.4)          (−4.1, 1.1)
+Braak Scores
+I-II                                                14                    5                      2                     21                     < 0.0001a
+III-IV                                              31                    25                     11                    67
+V-VI                                                2                     6                      23                    31
+NIA Reagan Diagnosis (likelihood of AD)
+No AD                                               0                     0                      0                     0                      < 0.0001a
+Low                                                 30                    16                     5                     51
+Intermediate                                        16                    15                     15                    46
+High                                                1                     5                      16                    22
+CERAD Diagnosis
+No AD                                               18                    11                     3                     32                     0.0003a
+Low                                                 4                     3                      1                     8
+Intermediate                                        18                    12                     14                    44
+High                                                7                     10                     18                    35
+a
+    Kruskal–Wallis and Dunn’s correction
+b
+    One-way ANOVA and Tukey’s correction
+‡
+ Chi-Square test Abbreviations: AD Alzheimer’s disease, MCI Mild cognitive impairment, MMSE Mini-Mental State Examination, NCI No cognitive impairment, SD
+Standard deviation
+
+
+
+
+and p = 0.0003, respectively) (Fig. 3A, C, E; Supplemen-                             PreC in Braak stage VI (PreC, p = 0.0144, Fig. 3A, C, E;
+tary Fig. 2 A). TauC3, which displayed a lower abundance                             Supplementary Fig. 2 A).
+than the pretangle markers, was significantly increased                                When compared among the clinical diagnostic groups,
+in Braak V in the FC and Braak VI in PCC (p = 0.0176                                 pS422 pathology was significantly increased between
+and p = 0.0477, respectively, Fig. 3A, C, E; Supplemen-                              NCI and AD in all three regions (FC, p = 0.0245; PCC,
+tary Fig. 2A). By contrast, MOAB-2 immunoreactivity                                  p = 0.0049; PreC, p = 0.0042), with increased levels in AD
+revealed increases in amyloid pathology as early as Braak                            compared to MCI in FC and PCC but not PreC (Sup-
+stages II-III, but the increase was significant only in the                          plementary Fig. 3A). TOC1 levels were also significantly
+Kara et al. Molecular Neurodegeneration Advances                                                                                         Page 7 of 23
+
+
+
+
+ Fig. 1 Immunolabeling of early tau and amyloid pathology in PCC. Representative photomicrographs showing pS422, TOC1, TNT2, TauC3,
+ and MOAB-2-immunoreactive profiles in layer 3/4 from a (A) Braak stage III/IV and (C) Braak stage V/VI case. Tau pathology was not apparent
+ in the DMN hubs in Braak I/II cases. (B, D) High magnification micrographs showing labeling for each marker within the square boxes outlined in (A,
+ C). Similar qualitative immunolabeling patterns were observed in FC and PreC. Scale bars: Blue = 200 µm, Black = 20 µm. Arrowheads = neuropil
+ threads; Arrows = tau + somal inclusions
+Kara et al. Molecular Neurodegeneration Advances                                                                                           Page 8 of 23
+
+
+
+
+ Fig. 2 Representative fluorescence micrographs of tau pretangle- immunoreactive profiles in PCC layers 3/4 of an AD case (Braak stage V). A)
+ pS422 + profiles (blue), (B) TNT2 + profiles (red), and (C) TOC1 + profiles (green). D) Overlap of pS422, TNT2, and TOC1. Images were captured
+ with a 40X oil objective. Scale bar: 25 µm. Note the differential expression patterns among the markers within neuropil threads (arrowheads),
+ whereas marker overlap was more prominent in the neuronal soma (arrows)
+
+
+
+
+higher in AD compared to NCI in FC (p = 0.0022) and                          Correlations between DMN pretangle tau markers
+PCC (p = 0.0056), but not PreC (Supplementary Fig. 3A).                      and clinical pathologic variables
+TNT2 and TauC3 levels were also significantly higher in                      Antemortem neuropsychological test scores assess-
+AD compared to NCI; however, TNT2 levels in FC were                          ing various cognitive domains were used to evaluate
+significantly higher in MCI compared to NCI (p = 0.0271)                     the relationship between regional DMN tau pathol-
+(Supplementary Fig. 3A). Levels of PHF-1 immunostaining                      ogy and cognitive performance within a year of death
+were significantly increased in Braak stage VI and were sig-                 [52]. Strikingly, increasing levels of pS422, TOC1,
+nificantly higher in AD compared to NCI (PCC, p < 0.0001,                    TNT2, and TauC3 + profiles in all three regions
+Supplementary Fig. 4). Finally, MOAB-2 + amyloid load did                    strongly correlated with poorer antemortem MMSE
+not differ across diagnostic groups except for a significant                 and GCS scores, as well as poorer performance on
+increase in PreC in e AD (Supplementary Fig. 3A).                            measures of episodic memory. By contrast, TNT2 and
+Kara et al. Molecular Neurodegeneration Advances                                                                                             Page 9 of 23
+
+
+
+
+TauC3 levels, but not pS422 or TOC1 levels, in FC and                          stages V in the FC and PCC (p = 0.0545, p = 0.0128,
+PreC were associated with working memory, whereas                              respectively) and in Braak stage VI in PreC (p = 0.031).
+none of the marker levels in PCC were associated with                          By contrast, Tau 5 total tau levels were only increased
+working memory, a cognitive domain less associated                             in Braak VI cases (Fig. 4A, C, E; Supplementary Fig. 2B).
+with DMN [77] (Fig. 3B, D, F; Supplementary Table 3).                          When comparing these markers across e clinical groups,
+By contrast, MOAB2 + amyloid load, correlated with                             soluble TOC1 levels were significantly increased in AD
+pS422, TOC1, and TNT2 in all regions, but was only                             compared to MCI in all three hubs and compared to NCI
+associated with lower episodic and semantic memory                             in PCC and PreC and TNT2 showed a similar pattern in
+scores and GCS in the PCC (Fig. 3D, Supplementary                              the FC and PCC (Supplementary Fig. 3B). TauC3 levels
+Table 3).                                                                      were increased between NCI and AD in PCC, whereas
+    Regarding postmortem neuropathological diag-                               total tau5 levels did not differ significantly between clini-
+nostic criteria, increasing pS422, TNT2, and TauC3                             cal groups (Supplementary Fig. 3B).
+levels were significantly associated with Braak stage,
+CERAD, and NIA-Reagan scores in the DMN hubs,                                  Correlations between soluble DMN pretangle tau markers
+these associations were weaker for TauC3 (Supple-                              and clinical pathologic variables
+mentary Fig. 5 A, C, E; Supplementary Table 6). TOC1                           Similar to histological results, inverse associations were
+levels followed a similar pattern in PCC and FC, but                           observed between increasing levels of pretangle tau in sol-
+did not correlate with the pathological diagnostic cri-                        uble DMN fractions and poorer antemortem performance
+teria in the PreC. MOAB-2 levels were significantly                            on neuropsychological tests. For example, TOC1 levels
+associated with CERAD and NIA-Reagan scores in the                             were correlated with poorer episodic memory in PCC
+DMN hubs, but not with Braak stage in FC and PreC.                             (r = −0.39; p = 0.00006) and PreC (r = −0.50; p = 0.0000001)
+Interestingly, increasing DMN pretangle markers were                           but not FC (r = −0.18; p = 0.08). Similarly, they were
+associated with increasing semi-quantitative estimates                         inversely correlated with semantic memory performance
+of global NFT and neuritic plaque burden, but not dif-                         ((PCC (r = −0.37; p = 0.0002), PreC (r = −0.42; p = 0.00002),
+fuse plaque burden (Supplementary Fig. 5 A, C, E; Sup-                         and FC (r = −0.26; p = 0.009) (Figs. 4B, D, F; Supplemen-
+plementary Table 6).                                                           tary Tables 3 & 4). TNT2 level associations with cognitive
+                                                                               performance were more variable across region and test,
+Soluble pretangle tau markers in DMN hubs                                      neither TOC1 nor TNT2 was associated with working
+We performed complementary custom sELISA studies                               memory. TauC3 correlated with MMSE, GCS, episodic
+to quantify TOC1, TNT2, and TauC3 in soluble DMN                               memory, semantic memory, and working memory in PCC
+extracts as a complementary approach to measure the                            and PreC, whereas total tau (Tau5) did not reveal any cor-
+accrual of diffusible, presumably toxic tau moieties.                          relations (Figs. 4B, D, F; Supplementary Table 4).
+Technical issues precluded optimization of a pS422 assay.                         With respect to postmortem neuropathological diag-
+We also quantified total tau in the fractions using the Tau                    nostic criteria, increasing TOC1, TNT2, and TauC3
+5 antibody (see Methods). We found that TOC1 oligo-                            levels, but not Tau5 levels, were significantly associated
+meric tau levels were significantly increased during the                       with Braak stage, CERAD, and NIA-Reagan scores in
+transition from Braak stage IV to V in all three hubs (FC,                     the DMN hubs (Supplementary Fig. 5B; Supplementary
+p < 0.0001; PCC, p = 0.003; PreC, p = 0.0006) (Fig. 4A, C,                     Table 7). TOC1, TNT2, and TauC3 levels were also posi-
+E; Supplementary Fig. 2B). Likewise, TNT2 levels were                          tively correlated with semi-quantitative estimates of NFT
+elevated in Braak V FC and PCC, and in Braak VI PreC                           density, neuritic plaque density, and neuritic plaque num-
+(p = 0.0223, p = 0.0001, p = 0.0462, respectively) cases.                      ber. Tau5 levels were not associated with any of the meas-
+TauC3 levels were also increased in DMN hubs in Braak                          ures (Supplementary Fig. 5B; Supplementary Table 7).
+
+
+
+ (See figure on next page.)
+ Fig. 3 Pathological tau accumulation in the DMN across Braak stage and correlations with antemortem cognitive performance. A, B) pS422, TOC1,
+ TNT2, TauC3, and MOAB2 levels (A) and correlations of tau marker levels with antemortem cognitive assessments (B) in FC. C, D) Tau and amyloid
+ pathology marker levels (C) and correlations (D) for PCC. E, F) Tau and amyloid pathology marker levels (E) and correlations (F) for PreC. % area values
+ were log-transformed only for visualization purposes and compared via Kruskal–Wallis with Dunn’s correction. *, p < 0.05; **, p < 0.01; ***, p < 0.001.
+ Bar graphs show mean ± SD. Spearman correlations tested associations between marker levels and clinical pathologic variables (rho coefficients are
+ shown), *, significant correlations (see Supplementary Tables 3 and 6 for p values). Abbreviations: MMSE, Mini-Mental State Exam; GCS, Global
+ Cognitive Score; EM, Episodic memory; SM, Semantic memory; WM, Working memory; PS, Perceptual speed; VA, Visuospatial ability
+Kara et al. Molecular Neurodegeneration Advances   Page 10 of 23
+
+
+
+
+ Fig. 3 (See legend on previous page.)
+Kara et al. Molecular Neurodegeneration Advances                                                                                           Page 11 of 23
+
+
+
+
+Validation studies in MADC subjects                                           marker and its expression levels were significantly
+DMN samples from the MADC clinical cohort were                                higher in the PCC (p = 0.0029) compared to FC and PreC
+used to validate the soluble tau sELISA finding derived                       (Fig. 7). Similarly, both total TOC1 and soluble TOC1
+from RROS tissue (Table 3). Subjects were classified as                       were higher in the PCC. Total TNT2 was also higher in
+low-Braak/control (Braak stage I-II), mid-Braak (III-IV),                     the PCC compared to the FC. Soluble TauC3 was slightly
+and high-Braak (V-VI) and did not differ in age, sex, or                      higher in the FC compared to the PreC. Finally, MOAB-2
+PMI across groups. However, MMSE scores were signifi-                         was significantly higher in the PCC and FC compared
+cantly lower in the high Braak group (Table 3). Interest-                     to PreC. The overall pattern indicated divergence in the
+ingly, regional soluble tau pathological load was higher                      posterior DMN hubs, with a higher pre-tangle tau load
+for all markers in successive Braak stages in this cohort                     in the PCC and possible resistance to tau and amyloid
+(Fig. 5A, C, E) compared to the RROS (Fig. 4). Moreo-                         pathology in neighboring PreC.
+ver, while soluble TOC1 and TNT2 levels were signifi-
+cantly increased during the transition from Braak stage                       Discussion
+IV to Braak stage V in the DMN hubs in RROS cases,                            Tau epitopes associated with pretangle cellular inclusions
+these markers were increased during the transition from                       are linked to impairment of cellular trafficking, ionic imbal-
+Braak stage III to Braak stage IV in the DMN hubs in the                      ances through disrupting ion-gated calcium channels, and
+MADC cases (Fig. 5). However, except for TOC1 in PCC,                         reduced mitochondrial and lysosomal functions [11, 78–80].
+significance was not reached until Braak stage V, similar                     These, and likely other cellular disturbances, result in syn-
+to the RROS cohort. TauC3 load was minimal in PCC                             aptic impairments (e.g., disrupted LTP) leading to neuronal
+and PreC, yet showed higher abundance in FC. There                            death, synaptic disconnection, and cognitive dysfunction
+were no differences in Tau5 + total tau levels across Braak                   [14, 17, 81, 82]. However, the threshold accumulation of
+stages. Finally, a strong and statistically significant inverse               tau toxic pretangle pathology underlying cortical dysfunc-
+correlation was observed between soluble TOC1 and                             tion required to precipitate cognitive impairment remains
+TNT2 levels and antemortem MMSE scores across all                             unknown. Here, we investigated pretangle cellular and neu-
+three DMN regions (Figs. 5B, D; Supplementary Table 5).                       ropil tau pathology in the FC, PCC, and PreC hubs of the
+In contrast, TauC3 levels correlated with MMSE scores                         DMN connectome that mediates memory and attention
+only in PreC, similar to the RROS cohort (Fig. 5F).                           function and is dysregulated in the preclinical and prodro-
+                                                                              mal stage of AD [83–85]. To our knowledge, this is the first
+Distribution of cognitive scores across Braak stage                           study to examine pretangle tau pathology across hubs of the
+in the RROS cohort                                                            DMN using tissue obtained from cases with an antemortem
+MMSE and GCS scores were plotted by Braak stage for                           clinical and postmortem neuropathological evaluation. To
+each RROS subject (Fig. 6). Both scores of antemor-                           accomplish this, we used multiple site-specific tau antibod-
+tem global cognitive performance were significantly                           ies to reveal pretangle lesions within hubs of the DMN across
+decreased between Braak stages IV and V, mirroring the                        clinical diagnostic categories and during the onset of Braak
+pattern of significant increases in pretangle tau markers                     stages. We found a step-like increase in DMN tau pathol-
+across Braak stages (Figs. 3 and 4).                                          ogy across clinical diagnostic groups, showing a significant
+                                                                              increase in AD compared to NCI, with intermediate levels in
+Regional differences in DMN tau pathology in the RROS                         MCI. In addition, pretangle tau markers correlated strongly
+cohort                                                                        with measures of episodic and semantic memory, global cog-
+When comparing regional distributions of the tau mark-                        nitive scores, and Braak, CERAD, and NIA-Reagan scores,
+ers within DMN hubs, pS422 was the most abundant
+
+
+
+ (See figure on next page.)
+ Fig. 4 Pathological tau accumulation in DMN soluble fractions across Braak stage and correlations with antemortem cognitive measurements.
+ TOC1, TNT2, TauC3, and Tau5 levels and correlations of tau marker levels with antemortem cognitive assessments (B) in FC. C, D) Tau marker
+ levels (C) and correlations (D) for PCC. E, F) Tau marker levels (E) and correlations (F) for PreC. % Light absorbance was compared via Kruskal–
+ Wallis with Dunn’s correction. *, p < 0.05; ***, p < 0.001; ****, p < 0.0001. Bar graphs show mean ± SD. Spearman correlations tested associations
+ between marker levels and clinical pathologic variables (rho coefficients are shown), *, significant correlations (see Supplementary Tables 4 and 7
+ for p values). Abbreviations: MMSE, Mini-Mental State Exam; GCS, Global Cognitive Score; EM, Episodic memory; SM, Semantic memory; WM,
+ Working memory; PS, Perceptual speed; VA, Visuospatial ability
+Kara et al. Molecular Neurodegeneration Advances   Page 12 of 23
+
+
+
+
+ Fig. 4 (See legend on previous page.)
+Kara et al. Molecular Neurodegeneration Advances                                                                                            Page 13 of 23
+
+
+
+
+Table 3 Demographic, Clinical, and Pathological Profile of the MADC cohort
+                                           Clinical diagnosis                                                                            Comparison
+                                                                                                                                         by diagnosis
+                                                                                                                                         group
+                                           low-Braak              mid-Braak              high-Braak               Total                  (P value)
+                                           (n = 12)               (n = 12)               (n = 12)                 (n = 36)
+
+Age at death (years)
+Mean ± SD                                  67.8 ± 14.9            80.3 ± 10.8            74.3 ± 10.5              74.1 ± 7.6             0.056a
+(Range)                                    (39–87)                (60–95)                (57–92)                  (39–95)
+No. (%) Males                              6 (50%)                6 (50%)                6 (50%)                  18 (50%)               > 0.9999‡
+Education
+Mean ± SD                                  15.25 ± 2.2            15.92 ± 2.4            15.33 ± 2.8              15.6 ± 2.5             0.8376a
+(Range)                                    13–18                  12–20                  12–20                    12–20
+Postmortem Interval (hours)
+Mean ± SD                                  12.7 ± 7.6             8.6 ± 5.3              9.6 ± 5.5                10.2 ± 6.3             0.298b
+(Range)                                    (4–26)                 (3–18)                 (4–21)                   (3–26)
+MMSE
+Mean ± SD                                  27 ± 2                 15.3 ± 11.9            8.1 ± 6.9                14.4 ± 10.9            0.0143 b
+(Range)                                    (24–28)                (1–29)                 (0–18)                   (0–29)
+Braak Scores
+I-II                                       12                     0                      0                        12                     < 0.0001b
+III-IV                                     0                      12                     0                        12
+V-VI                                       0                      0                      12                       12
+a
+    One-way ANOVA and Tukey’s correction
+b
+    Kruskal–Wallis and Dunn’s correction
+‡
+    Chi-Square test
+MMSE Mini-Mental State Exam, SD Standard deviation
+
+
+
+
+as well as semi-quantitative measures of NFT and neuritic                       to appearing in the cell soma suggesting an early axonal
+plaque burden.                                                                  transport defect similar to seen in association with the
+                                                                                cholinergic basal forbrain cortical projection neurons
+Pathological tau quantification in the DMN                                      [63, 86, 87], entorhinal cortex pyramidal neurons [64]
+Clinical pathological studies of tau in AD have                                 and in synaptosomes isolated from the angular gyrus
+mainly focused on NFTs in the trans/entorhinal cortex                           [88] during the progression of AD. Phosphorylation of
+and hippocampal components of the medial temporal                               tau at S422 residue is associated with several kinases,
+lobe memory circuit, which occur prior to the spread                            including GSK3B, JNK3, and p38 [13, 62, 87, 90], which
+of NFT into neocortical hubs of the DMN. Quantifica-                            are associated with tau toxicity through various molec-
+tion of early pathological pretangle tau phosphoryla-                           ular mechanisms [91–94]. S422 phosphorylation also
+tion and conformational epitopes revealed that pS422                            inhibits anterograde and retrograde fast axonal trans-
+(Serine 422 phosphorylation) was the earliest and the                           port [13], disrupts protein homeostasis [86], and is
+most abundant marker that primarily labeled NTs prior                           linked to neurotransmitter abnormalities [95]. Recently,
+
+
+
+
+    (See figure on next page.)
+    Fig. 5 Pathological tau accumulation in DMN soluble fractions in MADRC subjects and correlations with MMSE scores and Braak stage. TOC1, TNT2,
+    TauC3, and Tau5 levels and correlations of tau marker levels with MMSE and Braak stage in (A, B) FC, (C, D) PCC, and (E, F) PreC. % Light absorbance
+    was compared via Kruskal–Wallis with Dunn’s correction. *, p < 0.05; **, p < 0.01. Bar graphs show mean ± SD. Spearman correlations tested
+    associations between marker levels and MMSE score or Braak stage (rho coefficients are shown), *, significant correlations (see Supplementary
+    Table 5 and 8 for p values). Abbreviations: MMSE, Mini-Mental State Examination; GCS, Global Cognitive Score; EM, Episodic memory; SM, Semantic
+    memory; WM, Working memory; PS, Perceptual speed; VA, Visuospatial ability
+Kara et al. Molecular Neurodegeneration Advances   Page 14 of 23
+
+
+
+
+ Fig. 5 (See legend on previous page.)
+Kara et al. Molecular Neurodegeneration Advances                                                                                             Page 15 of 23
+
+
+
+
+ Fig. 6 Distribution of global cognitive scores across Braak stage in the RROS cohort. A) Antemortem MMSE scores for RROS subjects distributed
+ across their individual postmortem Braak stage diagnosis, via Kruskal–Wallis and Dunn’s correction. B) Antemortem GCS for each RROS subject
+ across Braak stage, via one-way ANOVA and Tukey’s correction. *, p < 0.05; **, p < 0.01; ***, p < 0.001; ****, p < 0.0001. Bar graphs show mean ± SD.
+ Abbreviations: GCS, Global Cognitive Score; MMSE, Mini-Mental State Exam
+
+
+
+
+Stefanoska and colleagues investigated Serine/Threo-                            during the transition from Braak stage IV to V in the
+nine phosphorylation sites of tau in vitro, identifying                         DMN. The abundance of TOC1 and TNT2 followed a
+S422 as a key residue in the C-terminus of tau, where                           similar pattern; however, their structural localization
+its phosphorylation modulates the phosphorylation of                            differed slightly. TNT2 staining was more pronounced
+other tau epitopes interdependently [96],      . In addi-                       than TOC1 in NTs, whereas TOC1 appeared early in
+tion to the DMN, oligomeric (TOC1-positive [65]) and                            the cell soma (Fig. 1, Supplementary Fig. 1A).
+N-terminal misfolded (TNT2-positive [75]) tau are                                 Although the origin of these neurites remains unclear, per-
+present in the entorhinal cortex and medial temporal                            haps they arise from corticocortical or thalamocortical pro-
+lobe [66, 97–99] as well as the frontal cortex in other                         jection neurons [102]. Moreover, the DMN hubs also receive
+tauopathies [89, 100]. Previously, TOC1-positive tau                            extensive innervation from cholinergic basal forebrain [103,
+levels were found to increase in synaptosome-enriched                           104] and brainstem noradrenergic [105, 106] and serotin-
+fractions from layer II of the visual cortex in Braak                           ergic [107] neurons that modulate memory and attentional
+stage III/IV cases [101]. Similar to pS422, TOC1 + and                          behaviors [108]. Although the process(es) underlying the
+TNT2 + NTs were largely confined within the corti-                              onset of NT pathology remains unknown, the extensive and
+cal laminae of the DMN hubs during early Braak stages                           early development of NTs reported during the evolution of
+(Figs. 1, 2) with the gradual appearance of neuronal                            tau pathology within the cholinergic basal forebrain suggests
+labeling in layers 2/3 and 5/6 by Braak stage V (Fig. 1)                        a defect in retrograde axonal transport [63]. Whether this is
+suggesting that these pathological profiles underlie the                        a unifying concept for the development of NTs during the
+significant increase in pretangle tau burden that occurs                        onset of AD remains a major area of interest.
+Kara et al. Molecular Neurodegeneration Advances                                                                                      Page 16 of 23
+
+
+
+
+ Fig. 7 Regional comparisons of soluble and total tau markers. Regional differences in the abundance of selected markers across regions. IHC
+ and ELISA-measured (i.e., sTOC1) markers in the PCC, PreC, and FC were paired for each case via the nonparametric Friedman test with Dunn’s
+ correction. s = measured in the S1 soluble fraction. *, p < 0.05; **, p < 0,01; ***, p < 0,001; ****, p < 0.0001
+Kara et al. Molecular Neurodegeneration Advances                                                               Page 17 of 23
+
+
+
+
+  The midstage marker TauC3 detects the truncation              co-pathological exacerbation of proteinopathy and
+of aspartic acid at residue 421 is achieved by caspase-         neuronal dysfunction [124–126]. In this regard, previ-
+mediated proteolysis [67, 68], which inhibits axonal            ous PET and fMRI studies showed that amyloid plaque
+transport [109]. In the current study, the appearance of        positivity in the DMN is associated with hypercon-
+TauC3-labeled profiles was more similar to TOC1, with           nectivity [40]. However, DMN functional connectivity
+relatively less prominent immunopositive NTs and more           shifts toward a state of hypoconnectivity once NFT co-
+neuronal enrichment within the DMN hubs (Fig. 1).               pathology is detectable by PET. More recently, combined
+TauC3 pathology was also less abundant compared to              PET/fMRI studies in two separate cohorts showed that
+the other markers in the early Braak stages, suggesting its     Aβ-associated hyperconnectivity may modulate the accu-
+later appearance is downstream of potential pretangle-          mulation of tau pathology in the same connected brain
+mediated neurodegenerative processes resulting in a pro-        regions, providing a potential link between Aβ deposition
+apoptotic cellular environment.                                 and NFT-associated resting state network failure [127].
+                                                                We also immunolabeled oligomeric Aβ using the MOAB-2
+DMN tau correlates with episodic and semantic memory            antibody and examined the correlation between oligo-
+We previously showed that pS422 and TOC1 colocalize             meric Aβ and tau pathology, as well as cognitive scores.
+within cholinergic nucleus basalis neurons, where their         Interestingly, MOAB-2 levels were strongly associated
+expression levels correlate with GCS and MMSE scores            with pS422, TOC1, and TNT2 in all three DMN regions,
+[110]. Consistent with these findings, we found strong          but oligomeric amyloid burden generally did not associ-
+inverse correlations between select pathological tau mark-      ate with cognitive deterioration except in the PCC (Fig. 3,
+ers in the DMN and GCS and MMSE scores, particularly            Supplementary Table 3) Together, these findings support
+episodic and semantic memory. Episodic memory is a type         the prevailing concept that tau pathology more strongly
+of explicit long-term memory that involves recalling past       impacts cognitive decline than amyloid pathology, even
+events and experiences and is primarily encoded, stored,        within the DMN connectome. Further studies are needed
+and processed within the medial temporal lobe memory            to validate these results and explore the complex interplay
+circuit and the PCC and PreC hubs of the DMN [111–              between these co-pathologies.
+114]. Episodic memory decline is a clinical hallmark of AD
+onset [115] but also declines with normal aging [116, 117].     Soluble tau pathology within the DMN
+Semantic memory, which involves the acquisition of facts,       Quantitative morphometric assessments were comple-
+concepts, and general knowledge throughout life, remains        mented by ELISA evaluations focusing on the accumu-
+intact with age, but declines during the amnestic MCI           lation of soluble pretangle tau monomers and oligomers
+prodromal stage ofAD [113, 118, 119]. Semantic memory           in the DMN. Similar to morphologic pathology, tau lev-
+has been suggested to be a potential clinical marker dif-       els significantly increased from Braak IV to V. However,
+ferentiating AD from pathological aging or other neuro-         weaker associations were found between TOC1, TNT2,
+degenerative diseases [22, 120]. Additionally, pretangle        and TauC3 levels with antemortem cognitive measures,
+tau pathology correlates to varying degrees with percep-        including MMSE and GCS, in the soluble protein fraction
+tual speed and visuospatial ability, which are mediated by      compared to structural assessments, including NT and
+the DMN connectome [121, 122]. By contrast, the role of         NFT labeling (Figs. 3B, D, F & 4B, D, F). This observation
+DMN function in working memory is debatable [77, 123].          is reminiscent of studies demonstrating that cognitive
+The lack of association between DMN pretangle tau bur-          deterioration accelerates with the appearance of NFTs
+den and working memory performance suggests that this           in higher association neocortical regions [128], suggest-
+cognitive domain is either resilient to tau neurodegenera-      ing that a threshold level of soluble toxic tau drives NFT
+tion or that the DMN plays a limited role in working mem-       pathology. In support of this concept, we showed that
+ory function. However, the present findings underscore          poorer antemortem global cognition was not significantly
+potential roles that the accumulation of early pathological     decreased until the transition from the limbic Braak stage
+tau species plays in episodic and semantic memory during        IV to neocortical Braak stage V (Fig. 6) in the cases from
+the onset of AD. These data also highlight the potential of     the RROS cohort.
+the DMN as a model paradigm for studying mechanistic              Interestingly, our validation cohort using postmortem
+clinical pathologic relationships in the context of this vul-   DMN soluble fractions from MADC subjects revealed
+nerable connectome in AD.                                       a similar abrupt increase in pretangle tau pathology
+                                                                with increasing Braak stage, but this increase occurred
+Oligomeric amyloid pathology in the DMN                         between Braak stages III and IV instead of IV and V, as
+The bidirectional interaction between Aβ and tau pathol-        seen in the RROS cases. A possible explanation for this
+ogy in AD is well recognized, with evidence of                  may relate to differences between the cohort subjects and
+Kara et al. Molecular Neurodegeneration Advances                                                               Page 18 of 23
+
+
+
+
+lifestyle factors. The RROS cohort, consisting of retired        Secondly, PET and fMRI sequences are not performed
+Catholic clergy, benefited from more years of formal          at the time of annual clinical evaluations in the RROS
+education (Tables 1, 5) and a relatively healthy lifestyle,   cohort. This precluded comparing postmortem tau pro-
+including a more regulated diet, structured sleep pat-        files with tau-PET and DMN functional connectivity
+terns, medical care, and religious activities that may pro-   prior to death. On the other hand, detailed postmor-
+vide cognitive benefits as well as stress reduction [52].     tem records of NFT and plaque pathology were avail-
+Additionally, the strong sense of community fostered          able, including plaque density, plaque number, and NFT
+by cloistered living both promotes the beneficial effects     counts in key regions like the entorhinal cortex, hip-
+of lifelong learning and prevents social isolation, which     pocampus, and cortical regions. These data were incor-
+are modifiable risk factors for dementia [129, 130]. In       porated into the correlation matrices, providing valuable
+contrast, the MADC cohort represents a community-             insights into the relationship between pathologies.
+dwelling population, with more potential exposures to            Thirdly, whether the development of novel biofluid or
+metabolic, vascular, epigenetic modulation, and tran-         neuroimaging biomarkers for nonfibrillar oligomers will
+scriptional regulation of the genome [49, 131, 132]. The      enhance early diagnosis and currently approved amyloid
+early accrual of tau pathology despite the MADC subjects      targeting drugs combined with future tau therapies to
+having a younger average age (74.1 ± 7.6) at death, sug-      treat AD remains an ongoing area of research [140]. In
+gests that the RROS cohort was enriched for pathological      this regard, it is possible that the present data describing
+resistance and cognitive resilience [133]. Alternatively,     the involvement of tau and amyloid oligomers during the
+the observed differences could be due to minor differ-        clinical and pathological onset of AD will contribute to this
+ences in neuropathological interpretation or regional         endeavor.
+brain dissection between the two cohorts.                        Finally, as AD has been suggested to be a multi-system
+                                                              disorder [141] affecting various biological systems and
+Regional differences in tau among the DMN hubs                processes, NFT pathology often overlaps with other con-
+Our findings that tau pathology was highest in the PCC        ditions, such as varying degrees of arteriolosclerosis and
+align with previous reports that the PCC is involved          cerebral amyloid angiopathy (CAA) [142]. In this study,
+very early in AD progression, possibly due to an early        some subjects were positive for CAA, which may have
+decline in its high metabolic baseline determined by          exacerbated cognitive decline in addition to the coexist-
+FDG-PET [46, 134]. Interestingly, Aβ initiation and           ing tau pathology.
+accumulation rates were highest in PCC compared to
+other brain regions, with PreC displaying relatively          Conclusions
+delayed amyloid and tau pathology, suggesting resist-         The DMN, which displays hallmark AD pathology early in
+ance [135]. The proposed resistance of PreC could be          the onset of the disease, is a excellent candidate to study
+due in part to the preservation of neurotrophic signal-       clinical pathologic correlations and potential mechanisms
+ing pathways despite accumulating Aβ pathology [136],         of tau-mediated neurodegeneration across tauopathies
+differences in gene regulation within PreC pyramidal          [42, 143, 144]. Increased NFT tracer retention shows
+neurons compared to the other DMN hubs [137], or              strong correlations with inter- and intra-functional con-
+differences in splicing protein mislocalization between       nectivity across DMN hubs in combined fMRI/PET stud-
+the PCC and PreC [138].                                       ies [24, 40, 134]. However, pretangle tau accumulation
+                                                              within the DMN during AD progression has never been
+Study limitations
+                                                              explored systematically. Here, we showed for the first
+The present study has limitations. First, the outcome         time that pretangle tau markers were present at low Braak
+measures used machine-learning software to quantify           stages, predominantly as NTs, and significantly increased
+the immunolabeled images based on the percentage of           at Braak stages IV to V. The markers increased in the
+labeled tissue, which allowed the normalization of the        DMN in a step-wise manner from NCI to MCI to AD
+signal relative to the area of the region of interest. How-   and were strongly correlated with antemortem measures
+ever, this may result in an underestimation of total tau      of cognitive deterioration, particularly in episodic and
+pathology. For instance, the predominance of NTs seen         semantic memory, as well as additional cognitive domains
+in the current microscopy studies appeared first in early     mediated by the DMN including perceptual speed and
+Braak stages in the DMN hubs, but did not coincide            visuospatial attention. These findings contribute to our
+with a high densitometric signal per region of interest.      understanding of the the timeline of AD pathophysiology
+Hence, the extent of NT pathology may be more accu-           within a key, vulnerable resting state network, and sug-
+rately measured using stereological counting techniques       gest that therapeutics aimed at pretangle forms of tau may
+[139].                                                        preserve brain connectome functionality in the DMN.
+Kara et al. Molecular Neurodegeneration Advances                                                                                                      Page 19 of 23
+
+
+
+
+Abbreviations
+Aβ	Beta Amyloid                                                                       impairment; NCI, no cognitive impairment; PCC, posterior cingulate corte;
+AD	Alzheimer’s Disease                                                                MMSE, Mini-Mental State Examination; GCS, Global Cognitive Score; EM,
+ANOVA	Analysis of Variance                                                            Episodic memory; SM, Semantic memory; WM, Working memory; PS,
+APOE	Apolipoprotein E                                                                 Perceptual speed; VA, Visuospatial ability (PDF 72 KB)
+BCA	Bicinchoninic Acid                                                                Supplementary file5 Correlations between the pretangle DMN tau levels
+CAA​	Cerebral Amyloid Angiopathy                                                      and neuropathological diagnostic scores in the RROS cohort. Correlation
+CERAD	Consortium to Establish a Registry for Alzheimer’s Disease                      coefficients of the Spearman correlations for the IHC (Supplementary
+DMN	Default Mode Network                                                              Figure 5 A, C, E) and ELISA (Supplementary Figure 5 B, D, F)-measured
+ELISA	Enzyme-Linked ImmunoSorbent Assay                                               selected markers and the postmortem neuropathological scores, such as
+FC	Frontal Cortex                                                                     neuritic plaque, diffuse plaque, TDP-43, and CAA scores in each region.
+fMRI	Functional Magnetic Resonance Imaging                                            TDP-43: TAR DNA-binding protein 43, CAA: Cerebral Amyloid Angiopathy.
+GCS	Global Cognitive z-Score                                                          Heat map reflects the strength of correlation (PDF 200 KB)
+GSK3β	Glycogen Synthase Kinase-3 Beta
+                                                                                       Supplementary file6 (PDF 86 KB)
+HRP	Rabbit Horseradish Peroxidase
+IF	Immunofluorescent                                                                  Supplementary file7 (PDF 112 KB)
+IHC	Immunohistochemistry
+                                                                                       Supplementary file8 (XLSX 15 KB)
+JNK3	c-Jun N-terminal Kinase 3
+LED	Light-Emitting Diode                                                              Supplementary file9 (XLSX 14 KB)
+LTP	Long Term Potentiation                                                            Supplementary file10 (XLSX 10 KB)
+MADC	Michigan Alzheimer’s Disease Center
+MCI	Mild Cognitive Impairment                                                         Supplementary file11 (XLSX 17 KB)
+MMSE	Mini-Mental State Examination                                                    Supplementary file12 (XLSX 15 KB)
+NCI	No Cognitive Impairment
+NFT	Neurofibrillary Tangle
+NT	Neuropil Threads                                                                 Acknowledgements
+PAD	Phosphatase Activating Domain                                                   The authors thank the Rush Religious Orders Study participants for their altru-
+PCC	Posterior Cingulate Cortex                                                      ism and the Rush Alzheimer’s Disease Research Center (National Institutes of
+PET	Positron Emission Tomography                                                    Health grant P30 AG072975).
+PMI	Postmortem Interval
+PreC	Precuneus                                                                      Author contributions
+RROS	Rush Religious Orders Study                                                    SEC conceived of and designed the research project with intellectual input from
+SCD	Subjective Cognitive Decline                                                    EJM, IEV, NKM, and BK. BK performed the histological and biochemical studies
+SD	Standard Deviation                                                               with critical assistance from IMK and JSB. Statistical analysis was performed by
+TDP-43	Transactive Response DNA-Binding Protein 4                                   BK, NK, and SEC. The manuscript was written by BK and SEC with substantive
+                                                                                     input from EJM, IEV, and NMK. All authors approved the manuscript.
+Supplementary Information                                                            Funding
+The online version contains supplementary material available at https://​doi.​       This study was supported by National Institutes of Health grants
+org/​10.​1186/​s44477-​026-​00019-y.                                                 PO1AG014449, RO1s AG017617, AG072599, AG074004, AG077103, AG081286,
+                                                                                     P30AG072931 (Michigan Alzheimer’s Disease Research Center), and the Ari-
+  Below is the link to the electronic supplementary material.Supplementary           zona Alzheimer’s Consortium at the Barrow Neurological Institute.
+  file1 Co-labeling with pS422, TOC1, and TNT2/TauC3 in PCC layers 3 and
+  4 of an AD case (Braak stage V) A) Immunofluorescence co-labeling of               Data availability
+  pS422, TNT2, and TOC1. B) Immunofluorescence co-labeling of pS422,                 The datasets analyzed during the current study are available from the cor-
+  TNT2, and TauC3. Note that pS422, TOC1, and TNT2 displayed significant             responding author on reasonable request.
+  overlap, particularly in the neuronal soma, whereas TauC3 epitopes
+  displayed minimal overlap. Image captured with a 40X oil objective. Scale
+                                                                                     Declarations
+  bar: 25 µm. Arrowheads = neuropil threads; Arrows = tau+ somal inclu-
+  sions (PDF 140 KB)
+                                                                                     Ethics approval and consent to participate
+  Supplementary file2 DMN pretangle tau distribution across RROS cases via           All subjects provided signed informed consents for clinical evaluations and
+  Braak staging. A) Tau and amyloid pathology markers quantified via IHC. B)         brain donations that were ethically approved by the Rush University Medical
+  Tau pathology markers quantified in soluble fractions via ELISA, via Kruskal       Center Institutional Review Board.
+  Wallis with Dunn’s correction. *, p < 0.05; ***, p < 0,001; ****, p<0.0001.
+  Abbreviations: FC, frontal cortex; PCC, posterior cingulate cortex; PreC,          Consent for publication
+  precuneus (PDF 433 KB)                                                             Not applicable.
+  Supplementary file3 DMN pretangle tau distribution across RROS cases via
+                                                                                     Competing interests
+  clinical diagnostic group. A) Tau and amyloid pathology markers quanti-
+                                                                                     The authors declare no competing interests.
+  fied via IHC. B) Tau pathology markers quantified in soluble fractions via
+  ELISA, via Kruskal Wallis with Dunn’s correction. *, p < 0.05; **, p < 0.01 ***,
+                                                                                     Author details
+  p < 0,001. Abbreviations: NCI, no cognitive impairment; MCI, mild cogni-           1
+                                                                                       Department of Translational Neuroscience, Michigan State University, 400
+  tive impairment; AD, Alzheimer’s disease; FC, frontal cortex; PCC, posterior
+                                                                                     Monroe Ave NW, Grand Rapids, MI 49503, USA. 2 Cell and Molecular Biology
+  cingulate cortex; PreC, precuneus (PDF 450 KB)
+                                                                                     Program, Michigan State University, East Lansing, MI 48824, USA. 3 Depart-
+  Supplementary file4 PHF-1 load in PCC and clinical pathologic correla-             ment of Translational Neuroscience, Barrow Neurological Institute, Phoenix,
+  tions in the RROS cohort. A) PHF-1 levels based upon Braak stage (left) or         AZ 85013, USA. 4 Michigan Alzheimer’s Disease Research Center, Ann Arbor,
+  clinical diagnostic group (right), via Kruskal-Wallis with Dunn’s correction.      MI 48109, USA. 5 Department of Family Medicine, Michigan State University,
+  B) PHF-1 associations with antemortem cognitive assessment, via Spear-             East Lansing, MI 48824, USA. 6 Trinity Health Hauenstein Neurosciences Center,
+  man correlation. *, p < 0.05; **, p < 0,01; ****, p < 0.0001 Abbreviations:        Grand Rapids, MI 49503, USA.
+  AD, Alzheimer’s disease; GCS, global cognitive z-score; MCI, mild cognitive
+Kara et al. Molecular Neurodegeneration Advances                                                                                                     Page 20 of 23
+
+
+
+
+Received: 20 August 2025 Accepted: 14 January 2026                                       Alzheimer’s disease as revealed by FDG-PET: relationship to degree of
+                                                                                         deterioration. Brain. 2002;125(Pt 5):1116–24.
+                                                                                   22.   Sugarman MA, Woodard JL, Nielson KA, Seidenberg M, Smith JC,
+                                                                                         Durgerian S, et al. Functional magnetic resonance imaging of semantic
+                                                                                         memory as a presymptomatic biomarker of Alzheimer’s disease risk.
+References                                                                               Biochim Biophys Acta. 2012;1822(3):442–56.
+  1. 2024 Alzheimer’s disease facts and figures. Alzheimers Dement.                23.   Bocancea DI, Svenningsson AL, van Loenhoud AC, Groot C, Barkhof F,
+      2024;20(5):3708-821.                                                               Strandberg O, et al. Determinants of cognitive and brain resilience to
+  2. Mueller RL, Combs B, Alhadidy MM, Brady ST, Morfini GA, Kanaan NM.                  tau pathology: a longitudinal analysis. Brain. 2023;146(9):3719–34.
+      Tau: A signaling hub protein. Front Mol Neurosci. 2021;14:647054.            24.   Biel D, Luan Y, Brendel M, Hager P, Dewenter A, Moscoso A, et al. Com-
+  3. Braak H, Braak E. Neuropathological stageing of Alzheimer-related                   bining tau-PET and fMRI meta-analyses for patient-centered prediction
+      changes. Acta Neuropathol. 1991;82(4):239–59.                                      of cognitive decline in Alzheimer’s disease. Alzheimers Res Ther.
+  4. Lasagna-Reeves CA, Castillo-Carranza DL, Sengupta U, Clos AL, Jack-                 2022;14(1):166.
+      son GR, Kayed R. Tau oligomers impair memory and induce synaptic             25.   Jann K, Boudreau J, Albrecht D, Cen SY, Cabeen RP, Ringman JM, et al.
+      and mitochondrial dysfunction in wild-type mice. Mol Neurode-                      FMRI complexity correlates with Tau-PET and cognitive decline in late-
+      gener. 2011;6:39.                                                                  onset and autosomal dominant Alzheimer’s disease. J Alzheimers Dis.
+  5. Kuchibhotla KV, Wegmann S, Kopeikina KJ, Hawkes J, Rudinskiy N,                     2023;95(2):437–51.
+      Andermann ML, et al. Neurofibrillary tangle-bearing neurons are              26.   Hoenig MC, Bischof GN, Seemiller J, Hammes J, Kukolja J, Onur OA,
+      functionally integrated in cortical circuits in vivo. Proc Natl Acad Sci U         et al. Networks of tau distribution in Alzheimer’s disease. Brain.
+      S A. 2014;111(1):510–4.                                                            2018;141(2):568–81.
+  6. Santacruz K, Lewis J, Spires T, Paulson J, Kotilinek L, Ingelsson M, et al.   27.   Green C, Sydow A, Vogel S, Anglada-Huguet M, Wiedermann D,
+      Tau suppression in a neurodegenerative mouse model improves                        Mandelkow E, et al. Functional networks are impaired by elevated
+      memory function. Science. 2005;309(5733):476–81.                                   tau-protein but reversible in a regulatable Alzheimer’s disease mouse
+  7. Mirbaha H, Holmes BB, Sanders DW, Bieschke J, Diamond MI.                           model. Mol Neurodegener. 2019;14(1):13.
+      Tau trimers are the minimal propagation unit spontaneously                   28.   Berron D, Vogel JW, Insel PS, Pereira JB, Xie L, Wisse LEM, et al. Early
+      internalized to seed intracellular aggregation. J Biol Chem.                       stages of tau pathology and its associations with functional connectiv-
+      2015;290(24):14893–903.                                                            ity, atrophy and memory. Brain. 2021;144(9):2771–83.
+  8. Fisar Z. Linking the Amyloid, tau, and mitochondrial hypotheses of Alz-       29.   Luan Y, Rubinski A, Biel D, Otero Svaldi D, Alonzo Higgins I, Shcherbinin
+      heimer’s disease and identifying promising drug targets. Biomolecules.             S, et al. Tau-network mapping of domain-specific cognitive impairment
+      2022;12(11).                                                                       in Alzheimer’s disease. NeuroImage: Clinical. 2024;44:103699.
+  9. Reddy PH. Abnormal tau, mitochondrial dysfunction, impaired axonal            30    Nabizadeh F. Local molecular and connectomic contributions of tau-
+      transport of mitochondria, and synaptic deprivation in Alzheimer’s                 related neurodegeneration. GeroScience. 2025;47(1):227–46.
+      disease. Brain Res. 2011;1415:136–48.                                        31.   Roemer SN, Brendel M, Gnorich J, Malpetti M, Zaganjori M, Quattrone
+ 10. Zheng J, Akbari M, Schirmer C, Reynaert ML, Loyens A, Lefebvre B, et al.            A, et al. Subcortical tau is linked to hypoperfusion in connected cortical
+      Hippocampal tau oligomerization early in tau pathology coincides with              regions in 4-repeat tauopathies. Brain. 2024;147(7):2428–39.
+      a transient alteration of mitochondrial homeostasis and DNA repair in a      32.   Ziontz J, Harrison TM, Fonseca C, Giorgio J, Han F, Lee J, et al. Connectiv-
+      mouse model of tauopathy. Acta Neuropathol Commun. 2020;8(1):25.                   ity, pathology, and ApoE4 interactions predict longitudinal tau spatial
+ 11. Kravenska Y, Koprowski P, Nieznanska H, Nieznanski K. Prion protein pre-            progression and memory. Hum Brain Mapp. 2024;45(17):e70083.
+      vents the inhibition of large-conductance calcium-activated potassium        33.   Spens E, Burgess N. A generative model of memory construction and
+      channel by Tau peptide K18 oligomers. Biochem Biophys Res Commun.                  consolidation. Nat Hum Behav. 2024;8(3):526–43.
+      2024;734:150793.                                                             34.   Migliaccio R, Cacciamani F. The temporal lobe in typical and atypical
+ 12. Crossley CA, Omoluabi T, Torraville SE, Duraid S, Maziar A, Hasan Z, et al.         Alzheimer disease. Handb Clin Neurol. 2022;187:449–66.
+      Hippocampal hyperphosphorylated tau-induced deficiency is rescued            35.   Kitamura T, Ogawa SK, Roy DS, Okuyama T, Morrissey MD, Smith
+      by L-type calcium channel blockade. Brain Commun. 2024;6(2):fcae096.               LM, et al. Engrams and circuits crucial for systems consolidation of a
+ 13. Tiernan CT, Combs B, Cox K, Morfini G, Brady ST, Counts SE, et al. Pseu-            memory. Science. 2017;356(6333):73–8.
+      dophosphorylation of tau at S422 enhances SDS-stable dimer forma-            36.   Sadeghi M, Azargoonjahromi A, Nasiri H, Yaghoobi A, Sadeghi M, Chavoshi SS,
+      tion and impairs both anterograde and retrograde fast axonal transport.            et al. Altered brain connectivity in mild cognitive impairment is linked to
+      Exp Neurol. 2016;283(Pt A):318–29.                                                 elevated tau and phosphorylated tau, but not to GAP-43 and Amyloid-beta
+ 14 Niewiadomska G, Niewiadomski W, Steczkowska M, Gasiorowska A. Tau                    measurements: a resting-state fMRI study. Mol Brain. 2024;17(1):60.
+      oligomers neurotoxicity. Life. 2021;11(1):28.                                37.   Raichle ME. The brain’s default mode network. Annu Rev Neurosci.
+ 15. Mueller RL, Kanaan NM, Combs B. Using live-cell imaging to measure                  2015;38:433–47.
+      the effects of pathological proteins on axonal transport in primary hip-     38.   Raichle ME, MacLeod AM, Snyder AZ, Powers WJ, Gusnard DA, Shul-
+      pocampal neurons. J Vis Exp: JoVE. 2023;22(202):10–3791.                           man GL. A default mode of brain function. Proc Natl Acad Sci U S A.
+ 16. Balducci C, Orsini F, Cerovic M, Beeg M, Rocutto B, Dacomo L, et al. Tau            2001;98(2):676–82.
+      oligomers impair memory and synaptic plasticity through the cellular         39    Giorgio J, Adams JN, Maass A, Jagust WJ, Breakspear M. Amyloid
+      prion protein. Acta Neuropathol Commun. 2025;13(1):17.                             induced hyperexcitability in default mode network drives medial
+ 17. Fa M, Puzzo D, Piacentini R, Staniszewski A, Zhang H, Baltrons MA, et al.           temporal hyperactivity and early tau accumulation. Neuron.
+      Extracellular tau oligomers produce an immediate impairment of LTP                 2024;112(4):676-86 e4.
+      and memory. Sci Rep. 2016;6:19393.                                           40.   Schultz AP, Chhatwal JP, Hedden T, Mormino EC, Hanseeuw BJ, Sepulcre
+ 18. Puzzo D, Argyrousi EK, Staniszewski A, Zhang H, Calcagno E, Zuccarello              J, et al. Phases of hyperconnectivity and hypoconnectivity in the default
+      E, et al. Tau is not necessary for amyloid-beta-induced synaptic and               mode and salience networks track with amyloid and tau in clinically
+      memory impairments. J Clin Invest. 2020;130(9):4831–44.                            normal individuals. J Neurosci. 2017;37(16):4323–31.
+ 19. Scaduto P, Marcatti M, Bhatt N, Kayed R, Taglialatela G. Calcineurin          41.   Hahn A, Strandberg TO, Stomrud E, Nilsson M, van Westen D, Palmqvist
+      inhibition prevents synaptic plasticity deficit induced by brain-derived           S, et al. Association between earliest amyloid uptake and func-
+      tau oligomers. Brain Commun. 2024;6(5):fcae277.                                    tional connectivity in cognitively unimpaired elderly. Cereb Cortex.
+ 20. Baudic S, Barba GD, Thibaudet MC, Smagghe A, Remy P, Traykov L.                     2019;29(5):2173–82.
+      Executive function deficits in early Alzheimer’s disease and their rela-     42.   Guzman-Velez E, Diez I, Schoemaker D, Pardilla-Delgado E, Vila-Castelar
+      tions with episodic memory. Arch Clin Neuropsychol. 2006;21(1):15–21.              C, Fox-Fuller JT, et al. Amyloid-beta and tau pathologies relate to dis-
+ 21. Desgranges B, Baron JC, Lalevee C, Giffard B, Viader F, de La Sayette               tinctive brain dysconnectomics in preclinical autosomal-dominant Alz-
+      V, et al. The neural substrates of episodic memory impairment in                   heimer’s disease. Proc Natl Acad Sci U S A. 2022;119(15):e2113641119.
+Kara et al. Molecular Neurodegeneration Advances                                                                                                 Page 21 of 23
+
+
+
+
+ 43. Celone KA, Calhoun VD, Dickerson BC, Atri A, Chua EF, Miller SL, et al.       63. Vana L, Kanaan NM, Ugwu IC, Wuu J, Mufson EJ, Binder LI. Progression of
+     Alterations in memory networks in mild cognitive impairment and                   tau pathology in cholinergic basal forebrain neurons in mild cognitive
+     Alzheimer’s disease: an independent component analysis. J Neurosci.               impairment and Alzheimer’s disease. Am J Pathol. 2011;179(5):2533–50.
+     2006;26(40):10222–31.                                                         64. Patterson KR, Remmers C, Fu Y, Brooker S, Kanaan NM, Vana L, et al.
+ 44. Threlkeld ZD, Jicha GA, Smith CD, Gold BT. Task deactivation reductions           Characterization of prefibrillar Tau oligomers in vitro and in Alzheimer
+     and atrophy within parietal default mode regions are overlapping but              disease. J Biol Chem. 2011;286(26):23063–76.
+     only weakly correlated in mild cognitive impairment. J Alzheimers Dis.        65. Ward SM, Himmelstein DS, Lancia JK, Fu Y, Patterson KR, Binder LI. Toc1:
+     2011;27(2):415–27.                                                                characterization of a selective oligomeric tau antibody. J Alzheimers
+ 45. Malotaux V, Dricot L, Quenon L, Lhommel R, Ivanoiu A, Hanseeuw B.                 Dis. 2013;37(3):593–602.
+     Default-mode network connectivity changes during the progression              66. Combs B, Hamel C, Kanaan NM. Pathological conformations involving
+     toward Alzheimer’s dementia: a longitudinal functional magnetic                   the amino terminus of tau occur early in Alzheimer’s disease and
+     resonance imaging study. Brain Connect. 2023;13(5):287–96.                        are differentially detected by monoclonal antibodies. Neurobiol Dis.
+ 46. Putcha D, Eckbo R, Katsumi Y, Dickerson BC, Touroutoglou A, Collins JA.           2016;94:18–31.
+     Tau and the fractionated default mode network in atypical Alzheimer’s         67. Gamblin TC, Chen F, Zambrano A, Abraha A, Lagalwar S, Guillozet
+     disease. Brain Commun. 2022;4(2):fcac055.                                         AL, et al. Caspase cleavage of tau: linking amyloid and neurofi-
+ 47. Mufson EJ, Chen EY, Cochran EJ, Beckett LA, Bennett DA, Kordower JH.              brillary tangles in Alzheimer’s disease. Proc Natl Acad Sci U S A.
+     Entorhinal cortex beta-amyloid load in individuals with mild cognitive            2003;100(17):10032–7.
+     impairment. Exp Neurol. 1999;158(2):469–90.                                   68. Guillozet-Bongaarts AL, Garcia-Sierra F, Reynolds MR, Horowitz PM, Fu Y,
+ 48. Bennett DA, Wilson RS, Schneider JA, Evans DA, Beckett LA, Aggarwal               Wang T, et al. Tau truncation during neurofibrillary tangle evolution in
+     NT, et al. Natural history of mild cognitive impairment in older persons.         Alzheimer’s disease. Neurobiol Aging. 2005;26(7):1015–22.
+     Neurology. 2002;59(2):198–205.                                                69. Greenberg SG, Davies P, Schein JD, Binder LI. Hydrofluoric acid-treated
+ 49. Counts SE, Beck JS, Maloney B, Malek-Ahmadi M, Ginsberg SD, Mufson                tau PHF proteins display the same biochemical properties as normal
+     EJ, et al. Posterior cingulate cortex microRNA dysregulation differenti-          tau. J Biol Chem. 1992;267(1):564–9.
+     ates cognitive resilience, mild cognitive impairment, and Alzheimer’s         70. Youmans KL, Tai LM, Kanekiyo T, Stine WB Jr, Michon SC, Nwabuisi-
+     disease. Alzheimers Dement. 2025;21(2):e70019.                                    Heath E, et al. Intraneuronal Abeta detection in 5xFAD mice by a new
+ 50. Counts SE, Nadeem M, Lad SP, Wuu J, Mufson EJ. Differential expres-               Abeta-specific antibody. Mol Neurodegener. 2012;7:8.
+     sion of synaptic proteins in the frontal and temporal cortex of elderly       71. LoPresti P, Szuchet S, Papasozomenos SC, Zinkowski RP, Binder LI.
+     subjects with mild cognitive impairment. J Neuropathol Exp Neurol.                Functional implications for the microtubule-associated protein
+     2006;65(6):592–601.                                                               tau: localization in oligodendrocytes. Proc Natl Acad Sci U S A.
+ 51. Schneider JA, Arvanitakis Z, Leurgans SE, Bennett DA. The neuropathol-            1995;92(22):10369–73.
+     ogy of probable Alzheimer disease and mild cognitive impairment. Ann          72. Carmel G, Mager EM, Binder LI, Kuret J. The structural basis of monoclo-
+     Neurol. 2009;66(2):200–8.                                                         nal antibody Alz50’s selectivity for Alzheimer’s disease pathology. J Biol
+ 52. Bennett DA, Buchman AS, Boyle PA, Barnes LL, Wilson RS, Schneider JA.             Chem. 1996;271(51):32789–95.
+     Religious Orders Study and Rush Memory and Aging Project. J Alzhei-           73. Porzig R, Singer D, Hoffmann R. Epitope mapping of mAbs AT8 and
+     mers Dis. 2018;64(s1):S161–89.                                                    Tau5 directed against hyperphosphorylated regions of the human tau
+ 53. Abner EL, Kryscio RJ, Cooper GE, Fardo DW, Jicha GA, Mendiondo MS,                protein. Biochem Biophys Res Commun. 2007;358(2):644–9.
+     et al. Mild cognitive impairment: statistical models of transition using      74. Berry RW, Sweet AP, Clark FA, Lagalwar S, Lapin BR, Wang T, et al. Tau
+     longitudinal clinical data. Int J Alzheimers Dis. 2012;2012:291920.               epitope display in progressive supranuclear palsy and corticobasal
+ 54. Morris JC, Storandt M, Miller JP, McKeel DW, Price JL, Rubin EH, et al.           degeneration. J Neurocytol. 2004;33(3):287–95.
+     Mild cognitive impairment represents early-stage Alzheimer disease.           75. Combs B, Tiernan CT, Hamel C, Kanaan NM. Production of recombinant
+     Arch Neurol. 2001;58(3):397–405.                                                  tau oligomers in vitro. Methods Cell Biol. 2017;141:45–64.
+ 55. Petersen RC. Mild cognitive impairment as a diagnostic entity. J Intern       76. Cox K, Combs B, Abdelmesih B, Morfini G, Brady ST, Kanaan NM.
+     Med. 2004;256(3):183–94.                                                          Analysis of isoform-specific tau aggregates suggests a common toxic
+ 56. McKhann GM, Knopman DS, Chertkow H, Hyman BT, Jack CR Jr., Kawas                  mechanism involving similar pathological conformations and axonal
+     CH, et al. The diagnosis of dementia due to Alzheimer’s disease: recom-           transport inhibition. Neurobiol Aging. 2016;47:113–26.
+     mendations from the National Institute on Aging-Alzheimer’s Associa-          77. Piccoli T, Valente G, Linden DE, Re M, Esposito F, Sack AT, et al. The
+     tion workgroups on diagnostic guidelines for Alzheimer’s disease.                 default mode network and the working memory network are not
+     Alzheimers Dement. 2011;7(3):263–9.                                               anti-correlated during all phases of a working memory task. PLoS
+ 57. Kelley CM, Ginsberg SD, Liang WS, Counts SE, Mufson EJ. Posterior                 ONE. 2015;10(4):e0123354.
+     cingulate cortex reveals an expression profile of resilience in cognitively   78. Durairajan SSK, Selvarasu K, Singh AK, Patnaik S, Iyaswamy A, Jaiswal
+     intact elders. Brain Commun. 2022;4(4):fcac162.                                   Y, et al. Unraveling the interplay of kinesin-1, tau, and microtubules
+ 58 Mirra SS, Heyman A, McKeel D, Sumi SM, Crain BJ, Brownlee LM, et al.               in neurodegeneration associated with Alzheimer’s disease. Front Cell
+     The consortium to establish a registry for Alzheimer’s disease (CERAD).           Neurosci. 2024;18:1432002.
+     Part II. Standardization of the neuropathologic assessment of Alzhei-         79. Cheng Y, Bai F. The association of tau with mitochondrial dysfunction
+     mer’s disease. Neurology. 1991;41(4):479–86.                                      in Alzheimer’s disease. Front Neurosci. 2018;12:163.
+ 59. Hyman BT, Trojanowski JQ. Consensus recommendations for the post-             80. Piovesana E, Magrin C, Ciccaldo M, Sola M, Bellotto M, Molinari M,
+     mortem diagnosis of Alzheimer disease from the National Institute on              et al. Tau accumulation in degradative organelles is associated to
+     Aging and the Reagan Institute Working Group on diagnostic criteria               lysosomal stress. Sci Rep. 2023;13(1):18024.
+     for the neuropathological assessment of Alzheimer disease. J Neuro-           81. Princen K, Van Dooren T, van Gorsel M, Louros N, Yang X, Dumbacher
+     pathol Exp Neurol. 1997;56(10):1095–7.                                            M, et al. Pharmacological modulation of septins restores calcium
+ 60. Montine TJ, Phelps CH, Beach TG, Bigio EH, Cairns NJ, Dickson DW,                 homeostasis and is neuroprotective in models of Alzheimer’s disease.
+     et al. National institute on aging-alzheimer’s association guidelines for         Science. 2024;384(6699):eadd6260.
+     the neuropathologic assessment of Alzheimer’s disease: a practical            82. Reiss AB, Gulkarov S, Jacob B, Srivastava A, Pinkhasov A, Gomolin IH,
+     approach. Acta Neuropathol. 2012;123(1):1–11.                                     et al. Mitochondria in Alzheimer’s disease pathogenesis. Life. 2024.
+ 61. McKay EC, Beck JS, Khoo SK, Dykema KJ, Cottingham SL, Winn ME, et al.             https://​doi.​org/​10.​3390/​life1​40201​96.
+     Peri-infarct upregulation of the oxytocin receptor in vascular dementia.      83. He Y, Wang L, Zang Y, Tian L, Zhang X, Li K, et al. Regional coherence
+     J Neuropathol Exp Neurol. 2019;78(5):436–52.                                      changes in the early stages of Alzheimer’s disease: a combined
+ 62. Guillozet-Bongaarts AL, Cahill ME, Cryns VL, Reynolds MR, Berry RW,               structural and resting-state functional MRI study. Neuroimage.
+     Binder LI. Pseudophosphorylation of tau at serine 422 inhibits caspase            2007;35(2):488–500.
+     cleavage: in vitro evidence and implications for tangle formation             84. Wu X, Li R, Fleisher AS, Reiman EM, Guan X, Zhang Y, et al. Altered
+     in vivo. J Neurochem. 2006;97(4):1005–14.                                         default mode network connectivity in Alzheimer’s disease–a resting
+Kara et al. Molecular Neurodegeneration Advances                                                                                                   Page 22 of 23
+
+
+
+
+       functional MRI and Bayesian network study. Hum Brain Mapp.                 104. Nair J, Klaassen AL, Arato J, Vyssotski AL, Harvey M, Rainer G. Basal fore-
+       2011;32(11):1868–81.                                                            brain contributes to default mode network regulation. Proc Natl Acad
+ 85.   Grieder M, Wang DJJ, Dierks T, Wahlund LO, Jann K. Default mode                 Sci U S A. 2018;115(6):1352–7.
+       network complexity and cognitive decline in mild Alzheimer’s dis-          105. Bondareff W, Mountjoy CQ, Roth M, Rossor MN, Iversen LL, Reynolds GP,
+       ease. Front Neurosci. 2018;12:770.                                              et al. Neuronal degeneration in locus ceruleus and cortical correlates of
+ 86.   Mufson EJ, Ward S, Binder L. Prefibrillar tau oligomers in mild                 Alzheimer disease. Alzheimer Dis Assoc Disord. 1987;1(4):256–62.
+       cognitive impairment and Alzheimer’s disease. Neurodegener Dis.            106. Kelly SC, He B, Perez SE, Ginsberg SD, Mufson EJ, Counts SE. Locus
+       2014;13(2–3):151–3.                                                             coeruleus cellular and molecular pathology during the progression of
+ 87.   Tiernan CT, Ginsberg SD, Guillozet-Bongaarts AL, Ward SM, He                    Alzheimer’s disease. Acta Neuropathol Commun. 2017;5(1):8.
+       B, Kanaan NM, et al. Protein homeostasis gene dysregulation in             107. Trillo L, Das D, Hsieh W, Medina B, Moghadam S, Lin B, et al. Ascend-
+       pretangle-bearing nucleus basalis neurons during the progression of             ing monoaminergic systems alterations in Alzheimer’s disease.
+       Alzheimer’s disease. Neurobiol Aging. 2016;42:80–90.                            Translating basic science into clinical care. Neurosci Biobehav Rev.
+ 88.   Henkins KM, Sokolow S, Miller CA, Vinters HV, Poon WW, Cornwell LB,             2013;37(8):1363–79.
+       et al. Extensive p-tau pathology and SDS-stable p-tau oligomers in         108. Theofilas P, Dunlop S, Heinsen H, Grinberg LT. Turning on the light
+       Alzheimer’s cortical synapses. Brain Pathol. 2012;22(6):826–33.                 within: subcortical nuclei of the isodentritic core and their role in
+ 89.   Kanaan NM, Cox K, Alvarez VE, Stein TD, Poncil S, McKee AC. Charac-             Alzheimer’s disease pathogenesis. J Alzheimers Dis. 2015;46(1):17–34.
+       terization of early pathological tau conformations and phosphoryla-        109. Conze C, Rierola M, Trushina NI, Peters M, Janning D, Holzer M, et al.
+       tion in chronic traumatic encephalopathy. J Neuropathol Exp Neurol.             Caspase-cleaved tau is senescence-associated and induces a toxic
+       2016;75(1):19–34.                                                               gain of function by putting a brake on axonal transport. Mol Psychiatry.
+ 90.   Yoshida H, Hastie CJ, McLauchlan H, Cohen P, Goedert M. Phospho-                2022;27(7):3010–23.
+       rylation of microtubule-associated protein tau by isoforms of c-Jun        110. Tiernan CT, Mufson EJ, Kanaan NM, Counts SE. Tau oligomer pathology
+       N-terminal kinase (JNK). J Neurochem. 2004;90(2):352–8.                         in nucleus basalis neurons during the progression of Alzheimer disease.
+ 91.   Sayas CL, Avila J. GSK-3 and Tau: a key duet in Alzheimer’s disease.            J Neuropathol Exp Neurol. 2018;77(3):246–59.
+       Cells. 2021. https://​doi.​org/​10.​3390/​cells​10040​721.                 111. Sestieri C, Corbetta M, Romani GL, Shulman GL. Episodic memory
+ 92.   Rankin CA, Sun Q, Gamblin TC. Tau phosphorylation by GSK-3beta                  retrieval, parietal cortex, and the default mode network: functional and
+       promotes tangle-like filament morphology. Mol Neurodegener.                     topographic analyses. J Neurosci. 2011;31(12):4407–20.
+       2007;2:12.                                                                 112. Jeong W, Chung CK, Kim JS. Episodic memory in aspects of large-scale
+ 93.   Solas M, Vela S, Smerdou C, Martisova E, Martinez-Valbuena I, Luquin            brain networks. Front Hum Neurosci. 2015;9:454.
+       MR, et al. JNK activation in Alzheimer’s disease is driven by amyloid      113. Menon V. 20 years of the default mode network: a review and synthesis.
+       beta and is associated with tau pathology. ACS Chem Neurosci.                   Neuron. 2023;111(16):2469–87.
+       2023;14(8):1524–34.                                                        114. Buckner RL, Andrews-Hanna JR, Schacter DL. The brain’s default net-
+ 94.   Ardanaz CG, Ezkurdia A, Bejarano A, Echarte B, Smerdou C, Martisova             work: anatomy, function, and relevance to disease. Ann N Y Acad Sci.
+       E, et al. JNK3 overexpression in the entorhinal cortex impacts on the           2008;1124:1–38.
+       Hippocampus and induces cognitive deficiencies and Tau misfolding.         115. Irish M, Lawlor BA, Coen RF, O’Mara SM. Everyday episodic memory in
+       ACS Chem Neurosci. 2023;14(11):2074–88.                                         amnestic mild cognitive impairment: a preliminary investigation. BMC
+ 95.   Tiernan CT, Ginsberg SD, He B, Ward SM, Guillozet-Bongaarts AL,                 Neurosci. 2011;12:80.
+       Kanaan NM, et al. Pretangle pathology within cholinergic nucleus           116. Tromp D, Dufour A, Lithfous S, Pebayle T, Despres O. Episodic memory
+       basalis neurons coincides with neurotrophic and neurotransmitter                in normal aging and Alzheimer disease: Insights from imaging and
+       receptor gene dysregulation during the progression of Alzheimer’s               behavioral studies. Ageing Res Rev. 2015;24(Pt B):232–62.
+       disease. Neurobiol Dis. 2018;117:125–36.                                   117. Friedman D. The cognitive aging of episodic memory: a view based on
+ 96.   Stefanoska K, Gajwani M, Tan ARP, Ahel HI, Asih PR, Volkerling A, et al.        the event-related brain potential. Front Behav Neurosci. 2013;7:111.
+       Alzheimer’s disease: Ablating single master site abolishes tau hyper-      118. Joubert S, Gardy L, Didic M, Rouleau I, Barbeau EJ. A meta-analysis of
+       phosphorylation. Sci Adv. 2022;8(27):eabl8809.                                  semantic memory in mild cognitive impairment. Neuropsychol Rev.
+ 97.   Mahady LJ, Perez SE, Malek-Ahmadi M, Mufson EJ. Oligomeric, phos-               2021;31(2):221–32.
+       phorylated, and truncated tau and spliceosome pathology within the         119. Hirni DI, Kivisaari SL, Monsch AU, Taylor KI. Distinct neuroanatomical
+       entorhinal-hippocampal connectome across stages of Alzheimer’s                  bases of episodic and semantic memory performance in Alzheimer’s
+       disease. J Comp Neurol. 2023;531(18):2080–108.                                  disease. Neuropsychologia. 2013;51(5):930–7.
+ 98.   Koss DJ, Dubini M, Buchanan H, Hull C, Platt B. Distinctive temporal       120. Irish M, Piguet O. The pivotal role of semantic memory in remembering
+       profiles of detergent-soluble and -insoluble tau and Abeta species in           the past and imagining the future. Front Behav Neurosci. 2013;7:27.
+       human Alzheimer’s disease. Brain Res. 2018;1699:121–34.                    121. Staffaroni AM, Brown JA, Casaletto KB, Elahi FM, Deng J, Neuhaus J,
+ 99.   Sarkar S, Raymick J, Cuevas E, Rosas-Hernandez H, Hanig J. Modifica-            et al. The longitudinal trajectory of default mode network connectiv-
+       tion of methods to use Congo-red stain to simultaneously visualize              ity in healthy older adults varies as a function of age and is associated
+       amyloid plaques and tangles in human and rodent brain tissue sec-               with changes in episodic memory and processing speed. J Neurosci.
+       tions. Metab Brain Dis. 2020;35(8):1371–83.                                     2018;38(11):2809–17.
+100.   Combs B, Kanaan NM. Exposure of the amino terminus of Tau                  122. Gonzalez Alam TRJ, Krieger-Redwood K, Varga D, Gao Z, Horner AJ,
+       is a pathological event in multiple tauopathies. Am J Pathol.                   Hartley T, et al. A double dissociation between semantic and spatial
+       2017;187(6):1222–9.                                                             cognition in visual to default network pathways. Elife. 2025. https://​doi.​
+101.   Taddei RN, Perbet R, de Mate Gerando A, Wiedmer AE, Sanchez-Mico                org/​10.​7554/​eLife.​94902.
+       M, Connors Stewart T, et al. Tau oligomer-containing synapse elimina-      123. Weber S, Aleman A, Hugdahl K. Involvement of the default mode net-
+       tion by microglia and astrocytes in Alzheimer disease. JAMA Neurol.             work under varying levels of cognitive effort. Sci Rep. 2022;12(1):6303.
+       2023;80(11):1209–21.                                                       124. Castillo-Carranza DL, Guerrero-Munoz MJ, Sengupta U, Hernandez C,
+102.   Felleman DJ, Van Essen DC. Distributed hierarchical processing in the           Barrett AD, Dineley K, et al. Tau immunotherapy modulates both patho-
+       primate cerebral cortex. Cereb Cortex. 1991;1(1):1–47.                          logical tau and upstream amyloid pathology in an Alzheimer’s disease
+103.   Mesulam MM, Mufson EJ, Levey AI, Wainer BH. Cholinergic innervation             mouse model. J Neurosci. 2015;35(12):4857–68.
+       of cortex by the basal forebrain: cytochemistry and cortical connec-       125. Oddo S, Caccamo A, Shepherd JD, Murphy MP, Golde TE, Kayed R,
+       tions of the septal area, diagonal band nuclei, nucleus basalis (sub-           et al. Triple-transgenic model of Alzheimer’s disease with plaques
+       stantia innominata), and hypothalamus in the rhesus monkey. J Comp              and tangles: intracellular Abeta and synaptic dysfunction. Neuron.
+       Neurol. 1983;214(2):170–97.                                                     2003;39(3):409–21.
+Kara et al. Molecular Neurodegeneration Advances                                                                                                         Page 23 of 23
+
+
+
+
+126. Zhang H, Wei W, Zhao M, Ma L, Jiang X, Pei H, et al. Interaction between                 amyloid pathology in prodromal Alzheimer’s disease. Biol Psychiatry.
+     Abeta and Tau in the pathogenesis of Alzheimer’s disease. Int J Biol Sci.                2015;77(8):693–703.
+     2021;17(9):2181–92.                                                               137.   Dharshini SAP, Sanz-Ros J, Pan J, Tang W, Vallejo K, Otero-Garcia M, et al.
+127. Roemer-Cassiano SN, Wagner F, Evangelista L, Rauchmann BS, Dehsarvi                      Molecular Signatures of Resilience to Alzheimer’s Disease in Neocortical
+     A, Steward A, et al. Amyloid-associated hyperconnectivity drives tau                     Layer 4 Neurons. bioRxiv. 2024.
+     spread across connected brain regions in Alzheimer’s disease. Sci Transl          138.   Perez SE, Nadeem M, He B, Miguel JC, Moreno DG, Moreno-Rodriguez
+     Med. 2025;17(782):eadp2564.                                                              M, et al. Spliceosome protein alterations differentiate hubs of the
+128. Nelson PT, Jicha GA, Schmitt FA, Liu H, Davis DG, Mendiondo MS, et al. Clinico-          default mode connectome during the progression of Alzheimer’s
+     pathologic correlations in a large Alzheimer disease center autopsy cohort:              disease. Brain Pathol. 2025. https://​doi.​org/​10.​1111/​bpa.​70004.
+     neuritic plaques and neurofibrillary tangles “do count” when staging              139.   Kneynsberg A, Collier TJ, Manfredsson FP, Kanaan NM. Quantitative and
+     disease severity. J Neuropathol Exp Neurol. 2007;66(12):1136–46.                         semi-quantitative measurements of axonal degeneration in tissue and
+129. Clarke KM, Etemadmoghadam S, Danner B, Corbett C, Ghaseminejad-                          primary neuron cultures. J Neurosci Methods. 2016;266:32–41.
+     Bandpey A, Dopler M, et al. The nun study: insights from 30 years of              140.   Habashi M, Vutla S, Tripathi K, Senapati S, Chauhan PS, Haviv-Chesner
+     aging and dementia research. Alzheimers Dement. 2025;21(2):e14626.                       A, et al. Early diagnosis and treatment of Alzheimer’s disease by
+130. Guarnera J, Yuen E, Macpherson H. The impact of loneliness and social                    targeting toxic soluble Abeta oligomers. Proc Natl Acad Sci U S A.
+     isolation on cognitive aging: a narrative review. J Alzheimers Dis Rep.                  2022;119(49):e2210766119.
+     2023;7(1):699–714.                                                                141.   Eiser AR, Fulop T. Alzheimer’s disease is a multi-organ disorder: it may
+131. Agapitova IV. Penetration of cefazolin and methicillin into tissues of rats              already be preventable. J Alzheimers Dis. 2023;91(4):1277–81.
+     with aseptic inflammation. Antibiot Khimioter. 1989;34(2):120–3.                  142.   Tsai HH, Liu CJ, Lee BC, Chen YF, Yen RF, Jeng JS, et al. Cerebral
+132. Lahiri DK, Maloney B, Wang R, White FA, Sambamurti K, Greig NH, et al.                   tau pathology in cerebral amyloid angiopathy. Brain Commun.
+     The seeds of its regulation: natural antisense transcripts as single-gene                2024;6(2):fcae086.
+     control switches in neurodegenerative disorders. Ageing Res Rev.                  143.   Qu J, Tian M, Zhu R, Song C, Wu Y, Xu G, et al. Aberrant dynamic
+     2024;99:102336.                                                                          functional network connectivity in progressive supranuclear palsy.
+133. Montine TJ, Cholerton BA, Corrada MM, Edland SD, Flanagan ME,                            Neurobiol Dis. 2024;195:106493.
+     Hemmy LS, et al. Concepts for brain aging: resistance, resilience,                144.   Johnson B, Neuberger T, Gay M, Hallett M, Slobounov S. Effects of
+     reserve, and compensation. Alzheimers Res Ther. 2019;11(1):22.                           subconcussive head trauma on the default mode network of the brain.
+134. Leech R, Sharp DJ. The role of the posterior cingulate cortex in cogni-                  J Neurotrauma. 2014;31(23):1907–13.
+     tion and disease. Brain. 2014;137(Pt 1):12–32.
+135. Insel PS, Mormino EC, Aisen PS, Thompson WK, Donohue MC. Neu-
+     roanatomical spread of amyloid beta and tau in Alzheimer’s disease:               Publisher’s Note
+     implications for primary prevention. Brain Commun. 2020;2(1):fcaa007.             Springer Nature remains neutral with regard to jurisdictional claims in pub-
+136. Perez SE, He B, Nadeem M, Wuu J, Scheff SW, Abrahamson EE, et al.                 lished maps and institutional affiliations.
+     Resilience of precuneus neurotrophic signaling pathways despite
+

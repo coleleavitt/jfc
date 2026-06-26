@@ -14,6 +14,7 @@ pub use jfc_engine::runtime::{QueuePriority, QueuedPrompt};
 pub use state::{
     ANIM_TICK_MS, App, ExpandedView, IDLE_TICK_MS, PromptRewriteProposal, PromptSearch, SPINNER,
     SelectKind, SelectRequest, TextSelection, TranscriptSearch, VOICE_AUDIO_LEVELS_CAP,
+    VOICE_TTS_TIMINGS_CAP,
 };
 
 #[cfg(test)]

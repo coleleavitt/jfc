@@ -29,6 +29,12 @@ pub struct BridgeConfig {
     pub secret: Vec<u8>,
     pub bootstrap_token: Option<String>,
     pub token_ttl: Duration,
+    /// CS-JFC-010: explicit opt-in to run with NO bootstrap authentication.
+    /// When `bootstrap_token` is `None`, session creation and worker-token
+    /// minting are rejected unless this is `true`. Default `false` so the
+    /// control plane fails closed instead of silently accepting anonymous
+    /// requests.
+    pub allow_insecure_no_auth: bool,
 }
 
 impl BridgeConfig {
@@ -38,6 +44,7 @@ impl BridgeConfig {
             secret: secret.into(),
             bootstrap_token: None,
             token_ttl: Duration::from_secs(12 * 60 * 60),
+            allow_insecure_no_auth: false,
         }
     }
 }
@@ -452,7 +459,12 @@ fn json_depth(value: &serde_json::Value) -> usize {
 
 fn require_bootstrap(state: &BridgeState, headers: &HeaderMap) -> Result<(), ApiError> {
     let Some(expected) = state.config.bootstrap_token.as_deref() else {
-        return Ok(());
+        // CS-JFC-010: no bootstrap token configured. Fail closed unless the
+        // operator explicitly opted into an insecure, no-auth local server.
+        if state.config.allow_insecure_no_auth {
+            return Ok(());
+        }
+        return Err(ApiError::Unauthorized);
     };
     let Some(actual) = bearer(headers) else {
         return Err(ApiError::Unauthorized);
@@ -549,7 +561,36 @@ mod tests {
             secret: b"secret".to_vec(),
             bootstrap_token: None,
             token_ttl: Duration::from_secs(60),
+            // Tests exercise the local, no-auth path explicitly.
+            allow_insecure_no_auth: true,
         })
+    }
+
+    // CS-JFC-010: with no bootstrap token and no explicit insecure opt-in, the
+    // control plane must reject anonymous bootstrap (fail closed by default).
+    #[tokio::test]
+    async fn bridge_bootstrap_fails_closed_without_token_or_optin_regression() {
+        let state = BridgeState::memory(BridgeConfig {
+            api_base_url: "http://127.0.0.1:1".to_owned(),
+            secret: b"secret".to_vec(),
+            bootstrap_token: None,
+            token_ttl: Duration::from_secs(60),
+            allow_insecure_no_auth: false,
+        });
+        let error = create_bridge(
+            State(state),
+            HeaderMap::new(),
+            Json(BridgeRequest {
+                environment_id: None,
+                title: Some("test".to_owned()),
+                tags: vec![],
+                metadata: Default::default(),
+                worker_id: Some("worker".to_owned()),
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, ApiError::Unauthorized));
     }
 
     #[tokio::test]

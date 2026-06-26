@@ -1077,7 +1077,7 @@ pub(crate) async fn run(
 
         // Apply view-facing effects queued by engine handlers in this burst
         // (scroll pinning, render-cache invalidation).
-        apply_engine_effects(&mut app);
+        apply_engine_effects(&mut app, Some(&tx));
 
         // After processing all events in this burst, mirror derived state
         // to remote-control clients.
@@ -1226,11 +1226,20 @@ fn resolve_effort_for_model(cfg: &jfc_engine::config::Config, model: &str) -> Op
 /// this burst. The engine never touches scroll/render state directly — it
 /// queues `EngineEffect`s and this is the TUI's interpretation of them.
 /// Headless frontends have their own (mostly no-op) interpretation.
-pub(crate) fn apply_engine_effects(app: &mut App) {
+pub(crate) fn apply_engine_effects(app: &mut App, tx: Option<&EventSender>) {
     let effects = std::mem::take(&mut app.engine.effects);
     for effect in effects {
         match effect {
             crate::app::EngineEffect::TranscriptAppended => {
+                // Pre-warm the TTS socket on the FIRST delta of the turn — which
+                // is often a reasoning/thinking chunk, before any spoken text —
+                // so the first sentence isn't blocked on connect latency.
+                if let Some(tx) = tx
+                    && app.engine.is_streaming
+                    && !app.voice_skip_next_stream_read_aloud
+                {
+                    crate::voice::read_aloud_prewarm(tx);
+                }
                 if app.engine.is_streaming
                     && let Some(idx) = app.engine.streaming_assistant_idx
                     && let Some(msg) = app.engine.messages.get(idx)
@@ -1238,6 +1247,14 @@ pub(crate) fn apply_engine_effects(app: &mut App) {
                 {
                     let total = crate::render::codex_stream::stream_pacer::display_line_count(text);
                     app.stream_pacer.reveal_all(total);
+                    // Incremental read-aloud: speak the newly-streamed text as it
+                    // arrives (cheap no-op unless read-aloud is enabled). Skipped
+                    // when the voice-conversation path already produced audio.
+                    if let Some(tx) = tx
+                        && !app.voice_skip_next_stream_read_aloud
+                    {
+                        crate::voice::read_aloud_feed(text, tx);
+                    }
                 }
                 // Follow content as it streams *only when the user is already
                 // pinned to the bottom* — and freeze the viewport while a
@@ -1250,6 +1267,14 @@ pub(crate) fn apply_engine_effects(app: &mut App) {
             }
             crate::app::EngineEffect::StreamingFinalized => {
                 app.render_cache.borrow_mut().clear_streaming();
+                // End the incremental read-aloud turn (flush the trailing partial
+                // sentence + drain playback). No-op if read-aloud is off or the
+                // voice-conversation path handled audio.
+                if app.voice_skip_next_stream_read_aloud {
+                    app.voice_skip_next_stream_read_aloud = false;
+                } else {
+                    crate::voice::read_aloud_finish();
+                }
             }
             crate::app::EngineEffect::ScrollToBottom => {
                 app.scroll_to_bottom();
@@ -1311,6 +1336,14 @@ async fn handle_voice_event(
             app.voice_state = state;
             match state {
                 VoiceState::Recording => {
+                    // Barge-in: stop any in-progress read-aloud the instant the
+                    // user starts speaking (VAD speech onset or PTT key-down).
+                    crate::voice::read_aloud_barge_in();
+                    // A fresh, wanted utterance has begun — stop suppressing
+                    // voice-driven input edits. Any late events from a manually
+                    // submitted (discarded) prior utterance have arrived before
+                    // this onset, so it's safe to listen to the box again.
+                    app.voice_suppress_input = false;
                     // Fresh recording — reset the level ring and hue time base.
                     app.voice_audio_levels.clear();
                     app.voice_record_started = Some(std::time::Instant::now());
@@ -1332,6 +1365,15 @@ async fn handle_voice_event(
             levels.push(*level);
         }
         VoiceEvent::Interim(text) => {
+            // Drop late interims from an utterance the user already manually
+            // submitted (Enter) — without this they re-hydrate the cleared box.
+            if app.voice_suppress_input {
+                tracing::debug!(
+                    target: "jfc::voice",
+                    "ignoring interim for manually-submitted (discarded) utterance"
+                );
+                return;
+            }
             // Live transcription: type the partial transcript into the input
             // box, replacing the previous interim in place. CC types interims
             // live; we mirror that so the box feels alive while you speak.
@@ -1343,6 +1385,24 @@ async fn handle_voice_event(
             replace_interim_in_input(app, text);
         }
         VoiceEvent::Final(text) => {
+            // Drop the late Final from an utterance the user already manually
+            // submitted — otherwise it auto-submits a duplicate of what was just
+            // sent (or re-hydrates the box in non-auto-submit modes).
+            if app.voice_suppress_input {
+                tracing::info!(
+                    target: "jfc::voice",
+                    chars = text.chars().count(),
+                    "ignoring Final for manually-submitted (discarded) utterance"
+                );
+                app.voice_interim = None;
+                return;
+            }
+            tracing::info!(
+                target: "jfc::voice",
+                chars = text.chars().count(),
+                empty = text.is_empty(),
+                "VoiceEvent::Final received → injecting transcript (→ auto-submit decision)"
+            );
             app.voice_interim = None;
             // Clear the live interim text first so the final transcript
             // replaces it cleanly (no double-typing).
@@ -1366,6 +1426,114 @@ async fn handle_voice_event(
                 ))
                 .await;
         }
+        VoiceEvent::ReadAloudStarted { chars: _ } => {
+            app.voice_read_aloud_active = true;
+            app.voice_read_aloud_started = Some(std::time::Instant::now());
+            app.voice_tts_word_timings.clear();
+        }
+        VoiceEvent::ReadAloudCompleted {
+            audio_bytes,
+            chunks_sent,
+        } => {
+            app.voice_read_aloud_active = false;
+            app.voice_read_aloud_started = None;
+            app.voice_read_aloud_last_stats = Some((*audio_bytes, *chunks_sent));
+        }
+        VoiceEvent::ReadAloudError(msg) => {
+            app.voice_read_aloud_active = false;
+            app.voice_read_aloud_started = None;
+            let _ = tx
+                .send(crate::runtime::EngineEvent::Control(
+                    crate::runtime::ControlEvent::Notice {
+                        kind: jfc_engine::toast::ToastKind::Warning,
+                        text: format!("Read aloud failed: {msg}"),
+                    },
+                ))
+                .await;
+        }
+        VoiceEvent::AssistantMessageStarted => {
+            commit_voice_interim_as_user_message(app);
+            start_voice_assistant_stream(app);
+        }
+        VoiceEvent::AssistantResponseCompleted => {
+            finish_voice_assistant_stream(app);
+        }
+        VoiceEvent::TtsWord { text, pts_ms } => {
+            if !text.is_empty() {
+                if app.voice_tts_word_timings.len() >= crate::app::VOICE_TTS_TIMINGS_CAP {
+                    app.voice_tts_word_timings.remove(0);
+                }
+                app.voice_tts_word_timings.push((text.clone(), *pts_ms));
+            }
+        }
+    }
+}
+
+fn start_voice_assistant_stream(app: &mut App) {
+    if app.engine.streaming_assistant_idx.is_some() {
+        return;
+    }
+    let idx = app.engine.messages.len();
+    app.engine
+        .messages
+        .push(jfc_core::ChatMessage::assistant(String::new()));
+    app.engine.streaming_assistant_idx = Some(idx);
+    app.engine.is_streaming = true;
+    let now = std::time::Instant::now();
+    app.engine.streaming_started_at = Some(now);
+    app.engine.last_stream_event_at = Some(now);
+    app.engine.streaming_last_token_at = Some(now);
+    app.engine.turn_started_at = Some(now);
+    app.engine.turn_start_cost = jfc_engine::cost::total_cost(&app.engine.usage_by_model);
+    app.engine.streaming_text.clear();
+    app.engine.streaming_reasoning.clear();
+    app.engine.streaming_response_bytes = 0;
+    app.engine.last_usage_output = 0;
+    app.engine.usage_apply_baseline = (0, 0, 0, 0);
+}
+
+fn finish_voice_assistant_stream(app: &mut App) {
+    app.engine.is_streaming = false;
+    app.engine.active_stream_handle = None;
+    app.engine.clear_active_stream_scope();
+    app.engine.last_stream_event_at = None;
+    app.engine.streaming_assistant_idx = None;
+    app.engine.streaming_started_at = None;
+    app.engine.streaming_last_token_at = None;
+    app.engine.turn_started_at = None;
+    app.engine.streaming_text.clear();
+    app.engine.streaming_reasoning.clear();
+    app.engine.streaming_response_bytes = 0;
+    jfc_engine::runtime::session_save::force_save(&mut app.engine);
+    app.voice_skip_next_stream_read_aloud = true;
+    app.engine
+        .push_effect(crate::app::EngineEffect::StreamingFinalized);
+}
+
+fn commit_voice_interim_as_user_message(app: &mut App) {
+    let Some(text) = app
+        .voice_interim
+        .as_ref()
+        .map(|text| text.trim())
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+    else {
+        return;
+    };
+    clear_interim_from_input(app);
+    app.voice_interim = None;
+    let insert_at = app
+        .engine
+        .streaming_assistant_idx
+        .filter(|idx| *idx <= app.engine.messages.len())
+        .unwrap_or(app.engine.messages.len());
+    app.engine
+        .messages
+        .insert(insert_at, jfc_core::ChatMessage::user(text));
+    if let Some(idx) = app.engine.streaming_assistant_idx
+        && idx >= insert_at
+    {
+        app.engine.streaming_assistant_idx = Some(idx.saturating_add(1));
     }
 }
 
@@ -1405,16 +1573,30 @@ fn clear_interim_from_input(app: &mut App) {
 
 /// Inject the STT transcript into the textarea (and optionally submit).
 async fn inject_voice_transcript(app: &mut App, text: &str, tx: &crate::runtime::EventSender) {
-    let auto_submit = voice_auto_submit();
-
+    let cfg = crate::voice::current_config();
+    // The RUNNING VAD loop is the source of truth for hands-free mode: `/voice
+    // vad` configures the recorder for VAD but doesn't persist `mode=vad` to the
+    // config `current_config()` reads (it stays `Hold`), so cfg alone would say
+    // "don't auto-submit" and the transcript would just sit in the box. A live
+    // VAD loop ⇒ no key to press ⇒ MUST submit on its own, exactly like Enter.
+    let vad_running = crate::voice::vad_loop_running().await;
+    let auto_submit = vad_running || voice_auto_submit();
     tracing::info!(
         target: "jfc::voice",
-        chars = text.len(),
+        mode = ?cfg.mode,
+        vad_loop_running = vad_running,
+        configured_auto_submit = cfg.auto_submit,
         auto_submit,
-        "voice transcript injected"
+        chars = text.chars().count(),
+        "inject_voice_transcript: auto-submit decision (VAD loop running ⇒ submit like Enter)"
     );
 
     if auto_submit {
+        tracing::info!(
+            target: "jfc::voice",
+            chars = text.chars().count(),
+            "voice transcript auto-submitting as a turn"
+        );
         // Clear any leftover input, then submit the transcript directly —
         // same path as pressing Enter. We don't type into the box first
         // because handle_submit doesn't drain it (the Enter path resets the
@@ -1427,6 +1609,11 @@ async fn inject_voice_transcript(app: &mut App, text: &str, tx: &crate::runtime:
                 tracing::warn!(target: "jfc::voice", error = %err, "auto-submit failed");
             });
     } else {
+        tracing::info!(
+            target: "jfc::voice",
+            chars = text.chars().count(),
+            "voice transcript parked in input box (auto-submit off — press Enter to send)"
+        );
         // No auto-submit: type the transcript into the box and leave it for
         // the user to edit and send manually.
         for ch in text.chars() {
@@ -1440,13 +1627,22 @@ fn voice_auto_submit() -> bool {
     if let Some(value) = voice_auto_submit_override() {
         return value;
     }
-    let cfg = jfc_engine::config::load_arc();
-    cfg.claude
-        .voice
-        .as_ref()
-        .and_then(|v| v.get("autoSubmit"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
+    let cfg = crate::voice::current_config();
+    voice_should_auto_submit(cfg.mode, cfg.auto_submit)
+}
+
+/// Whether a finalized voice transcript should be submitted as a turn
+/// immediately, or merely typed into the input box for the user to review and
+/// send by hand.
+///
+/// VAD (hands-free) mode has no key to press to send — the whole point is "just
+/// talk" — so a completed utterance MUST become a turn on its own. Otherwise the
+/// transcript silently piles up unsent in the input box, which is the "VAD
+/// transcribes but never sends a turn" regression. The `autoSubmit` setting
+/// only governs the keyed dictation modes (hold/tap), where the user may want
+/// to review/edit before pressing Enter; it defaults to off there.
+fn voice_should_auto_submit(mode: jfc_voice::VoiceMode, configured_auto_submit: bool) -> bool {
+    matches!(mode, jfc_voice::VoiceMode::Vad) || configured_auto_submit
 }
 
 #[cfg(test)]
@@ -1627,6 +1823,55 @@ mod voice_event_tests {
         assert_eq!(app.voice_interim_chars, 0);
     }
 
+    // --- VAD auto-submit regression -----------------------------------------
+    // Bug: in VAD (hands-free) mode, speech was transcribed but never sent as a
+    // turn — the transcript just piled up in the input box. The auto-submit gate
+    // only consulted the `autoSubmit` setting (default false, documented "hold
+    // mode only") and ignored the voice mode. VAD has no key to press to submit,
+    // so it MUST force-submit regardless of the flag. These pin the decision so
+    // the gate can't silently revert to a flag-only check.
+
+    #[test]
+    fn vad_mode_auto_submits_even_when_flag_is_off_regression() {
+        use jfc_voice::VoiceMode;
+        // The exact broken case: VAD + autoSubmit unset/false must still submit.
+        assert!(voice_should_auto_submit(VoiceMode::Vad, false));
+        assert!(voice_should_auto_submit(VoiceMode::Vad, true));
+    }
+
+    #[test]
+    fn keyed_modes_honor_auto_submit_flag_normal() {
+        use jfc_voice::VoiceMode;
+        // Hold/tap dictation lets the user review before sending, so they honor
+        // the configured flag and default to parking the transcript in the box.
+        assert!(!voice_should_auto_submit(VoiceMode::Hold, false));
+        assert!(voice_should_auto_submit(VoiceMode::Hold, true));
+        assert!(!voice_should_auto_submit(VoiceMode::Tap, false));
+        assert!(voice_should_auto_submit(VoiceMode::Tap, true));
+    }
+
+    #[tokio::test]
+    async fn voice_final_auto_submits_and_drains_input_box_regression() {
+        let mut app = app();
+        // Simulate the VAD decision (force auto-submit) at the consumer seam.
+        let _guard = AutoSubmitGuard::set(true);
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::Final("send me as a turn".to_owned()),
+            &tx,
+        )
+        .await;
+
+        // Auto-submit takes the submit branch, which drains the box (the text is
+        // handed to handle_submit). The bug's symptom was the opposite: the
+        // transcript left parked in the input, never becoming a turn.
+        assert_eq!(input_text(&app), "");
+        assert_eq!(app.voice_interim, None);
+        assert_eq!(app.voice_interim_chars, 0);
+    }
+
     #[tokio::test]
     async fn voice_final_replaces_live_interim_regression() {
         let mut app = app();
@@ -1651,6 +1896,58 @@ mod voice_event_tests {
         assert_eq!(app.voice_interim_chars, 0);
     }
 
+    // REGRESSION (rehydration after manual Enter): a manual submit while a VAD
+    // utterance is still finalizing left `voice_suppress_input` set; late
+    // Interim/Final events from that discarded utterance must NOT touch the
+    // input box, and the next Recording onset must lift the suppression so a
+    // fresh utterance types normally again.
+    #[tokio::test]
+    async fn suppressed_voice_events_do_not_rehydrate_input_regression() {
+        let mut app = app();
+        let _guard = AutoSubmitGuard::set(true); // VAD-style: Final would auto-submit
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        // User pressed Enter mid-utterance → input cleared, suppression armed.
+        app.voice_suppress_input = true;
+
+        // Late interim for the discarded utterance — must be ignored.
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::Interim("late partial".to_owned()),
+            &tx,
+        )
+        .await;
+        assert_eq!(input_text(&app), "", "late interim re-hydrated the box");
+        assert_eq!(app.voice_interim_chars, 0);
+
+        // Late Final for the discarded utterance — must not auto-submit/inject.
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::Final("late final".to_owned()),
+            &tx,
+        )
+        .await;
+        assert_eq!(input_text(&app), "", "late Final injected after manual submit");
+        assert_eq!(app.voice_interim, None);
+
+        // Next utterance begins → suppression lifts, live typing resumes.
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::StateChanged(1), // Recording
+            &tx,
+        )
+        .await;
+        assert!(!app.voice_suppress_input, "Recording onset must clear suppression");
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::Interim("new utterance".to_owned()),
+            &tx,
+        )
+        .await;
+        assert_eq!(input_text(&app), "new utterance");
+    }
+
     #[tokio::test]
     async fn voice_error_clears_live_interim_regression() {
         let mut app = app();
@@ -1673,6 +1970,138 @@ mod voice_event_tests {
         assert_eq!(app.voice_interim, None);
         assert_eq!(app.voice_interim_chars, 0);
         assert!(rx.recv().await.is_some());
+    }
+
+    #[tokio::test]
+    async fn read_aloud_events_update_playback_state_without_touching_input_normal() {
+        let mut app = app();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::ReadAloudStarted { chars: 12 },
+            &tx,
+        )
+        .await;
+        assert!(app.voice_read_aloud_active);
+        assert!(app.voice_read_aloud_started.is_some());
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::ReadAloudCompleted {
+                audio_bytes: 3200,
+                chunks_sent: 2,
+            },
+            &tx,
+        )
+        .await;
+        assert!(!app.voice_read_aloud_active);
+        assert_eq!(app.voice_read_aloud_last_stats, Some((3200, 2)));
+        assert_eq!(input_text(&app), "");
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::ReadAloudError("speaker offline".to_owned()),
+            &tx,
+        )
+        .await;
+        assert!(!app.voice_read_aloud_active);
+        assert!(rx.recv().await.is_some());
+    }
+
+    #[tokio::test]
+    async fn assistant_message_start_commits_voice_interim_before_assistant_regression() {
+        let mut app = app();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::Interim("voice question".to_owned()),
+            &tx,
+        )
+        .await;
+        app.engine
+            .messages
+            .push(jfc_core::ChatMessage::assistant(String::new()));
+        app.engine.streaming_assistant_idx = Some(0);
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::AssistantMessageStarted,
+            &tx,
+        )
+        .await;
+
+        assert_eq!(input_text(&app), "");
+        assert_eq!(app.voice_interim, None);
+        assert_eq!(app.voice_interim_chars, 0);
+        assert_eq!(app.engine.messages.len(), 2);
+        assert!(matches!(app.engine.messages[0].role, jfc_core::Role::User));
+        assert_eq!(
+            app.engine.messages[0].parts[0].text_only(),
+            "voice question"
+        );
+        assert!(matches!(
+            app.engine.messages[1].role,
+            jfc_core::Role::Assistant
+        ));
+        assert_eq!(app.engine.streaming_assistant_idx, Some(1));
+    }
+
+    #[tokio::test]
+    async fn assistant_message_start_creates_voice_owned_stream_normal() {
+        let mut app = app();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::AssistantMessageStarted,
+            &tx,
+        )
+        .await;
+
+        assert!(app.engine.is_streaming);
+        assert_eq!(app.engine.streaming_assistant_idx, Some(0));
+        assert_eq!(app.engine.messages.len(), 1);
+        assert!(matches!(
+            app.engine.messages[0].role,
+            jfc_core::Role::Assistant
+        ));
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::AssistantResponseCompleted,
+            &tx,
+        )
+        .await;
+
+        assert!(!app.engine.is_streaming);
+        assert_eq!(app.engine.streaming_assistant_idx, None);
+        assert!(app.voice_skip_next_stream_read_aloud);
+    }
+
+    #[tokio::test]
+    async fn tts_word_events_record_karaoke_timing_normal() {
+        let mut app = app();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::ReadAloudStarted { chars: 12 },
+            &tx,
+        )
+        .await;
+        handle_voice_event(
+            &mut app,
+            &crate::runtime::VoiceEvent::TtsWord {
+                text: "hello".to_owned(),
+                pts_ms: 42,
+            },
+            &tx,
+        )
+        .await;
+
+        assert_eq!(app.voice_tts_word_timings, vec![("hello".to_owned(), 42)]);
     }
 }
 

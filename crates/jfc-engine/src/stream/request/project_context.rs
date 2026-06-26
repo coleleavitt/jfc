@@ -156,12 +156,21 @@ pub(super) async fn append_project_context(
                 std::time::Duration::from_millis(750),
             )
             .await;
-            stats.memory_context_chars +=
-                append_session_start_knowledge_brief(system_prompt, &cwd_path).await;
+            stats.memory_context_chars += append_session_start_knowledge_brief(
+                system_prompt,
+                &cwd_path,
+                overrides.session_id.as_deref(),
+            )
+            .await;
         }
         if let Some(query) = last_user_text(messages) {
-            stats.memory_context_chars +=
-                append_cross_project_knowledge(system_prompt, &cwd_path, &query).await;
+            stats.memory_context_chars += append_cross_project_knowledge(
+                system_prompt,
+                &cwd_path,
+                &query,
+                overrides.session_id.as_deref(),
+            )
+            .await;
         }
         if let Ok(Some(memory_store_section)) = tokio::time::timeout(
             std::time::Duration::from_millis(1500),

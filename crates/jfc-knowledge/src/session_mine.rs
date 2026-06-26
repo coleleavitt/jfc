@@ -234,6 +234,12 @@ fn mine_preferences(session: &Session, out: &mut Vec<MinedLesson>) {
             continue;
         };
         let trimmed = user_text.trim();
+        // Skip harness-injected scaffolding (system reminders, continuation
+        // nudges) — mining it teaches the model its own scaffolding back to
+        // itself, which dominated and polluted recall.
+        if is_harness_noise(trimmed) {
+            continue;
+        }
         if !is_correction(trimmed) {
             continue;
         }
@@ -250,6 +256,18 @@ fn mine_preferences(session: &Session, out: &mut Vec<MinedLesson>) {
             session_id: session.id.clone(),
         });
     }
+}
+
+/// Harness-injected scaffolding that must NOT be mined as a user preference.
+fn is_harness_noise(text: &str) -> bool {
+    let t = text.trim_start();
+    let lower = t.to_ascii_lowercase();
+    t.starts_with("<system-reminder")
+        || lower.contains("</system-reminder")
+        || lower.contains("[system notification")
+        || lower.contains("automated background-task")
+        || lower.starts_with("continue — do the next")
+        || lower.starts_with("continue the remaining")
 }
 
 /// Normalize a tool's error output into a stable class string for dedup.

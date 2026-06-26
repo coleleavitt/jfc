@@ -1,0 +1,986 @@
+                                    communications biology                                                                                                            Review article
+                                    A Nature Portfolio journal
+
+
+
+
+                                                                                                                                                   https://doi.org/10.1038/s42003-026-10042-0
+
+
+                                    The role of transthalamic pathways in
+                                    perception
+                                                                                                                                                                                Check for updates
+
+                                    Kevin P. Koster1 & Christina Mo               2
+
+
+
+
+                                    Cognition is supported by neuronal signaling between regions of the cerebral cortex, most of which are
+                                    linked by a strong synapse in the thalamus, forming transthalamic pathways. These pathways have
+                                    gained attention for their powerful inﬂuence on perception, distinct from direct corticocortical
+                                    pathways, prompting a reassessment of current cortical processing models. Recent advances in
+
+
+1234567890():,;   1234567890():,;
+                                    recording and manipulation technologies have allowed components of these pathways to be probed
+                                    during behavior, but not the entire pathway. Here we synthesize ﬁndings on transthalamic
+                                    contributions to perceptual behavior and outline the methodological constraints that shape
+                                    interpretations. We argue that, despite these limitations, a converging conceptual update is taking
+                                    form: transthalamic pathways operate as dynamic integrators that convey contextual, internal-state,
+                                    and task-relevant information across distributed cortical areas. More complete understanding of these
+                                    circuits will reﬁne broader theories of brain computation.
+
+
+                                    How the brain integrates what we sense from the outside world with our             corticothalamic synapses are unusually strong compared to most corti-
+                                    internal states to guide behavior remains one of the central puzzles in            cocortical connections16,17. With the advent of viral tracing, calcium
+                                    neuroscience. Many decades of research have revealed that different regions        imaging, and optogenetic tools, research has now moved beyond synaptic
+                                    of the cerebral cortex make distinct contributions to this process, and            physiology to direct tests of how transthalamic circuits contribute to
+                                    silencing or recording from them during perception and decision-making             behavior. These studies reveal surprising roles in decision-making, sti-
+                                    has helped map out a functional hierarchy from sensory to association to           mulus valuation, conﬁdence, and predictive processing.
+                                    motor areas1–13. Within this framework, cortical information ﬂow is often                Transthalamic pathways arise from layer 5 (L5) pyramidal neurons
+                                    discussed as depending primarily on direct connections between cortical            of a “lower” cortical region and transmit through higher-order thalamus
+                                    regions14,15. However, this cortico-centric view is now being reappraised, as      to “higher” cortical areas. L5b cells are major cortical output neurons that
+                                    advances in circuit-dissection methods reveal the importance of inter-             also target subcortical regions controlling movement18–20, positioning
+                                    mediary routes. Silencing a cortical region disrupts not only its direct cor-      transthalamic circuits as a hub for integrating motor, sensory, and cog-
+                                    ticocortical projections (area A → area B), but also indirect communication        nitive signals. An important detail is that direct corticocortical and
+                                    pathways that involve additional brain structures.                                 transthalamic circuits originate from largely separate neuronal popula-
+                                         Chief among these is the thalamus, the intricately connected partner          tions in cortical L521, suggesting that they carry different streams of
+                                    of the cortex long cast as a passive relay for sensory input. While that           information. This begs the question: what information is sent through
+                                    description holds for certain ﬁrst-order thalamic nuclei, higher-order             this indirect cortical circuit with a powerful synapse in thalamus
+                                    nuclei receive substantial input from cortex itself and project broadly            and why?
+                                    back to other cortical regions, forming transthalamic pathways. These                    In this review, we synthesize these circuit ﬁndings with a focus on
+                                    cortico-thalamo-cortical circuits link primary to higher-order sensory             their behavioral relevance but acknowledge the methodological limita-
+                                    cortices, motor cortices, sensorimotor regions, and frontal areas, offering        tions. We present emerging evidence that transthalamic pathways are
+                                    a powerful alternative route of information ﬂow across the brain. Evi-             well-positioned as dynamic integrators that transform and broadcast
+                                    dence for transthalamic pathways comes primarily from mice, where                  contextual signals, internal states, and task-relevant information
+                                    their anatomy and function have been dissected in detail, but com-                 across the cortex. By consolidating evidence across circuit physiology,
+                                    parative data suggest that they are conserved across species and may               systems neuroscience, and cognitive theory, we provide a conceptual
+                                    represent a general feature of cortical organization. Initial work suggested       update on thalamic function: from local communication to brain-wide
+                                    that these pathways might be especially powerful because their                     computation.
+
+
+                                    1
+                                        Department of Neurobiology, University of Chicago, Chicago, IL, USA. 2The Florey Institute of Neuroscience and Mental Health, Melbourne, VIC, Australia.
+                                          e-mail: Christina.mo@ﬂorey.edu.au
+
+
+                                    Communications Biology | (2026)9:585                                                                                                                           1
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                          Review article
+
+
+
+
+Fig. 1 | Basic organization of transthalamic pathways. A Feedforward transtha-         projections to primary cortex terminate with modulator synapses (open circles),
+lamic pathways arise from L5 of primary cortex to higher order cortical areas (e.g.,   particularly to L1 and L5. C Variants of this motif extend to motor and cross-modal
+secondary, tertiary, etc.) via HO thalamus. This pathway is comprised of all strong    circuits, such as S1–M1 (feedforward driver–driver) and S1–auditory cortex
+‘driver’ synapses (arrows). B Feedback transthalamic pathways from L5 of higher        (driver–modulator).
+order cortex project to HO thalamus via driver synapses but HO thalamic
+
+
+
+Transthalamic pathways: general wiring pattern                                         ﬁrst indication of why they may exert such powerful inﬂuence over cortical
+The prototypical feedforward transthalamic pathway was ﬁrst demon-                     processing.
+strated in the mouse somatosensory system, where activity in primary                         By contrast, feedback transthalamic pathways (e.g., S2 → POm → S1)
+somatosensory cortex (S1) stimulated metabolic activity in the secondary               are organized differently: L5 inputs to HO thalamus are drivers, but HO
+somatosensory cortex (S2) via the higher-order thalamic nucleus, the pos-              projections back to primary cortex are modulatory, targeting mainly
+terior medial nucleus (POm)22. Subsequent studies have revealed similar                superﬁcial and deep layers24 (Fig. 1B). Considering the HO thalamic pro-
+feedforward pathways in the visual23,24, sensorimotor25 and motor systems26.           jections to a given cortical target are either driver to all layers or modulator to
+      Transthalamic circuits follow a conserved organization: layer 5 (L5)             all layers, not mixed, it follows that standard transthalamic pathways con-
+neurons in one cortical area send strong inputs to higher-order (HO) tha-              form a conserved organization shown in Fig. 1A, B24,25.
+lamus, which then relays similarly strong inputs to other cortical regions16,24              Beyond sensory cortices, transthalamic circuits also link sensorimotor
+(Fig. 1A). These strong connections at the synapse have been termed “dri-              and motor areas25 and even cross modalities (e.g., S1 → auditory thalamus
+vers,” and are specialized for reliably transmitting the excitatory sensory            → auditory cortex)28 (Fig. 1C). This suggests a generalized circuit motif that
+information, in contrast to the weaker “modulatory” connections that tune              connects primary to higher-order sensory cortices, motor and sensorimotor
+or adjust activity rather than carry the main signal17,27. Importantly, all            regions, and even frontal areas, and that is likely conserved across species,
+known transthalamic pathways use driver-type connections, providing a                  with the strongest evidence to date from mice.
+
+
+
+Communications Biology | (2026)9:585                                                                                                                                    2
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                              Review article
+
+
+
+
+Fig. 2 | How do individual thalamic relays contribute to transthalamic pathways?          the feedforward (blue) and feedback (red) pathways solely innervate distinct HO
+A Most HO thalamic cells branch to innervate multiple cortical areas (multiareal,         relay cells, effectively separating these two information streams. However, given the
+purple) and may therefore integrate both the feedforward and feedback pathways            prevalence of multiareal cells34 and degree of convergence of L5 inputs in HO
+alone34. B An alternative model is that in addition to multiareal cells (purple), there   thalamus119, model C is unlikely (denoted by red shading over title), while models A
+are also separate feedforward and feedback transthalamic channels, mediated by two        and B are both plausible (denoted by green shading).
+separate populations of HO thalamic cells (red and blue). C A ﬁnal scenario is that
+
+
+     Notably, while we focus on transthalamic pathways, reciprocal con-                   Difﬁculties in isolating the transthalamic pathway for study
+nections between cortex and thalamus, sometimes called cortico-thalamo-                   Transthalamic pathways are disynaptic circuits (the corticothalamic and
+cortical (CTC) loops, are also ubiquitous29–31. These are likely integrated               thalamocortical synapses) that run parallel with other corticothalamic (e.g.,
+with transthalamic pathways, as discussed in a recent review32, but are not               those from L6), thalamocortical, and corticocortical circuits. Therefore,
+examined in detail here.                                                                  selective study of the entire transthalamic pathway is very challenging and,
+                                                                                          to date, has only been achieved in studies using slice electrophysiology and
+How do individual thalamic relays participate in transthalamic                            anatomical tracing (including rabies-mediated transsynaptic tracing)22–26.
+pathways?                                                                                 These ﬁndings have revealed that feedforward transthalamic pathways are
+How HO thalamic neurons implement these circuits remains unresolved.                      anatomically prominent and purely constituted by powerful driver synap-
+Single-cell tracing in rodents using viral-based tracing and in vivo electro-             ses, which implicate a dominance in the awake state.
+poration approaches shows that the majority of HO neurons branch to                             Experiments in awake animals thus far have only isolated one leg of the
+innervate, often densely, multiple cortical areas33,34. In other words, a large           transthalamic pathway, leaving an open loop. For instance, silencing the
+proportion of the neurons in HO thalamus are so called “multiareal cells”34.              cortical output from to HO thalamus indeed suppresses the ﬁrst step, but
+It follows that these cells would be capable of participating in both feed-               while these projections to HO thalamus may synapse on cells that are
+forward and feedback pathways simultaneously due to their projections to                  transthalamic, they may also innervate those that project subcortically, such
+interlinked cortical areas - S1 and S2, for instance33. However, since the same           as the striatum or amygdala38–40 (Fig. 3A). Thus, the observed behavioral
+HO nucleus (e.g., POm) provides driver inputs to some targets (e.g., S2) and              effects cannot be entirely attributed to transthalamic function (Fig. 3A).
+modulators to others (e.g., S1), individual multiareal cells would need to                Similarly, silencing the HO thalamic projections to cortex will impact the
+manifest this functional divergence (i.e., drive one target but modulate                  function of the second leg of the transthalamic pathway, but not all those
+another). Indeed, electron microscopy recently revealed single POm neu-                   HO thalamic cells receive input from cortical L5 (Fig. 3B).
+rons innervating distinct cortices (M1 vs. S1) with markedly different axonal                   One workaround is to measure how silencing this cortical L5→HO
+bouton morphologies35 that correspond to their previously described                       thalamus projection affects neuronal activity in a target region using, for
+functional roles as drivers or modulators25. Given the prevalence of multi-               instance, calcium imaging or multi-electrode recordings (Fig. 3C). Even so,
+areal neurons in HO thalamus, these cells may be the primary conduit of                   indirect circuits between HO thalamus and cortex contribute to the
+transthalamic information in both the feedforward and feedback direc-                     observed effects. Combating the confound presented by targeting only the
+tion (Fig. 2A).                                                                           second leg of the transthalamic pathway (i.e., HO thalamus→cortex)
+      Alternatively, subpopulations of HO neurons may specialize, such that               requires the selective manipulation of HO relays that receive a L5 cortical
+some HO neurons project exclusively to primary cortex (modulators),                       input from the area of interest. However, plans to use anterograde, trans-
+others exclusively to higher cortex (drivers), and a third group—the mul-                 synaptic combinatorial viral techniques such as those used to isolate the
+tiareal cells branch to both (Fig. 2B). This mixed organization is most                   subcortical projections to HO thalamus (i.e., AAV1-based approaches41,42)
+consistent with current data because, in addition to the substantial multi-               are thwarted by the fact that both L5 and L6 project to HO thalamus (i.e.,
+areal cell population in HO thalamus, there exist many cells that project to a            transsynaptic transport will occur along both pathways, confounding the
+single cortical target. This is evidenced both by bulk labeling, in which dual            interpretation). Advances in anterograde tracing or combinatorial genetic
+retrograde labeling of disparate visual cortices revealed only a fraction of HO           approaches may provide fruitful solutions to this problem43,44 (Fig. 3D).
+thalamic neurons are doubly labeled (i.e. branch to multiple cortical areas;                    In this review, we prioritize the discussion of experiments which record
+although this method is subject to false negatives)36, and single-cell tracing,           from, or perturb, speciﬁc transthalamic components, such as corticotha-
+which demonstrates that a fraction of HO neurons (perhaps less than 20%)                  lamic L5 projections to a deﬁned HO nucleus (Fig. 3A), or thalamocortical
+project to a single cortical area in restricted fashion34,37. These cells may also        projections from a HO nucleus to a speciﬁc cortical region (Fig. 3B). We
+participate in transthalamic processing. A purely segregated model, where                 exclude studies where entire cortical or thalamic brain regions were
+feedforward and feedback relays are entirely distinct, appears very unlikely              manipulated, as well as generalized L5 projections not targeted to HO
+given the prevalence of multiareal cells (Fig. 2C). Clarifying these con-                 thalamus. Although no study in behaving animals has yet fully isolated a
+tributions will be key for understanding how transthalamic signals are                    complete transthalamic pathway, valuable insights have nonetheless
+temporally and functionally distributed across the cortex.                                emerged from work that interrogates its separate legs.
+
+
+
+Communications Biology | (2026)9:585                                                                                                                                         3
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                           Review article
+
+                                              Types of experiments discussed and their limitations
+      A                                                                           B
+                     Manipulation of L5             HO thalamus                                  Manipulation of HO thalamus                    cortex
+
+
+                                                         L5 expression of                            local           cortical area:
+                                 a:
+                             are                         opsin/DREADD                             manipulation
+                   r t i cal        #3                                                                                #1 #2 #3                      subcortical
+                co                                                                                                                                    inputs
+                           #2
+                 #1                                 L5
+                                                                                                                       L5
+
+
+
+
+                                                  local
+                                                                                                      thalamus
+                   striatum                    manipulation
+                                         thalamus                                          thalamic expression of opsin/DREADD
+
+            which outputs of HO
+                                                                                                                          which inputs of HO
+          thalamus are responsible
+                                                                                                                       thalamus are responsible
+                for the effect?
+                                                                                                                             for the effect?
+
+
+                                             Potential solutions to capture transthalamic pathways
+      C                                                                           D
+                                                                                                                 HSV-'TK-FLP + Cre-dep. TK
+        multielectrode         Ca2+ imaging                                                                                  or
+         recording                                       L5 expression of                                             Cre- dep. ATLAS
+                                                                                                     local
+                          or                             opsin/DREADD                             manipulation
+
+                                                    L5
+                                                                                                                       L5
+
+
+
+
+                                                  local
+                                               manipulation
+                                                                                                     FLP-dependent
+                                                                                                         opsin
+                 Record activity in
+                 salient outputs &                                                                                  Use combinitorial viral
+                correlate with effect                                                                               strategy to manipulate
+                                                                                                                   transthalamic pathway**
+
+Fig. 3 | Difﬁculties in experimentally manipulating the transthalamic pathway.        projections may include non-transthalamic relays. C Combining manipulation with
+A, B Depictions of the types of L5 corticothalamic and thalamocortical studies thus   recording/imaging in downstream cortex provides a partial solution. D Next-
+far and the potential confounds in interpreting their results as relying on trans-    generation viral and genetic strategies (**and a desirable toxicity proﬁle), may allow
+thalamic circuitry speciﬁcally. A Manipulating L5 inputs to HO thalamus affects       isolation of the entire transthalamic pathway in future work44.
+downstream projections beyond cortex. B Manipulating HO thalamocortical
+
+
+In vivo functional investigations of transthalamic                                    preferences strongly correlated with L2/3 neurons in HVAs, whereas V1
+pathway                                                                               corticocortical boutons had broader stimulus responses, indicating that
+Having established the organization of transthalamic pathways and meth-               pulvinar exerts a more targeted inﬂuence on HVAs than direct V1 input.
+odological challenges, we examine recent studies in awake rodents that                The authors also manipulated the animals’ visual ﬂow by decoupling the
+monitor or manipulate these circuits to understand their role in attention,           virtual visual environment from treadmill activity. They found that
+decision making, and sensory perception (Table 1), which are oper-                    pulvinar-to-HVA boutons encoded both optic ﬂow and locomotor signals,
+ationalized by the observable outcomes in goal-directed stimulus-                     while V1 corticocortical boutons primarily responded to optic ﬂow. This
+response tasks.                                                                       suggests that HVAs rely on pulvinar input to integrate external visual signals
+                                                                                      with self-motion cues, and that this integration does not depend on direct
+Visual transthalamic pathways                                                         V1 inputs23.
+The feedforward visual transthalamic pathway connects L5 of primary                         Results from related studies by Han and Bonin (2024) and Neske and
+visual cortex (V1) to higher visual areas (HVAs) through the HO visual                Cardin (2025) support that corticocortical and HO thalamocortical pro-
+thalamic nucleus, the pulvinar (also referred to as lateral posterior nucleus in      jections to HVAs carry distinct signals. Both studies also performed calcium
+mice)23,24,45. Blot and colleagues ﬁrst investigated these pathways in vivo,          imaging of L1 boutons from pulvinar to various HVAs in the awake mouse.
+using two-photon calcium imaging to compare activity in corticothalamic               Results from Han and Bonin largely corroborated with that of Blot et al.,
+versus thalamocortical projections to HVAs23 (Table 1). Their results                 ﬁnding that the tuning of pulvinar→HVA boutons matches the tuning of
+demonstrated that pulvinar-to-HVA boutons displayed response                          the target HVA neurons, more so than the corticocortical inputs46.
+
+
+Communications Biology | (2026)9:585                                                                                                                                      4
+                                       Table 1 | Summary of studies examining transthalamic pathways in vivo
+
+                                       Citation          Type of study              Pathway(s)              Method of manipulation            Behavioral task/stimulus                     Findings                                       Notes on speciﬁc study of the
+                                                                                    (manipulated/                                                                                                                                         pathway
+                                                                                    imaged)
+                                       Visual system
+                                       Blot et al.,      Visual stimulus plus       Silenced:               Excitatory opsin (ChrimsonR)      1) Presentation of drifting gratings         1a) V1 suppression strongly reduced            Compared corticocortical and
+                                       2021              state-related              Visual cortical areas   expressed in interneurons (PV)    2) Animal traverses a linear virtual track   pulvinar axon activity in AL and PM            thalamocortical inputs to higher order
+                                                         information and            (V1, AL, PM)            of cortical region*               w/ or w/o decoupling from optic ﬂow          1b) Pulvinar axons have tuning                 cortex
+                                                         visual ﬂow                 Imaged during                                                                                          preferences that are similar to their target   *Cannot distinguish contribution of L5
+                                                                                    silencing:                                                                                             HVA                                            and L6 with this approach.
+                                                                                    Pulvinar→AL axons                                                                                      2) Pulvinar axons to HVAs carry both
+                                                                                    Pulvinar→PM                                                                                            sensory and motor (self-motion)
+                                                                                    axons                                                                                                  information, while intracortical
+Communications Biology | (2026)9:585
+
+
+                                                                                                                                                                                           connections are largely sensory
+                                       Han and           Visual stimulus only (no   Imaged:                 N/A                               Presentation of a range of visual stimuli    a) Visual cortical areas with similar tuning   Compared corticocortical and
+                                                                                                                                                                                                                                                                                   https://doi.org/10.1038/s42003-026-10042-0
+
+
+
+                                       Bonin, 2024       behavior)                  V1 and HVAs→AL                                            varying in spatiotemporal properties         preferences are more strongly                  thalamocortical inputs to higher order
+                                                                                    V1 and HVAs→PM                                                                                         anatomically interconnected                    cortex
+                                                                                    V1 and HVAs→A                                                                                          b) Intracortical projections carry sensory
+                                                                                    Pulvinar→V1                                                                                            information to their targets that is
+                                                                                    and HVAs                                                                                               speciﬁc (i.e., matches the functional bias
+                                                                                                                                                                                           of the target), albeit relatively weakly.
+                                                                                                                                                                                           c) Pulvinar inputs to HVAs provide highly
+                                                                                                                                                                                           speciﬁc information to target HVAs (i.e.,
+                                                                                                                                                                                           pulvinar input tuning preferences match
+                                                                                                                                                                                           their targets)
+                                       Neske and         Visual stimulus plus       Silenced:               Inhibitory opsin (eOPN3)          1) Presentation of drifting gratings.        1a) Corticocortical projections carried        Compared corticocortical and
+                                       Cardin, 2025      state-related              Cortical or Pulvinar    expressed in thalamic or          2) Monitoring of movement and pupil          sensory information to PM                      thalamocortical inputs to higher order
+                                                         information                inputs to PM            cortical inputs while imaging     size (arousal state).                        1b) thalamocortical projections carried        cortex
+                                                                                    Imaged during           PM cell activity                                                               state-related information (e.g., related to
+                                                                                    silencing:                                                                                             pupil dilation)
+                                                                                    Intracortical:                                                                                         2) Silencing intracortical (e.g., V1→PM)
+                                                                                    V1→PM axons                                                                                            connections decreased contrast-
+                                                                                    LM→PM axons                                                                                            response curves of PM neurons during
+                                                                                    Thalamo-cortical:                                                                                      passive presentation of visual gratings.
+                                                                                    Pulvinar→PM                                                                                            Silencing thalamocortical projections
+                                                                                    axons                                                                                                  only moderately decreased PM visual
+                                                                                                                                                                                           response curves
+                                       McKinnon et       Visual discrimination      Silenced:               Inhibitory opsin (Jaws)           Discrimination of oriented visual            Silencing V1 L5 → pulvinar projections         Manipulated only the corticothalamic
+                                       al., 2025         go, no-go                  V1 L5 → pulvinar        expressed in V1 L5 and            stimuli (static gratings) with               causes increased error rate, a ﬂattening       leg of the pathway
+                                                         behavioral task                                    terminals inhibited in pulvinar   psychometric testing                         of the psychometric function, and
+                                                                                                                                                                                           reduced d-prime performance across all
+                                                                                                                                                                                           stimuli.
+                                       Somatosensory system
+                                       Takahashi et      Whisker go, no-go          Silenced:               Inhibitory DREADD in S1 L5,       Detection of a single whisker                Detection (or reporting) of stimulus is        * DREADD-based manipulation means
+                                       al., 2020         detection task             S1 L5→POm               local (POm) infusion of CNO       movement, go/no-go task                      severely reduced with DREADDs                  that the targeted pathway was affected
+                                                                                    Imaged:                                                                                                inhibition*                                    throughout all parts of the task.
+                                                                                    Dendrites of S1
+                                                                                    L5 cells
+                                       Qi et al., 2022   Whisker discrimination     Slienced:               Inhibitory opsin injected into    Whisker discrimination task in freely        Bilateral suppression of S1 L5 → POm           *We are highlighting only the
+                                                         two-alternative forced     S1 L5→POm*              S1 L5 bilaterally and optic       behaving mice; detection of target           pathway abolishes texture                      transthalamic component; the authors
+                                                         choice task                                        ﬁbers implanted bilaterally       texture accompanies water reward,            discrimination. Behavioral performance         also show that inhibiting M1/M2
+                                                                                                            over terminals in POm             2-alternative forced choice task             is reduced equally when whole POm is           L5→POm, and SpV→POm pathways
+                                                                                                                                                                                           suppressed.                                    has no behavioral effect.
+                                       Mo et al., 2024   Whisker discrimination     Silenced:               Inhibitory opsin (Jaws)                                                        Silencing S1 L5 →POm increased error           Study attempted to ‘complete the
+                                                         go, no-go task             S1 L5→POm               expressed in S1 L5 and                                                         rate, ﬂattened the psychometric function       circuit’ by manipulating S1 L5→POm
+                                                                                                                                                                                                                                                                                   Review article
+5
+                                       Table 1 (continued) | Summary of studies examining transthalamic pathways in vivo
+                                        Citation            Type of study                 Pathway(s)                 Method of manipulation                Behavioral task/stimulus                        Findings                                          Notes on speciﬁc study of the
+                                                                                          (manipulated/                                                                                                                                                      pathway
+                                                                                          imaged)
+                                                                                          Imaged during              terminals inhibited in POm            Texture discrimination and whisker              of performance, and reduced d-prime               whilst imaging in S2 but POm→S2 was
+                                                                                          silencing:                 while imaging S1 or S2 cell           detection tasks with psychometric               performance across all stimuli,                   not directly studied.
+                                                                                          S1 or S2                   bodies                                testing, go/no-go task                          particularly during the sensory periods of
+                                                                                                                                                                                                           the task. Reward-based neuronal
+                                                                                                                                                                                                           discrimination is impaired by S1 L5 →
+                                                                                                                                                                                                           POm inhibition, particularly in S2.
+                                        Motor system
+                                        Takahashi et        Whisker deﬂection             VM→ALM L1                  Inhibitory DREADD in VM, local        Manual deﬂection of whisker, licking to         a) Licking/reporting of whisker defection         Behavioral performance is preserved in
+                                        al., 2022           detection task                                           (ALM) infusion of CNO;                report                                          detection is delayed with silencing of            these experiments—only the timing of
+Communications Biology | (2026)9:585
+
+
+
+                                                                                                                     Excitatory ChR2 in VM, local                                                          VM→ALML1                                          motor response is affected.
+                                                                                                                     LED stimulation in ALM                                                                b) Licking/reporting of whisker deﬂection
+                                                                                                                                                                                                                                                                                                               https://doi.org/10.1038/s42003-026-10042-0
+
+
+
+                                                                                                                                                                                                           detection is accelerated with activation
+                                                                                                                                                                                                           of VM→ALM L1
+                                        Prefrontal system
+                                        Bolkan et al.,      Spatial working               MD→PFC                     eArch3.0 in MD, local terminal        Delayed nonmatch-to-sample                      Suppression of MD→PFC projections,
+                                        2017                memory task                   MD→OFC                     suppression via optical ﬁber in       T-maze task.                                    but not MD→OFC, decreases
+                                                                                                                     PFC of OFC                                                                            performance in T-maze task;
+                                                                                                                                                                                                           suppression restricted to the delay
+                                                                                                                                                                                                           phase (but not sample or choice phases)
+                                                                                                                                                                                                           of the task accounts for performance
+                                                                                                                                                                                                           decrease.
+                                                                                          mPFC→MD                    eArch3.0 in PFC, local terminal                                                       Suppression of PFC→MD pathway                     *Cannot distinguish contribution of L5
+                                                                                                                     suppression via optical ﬁber                                                          decreased task performance;                       and L6 with this approach
+                                                                                                                     in MD*                                                                                suppression restricted to the either the
+                                                                                                                                                                                                           delay or choice phases (but not sample
+                                                                                                                                                                                                           phase) accounts for performance
+                                                                                                                                                                                                           decrease.
+                                        Alcaraz et al.,     Instrumental learning         MD→PFC                     Dual viral strategy using             Instrumental learning task with                 Suppression of MD→PFC pathway does                Separate study of corticothalamic and
+                                        2018                task in rats                                             retrograde-Cre (Cav-2) in PFC         speciﬁc reward tied to either level             not affect learning, but impairs                  thalamocortical legs of the pathway
+                                                                                                                     and Cre-dependent hM4Di               pressing or pushing of a tilt. Rewards          behavioral ﬂexibility of the animal during
+                                                                                                                     in MD                                 were either devalued or degraded                both devaluation of reward and
+                                                                                                                                                           during test session                             degradation of the action-reward
+                                                                                                                                                                                                           relationship
+                                                                                          PFC→MD                     Dual viral strategy using                                                             Suppression PFC→MD pathway does
+                                                                                                                     retrograde-Cre (Cav-2) in MD                                                          not affect learning, and only affects
+                                                                                                                     and Cre-dependent hM4Di                                                               choice behavior during devaluation of
+                                                                                                                     in PFC                                                                                reward (not involved in action-outcome
+                                                                                                                                                                                                           assessment)
+                                        Lam et al.,         Multisensory rule             Silencing:                 iC + + or halorhodopsin               Switching cued rules in a block design          Inhibiting ACC → MD delayed                       *Cannot distinguish contribution of L5
+                                        2024                reversal task in tree         ACC→MD*                    in ACC                                                                                behavioural rule switching                        and L6 with this approach
+                                                            shrews                        ACC→PFC                                                                                                          ACC → PFC corticocortical pathway had
+                                                                                                                                                                                                           no effect
+                                       A anterior visual cortex, ACC anterior cingulate cortex, AL anterolateral visual cortex, ALM anterolateral medial cortex, ChR2 channelrhodopsin, CNO clozapine-N-oxide, DREADD designer receptor exclusively activated by designer drugs, FA false alarm, L layer, MD
+                                       mediodorsal thalamus, PFC prefrontal cortex; PM posteromedial visual cortex, POm posteromedial thalamus, PV parvalbumin, S1 primary somatosensory cortex, S2 secondary somatosensory cortex, V1 primary visual cortex, VGAT vesicular GABA transporter, VM
+                                       ventromedial motor thalamus.
+
+
+
+
+                                                                                                                                                                                                                                                                                                               Review article
+6
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                 Review article
+
+Interestingly, this was not the case for pulvinar→V1 boutons, again              but effects were weaker or absent for brainstem targets. In complementary
+emphasizing the feedback, modulatory function of HO thalamus to primary          experiments, increases in S1 L5 apical dendritic calcium activity predicted
+cortex24. In contrast, Neske and Cardin (2025) saw weak correlations             detection of the whisker deﬂection. This suggests that S1 L5 outputs to
+between calcium activity in pulvinar→HVA boutons (area posteromedial,            multiple subcortical structures, including POm, provide essential infor-
+PM) and the PM cortical neurons they simultaneously imaged, but veriﬁed          mation for perceiving and reporting the presence of a somatosensory
+that pulvinar→PM inputs carry more arousal and movement information              stimulus.
+compared to corticocortical projections47.                                             Using a complementary technique, Qi et al. (2022) optogenetically
+      The aforementioned data were collected in the awake animal but in the      inhibited various projections to POm during a freely moving texture dis-
+absence of a decision task23,46,47, leaving open questions about perceptual      crimination task in mice54. Silencing brainstem projections from the spinal
+function. Addressing this, McKinnon et al. (2025) perturbed the corti-           nucleus of the ﬁfth nerve (SpV), which transmits whisker (and facial) sen-
+cothalamic leg of the transthalamic pathway during a visual discrimination       sory information to POm, had little effect on texture discrimination.
+task48. Mice were trained to lick in response to one visual stimulus (90°        Similarly, suppression of L5 inputs to POm from primary and secondary
+oriented grating) and withhold licking to another stimulus (0° oriented          motor cortex (M1 and M2) did not affect performance. In contrast, silencing
+grating) for water reward. Speciﬁc optogenetic silencing of the V1 L5-to-        S1 L5 terminals in POm reduced discrimination levels, most effectively on
+pulvinar inputs impaired stimulus discrimination across a range of 0–90°         trials that were more difﬁcult to discriminate. These data highlight the
+orientations. In an important control, the behavioral effect was not seen        unique importance of S1 L5 to POm to discrimination ability, a function
+when the stimulus was presented in visual space that activated the corre-        that relies on intact S155.
+sponding V1 area which did not express the inhibitory opsin48. This                    Further reﬁning these ﬁndings, Mo et al. selectively inhibited the S1 L5
+dependance on the corticothalamic projection suggests that the transtha-         to POm projection during speciﬁc task epochs, revealing that pathway
+lamic pathway contributes to accurate perception during goal-directed            activity during sensory sampling was essential for discrimination, whereas
+behavior.                                                                        inhibition during the delay period increased discrimination thresholds
+      While these studies collectively provide excellent data for the likely     without abolishing performance53. Notably, discrimination ability was
+roles of transthalamic pathways through pulvinar in visual perception,           impaired across texture difﬁculties to a level similar to performance in the
+limitations remain. First, the two separate legs of the transthalamic pathway    absence of whiskers, and the degree of impairment correlated with the
+(corticothalamic and thalamocortical) were perturbed or examined across          estimated magnitude of opsin activation53. These results indicate that
+studies, but their results cannot be applied to understanding feedforward        transthalamic pathway activity is essential for aspects of behavioral per-
+transthalamic pathways as a whole. As outlined in Fig. 3B, when assessing        formance that extend beyond the initial encoding of sensory stimuli (but
+the functional implications of pulvinar versus corticocortical bouton activity   that do not include the motor action itself). This is discussed further in
+in HVAs, the thalamocortical axons from pulvinar that are part of the            Sections “Stimulus detection and discrimination” and “Maintenance of a
+transthalamic pathway (with inputs from cortical L5) cannot be dis-              percept”.
+tinguished from those that are driven by, for example, the superior colli-             A limitation of the neural silencing paradigms shared by all these
+culus, which provides distinct information about the visual scene and eye        studies12,53,54 is that there are multiple downstream impacts of inhibiting S1
+movements to pulvinar38,49–52 (see also section “Integrating extrinsic signals   L5→POm which could underlie the behavioral deﬁcits (Fig. 3A). POm
+with internal state”).                                                           projects not only to higher- order somatosensory and association cortices56,
+      Further, when assessing the functional contribution of transthalamic       but also motor cortex25, striatum40,57, and in feedback fashion to S1, where it
+versus corticocortical pathways in higher visual areas, all studies imaged       can modulate future driver responses through mGluR activation24. Thus, the
+afferent boutons in L123,46,47. This is an important detail, as all HO sensory   behavioral deﬁcits reported likely reﬂect the combined impact of reduced
+nuclei studied to date project largely to the middle layers of higher-order      activation in multiple circuits.
+cortical areas (some participating in feedforward transthalamic                        To probe this, Mo and colleagues (2024) combined inhibition of S1
+pathways)24,25. Meanwhile, projections to primary cortex (some comprising        L5→POm terminals with two-photon calcium imaging in S1 and S2,
+feedback transthalamic pathways) terminate with modulator synapses               thereby recording impacts on the feedforward transthalamic pathway to S2
+preferentially in L1 and L524. Thus, the L1 bouton populations imaged in         (as in Fig. 3C) and also the reciprocal pathway back to S1. Responses in S1
+these studies may be enriched for particular subcircuits that fall outside the   and S2 showed higher response selectivity for the rewarded (‘hit’) texture
+feedforward, all-driver organization that typiﬁes transthalamic pathways. A      over the unrewarded (‘correct-rejection’ (CR)) texture (Fig. 4A). This tex-
+more comprehensive capture of the laminar activity of the inputs to, and         ture selectivity is a key correlate of expert discrimination performance and
+neurons in, V1 and HVAs is required to assess how sensory versus more            successful reversal learning58–60. Silencing S1 L5 → POm inputs during
+complex, integrated information is distributed to visual cortex.                 sensory sampling did not change overall texture responsiveness in S1 or S2.
+      In sum, these in vivo studies demonstrate the existence of a feedforward   Rather, it reversed selectivity of the S2 population, in alignment with
+visual transthalamic pathway through pulvinar23 that is required for visual      increased performance errors (Fig. 4B). In S1, inhibition changed cell dis-
+discrimination48. They also show that signals from this HO nucleus, some of      criminability to equal fractions of those selective for the hit and CR textures
+which are likely to be driven by the transthalamic circuit, contribute to        (Fig. 4B)53. This more modest impact of inhibiting S1 L5 → POm on S1
+disambiguation between self-motion and visual signals of the corticocortical     responses is expected based on the modulatory synaptic properties of the
+projection23,46,47 (see further discussion in Section “Integrating extrinsic     POm → S1 projection61. In contrast, the substantial loss of selectivity in S2
+signals with internal state”).                                                   cells is expected based on the driver properties of the POm → S2
+                                                                                 projection24,61. However, the involvement of the direct POm→S2 projection
+Somatosensory transthalamic pathways                                             was only implied, and further exploration is needed into yet-to-be estab-
+The somatosensory feedforward transthalamic pathway links S1 L5 to               lished intermediaries (e.g. striatum) to completely explain the results.
+secondary somatosensory cortex (S2) via the higher-order thalamic pos-                 In summary, across several studies, silencing the ﬁrst leg of the trans-
+terior medial nucleus (POm)22,53. Inhibiting this ﬁrst leg of the pathway, S1    thalamic pathway (S1 L5→POm) severely impaired whisker-based detec-
+L5→POm, leads to robust deﬁcits in whisker-based somatosensory tasks             tion and discrimination performance12,53,54 with the sensory period of the
+(Fig. 3A). Takahashi and colleagues used chemogenetics to speciﬁcally            task particularly germane to behavioral success. Together, these ﬁndings
+silence S1 L5 terminals in POm (Table 1), which severely diminished the          highlight the transthalamic route as a critical driver of perceptual perfor-
+ability to detect whisker deﬂections12. Targeted silencing of other S1 L5        mance, extending beyond local encoding in S1 to shape distributed cortical
+outputs to the superior colliculus and striatum also disrupted performance       representations in S253.
+
+
+
+Communications Biology | (2026)9:585                                                                                                                          7
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                         Review article
+
+
+
+
+Fig. 4 | Feedforward transthalamic pathway through POm encodes stimulus                 transthalamic pathway (S1 L5 → POm) is inhibited at the synapse in thalamus, the
+preference. A In expert mice trained to discriminate between a rewarded texture (hit    textures are no longer distinguishable in S1 (likely via S1 L5 → POm → S1) and
+texture) and an unrewarded texture (CR texture), there is hit stimulus selectivity in   reversed in S2, aligning with discrimination errors. Adapted from53.
+S1 and S2 neurons, recorded in L2/3. B When the ﬁrst leg of the somatosensory
+
+
+
+
+Auditory transthalamic pathways                                                         need to selectively assess the contribution of the transthalamic circuits to
+Anatomical studies have identiﬁed an auditory transthalamic pathway                     generating or maintaining movements.
+linking primary to secondary auditory cortex via the higher-order thalamic
+nucleus of the auditory system, the dorsal division of the medial geniculate            Frontal transthalamic pathways
+body (MGBd)62. In particular, MGBd is suggested to act as a transthalamic               Transthalamic pathways through frontal thalamic nuclei are of particular
+node for corticocolliculo-thalamocortical signaling28,63. However, functional           interest because they link prefrontal cortex with other cortical regions and
+studies remain scarce. Lohse et al. (2021) identiﬁed a cross-modal pathway              may support higher cognitive functions such as working memory, ﬂexibility,
+from S1 L5 to medial auditory thalamic nuclei, modulating auditory cortical             and adaptive decision-making. These circuits offer a potential mechanism
+activity28. The role of MGBd in auditory transthalamic processing and its               by which thalamus contributes to cognition beyond simple sensory relay.
+behavioral signiﬁcance remain unexplored.                                               The mediodorsal nucleus (MD) of the thalamus receives a driver-like input
+                                                                                        from L5 of several frontal, sensory, and motor cortical regions29,68–70, and
+Motor transthalamic pathways                                                            projects to frontal cortical areas71. As such, MD is considered the HO tha-
+While sensory transthalamic pathways are increasingly well-characterized,               lamic nucleus subserving functions associated with prefrontal cortical
+much less is known about their counterparts in motor systems. Under-                    areas72.
+standing these pathways is important because they may provide a route for                    So far, however, direct evidence for MD forming a feedforward cortico-
+integrating cortical and subcortical signals that guide the initiation and vigor        thalamo-cortical pathway between two distinct cortical areas remains lim-
+of movement. The motor thalamus is a conglomerate of the ventromedial                   ited. One candidate pathway has been implicated from
+(VM), ventroanterior (VA), and ventrolateral (VL) nuclei, which are reci-               ACC → MD → PFC73, but most studied connections appear largely reci-
+procally and non-reciprocally connected to motor cortical regions64,65. A               procal. Moreover, MD→frontal cortex terminations may not be classical
+recent study demonstrated that M1 L5 innervates VA/VL cells with driver                 drivers, with relatively small presynaptic boutons in L1, L3 and deep layers
+type synaptic properties and established a feedforward motor transthalamic              of prefrontal cortex74,75. Although, frontal cortical regions in rodents largely
+pathway from M1 L5→VA/VL→M226. Furthermore, there appears to be a                       lack a thalamocortical recipient L476, suggesting the dense plexus of MD
+small amplitude input from M1 onto a fraction of VM→ALM relays,                         terminals in L3 might represent the equivalent feedforward projection from
+demonstrating a minor feedforward transthalamic pathway through VM31.                   HO thalamus to higher order cortex in sensory systems. Considering
+     The thalamocortical leg of a motor transthalamic pathway has been                  transthalamic pathways through MD are currently understood as reciprocal
+functionally characterized in a study by Takahashi et al. (2021). During a              connections, we discuss these studies here. Future investigations will reveal
+whisker deﬂection task, the authors imaged and manipulated the L1 bouton                potential feedforward pathways from sensorimotor cortical areas with
+activity of VM-to-ALM projections (as in Fig. 3B). They demonstrated that               which MD is connected.
+the thalamocortical axons from VM→ALM L1 were activated coincident                           Functional manipulations of MD-PFC circuits highlight their role in
+with the initiation of lick responses, and performed chemogenetic inhibition            cognitive ﬂexibility, working memory, and rule learning73,77,78. For instance,
+or optogenetic activation to show that the projection is important for                  one study silenced the activity of MD and mPFC circuits trained to traverse
+learned movement initiation66. However, the VM integrates inputs from                   two T-maze arms sequentially, separated by a delay77. The MD→PFC
+several cortical and subcortical areas, including the basal ganglia, which is           pathway was required during the delay phase, and mPFC recordings
+known to contribute to movement urgency and vigor67 (as in Fig. 3B).                    showed that delay-period activity depended on MD input. These ﬁndings
+Therefore, as with most studies discussed herein, future experiments will               corroborate similar data using a split-attention task79, demonstrating that
+
+
+Communications Biology | (2026)9:585                                                                                                                                  8
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                       Review article
+
+
+
+
+Fig. 5 | Summary of transthalamic pathway functions to date. Compared to            preferences, sensorimotor signals associated with self-generated movements (i.e.,
+corticocortical pathways, which primarily transmit information about sensory sti-   efference copies), and internal state information such as arousal and movement. The
+muli, transthalamic pathways integrate sensory information with learned and         frontal transthalamic pathways studied thus far enable the updating of action
+internally generated signals. These include reward-related stimulus response        -reward and -error outcomes.
+
+
+
+the MD→PFC pathway is crucial for trial-by-trial learning and short-term            respectively12,48,53,54. Notably, inhibiting S1 L5→POm strongly disrupted
+rule maintenance77,80.                                                              texture discrimination but had only mild effects on simple detection53,54,
+      Other studies dissected the bidirectional MD–mPFC pathway during              consistent with prior work showing that S1 is dispensable for detection but
+action-outcome learning (Table 1). Inhibition experiments revealed that             critical for ﬁne discrimination55,83. In the visual system, pulvinar-to-HVA
+corticothalamic projections contributed to reward-value assignment, while           projections encode stimulus features that match the preferences of target
+the MD → mPFC pathway was required for updating action-outcome                      cortical neurons, implying that HO thalamus contributes to shaping sti-
+contingencies81. Two studies build on these data using a complex multi-             mulus selectivity in higher visual cortex23,84. Additionally, McKinnon et al.
+sensory task design with visual or auditory rulesets73,78. Suppression of the       (2025) showed that V1 L5 input to pulvinar is necessary for discriminating
+MD→PFC pathway impaired the ability to rule switch in response to the               visual gratings, further supporting a role for transthalamic pathways in
+initial cue. Suppressing MD required twice the number of trials to switch           feature preference encoding.
+and update their choices78. Lam et al. (2024) demonstrated in tree shrews                 Transthalamic pathways also appear to carry reward-related infor-
+that optogenetic inhibition of ACC-to-MD projections disrupted a similar            mation that shapes sensory selectivity. Neurons in S1 and S2 preferentially
+adaptive decision-making task, implicating a transthalamic pathway                  respond to rewarded stimuli, and this preference emerges over learning58–60.
+between frontal cortices73. However, whether these connections form a true          Reward signals in S1 L5 neuron dendrites contribute to perceptual
+feedforward transthalamic circuit remains to be determined.                         learning85–87, while suppression of S1 L5→POm diminishes reward pre-
+      Together, these studies demonstrate that MD→PFC circuitry is                  ference in S2 neurons53. Similarly, POm and pulvinar neurons robustly
+required to support behavioral ﬂexibility in adaptive decision-making               respond to the behavioral salience of stimuli, regardless of the sensory
+tasks77,78,81 with potential transthalamic inputs from PFC itself or the ACC73.     stimulus modality88,89. Taken together, these studies suggest that transtha-
+This idea converges with ﬁndings in monkeys and humans that MD                      lamic pathways integrate both sensory features and reward relevance,
+function is required for aspects of cognition and speciﬁcally implicate the         helping shape perception in a way that direct corticocortical projections may
+MD→PFC pathway in maintaining task-rule associations across a delay68,71.           not. Exactly what information is encoded and computed at the level of the
+Yet, the circuit-level details of cortico-thalamo-cortical interactions through     higher-order thalamus, remain key questions for future work.
+MD require further scrutiny to isolate the particular roles of transthalamic
+pathways in these behaviors.                                                        Maintenance of a percept
+                                                                                    Persistent neural activity has long been proposed as a mechanism for per-
+Proposed functions of transthalamic pathways                                        ceptual stability90, especially in thalamo-cortical circuits91,92. While pre-
+Recent behavioral studies have shed light on the functional roles of trans-         frontal thalamo-cortical circuits are crucial for working memory78,93,
+thalamic pathways, albeit by analyzing the two parts separately (Table 1).          evidence for sensory thalamocortical contributions remains limited94. A
+Here, we consolidate these insights into broader functional motifs and              modest deﬁcit in discrimination performance was observed when the S1
+consider how they align with earlier hypotheses about cortico-thalamo-              L5→POm pathway was silenced during a delay period53, hinting that sen-
+cortical signaling (e.g.82).                                                        sory transthalamic circuits may help maintain stimulus information across
+                                                                                    short timescales. However, the inhibition could have suppressed the
+Stimulus detection and discrimination                                               transmission of transthalamic signals to target areas, such as motor
+A well-substantiated role for transthalamic pathways is sensory processing          cortex5,6,25 or even striatum40,57, which in turn interrupted stimulus-response
+in learned responses (Fig. 5). This is most clearly shown in the somato-            or motor processing. More selective perturbations will be required to test
+sensory and visual systems, where inactivation of the S1 L5→POm or V1               whether sensory transthalamic pathways truly support stable percepts, as
+L5→pulvinar pathways impairs discrimination of textures and gratings,               has been proposed for frontal thalamocortical circuits.
+
+
+
+Communications Biology | (2026)9:585                                                                                                                                 9
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                       Review article
+
+Integrating extrinsic signals with internal state                                           Taken together, there is mounting evidence that cortico-subcortical
+A key distinction of transthalamic pathways compared to corticocortical               projections from L5 are major determinants of perception, particularly the
+routes is their integration of external sensory inputs with internal state            integration of the rewarded stimulus with action12,13,87,108 whilst corticocor-
+information. For example, pulvinar inputs to higher visual cortex correlate           tical projections to higher-order cortex represent sensory feature
+with arousal, indexed by pupil diameter47, and POm/pulvinar activity scales           information109–111, although stimulus-reward association activity develops
+with arousal levels more broadly95. The source of these state-dependent               with learning87,112,113. These investigations of cortico-subcortical projections
+signals remains unclear but may involve neuromodulatory inputs (e.g.                  in general likely apply to the ﬁrst leg of transthalamic signaling, which
+acetylcholine), since they act directly on HO thalamic cells96, and on                emanates from cortical L5 to HO thalamus, and the suppression of which
+GABAergic inputs to HO thalamus such as the zona incerta97, or cortical               leads to large deﬁcits in perceptual performance12,53,54 (see Section “Soma-
+projection neurons that themselves encode arousal47,98. By transmitting               tosensory transthalamic pathways”).
+these combined signals to higher cortical areas, transthalamic circuits may                 Regarding the second leg of transthalamic pathways, HO thalamus
+enable sensory processing to be dynamically tuned by behavioral context, a            appears to exert a stronger inﬂuence on cortical function than direct cortical
+key area for future investigation.                                                    inputs. For instance, thalamocortical projections to frontal cortex contribute
+                                                                                      more signiﬁcantly to stimulus processing, choice, and response selection
+Distinguishing external and self-generated motion                                     than corticocortical inputs114. In the visual system, HO thalamocortical
+Another proposed function of transthalamic pathways is the transmission of            projections shape neuronal selectivity more than cortical inputs to a target
+efference copies: predictive motor signals that help the brain distinguish self-      higher visual area23,84. Collectively, these ﬁndings suggest that transthalamic
+generated from external stimuli99. This idea is supported by the anatomy of           pathways serve as strong conduits for sensory-motor communication,
+L5 corticothalamic neurons, which collateralize to motor centers in the               requiring that they be considered at least as deeply as direct corticocortical
+brainstem or spinal cord18,20,37,100–102. This organization contrasts that of the     interactions in future models of global cortical function11,115 (Fig. 5). How-
+separate population of corticocortical-projecting L5 neurons21,103. Activation        ever, as discussed previously, we await technology that allows manipulation
+of L5 projections in primary cortex can directly induce movements via                 of the complete pathway spanning the three brain regions to make more
+brainstem sites104. Since the same action potential pattern extends to all            concrete predictions of transthalamic function. It is important to note that
+axonal branches, it has been posited that transthalamic circuits convey               selective silencing of the direct corticocortical pathway is also rare116, which
+predictive motor signals to sensory cortex, aiding in distinguishing self-            emphasizes the need for more scrupulous dissection of circuitry if we are to
+generated from external stimuli82. Considering that this hypothesis has been          accurately assign function.
+discussed in detail previously16, we focus here on the recent in vivo studies of
+transthalamic circuitry, which generally support it (however, see ref. 95).           Future perspectives
+      In line with this, recent studies report visuomotor mismatch signals            Modulation and gating of transthalamic pathways
+carried by pulvinar-to-cortex projections when expected sensory con-                  One emerging view is that transthalamic pathways dynamically modulate or
+sequences of movement are violated23,105. Pulvinar inputs to V1 also encode           gate information ﬂow between cortical regions in ways that corticocortical
+saccade-induced motion106 and amplify unexpected visual ﬂow through a                 circuits cannot (Fig. 6A). While HO thalamic nuclei receive strong driver
+disinhibitory cortical circuit107. These ﬁndings suggest a key role for trans-        inputs from L5, they also integrate diverse subcortical inputs51,117,118. For
+thalamic pathways in distinguishing environmental stimuli from self-                  instance, POm integrate afferents from L5 of somatosensory and motor
+generated changes23,105,106 (Fig. 5), though direct tests of efference copy           cortex, the spinal nucleus of the trigeminal nerve (SpV), dorsal column
+transmission via relevant tasks with detailed movement tracking, await                nuclei, superior colliculus, and inhibitory inputs from zona incerta and
+future testing.                                                                       anterior pretectal nucleus117,119,120. Physiological data now demonstrate that
+                                                                                      this integration occurs on the level of individual POm neurons121. This
+Comparison of corticocortical and transthalamic pathway                               convergence enables individual thalamic neurons to act as computational
+function                                                                              gates, ﬂexibly transmitting top–down, bottom–up, or multimodal signals
+As introduced, the impacts of cortical inactivation during cognitive tasks            depending on their timing122 (Fig. 6B).
+have often been interpreted as a result of disrupted direct corticocortical                In contrast to converging excitatory streams, GABAergic inputs from
+processing. However, recent work has shown that cortico-subcortical sig-              the extrareticular GABAergic nuclei or basal ganglia may selectively sup-
+naling, rather than corticocortical signaling, supports sensory decision-             press information traversing HO thalamus (Fig. 6B). In this way,
+making12,13,87,108. Takahashi and colleagues (2020) compared the roles of             GABAergic inputs to a given transthalamic relay can dynamically determine
+corticocortical S1 (intratelencephalic)-projecting neurons with S1 cortico-           which cortical areas are connected by transthalamic circuits and which are
+subcortical (pyramidal tract L5)-projecting neurons during a whisker                  not, as discussed recently123 (Fig. 6B).
+detection task. While optogenetic activation of cortico-subcortical S1 den-                In addition to active shunting, the properties of the GABAergic
+drites increased the detection of a whisker movement, the same manipula-              neurons impinging on HO relays suggest that HO thalamus is at least
+tion of corticocortical dendrites had no effect12. In a related study, the activity   partially governed by a disinhibitory functional motif (Fig. 6C–F). The
+of these pathways was investigated across associative learning, ﬁnding that           basal ganglia, zona incerta, and a subpopulation of neurons in the
+cortico-subcortical-projecting dendrites showed increasing reward-                    anterior pretectal nuclei ﬁre tonically at reasonably high rates at baseline,
+associated activity with learning, while corticocortical-projecting dendrites         thereby providing a tonic inhibition to HO relays124–127. Upon release
+in S1 signaled stable, sensory representations87. Indeed, in a texture dis-           from this robust suppression, HO relays are temporarily disinhibited and
+crimination study, the dendritic activity of S1 L5 → S2 neurons did not               more likely to ﬁre in response to an incoming excitatory input. Such a
+reﬂect the improvement in discrimination ability over learning, but their             mechanism has been demonstrated—speciﬁcally, disinhibition of POm
+inhibition during the outcome period blocked learning, suggesting a role in           relays is selectively gated by motor cortical L5 inputs to zona incerta,
+integrating outcome salience86. Work in the auditory system also showed that          which act locally to suppress neighboring incertal cells and thereby
+L5 subcortical-projecting cells more strongly represent stimulus-to-choice            release POm relays from tonic inhibition128,129 (Fig. 6C, D). A similar
+coupling compared to corticocortical-projecting cells108. Accordingly, in a           organization appears in the motor thalamus via basal ganglia
+separate study using an auditory decision task based on evidence accumu-              interactions26 (Fig. 6E, F). Future behavioral experiments that silence the
+lation, inhibition of subcortical-projecting neurons in the parietal cortex           subcortical circuits to HO transthalamic relays will provide crucial
+(during either the stimulus presentation or delay periods) impaired decision-         insight into how these pathways are regulated by endogenous mechan-
+making, whilst silencing corticocortical-projecting neurons did not13.                isms, and for what perceptual function.
+
+
+
+Communications Biology | (2026)9:585                                                                                                                               10
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                              Review article
+
+
+
+
+Fig. 6 | Modulation, gating, and disinhibition of transthalamic pathways. A)             Presumably, excitatory drive to disinhibited cells can arise from bottom–up (SpV) or
+Secondary inputs to HO thalamus can modulate or gate the function of transtha-           top–down (somatosensory cortex) sources. D Speciﬁcally, activity from the motor
+lamic circuitry, depending on the type of input (i.e., drivers, modulators, or inhi-     cortex drives the activity of zona incerta cells (ZI cell #1) that inhibit nearby POm-
+bitory/GABAergic). B Convergent driving excitatory signals, such as from SpV and         projecting incertal cells (ZI cell #2), creating a disinhibitory window for excitatory
+S1 L5, may allow HO thalamic relays to act as AND or OR gates122. Similarly, mGluR       activation by any input to POm. E In the motor thalamus, L5 projections from motor
+activation from ascending modulatory inputs might allow a potentiation of sub-           cortices branch to innervate both the basal ganglia and motor thalamus. Therefore,
+sequent driving responses over the extended time frame of mGluR-dependent                cortical signals might disinhibit motor thalamus through a circuit traversing the
+depolarization (denoted by asterisk). On the other hand, inhibitory inputs (e.g., from   caudoputamen and internal globus pallidus (GPi) or substantia nigra pars reticulata
+zona incerta) may gate excitatory information ﬂow, as recently demonstrated26 and        (SNr). F Motor thalamic disinhibition is achieved via the basal ganglia. Disinhibited
+discussed123. Importantly, the propensity of GABAergic inputs to HO thalamus from        motor thalamic relays can be driven by bottom–up inputs from the deep cerebellar
+cells with a high baseline ﬁring rate (20-50+Hz) sets the stage for a disinhibitory      nuclei or L5 of motor cortex. Under some circumstances (denoted by an asterisk in
+motif across HO thalamic nuclei. C L5 of motor cortex can govern POm relay cell          F) disinhibition alone might drive relay cell ﬁring due to t-type calcium channel-
+ﬁring by driving a local disinhibitory circuit via the zona incerta (red outline)129.    mediated rebound spiking.
+
+
+
+
+Communications Biology | (2026)9:585                                                                                                                                        11
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                     Review article
+
+Transthalamic pathways in sensation, versus motion or cognition                    L5 pyramidal neurons have been proposed as crucial integrators158, sup-
+Most work on transthalamic circuits so far has examined sensory and                porting earlier theoretical work159,160. Their leading framework is the den-
+cognitive processes (Table 1)—whether the same organizational principles           dritic integration model, in which mGluR activation couples apical and
+extend to motor and frontal systems is unclear. For instance, while sensory        basal dendritic signals on L5 neurons, particularly by HO thalamus158. Since
+information reaches primary sensory cortex and ascends the cortical                feedback transthalamic pathways predominantly activate mGluRs (see
+hierarchy130,131, motor commands emerge in what are considered premotor            Section “Transthalamic pathways: general wiring pattern” and Fig. 1),24,
+or higher order cortical areas prior to movement initiation in primary motor       they may play a critical role in cortical processing underlying consciousness.
+cortex31,132, potentially reversing this hierarchy.                                      Feedforward transthalamic pathways may also contribute to conscious
+      A second potential point of distinction lies in the cortico-thalamo-         perception. Systems-level theories of consciousness, like the global network
+cortical connectivity pattern in sensory versus motor areas. While trans-          workspace theory (GNWT), propose an “ignition” like propagation of
+thalamic circuits in frontal and motor areas appear to be dominated by             neural activity from sensory to more cognitive cortical regions for a given
+reciprocal connectivity loops, sensory transthalamic circuits demonstrate a        stimulus to reach conscious perception161–163. Given that feedforward
+propensity for forming feedforward and feedback pathways in addition to            transthalamic pathways transmit via strong driver synapses, they may be
+reciprocal ones29,31,45. In addition, with the diversity of thalamocortical tar-   instrumental in sparking sensory-to-cognitive transformations. Note that
+gets, the functional consequences of transthalamic circuit activation can be       simultaneous with this “forward” propagation is the activation of feedback
+expected to vary based on the cortical circuitry. For instance, while HO           transthalamic pathways and, consequently, mGluR activation in the
+somatosensory thalamus output HO somatosensory cortex appears to lar-              “backward” direction. Together, these features suggest that transthalamic
+gely avoid interneurons, the innervation pattern in primary sensory                circuits may be central to the integration and propagation processes that
+cortex133, and perhaps in motor cortex134, encompasses several interneuron         make perception conscious.
+subtypes. Therefore, studies examining the population activity in these
+cortical regions should take into account the synaptic targets and local           Concluding remarks
+circuitry. These variations suggest that transthalamic pathways are a shared       Over the past decade, advancements in circuit-dissection techniques have
+motif with system-speciﬁc specializations, tailored to the computations of         dramatically improved our understanding of transthalamic pathways. Since
+each domain.                                                                       the ﬁrst functional demonstration in a brain slice22, circuit technologies in
+                                                                                   behaving animals has provided compelling evidence that these circuits
+Development and plasticity of transthalamic pathways                               contribute directly to perception, movement, and cognition. Importantly,
+This review has focused solely on the function of transthalamic pathways in        evidence is accumulating that cortical layer 5 projections to HO thalamus
+adult animals, where such circuits are presumably fully mature. In contrast,       shape brain-wide computation in ways not achievable through cortico-
+how transthalamic pathways develop remains largely unexplored. Although            cortical pathways alone. The notion that entire thalamic nuclei serve uni-
+the development of thalamocortical and layer 5 (L5) corticothalamic pro-           form functions has been replaced by a more nuanced view, where distinct
+jections has been studied extensively135–138 it is unclear whether coordinating    thalamic circuits contribute differentially to cognition and behavior. A key
+a transthalamic pathway across two cortical targets (sometimes spanning            challenge for the next decade is to directly study the transthalamic pathway
+distal regions such as sensory and frontal cortex), requires additional            as it spans the three brain regions during tasks relevant to predictive pro-
+developmental constraints beyond those governing reciprocal cortico-               cessing and perception. This will allow the synthesis of scattered ﬁndings
+thalamo–cortical loops. Another wrinkle is related to how HO neurons               across sensory, motor, and cognitive domains into a uniﬁed framework.
+participate in transthalamic circuits (Section “How do individual thalamic         This will require integrating experimental results with theoretical models of
+relays participate in transthalamic pathways?”): If it is true that transtha-      cortical computation and consciousness. In doing so, we may ﬁnd that
+lamic circuits are largely facilitated by certain cell types, such as multiareal   transthalamic pathways act as ﬂexible hubs that transform, integrate, and
+cells, their distinct developmental proﬁle (e.g., molecular identity)34 might      gate information across the cortical hierarchy.
+allow for appropriate targeting by those L5 inputs that will ultimately form a
+transthalamic circuit.                                                             Received: 10 July 2025; Accepted: 30 March 2026;
+      Transthalamic circuits also exhibit clear short-term synaptic dynamics.
+L5 inputs to HO neurons display strong paired-pulse depression char-
+acteristic of driver synapses and HO intrinsic properties enable switching         References
+between burst (“wake-up call”) and tonic ﬁring modes (“faithful informa-           1.    Harvey, C. D., Coen, P. & Tank, D. W. Choice-speciﬁc sequences in
+tion transmission”)139–142. These mechanisms are well described143,144, but              parietal cortex during a virtual-navigation decision task. Nature 484,
+their behavioral relevance within intact transthalamic circuits remains                  62–68 (2012).
+incompletely resolved.                                                             2.    Esmaeili, V. et al. Rapid suppression and sustained activation of
+      The role of long-term plasticity in transthalamic pathways is less                 distinct cortical regions for a delayed sensory-triggered motor
+established. While experience-dependent plasticity reﬁnes thalamocortical                response. Neuron 109, 2183–2201.e9 (2021).
+circuits, both in development145 and in adults146–148, experiments isolating the   3.    Kwon, S. E., Yang, H., Minamisawa, G. & O’Connor, D. H. Sensory
+transthalamic subpopulation have not been performed. Whether classical                   and decision-related activity propagate in a cortical feedback loop
+forms of long-term synaptic plasticity operate at the L5 → HO synapse in                 during touch perception. Nat. Neurosci. 19, 1243–1249 (2016).
+mature circuits, and how such plasticity would interact with the proposed          4.    Oryshchuk, A. et al. Distributed and speciﬁc encoding of sensory,
+role of this pathway in reliable signal transmission149 remains an open                  motor, and decision information in the mouse neocortex during goal-
+question. Addressing these developmental and plastic mechanisms will be                  directed behavior. Cell Rep. 43, 113618 (2024).
+essential for understanding how transthalamic pathways contribute to               5.    Gallero-Salas, Y. et al. Sensory and behavioral components of
+learning and adaptive cortical computation.                                              neocortical signal ﬂow in discrimination tasks with short-term
+                                                                                         memory. Neuron 109, 135–148.e6 (2021).
+Transthalamic pathways and consciousness                                           6.    Gilad, A., Gallero-Salas, Y., Groos, D. & Helmchen, F. Behavioral
+The thalamus has long been implicated in conscious experience150–153 and                 strategy determines frontal or posterior location of short-term
+transthalamic circuits offer a mechanistic route linking this classical idea             memory in neocortex. Neuron 99, 814–828.e7 (2018).
+with modern theories154. Studies in humans underscore that neuronal                7.    Guo, Z. V. et al. Flow of cortical activity underlying a tactile decision in
+population dynamics are a requirement for conscious experience155–157 and                mice. Neuron 81, 179–194 (2014).
+
+
+
+Communications Biology | (2026)9:585                                                                                                                              12
+https://doi.org/10.1038/s42003-026-10042-0                                                                                               Review article
+
+8.    Allen, W. E. et al. Global representations of goal-directed behavior in   27.   Kirchgessner, M. A., Franklin, A. D. & Callaway, E. M. Distinct
+      distinct cell types of mouse neocortex. Neuron 94, 891–907.e6                   “driving” versus “modulatory” inﬂuences of different visual
+      (2017).                                                                         corticothalamic pathways. Curr. Biol. 31, 5121–5137.e7 (2021).
+9.    Zatka-Haas, P., Steinmetz, N. A., Carandini, M. & Harris, K. D.           28.   Lohse, M., Dahmen, J. C., Bajo, V. M. & King, A. J. Subcortical
+      Sensory coding and the causal impact of mouse cortex in a visual                circuits mediate communication between primary sensory cortical
+      decision. eLife 10, e63163 (2021).                                              areas in mice. Nat. Commun. 12, 3916 (2021).
+10.   Pinto, L. et al. Task-dependent changes in the large-scale dynamics       29.   Collins, D. P., Anastasiades, P. G., Marlin, J. J. & Carter, A. G.
+      and necessity of cortical regions. Neuron 104, 810–824.e9 (2019).               Reciprocal circuits linking the prefrontal cortex with dorsal and
+11.   Steinmetz, N. A., Zatka-Haas, P., Carandini, M. & Harris, K. D.                 ventral thalamic nuclei. Neuron 98, 366–379.e4 (2018).
+      Distributed coding of choice, action, and engagement across the           30.   Guo, K., Yamawaki, N., Barrett, J. M., Tapies, M. & Shepherd, G. M.
+      mouse brain. Nature 576, 266–273 (2019).                                        Cortico-thalamo-cortical circuits of mouse forelimb S1 are
+12.   Takahashi, N. et al. Active dendritic currents gate descending                  organized primarily as recurrent loops. J. Neurosci. Off. J. Soc.
+      cortical outputs in perception. Nat. Neurosci. 23, 1277–1285 (2020).            Neurosci. 40, 2849–2858 (2019).
+      *Study demonstrating corticofugal projections of pyramidal tract          31.   Guo, K., Yamawaki, N., Svoboda, K. & Shepherd, G. Anterolateral
+      neurons in L5 are crucial for behavioral performance in a simple                motor cortex connects with a medial subdivision of ventromedial
+      somatosensory detection task, while corticocortical projections are             thalamus through cell type-speciﬁc circuits, forming an excitatory
+      less salient.                                                                   thalamo-cortico-thalamic loop via layer 1 apical tuft dendrites of layer
+13.   Musall, S. et al. Pyramidal cell types drive functionally distinct              5B pyramidal tract type neurons. J. Neurosci. 38, 8787–8797 (2018).
+      cortical activity patterns during decision-making. Nat. Neurosci. 26,     32.   Shepherd, G. M. & Yamawaki, N. Untangling the cortico-thalamo-
+      495–505 (2023).                                                                 cortical loop: cellular pieces of a knotty circuit puzzle. Nat. Rev.
+14.   Felleman, D. J. & Essen, D. C. V. Distributed hierarchical processing           Neurosci. 22, 389–406 (2021).
+      in the primate cerebral cortex. Cereb. Cortex 1, 1–47 (1991).             33.   Ohno, S. et al. A morphological analysis of thalamocortical axon
+15.   Lim, D. H. et al. In vivo large-scale cortical mapping using                    ﬁbers of rat posterior thalamic nuclei: a single neuron tracing study
+      channelrhodopsin-2 stimulation in transgenic mice reveals                       with viral vectors. Cereb. Cortex 22, 2840–2857 (2012).
+      asymmetric and reciprocal relationships between cortical areas.           34.   Clascá, F., Rubio-Garrido, P. & Jabaudon, D. Unveiling the diversity
+      Front. Neural Circuits 6, 11 (2012).                                            of thalamocortical neuron subtypes. Eur. J. Neurosci. 35, 1524–1532
+16.   Sherman, S. M. Thalamus plays a central role in ongoing cortical                (2012).
+      functioning. Nat. Neurosci. 19, 533–541 (2016).                           35.   Rodriguez-Moreno, J. et al. Area-speciﬁc synapse structure in
+17.   Sherman, S. M. & Guillery, R. W. On the actions that one nerve cell             branched posterior nucleus axons reveals a new level of complexity
+      can have on another: Distinguishing “drivers” from “modulators.                 in thalamocortical networks. J. Neurosci. 40, 2663–2679 (2020).
+      Proc. Natl. Acad. Sci. USA 95, 7121–7126 (1998).                          36.   Juavinett, A. L., Kim, E. J., Collins, H. C. & Callaway, E. M. A
+18.   Bourassa, J. & Descheˆnes, M. Corticothalamic projections from the              systematic topographical relationship between mouse lateral
+      primary visual cortex in rats: a single ﬁber study using biocytin as an         posterior thalamic neurons and their visual cortical projection
+      anterograde tracer. Neuroscience 66, 253–263 (1995).                            targets. J. Comp. Neurol. 528, 99–111 (2020).
+19.   Deschênes, M., Bourassa, J. & Pinault, D. Corticothalamic                 37.   Deschênes, M., Veinante, P. & Zhang, Z.-W. The organization of
+      projections from layer V cells in rat are collaterals of long-range             corticothalamic projections: reciprocity versus parity. Brain Res.
+      corticofugal axons. Brain Res. 664, 215–219 (1994).                             Rev. 28, 286–308 (1998).
+20.   Economo, M. N. et al. Distinct descending motor cortex pathways           38.   Zhou, N., MAIRE, I. S., TERSON, S. P. & BICKFORD, M. E. The
+      and their roles in movement. Nature 563, 79–84 (2018).                          mouse pulvinar nucleus: organization of the tectorecipient zones.
+21.   Petrof, I., Viaene, A. N. & Sherman, S. M. Two populations of                   Vis. Neurosci. 34, E011 (2017).
+      corticothalamic and interareal corticocortical cells in the subgranular   39.   Kamishina, H., Yurcisin, G. H., Corwin, J. V. & Reep, R. L. Striatal
+      layers of the mouse primary sensory cortices. J. Comp. Neurol. 520,             projections from the rat lateral posterior thalamic nucleus. Brain Res.
+      1678–1686 (2012).                                                               1204, 24–39 (2008).
+22.   Theyel, B. B., Llano, D. A. & Sherman, S. M. The                          40.   Smith, J. B., Mowery, T. M. & Alloway, K. D. Thalamic POm
+      corticothalamocortical circuit drives higher-order cortex in the                projections to the dorsolateral striatum of rats: potential pathway for
+      mouse. Nat. Neurosci. 13, 84–88 (2010). *First functional                       mediating stimulus–response associations for sensorimotor habits.
+      demonstration of feedforward transthalamic circuit activity in a                J. Neurophysiol. 108, 160–174 (2012).
+      somatosensory slice preparation.                                          41.   El-Boustani, S. et al. Anatomically and functionally distinct
+23.   Blot, A. et al. Visual intracortical and transthalamic pathways carry           thalamocortical inputs to primary and secondary mouse whisker
+      distinct information to cortical areas. Neuron 109, 1996–2008.e6                somatosensory cortices. Nat. Commun. 11, 3342 (2020).
+      (2021). *First anatomical demonstration of the feedforward                42.   Zingg, B. et al. AAV-mediated anterograde transsynaptic tagging:
+      transthalamic pathway from primary visual cortex to higher visual               mapping corticocollicular input-deﬁned neural pathways for defense
+      areas. Also, in depth functional characterization of thalamocortical            behaviors. Neuron 93, 33–47 (2017).
+      versus corticocortical inputs to higher visual areas.                     43.   Li, D. et al. Anterograde neuronal circuit tracers derived from herpes
+24.   Miller-Hansen, A. J. & Sherman, S. M. Conserved patterns of                     simplex virus 1: development, application, and perspectives. Int. J.
+      functional organization between cortex and thalamus in mice. Proc.              Mol. Sci. 21, 5937 (2020).
+      Natl. Acad. Sci. USA 119, e2201481119 (2022). *Systematic                 44.   Rivera, J. F. et al. ATLAS: a rationally designed anterograde
+      characterization of transthalamic circuits (arising in L5) across               transsynaptic tracer. Nat. Methods 22, 1101–1111 (2025).
+      sensory modalities, demonstrating a conserved organization of             45.   Cassidy, R. M., Macias, A. V., Lagos, W. N., Ugorji, C. & Callaway, E.
+      transthalamic pathways.                                                         M. Complementary organization of mouse driver and modulator
+25.   Mo, C. & Sherman, M. S. A sensorimotor pathway via higher-order                 cortico-thalamo-cortical circuits. J. Neurosci. 45, e1167242024
+      thalamus. J. Neurosci. 39, 692–704 (2019).                                      (2024).
+26.   Koster, K. P. & Sherman, S. M. Convergence of inputs from the basal       46.   Han, X. & Bonin, V. Higher-order cortical and thalamic pathways
+      ganglia with layer 5 of motor cortex and cerebellum in mouse motor              shape visual processing streams in the mouse cortex. Curr. Biol. 34,
+      thalamus. eLife 13, e97489 (2024).                                              5671–5684.e6 (2024).
+
+
+Communications Biology | (2026)9:585                                                                                                                       13
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                  Review article
+
+47.   Neske, G. T. & Cardin, J. A. Higher-order thalamic input to cortex          67.   Thura, D. & Cisek, P. The basal ganglia do not select reach targets
+      selectively conveys state information. Cell Rep. 44, 115292 (2025).               but control the urgency of commitment. Neuron 95, 1160–1170.e5
+48.   McKinnon, C., Mo, C. & Sherman, S. M. Disruption of transthalamic                 (2017).
+      circuitry from primary visual cortex impairs visual discrimination in       68.   Mitchell, A. S. The mediodorsal thalamus as a higher order thalamic
+      mice. J. Neurosci. 45, e0002252025 (2025).                                        relay nucleus important for learning and decision-making. Neurosci.
+49.   Robinson, D. L. & McClurkin, J. W. The visual superior colliculus and             Biobehav Rev. 54, 76–88 (2015).
+      pulvinar. Rev. Oculomot. Res. 3, 337–360 (1989).                            69.   Xiao, D., Zikopoulos, B. & Barbas, H. Laminar and modular
+50.   Soares, S. C., Maior, R. S., Isbell, L. A., Tomaz, C. & Nishijo, H. Fast          organization of prefrontal projections to multiple thalamic nuclei.
+      detector/ﬁrst responder: interactions between the superior                        Neuroscience 161, 1067–1081 (2009).
+      colliculus-pulvinar pathway and stimuli relevant to primates. Front         70.   Prasad, J. A., Carroll, B. J. & Sherman, S. M. Layer 5 Corticofugal
+      Neurosci. 11, 67 (2017).                                                          Projections from Diverse Cortical Areas: Variations on a Pattern of
+51.   Bennett, C. et al. Higher-order thalamic circuits channel parallel                Thalamic and Extrathalamic Targets. J. Neurosci. Off. J. Soc.
+      streams of visual information in mice. Neuron 102, 477–492.e5                     Neurosci. 40, 5785–5796 (2020).
+      (2019).                                                                     71.   Mitchell, A. S. & Chakraborty, S. What does the mediodorsal
+52.   Tohmi, M., Meguro, R., Tsukano, H., Hishida, R. & Shibuki, K. The                 thalamus do? Front. Syst. Neurosci. 7, 37 (2013).
+      extrageniculate visual pathway generates distinct response properties in    72.   Carlén, M. What constitutes the prefrontal cortex? Science 358,
+      the higher visual areas of mice. Curr. Biol. 24, 587–597 (2014).                  478–482 (2017).
+53.   Mo, C., McKinnon, C. & Sherman, S. M. A transthalamic pathway               73.   Lam, N. H. et al. Prefrontal transthalamic uncertainty processing
+      crucial for perception. Nat. Commun. 15, 6300 (2024). *An in vivo                 drives ﬂexible switching. Nature 637, 127–136 (2024).
+      study of the somatosensory feedforward transthalamic pathway and            74.   Anastasiades, P. G., Collins, D. P. & Carter, A. G. Mediodorsal and
+      the closest attempt at “closing the loop” on the entire transthalamic             ventromedial thalamus engage distinct L1 circuits in the prefrontal
+      circuit by performing calcium imaging of cortical activity upstream of            cortex. Neuron 109, 314–330.e4 (2020).
+      the corticothalamic (L5) perturbation.                                      75.   Kuroda, M., Yokofujita, J. & Murakami, K. An ultrastructural study of
+54.   Qi, J., Ye, C., Naskar, S., Inácio, A. R. & Lee, S. Posteromedial                 the neural circuit between the prefrontal cortex and the mediodorsal
+      thalamic nucleus activity signiﬁcantly contributes to perceptual                  nucleus of the thalamus. Prog. Neurobiol. 54, 417–458 (1998).
+      discrimination. Plos Biol. 20, e3001896 (2022).                             76.   Anastasiades, P. G. & Carter, A. G. Circuit organization of the rodent
+55.   Park, J. M. et al. Deep and superﬁcial layers of the primary                      medial prefrontal cortex. Trends Neurosci. 44, 550–563 (2021).
+      somatosensory cortex are critical for whisker-based texture                 77.   Bolkan, S. S. et al. Thalamic projections sustain prefrontal activity
+      discrimination in mice. Preprint at bioRxiv https://doi.org/10.1101/2020.         during working memory maintenance. Nat. Neurosci. 20, 987–996
+      08.12.245381 (2022).                                                              (2017).
+56.   Hunnicutt, B. J. et al. A comprehensive thalamocortical projection          78.   Rikhye, R. V., Gilra, A. & Halassa, M. M. Thalamic regulation of
+      map at the mesoscopic level. Nat. Neurosci. 17, 1276–1285 (2014).                 switching between cortical representations enables cognitive
+57.   Alloway, K. D., Smith, J. B. & Watson, G. D. Thalamostriatal                      ﬂexibility. Nat. Neurosci. 21, 1753–1763 (2018).
+      projections from the medial posterior and parafascicular nuclei have        79.   Schmitt, I. L. et al. Thalamic ampliﬁcation of cortical connectivity
+      distinct topographic and physiologic properties. J. Neurophysiol.                 sustains attentional control. Nature 545, 219–223 (2017).
+      111, 36–50 (2014).                                                          80.   Parnaudeau, S., Bolkan, S. S. & Kellendonk, C. The mediodorsal
+58.   Chen, T.-W., Li, N., Daie, K. & Svoboda, K. A map of anticipatory                 thalamus: an essential partner of the prefrontal cortex for cognition.
+      activity in mouse motor cortex. Neuron 94, 866–879.e4 (2016).                     Biol. Psychiatry 83, 648–656 (2017).
+59.   Gilad, A. & Helmchen, F. Spatiotemporal reﬁnement of signal ﬂow             81.   Alcaraz, F. et al. Thalamocortical and corticothalamic pathways
+      through association cortex during learning. Nat. Commun. 11, 1744                 differentially contribute to goal-directed behaviors in the rat. Elife 7,
+      (2019).                                                                           e32517 (2018).
+60.   Chéreau, R. et al. Dynamic perceptual feature selectivity in primary        82.   Sherman, S. M. & Guillery, R. Distinct functions for direct and
+      somatosensory cortex upon reversal learning. Nat. Commun. 11,                     transthalamic corticocortical connections. J. Neurophysiol. 106,
+      3245 (2020).                                                                      1068–1077 (2011).
+61.   Viaene, A. N., Petrof, I. & Sherman, S. M. Properties of the thalamic       83.   Hong, Y. K., Laceﬁeld, C. O., Rodgers, C. C. & Bruno, R. M.
+      projection from the posterior medial nucleus to primary and                       Sensation, movement and learning in the absence of barrel cortex.
+      secondary somatosensory cortices in the mouse. Proc. Natl. Acad.                  Nature 561, 542–546 (2017).
+      Sci. 108, 18156–18161 (2011).                                               84.   Han, X. & Bonin, V. Higher-order cortical and thalamic pathways
+62.   Llano, D. A. & Sherman, M. S. Evidence for nonreciprocal                          shape visual processing streams in the mouse cortex. Curr Biol. 34,
+      organization of the mouse auditory thalamocortical-corticothalamic                5671–5684.e6 (2024).
+      projection systems. J. Comp. Neurol. 507, 1209–1227 (2008).                 85.   Laceﬁeld, C. O., Pnevmatikakis, E. A., Paninski, L. & Bruno, R. M.
+63.   Antunes, F. M. & Malmierca, M. S. Corticothalamic pathways in                     Reinforcement learning recruits somata and apical dendrites across
+      auditory processing: recent advances and insights from other                      layers of primary sensory cortex. Cell Rep. 26, 2000–2008.e2 (2016).
+      sensory systems. Front. Neural Circuits 15, 721186 (2021).                  86.   Schoenfeld, G. et al. Unsigned temporal difference errors in cortical
+64.   Bosch-Bouju, C., Hyland, B. I. & Parr-Brownlie, L. C. Motor thalamus              L5 dendrites during learning. bioRxiv 12, 474360 (2024).
+      integration of cortical, cerebellar and basal ganglia information:          87.   Moberg, S. et al. Distinct roles of cortical layer 5 subtypes in
+      implications for normal and parkinsonian conditions. Front. Comput.               associative learning. Nat Commun. 17, 2648 (2026).
+      Neurosci. 7, 163 (2013).                                                    88.   Petty, G. H. & Bruno, R. M. Attentional modulation of secondary
+65.   McFarland, N. R. & Haber, S. N. Thalamic relay nuclei of the basal                somatosensory and visual thalamus of mice. https://doi.org/10.
+      ganglia form both reciprocal and nonreciprocal cortical connections,              7554/elife.97188.1 (2024).
+      linking multiple frontal cortical areas. J. Neurosci. 22, 8117–8132         89.   Heimburg, F. et al. A tactile discrimination task to study neuronal
+      (2002).                                                                           dynamics in freely-moving mice. Nat. Commun. 16, 6421 (2025).
+66.   Takahashi, N. et al. Thalamic input to motor cortex facilitates goal-       90.   Edelman, G. M. Neural Darwinism: selection and reentrant signaling
+      directed action initiation. Curr. Biol. 31, 4148–4155.e4 (2021).                  in higher brain function. Neuron 10, 115–125 (1993).
+
+
+
+Communications Biology | (2026)9:585                                                                                                                          14
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                Review article
+
+91.    Ahissar, E., Sosnik, R. & Haidarliu, S. Transformation from temporal       114. Yang, W., Tipparaju, S. L., Chen, G. & Li, N. Thalamus-driven
+       to rate coding in a somatosensory thalamocortical pathway. Nature               functional populations in frontal cortex support decision-making.
+       406, 302–306 (2000).                                                            Nat. Neurosci. 25, 1339–1352 (2022).
+92.    Wang, Q., Webber, R. M. & Stanley, G. B. Thalamic synchrony and            115. Khilkevich, A. et al. Brain-wide dynamics linking sensation to action
+       the adaptive gating of information ﬂow to cortex. Nat. Neurosci. 13,            during decision-making. Nature 634, 890–900 (2024).
+       1534–1541 (2010).                                                          116. Chang, C. et al. A cortico-cortical pathway targets inhibitory
+93.    Guo, Z. V. et al. Maintenance of persistent activity in a frontal               interneurons and modulates paw movement during locomotion in
+       thalamocortical loop. Nature 545, 181–186 (2016).                               mice. J. Neurosci. 42, 44–57 (2022).
+94.    Zhang, X. et al. Active information maintenance in working memory          117. Casas-Torremocha, D. et al. A combinatorial input landscape in the
+       by a sensory cortex. eLife 8, e43191 (2019).                                    “higher-order relay” posterior thalamic nucleus. J. Neurosci. 42, JN-
+95.    Petty, G. H., Kinnischtzke, A. K., Hong, Y. K. & Bruno, R. M. Effects of        RM-0698-22 (2022).
+       arousal and movement on secondary somatosensory and visual                 118. Gămănuţ, R. & Shimaoka, D. Anatomical and functional
+       thalamus. eLife 10, e67611 (2021).                                              connectomes underlying hierarchical visual processing in mouse
+96.    Varela, C. & Sherman, S. M. Differences in response to muscarinic               visual system. Brain Struct. Funct. 227, 1297–1315 (2022).
+       activation between ﬁrst and higher order thalamic relays. J.               119. Sampathkumar, V., Miller-Hansen, A., Sherman, M. S. & Kasthuri, N.
+       Neurophysiol. 98, 3538–3547 (2007).                                             Integration of signals from different cortical areas in higher order
+97.    Masri, R., Trageser, J. C., Bezdudnaya, T., Li, Y. & Keller, A.                 thalamic neurons. Proc. Natl. Acad. Sci. USA 118, e2104137118 (2021).
+       Cholinergic regulation of the posterior medial thalamic nucleus. J.        120. Groh, A. et al. Convergence of cortical and sensory driver inputs on
+       Neurophysiol. 96, 2265–2273 (2006).                                             single thalamocortical cells. Cereb. Cortex 24, 3167–3179 (2014).
+98.    Reimer, J. et al. Pupil ﬂuctuations track rapid changes in adrenergic      121. Koster, K. P. & Sherman, S. M. Modulation and gating of
+       and cholinergic activity in cortex. Nat. Commun. 7, 13289 (2016).               transthalamic and subcortical pathways through somatosensory
+99.    Holst, E. V. & Mittelstaedt, H. Das Reafferenzprinzip.                          thalamus. J. Neurosci. 46, e0783252026 (2026).
+       Naturwissenschaften 37, 464–476 (1950).                                    122. Ahissar, E. & Oram, T. Thalamic relay or cortico-thalamic processing?
+100.   Veinante, P., Lavallée, P. & Deschênes, M. Corticothalamic                      Old question, new answers. Cereb. Cortex 25, 845–848 (2015).
+       projections from layer 5 of the vibrissal barrel cortex in the rat. J.     123. Sherman, S. M. & Usrey, W. M. Transthalamic pathways for cortical
+       Comp. Neurol. 424, 197–204 (2000).                                              function. J. Neurosci. 44, e0909242024 (2024).
+101.   Kita, T. & Kita, H. The subthalamic nucleus is one of multiple             124. Lavallée, P. et al. Feedforward inhibitory control of sensory
+       innervation sites for long-range corticofugal axons: a single-axon              information in higher-order thalamic nuclei. J. Neurosci. Off. J. Soc.
+       tracing study in the rat. J. Neurosci. J. Soc. Neurosci. 32, 5990–5999          Neurosci. 25, 7489–7498 (2005).
+       (2012).                                                                    125. Lanciego, J. L., Luquin, N. & Obeso, J. A. Functional neuroanatomy
+102.   Winnubst, J. et al. Reconstruction of 1,000 projection neurons                  of the basal ganglia. Csh Perspect. Med. 2, a009621 (2012).
+       reveals new cell types and organization of long-range connectivity in      126. Giber, K. et al. Heterogeneous output pathways link the anterior
+       the mouse brain. Cell 179, 268–281.e13 (2019).                                  pretectal nucleus with the zona incerta and the thalamus in rat. J.
+103.   Moberg, S. & Takahashi, N. Neocortical layer 5 subclasses: from                 Comp. Neurol. 506, 122–140 (2007).
+       cellular properties to roles in behavior. Front. Synaptic Neurosci. 14,    127. Murray, P. D., Masri, R. & Keller, A. Abnormal anterior pretectal
+       1006773 (2022).                                                                 nucleus activity contributes to central pain syndrome. J.
+104.   Matyas, F. et al. Motor control by sensory cortex. Science 330,                 Neurophysiol. 103, 3044–3053 (2010).
+       1240–1243 (2010).                                                          128. Barthó, P. et al. Cortical control of zona incerta. J. Neurosci. Off. J.
+105.   Roth, M. M. et al. Thalamic nuclei convey diverse contextual information        Soc. Neurosci. 27, 1670–1681 (2007).
+       to layer 1 of visual cortex. Nat. Neurosci. 19, 299–307 (2016).            129. Urbain, N. & Deschênes, M. Motor cortex gates vibrissal responses
+106.   Miura, S. K. & Scanziani, M. Distinguishing externally from saccade-            in a thalamocortical projection pathway. Neuron 56, 714–725 (2007).
+       induced motion in visual cortex. Nature 610, 135–142 (2021).               130. Salinas, E., Herná ndez, A., Zainos, A. & Romo, R. Periodicity and
+107.   Furutachi, S., Franklin, A. D., Aldea, A. M., Mrsic-Flogel, T. D. &             ﬁring rate as candidate neural codes for the frequency of vibrotactile
+       Hofer, S. B. Cooperative thalamocortical circuit mechanism for                  stimuli. J. Neurosci. 20, 5503–5515 (2000).
+       sensory prediction errors. Nature 633, 398–406 (2024).                     131. Rossi-Pool, R. et al. Invariant timescale hierarchy across the cortical
+108.   Schneider, N. A., Malina, M. I. & Williamson, R. S. A cortical output           somatosensory network. Proc. Natl. Acad. Sci. 118, e2021843118
+       channel for perceptual categorization. bioRxiv 2025 09, 674544                  (2021).
+       (2025).                                                                    132. Li, N., Chen, T.-W., Guo, Z. V., Gerfen, C. R. & Svoboda, K. A motor
+109.   El-Shamayleh, Y., Kumbhani, R. D., Dhruv, N. T. & Movshon, J. A.                cortex circuit for motor planning and movement. Nature 519, 51–56
+       Visual response properties of V1 neurons projecting to V2 in                    (2015).
+       macaque. J. Neurosci. 33, 16594–16605 (2013).                              133. Audette, N. J., Urban-Ciecko, J., Matsushita, M. & Barth, A. L. POm
+110.   Matsui, T. & Ohki, K. Target dependence of orientation and direction            thalamocortical input drives layer-speciﬁc microcircuits in
+       selectivity of corticocortical projection neurons in the mouse V1.              somatosensory cortex. Cereb. Cortex 28, 1312–1328 (2017).
+       Front. Neural Circuits 7, 143 (2013).                                      134. Okoro, S. U. et al. Organization of cortical and thalamic input to
+111.   Glickfeld, L. L., Andermann, M. L., Bonin, V. & Reid, R. C. Cortico-            inhibitory neurons in mouse motor cortex. J. Neurosci. 42,
+       cortical projections in mouse visual cortex are functionally target             8095–8112 (2022).
+       speciﬁc. Nat. Neurosci. 16, 219–226 (2013).                                135. Auladell, C., Pérez-Sust, P., Supèr, H. & Soriano, E. The early
+112.   Chen, J. L. et al. Pathway-speciﬁc reorganization of projection                 development of thalamocortical and corticothalamic projections in
+       neurons in somatosensory cortex during learning. Nat. Neurosci. 18,             the mouse. Anat. Embryol. 201, 169–179 (2000).
+       1101–1108 (2015).                                                          136. Grant, E., Hoerder-Suabedissen, A. & Molnár, Z. Development of the
+113.   Chen, J. L., Carta, S., Soldado-Magraner, J., Schneider, B. L. &                corticothalamic projections. Front. Neurosci. 6, 53 (2012).
+       Helmchen, F. Behaviour-dependent recruitment of long-range                 137. Clascá, F., Angelucci, A. & Sur, M. Layer-speciﬁc programs of
+       projection neurons in somatosensory cortex. Nature 499, 336–340                 development in neocortical projection neurons. Proc. Natl. Acad.
+       (2012).                                                                         Sci. 92, 11145–11149 (1995).
+
+
+
+Communications Biology | (2026)9:585                                                                                                                        15
+https://doi.org/10.1038/s42003-026-10042-0                                                                                                  Review article
+
+138. Molnár, Z. & Kwan, K. Y. Development and evolution of                        161. Baars, B. J. Global workspace theory of consciousness: toward a
+     thalamocortical connectivity. Cold Spring Harb. Perspect. Biol. 16,               cognitive neuroscience of human experience. Prog. Brain Res. 150,
+     a041503 (2024).                                                                   45–53 (2005).
+139. Jahnsen, H. & Llinás, R. Voltage-dependent burst-to-tonic switching          162. Guillery, R. W. Anatomical evidence concerning the role of the
+     of thalamic cell activity: an in vitro study. Arch. Ital. Biol. 122, 73–82        thalamus in corticocortical communication: a brief review. J. Anat.
+     (1984).                                                                           187, 583–92 (1995). *First description of higher order thalamic nuclei
+140. Ramcharan, E. J., Gnadt, J. W. & Sherman, S. M. Burst and tonic                   as relaying information between cortical regions. See also Sherman
+     ﬁring in thalamic cells of unanesthetized, behaving monkeys. Vis.                 and Guillery, 1996.
+     Neurosci. 17, 55–62 (2000).                                                  163. Sherman, S. M. & Guillery, R. W. Functional organization of
+141. Sherman, S. M. Tonic and burst ﬁring: dual modes of thalamocortical               thalamocortical relays. J. Neurophysiol. 76, 1367–1395 (1996). *First
+     relay. Trends Neurosci. 24, 122–126 (2001).                                       systematic description of higher order thalamic nuclei as relaying
+142. Swadlow, H. A., Gusev, A. G. & Bezdudnaya, T. Activation of a                     information between cortical regions. See also Guillery, 1995.
+     cortical column by a thalamocortical impulse. J. Neurosci. J. Soc.
+     Neurosci. 22, 7766–7773 (2002).                                              Acknowledgements
+143. Usrey, W. M. & Sherman, S. M. Exploring Thalamocortical                      The authors thank S. Murray Sherman for comments on the manuscript.
+     Interactions: Circuitry for Sensation, Action, and Cognition (Oxford         K.P.K is supported by National Institute of Neurological Disorders and
+     University Press, 2021).                                                     Stroke (Grant NS094184) and C.M is supported by the National Health and
+144. Sherman, M. S. & Guillery, R. Exploring the thalamus and its role in         Medical Research Council, Australia (Grant GNT2003646). The Florey
+     cortical function. https://doi.org/10.7551/mitpress/2940.003.0008            Institute of Neuroscience and Mental Health acknowledges the strong
+     (2009).                                                                      support from the Victorian Government and in particular the funding from the
+145. Daw, M. I., Scott, H. L. & Isaac, J. T. R. Developmental synaptic            Operational Infrastructure Support Grant.
+     plasticity at the thalamocortical input to barrel cortex: Mechanisms
+     and roles. Mol. Cell. Neurosci. 34, 493–502 (2007).                          Author contributions
+146. Audette, N. J., Bernhard, S. M., Ray, A., Stewart, L. T. & Barth, A. L.      K.P.K.-writing (draft and revisions); C.M.-writing (draft and revisions).
+     Rapid plasticity of higher-order thalamocortical inputs during
+     sensory learning. Neuron 103, 277–291.e4 (2018).                             Competing interests
+147. Gambino, F. et al. Sensory-evoked LTP driven by dendritic plateau            The authors declare no competing interests.
+     potentials in vivo. Nature 515, 116–119 (2014).
+148. Pardi, M. B. et al. A thalamocortical top-down circuit for associative       Additional information
+     memory. Science 370, 844–848 (2020).                                         Supplementary information The online version contains
+149. Groh, A. & Mease, R. The Thalamus. 221–236 https://doi.org/10.               supplementary material available at
+     1017/9781108674287.013. (2022).                                              https://doi.org/10.1038/s42003-026-10042-0.
+150. Aru, J., Suzuki, M., Rutiku, R., Larkum, M. E. & Bachmann, T.
+     Coupling the state and contents of consciousness. Front. Syst.               Correspondence and requests for materials should be addressed to
+     Neurosci. 13, 43 (2019).                                                     Christina Mo.
+151. Aru, J., Suzuki, M. & Larkum, M. E. Cellular mechanisms of
+     conscious processing. Trends Cogn. Sci. 24, 814–825 (2020).                  Peer review information Communications Biology thanks Francisco
+152. Whyte, C. J., Redinbaugh, M. J., Shine, J. M. & Saalmann, Y. B.              Martini, Anthony Holtmaat and the other, anonymous, reviewer(s) for their
+     Thalamic contributions to the state and contents of consciousness.           contribution to the peer review of this work. Primary Handling Editor:
+     Neuron 112, 1611–1625 (2024).                                                Benjamin Bessieres. A peer review ﬁle is available.
+153. Llinás, R. & Ribary, U. Consciousness and the brain. The
+     thalamocortical dialogue in health and disease. Ann. N.Y. Acad. Sci.         Reprints and permissions information is available at
+     929, 166–175 (2001).                                                         http://www.nature.com/reprints
+154. Wang, B. A., Li, S., Halassa, M. M. & Pleger, B. The unique role of the
+     associative thalamus in cognitive processing. Brain Res. Bull. 229,          Publisher’s note Springer Nature remains neutral with regard to
+     111432 (2025).                                                               jurisdictional claims in published maps and institutional afﬁliations.
+155. Demertzi, A. et al. Human consciousness is supported by dynamic
+     complex patterns of brain signal coordination. Sci. Adv. 5, eaat7603         Open Access This article is licensed under a Creative Commons
+     (2019).                                                                      Attribution 4.0 International License, which permits use, sharing,
+156. Luppi, A. I. et al. Consciousness-speciﬁc dynamic interactions of brain      adaptation, distribution and reproduction in any medium or format, as long
+     integration and functional diversity. Nat. Commun. 10, 4616 (2019).          as you give appropriate credit to the original author(s) and the source,
+157. Huang, Z., Zhang, J., Wu, J., Mashour, G. A. & Hudetz, A. G.                 provide a link to the Creative Commons licence, and indicate if changes
+     Temporal circuit of macroscale dynamic brain activity supports               were made. The images or other third party material in this article are
+     human consciousness. Sci. Adv. 6, eaaz0087 (2020).                           included in the article's Creative Commons licence, unless indicated
+158. Suzuki, M. & Larkum, M. E. General anesthesia decouples cortical             otherwise in a credit line to the material. If material is not included in the
+     pyramidal neurons. Cell 180, 666–676.e13 (2020).                             article's Creative Commons licence and your intended use is not permitted
+159. Llinás, R., Ribary, U., Contreras, D. & Pedroarena, C. The neuronal          by statutory regulation or exceeds the permitted use, you will need to
+     basis for consciousness. Philos. Trans. R. Soc. Lond. Ser. B Biol. Sci.      obtain permission directly from the copyright holder. To view a copy of this
+     353, 1841–1849 (1998).                                                       licence, visit http://creativecommons.org/licenses/by/4.0/.
+160. Llinás, R. R. I of the Vortex. https://doi.org/10.7551/mitpress/3626.
+     003.0009 (2001).                                                             © The Author(s) 2026
+
+
+
+
+Communications Biology | (2026)9:585                                                                                                                          16
+

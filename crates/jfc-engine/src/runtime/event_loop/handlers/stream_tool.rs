@@ -157,6 +157,10 @@ pub fn dispatch_eager_safe_prefix(state: &mut EngineState, tx: &EventSender) -> 
         || state.pending_approval.is_some()
         || !state.approval_queue.is_empty()
         || state.pending_classifications > 0
+        // An open AskUserQuestion modal turns the turn blocking: do not eager-
+        // dispatch sibling read-only tools, otherwise their AllComplete drives
+        // continuation while the user is still answering.
+        || state.pending_question.is_some()
     {
         return Vec::new();
     }
@@ -328,18 +332,33 @@ pub async fn handle_stream_tool(state: &mut EngineState, tx: &EventSender, tool:
                 msg.parts.push(MessagePart::tool_boxed(tool));
             }
         } else if let Some(pending) = crate::runtime::approvals::build_pending_question(&tool) {
+            // Only arm `pending_question` once the non-terminal tool_use part is
+            // actually recorded on the streaming assistant message. Setting it
+            // without a recorded part left the modal open but invisible to the
+            // turn-completion gates' `last_assistant_has_unresolved_tool` guard,
+            // so a sibling tool's AllComplete could continue the stream while the
+            // question was still unanswered. No slot → the tool_use can't be
+            // paired with a tool_result anyway, so drop it instead of opening a
+            // phantom modal.
             if let Some(msg) = streaming_assistant_mut(state) {
                 msg.parts
                     .push(MessagePart::tool_boxed(Box::new((*tool).clone())));
+                emit_deferred_tool_use(tx, &tool, "awaiting_user_answer");
+                tracing::info!(
+                    target: "jfc::ui::question",
+                    tool_id = %tool.id,
+                    questions = pending.items.len(),
+                    "route=ask_user_question (modal opened)"
+                );
+                state.pending_question = Some(pending);
+            } else {
+                tracing::warn!(
+                    target: "jfc::ui::question",
+                    tool_id = %tool.id,
+                    "AskUserQuestion arrived with no streaming assistant slot — \
+                     dropping (cannot pair tool_use with an answer)"
+                );
             }
-            emit_deferred_tool_use(tx, &tool, "awaiting_user_answer");
-            tracing::info!(
-                target: "jfc::ui::question",
-                tool_id = %tool.id,
-                questions = pending.items.len(),
-                "route=ask_user_question (modal opened)"
-            );
-            state.pending_question = Some(pending);
         } else {
             let mut tool = tool;
             tool.status = ToolStatus::Failed;
@@ -777,6 +796,50 @@ mod tests {
                 suppress_output: None,
             },
         )
+    }
+
+    fn pending_question(tool_id: &str) -> crate::app::PendingQuestion {
+        use crate::app::{PendingQuestion, QuestionItem, QuestionOption};
+        PendingQuestion {
+            tool_id: crate::ids::ToolId::from(tool_id),
+            items: vec![QuestionItem {
+                question: "Pick one?".to_owned(),
+                header: "Pick".to_owned(),
+                options: vec![QuestionOption {
+                    label: "A".to_owned(),
+                    description: String::new(),
+                    preview: None,
+                }],
+                multi_select: false,
+                selected: 0,
+                chosen: std::collections::BTreeSet::new(),
+                other_text: String::new(),
+                answer: None,
+            }],
+            current: 0,
+            editing_other: false,
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn eager_prefix_waits_for_pending_question_regression() {
+        // An open AskUserQuestion modal must block eager dispatch of sibling
+        // read-only tools — otherwise their AllComplete drives continuation
+        // while the user is still answering (the non-blocking-question race).
+        let _guard = StreamingToolExecGuard::enable();
+        let mut state = test_app();
+        state.pending_question = Some(pending_question("q1"));
+        state.pending_tool_calls = vec![glob_tool("g1")];
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        let dispatched = dispatch_eager_safe_prefix(&mut state, &tx);
+
+        assert!(dispatched.is_empty());
+        assert_eq!(state.pending_tool_calls.len(), 1);
+        assert_eq!(state.pending_tool_calls[0].id.as_str(), "g1");
+        assert_eq!(state.in_flight_eager_dispatches, 0);
+        assert_eq!(state.in_flight_tool_batches, 0);
     }
 
     #[tokio::test(flavor = "current_thread")]

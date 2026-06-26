@@ -1,0 +1,867 @@
+                                                                                                               TYPE Mini Review
+                                                                                                               PUBLISHED 19 May 2026
+                                                                                                               DOI 10.3389/fpsyt.2026.1730869
+
+
+
+
+                                            Prefrontal spine loss in
+OPEN ACCESS
+                                            neuropsychiatric disorders:
+EDITED BY
+Diana Rodrigues,                            circuit consequences
+Ludwig Maximilian University of Munich,
+Germany
+
+REVIEWED BY
+                                            for cognition
+Amy F. T. Arnsten,
+Yale University, United States
+Reem Khalil,
+                                            Sebastian H. Bitzenhofer 1*† and Anne Günther 2*†
+American University of Sharjah, United      1
+                                              Neural Circuit Physiology, Center for Molecular Neurobiology Hamburg, University Medical Center
+Arab Emirates                               Hamburg-Eppendorf, Hamburg, Germany, 2 Institute of Developmental Neuroscience, Center for
+*CORRESPONDENCE
+                                            Molecular Neurobiology Hamburg, Hamburg Center of Neuroscience, University Medical Center
+                                            Hamburg-Eppendorf, Hamburg, Germany
+Sebastian H. Bitzenhofer
+  sebastian.bitzenhofer@zmnh.uni-
+hamburg.de
+Anne Günther                                Dendritic spine loss on superﬁcial layer pyramidal neurons in the prefrontal cortex
+  anne.guenther@zmnh.uni-                   (PFC) has emerged as a central neuropathological feature across a range of
+hamburg.de
+                                            neuropsychiatric disorders. This is particularly signiﬁcant as the PFC serves as a
+†
+  These authors have contributed equally    critical hub for higher-order cognitive functions such as working memory,
+to this work
+                                            attention regulation, and decision-making, which are often disrupted in neuro-
+RECEIVED 23 October 2025
+REVISED 10 April 2026                       psychiatric disorders. These cognitive functions rely on the integration of local
+ACCEPTED 16 April 2026
+PUBLISHED 19 May 2026
+                                            and global inputs within prefrontal microcircuits, with dendritic spines acting as
+                                            key structural substrates underlying this integration. Consequently, spine loss in
+CITATION
+Bitzenhofer SH and Günther A (2026)         the PFC might compromise functional connectivity within local prefrontal circuits
+Prefrontal spine loss in neuropsychiatric   as well as brain-wide networks, ultimately cascading into circuit dysfunction and
+disorders: circuit consequences
+                                            impaired cognitive performance. By integrating ﬁndings across molecular, circuit,
+for cognition.
+Front. Psychiatry 17:1730869.               and behavioral levels as well as across species, we highlight why, despite disparate
+doi: 10.3389/fpsyt.2026.1730869             etiologies, this shared pathological feature of prefrontal spine loss may act as a
+COPYRIGHT                                   mechanistic link between cellular pathology and the complex cognitive symp-
+© 2026 Bitzenhofer and Günther. This is     toms observed in neuropsychiatric disorders.
+an open-access article distributed under
+the terms of the Creative Commons
+Attribution License (CC BY). The use,       KEYWORDS
+distribution or reproduction in other       dendritic spines, neurodevelopmental disorders, neuropsychiatric disorders, prefrontal
+forums is permitted, provided the
+original author(s) and the copyright
+                                            cortex, pyramidal neurons
+owner(s) are credited and that the
+original publication in this journal is
+cited, in accordance with accepted
+academic practice. No use, distribution
+or reproduction is permitted which does     1 Introduction
+not comply with these terms.
+
+                                                Higher-order cognitive processing is thought to depend on distributed brain networks,
+                                            with the prefrontal cortex (PFC) playing a central role in coordinating their activity and thus
+                                            governing a broad range of cognitive functions (1). In particular, the PFC serves as a hub for
+                                            organizing the ﬂow of information between cortical and subcortical regions and facilitates
+                                            ﬂexible adjustment of behavior to changing demands. To this end, the PFC integrates inputs
+                                            from multiple brain regions, including the hippocampus, amygdala, thalamus, and other
+                                            neocortical areas (2, 3). These inputs preferentially target speciﬁc prefrontal layers and are
+                                            processed within the local recurrent network of the PFC (2, 4, 5) (Figure 1). The balance of
+                                            local and long-range inputs is critical for prefrontal function (6). Particularly, pyramidal
+                                            neurons in superﬁcial layers of the PFC receive a variety of long-range inputs, which they
+                                            integrate with local recurrent inputs (2, 7–10). Because of this strategic positioning,
+
+
+
+
+Frontiers in Psychiatry                                           01                                                              frontiersin.org
+Bitzenhofer and Günther                                                                                                          10.3389/fpsyt.2026.1730869
+
+
+
+
+   FIGURE 1
+   Integration of local and long-range inputs in the PFC. (A) Layer-speciﬁc long-range (left) and local (right) inputs to pyramidal neurons in the rodent
+   PFC. (B) Subcellular distribution of local and long-range inputs to L2/3 pyramidal neurons in the mPFC of rodents. (C) Subcellular distribution of local
+   and long-range inputs to L3 pyramidal neurons in the dlPFC of primates. Colors represent input sources highlighted by the text color. (mPFC –
+   medial prefrontal cortex, dlPFC – dorsolateral PFC, cPFC – contralateral PFC, vHP – ventral hippocampus, BLA – basolateral amygdala, MD –
+   mediodorsal nucleus of the thalamus, VM – ventromedial nucleus of the thalamus).
+
+
+
+superﬁcial-layer pyramidal neurons are especially important for                   function as well as long-range cortical communication, it is striking
+sustaining recurrent activity within the PFC and for the integration              that multiple studies on post mortem tissue from patients with
+of inputs from brain-wide networks.                                               different neuropsychiatric disorders have identiﬁed aberrations in
+    As spines are the major sites of excitatory inputs to prefrontal              neuronal architecture, speciﬁcally in the form of altered spine
+pyramidal neurons, altered spine numbers might shift the balance of               density or dendritic complexity on superﬁcial layer pyramidal
+local and long-range inputs in the PFC and disturb the integration of             neurons in the dorsolateral PFC (dlPFC) (9, 16, 17). This shared
+brain-wide inputs required for the coordination of cognitive abilities.           feature among otherwise heterogeneous neuropsychiatric condi-
+Most cognitive abilities mature throughout development up until the               tions might present a key aspect for improving our understanding
+adolescent period, consistent with the prolonged development of the               of the processes underlying hallmark neuropsychiatric symptoms,
+PFC (11, 12). During this prolonged development, spine numbers on                 such as cognitive impairment.
+prefrontal pyramidal neurons initially increase, followed by a gradual                 In this review, we summarize ﬁndings of altered spine numbers
+decrease during adolescence until they reach stable levels in early               on prefrontal pyramidal neurons from patient studies, as well as
+adulthood (12, 13). Recent studies in rodents showed that changes in              from animal models mimicking a range of neuropsychiatric disor-
+prefrontal activity during early development (14), thalamic input to              ders. We particularly discuss potential aspects from altered spine
+the PFC (15), or microglia-mediated synaptic pruning (7) lead to                  number to cognitive symptoms commonly described for these
+varied forms of long-lasting impairments in the PFC. These effects                disorders. For a broader perspective on the developmental, genetic,
+include altered spine numbers, as well as impaired network activity               and molecular mechanism, we want to point the reader to excellent
+and cognitive deﬁcits. This prolonged developmental period might                  reviews covering these speciﬁc topics (9, 18–20). By combining
+underlie the speciﬁc vulnerability of the PFC that is associated with             evidence from structural alterations to circuit dynamics and behav-
+neuropsychiatric disorders.                                                       ior, we aim to outline how spine pathology in superﬁcial layer
+    Considering the crucial role of superﬁcial layer prefrontal                   pyramidal neurons of the PFC may provide a link between cellular
+pyramidal neurons in the integration of inputs for local microcircuit             abnormalities and complex cognitive symptoms.
+
+
+
+
+Frontiers in Psychiatry                                                      02                                                                frontiersin.org
+Bitzenhofer and Günther                                                                                                          10.3389/fpsyt.2026.1730869
+
+
+
+
+2 Dendritic spine loss on prefrontal                                            dlPFC and rodent mPFC have been identiﬁed across a range of
+                                                                                neuropsychiatric disorders.
+pyramidal neurons: a common                                                         Due to the above-mentioned limitation of the absence of a clear
+pathological thread                                                             homolog area for the primate dlPFC, most rodent studies focused
+                                                                                on the mPFC or subdivisions of the mPFC. For better readability,
+    Altered spine densities on pyramidal neurons in superﬁcial                  we refer to L2/3 and PFC when describing similar ﬁndings across
+layers of the PFC present a convergent phenotype among patients                 species. The details about the speciﬁc parts of the PFC and layers for
+with neuropsychiatric disorders and might thus underlie shared                  spine alterations are mentioned in Table 1.
+pathological features such as cognitive deﬁcits (9, 11). Here, we
+summarize key ﬁndings on aberrations of prefrontal spine densities              2.1 Schizophrenia
+from human data and animal models of different neuropsychiatric
+disorders (Table 1).                                                                 Schizophrenia (SCZ) is a complex, heterogeneous disorder that
+    The comparison of data from different species comes with the                is characterized by a gradual decline in mood and social function-
+challenge to identify homologous areas which is particularly chal-              ing, psychotic symptoms, and cognitive impairments (62). SCZ was
+lenging for the PFC. The common deﬁnition of the PFC across                     among the ﬁrst neuropsychiatric disorders identiﬁed to present
+mammalian species is the part of the cerebral cortex that receives              with altered neuroanatomy of pyramidal neurons in speciﬁc layers
+input from the mediodorsal nucleus of the thalamus (21). However,               of frontal cortical regions (24). Since then, post mortem studies on
+the massive expansion of the PFC in primates and the presence of a              tissue from SCZ patients have consistently revealed a marked loss of
+granular part of the PFC in primates that is absent in rodents make             dendritic spine density and dendritic complexity of pyramidal
+it difﬁcult to deﬁne clear homological subdivisions across species              neurons of the dlPFC, particularly in layer (L) 3 (25–28), while
+(22). Particularly for the primate dlPFC, no clear homolog area                 other layers remain unaffected (63). Frontal spine loss has been
+exists in rodents. However, based on structural and functional                  recently conﬁrmed with PET-imaging in early-course schizophre-
+comparisons, the medial PFC (mPFC) is considered the rodent                     nia patients (29). The selective vulnerability has long been hypoth-
+homolog of the primate dlPFC (22, 23). This limitation should be                esized to indicate impaired synaptic stability and dysfunctional
+kept in mind for translational investigations of the PFC. Anyways,              synaptic pruning, potentially going all the way back to early
+spine alterations in superﬁcial layer pyramidal neurons in primate              development (64, 65). Additionally, spine density peaks earlier in
+
+
+TABLE 1   Neuronal architecture aberrations on pyramidal neurons in L2 and L3 of the PFC in patients and animal models of neuropsychiatric disease.
+
+
+ Disorder        Species      Model              Area             Layer                                  Neuroarchitecture                   Reference
+                 Patient      –                  BA10, 11, 45     3                                      Spine density ↓                     (24)
+
+                 Patient      –                  BA46             3                                      Basal spine density ↓               (25)
+
+                 Patient      –                  BA32             3, 5                                   Basal and apical spine density ↓    (26)
+
+                                                                                                         Basal spine density ↓, dendritic
+                 Patient      –                  BA46             3                                                                          (27)
+                                                                                                         length ↓
+
+                                                                                                         Basal dendritic length ↓ and
+                 Patient      –                  BA11             3                                                                          (28)
+                                                                                                         branching ↓
+
+                 Patient      -                  PFC              –                                      Spine density ↓                     (29)
+
+                 Mouse        Setd1a             mPFC             2/3                                    Spine density ↓                     (30)
+ SCZ
+                 Mouse        Glun2c             mPFC             2/3, 5                                 Basal spine density ↓               (31)
+
+                                                                                                         Spine density ↓, dendritic
+                 Mouse        Disc1, poly(I:C)   mPFC             2/3                                                                        (7)
+                                                                                                         branching ↓
+
+                 Mouse        Df(16)A            mPFC             2/3                                    Spine density ↓                     (32)
+
+                 Mouse        Arhgap10           mPFC             2/3                                    Spine density ↓                     (33)
+
+                                                                                                         Spine density ↓, dendritic length
+                 Mouse        Poly(I:C)          mPFC             2/3                                                                        (34)
+                                                                                                         ↓ and branching ↓
+
+                 Mouse        Arhgap10           mPFC             2/3                                    Spine density ↓                     (35)
+
+                 Mouse        Shank3             PFC              2/3                                    Spine density ↓                     (36)
+
+                 Patient      –                  PFC              2, 3                                   Spine density ↓                     (37)
+
+                 Rat          Repeat stress      mPFC             2/3                                    Apical branching ↓                  (38)
+ MDD                                                                                                     Apical dendritic branching ↓ and
+                 Rat          Repeat stress      ACC, PL          2/3                                                                        (39)
+                                                                                                         length ↓
+
+                 Rat          Mild stress        mPFC             2/3                                                                        (40)
+
+                                                                                                                                                    (Continued)
+
+
+
+
+Frontiers in Psychiatry                                                    03                                                                 frontiersin.org
+Bitzenhofer and Günther                                                                                                                                         10.3389/fpsyt.2026.1730869
+
+
+
+
+TABLE 1   Continued
+
+
+  Disorder         Species           Model                   Area                    Layer                                              Neuroarchitecture                         Reference
+                                                                                                                                        Apical dendritic branching ↓ +
+                                                                                                                                        length ↓
+
+                                                                                                                                        Apical spine density ↓, dendritic
+                   Rat               Repeat stress           ACC, PL                 2/3                                                                                          (41)
+                                                                                                                                        length ↓
+
+                                                                                                                                        Apical spine density ↓, dendritic
+                   Rat               Variable stress         PL                      2/3                                                                                          (42)
+                                                                                                                                        length + branching ↓
+
+                                                                                                                                        Apical dendritic branching ↓ +
+                   Rat               Chronic stress          mPFC                    2/3                                                                                          (43)
+                                                                                                                                        length ↓
+
+                   Patient           –                       BA6                     3                                                  Apical dendritic branching ↓              (44)
+
+  RS               Patient           –                       BA6                     3, 5                                               Basal dendritic length ↓                  (45)
+
+                   Patient           –                       BA10                    3                                                  Apical dendritic branching ↓              (46)
+
+                                                                                                                                        Apical and basal spine density ↑,
+  FXS              Mouse             Fmr1                    PL, IL                  3                                                                                            (47)
+                                                                                                                                        immature
+
+                                                                                                                                        Basal spine density ↓, dendritic
+                   Patient           –                       BA46                    3                                                                                            (27)
+                                                                                                                                        length ↓
+
+  BPD                                                                                                                                   Spine density ↓, dendritic length
+                   Patient           –                       BA46                    3                                                                                            (48)
+                                                                                                                                        ↓
+
+                   Mouse             Akt                     mPFC                    2/3                                                Basal spine density ↓                     (49)
+
+                   Patient           –                       BA9, 10                 all                                                Dendritic branching ↓                     (50)
+
+                   Patient           –                       BA9                     2                                                  Spine density ↑                           (51)
+
+                   Patient           –                       PFC                     –                                                  Spine density ↓                           (52)
+
+                                                                                                                                        Spine density ↓ (at birth), spine
+                   Marmoset          VPA                     BA8b, 9                 3                                                                                            (53)
+                                                                                                                                        density ↑ (at 6M)
+
+                   Mouse             Cntnap2                 mPFC                    2/3                                                Basal and apical spine density ↓          (54)
+
+                   Mouse             C58/J                   mPFC                    2/3                                                Apical spine density ↓                    (55)
+
+                   Mouse             Rfwd2                   PL                      2/3                                                Spine density ↓                           (56)
+  ASD
+                                                                                                                                        Spine density ↓, dendritic length
+                   Rat               LPS                     mPFC                    all                                                                                          (57)
+                                                                                                                                        ↓
+
+                   Mouse             VPA                     mPFC                    2/3                                                Spine density ↓                           (58)
+
+                   Mouse             Shank3                  PFC                     2/3                                                Spine density ↓                           (36)
+
+                   Mouse             Dyrka1                  PL                      2/3                                                Dendritic branching ↓                     (59)
+
+                   Mouse             Ank2                    mPFC                    2/3                                                Apical spine density ↑                    (60)
+
+                                                                                                                                        Spine density ↓, dendritic
+                   Beagle            Shank3                  PFC                     2/3                                                                                          (61)
+                                                                                                                                        branching ↓
+SCZ, schizophrenia; ASD, autism-spectrum-disorder; MDD, major depressive disorder; RS, rett syndrome; FXS, fragile x syndrome; BPD, bipolar disorder; Set1da, SET domain-containing 1A; Glun2c,
+glutamate ionotropic receptor NMDA type subunit 2C; Disc1, disrupted-in-schizophrenia 1; poly(I:C), polyinosinic,polycytidylic acid; Arhgap10, Rho GTPase-activating protein 10; Shank3, SH3 and
+multiple ankyrin repeat domains 3; VPA, valproic acid; Cntnap2, contactin-associated protein 2; Rfwd2, ring ﬁnger and WD domain 2; LPS, lipopolysaccharide; Ank2, ankyrin-2; Fmr1, graﬁle x
+messenger ribonucleoprotein 1; Akt, protein kinase B; Dyrka1, dual speciﬁcity tyrosine-phosphorylation-regulated kinase 1a; BA, Broadmann area; ACC, anterior cingulate cortex; PL, prelimbic cortex;
+IL, infralimbic cortex.
+
+
+L3 (at ~ 2 years of age) than in L5 (at ~ 9 years of age) of the human                               spine densities on L2/3 pyramidal neurons in the PFC of mice,
+dlPFC (13). In combination with comparatively less substantial                                       accompanied by deﬁcits in working memory, social interaction, and
+synaptic pruning in L5 and L6 during adolescence than in L3 (66),                                    prepulse inhibition (30). Furthermore, assessing synapse-targeting
+this might explain the exacerbation of L3 neuron vulnerability                                       risk factors as a potential underlying cause of spine vulnerability,
+during speciﬁc phases of development. Furthermore, prefrontal                                        homozygous knockout of the NMDAR subunit Glun2c was shown
+L3 pyramidal neurons in primates show developmental and mo-                                          to result in a reduction of basal spines in L2/3 pyramidal neurons in
+lecular features which render them particularly vulnerable (67).                                     the PFC, as well as deﬁcits in prepulse inhibition, highlighting the
+    Numerous studies in animal models mimicking aspects of SCZ                                       potential impact of excitatory-inhibitory imbalance due to NMDA
+have been conducted, aiming to assess which processes might                                          receptor dysregulation in SCZ (31). Similarly, heterozygous trun-
+underlie this speciﬁc vulnerability, identifying genetic as well as                                  cation of Disc1, a scaffolding protein essential for cellular signaling,
+environmental stressors as potential contributors (7, 11, 30–36, 67,                                 in combination with an environmental stressor during pregnancy,
+68). For instance, heterozygous knockout of Setd1a, a histone                                        leads to a reduction of spine densities and dendritic complexity of
+methyltransferase that has been linked to SCZ (69), leads to reduced                                 L2/3 pyramidal neurons of the PFC during early development,
+
+
+Frontiers in Psychiatry                                                                         04                                                                                frontiersin.org
+Bitzenhofer and Günther                                                                                                 10.3389/fpsyt.2026.1730869
+
+
+
+
+accompanied by behavioral deﬁcits (7). A similar reduction of spine           2.4 Autism spectrum disorder
+densities on L2/3 pyramidal neurons in the PFC and impaired
+cognitive abilities have been reported for the Df(16)A mouse model                Autism spectrum disorder (ASD) is a neurodevelopmental
+which mimics the human 22q11.2 deletion syndrome (32). Notably,               disorder that is characterized by impaired communication and
+in the Disc1 and Df(16)A model, the deﬁcits can be reversed by                social interaction, as well as repetitive patterns of behavior (76).
+transient application of an anti-inﬂammatory agent, highlighting a            While a strong genetic basis has been described for autism, the
+potential role for inﬂammation in SCZ, as well as the potential for           speciﬁc genetic causes identiﬁed in different patients are heteroge-
+rescue of deﬁcits at suitable time points early in development                neous, implicating a large number of genes in ASD etiology (77).
+(7, 32).                                                                      Post mortem studies on tissue from ASD patients are rather sparse
+                                                                              and ﬁndings are inconsistent, depending on age, layer, and assessed
+2.2 Major depressive disorder                                                 region of the dlPFC (50, 51). Elevated spine densities on L2
+                                                                              pyramidal neurons of the dlPFC in post mortem tissue from ASD
+    Major depressive disorder (MDD) is a mood disorder that is                patients was shown (51), while a reduction in dendritic branching of
+characterized by anhedonia and decreased interest in pleasurable              pyramidal neurons throughout all layers of the dlPFC was also
+activities, impacting concentration, appetite, and sleep (70). Post           reported (50). It should be noted that a reduction in dendritic
+mortem studies of tissue from MDD patients revealed reduced                   material due to reduced dendritic branching might potentially
+dendritic spine density in L2 and L3 of the dlPFC (37). Imaging               result in a net loss of spines per neuron, even in cases of increased
+studies in human subjects reported an association between reduced             spine densities. However, a possible explanation for these disparate
+synaptic density and depression severity (71). Stress-induced spine           observations was given by Tang and colleagues, reporting impaired
+loss in the prefrontal and cingulate cortex contributes to impaired           pruning in ASD during adolescence compared to controls (78). The
+emotional regulation (72). Mechanistically, MDD-induced spine                 developmental progression of spine densities in L3 of the human
+loss is accompanied by downregulation of synaptically enriched                dlPFC – i.e. a sharp increase in spine numbers from birth until a
+proteins as well as upregulation of speciﬁc transcription factors             peak at about 2 years of age, followed by a continuous reduction of
+modulating the expression of synaptic proteins, suggesting synaptic           spines throughout childhood, adolescence, and adult life (13) – in
+weakening as a possible driver of dendritic remodeling (37). Stress           combination with delayed pruning during adolescence in ASD (78),
+models in rodents mimicking aspects of MDD replicate these                    might provide an explanation for developmental phases of in-
+ﬁndings, demonstrating spine loss in prefrontal L2/3 pyramidal                creased spine densities in ASD. This idea is corroborated by results
+neurons following repeated stress (38, 39, 41, 42). Notably, a                showing comparatively lower spine density at birth but higher spine
+marked pattern of reduced dendritic length and dendritic branching            density at 6 months (~human puberty) in L3 of the dlPFC in a
+complexity focused on apical dendrites was also observed in                   valproic acid-induced ASD model in non-human primates (53).
+numerous studies after mild, repeated, variable, or chronic stress            Similarly, mice with knockout of Ank2, a structural protein linking
+(38–43). These structural alterations are accompanied by functional           ion channels to the cytoskeleton that is considered a high conﬁ-
+impairments in working memory and cognitive ﬂexibility (38). The              dence gene for ASD, show increased apical spine densities in L2/3 of
+observed pattern of differential effects on apical vs. basal dendrites        prefrontal pyramidal neurons during early development, which
+might have a crucial impact on the resulting behavioral and                   normalize towards adulthood (60). Furthermore, a recent PET-
+functional deﬁcits.                                                           imaging study showed decreased spine densities on prefrontal
+                                                                              neurons in adult ASD patients (52). Notably, an altered ratio of
+2.3 Bipolar disorder                                                          spine types, shifting from mature mushroom spines towards more
+                                                                              immature spine types, persists on L2/3 pyramidal neurons of the
+    Bipolar disorder (BPD) is characterized by cyclic elevations in           PFC (60), potentially impacting integration of inputs and circuit
+mood that are interspersed with depressive episodes (73).                     integrity despite normalized spine densities. Taken together, data
+Impairments in attention and executive functions have been re-                from human and animal studies point towards a reduction of spine
+ported in the majority of BPD patients and persist even during                size and spine numbers, altered dendritic morphology, but in-
+euthymic phases (74). Similar to SCZ, post mortem investigations of           creased density of spines with immature morphology (79).
+the dlPFC of BPD patients revealed reductions in dendritic spine                  Despite this genetic complexity, multiple ASD susceptibility
+density and dendritic length of pyramidal neurons, speciﬁcally in L3          genes converge on cellular pathways involved in the organization of
+(27, 48). In mice, functional depletion of Akt, a serine/threonine            postsynaptic sites (80). Numerous studies have been conducted in
+kinase that has been linked to BPD, leads to reduced spine density            animal models assessing the impact of synaptic genes identiﬁed as
+on basal dendrites of pyramidal neurons in the infralimbic area,              risk factors for ASD (36, 54, 56, 60, 61, 81). For instance, knockout
+accompanied by deﬁcits in recognition and context memory (49).                of Cntnap2, a member of the neurexin cell adhesion protein family
+Notably, treatment with the mood stabilizer lithium, which has                that is essential for synapse formation, results in reduced basal and
+been shown to promote dendritic growth and spine formation in                 apical spine densities on pyramidal neurons of prefrontal L2/3
+cultured neurons (75), successfully reverses neuroarchitectural               pyramidal neurons (54). Additionally, a reduced number of multi-
+deﬁcits in BPD patients, indicating a degree of plasticity and                synapse boutons on these neurons indicates reduced synaptogenesis
+potential for therapeutic recovery (48).                                      (54). Similarly, heterozygous knock-in of Rfwd2, an E3 ubiquitin-
+
+
+
+
+Frontiers in Psychiatry                                                  05                                                          frontiersin.org
+Bitzenhofer and Günther                                                                                                  10.3389/fpsyt.2026.1730869
+
+
+
+
+protein ligase involved in dendritic development that has been                pyramidal neurons (2). The integrity of spines on these neurons is
+linked to ASD, leads to reduced spine densities on L2/3 pyramidal             critical for the PFC to process and integrate these inputs. Thus,
+neurons of the PFC, as well as deﬁcits in communication, social               reduced spine numbers in superﬁcial layers of the PFC, as consis-
+behaviors, and an increase in repetitive behaviors (56). Notably,             tently observed in many neuropsychiatric disorders, may represent
+these phenotypes are more strongly apparent in male mice com-                 a shared pathological feature that directly contributes to cogni-
+pared to female mice (56), mimicking reports of sex-dependent                 tive impairments.
+effects of ASD in humans (82). These results, as well as the increased             At the cellular level, reduced spine numbers in L2/3 pyramidal
+presence of microglia in close proximity to dlPFC pyramidal                   neurons of the PFC result in a reduction of excitatory inputs in
+neurons as has been reported in ASD patients (83), emphasize                  various animal models of neuropsychiatric disorders (30, 36, 54,
+the potential role of impaired synaptic stability and failure of              59). Reduced excitatory input seems to be at odds with hyperexcit-
+normal developmental synaptic pruning in the pathology of ASD.                ability of cortical networks associated with ASD, as well as a shift in
+Overall, a model of impaired connectivity within brain regions (due           the ratio between excitation and inhibition towards excitation (88,
+to altered neuronal architecture) leading to impaired connectivity            89). This apparent paradox can be reconciled by considering
+between brain regions (due to altered impact of experience-driven             evidence for a transient increase in spine densities during develop-
+connectivity) has been proposed for ASD (84).                                 ment. Later reductions in spine numbers might reﬂect compensa-
+                                                                              tory mechanisms counteracting increased excitability in early life.
+2.5 Cross-disorder considerations                                             Given that L2/3 pyramidal neurons are essential for recurrent local
+                                                                              activity and for synchronization with distant brain areas, a reduc-
+     Across neuropsychiatric disorders, a reduction of dendritic              tion of excitatory input might have widespread consequences for
+spine density on superﬁcial layer pyramidal neurons in the PFC                prefrontal function.
+emerges as a common structural phenotype, suggesting that dis-                     Within the PFC, pyramidal neurons in L2/3 form recurrently
+rupted synaptic connectivity within the PFC may represent a shared            connected networks. These excitatory networks generate reverber-
+substrate underlying cognitive impairments (9, 18–20). However,               atory ﬁring that is critical for sustained representations in working
+the mechanisms leading to spine pathology appear to differ across             memory (90, 91). More speciﬁcally, in the primate dlPFC, partic-
+disorders. In SCZ and BPD, spine loss in superﬁcial layer pyramidal           ularly recurrent circuits of pyramidal neurons in L3 are essential for
+neurons has been linked to genetic risk factors affecting synaptic            the maintenance of working memory related activity (92, 93). Spine
+signaling, NMDA receptor function, and intracellular pathways that            loss weakens these recurrent networks, leading to unstable or
+regulate synaptic stability, potentially promoting excessive synaptic         prematurely decaying activity patterns, a mechanism that might
+pruning (11, 27, 49, 64, 85). In MDD, spine loss is more closely              underlie working memory impairments in SCZ (93–96). The
+associated with chronic stress and transcriptional changes that               speciﬁc functionality of thin spines, might explain the high vulner-
+weaken synaptic maintenance and drive activity-dependent synap-               ability of L3 pyramidal neurons in the dlPFC and create a structural
+tic remodeling (17, 37). ASD involves altered developmental tra-              link to working memory impairment (97–99). Furthermore, re-
+jectories of synapse formation and pruning, which can result in               duced spine numbers might contribute to altered network activity
+transiently increased spine densities, a shift toward immature spine          in neuropsychiatric disorders, especially in the gamma frequency
+types, and ultimately spine loss in adulthood (61, 77, 81, 84).               range (100, 101). In the PFC, activation of superﬁcial layer pyra-
+Identifying commonalities across neuropsychiatric disorders is                midal neurons drives local synchronization in gamma oscillations
+fundamentally challenging due to the complexity of their underly-             (8, 102). This local synchronization depends on recurrent excitation
+ing causes and the diversity of their neuronal and cognitive                  between L2/3 pyramidal neurons and inhibitory feedback from fast-
+manifestations. Together, these ﬁndings suggest that similar alter-           spiking interneurons, which is impaired in mouse models of
+ations in prefrontal spine density can arise from distinct biological         neuropsychiatric disorders (7, 8, 102–104). In primates, extensive
+processes which may converge on shared points of vulnerability                recurrent connections of L3 pyramidal neurons in the dlPFC
+across disorders. Importantly, the developmental timing of these              underly the generation of persistent activity and their activation is
+processes appears to shape the resulting phenotype, emphasizing               reﬂected in gamma activity, providing a link between local circuits,
+the need to consider spine loss within the framework of circuit               population activity, and working memory (105). The early onset of
+maturation (9, 11, 19, 86, 87).                                               working memory deﬁcits in the prodromal stage of SCZ correlates
+                                                                              with early deﬁcits in L3 pyramidal neurons in dlPFC, indicating that
+                                                                              dendritic spine loss on L3 pyramidal neurons might be the primary
+                                                                              insult in the progression of the disease and that deﬁcits of fast-
+3 Disrupted integration and network                                           spiking interneurons reﬂect compensatory measures (20). Chronic
+dynamics: linking prefrontal spine loss                                       stress, a considerable risk-factor for neuropsychiatric disorders, has
+to cognitive symptoms                                                         been shown to result in a mPFC speciﬁc reduction of spines on L2/3
+                                                                              pyramidal neurons and a selective impairment in an attentional set-
+     The PFC is widely recognized as a hub for cognitive control,             shifting task in rodents (38). Inhibition of protein kinase C,
+integrating information from a broad array of cortical and subcor-            mediating stress-induced deﬁcits, rescued dendritic spine loss and
+tical structures. Many of these long-range afferents target superﬁcial        cognitive deﬁcits, showing a correlation between L2/3 PFC spine
+layers, forming excitatory synapses on dendritic spines of L2/3               densities and cognitive performance (106). Accordingly, a selective
+
+
+
+Frontiers in Psychiatry                                                  06                                                            frontiersin.org
+Bitzenhofer and Günther                                                                                                 10.3389/fpsyt.2026.1730869
+
+
+
+
+impairment of attentional control and disrupted connectivity in the           frequencies proposed as a biomarker for neuropsychiatric disorders
+frontal network have been shown in response to social stress in               (125–127).
+humans (107). Taken together, these observations highlight how                    In sum, dendritic spines on L2/3 pyramidal neurons of the PFC
+structural alterations at the synaptic level can cascade into macro-          are key structural substrates for integrating long-range inputs and
+scopic disturbances of network dynamics and cognition.                        supporting recurrent local activity. Their disruption across neuro-
+     In addition to local prefrontal networks, abnormal spine den-            psychiatric disorders destabilizes local and global network dynamics
+sities and morphology might impair the ability of prefrontal                  and impairs prefrontal control over behavior. These circuit-level
+pyramidal neurons to integrate converging signals from distributed            consequences provide mechanistic explanations for deﬁcits in
+brain areas. Several long-range inputs target superﬁcial pyramidal            working memory, cognitive ﬂexibility, emotional regulation, and
+neurons in the PFC, such as prefrontal afferents from the basolateral         social cognition. By linking superﬁcial-layer spine pathology to
+amygdala (BLA), mediodorsal nucleus of the thalamus (MD),                     altered network dysfunction, a cross-level framework emerges that
+ventral hippocampus (vHP), and the contralateral PFC (2, 4)                   connects cellular alterations with cognitive symptoms in disorders
+(Figure 1). While inputs from the BLA and MD speciﬁcally target               such as SCZ and ASD.
+pyramidal neurons in L2/3, inputs from the contralateral PFC target
+all cortical layers (4, 108, 109). In contrast, inputs from the vHP
+preferentially target pyramidal neurons in L5 in the prelimbic
+subdivision and all layers in the infralimbic subdivision of the              4 Conclusions
+PFC in rodents (4, 110). Interestingly, these areas support different
+functions of cognitive processing, suggesting that reduced commu-                  L2/3 pyramidal neurons of the PFC have emerged as critical
+nication with the PFC, caused by a reduction of spine numbers in              points of vulnerability in neuropsychiatric disorders. Reduced spine
+speciﬁc populations of prefrontal pyramidal neurons, might alter              densities and reduced dendritic complexity on these neurons, which
+the balance of these inputs. Thus, we hypothesize that spine                  are critical for local circuit processing and long-range cortical
+pathology in L2/3 may not simply weaken individual connections,               communication, have been linked to hallmark cognitive deﬁcits,
+but reshape the balance of inputs from distinct brain regions,                such as impaired working memory, attention, and cognitive ﬂexi-
+resulting in biased processing in prefrontal circuits.                        bility. Notably, even beyond neuropsychiatric disorders, prefrontal
+     While the mechanisms underlying the integration of diverse               spine loss remains a pattern in a wide range of neuropathological
+long-range inputs in the PFC remain poorly understood, projec-                disorders. For example, Alzheimer’s disease is characterized by a
+tions from individual areas have been characterized in greater detail.        profound loss of spines in L3 of the PFC, correlating strongly with
+The BLA is considered important for emotional memories, partic-               cognitive decline (128, 129). Also, during normal aging, a decline of
+ularly fear learning. It projects strongly to L2 pyramidal neurons of         cognitive functions appears to be linked to spine alterations in the
+the PFC, where it supports the integration of affective and emo-              PFC (130).
+tional information to guide behavior (111). Attenuated prefrontal                  The mechanisms driving prefrontal spine loss vary among
+integration of amygdalar input, as expected under conditions of               disorders and include aberrant synaptic pruning, neurotransmitter
+spine loss, might contribute to impaired emotional regulation, and            imbalances, altered synaptogenesis and cytoskeletal dynamics, as
+is consistent with impaired emotional processing observed in                  well as early-life inﬂammation (18). Unique molecular regulation in
+neuropsychiatric disorders, as well as reduced functional coupling            superﬁcial layer pyramidal neurons of the primate PFC might also
+between the amygdala and PFC (112–114). In contrast, MD input to              play a crucial role in their apparent vulnerability (98). Stress-
+the PFC is critical for working memory maintenance and atten-                 induced spine loss has been implicated to contribute to reduced
+tional control (115, 116). Prefrontal inputs from the MD preferen-            connectivity in the PFC across disorders, as previously summarized
+tially target L3 pyramidal neurons (117). Inhibition of MD disrupts           in an excellent review (68). Despite the mechanistic distinctions, a
+interactions between the thalamus and PFC, as well as working                 common theme of synaptic disruption emerges across disorders,
+memory performance, consistent with working memory impair-                    ultimately impairing excitatory microcircuits in the superﬁcial
+ments and decreased thalamo-prefrontal coupling in SCZ (118,                  layers of the PFC and thereby compromising its role in cognition.
+119). Adolescent thalamic inhibition results in perturbations of                   Therefore, resolving how distinct, disease-speciﬁc mechanisms
+MD-PFC connectivity, causing long-lasting deﬁcits in prefrontal               lead to the convergent structural phenotype of prefrontal spine loss
+activity and cognitive functions (15, 120). Prefrontal inputs from            offers a powerful framework for bridging molecular pathology with
+the vHP terminate in superﬁcial and deep layers and coordinate                functional and behavioral outcomes. Future, integrative studies
+oscillatory activity in the PFC underlying spatial working memory             leveraging technologies such as iPSC-derived neurons (131) as
+(110, 121, 122). Disrupted hippocampal-prefrontal synchrony im-               well as longitudinal and mechanistic studies that clarify the tem-
+pairs working memory and has been proposed as a core deﬁcit in                poral and causal relationships between cellular structure, circuit
+SCZ (122–124). The distinct targeting of deep and superﬁcial layers           dynamics, and behavior will be essential for identifying precise
+by hippocampal inputs in different subdivisions of the PFC requires           intervention windows and mechanisms. Ultimately, understanding
+further investigation. We hypothesize that a disturbance in the               how aberrant spine loss shapes circuit function and thereby
+balance between these inputs could underlie altered phase-ampli-              cognitive performance may pave the way for therapeutic strategies
+tude coupling between oscillatory activity in theta and gamma                 aimed at preserving or restoring dendritic architecture and may
+
+
+
+
+Frontiers in Psychiatry                                                  07                                                          frontiersin.org
+Bitzenhofer and Günther                                                                                                                                10.3389/fpsyt.2026.1730869
+
+
+
+
+hold promise for improving cognitive outcomes across diverse                                    Conﬂict of interest
+neuropsychiatric conditions.
+                                                                                                    The authors declared that this work was conducted in the
+                                                                                                absence of any commercial or ﬁnancial relationships that could
+                                                                                                be construed as a potential conﬂict of interest.
+Author contributions
+   SB: Conceptualization, Writing – review & editing,
+Investigation, Writing – original draft, Visualization, Funding
+acquisition. AG: Data curation, Visualization, Conceptualization,                               Generative AI statement
+Writing – review & editing, Project administration, Investigation,
+Writing – original draft.                                                                           The author(s) declared that generative AI was not used in the
+                                                                                                creation of this manuscript.
+                                                                                                    Any alternative text (alt text) provided alongside ﬁgures in this
+                                                                                                article has been generated by Frontiers with the support of artiﬁcial
+Funding                                                                                         intelligence and reasonable efforts have been made to ensure
+                                                                                                accuracy, including review by the authors wherever possible. If
+    The author(s) declared that ﬁnancial support was received for                               you identify any issues, please contact us.
+this work and/or its publication. This work was supported by grants
+from the German Research Foundation (FOR5159 Ha4466/20-1,
+22-1, and 23–1 to Ileana L. Hanganu-Opatz) and from the
+European Research Council (HORIZON EUROPE ERC-2023-StG
+101114633 to Sebastian Bitzenhofer).
+                                                                                                Publisher’s note
+                                                                                                    All claims expressed in this article are solely those of the
+                                                                                                authors and do not necessarily represent those of their afﬁliated
+Acknowledgments                                                                                 organizations, or those of the publisher, the editors and the
+                                                                                                reviewers. Any product that may be evaluated in this article, or
+   We would like to acknowledge Prof. Dr. Ileana L. Hanganu-                                    claim that may be made by its manufacturer, is not guaranteed or
+Opatz for her support of this article.                                                          endorsed by the publisher.
+
+
+
+
+References
+1. Miller EK, Cohen JD. An integrative theory of prefrontal cortex function. Annu Rev           12. Pöpplau JA, Schwarze T, Dorofeikova M, Pochinok I, Günther A, Marquardt A,
+Neurosci. (2001) 24:167–202. doi: 10.1146/annurev.neuro.24.1.167                                et al. Reorganization of adolescent prefrontal cortex circuitry is required for mouse
+                                                                                                cognitive maturation. Neuron. (2024) 112:421–440.e7. doi: 10.1016/
+2. Anastasiades PG, Carter AG. Circuit organization of the rodent medial prefrontal             j.neuron.2023.10.024
+cortex. Trends Neurosci. (2021) 44:550–563. doi: 10.1016/j.tins.2021.03.006
+                                                                                                13. Petanjek Z, Judaš M, Šimić G, Rašin MR, Uylings HBM, Rakic P, et al.
+3. Günther A, Stelzer M, Franzelin A, Marquardt A, Schröder J, Oertner T, et al.                Extraordinary neoteny of synaptic spines in the human prefrontal cortex. Proc Natl
+Mapping prefrontal afferents along development. bioRxiv. (2025). doi: 10.1101/                  Acad Sci USA. (2011) 108:13281–13286. doi: 10.1073/pnas.1105108108
+2025.09.17.674820
+                                                                                                14. Bitzenhofer SH, Pöpplau JA, Chini M, Marquardt A, Hanganu-Opatz IL. A
+4. Little JP, Carter AG. Subcellular synaptic connectivity of layer 2 pyramidal neurons         transient developmental increase in prefrontal activity alters network maturation and
+in the medial prefrontal cortex. J Neurosci. (2012) 32:12808–12819. doi: 10.1523/               causes cognitive dysfunction in adult mice. Neuron. (2021) 109:1350–1364.e6.
+jneurosci.1616-12.2012                                                                          doi: 10.1016/j.neuron.2021.02.011
+5. Petreanu L, Mao T, Sternson SM, Svoboda K. The subcellular organization of                   15. Benoit LJ, Holt ES, Posani L, Fusi S, Harris AZ, Canetta S, et al. Adolescent
+neocortical excitatory connections. Nature. (2009) 457:1142–1145. doi: 10.1038/                 thalamic inhibition leads to long-lasting impairments in prefrontal cortex function. Nat
+nature07709                                                                                     Neurosci. (2022) 25:714–725. doi: 10.1038/s41593-022-01072-y
+6. Allen SJ, Morishita H. Local and long-range input balance: a framework for                   16. Glausier JR, Lewis DA. Dendritic spine pathology in schizophrenia. Neuroscience.
+investigating frontal cognitive circuit maturation in health and disease. Sci Adv.              (2013) 251:90–107. doi: 10.1016/j.neuroscience.2012.04.044
+(2024) 10:eadh3920. doi: 10.1126/sciadv.adh3920
+                                                                                                17. Duman CH, Duman RS. Spine synapse remodeling in the pathophysiology and
+7. Chini M, Pöpplau JA, Lindemann C, Carol-Perdiguer L, Hnida M, Oberländer V,                  treatment of depression. Neurosci Lett. (2015) 601:20–29. doi: 10.1016/
+et al. Resolving and rescuing developmental miswiring in a mouse model of cognitive             j.neulet.2015.01.022
+impairment. Neuron. (2020) 105:60–74.e7. doi: 10.1016/j.neuron.2019.09.042
+                                                                                                18. Lima Caldeira G, Peça J, Carvalho AL. New insights on synaptic dysfunction in
+8. Bitzenhofer SH, Ahlbeck J, Wolff A, Wiegert JS, Gee CE, Oertner TG, et al. Layer-            neuropsychiatric disorders. Curr Opin Neurobiol. (2019) 57:62–70. doi: 10.1016/
+speciﬁc optogenetic activation of pyramidal neurons causes beta-gamma entrainment               j.conb.2019.01.004
+of neonatal networks. Nat Commun. (2017) 8:14563. doi: 10.1038/ncomms14563
+                                                                                                19. Penzes P, Cahill ME, Jones KA, VanLeeuwen JE, Woolfrey KM. Dendritic spine
+9. Forrest MP, Parnell E, Penzes P. Dendritic structural plasticity and neuropsychiatric        pathology in neuropsychiatric disorders. Nat Neurosci. (2011) 14:285–293.
+disease. Nat Rev Neurosci. (2018) 19:215–234. doi: 10.1038/nrn.2018.16                          doi: 10.1038/nn.2741
+10. Medalla M, Zikopoulos B. Laminar excitatory inputs to the dorsolateral prefrontal           20. Dienel SJ, Schoonover KE, Lewis DA. Cognitive dysfunction and prefrontal cortical
+cortex: implications for periadolescent synaptic plasticity and circuit pathology. Biol         circuit alterations in schizophrenia: developmental trajectories. Biol Psychiatry. (2022)
+Psychiatry. (2023) 94:280–282. doi: 10.1016/j.biopsych.2023.06.005                              92:450–459. doi: 10.1016/j.biopsych.2022.03.002
+11. Chini M, Hanganu-Opatz IL. Prefrontal cortex development in health and disease:             21. Rose JE, Woolsey CN. The orbitofrontal cortex and its connections with the
+lessons from rodents and humans. Trends Neurosci. (2021) 44:227–240. doi: 10.1016/              mediodorsal nucleus in rabbit, sheep and cat. Res Publ Assoc Res Nerv Ment Dis. (1948)
+j.tins.2020.10.017                                                                              27:210–232. doi:
+
+
+
+
+Frontiers in Psychiatry                                                                    08                                                                           frontiersin.org
+Bitzenhofer and Günther                                                                                                                               10.3389/fpsyt.2026.1730869
+
+
+
+
+22. Carlén M. What constitutes the prefrontal cortex? Science. (2017) 358:478–482.             45. Armstrong D, Dunn JK, Antalffy B, Trivedi R. Selective dendritic alterations in the
+doi: 10.1126/science.aan8868                                                                   cortex of Rett syndrome. J Neuropathol Exp Neurol. (1995) 54:195–201. doi: 10.1097/
+                                                                                               00005072-199503000-00006
+23. Uylings HBM, Groenewegen HJ, Kolb B. Do rats have a prefrontal cortex? Behav
+Brain Res. (2003) 146:3–17. doi: 10.1016/j.bbr.2003.09.028                                     46. Belichenko PV, Oldfors A, Hagberg B, Dahlström A. Rett syndrome: 3-D confocal
+                                                                                               microscopy of cortical pyramidal dendrites and afferents. NeuroReport. (1994) 5:1509.
+24. Garey L, Ong W, Patel T, Kanani M, Davis A, Mortimer A, et al. Reduced dendritic
+                                                                                               doi: 10.1097/00001756-199407000-00025
+spine density on cerebral cortical pyramidal neurons in schizophrenia. J Neurol
+Neurosurg Psychiatry. (1998) 65:446–453. doi: 10.1136/jnnp.65.4.446                            47. Liu ZH, Chuang DM, Smith CB. Lithium ameliorates phenotypic deﬁcits in a
+                                                                                               mouse model of fragile X syndrome. Int J Neuropsychopharmacol. (2011) 14:618–630.
+25. Glantz LA, Lewis DA. Decreased dendritic spine density on prefrontal cortical              doi: 10.1017/s1461145710000520
+pyramidal neurons in schizophrenia. Arch Gen Psychiatry. (2000) 57:65–73.
+doi: 10.1001/archpsyc.57.1.65                                                                  48. Tobe BTD, Crain AM, Winquist AM, Calabrese B, Makihara H, Zhao W, et al.
+                                                                                               Probing the lithium-response pathway in hiPSCs implicates the phosphoregulatory set-
+26. Broadbelt K, Byne W, Jones LB. Evidence for a decrease in basilar dendrites of
+                                                                                               point for a cytoskeletal modulator in bipolar pathogenesis. Proc Natl Acad Sci USA.
+pyramidal cells in schizophrenic medial prefrontal cortex. Schizophr Res. (2002) 58:75–
+                                                                                               (2017) 114:E4462–E4471. doi: 10.1073/pnas.1700111114
+81. doi: 10.1016/s0920-9964(02)00201-3
+                                                                                               49. Vanderplow AM, Eagle AL, Kermath BA, Bjornson KJ, Robison AJ, Cahill ME,
+27. Konopaske GT, Lange N, Coyle JT, Benes FM. Prefrontal cortical dendritic spine
+                                                                                               et al. Akt-mTOR hypoactivity in bipolar disorder gives rise to cognitive impairments
+pathology in schizophrenia and bipolar disorder. JAMA Psychiatry. (2014) 71:1323–
+                                                                                               associated with altered neuronal structure and function. Neuron. (2021) 109:1479–
+1331. doi: 10.1001/jamapsychiatry.2014.1582
+                                                                                               1496.e6. doi: 10.1016/j.neuron.2021.03.008
+28. Kalus P, Muller TJ, Zuschratter W, Senitz D. The dendritic architecture of                 50. Mukaetova-Ladinska EB, Arnold H, Jaros E, Perry R, Perry E. Depletion of MAP2
+prefrontal pyramidal neurons in schizophrenic patients. NeuroReport. (2000)
+                                                                                               expression and laminar cytoarchitectonic changes in dorsolateral prefrontal cortex in
+11:3621. doi: 10.1097/00001756-200011090-00044
+                                                                                               adult autistic individuals. Neuropathol Appl Neurobiol. (2004) 30:615–623.
+29. Yoon JH, Zhang Z, Mormino E, Davidzon G, Minzenberg MJ, Ballon J, et al.                   doi: 10.1111/j.1365-2990.2004.00574.x
+Reductions in synaptic marker SV2A in early-course schizophrenia. J Psychiatr Res.             51. Hutsler JJ, Zhang H. Increased dendritic spine densities on cortical projection
+(2023) 161:213–217. doi: 10.1016/j.jpsychires.2023.02.026                                      neurons in autism spectrum disorders. Brain Res. (2010) 1309:83–94. doi: 10.1016/
+30. Nagahama K, Sakoori K, Watanabe T, Kishi Y, Kawaji K, Koebis M, et al. Setd1a              j.brainres.2009.09.120
+insufﬁciency in mice attenuates excitatory synaptic function and recapitulates schizo-
+                                                                                               52. Matuskey D, Yang Y, Naganawa M, Koohsari S, Toyonaga T, Gravel P, et al. 11C-
+phrenia-related behavioral abnormalities. Cell Rep. (2020) 32(11):108126. doi: 10.1016/
+                                                                                               UCB-J PET imaging is consistent with lower synaptic density in autistic adults. Mol
+j.celrep.2020.108126
+                                                                                               Psychiatry. (2025) 30:1610–1616. doi: 10.1038/s41380-024-02776-2
+31. Gupta SC, Ravikrishnan A, Liu J, Mao Z, Pavuluri R, Hillman BG, et al. The
+                                                                                               53. Watanabe S, Kurotani T, Oga T, Noguchi J, Isoda R, Nakagami A, et al. Functional
+NMDA receptor GluN2C subunit controls cortical excitatory-inhibitory balance,
+                                                                                               and molecular characterization of a non-human primate model of autism spectrum
+neuronal oscillations and cognitive function. Sci Rep. (2016) 6:38321. doi: 10.1038/
+                                                                                               disorder shows similarity with the human disease. Nat Commun. (2021) 12:5388.
+srep38321
+                                                                                               doi: 10.1038/s41467-021-25487-6
+32. Günther A, Chini M, Bitzenhofer SH, Marquardt A, Hanganu-Opatz IL. Early                   54. Lazaro MT, Taxidis J, Shuman T, Bachmutsky I, Ikrar T, Santos R, et al. Reduced
+rebalancing of neuroinﬂammatory cascades lastingly rescues prefrontal deﬁcits in a
+                                                                                               prefrontal synaptic connectivity and disturbed oscillatory population dynamics in the
+22q11.2ds model. Brain Behav Immun. (2026) 134:106470. doi: 10.1016/
+                                                                                               CNTNAP2 model of autism. Cell Rep. (2019) 27:2567–2578.e6. doi: 10.1016/
+j.bbi.2026.106470
+                                                                                               j.celrep.2019.05.006
+33. Tanaka R, Liao J, Hada K, Mori D, Nagai T, Matsuzaki T, et al. Inhibition of Rho-          55. Barón-Mendoza I, Maqueda-Martínez E, Martínez-Marcial M, De la Fuente-
+kinase ameliorates decreased spine density in the medial prefrontal cortex and                 Granada M, Gómez-Chavarín M, González-Arenas A, et al. Changes in the number
+methamphetamine-induced cognitive dysfunction in mice carrying schizophrenia-
+                                                                                               and morphology of dendritic spines in the hippocampus and prefrontal cortex of the
+associated mutations of the Arhgap10 gene. Pharmacol Res. (2023) 187:106589.
+                                                                                               C58/J mouse model of autism. Front Cell Neurosci. (2021) 15:726501. doi: 10.3389/
+doi: 10.1016/j.phrs.2022.106589
+                                                                                               fncel.2021.726501
+34. Bagheri F, Safari A, Namavar MR. Effect of dimethyl fumarate on the changes in
+                                                                                               56. Li YX, Tan ZN, Li XH, Ma B, Adu Nti F, Lv XQ, et al. Increased gene dosage of
+the medial prefrontal cortex structure and behavior in the poly(I:C)-induced maternal          RFWD2 causes autistic-like behaviors and aberrant synaptic formation and function in
+immune activation model of schizophrenia in the male mice. Behav Brain Res. (2022)             mice. Mol Psychiatry. (2024) 29:2496–2509. doi: 10.1038/s41380-024-02515-7
+417:113581. doi: 10.1016/j.bbr.2021.113581
+                                                                                               57. Lin F, Wang X, Luo R, Yuan B, Ye S, Yang T, et al. Maternal LPS exposure enhances
+35. Sekiguchi M, Sobue A, Kushima I, Wang C, Arioka Y, Kato H, et al. ARHGAP10,
+                                                                                               the 5-HT level in the prefrontal cortex of autism-like young offspring. Brain Sci. (2023)
+which encodes Rho GTPase-activating protein 10, is a novel gene for schizophrenia
+                                                                                               13:958. doi: 10.3390/brainsci13060958
+risk. Transl Psychiatry. (2020) 10:247. doi: 10.1038/s41398-020-00917-z
+                                                                                               58. Hara Y, Ago Y, Taruta A, Katashiba K, Hasebe S, Takano E, et al. Improvement by
+36. Zhou Y, Kaiser T, Monteiro P, Zhang X, Van der Goes MS, Wang D, et al. Mice
+                                                                                               methylphenidate and atomoxetine of social interaction deﬁcits and recognition
+with Shank3 mutations associated with ASD and schizophrenia display both shared
+                                                                                               memory impairment in a mouse model of valproic acid-induced autism. Autism Res.
+and distinct defects. Neuron. (2016) 89:147–162. doi: 10.1016/j.neuron.2015.11.023
+                                                                                               (2016) 9:926–939. doi: 10.1002/aur.1596
+37. Kang HJ, Voleti B, Hajszan T, Rajkowska G, Stockmeier CA, Licznerski P, et al.             59. Roh JD, Bae M, Kim H, Yang Y, Lee Y, Cho Y, et al. Lithium normalizes ASD-
+Decreased expression of synapse-related genes and loss of synapses in major depressive
+                                                                                               related neuronal, synaptic, and behavioral phenotypes in DYRK1A-knockin mice. Mol
+disorder. Nat Med. (2012) 18:1413–1417. doi: 10.1038/nm.2886
+                                                                                               Psychiatry. (2025) 30:2584–2596. doi: 10.1038/s41380-024-02865-2
+38. Liston C, Miller MM, Goldwater DS, Radley JJ, Rocher AB, Hof PR, et al. Stress-
+                                                                                               60. Murphy KE, Duncan B, Sperringer JE, Zhang E, Haberman V, Wyatt EV, et al.
+induced alterations in prefrontal cortical dendritic morphology predict selective              Ankyrin B promotes developmental spine regulation in the mouse prefrontal cortex.
+impairments in perceptual attentional set-shifting. J Neurosci. (2006) 26:7870–7874.           Cereb Cortex. (2023) 33(20):10634–10648. doi: 10.1093/cercor/bhad311
+doi: 10.1523/jneurosci.1184-06.2006
+                                                                                               61. Zhu F, Shi Q, Jiang Y, Zhang YQ, Zhao H. Impaired synaptic function and
+39. Radley JJ, Sisti HM, Hao J, Rocher AB, McCall T, Hof PR, et al. Chronic behavioral
+                                                                                               hyperexcitability of the pyramidal neurons in the prefrontal cortex of autism-associated
+stress induces apical dendritic reorganization in pyramidal neurons of the medial
+                                                                                               Shank3 mutant dogs. Mol Autism. (2024) 15:9. doi: 10.1186/s13229-024-00587-4
+prefrontal cortex. Neuroscience. (2004) 125:1–6. doi: 10.1016/j.neurosci-
+ence.2004.01.006                                                                               62. Jauhar S, Johnstone M, McKenna PJ. Schizophrenia. Lancet. (2022) 399:473–486.
+                                                                                               doi: 10.1016/s0140-6736(09)60722-4
+40. Brown SM, Henning S, Wellman CL. Mild, short-term stress alters dendritic
+morphology in rat medial prefrontal cortex. Cereb Cortex. (2005) 15:1714–1722.                 63. Kolluri N, Sun Z, Sampson AR, Lewis DA. Lamina-speciﬁc reductions in dendritic
+doi: 10.1093/cercor/bhi048                                                                     spine density in the prefrontal cortex of subjects with schizophrenia. Am J Psychiatry.
+                                                                                               (2005) 162:1200–1202. doi: 10.1176/appi.ajp.162.6.1200
+41. Radley JJ, Rocher AB, Miller M, Janssen WGM, Liston C, Hof PR, et al. Repeated
+stress induces dendritic spine loss in the rat medial prefrontal cortex. Cereb Cortex.         64. Osimo EF, Beck K, Reis Marques T, Howes OD. Synaptic loss in schizophrenia: a
+(2006) 16:313–320. doi: 10.1093/cercor/bhi104                                                  meta-analysis and systematic review of synaptic protein and mRNA measures. Mol
+                                                                                               Psychiatry. (2019) 24:549–561. doi: 10.1038/s41380-018-0041-5
+42. Radley JJ, Anderson RM, Hamilton BA, Alcock JA, Romig-Martin SA. Chronic
+stress-induced alterations of dendritic spine subtypes predict functional decrements in        65. Howes OD, Onwordi EC. The synaptic hypothesis of schizophrenia version III: a
+an hypothalamo–pituitary–adrenal-inhibitory prefrontal circuit. J Neurosci. (2013)             master mechanism. Mol Psychiatry. (2023) 28:1843–1856. doi: 10.1038/s41380-023-
+33:14379–14391. doi: 10.1523/jneurosci.0287-13.2013                                            02043-w
+43. Cook SC, Wellman CL. Chronic stress alters dendritic morphology in rat medial              66. Bourgeois JP, Goldman-Rakic PS, Rakic P. Synaptogenesis in the prefrontal cortex
+prefrontal cortex. J Neurobiol. (2004) 60:236–248. doi: 10.1002/neu.20025                      of rhesus monkeys. Cereb Cortex. (1994) 4:78–96. doi: 10.1093/cercor/4.1.78
+44. Armstrong DD, Dunn K, Antalffy B. Decreased dendritic branching in frontal,                67. Arnsten AFT, Datta D. Characterizing the most vulnerable prefrontal cortical
+motor and limbic cortex in Rett syndrome compared with trisomy 21. J Neuropathol               neurons in schizophrenia. Am J Psychiatry. (2024) 181(10):861–864. doi: 10.1176/
+Exp Neurol. (1998) 57:1013–1017. doi: 10.1097/00005072-199811000-00003                         appi.ajp.20240731
+
+
+
+
+Frontiers in Psychiatry                                                                   09                                                                           frontiersin.org
+Bitzenhofer and Günther                                                                                                                                                10.3389/fpsyt.2026.1730869
+
+
+
+
+68. Woo E, Sansing LH, Arnsten AFT, Datta D. Chronic stress weakens connectivity in                            94. Perlstein WM, Dixit NK, Carter CS, Noll DC, Cohen JD. Prefrontal cortex
+the prefrontal cortex: architectural and molecular changes. Chronic Stress. (2021)                             dysfunction mediates deﬁcits in working memory and prepotent responding in
+5:24705470211029254. doi: 10.1177/24705470211029254                                                            schizophrenia. Biol Psychiatry. (2003) 53:25–38. doi: 10.1016/s0006-3223(02)01675-x
+69. Singh T, Kurki MI, Curtis D, Purcell SM, Crooks L, McRae J, et al. Rare loss-of-                           95. Eryilmaz H, Tanner AS, Ho NF, Nitenson AZ, Silverstein NJ, Petruzzi LJ, et al.
+function variants in SETD1A are associated with schizophrenia and developmental                                Disrupted working memory circuitry in schizophrenia: disentangling fMRI markers of
+disorders. Nat Neurosci. (2016) 19:571–577. doi: 10.1038/nn.4267                                               core pathology vs other aspects of impaired performance. Neuropsychopharmacology.
+                                                                                                               (2016) 41:2411–2420. doi: 10.1038/npp.2016.55
+70. Uher R, Payne JL, Pavlova B, Perlis RH. Major depressive disorder in DSM-5:
+implications for clinical practice and research of changes from DSM-IV. Depress                                96. Frost DO, Tamminga CA, Medoff DR, Caviness V, Innocenti G, Carpenter WT,
+Anxiety. (2014) 31:459–471. doi: 10.1002/da.22217                                                              et al. Neuroplasticity and schizophrenia. Biol Psychiatry. (2004) 56:540–543.
+                                                                                                               doi: 10.1016/j.biopsych.2004.01.020
+71. Holmes SE, Scheinost D, Finnema SJ, Naganawa M, Davis MT, DellaGioia N, et al.
+Lower synaptic density is associated with depression severity and network alterations.                         97. Young ME, Ohm DT, Dumitriu D, Rapp PR, Morrison JH. Differential effects of
+Nat Commun. (2019) 10:1529. doi: 10.1038/s41467-019-09562-7                                                    aging on dendritic spines in visual cortex and prefrontal cortex of the rhesus monkey.
+                                                                                                               Neuroscience. (2014) 274:33–43. doi: 10.1016/j.neuroscience.2014.05.008
+72. Arnsten AFT, Joyce MKP, Roberts AC. The aversive lens: stress effects on the
+prefrontal-cingulate cortical pathways that regulate emotion. Neurosci Biobehav Rev.                           98. Arnsten AFT, Wang MJ, Paspalas CD. Neuromodulation of thought: ﬂexibilities
+(2023) 145:105000. doi: 10.1016/j.neubiorev.2022.105000                                                        and vulnerabilities in prefrontal cortical network synapses. Neuron. (2012) 76:223–239.
+                                                                                                               doi: 10.1016/j.neuron.2012.08.038
+73. Lane NM, Smith DJ. Bipolar disorder: diagnosis, treatment and future directions. J
+R Coll Physicians Edinb. (2023) 53:192–196. doi: 10.1177/14782715231197577                                     99. Datta D, Yang S, Joyce MKP, Woo E, McCarroll SA, Gonzalez-Burgos G, et al. Key
+                                                                                                               roles of CACNA1C/Cav1.2 and CALB1/Calbindin in prefrontal neurons altered in
+74. Solé B, Jiménez E, Torrent C, Reinares M, Bonnin C, Torres I, et al. Cognitive
+                                                                                                               cognitive disorders. JAMA Psychiatry. (2024) 81:870–881. doi: 10.1001/
+impairment in bipolar disorder: treatment and prevention strategies. Int J
+                                                                                                               jamapsychiatry.2024.1112
+Neuropsychopharmacol. (2017) 20:670–680. doi: 10.1093/ijnp/pyx032
+                                                                                                               100. Uhlhaas PJ, Singer W. Abnormal neural oscillations and synchrony in schizo-
+75. Kim HJ, Thayer SA. Lithium increases synapse formation between hippocampal                                 phrenia. Nat Rev Neurosci. (2010) 11:100–113. doi: 10.1038/nrn2774
+neurons by depleting phosphoinositides. Mol Pharmacol. (2009) 75:1021–1030.
+doi: 10.1124/mol.108.052357                                                                                    101. Sohal VS. Transforming discoveries about cortical microcircuits and gamma
+                                                                                                               oscillations into new treatments for cognitive deﬁcits in schizophrenia. Am J Psychiatry.
+76. Baird G, Simonoff E, Pickles A, Chandler S, Loucas T, Meldrum D, et al. Prevalence
+                                                                                                               (2022) 179:267–276. doi: 10.1176/appi.ajp.20220147
+of disorders of the autism spectrum in a population cohort of children in South
+Thames: the Special Needs and Autism Project (SNAP). Lancet. (2006) 368:210–215.                               102. Bitzenhofer SH, Pöpplau JA, Hanganu-Opatz I. Gamma activity accelerates
+doi: 10.1016/s0140-6736(06)69041-7                                                                             during prefrontal development. eLife. (2020) 9:e56795. doi: 10.7554/elife.56795
+77. Ramaswami G, Geschwind DH. Genetics of autism spectrum disorder. Handb Clin                                103. Cho KKA, Hoch R, Lee AT, Patel T, Rubenstein JLR, Sohal VS, et al. Gamma
+Neurol. (2018) 147:321–329. doi: 10.1016/b978-0-444-63233-3.00021-x                                            rhythms link prefrontal interneuron dysfunction with cognitive inﬂexibility in Dlx5/6
+                                                                                                               +/− mice. Neuron. (2015) 85:1332–1343. doi: 10.1016/j.neuron.2015.02.019
+78. Tang G, Gudsnuk K, Kuo SH, Cotrina ML, Rosoklija G, Sosunov A, et al. Loss of
+mTOR-dependent macroautophagy causes autistic-like synaptic pruning deﬁcits.                                   104. Sohal VS. Insights into cortical oscillations arising from optogenetic studies. Biol
+Neuron. (2014) 83:1131–1143. doi: 10.1016/j.neuron.2014.07.040                                                 Psychiatry. (2012) 71:1039–1045. doi: 10.1016/j.biopsych.2012.01.024
+79. Martínez-Cerdeño V. Dendrite and spine modiﬁcations in autism and related                                  105. Constantinidis C, Funahashi S, Lee D, Murray JD, Qi XL, Wang M, et al.
+neurodevelopmental disorders in patients and animal models. Dev Neurobiol. (2017)                              Persistent spiking activity underlies working memory. J Neurosci. (2018) 38:7020–
+77:393–404. doi: 10.1002/dneu.22417                                                                            7028. doi: 10.1523/jneurosci.2486-17.2018
+80. Bourgeron T. A synaptic trek to autism. Curr Opin Neurobiol. (2009) 19:231–234.                            106. Hains AB, Vu MAT, Maciejewski PK, van Dyck CH, Gottron M, Arnsten AFT,
+doi: 10.1016/j.conb.2009.06.003                                                                                et al. Inhibition of protein kinase C signaling protects prefrontal cortex dendritic spines
+                                                                                                               and cognition from the effects of chronic stress. Proc Natl Acad Sci. (2009) 106:17957–
+81. Varghese M, Keshav N, Jacot-Descombes S, Warda T, Wicinski B, Dickstein DL,                                17962. doi: 10.1073/pnas.0908563106
+et al. Autism spectrum disorder: neuropathology and animal models. Acta Neuropathol
+(Berl). (2017) 134:537–566. doi: 10.1007/s00401-017-1736-4                                                     107. Liston C, McEwen BS, Casey BJ. Psychosocial stress reversibly disrupts prefrontal
+                                                                                                               processing and attentional control. Proc Natl Acad Sci. (2009) 106:912–917.
+82. Werling DM, Geschwind DH. Sex differences in autism spectrum disorders. Curr
+                                                                                                               doi: 10.1073/pnas.0807041106
+Opin Neurol. (2013) 26:146–153. doi: 10.1097/wco.0b013e32835ee548
+                                                                                                               108. Little JP, Carter AG. Synaptic mechanisms underlying strong reciprocal connec-
+83. Morgan JT, Chana G, Abramson I, Semendeferi K, Courchesne E, Everall IP, et al.
+                                                                                                               tivity between the medial prefrontal cortex and basolateral amygdala. J Neurosci. (2013)
+Abnormal microglial–neuronal spatial organization in the dorsolateral prefrontal
+                                                                                                               33:15333–15342. doi: 10.1523/jneurosci.2385-13.2013
+cortex in autism. Brain Res. (2012) 1456:72–81. doi: 10.1016/j.brainres.2012.03.036
+                                                                                                               109. Anastasiades PG, Collins DP, Carter AG. Mediodorsal and ventromedial thala-
+84. Geschwind DH, Levitt P. Autism spectrum disorders: developmental disconnec-                                mus engage distinct L1 circuits in the prefrontal cortex. Neuron. (2021) 109:314–330.e4.
+tion syndromes. Curr Opin Neurobiol. (2007) 17:103–111. doi: 10.1016/                                          doi: 10.1016/j.neuron.2020.10.031
+j.conb.2007.01.009
+                                                                                                               110. Liu X, Carter AG. Ventral hippocampal inputs preferentially drive corticocortical
+85. Moyer CE, Shelton MA, Sweet RA. Dendritic spine alterations in schizophrenia.
+                                                                                                               neurons in the infralimbic prefrontal cortex. J Neurosci. (2018) 38:7351–7363.
+Neurosci Lett. (2015) 601:46–53. doi: 10.1016/j.neulet.2014.11.042
+                                                                                                               doi: 10.1523/jneurosci.0378-18.2018
+86. Sydnor VJ, Larsen B, Bassett DS, Alexander-Bloch A, Fair DA, Liston C, et al.
+                                                                                                               111. Burgos-Robles A, Kimchi EY, Izadmehr EM, Porzenheim MJ, Ramos-Guasp WA,
+Neurodevelopment of the association cortices: patterns, mechanisms, and implications
+                                                                                                               Nieh EH, et al. Amygdala inputs to prefrontal cortex guide behavior amid conﬂicting
+f o r p s y c h o p a t h o l og y . Ne uro n . ( 2 0 21 ) 1 09 : 28 20 – 28 4 6. d o i : 1 0. 1 01 6 /
+                                                                                                               cues of reward and punishment. Nat Neurosci. (2017) 20:824–835. doi: 10.1038/
+j.neuron.2021.06.016
+                                                                                                               nn.4553
+87. Brandon NJ, Sawa A. Linking neurodevelopmental and synaptic theories of mental
+                                                                                                               112. Lu Q, Li H, Luo G, Wang Y, Tang H, Han L, et al. Impaired prefrontal–amygdala
+illness through DISC1. Nat Rev Neurosci. (2011) 12:707–722. doi: 10.1038/nrn3120
+                                                                                                               effective connectivity is responsible for the dysfunction of emotion process in major
+88. Sohal VS, Rubenstein JLR. Excitation-inhibition balance as a framework for                                 depressive disorder: a dynamic causal modeling study on MEG. Neurosci Lett. (2012)
+investigating mechanisms in neuropsychiatric disorders. Mol Psychiatry. (2019)                                 523:125–130. doi: 10.1016/j.neulet.2012.06.058
+24:1248–1257. doi: 10.1038/s41380-019-0426-0                                                                   113. Bjorkquist OA, Olsen EK, Nelson BD, Herbener ES. Altered amygdala-prefrontal
+89. Hussein Y, Tripathi U, Choudhary A, Nayak R, Peles D, Rosh I, et al. Early                                 connectivity during emotion perception in schizophrenia. Schizophr Res. (2016)
+maturation and hyperexcitability is a shared phenotype of cortical neurons derived                             175:35–41. doi: 10.1016/j.schres.2016.04.003
+from different ASD-associated mutations. Transl Psychiatry. (2023) 13:246.
+                                                                                                               114. Christian IR, Liuzzi MT, Yu Q, Kryza-Lacombe M, Monk CS, Jarcho J, et al.
+doi: 10.1038/s41398-023-02535-x
+                                                                                                               Context-dependent amygdala-prefrontal connectivity in youths with autism spectrum
+90. Finn ES, Huber L, Jangraw DC, Molfese PJ, Bandettini PA. Layer-dependent                                   disorder. Res Autism Spectr Disord. (2022) 91:101913. doi: 10.1016/j.rasd.2021.101913
+activity in human prefrontal cortex during working memory. Nat Neurosci. (2019)
+                                                                                                               115. Bolkan SS, Stujenske JM, Parnaudeau S, Spellman TJ, Rauffenbart C, Abbas AI,
+22:1687–1695. doi: 10.1038/s41593-019-0487-z
+                                                                                                               et al. Thalamic projections sustain prefrontal activity during working memory
+91. Degutis JK, Chaimow D, Haenelt D, Assem M, Duncan J, Haynes JD, et al.                                     maintenance. Nat Neurosci. (2017) 20:987–996. doi: 10.1038/nn.4568
+Dynamic layer-speciﬁc processing in the prefrontal cortex during working memory.
+                                                                                                               116. Schmitt LI, Wimmer RD, Nakajima M, Happ M, Mofakham S, Halassa MM, et al.
+Commun Biol. (2024) 7:1140. doi: 10.1038/s42003-024-06780-8
+                                                                                                               Thalamic ampliﬁcation of cortical connectivity sustains attentional control. Nature.
+92. Selemon LD, Goldman-Rakic PS. The reduced neuropil hypothesis: a circuit based model                       (2017) 545:219–223. doi: 10.1038/nature22073
+of schizophrenia. Biol Psychiatry. (1999) 45:17–25. doi: 10.1016/s0006-3223(98)00281-9
+                                                                                                               117. Collins DP, Anastasiades PG, Marlin JJ, Carter AG. Reciprocal circuits linking the
+93. Goldman-Rakic PS. Cellular basis of working memory. Neuron. (1995) 14:477–485.                             prefrontal cortex with dorsal and ventral thalamic nuclei. Neuron. (2018) 98:366–
+doi: 10.1016/0896-6273(95)90304-6                                                                              379.e4. doi: 10.1016/j.neuron.2018.03.024
+
+
+
+
+Frontiers in Psychiatry                                                                                   10                                                                            frontiersin.org
+Bitzenhofer and Günther                                                                                                                           10.3389/fpsyt.2026.1730869
+
+
+
+
+118. Parnaudeau S, O'Neill PK, Bolkan SS, Ward RD, Abbas AI, Roth BL, et al.                  125. Won GH, Kim JW, Choi TY, Lee YS, Min KJ, Seol KH, et al. Theta-phase gamma-
+Inhibition of mediodorsal thalamus disrupts thalamofrontal connectivity and cogni-            amplitude coupling as a neurophysiological marker in neuroleptic-naïve schizophrenia.
+tion. Neuron. (2013) 77:1151–1162. doi: 10.1016/j.neuron.2013.01.038                          Psychiatry Res. (2018) 260:406–411. doi: 10.1016/j.psychres.2017.12.021
+119. Kupferschmidt DA, Gordon JA. The dynamics of disordered dialogue: prefrontal,            126. Zhang J, Jiao X, Wang J, Qian Z, Wang Y, Tang X, et al. Abnormal phase-
+hippocampal and thalamic miscommunication underlying working memory deﬁcits in schizo-        amplitude coupling in patients with ﬁrst-episode schizophrenia during the auditory
+phrenia. Brain Neurosci Adv. (2018) 2:2398212818771821. doi: 10.1177/2398212818771821         steady-state response and resting states. Med Biol Eng Comput. (2025) 63:3099–3111.
+                                                                                              doi: 10.1007/s11517-025-03387-x
+120. Petersen D, Raudales R, Silva AK, Kellendonk C, Canetta S. Adolescent
+thalamoprefrontal inhibition leads to changes in intrinsic prefrontal network connec-         127. Günther A, Hanganu-Opatz IL. Neuronal oscillations: early biomarkers of
+tivity. eNeuro. (2024) 11(8):ENEURO.0284-24.2024. doi: 10.1523/eneuro.0284-24.2024            psychiatric disease? Front Behav Neurosci. (2022) 16:1038981. doi: 10.3389/
+                                                                                              fnbeh.2022.1038981
+121. Spellman T, Rigotti M, Ahmari SE, Fusi S, Gogos JA, Gordon JA, et al.
+Hippocampal-prefrontal input supports spatial encoding in working memory.                     128. DeKosky ST, Scheff SW. Synapse loss in frontal cortex biopsies in Alzheimer's
+Nature. (2015) 522:309–314. doi: 10.1038/nature14445                                          disease: correlation with cognitive severity. Ann Neurol. (1990) 27:457–464.
+                                                                                              doi: 10.1002/ana.410270502
+122. Tamura M, Spellman TJ, Rosen AM, Gogos JA, Gordon JA. Hippocampal-
+prefrontal theta-gamma coupling during performance of a spatial working memory                129. Scheff SW, Price DA, Ansari MA, Roberts KN, Schmitt FA, Ikonomovic MD, et al.
+task. Nat Commun. (2017) 8:2182. doi: 10.1038/s41467-017-02108-9                              Synaptic change in the posterior cingulate gyrus in the progression of Alzheimer's
+                                                                                              disease. J Alzheimers Dis. (2015) 43:1073–1090. doi: 10.3233/jad-141518
+123. Sigurdsson T, Stark KL, Karayiorgou M, Gogos JA, Gordon JA. Impaired
+hippocampal–prefrontal synchrony in a genetic mouse model of schizophrenia.                   130. Morrison JH, Baxter MG. The ageing cortical synapse: hallmarks and implications
+Nature. (2010) 464:763–767. doi: 10.1038/nature08855                                          for cognitive decline. Nat Rev Neurosci. (2012) 13:240–250. doi: 10.1038/nrn3200
+124. Sigurdsson T, Duvarci S. Hippocampal-prefrontal interactions in cognition,               131. Wen Z, Nguyen HN, Guo Z, Lalli MA, Wang X, Su Y, et al. Synaptic dysregulation
+behavior and psychiatric disease. Front Syst Neurosci. (2016) 9:190. doi: 10.3389/            in a human iPS cell model of mental disorders. Nature. (2014) 515:414–418.
+fnsys.2015.00190                                                                              doi: 10.1038/nature13716
+
+
+
+
+Frontiers in Psychiatry                                                                  11                                                                       frontiersin.org
+
