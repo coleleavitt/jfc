@@ -85,6 +85,16 @@ fn build_snapshot(app: &App) -> DashboardSnapshot {
         compartments,
         usage_by_model,
         total_cost_usd: jfc_engine::cost::total_cost(&engine.usage_by_model),
+        rsi_prompt_sections: engine
+            .current_stream_request
+            .as_ref()
+            .map(|metadata| metadata.rsi_prompt_sections as u64)
+            .unwrap_or(0),
+        rsi_tool_visibility_rules: engine
+            .current_stream_request
+            .as_ref()
+            .map(|metadata| metadata.rsi_tool_visibility_rules as u64)
+            .unwrap_or(0),
         timeline: app.timeline.iter().cloned().collect(),
         profile: profile_phases(),
     }

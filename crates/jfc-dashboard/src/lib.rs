@@ -60,6 +60,11 @@ pub struct DashboardSnapshot {
     pub usage_by_model: Vec<ModelUsageRow>,
     /// Total session spend across all models, in USD.
     pub total_cost_usd: f64,
+    /// Active RSI (recursive self-improvement) runtime guidance for the latest
+    /// request: prompt sections + tool-visibility rules injected by the curator's
+    /// promoted definitions. Grows as RSI verifies and promotes more.
+    pub rsi_prompt_sections: u64,
+    pub rsi_tool_visibility_rules: u64,
     /// Per-request token/cost timeline (oldest → newest), for debugging where
     /// input/output tokens go over the session. Bounded ring; see
     /// [`TimelineSample`].
@@ -109,6 +114,10 @@ pub struct TimelineSample {
     /// Anomaly tags flagged for review (e.g. `input_spike`, `cache_hit_drop`,
     /// `cost_spike`, `context_near_window`). Empty when nothing stood out.
     pub flags: Vec<String>,
+    /// Active RSI prompt sections / tool-visibility rules at this request — lets
+    /// the timeline show RSI guidance growing over the session.
+    pub rsi_prompt_sections: u64,
+    pub rsi_tool_visibility_rules: u64,
 }
 
 /// Rollup of the owned [`jfc_context::CompartmentSequence`] by tier.

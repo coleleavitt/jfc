@@ -85,6 +85,18 @@ impl App {
             context_window_tokens: self.engine.selected_context_window_tokens() as u64,
             cache_hit_pct,
             flags: Vec::new(),
+            rsi_prompt_sections: self
+                .engine
+                .current_stream_request
+                .as_ref()
+                .map(|metadata| metadata.rsi_prompt_sections as u64)
+                .unwrap_or(0),
+            rsi_tool_visibility_rules: self
+                .engine
+                .current_stream_request
+                .as_ref()
+                .map(|metadata| metadata.rsi_tool_visibility_rules as u64)
+                .unwrap_or(0),
         };
         sample.flags = anomaly_flags(&sample, self.timeline.back());
 
