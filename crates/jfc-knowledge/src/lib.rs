@@ -160,7 +160,30 @@ impl KnowledgeStore {
     }
 
     /// Open (creating if needed) and migrate the store at `path`.
+    ///
+    /// Concurrent first-time openers — two JFC processes (daemon + TUI) on a
+    /// first-ever run, or parallel tests sharing a path — can briefly collide
+    /// while SQLite initializes the WAL on a fresh file, surfacing as a
+    /// transient `SQLITE_BUSY` ("database is locked"). We retry with a short
+    /// backoff; the [`schema::migrate`] write lock then serializes the actual
+    /// schema upgrade so no opener replays a DDL step another already ran.
     pub async fn open(path: &Path) -> Result<Self> {
+        const MAX_ATTEMPTS: u32 = 8;
+        let mut attempt: u32 = 0;
+        loop {
+            match Self::try_open(path).await {
+                Ok(store) => return Ok(store),
+                Err(err) if attempt < MAX_ATTEMPTS && is_transient_lock_error(&err) => {
+                    attempt += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(20 * u64::from(attempt)))
+                        .await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    async fn try_open(path: &Path) -> Result<Self> {
         let opts = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
@@ -1083,6 +1106,17 @@ fn import_memory_meta_json(item: &ImportableMemory, hash: &str) -> String {
         "source_path": source_path,
     })
     .to_string()
+}
+
+/// True for transient SQLite lock errors (`SQLITE_BUSY` / `SQLITE_LOCKED`)
+/// raised while a concurrent opener holds the file — safe to retry, unlike a
+/// schema or constraint error.
+fn is_transient_lock_error(err: &KnowledgeError) -> bool {
+    let KnowledgeError::Sqlite(sqlx::Error::Database(db)) = err else {
+        return false;
+    };
+    let msg = db.message().to_ascii_lowercase();
+    msg.contains("database is locked") || msg.contains("database table is locked")
 }
 
 /// `~/.local/share/jfc/knowledge.db`, honoring `JFC_KNOWLEDGE_DB` and

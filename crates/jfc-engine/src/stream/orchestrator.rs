@@ -711,6 +711,35 @@ mod fallback_tests {
 
     use jfc_provider::{EventStream, ModelInfo, ProviderContent, ProviderRole};
 
+    /// Point the process-global `JFC_KNOWLEDGE_DB` at a throwaway path so a test
+    /// that archives provider history never touches the developer's real DB or
+    /// races another test's database. Pair with `#[serial_test::serial]`: the
+    /// env var is process-wide, so concurrent DB tests must not overlap.
+    struct KnowledgeDbEnvGuard {
+        prior: Option<std::ffi::OsString>,
+        _dir: tempfile::TempDir,
+    }
+
+    impl KnowledgeDbEnvGuard {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let prior = std::env::var_os("JFC_KNOWLEDGE_DB");
+            unsafe { std::env::set_var("JFC_KNOWLEDGE_DB", dir.path().join("knowledge.db")) };
+            Self { prior, _dir: dir }
+        }
+    }
+
+    impl Drop for KnowledgeDbEnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.prior {
+                    Some(prior) => std::env::set_var("JFC_KNOWLEDGE_DB", prior),
+                    None => std::env::remove_var("JFC_KNOWLEDGE_DB"),
+                }
+            }
+        }
+    }
+
     #[test]
     fn output_token_cap_error_is_not_prompt_too_long_regression() {
         let err = "invalid request: max_tokens: 128000 > 64000, which is the maximum allowed number of output tokens for claude-sonnet-4-5-20250929";
@@ -842,7 +871,9 @@ mod fallback_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn stream_response_transforms_provider_history_before_overflow_error_regression() {
+        let _db = KnowledgeDbEnvGuard::new();
         let seen_messages = Arc::new(Mutex::new(None));
         let provider = Arc::new(CapturingProvider {
             seen_messages: Arc::clone(&seen_messages),

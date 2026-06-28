@@ -8,7 +8,7 @@
 
 use sqlx::AssertSqlSafe;
 use sqlx::Row;
-use sqlx::sqlite::SqlitePool;
+use sqlx::sqlite::{SqliteConnection, SqlitePool};
 
 use crate::error::{KnowledgeError, Result};
 
@@ -553,13 +553,43 @@ pub async fn apply_pragmas(pool: &SqlitePool) -> Result<()> {
 }
 
 /// Run all pending migrations. Idempotent: a fully-migrated DB is a no-op.
+///
+/// Concurrency: multiple openers can race the same database file — two JFC
+/// processes (daemon + TUI) on first run, or parallel tests sharing a path via
+/// `JFC_KNOWLEDGE_DB`. We serialize them with a single `BEGIN IMMEDIATE`
+/// transaction that takes the write lock up front, so a second migrator blocks
+/// on `busy_timeout` instead of replaying a DDL step the first already ran
+/// (which otherwise surfaces as `table knowledge already exists` /
+/// `duplicate column name: mem_level`). Once it acquires the lock it re-reads
+/// the version under that lock and applies only genuinely-pending steps. The
+/// whole upgrade is one transaction, so an interrupted run rolls back to the
+/// starting version instead of leaving a half-migrated DB.
 pub async fn migrate(pool: &SqlitePool) -> Result<()> {
+    let mut conn = pool.acquire().await?;
+    sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+    match apply_pending_migrations(&mut conn).await {
+        Ok(()) => {
+            sqlx::query("COMMIT").execute(&mut *conn).await?;
+            Ok(())
+        }
+        Err(err) => {
+            // Best-effort rollback; surface the original migration error.
+            let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+            Err(err)
+        }
+    }
+}
+
+/// Apply every not-yet-recorded migration step on a connection that already
+/// holds the write lock (see [`migrate`]). Split out so the lock is acquired and
+/// released in exactly one place regardless of success or failure.
+async fn apply_pending_migrations(conn: &mut SqliteConnection) -> Result<()> {
     sqlx::query("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);")
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
     let applied: i64 = sqlx::query("SELECT COALESCE(MAX(version), 0) FROM schema_version")
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await?
         .try_get(0)?;
 
@@ -575,19 +605,17 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
         if version <= applied {
             continue;
         }
-        let mut tx = pool.begin().await?;
         // Each migration step is a batch of DDL statements; run them one at a
         // time on the transaction connection. We split on `;` boundaries that
         // are not inside a trigger body so FTS5 virtual tables + triggers
         // survive verbatim.
         for stmt in split_sql_statements(ddl) {
-            sqlx::query(AssertSqlSafe(stmt)).execute(&mut *tx).await?;
+            sqlx::query(AssertSqlSafe(stmt)).execute(&mut *conn).await?;
         }
         sqlx::query("INSERT INTO schema_version (version) VALUES (?1)")
             .bind(version)
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await?;
-        tx.commit().await?;
         tracing::debug!(target: "jfc::knowledge", version, "applied knowledge migration");
     }
     Ok(())
@@ -665,6 +693,39 @@ mod tests {
         .try_get(0)
         .unwrap();
         assert_eq!(n, 2);
+    }
+
+    // Robust: many openers racing the same on-disk DB (two JFC processes, or
+    // parallel tests sharing a `JFC_KNOWLEDGE_DB` path) must not collide on a
+    // migration step. Before the `BEGIN IMMEDIATE` guard this raced as
+    // `table knowledge already exists` / `duplicate column name: mem_level`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_migrate_on_shared_file_does_not_race_robust() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("knowledge.db");
+
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let path = path.clone();
+            handles.push(tokio::spawn(async move {
+                KnowledgeStore::open(&path).await.map(|_| ())
+            }));
+        }
+        for handle in handles {
+            handle
+                .await
+                .expect("open task should not panic")
+                .expect("concurrent migrate should not error");
+        }
+
+        let store = KnowledgeStore::open(&path).await.unwrap();
+        let version: i64 = sqlx::query("SELECT MAX(version) FROM schema_version")
+            .fetch_one(store.pool())
+            .await
+            .unwrap()
+            .try_get(0)
+            .unwrap();
+        assert_eq!(version, CURRENT_VERSION);
     }
 
     #[test]
