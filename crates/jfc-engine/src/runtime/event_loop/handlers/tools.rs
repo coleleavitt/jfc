@@ -510,6 +510,24 @@ pub fn should_recheck_completion_after_tool_result(state: &EngineState) -> bool 
         && stream::should_continue_loop(&state.messages)
 }
 
+fn post_response_compaction_tokens(state: &EngineState) -> usize {
+    let unqueued: Vec<_> = state
+        .messages
+        .iter()
+        .filter(|message| !message.queued)
+        .cloned()
+        .collect();
+    crate::context_accounting::estimate_transcript_tokens(&unqueued)
+}
+
+fn post_response_compaction_level(state: &EngineState) -> crate::compact::CompactLevel {
+    crate::compact::compact_level_with_output(
+        post_response_compaction_tokens(state),
+        state.max_context_tokens,
+        state.max_output_tokens,
+    )
+}
+
 /// Handle `ToolEvent::AllComplete` — all tools in the current batch finished.
 pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
     // Decrement the dispatch counters if there are outstanding ones.
@@ -676,11 +694,7 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
         );
     } else {
         if !manual {
-            let level = crate::compact::compact_level_with_output(
-                state.tool_ctx.approx_tokens,
-                state.max_context_tokens,
-                state.max_output_tokens,
-            );
+            let level = post_response_compaction_level(state);
             let saved_tokens = crate::compact::microcompact_if_helpful(
                 &mut state.messages,
                 &mut state.tool_ctx.approx_tokens,
@@ -695,11 +709,11 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
                 );
             }
         }
+        let level = post_response_compaction_level(state);
         if manual
-            || crate::compact::should_compact_with_output(
-                state.tool_ctx.approx_tokens,
-                state.max_context_tokens,
-                state.max_output_tokens,
+            || matches!(
+                level,
+                crate::compact::CompactLevel::Compact | crate::compact::CompactLevel::Blocked
             )
         {
             if manual {
@@ -713,6 +727,9 @@ pub async fn handle_all_complete(state: &mut EngineState, tx: &EventSender) {
             tracing::info!(
                 target: "jfc::compact",
                 manual,
+                compaction_tokens = post_response_compaction_tokens(state),
+                cache_inclusive_tokens = state.tool_ctx.approx_tokens,
+                level = ?level,
                 model = %state.model,
                 max_context_tokens = state.max_context_tokens,
                 message_count = state.messages.len(),
@@ -1151,6 +1168,42 @@ mod tests {
             current: 0,
             editing_other: false,
         }
+    }
+
+    #[test]
+    fn post_response_compaction_ignores_cache_inflated_usage_regression() {
+        let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
+        state.task_store = jfc_session::TaskStore::in_memory();
+        state.max_context_tokens = 200_000;
+        state.max_output_tokens = Some(64_000);
+        state.tool_ctx.approx_tokens = 172_170;
+        state.messages = (0..20)
+            .map(|idx| ChatMessage::user(format!("message-{idx} {}", "x".repeat(12_000))))
+            .collect();
+
+        let cache_inclusive_level = crate::compact::compact_level_with_output(
+            state.tool_ctx.approx_tokens,
+            state.max_context_tokens,
+            state.max_output_tokens,
+        );
+
+        assert!(matches!(
+            cache_inclusive_level,
+            crate::compact::CompactLevel::Compact | crate::compact::CompactLevel::Blocked
+        ));
+        assert!(
+            post_response_compaction_tokens(&state)
+                < crate::compact::compact_threshold_with_output(
+                    state.max_context_tokens,
+                    state.max_output_tokens,
+                ),
+            "local transcript should still be below compact threshold"
+        );
+        assert_eq!(
+            post_response_compaction_level(&state),
+            crate::compact::CompactLevel::Ok,
+            "post-response compaction must not fire just because prompt-cache usage is high"
+        );
     }
 
     #[tokio::test]

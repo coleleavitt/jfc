@@ -127,7 +127,11 @@ fn is_secret_key(k: &str) -> bool {
         "private_key",
         "auth",
         "credential",
-        "session",
+        "session_token",
+        "session_key",
+        "session_secret",
+        "sessionid",
+        "session_id",
         "bearer",
         "client_secret",
     ];
@@ -245,6 +249,16 @@ mod tests {
     fn redacts_kv_secrets_normal() {
         assert_eq!(redact("password=hunter2", false), "password=[REDACTED]");
         assert!(redact("API_KEY: somevalue123", false).contains("[REDACTED]"));
+        assert_eq!(
+            redact("session_token=abc123", false),
+            "session_token=[REDACTED]"
+        );
+    }
+
+    #[test]
+    fn allows_ordinary_session_prose_robust() {
+        let text = "Ponoma roadmap session: Phases 4-6 complete";
+        assert_eq!(redact(text, false), text);
     }
 
     #[test]

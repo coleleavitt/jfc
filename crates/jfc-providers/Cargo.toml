@@ -8,6 +8,7 @@ jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
 jfc-auth = { path = "../jfc-auth" }
 jfc-core = { path = "../jfc-core" }
 jfc-compress = { path = "../jfc-compress" }
+jfc-plugin-sdk = { path = "../jfc-plugin-sdk" }
 jfc-provider = { path = "../jfc-provider" }
 
 anyhow = { workspace = true }

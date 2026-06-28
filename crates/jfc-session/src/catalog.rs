@@ -13,7 +13,7 @@ pub async fn load_session_metadata(session_id: &SessionId) -> Option<SessionMeta
 }
 
 fn open_session_db() -> Option<KnowledgeStore> {
-    jfc_knowledge::block_on_knowledge(async { KnowledgeStore::open_default().await.ok() })
+    jfc_knowledge::block_on_knowledge(async { crate::open_default_knowledge_store().await.ok() })
 }
 
 fn metadata_from_row(row: SessionRow) -> SessionMetadata {
@@ -342,17 +342,13 @@ mod tests {
 
     #[test]
     fn most_recent_session_for_cwd_uses_normalized_db_cwd_regression() {
-        let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let project = dir.path().join("project");
+        let db = crate::TestKnowledgeDb::new();
+        let project = db.root().join("project");
         std::fs::create_dir(&project).unwrap();
         let equivalent = project.join("..").join("project");
-        let db = dir.path().join("knowledge.db");
-        let previous = std::env::var_os("JFC_KNOWLEDGE_DB");
-        unsafe { std::env::set_var("JFC_KNOWLEDGE_DB", &db) };
 
         jfc_knowledge::block_on_knowledge(async {
-            let store = jfc_knowledge::KnowledgeStore::open_default().await.unwrap();
+            let store = crate::open_default_knowledge_store().await.unwrap();
             store
                 .upsert_session(&jfc_knowledge::SessionRow {
                     id: "matching-project".to_owned(),
@@ -369,7 +365,7 @@ mod tests {
             store
                 .upsert_session(&jfc_knowledge::SessionRow {
                     id: "newer-other-project".to_owned(),
-                    cwd: Some(dir.path().join("other").display().to_string()),
+                    cwd: Some(db.root().join("other").display().to_string()),
                     model: None,
                     created_at: Some("2026-01-01T00:00:00Z".to_owned()),
                     updated_at: Some("2026-01-01T00:00:02Z".to_owned()),
@@ -385,10 +381,6 @@ mod tests {
             most_recent_session_for_cwd(equivalent.to_str()).await
         });
 
-        match previous {
-            Some(value) => unsafe { std::env::set_var("JFC_KNOWLEDGE_DB", value) },
-            None => unsafe { std::env::remove_var("JFC_KNOWLEDGE_DB") },
-        }
         assert_eq!(
             picked.map(|id| id.as_str().to_owned()),
             Some("matching-project".to_owned())

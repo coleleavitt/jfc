@@ -716,6 +716,7 @@ async fn import_memory_dir_to_db(
     let Ok(entries) = std::fs::read_dir(local_dir) else {
         return Ok(());
     };
+    let store = open_store_or_err().await?;
     for entry in entries {
         let entry =
             entry.map_err(|e| format!("failed to read entry in {}: {e}", local_dir.display()))?;
@@ -729,12 +730,21 @@ async fn import_memory_dir_to_db(
         if body.trim().is_empty() {
             continue;
         }
-        if let Err(e) = create_memory_checked(
+        let body = body.trim();
+        let hash = content_hash(body);
+        match store.find_memory_by_hash(&hash).await {
+            Ok(Some(_)) => continue,
+            Ok(None) => {}
+            Err(error) => return Err(format!("failed to check memory hash: {error}")),
+        }
+        if let Err(e) = write_memory_row(
+            &store,
             level,
             frontmatter.memory_type,
             frontmatter.scope,
-            body.trim(),
+            body,
             project_root,
+            &hash,
         )
         .await
         {
@@ -895,6 +905,7 @@ fn write_atomic_sync(path: &Path, content: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
     use tempfile::TempDir;
 
     struct EnvGuard {
@@ -925,6 +936,16 @@ mod tests {
         EnvGuard::set("JFC_KNOWLEDGE_DB", &tmp.path().join("knowledge.db"))
     }
 
+    async fn memory_meta_json(project_root: &Path, id: &str) -> String {
+        let store = jfc_knowledge::KnowledgeStore::open_default().await.unwrap();
+        let project_key = jfc_knowledge::project_key(project_root);
+        let rows = store.load_memories(Some(&project_key)).await.unwrap();
+        rows.into_iter()
+            .find(|row| row.id == id)
+            .and_then(|row| row.meta)
+            .expect("memory metadata")
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn create_project_memory_persists_db_row_normal() {
@@ -953,6 +974,42 @@ mod tests {
             created
                 .body
                 .contains("Build runs from the workspace root via cargo build.")
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn legacy_memory_import_is_idempotent_regression() {
+        // Given: a legacy project memory file has already been imported once.
+        let tmp = TempDir::new().unwrap();
+        let _guard = use_temp_knowledge_db(&tmp);
+        let _config_guard = EnvGuard::set("XDG_CONFIG_HOME", &tmp.path().join("config"));
+        let root = tmp.path();
+        let memory_dir = project_memory_dir(root);
+        std::fs::create_dir_all(&memory_dir).unwrap();
+        std::fs::write(
+            memory_dir.join("legacy.md"),
+            "---\ntype: context\nscope: private\n---\nLegacy fact to import.\n",
+        )
+        .unwrap();
+        let first = load_all_memories(root).await;
+        let id = first
+            .iter()
+            .find_map(|memory| memory.id.as_deref())
+            .expect("legacy memory imported")
+            .to_owned();
+        let first_meta = memory_meta_json(root, &id).await;
+
+        // When: memory loading runs again later in the same project.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let second = load_all_memories(root).await;
+        let second_meta = memory_meta_json(root, &id).await;
+
+        // Then: the importer must not rewrite existing DB rows on every load.
+        assert_eq!(second.len(), 1);
+        assert_eq!(
+            first_meta, second_meta,
+            "legacy import must be idempotent once a matching memory exists"
         );
     }
 

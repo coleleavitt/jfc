@@ -14,6 +14,7 @@ struct CargoMetadata {
 struct CargoPackage {
     name: String,
     id: String,
+    manifest_path: PathBuf,
     dependencies: Vec<CargoDependency>,
 }
 
@@ -32,9 +33,19 @@ pub(crate) struct ForbiddenDependencyEdge {
 }
 
 pub(crate) type WorkspaceDependencies = BTreeMap<String, BTreeSet<String>>;
+pub(crate) type WorkspacePackageRoots = BTreeMap<String, String>;
 
 pub(crate) fn read_workspace_dependencies()
 -> Result<WorkspaceDependencies, Box<dyn std::error::Error>> {
+    Ok(workspace_dependencies(read_cargo_metadata()?))
+}
+
+pub(crate) fn read_workspace_package_roots()
+-> Result<WorkspacePackageRoots, Box<dyn std::error::Error>> {
+    Ok(workspace_package_roots(read_cargo_metadata()?))
+}
+
+fn read_cargo_metadata() -> Result<CargoMetadata, Box<dyn std::error::Error>> {
     let output = Command::new("cargo")
         .args(["metadata", "--no-deps", "--format-version=1"])
         .current_dir(workspace_root())
@@ -48,8 +59,7 @@ pub(crate) fn read_workspace_dependencies()
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let metadata: CargoMetadata = serde_json::from_slice(&output.stdout)?;
-    Ok(workspace_dependencies(metadata))
+    Ok(serde_json::from_slice(&output.stdout)?)
 }
 
 fn workspace_root() -> PathBuf {
@@ -87,6 +97,31 @@ fn workspace_dependencies(metadata: CargoMetadata) -> WorkspaceDependencies {
                 .collect::<BTreeSet<_>>();
 
             (package.name, workspace_deps)
+        })
+        .collect()
+}
+
+fn workspace_package_roots(metadata: CargoMetadata) -> WorkspacePackageRoots {
+    let root = workspace_root();
+    let workspace_member_ids = metadata
+        .workspace_members
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+    metadata
+        .packages
+        .into_iter()
+        .filter(|package| workspace_member_ids.contains(&package.id))
+        .map(|package| {
+            let package_root = package
+                .manifest_path
+                .parent()
+                .and_then(|path| path.strip_prefix(&root).ok())
+                .and_then(Path::to_str)
+                .map(str::to_owned)
+                .unwrap_or_else(|| package.manifest_path.display().to_string());
+
+            (package.name, package_root)
         })
         .collect()
 }

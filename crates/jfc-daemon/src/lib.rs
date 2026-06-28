@@ -36,7 +36,10 @@ pub use registry::{
 pub use runtime::{
     Daemon, WorkerInfo, fire_cron_cli, list_string, run_daemon, status_string, stop_daemon,
 };
-pub use scheduled_tasks::{ScheduledTask, ScheduledTaskRegistry, TaskLifecycle, TaskRun};
+pub use scheduled_tasks::{
+    ScheduledTask, ScheduledTaskCreate, ScheduledTaskManagementService, ScheduledTaskRegistry,
+    ScheduledTaskRegistryService, ScheduledTaskSnapshot, TaskLifecycle, TaskRun,
+};
 pub use shortcuts::{Shortcut, ShortcutError, ShortcutStore};
 pub use state::{
     BackgroundAgentInfo, BackgroundAgentLaunch, BackgroundAgentStatus, DaemonPaths, DaemonState,

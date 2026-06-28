@@ -185,11 +185,7 @@ fn submit_question(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
         "User has answered your question(s): {answers}. \
          You can now continue with the user's answers in mind."
     );
-    let _ = tx.try_send(EngineEvent::Tool(ToolEvent::Result {
-        tool_id,
-        result: ExecutionResult::success(result_text),
-    }));
-    send_critical(tx, EngineEvent::Tool(ToolEvent::AllComplete));
+    send_question_completion(tx, tool_id, ExecutionResult::success(result_text));
 }
 
 fn decline_question(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
@@ -198,11 +194,36 @@ fn decline_question(app: &mut App, tx: &mpsc::Sender<EngineEvent>) {
     };
     let tool_id = pending.tool_id;
     tracing::info!(target: "jfc::ui::question", tool_id = %tool_id, "AskUserQuestion declined");
-    let _ = tx.try_send(EngineEvent::Tool(ToolEvent::Result {
+    send_question_completion(
+        tx,
         tool_id,
-        result: ExecutionResult::failure("User declined to answer the question(s)."),
-    }));
-    send_critical(tx, EngineEvent::Tool(ToolEvent::AllComplete));
+        ExecutionResult::failure("User declined to answer the question(s)."),
+    );
+}
+
+fn send_question_completion(
+    tx: &mpsc::Sender<EngineEvent>,
+    tool_id: jfc_engine::ids::ToolId,
+    result: ExecutionResult,
+) {
+    let result_event = EngineEvent::Tool(ToolEvent::Result { tool_id, result });
+    match tx.try_send(result_event) {
+        Ok(()) => send_critical(tx, EngineEvent::Tool(ToolEvent::AllComplete)),
+        Err(mpsc::error::TrySendError::Full(result_event)) => {
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                if tx.send(result_event).await.is_ok() {
+                    let _ = tx.send(EngineEvent::Tool(ToolEvent::AllComplete)).await;
+                }
+            });
+        }
+        Err(mpsc::error::TrySendError::Closed(_)) => {
+            tracing::debug!(
+                target: "jfc::ui::question",
+                "question completion channel closed; dropping result during shutdown"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

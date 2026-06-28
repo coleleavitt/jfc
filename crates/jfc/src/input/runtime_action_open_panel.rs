@@ -1,43 +1,29 @@
 use crate::app::App;
 use crate::runtime::EngineEvent;
+use jfc_engine::runtime::{
+    FrontendOpenPanelRequest, RuntimeActionBoundaryError, RuntimeActionFrontendDirective,
+    RuntimeActionOutcome, resolve_runtime_action,
+};
 use jfc_plugin_sdk::{
     RuntimeActionDescriptor, RuntimeActionOpenPanelTarget, RuntimeActionPayloadError,
 };
 use tokio::sync::mpsc;
 
-use super::runtime_action_panels::focus_info_sidebar_panel;
+use super::runtime_action_panels::focus_info_sidebar_panel_request;
 use super::runtime_action_refresh::{
     refresh_focused_panel_snapshot, refresh_focused_widget_snapshot,
 };
-use super::runtime_action_widgets::focus_info_sidebar_widget;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct OpenPanelAction {
-    target: RuntimeActionOpenPanelTarget,
-    execute_panel_action: bool,
-    execute_widget_action: bool,
-}
-
-impl OpenPanelAction {
-    fn parse(action: &RuntimeActionDescriptor) -> Result<Self, RuntimeActionPayloadError> {
-        let payload = action.open_panel_payload()?;
-        Ok(Self {
-            target: payload.target,
-            execute_panel_action: payload.execute_panel_action,
-            execute_widget_action: payload.execute_widget_action,
-        })
-    }
-}
+use super::runtime_action_widgets::focus_info_sidebar_widget_request;
 
 pub(super) async fn execute_open_panel_action(
     app: &mut App,
     action: &RuntimeActionDescriptor,
     tx: &mpsc::Sender<EngineEvent>,
 ) {
-    let Some(open_panel) = parse_open_panel_action(action) else {
+    let Some(open_panel) = open_panel_frontend_directive(action) else {
         return;
     };
-    let navigation_action = execute_open_panel_navigation(app, action, open_panel).await;
+    let navigation_action = apply_open_panel_directive(app, &open_panel).await;
     if let Some(navigation_action) = navigation_action.as_ref() {
         if open_panel.execute_panel_action || open_panel.execute_widget_action {
             super::runtime_action_router::execute_nested_runtime_action(app, navigation_action, tx)
@@ -56,19 +42,19 @@ pub(super) async fn open_panel_navigation(
     app: &mut App,
     action: &RuntimeActionDescriptor,
 ) -> Option<RuntimeActionDescriptor> {
-    let open_panel = parse_open_panel_action(action)?;
-    execute_open_panel_navigation(app, action, open_panel).await
+    let open_panel = open_panel_frontend_directive(action)?;
+    apply_open_panel_directive(app, &open_panel).await
 }
 
-async fn execute_open_panel_navigation(
+async fn apply_open_panel_directive(
     app: &mut App,
-    action: &RuntimeActionDescriptor,
-    open_panel: OpenPanelAction,
+    open_panel: &FrontendOpenPanelRequest,
 ) -> Option<RuntimeActionDescriptor> {
     match open_panel.target {
         RuntimeActionOpenPanelTarget::InfoSidebar => {
             app.info_sidebar.visible = true;
-            focus_info_sidebar_panel(app, action).or_else(|| focus_info_sidebar_widget(app, action))
+            focus_info_sidebar_panel_request(app, open_panel)
+                .or_else(|| focus_info_sidebar_widget_request(app, open_panel))
         }
         RuntimeActionOpenPanelTarget::SessionsSidebar => {
             if !app.session_sidebar.visible {
@@ -95,10 +81,27 @@ async fn execute_open_panel_navigation(
     }
 }
 
-fn parse_open_panel_action(action: &RuntimeActionDescriptor) -> Option<OpenPanelAction> {
-    match OpenPanelAction::parse(action) {
-        Ok(open_panel) => Some(open_panel),
-        Err(RuntimeActionPayloadError::MissingOpenPanel) => {
+fn open_panel_frontend_directive(
+    action: &RuntimeActionDescriptor,
+) -> Option<FrontendOpenPanelRequest> {
+    match resolve_runtime_action(action) {
+        Ok(RuntimeActionOutcome::Frontend(RuntimeActionFrontendDirective::OpenPanel(
+            open_panel,
+        ))) => Some(open_panel),
+        Ok(outcome) => {
+            tracing::warn!(
+                target: "jfc::palette",
+                plugin = action.plugin_id.as_str(),
+                action = action.id.as_str(),
+                outcome = ?outcome,
+                "runtime action did not resolve to OpenPanel frontend directive"
+            );
+            None
+        }
+        Err(RuntimeActionBoundaryError::Payload {
+            payload_error: RuntimeActionPayloadError::MissingOpenPanel,
+            ..
+        }) => {
             tracing::warn!(
                 target: "jfc::palette",
                 plugin = action.plugin_id.as_str(),
@@ -108,7 +111,10 @@ fn parse_open_panel_action(action: &RuntimeActionDescriptor) -> Option<OpenPanel
             );
             None
         }
-        Err(RuntimeActionPayloadError::UnsupportedOpenPanelTarget) => {
+        Err(RuntimeActionBoundaryError::Payload {
+            payload_error: RuntimeActionPayloadError::UnsupportedOpenPanelTarget,
+            ..
+        }) => {
             tracing::warn!(
                 target: "jfc::palette",
                 plugin = action.plugin_id.as_str(),
@@ -118,12 +124,12 @@ fn parse_open_panel_action(action: &RuntimeActionDescriptor) -> Option<OpenPanel
             );
             None
         }
-        Err(error) => {
+        Err(RuntimeActionBoundaryError::Payload { payload_error, .. }) => {
             tracing::warn!(
                 target: "jfc::palette",
                 plugin = action.plugin_id.as_str(),
                 action = action.id.as_str(),
-                reason = error.as_manifest_reason(),
+                reason = payload_error.as_manifest_reason(),
                 "invalid runtime-action OpenPanel payload"
             );
             None
@@ -151,9 +157,11 @@ mod tests {
             "execute_widget_action": false
         }));
 
-        let open_panel = OpenPanelAction::parse(&action).expect("known panel");
+        let open_panel = open_panel_frontend_directive(&action).expect("known panel");
 
         assert_eq!(open_panel.target, RuntimeActionOpenPanelTarget::InfoSidebar);
+        assert_eq!(open_panel.source.plugin_id, "plugin.palette");
+        assert_eq!(open_panel.source.action_id, "panel.open");
         assert!(open_panel.execute_panel_action);
         assert!(!open_panel.execute_widget_action);
     }
@@ -170,8 +178,11 @@ mod tests {
         .with_payload(serde_json::json!({ "panel": "floating_debugger" }));
 
         assert_eq!(
-            OpenPanelAction::parse(&action),
-            Err(RuntimeActionPayloadError::UnsupportedOpenPanelTarget)
+            resolve_runtime_action(&action).map(|_| ()),
+            Err(RuntimeActionBoundaryError::Payload {
+                kind: RuntimeActionKind::OpenPanel,
+                payload_error: RuntimeActionPayloadError::UnsupportedOpenPanelTarget,
+            })
         );
     }
 
@@ -186,8 +197,11 @@ mod tests {
         );
 
         assert_eq!(
-            OpenPanelAction::parse(&action),
-            Err(RuntimeActionPayloadError::MissingOpenPanel)
+            resolve_runtime_action(&action).map(|_| ()),
+            Err(RuntimeActionBoundaryError::Payload {
+                kind: RuntimeActionKind::OpenPanel,
+                payload_error: RuntimeActionPayloadError::MissingOpenPanel,
+            })
         );
     }
 }

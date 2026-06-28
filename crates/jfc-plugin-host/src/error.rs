@@ -6,6 +6,15 @@ use thiserror::Error;
 pub enum PluginHostError {
     #[error("duplicate plugin id: {plugin_id}")]
     DuplicatePluginId { plugin_id: String },
+    #[error(
+        "duplicate {descriptor_kind} descriptor id {descriptor_id}: {first_plugin_id} conflicts with {duplicate_plugin_id}"
+    )]
+    DuplicateDescriptorId {
+        descriptor_kind: String,
+        descriptor_id: String,
+        first_plugin_id: String,
+        duplicate_plugin_id: String,
+    },
     #[error("plugin not found: {plugin_id}")]
     PluginNotFound { plugin_id: String },
     #[error("plugin activation failed for {plugin_id}: {message}")]

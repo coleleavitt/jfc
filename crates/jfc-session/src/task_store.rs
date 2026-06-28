@@ -658,7 +658,7 @@ impl TaskStore {
 
     fn load_inner_from_db(session_id: &str) -> TaskStoreInner {
         jfc_knowledge::block_on_knowledge(async {
-            let Ok(store) = jfc_knowledge::KnowledgeStore::open_default().await else {
+            let Ok(store) = crate::open_default_knowledge_store().await else {
                 return TaskStoreInner::default();
             };
             let Ok(Some(row)) = store
@@ -682,7 +682,7 @@ impl TaskStore {
         }
         if let Ok(json) = serde_json::to_string(&legacy) {
             let result = jfc_knowledge::block_on_knowledge(async {
-                let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+                let store = crate::open_default_knowledge_store().await?;
                 store
                     .upsert_session_artifact(session_id, TASK_STORE_KIND, TASK_STORE_KEY, &json)
                     .await?;
@@ -797,7 +797,7 @@ impl TaskStore {
 
             // First, fetch remote and merge if it exists
             let result = jfc_knowledge::block_on_knowledge(async {
-                let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+                let store = crate::open_default_knowledge_store().await?;
                 if let Ok(Some(row)) = store
                     .get_session_artifact(&session_id, TASK_STORE_KIND, TASK_STORE_KEY)
                     .await
@@ -824,7 +824,7 @@ impl TaskStore {
 
             // Now upsert the merged state
             let result = jfc_knowledge::block_on_knowledge(async {
-                let store = jfc_knowledge::KnowledgeStore::open_default().await?;
+                let store = crate::open_default_knowledge_store().await?;
                 store
                     .upsert_session_artifact(&session_id, TASK_STORE_KIND, TASK_STORE_KEY, &json)
                     .await?;

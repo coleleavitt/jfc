@@ -5,6 +5,9 @@ use crate::providers::{
     GeminiApiProvider, LiteLLMProvider, OpenAIProvider, OpenRouterProvider, OpenWebUIProvider,
     VertexProvider,
 };
+use crate::runtime::{
+    ProviderModelResolution, ProviderRegistry, ProviderRegistryError, RuntimeService,
+};
 use jfc_provider::{
     ModelId, ModelResolutionReason, ModelSpec, Provider, ProviderId, ResolvedModel,
 };
@@ -17,6 +20,8 @@ pub struct ProvidersInit {
     pub active_idx: usize,
     pub model: ModelId,
     pub oauth: Option<Arc<AnthropicOAuthProvider>>,
+    pub provider_plugin_runtime: jfc_plugin_host::PluginRuntime,
+    pub provider_plugin_diagnostics: jfc_plugin_host::PluginHostDiagnostics,
 }
 
 /// Fire-and-forget TLS/DNS preconnect warmup for the active provider.
@@ -35,10 +40,51 @@ pub fn spawn_active_provider_warmup(init: &ProvidersInit) {
     jfc_provider::http::spawn_connect_warmup(provider);
 }
 
-pub struct ProviderModelResolution {
-    pub provider: Arc<dyn Provider>,
-    pub model: ModelId,
-    pub resolved_model: ResolvedModel,
+pub struct BuiltInProviderRegistry {
+    providers: Vec<Arc<dyn Provider>>,
+}
+
+impl BuiltInProviderRegistry {
+    pub fn new(providers: Vec<Arc<dyn Provider>>) -> Self {
+        Self { providers }
+    }
+}
+
+impl RuntimeService for BuiltInProviderRegistry {
+    fn service_name(&self) -> &'static str {
+        "built-in-provider-registry"
+    }
+}
+
+impl ProviderRegistry for BuiltInProviderRegistry {
+    fn resolve_provider_model(
+        &self,
+        model_id: &str,
+    ) -> Result<ProviderModelResolution, ProviderRegistryError> {
+        resolve_provider_model_from_slice(&self.providers, model_id)
+    }
+}
+
+pub fn register_first_party_provider_pack(
+    host: &mut jfc_plugin_host::PluginHost,
+) -> Result<(), jfc_plugin_host::PluginHostError> {
+    let plugin_id = jfc_plugin_sdk::PluginId::new(jfc_providers::BUILTIN_PROVIDER_PACK_ID);
+    host.register_internal(
+        jfc_plugin_host::PluginRegistration::new(jfc_plugin_sdk::PluginManifest::new(
+            plugin_id,
+            jfc_plugin_sdk::PluginVersion::new(env!("CARGO_PKG_VERSION")),
+            jfc_plugin_sdk::PluginSource::built_in("first-party-providers"),
+        ))
+        .with_provider_descriptors(jfc_providers::first_party_provider_descriptors()),
+    )
+}
+
+pub fn first_party_provider_plugin_host()
+-> Result<jfc_plugin_host::PluginHost, jfc_plugin_host::PluginHostError> {
+    let mut host = jfc_plugin_host::PluginHost::new();
+    register_first_party_provider_pack(&mut host)?;
+    host.activate_all()?;
+    Ok(host)
 }
 
 /// Build every provider that has usable config in this environment, plus pick which one
@@ -94,6 +140,11 @@ pub fn build_providers() -> ProvidersInit {
 
     let mut providers: Vec<Arc<dyn Provider>> = Vec::new();
     let mut prefer: Option<&'static str> = None;
+    let provider_plugin_host = first_party_provider_plugin_host()
+        .expect("first-party provider pack registration is static and must activate");
+    let provider_plugin_diagnostics = provider_plugin_host.diagnostics();
+    let provider_plugin_runtime = jfc_plugin_host::PluginRuntime::from_host(&provider_plugin_host)
+        .expect("first-party provider pack descriptors must be unique");
 
     // Explicit env wins: ANTHROPIC_API_KEY → API-key provider as default.
     if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
@@ -311,6 +362,8 @@ pub fn build_providers() -> ProvidersInit {
         active_idx,
         model,
         oauth: oauth_arc,
+        provider_plugin_runtime,
+        provider_plugin_diagnostics,
     }
 }
 
@@ -326,8 +379,19 @@ pub fn resolve_provider_model(
     providers: &[Arc<dyn Provider>],
     model_id: &str,
 ) -> Option<ProviderModelResolution> {
+    BuiltInProviderRegistry::new(providers.to_vec())
+        .resolve_provider_model(model_id)
+        .ok()
+}
+
+fn resolve_provider_model_from_slice(
+    providers: &[Arc<dyn Provider>],
+    model_id: &str,
+) -> Result<ProviderModelResolution, ProviderRegistryError> {
     if model_id.is_empty() {
-        return None;
+        return Err(ProviderRegistryError::MissingProvider {
+            model: model_id.to_owned(),
+        });
     }
     // Try parsing as ModelSpec — if qualified, route directly by provider name
     // and strip the prefix before the model id is sent to the provider.
@@ -350,6 +414,9 @@ pub fn resolve_provider_model(
                     spec.model().clone(),
                     ModelResolutionReason::ExplicitProvider,
                 )
+            })
+            .ok_or_else(|| ProviderRegistryError::MissingProvider {
+                model: model_id.to_owned(),
             });
     }
     let model = ModelId::new(model_id);
@@ -357,7 +424,7 @@ pub fn resolve_provider_model(
     for p in providers {
         let models = p.available_models();
         if models.iter().any(|m| m.id.as_str() == model_id) {
-            return Some(provider_resolution(
+            return Ok(provider_resolution(
                 Arc::clone(p),
                 ModelSpec::bare(model_id),
                 model,
@@ -382,6 +449,9 @@ pub fn resolve_provider_model(
                         rule: "codex-looking model id".to_owned(),
                     },
                 )
+            })
+            .ok_or_else(|| ProviderRegistryError::MissingProvider {
+                model: model_id.to_owned(),
             });
     }
 
@@ -400,6 +470,9 @@ pub fn resolve_provider_model(
                         rule: "openai-looking model id".to_owned(),
                     },
                 )
+            })
+            .ok_or_else(|| ProviderRegistryError::MissingProvider {
+                model: model_id.to_owned(),
             });
     }
 
@@ -418,6 +491,9 @@ pub fn resolve_provider_model(
                         rule: "openrouter vendor/model id".to_owned(),
                     },
                 )
+            })
+            .ok_or_else(|| ProviderRegistryError::MissingProvider {
+                model: model_id.to_owned(),
             });
     }
 
@@ -436,6 +512,9 @@ pub fn resolve_provider_model(
                         rule: "proxy-routed non-claude model id".to_owned(),
                     },
                 )
+            })
+            .ok_or_else(|| ProviderRegistryError::MissingProvider {
+                model: model_id.to_owned(),
             });
     }
 
@@ -454,13 +533,16 @@ pub fn resolve_provider_model(
                         rule: "openwebui catch-all proxy model id".to_owned(),
                     },
                 )
+            })
+            .ok_or_else(|| ProviderRegistryError::MissingProvider {
+                model: model_id.to_owned(),
             });
     }
 
     // Tier 3b: gemini-prefixed ids route to the gemini or antigravity provider.
     if model_id.starts_with("gemini") {
         if let Some(p) = providers.iter().find(|p| p.name() == "antigravity") {
-            return Some(provider_resolution(
+            return Ok(provider_resolution(
                 Arc::clone(p),
                 ModelSpec::bare(model_id),
                 model,
@@ -470,7 +552,7 @@ pub fn resolve_provider_model(
             ));
         }
         if let Some(p) = providers.iter().find(|p| p.name() == "gemini") {
-            return Some(provider_resolution(
+            return Ok(provider_resolution(
                 Arc::clone(p),
                 ModelSpec::bare(model_id),
                 model,
@@ -480,7 +562,9 @@ pub fn resolve_provider_model(
             ));
         }
     }
-    None
+    Err(ProviderRegistryError::MissingProvider {
+        model: model_id.to_owned(),
+    })
 }
 
 pub fn provider_name_matches_request(provider_name: &str, requested_provider: &str) -> bool {
@@ -564,6 +648,11 @@ mod tests {
 
     struct NamedProvider(&'static str);
 
+    struct CatalogProvider {
+        name: &'static str,
+        model: &'static str,
+    }
+
     #[async_trait::async_trait]
     impl Provider for NamedProvider {
         fn name(&self) -> &str {
@@ -584,6 +673,27 @@ mod tests {
     }
 
     impl jfc_provider::seal::Sealed for NamedProvider {}
+
+    #[async_trait::async_trait]
+    impl Provider for CatalogProvider {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            vec![ModelInfo::new(self.model, "Catalog Model", self.name)]
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            anyhow::bail!("unused")
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for CatalogProvider {}
 
     #[test]
     fn resolve_provider_model_routes_anthropic_prefix_to_oauth_regression() {
@@ -608,5 +718,143 @@ mod tests {
 
         assert_eq!(resolved.provider.name(), "anthropic");
         assert_eq!(resolved.model.as_str(), "claude-opus-4-6");
+    }
+
+    #[test]
+    fn built_in_provider_registry_selection_uses_current_provider_catalog_normal() {
+        let registry = BuiltInProviderRegistry::new(vec![Arc::new(CatalogProvider {
+            name: "anthropic",
+            model: "claude-opus-4-8",
+        })]);
+
+        let resolved = registry
+            .resolve_provider_model("claude-opus-4-8")
+            .expect("catalog model should resolve through current provider registry");
+
+        assert_eq!(resolved.provider.name(), "anthropic");
+        assert_eq!(resolved.model.as_str(), "claude-opus-4-8");
+    }
+
+    #[test]
+    fn built_in_provider_registry_missing_provider_returns_typed_error_robust() {
+        let registry = BuiltInProviderRegistry::new(vec![Arc::new(NamedProvider("anthropic"))]);
+
+        let error = registry
+            .resolve_provider_model("missing-model")
+            .expect_err("unknown model should not resolve silently");
+
+        assert_eq!(
+            error,
+            ProviderRegistryError::MissingProvider {
+                model: "missing-model".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn built_in_provider_registry_selects_openai_family_catalog_normal() {
+        let registry = BuiltInProviderRegistry::new(vec![
+            Arc::new(NamedProvider("anthropic")),
+            Arc::new(CatalogProvider {
+                name: "openai",
+                model: "gpt-5.1",
+            }),
+        ]);
+
+        let resolved = registry
+            .resolve_provider_model("gpt-5.1")
+            .expect("openai catalog model should resolve");
+
+        assert_eq!(resolved.provider.name(), "openai");
+        assert_eq!(resolved.model.as_str(), "gpt-5.1");
+        assert!(matches!(
+            resolved.resolved_model.reason,
+            ModelResolutionReason::CatalogMatch
+        ));
+    }
+
+    #[test]
+    fn built_in_provider_registry_does_not_cross_route_missing_openai_family_prefix_robust() {
+        let registry = BuiltInProviderRegistry::new(vec![Arc::new(CatalogProvider {
+            name: "openai",
+            model: "gpt-5.1",
+        })]);
+
+        let error = registry
+            .resolve_provider_model("openrouter/openai/gpt-5.1")
+            .expect_err("missing explicit OpenRouter provider should not fall back to OpenAI");
+
+        assert_eq!(
+            error,
+            ProviderRegistryError::MissingProvider {
+                model: "openrouter/openai/gpt-5.1".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn first_party_provider_pack_reaches_runtime_maps_and_status_normal() {
+        let mut host = jfc_plugin_host::PluginHost::new();
+        register_first_party_provider_pack(&mut host).expect("provider pack registers");
+        host.activate_all().expect("provider pack activates");
+
+        let runtime = jfc_plugin_host::PluginRuntime::from_host(&host).expect("runtime builds");
+        let descriptor = runtime
+            .providers()
+            .get("anthropic")
+            .expect("anthropic provider descriptor is mapped")
+            .descriptor();
+
+        assert_eq!(
+            descriptor.plugin_id.as_str(),
+            jfc_providers::BUILTIN_PROVIDER_PACK_ID
+        );
+        assert_eq!(descriptor.provider, "anthropic");
+        assert!(
+            descriptor
+                .models
+                .iter()
+                .any(|model| model.id == "claude-opus-4-8")
+        );
+
+        let diagnostics = host.diagnostics();
+        let openai_descriptor = runtime
+            .providers()
+            .get("openai")
+            .expect("openai provider descriptor is mapped")
+            .descriptor();
+        assert_eq!(openai_descriptor.provider, "openai");
+        assert!(
+            openai_descriptor
+                .models
+                .iter()
+                .any(|model| model.id == "gpt-5.1")
+        );
+
+        assert!(runtime.providers().contains_key("openrouter"));
+        assert!(runtime.providers().contains_key("litellm"));
+        assert_eq!(diagnostics.counts.providers, 4);
+        assert!(
+            diagnostics
+                .active_plugins
+                .iter()
+                .any(|plugin_id| plugin_id.as_str() == jfc_providers::BUILTIN_PROVIDER_PACK_ID)
+        );
+    }
+
+    #[test]
+    fn disabled_first_party_provider_pack_is_hidden_from_runtime_maps_and_status_robust() {
+        let mut host = jfc_plugin_host::PluginHost::new();
+        register_first_party_provider_pack(&mut host).expect("provider pack registers");
+        let plugin_id = jfc_plugin_sdk::PluginId::new(jfc_providers::BUILTIN_PROVIDER_PACK_ID);
+        host.disable_plugin(&plugin_id)
+            .expect("provider pack disables");
+        host.activate_all()
+            .expect("provider pack activation skips disabled");
+
+        let runtime = jfc_plugin_host::PluginRuntime::from_host(&host).expect("runtime builds");
+
+        assert!(runtime.providers().is_empty());
+        assert_eq!(host.diagnostics().counts.providers, 0);
     }
 }

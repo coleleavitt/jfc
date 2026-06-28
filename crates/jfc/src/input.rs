@@ -20,6 +20,7 @@ mod palette_actions;
 mod palette_slash_action;
 mod prompt_rewrite;
 mod question;
+mod runtime_action_host;
 mod runtime_action_metrics;
 mod runtime_action_open_panel;
 mod runtime_action_panels;

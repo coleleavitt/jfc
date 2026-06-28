@@ -33,7 +33,10 @@ use crate::types::{DiffLineKind, ReplacementMode, ToolInput, ToolKind};
 use jfc_provider::ToolDef;
 use jfc_session::{DeletedFilter, TaskStore};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicUsize, Ordering},
+};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
@@ -3408,6 +3411,111 @@ async fn execute_tool_kind_input_mismatch_falls_through_robust() {
     .await;
     assert!(r.is_error());
     assert!(r.output.contains("tool input mismatch"), "{}", r.output);
+}
+
+struct FakeReadToolRuntime {
+    calls: AtomicUsize,
+}
+
+impl crate::runtime::RuntimeService for FakeReadToolRuntime {
+    fn service_name(&self) -> &'static str {
+        "fake-read-tool-runtime"
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::runtime::ToolRuntime for FakeReadToolRuntime {
+    fn catalog(&self) -> Vec<crate::runtime::ToolRuntimeCatalogEntry> {
+        vec![crate::runtime::ToolRuntimeCatalogEntry::read_only(
+            ToolKind::Read,
+        )]
+    }
+
+    async fn dispatch(
+        &self,
+        request: crate::runtime::ToolRuntimeRequest<'_>,
+    ) -> Option<ExecutionResult> {
+        assert_eq!(request.kind, &ToolKind::Read);
+        match request.input {
+            ToolInput::Read { file_path, .. } => {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Some(ExecutionResult::success(format!(
+                    "fake runtime read: {file_path}"
+                )))
+            }
+            _ => None,
+        }
+    }
+}
+
+#[tokio::test]
+async fn execute_tool_read_can_dispatch_through_tool_runtime_service_normal() {
+    let runtime = Arc::new(FakeReadToolRuntime {
+        calls: AtomicUsize::new(0),
+    });
+    let runtime_service: Arc<dyn crate::runtime::ToolRuntime> = runtime.clone();
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("routed.txt");
+    tokio::fs::write(&path, "legacy path should not be read\n")
+        .await
+        .unwrap();
+
+    let result = super::dispatch::execute_tool_with_runtime(
+        ToolKind::Read,
+        ToolInput::Read {
+            file_path: path.to_string_lossy().to_string(),
+            offset: None,
+            limit: None,
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+        Some(runtime_service),
+    )
+    .await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    assert!(
+        result.output.contains("fake runtime read"),
+        "{}",
+        result.output
+    );
+    assert_eq!(runtime.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn execute_tool_read_policy_denial_precedes_tool_runtime_service_robust() {
+    let runtime = Arc::new(FakeReadToolRuntime {
+        calls: AtomicUsize::new(0),
+    });
+    let runtime_service: Arc<dyn crate::runtime::ToolRuntime> = runtime.clone();
+    let dir = tempfile::tempdir().expect("temp dir");
+    tokio::fs::write(dir.path().join(".jfcignore"), "secret.txt\n")
+        .await
+        .unwrap();
+    tokio::fs::write(dir.path().join("secret.txt"), "hidden\n")
+        .await
+        .unwrap();
+
+    let result = super::dispatch::execute_tool_with_runtime(
+        ToolKind::Read,
+        ToolInput::Read {
+            file_path: "secret.txt".to_owned(),
+            offset: None,
+            limit: None,
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+        Some(runtime_service),
+    )
+    .await;
+
+    assert!(result.is_error());
+    assert!(result.output.contains("blocked by an AI-access rule"));
+    assert_eq!(runtime.calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

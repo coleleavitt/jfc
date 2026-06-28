@@ -6,7 +6,12 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::context::ReadDedupCache;
-use crate::runtime::{ExecutionResult, ToolErrorCategory};
+use async_trait::async_trait;
+
+use crate::runtime::{
+    ExecutionResult, RuntimeService, ToolErrorCategory, ToolRuntime, ToolRuntimeCatalogEntry,
+    ToolRuntimeRequest,
+};
 use crate::types::{ToolInput, ToolKind};
 use jfc_session::TaskStore;
 
@@ -62,6 +67,39 @@ use super::registry::{
 use super::safe_tools::tool_permission_path;
 use super::safe_tools::{execute_tool_search, execute_tool_suggest, maybe_run_slop_guard};
 
+pub struct BuiltinToolRuntime;
+
+impl RuntimeService for BuiltinToolRuntime {
+    fn service_name(&self) -> &'static str {
+        "builtin-tool-runtime"
+    }
+}
+
+#[async_trait]
+impl ToolRuntime for BuiltinToolRuntime {
+    fn catalog(&self) -> Vec<ToolRuntimeCatalogEntry> {
+        vec![ToolRuntimeCatalogEntry::read_only(ToolKind::Read)]
+    }
+
+    async fn dispatch(&self, request: ToolRuntimeRequest<'_>) -> Option<ExecutionResult> {
+        match (request.kind, request.input) {
+            (
+                ToolKind::Read,
+                ToolInput::Read {
+                    file_path,
+                    offset,
+                    limit,
+                },
+            ) => Some(execute_read(file_path, *offset, *limit, request.dedup).await),
+            _ => None,
+        }
+    }
+}
+
+fn builtin_tool_runtime() -> Arc<dyn ToolRuntime> {
+    Arc::new(BuiltinToolRuntime)
+}
+
 fn checkpoint_before_mutation(path: &Path, tool: &str) {
     match crate::file_checkpoint::checkpoint_file(path) {
         Ok(backup) => {
@@ -94,10 +132,18 @@ pub async fn execute_tool(
     task_store: Option<Arc<TaskStore>>,
     active_team_name: Option<&str>,
 ) -> ExecutionResult {
-    execute_tool_with_runtime_id(kind, input, cwd, dedup, task_store, active_team_name, None).await
+    execute_tool_with_runtime(
+        kind,
+        input,
+        cwd,
+        dedup,
+        task_store,
+        active_team_name,
+        Some(builtin_tool_runtime()),
+    )
+    .await
 }
 
-#[tracing::instrument(target = "jfc::tools", skip(input, cwd, dedup, task_store), fields(kind = ?kind))]
 pub async fn execute_tool_with_runtime_id(
     kind: ToolKind,
     input: ToolInput,
@@ -106,6 +152,52 @@ pub async fn execute_tool_with_runtime_id(
     task_store: Option<Arc<TaskStore>>,
     active_team_name: Option<&str>,
     runtime_tool_id: Option<String>,
+) -> ExecutionResult {
+    execute_tool_inner(
+        kind,
+        input,
+        cwd,
+        dedup,
+        task_store,
+        active_team_name,
+        runtime_tool_id,
+        Some(builtin_tool_runtime()),
+    )
+    .await
+}
+
+pub async fn execute_tool_with_runtime(
+    kind: ToolKind,
+    input: ToolInput,
+    cwd: std::path::PathBuf,
+    dedup: Option<Arc<Mutex<ReadDedupCache>>>,
+    task_store: Option<Arc<TaskStore>>,
+    active_team_name: Option<&str>,
+    tool_runtime: Option<Arc<dyn ToolRuntime>>,
+) -> ExecutionResult {
+    execute_tool_inner(
+        kind,
+        input,
+        cwd,
+        dedup,
+        task_store,
+        active_team_name,
+        None,
+        tool_runtime,
+    )
+    .await
+}
+
+#[tracing::instrument(target = "jfc::tools", skip(input, cwd, dedup, task_store, tool_runtime), fields(kind = ?kind))]
+async fn execute_tool_inner(
+    kind: ToolKind,
+    input: ToolInput,
+    cwd: std::path::PathBuf,
+    dedup: Option<Arc<Mutex<ReadDedupCache>>>,
+    task_store: Option<Arc<TaskStore>>,
+    active_team_name: Option<&str>,
+    runtime_tool_id: Option<String>,
+    tool_runtime: Option<Arc<dyn ToolRuntime>>,
 ) -> ExecutionResult {
     #[cfg(feature = "hooks")]
     {
@@ -223,6 +315,20 @@ pub async fn execute_tool_with_runtime_id(
         (_, _, Some(store)) => Some(store),
         _ => task_store,
     };
+
+    if let Some(runtime) = tool_runtime.as_ref()
+        && let Some(result) = runtime
+            .dispatch(ToolRuntimeRequest {
+                kind: &kind,
+                input: &input,
+                cwd: &cwd,
+                dedup: dedup.as_ref(),
+                runtime_tool_id: runtime_tool_id.as_deref(),
+            })
+            .await
+    {
+        return result;
+    }
 
     let descriptor_context = super::descriptor_router::DescriptorExecutionContext::new(
         &cwd,

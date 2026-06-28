@@ -95,12 +95,7 @@ async fn execute_runtime_action_descriptor(
 }
 
 async fn execute_host_action(app: &mut App, action: &RuntimeActionDescriptor) {
-    let Ok(host_action) =
-        required_action_payload(action, RuntimeActionDescriptor::host_action_payload)
-    else {
-        return;
-    };
-    super::host_palette_action::execute_host_palette_action_name(app, host_action).await;
+    super::runtime_action_host::execute_host_action(app, action).await;
 }
 
 async fn execute_slash_command(

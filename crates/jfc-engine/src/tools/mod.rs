@@ -74,7 +74,7 @@ pub use descriptor_catalog::{
 };
 pub use descriptor_router::builtin_tool_descriptors;
 pub(crate) use descriptor_router::external_tool_policy;
-pub use dispatch::{execute_tool, execute_tool_with_runtime_id};
+pub use dispatch::{execute_tool, execute_tool_with_runtime, execute_tool_with_runtime_id};
 
 // plan↔task linkage hook, shared by the manual TaskDone path and the
 // subagent parent_task_id completion path so both advance linked plans.

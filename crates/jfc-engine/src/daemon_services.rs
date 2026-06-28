@@ -1,44 +1,12 @@
 use std::sync::{Arc, LazyLock};
 
+pub use jfc_daemon::{
+    ScheduledTaskCreate as DaemonScheduledTaskCreate,
+    ScheduledTaskManagementService as DaemonScheduledTaskService,
+    ScheduledTaskSnapshot as DaemonScheduledTaskSnapshot,
+    TaskLifecycle as DaemonScheduledTaskLifecycle,
+};
 use parking_lot::RwLock;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DaemonScheduledTaskLifecycle {
-    Active,
-    Paused,
-    Archived,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DaemonScheduledTaskSnapshot {
-    pub id: String,
-    pub title: String,
-    pub prompt: String,
-    pub lifecycle: DaemonScheduledTaskLifecycle,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DaemonScheduledTaskCreate {
-    pub id: String,
-    pub title: String,
-    pub cron_expr: String,
-    pub prompt: String,
-}
-
-pub trait DaemonScheduledTaskService: Send + Sync + 'static {
-    fn list_scheduled_tasks(
-        &self,
-        archived: bool,
-    ) -> Result<Vec<DaemonScheduledTaskSnapshot>, String>;
-
-    fn create_scheduled_task(&self, request: DaemonScheduledTaskCreate) -> Result<String, String>;
-
-    fn set_scheduled_task_lifecycle(
-        &self,
-        id: &str,
-        lifecycle: DaemonScheduledTaskLifecycle,
-    ) -> Result<(), String>;
-}
 
 static SCHEDULED_TASK_SERVICE: LazyLock<RwLock<Option<Arc<dyn DaemonScheduledTaskService>>>> =
     LazyLock::new(|| RwLock::new(None));

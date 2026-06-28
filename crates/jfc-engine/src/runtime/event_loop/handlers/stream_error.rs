@@ -14,25 +14,87 @@ use crate::runtime::{
 use crate::types::*;
 use crate::{toast, types};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamErrorLogDisposition {
+    ExpectedLifecycle,
+    Unexpected,
+}
+
+fn stream_interrupt_flag(state: &EngineState) -> bool {
+    state
+        .interrupt_flag
+        .load(std::sync::atomic::Ordering::SeqCst)
+}
+
+fn is_stream_lifecycle_error(error: &str) -> bool {
+    error.starts_with("Stream timed out")
+        || error.starts_with("Stream cancelled before connection opened")
+        || error.starts_with("Stream open timed out")
+        || error.starts_with("stream task cancelled")
+}
+
+fn stream_error_interrupted_by_user(state: &EngineState, error: &str) -> bool {
+    error.contains("Interrupted by user")
+        || (error.starts_with("stream task cancelled")
+            && (state.cancel_token.is_cancelled() || stream_interrupt_flag(state)))
+}
+
+fn stream_error_log_disposition(state: &EngineState, error: &str) -> StreamErrorLogDisposition {
+    let stale_interrupt = error == "Interrupted by user"
+        && !state.cancel_token.is_cancelled()
+        && !stream_interrupt_flag(state);
+    let superseded_lifecycle = is_stream_lifecycle_error(error)
+        && state.is_streaming
+        && !state.cancel_token.is_cancelled()
+        && !stream_interrupt_flag(state);
+    let late_cleaned_join = error.starts_with("stream task cancelled")
+        && !state.is_streaming
+        && state.streaming_assistant_idx.is_none()
+        && state.active_stream_handle.is_none();
+    if stale_interrupt
+        || superseded_lifecycle
+        || late_cleaned_join
+        || stream_error_interrupted_by_user(state, error)
+    {
+        StreamErrorLogDisposition::ExpectedLifecycle
+    } else {
+        StreamErrorLogDisposition::Unexpected
+    }
+}
+
+fn log_stream_error_received(state: &EngineState, error: &str) {
+    match stream_error_log_disposition(state, error) {
+        StreamErrorLogDisposition::ExpectedLifecycle => tracing::info!(
+            target: "jfc::stream",
+            error = %error,
+            is_streaming = state.is_streaming,
+            cancelled = state.cancel_token.is_cancelled(),
+            interrupt_flag = stream_interrupt_flag(state),
+            streaming_response_bytes = state.streaming_response_bytes,
+            streaming_assistant_idx = ?state.streaming_assistant_idx,
+            "StreamEvent::Error — expected stream lifecycle cancellation"
+        ),
+        StreamErrorLogDisposition::Unexpected => tracing::error!(
+            target: "jfc::stream",
+            error = %error,
+            is_streaming = state.is_streaming,
+            cancelled = state.cancel_token.is_cancelled(),
+            interrupt_flag = stream_interrupt_flag(state),
+            streaming_response_bytes = state.streaming_response_bytes,
+            streaming_assistant_idx = ?state.streaming_assistant_idx,
+            "StreamEvent::Error — resetting stream state"
+        ),
+    }
+}
+
 /// Handle `StreamEvent::Error(e)`.
 pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: String) {
     state.record_stream_activity();
     state.stream_lifecycle = None;
-    tracing::error!(
-        target: "jfc::stream",
-        error = %e,
-        is_streaming = state.is_streaming,
-        cancelled = state.cancel_token.is_cancelled(),
-        interrupt_flag = state.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
-        streaming_response_bytes = state.streaming_response_bytes,
-        streaming_assistant_idx = ?state.streaming_assistant_idx,
-        "StreamEvent::Error — resetting stream state"
-    );
+    log_stream_error_received(state, &e);
     if e == "Interrupted by user"
         && !state.cancel_token.is_cancelled()
-        && !state
-            .interrupt_flag
-            .load(std::sync::atomic::Ordering::SeqCst)
+        && !stream_interrupt_flag(state)
     {
         tracing::info!(
             target: "jfc::stream",
@@ -62,16 +124,11 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
     // opened" bug). Gate on the identical is_streaming && !cancelled &&
     // !interrupt condition so a *genuine* ESC (sets interrupt_flag) and a
     // *genuine* watchdog (clears is_streaming) both still surface.
-    let is_superseded_stream_lifecycle_error = e.starts_with("Stream timed out")
-        || e.starts_with("Stream cancelled before connection opened")
-        || e.starts_with("Stream open timed out")
-        || e.starts_with("stream task cancelled");
+    let is_superseded_stream_lifecycle_error = is_stream_lifecycle_error(&e);
     if is_superseded_stream_lifecycle_error
         && state.is_streaming
         && !state.cancel_token.is_cancelled()
-        && !state
-            .interrupt_flag
-            .load(std::sync::atomic::Ordering::SeqCst)
+        && !stream_interrupt_flag(state)
     {
         tracing::info!(
             target: "jfc::stream",
@@ -106,12 +163,7 @@ pub async fn handle_stream_error(state: &mut EngineState, tx: &EventSender, e: S
         return;
     }
 
-    let interrupted_by_user = e.contains("Interrupted by user")
-        || (e.starts_with("stream task cancelled")
-            && (state.cancel_token.is_cancelled()
-                || state
-                    .interrupt_flag
-                    .load(std::sync::atomic::Ordering::SeqCst)));
+    let interrupted_by_user = stream_error_interrupted_by_user(state, &e);
 
     // ─── Synthetic tool_result injection on interrupt ────────
     // When a stream is interrupted with pending/running tool_use
@@ -599,6 +651,39 @@ mod tests {
         let mut state = EngineState::new(Arc::new(TestProvider), model);
         state.task_store = jfc_session::TaskStore::in_memory();
         state
+    }
+
+    #[test]
+    fn stream_cancelled_by_user_is_expected_lifecycle_log_regression() {
+        // Given: a user interrupt cancelled an active stream task.
+        let mut state = test_app();
+        state.is_streaming = true;
+        state.streaming_assistant_idx = Some(1);
+        state.cancel_token.cancel();
+        state
+            .interrupt_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        // When: the stream supervisor reports the task JoinError.
+        let disposition =
+            stream_error_log_disposition(&state, "stream task cancelled: task 17 was cancelled");
+
+        // Then: it is expected lifecycle noise, not an unexpected stream error.
+        assert_eq!(disposition, StreamErrorLogDisposition::ExpectedLifecycle);
+    }
+
+    #[test]
+    fn provider_error_is_unexpected_log_normal() {
+        // Given: an active stream receives a provider-side failure.
+        let mut state = test_app();
+        state.is_streaming = true;
+        state.streaming_assistant_idx = Some(1);
+
+        // When: the error is not a cancellation/supersession lifecycle event.
+        let disposition = stream_error_log_disposition(&state, "provider 500 overloaded");
+
+        // Then: it still logs as an unexpected stream error.
+        assert_eq!(disposition, StreamErrorLogDisposition::Unexpected);
     }
 
     #[tokio::test]

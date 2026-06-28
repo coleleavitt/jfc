@@ -9,12 +9,15 @@ jfc-plugin-sdk = { path = "../jfc-plugin-sdk" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "process", "time"] }
 toml = "0.8"
 tracing = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true

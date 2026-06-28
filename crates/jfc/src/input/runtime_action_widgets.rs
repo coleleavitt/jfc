@@ -1,4 +1,5 @@
 use crate::app::App;
+use jfc_engine::runtime::{FrontendOpenPanelRequest, RuntimeActionSource};
 use jfc_plugin_sdk::{RuntimeActionDescriptor, UiMutationScope, UiWidgetDescriptor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7,36 +8,32 @@ pub(super) enum InfoSidebarWidgetFocusStep {
     Next,
 }
 
-pub(super) fn focus_info_sidebar_widget(
+pub(super) fn focus_info_sidebar_widget_request(
     app: &mut App,
-    action: &RuntimeActionDescriptor,
+    request: &FrontendOpenPanelRequest,
 ) -> Option<RuntimeActionDescriptor> {
-    let Ok(open_panel) = action.open_panel_payload() else {
+    let Some(widget) = request.widget.as_ref() else {
         return None;
     };
-    let Some(widget_id) = open_panel.widget_id else {
-        return None;
-    };
-    let plugin_id = open_panel
-        .widget_plugin_id
-        .or(open_panel.plugin_id)
-        .unwrap_or_else(|| action.plugin_id.as_str());
-    let plugin_id = plugin_id.to_owned();
-    let widget_id = widget_id.to_owned();
 
     let Some(runtime_action_id) = runtime_action_id_for_info_sidebar_widget(
         app,
-        plugin_id.as_str(),
-        widget_id.as_str(),
-        action,
+        widget.plugin_id.as_str(),
+        widget.widget_id.as_str(),
+        &request.source,
     ) else {
         return None;
     };
 
     app.info_sidebar
-        .focus_widget(plugin_id.clone(), widget_id.clone());
+        .focus_widget(widget.plugin_id.clone(), widget.widget_id.clone());
     runtime_action_id.and_then(|runtime_action_id| {
-        runtime_action_for_widget(app, plugin_id.as_str(), runtime_action_id.as_str(), action)
+        runtime_action_for_widget(
+            app,
+            widget.plugin_id.as_str(),
+            runtime_action_id.as_str(),
+            &request.source,
+        )
     })
 }
 
@@ -97,7 +94,7 @@ fn runtime_action_id_for_info_sidebar_widget(
     app: &mut App,
     plugin_id: &str,
     widget_id: &str,
-    action: &RuntimeActionDescriptor,
+    source: &RuntimeActionSource,
 ) -> Option<Option<String>> {
     let Some(widget) = app
         .plugins
@@ -108,8 +105,8 @@ fn runtime_action_id_for_info_sidebar_widget(
         app.info_sidebar.clear_widget_focus();
         tracing::warn!(
             target: "jfc::palette",
-            plugin = action.plugin_id.as_str(),
-            action = action.id.as_str(),
+            plugin = source.plugin_id.as_str(),
+            action = source.action_id.as_str(),
             widget_plugin = plugin_id,
             widget_id,
             "runtime action targeted an unknown info-sidebar widget"
@@ -123,14 +120,14 @@ fn runtime_action_for_widget(
     app: &App,
     plugin_id: &str,
     runtime_action_id: &str,
-    action: &RuntimeActionDescriptor,
+    source: &RuntimeActionSource,
 ) -> Option<RuntimeActionDescriptor> {
     let runtime_action = runtime_action_for_widget_id(app, plugin_id, runtime_action_id);
     if runtime_action.is_none() {
         tracing::warn!(
             target: "jfc::palette",
-            plugin = action.plugin_id.as_str(),
-            action = action.id.as_str(),
+            plugin = source.plugin_id.as_str(),
+            action = source.action_id.as_str(),
             widget_plugin = plugin_id,
             widget_action = runtime_action_id,
             "focused plugin widget references a missing runtime action"

@@ -1,14 +1,19 @@
-use jfc_plugin_sdk::{DescriptorVisibility, ToolApprovalPolicy};
+use jfc_plugin_host::{PluginHost, PluginRuntime, PluginStatusKind};
+use jfc_plugin_sdk::{DescriptorVisibility, PluginId, ToolApprovalPolicy};
 use serde_json::json;
 
 use crate::types::{ReplacementMode, ToolInput, ToolKind};
 
 use super::defs::all_tool_defs;
+use super::descriptor_filesystem_defs::filesystem_descriptors;
 use super::descriptor_router::{
-    EDIT_TOOL_HANDLER, GLOB_TOOL_HANDLER, GREP_TOOL_HANDLER, MULTI_EDIT_TOOL_HANDLER,
-    NOTEBOOK_EDIT_TOOL_HANDLER, NOTEBOOK_READ_TOOL_HANDLER, READ_TOOL_HANDLER, WRITE_TOOL_HANDLER,
-    descriptor_for_handler, execute_descriptor_tool,
+    BUILTIN_FILESYSTEM_TOOL_PACK_ID, BUILTIN_SEARCH_TOOL_PACK_ID, EDIT_TOOL_HANDLER,
+    GLOB_TOOL_HANDLER, GREP_TOOL_HANDLER, MULTI_EDIT_TOOL_HANDLER, NOTEBOOK_EDIT_TOOL_HANDLER,
+    NOTEBOOK_READ_TOOL_HANDLER, READ_TOOL_HANDLER, WRITE_TOOL_HANDLER, descriptor_for_handler,
+    execute_descriptor_tool, register_builtin_filesystem_tool_pack,
+    register_builtin_search_tool_pack,
 };
+use super::descriptor_search_defs::search_descriptors;
 use super::execute_tool;
 
 #[tokio::test]
@@ -95,6 +100,83 @@ fn builtin_search_descriptors_are_model_visible_read_only_normal() {
 }
 
 #[test]
+fn builtin_search_tool_pack_reaches_runtime_maps_and_status_normal() {
+    let mut host = PluginHost::new();
+    register_builtin_search_tool_pack(&mut host).expect("search pack registers");
+    host.activate_all().expect("search pack activates");
+
+    let runtime = PluginRuntime::from_host(&host).expect("runtime builds");
+    let snapshot = host.status_snapshot();
+
+    for handler in [GLOB_TOOL_HANDLER, GREP_TOOL_HANDLER] {
+        let descriptor = runtime
+            .tools()
+            .get(handler)
+            .expect("search descriptor is mapped")
+            .descriptor();
+        assert_eq!(descriptor.plugin_id.as_str(), BUILTIN_SEARCH_TOOL_PACK_ID);
+        assert_eq!(descriptor.name, handler);
+    }
+
+    let entry = snapshot
+        .plugins
+        .iter()
+        .find(|entry| entry.plugin_id.as_str() == BUILTIN_SEARCH_TOOL_PACK_ID)
+        .expect("search pack status entry");
+    assert_eq!(entry.status, PluginStatusKind::Active);
+}
+
+#[test]
+fn disabled_builtin_search_tool_pack_is_hidden_from_runtime_maps_and_catalog_robust() {
+    let mut host = PluginHost::new();
+    register_builtin_search_tool_pack(&mut host).expect("search pack registers");
+    host.disable_plugin(&PluginId::new(BUILTIN_SEARCH_TOOL_PACK_ID))
+        .expect("search pack disables");
+    host.activate_all()
+        .expect("disabled search pack is skipped");
+
+    let runtime = PluginRuntime::from_host(&host).expect("runtime builds");
+
+    assert!(runtime.tools().is_empty());
+    assert!(host.tool_descriptors().is_empty());
+    let status = host
+        .status_snapshot()
+        .plugins
+        .iter()
+        .find(|entry| entry.plugin_id.as_str() == BUILTIN_SEARCH_TOOL_PACK_ID)
+        .expect("search pack status entry")
+        .status;
+    assert_eq!(status, PluginStatusKind::Disabled);
+}
+
+#[test]
+fn builtin_search_runtime_schema_matches_existing_descriptor_family_normal() {
+    let mut host = PluginHost::new();
+    register_builtin_search_tool_pack(&mut host).expect("search pack registers");
+    host.activate_all().expect("search pack activates");
+
+    let runtime = PluginRuntime::from_host(&host).expect("runtime builds");
+    let expected = search_descriptors(PluginId::new(BUILTIN_SEARCH_TOOL_PACK_ID));
+
+    for descriptor in expected {
+        let runtime_descriptor = runtime
+            .tools()
+            .get(&descriptor.name)
+            .expect("search descriptor is mapped")
+            .descriptor();
+
+        assert_eq!(runtime_descriptor.description, descriptor.description);
+        assert_eq!(runtime_descriptor.input_schema, descriptor.input_schema);
+        assert_eq!(runtime_descriptor.executor, descriptor.executor);
+        assert_eq!(
+            runtime_descriptor.approval_policy,
+            descriptor.approval_policy
+        );
+        assert_eq!(runtime_descriptor.visibility, descriptor.visibility);
+    }
+}
+
+#[test]
 fn builtin_filesystem_descriptors_have_expected_policy_normal() {
     for handler in [READ_TOOL_HANDLER, NOTEBOOK_READ_TOOL_HANDLER] {
         let descriptor = descriptor_for_handler(handler).expect("read descriptor");
@@ -115,6 +197,93 @@ fn builtin_filesystem_descriptors_have_expected_policy_normal() {
         assert_eq!(descriptor.name, handler);
         assert_eq!(descriptor.approval_policy, ToolApprovalPolicy::Mutating);
         assert_eq!(descriptor.visibility, DescriptorVisibility::ModelVisible);
+    }
+}
+
+#[test]
+fn builtin_filesystem_tool_pack_reaches_runtime_maps_and_status_normal() {
+    let mut host = PluginHost::new();
+    register_builtin_filesystem_tool_pack(&mut host).expect("filesystem pack registers");
+    host.activate_all().expect("filesystem pack activates");
+
+    let runtime = PluginRuntime::from_host(&host).expect("runtime builds");
+    let snapshot = host.status_snapshot();
+
+    for handler in [
+        READ_TOOL_HANDLER,
+        WRITE_TOOL_HANDLER,
+        EDIT_TOOL_HANDLER,
+        MULTI_EDIT_TOOL_HANDLER,
+        NOTEBOOK_READ_TOOL_HANDLER,
+        NOTEBOOK_EDIT_TOOL_HANDLER,
+    ] {
+        let descriptor = runtime
+            .tools()
+            .get(handler)
+            .expect("filesystem descriptor is mapped")
+            .descriptor();
+        assert_eq!(
+            descriptor.plugin_id.as_str(),
+            BUILTIN_FILESYSTEM_TOOL_PACK_ID
+        );
+        assert_eq!(descriptor.name, handler);
+    }
+
+    let entry = snapshot
+        .plugins
+        .iter()
+        .find(|entry| entry.plugin_id.as_str() == BUILTIN_FILESYSTEM_TOOL_PACK_ID)
+        .expect("filesystem pack status entry");
+    assert_eq!(entry.status, PluginStatusKind::Active);
+}
+
+#[test]
+fn disabled_builtin_filesystem_tool_pack_is_hidden_from_runtime_maps_and_catalog_robust() {
+    let mut host = PluginHost::new();
+    register_builtin_filesystem_tool_pack(&mut host).expect("filesystem pack registers");
+    host.disable_plugin(&PluginId::new(BUILTIN_FILESYSTEM_TOOL_PACK_ID))
+        .expect("filesystem pack disables");
+    host.activate_all()
+        .expect("disabled filesystem pack is skipped");
+
+    let runtime = PluginRuntime::from_host(&host).expect("runtime builds");
+
+    assert!(runtime.tools().is_empty());
+    assert!(host.tool_descriptors().is_empty());
+    let status = host
+        .status_snapshot()
+        .plugins
+        .iter()
+        .find(|entry| entry.plugin_id.as_str() == BUILTIN_FILESYSTEM_TOOL_PACK_ID)
+        .expect("filesystem pack status entry")
+        .status;
+    assert_eq!(status, PluginStatusKind::Disabled);
+}
+
+#[test]
+fn builtin_filesystem_runtime_schema_matches_existing_descriptor_family_normal() {
+    let mut host = PluginHost::new();
+    register_builtin_filesystem_tool_pack(&mut host).expect("filesystem pack registers");
+    host.activate_all().expect("filesystem pack activates");
+
+    let runtime = PluginRuntime::from_host(&host).expect("runtime builds");
+    let expected = filesystem_descriptors(PluginId::new(BUILTIN_FILESYSTEM_TOOL_PACK_ID));
+
+    for descriptor in expected {
+        let runtime_descriptor = runtime
+            .tools()
+            .get(&descriptor.name)
+            .expect("filesystem descriptor is mapped")
+            .descriptor();
+
+        assert_eq!(runtime_descriptor.description, descriptor.description);
+        assert_eq!(runtime_descriptor.input_schema, descriptor.input_schema);
+        assert_eq!(runtime_descriptor.executor, descriptor.executor);
+        assert_eq!(
+            runtime_descriptor.approval_policy,
+            descriptor.approval_policy
+        );
+        assert_eq!(runtime_descriptor.visibility, descriptor.visibility);
     }
 }
 

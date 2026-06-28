@@ -1,14 +1,16 @@
 //! Well-known `.claude/` directory paths mirroring CC 2.1.167.
 //!
-//! Centralises the path logic for:
+//! Centralises the path logic and diagnostics for:
 //! - Agent memory (user / project / local tiers)
 //! - Teams directory
 //! - Worktrees directory
 //! - Plans directory (configurable via `plansDirectory` setting)
 //! - Remote credential paths (`~/.claude/remote/`)
 //!
-//! All functions are pure path constructors — no I/O, no panics.
+//! Path constructors are pure and do not panic. Diagnostics may read path
+//! metadata, but remain non-destructive.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use crate::ClaudeCompatibilityConfig;
@@ -145,6 +147,153 @@ pub fn plans_dir(project_root: &Path, settings: &ClaudeCompatibilityConfig) -> P
         .join("plans")
 }
 
+// ── XDG path diagnostics ──────────────────────────────────────────────────────
+
+/// Domain service for the non-destructive `jfc doctor paths` report.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct XdgPathDiagnosticService;
+
+impl XdgPathDiagnosticService {
+    pub fn report(self) -> String {
+        xdg_path_diagnostic_report()
+    }
+}
+
+fn xdg_path_diagnostic_report() -> String {
+    let home_dir = dirs::home_dir();
+    let config_dir = dirs::config_dir();
+    let data_dir = dirs::data_dir();
+    let cache_dir = dirs::cache_dir();
+    let legacy_keybindings = home_dir
+        .as_ref()
+        .map(|home| home.join(".claude").join("keybindings.json"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent"));
+    let xdg_keybindings = config_dir
+        .as_ref()
+        .map(|config| config.join("claude").join("keybindings.json"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent"));
+
+    xdg_path_diagnostic_report_in(XdgPathDiagnosticInputs {
+        home_dir,
+        config_dir,
+        data_dir,
+        cache_dir,
+        legacy_keybindings_exists: legacy_keybindings.exists(),
+        xdg_keybindings_exists: xdg_keybindings.exists(),
+    })
+}
+
+struct XdgPathDiagnosticInputs {
+    home_dir: Option<PathBuf>,
+    config_dir: Option<PathBuf>,
+    data_dir: Option<PathBuf>,
+    cache_dir: Option<PathBuf>,
+    legacy_keybindings_exists: bool,
+    xdg_keybindings_exists: bool,
+}
+
+fn xdg_path_diagnostic_report_in(inputs: XdgPathDiagnosticInputs) -> String {
+    let legacy_keybindings = inputs
+        .home_dir
+        .as_ref()
+        .map(|home| home.join(".claude").join("keybindings.json"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent"));
+    let xdg_keybindings = inputs
+        .config_dir
+        .as_ref()
+        .map(|config| config.join("claude").join("keybindings.json"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent"));
+    let sessions_legacy = inputs
+        .config_dir
+        .as_ref()
+        .map(|config| config.join("jfc").join("sessions"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent"));
+    let sessions_modern = inputs
+        .data_dir
+        .as_ref()
+        .map(|data| data.join("jfc").join("sessions"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent"));
+    let logs_cfg = inputs
+        .config_dir
+        .as_ref()
+        .map(|config| config.join("jfc").join("logs"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent"));
+    let logs_cache = inputs
+        .cache_dir
+        .as_ref()
+        .map(|cache| cache.join("jfc").join("logs"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent"));
+
+    let mut report = String::new();
+    report.push_str("jfc doctor — XDG path diagnostics\n\n");
+
+    if let Some(config) = &inputs.config_dir {
+        let _ = writeln!(report, "• XDG_CONFIG_HOME: {}", config.display());
+        let _ = writeln!(report, "  - jfc config dir: {}/jfc", config.display());
+    } else {
+        report.push_str("• XDG_CONFIG_HOME: (not set; dirs::config_dir() unavailable)\n");
+    }
+
+    if let Some(data) = &inputs.data_dir {
+        let _ = writeln!(report, "• XDG_DATA_HOME:   {}", data.display());
+    } else {
+        report.push_str("• XDG_DATA_HOME:   (not set)\n");
+    }
+
+    if let Some(cache) = &inputs.cache_dir {
+        let _ = writeln!(report, "• XDG_CACHE_HOME:  {}", cache.display());
+    } else {
+        report.push_str("• XDG_CACHE_HOME:  (not set)\n");
+    }
+
+    report.push_str("\nChecks:\n\n");
+
+    if inputs.legacy_keybindings_exists && !inputs.xdg_keybindings_exists {
+        let recommendation = xdg_keybindings
+            .parent()
+            .map(|path| path.display().to_string() + "/keybindings.json")
+            .unwrap_or_else(|| "~/.config/claude/keybindings.json".to_string());
+        let _ = writeln!(
+            report,
+            "- Legacy keybindings found at {}\n  Recommendation: move or copy to {}",
+            legacy_keybindings.display(),
+            recommendation
+        );
+    } else if inputs.xdg_keybindings_exists {
+        let _ = writeln!(
+            report,
+            "- Keybindings present at modern XDG path: {}",
+            xdg_keybindings.display()
+        );
+    } else {
+        report.push_str("- No keybindings file found (optional feature)\n");
+    }
+
+    let _ = writeln!(
+        report,
+        "- Sessions directory (current): {}",
+        sessions_legacy.display()
+    );
+    if !sessions_modern.as_os_str().is_empty() {
+        let _ = writeln!(
+            report,
+            "  Suggested future location: {} (XDG_DATA_HOME)",
+            sessions_modern.display()
+        );
+    }
+
+    let _ = writeln!(report, "- Logs directory (current): {}", logs_cfg.display());
+    if !logs_cache.as_os_str().is_empty() {
+        let _ = writeln!(
+            report,
+            "  Suggested cache location: {} (XDG_CACHE_HOME)",
+            logs_cache.display()
+        );
+    }
+
+    report
+}
+
 // ── Remote credential paths ───────────────────────────────────────────────────
 
 /// Paths to managed remote session credential files in `~/.claude/remote/`.
@@ -240,5 +389,34 @@ mod tests {
         );
         // All three should be in the same remote/ directory.
         assert_eq!(paths.oauth_token.parent(), paths.api_key.parent());
+    }
+
+    #[test]
+    fn xdg_path_diagnostic_report_no_keybindings_normal() {
+        let report = xdg_path_diagnostic_report_in(XdgPathDiagnosticInputs {
+            home_dir: Some(PathBuf::from("/home/tester")),
+            config_dir: Some(PathBuf::from("/home/tester/.config")),
+            data_dir: Some(PathBuf::from("/home/tester/.local/share")),
+            cache_dir: Some(PathBuf::from("/home/tester/.cache")),
+            legacy_keybindings_exists: false,
+            xdg_keybindings_exists: false,
+        });
+
+        assert_eq!(
+            report,
+            concat!(
+                "jfc doctor — XDG path diagnostics\n\n",
+                "• XDG_CONFIG_HOME: /home/tester/.config\n",
+                "  - jfc config dir: /home/tester/.config/jfc\n",
+                "• XDG_DATA_HOME:   /home/tester/.local/share\n",
+                "• XDG_CACHE_HOME:  /home/tester/.cache\n\n",
+                "Checks:\n\n",
+                "- No keybindings file found (optional feature)\n",
+                "- Sessions directory (current): /home/tester/.config/jfc/sessions\n",
+                "  Suggested future location: /home/tester/.local/share/jfc/sessions (XDG_DATA_HOME)\n",
+                "- Logs directory (current): /home/tester/.config/jfc/logs\n",
+                "  Suggested cache location: /home/tester/.cache/jfc/logs (XDG_CACHE_HOME)\n"
+            )
+        );
     }
 }

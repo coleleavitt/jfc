@@ -1,4 +1,5 @@
 use super::mcp::{mcp_server_instructions_section, mcp_tool_metadata_section};
+use crate::runtime::RuntimeDiagnostics;
 
 pub(super) struct PromptSeed {
     pub(super) system_prompt: String,
@@ -8,6 +9,12 @@ pub(super) struct PromptSeed {
 }
 
 pub(super) async fn build_prompt_seed() -> PromptSeed {
+    build_prompt_seed_with_diagnostics(&crate::diagnostics::GlobalDiagnosticsService).await
+}
+
+pub(super) async fn build_prompt_seed_with_diagnostics(
+    diagnostics: &dyn RuntimeDiagnostics,
+) -> PromptSeed {
     let cwd = std::env::current_dir()
         .ok()
         .and_then(|p| p.to_str().map(str::to_owned))
@@ -33,7 +40,7 @@ pub(super) async fn build_prompt_seed() -> PromptSeed {
     };
 
     let diagnostics_block = {
-        let diags = crate::diagnostics::global_snapshot();
+        let diags = diagnostics.diagnostic_entries();
         crate::diagnostics::render_for_prompt(&diags).unwrap_or_default()
     };
 
@@ -175,5 +182,58 @@ pub(super) async fn build_prompt_seed() -> PromptSeed {
         skills_chars,
         dispatch_chars,
         diagnostics_chars,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diagnostics::{DiagnosticEntry, Severity};
+    use crate::runtime::{RuntimeDiagnosticsSnapshot, RuntimeDiagnosticsStatus, RuntimeService};
+
+    struct FakeDiagnostics;
+
+    impl RuntimeService for FakeDiagnostics {
+        fn service_name(&self) -> &'static str {
+            "fake-diagnostics"
+        }
+    }
+
+    impl RuntimeDiagnostics for FakeDiagnostics {
+        fn snapshot(&self) -> RuntimeDiagnosticsSnapshot {
+            RuntimeDiagnosticsSnapshot {
+                service_name: self.service_name(),
+                status: RuntimeDiagnosticsStatus::Healthy,
+                detail: Some("fake prompt diagnostics".to_owned()),
+            }
+        }
+
+        fn diagnostic_entries(&self) -> Vec<DiagnosticEntry> {
+            vec![DiagnosticEntry {
+                file: "fake_service.rs".to_owned(),
+                line: 12,
+                col: 5,
+                message: "diagnostic from fake service".to_owned(),
+                code: Some("EFAKE".to_owned()),
+                source: Some("fake".to_owned()),
+                severity: Severity::Error,
+            }]
+        }
+    }
+
+    #[tokio::test]
+    async fn prompt_seed_uses_runtime_diagnostics_service_snapshot_normal() {
+        crate::diagnostics::set_global_snapshot(Vec::new());
+
+        let seed = build_prompt_seed_with_diagnostics(&FakeDiagnostics).await;
+
+        assert!(
+            seed.system_prompt.contains("fake_service.rs"),
+            "prompt must include fake service diagnostics, got {} chars",
+            seed.system_prompt.len()
+        );
+        assert!(seed.system_prompt.contains("diagnostic from fake service"));
+        assert!(seed.diagnostics_chars > 0);
+        assert!(crate::diagnostics::global_snapshot().is_empty());
     }
 }

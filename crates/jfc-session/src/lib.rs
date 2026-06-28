@@ -1,10 +1,8 @@
 //! Session catalog and path helpers.
 //!
-//! Full transcript serialization still lives in `jfc` while message/tool
-//! types are being untangled. This crate owns the provider-neutral session
-//! index surface: paths, IDs, metadata listing, and picker helpers.
-
 use std::path::PathBuf;
+#[cfg(test)]
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jfc_core::SessionId;
@@ -17,13 +15,77 @@ use tracing::debug;
 #[cfg(test)]
 pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+#[cfg(test)]
+fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    TEST_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner())
+}
+
+#[cfg(test)]
+pub(crate) struct TestKnowledgeDb {
+    root: tempfile::TempDir,
+    previous_db: Option<std::ffi::OsString>,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl TestKnowledgeDb {
+    pub(crate) fn new() -> Self {
+        let lock = test_env_lock();
+        let root = tempfile::tempdir().expect("tempdir");
+        let previous_db = std::env::var_os("JFC_KNOWLEDGE_DB");
+        unsafe {
+            std::env::set_var("JFC_KNOWLEDGE_DB", root.path().join("knowledge.db"));
+        }
+        Self {
+            root,
+            previous_db,
+            _lock: lock,
+        }
+    }
+
+    pub(crate) fn root(&self) -> &std::path::Path {
+        self.root.path()
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestKnowledgeDb {
+    fn drop(&mut self) {
+        unsafe {
+            match self.previous_db.take() {
+                Some(value) => std::env::set_var("JFC_KNOWLEDGE_DB", value),
+                None => std::env::remove_var("JFC_KNOWLEDGE_DB"),
+            }
+        }
+    }
+}
+
+pub(crate) async fn open_default_knowledge_store() -> jfc_knowledge::Result<KnowledgeStore> {
+    #[cfg(test)]
+    {
+        static TEST_DB_OPEN_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+        let lock = TEST_DB_OPEN_LOCK.get_or_init(|| tokio::sync::Mutex::new(()));
+        let _guard = lock.lock().await;
+        KnowledgeStore::open_default().await
+    }
+
+    #[cfg(not(test))]
+    {
+        KnowledgeStore::open_default().await
+    }
+}
+
 mod catalog;
+mod entry;
 mod git_commits;
 mod inbox;
 mod search;
+mod session_entry;
 mod soft_match;
+mod store;
 mod task_history;
 mod task_store;
+pub mod transcript;
 
 pub use catalog::{
     SessionMetadata, cwd_mismatch_message, format_session_id_timestamp, group_by_cwd,
@@ -42,6 +104,16 @@ pub use search::{
     discover as search_sessions, discover_excluding as search_sessions_excluding,
     prior_user_prompts, scroll as scroll_session,
 };
+pub use session_entry::{
+    BranchForkSummary, CompactionBoundary, ContextEvent, CustomPluginEntry, LabelEntry,
+    MessageContentPart, MessageMetadata, ModelChange, SessionEntry, SessionEntryId,
+    SessionEntryKind, SessionEntryValidationError, ThinkingChange, ToolResult, ToolUse,
+};
+pub use store::{
+    AutosaveOutcome, AutosaveRequest, DefaultSessionStore, ListSessionsRequest,
+    SaveTranscriptRequest, SearchSessionsRequest, SessionStore, SessionTranscript,
+    StoredSessionMessage, default_session_store,
+};
 pub use task_history::{
     TaskHistoryRecord, history_key_for_store_path, read_records as read_task_history,
     session_history_key,
@@ -50,6 +122,10 @@ pub use task_store::{
     DeletedFilter, FactoryMetrics, FailureRecovery, Task, TaskCounts, TaskError, TaskId, TaskKind,
     TaskPatch, TaskRisk, TaskStatus, TaskStore, TaskValidation, is_transient_failure,
     task_store_path, task_stores_dir, team_task_store_path, team_tasks_dir,
+};
+pub use transcript::{
+    SerializedDiffHunk, SerializedDiffLine, SerializedMessage, SerializedPart, SerializedSession,
+    SerializedToolInput, SerializedToolOutput, SerializedToolPart,
 };
 
 pub fn sessions_dir() -> PathBuf {
@@ -81,7 +157,7 @@ pub async fn gc_old_sessions(max_age_days: u64, min_keep: usize) -> std::io::Res
     }
     tokio::task::spawn_blocking(move || {
         jfc_knowledge::block_on_knowledge(async {
-            let store = match jfc_knowledge::KnowledgeStore::open_default().await {
+            let store = match open_default_knowledge_store().await {
                 Ok(store) => store,
                 Err(_) => return Ok(0),
             };
@@ -154,8 +230,7 @@ const FSCK_QUARANTINE_KIND: &str = "quarantined_session";
 #[cfg(test)]
 mod tests {
     use jfc_knowledge::{
-        KnowledgeStore, SessionMessage as KnowledgeSessionMessage,
-        SessionRow as KnowledgeSessionRow,
+        SessionMessage as KnowledgeSessionMessage, SessionRow as KnowledgeSessionRow,
     };
 
     use super::{
@@ -172,17 +247,92 @@ mod tests {
         assert!(second.as_str().starts_with("ses_"));
     }
 
+    #[tokio::test]
+    async fn session_store_facade_save_title_load_list_normal() {
+        let _db = super::TestKnowledgeDb::new();
+        let store = super::default_session_store();
+        let session_id = super::SessionId::new("ses_20260628_120000_facade");
+        let messages = vec![
+            super::StoredSessionMessage {
+                seq: 0,
+                role: "user".to_owned(),
+                content: "remember facade ownership".to_owned(),
+                meta: Some(r#"{"role":"user","parts":[{"type":"text","content":"remember facade ownership"}]}"#.to_owned()),
+            },
+            super::StoredSessionMessage {
+                seq: 1,
+                role: "assistant".to_owned(),
+                content: "facade persisted".to_owned(),
+                meta: Some(r#"{"role":"assistant","parts":[{"type":"text","content":"facade persisted"}]}"#.to_owned()),
+            },
+        ];
+
+        super::SessionStore::save_transcript(
+            &store,
+            super::SaveTranscriptRequest::new(&session_id, &messages)
+                .with_cwd(Some("/tmp/jfc-session-facade"))
+                .with_model(Some("facade-model"))
+                .with_first_prompt(Some("remember facade ownership")),
+        )
+        .await;
+        super::SessionStore::set_title(&store, &session_id, "Facade title").await;
+
+        let loaded = super::SessionStore::load_transcript(&store, &session_id)
+            .await
+            .expect("facade loads saved transcript");
+        let listed = super::SessionStore::list_sessions(
+            &store,
+            super::ListSessionsRequest {
+                cwd_filter: Some("/tmp/jfc-session-facade"),
+                limit: Some(1),
+            },
+        )
+        .await;
+
+        assert_eq!(loaded.model.as_deref(), Some("facade-model"));
+        assert_eq!(loaded.messages, messages);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id.as_str(), session_id.as_str());
+        assert_eq!(listed[0].title.as_deref(), Some("Facade title"));
+        assert_eq!(listed[0].display_title(), "Facade title");
+    }
+
+    #[tokio::test]
+    async fn session_store_facade_missing_and_empty_behaviors_robust() {
+        let _db = super::TestKnowledgeDb::new();
+        let store = super::default_session_store();
+        let missing = super::SessionId::new("ses_missing_facade");
+
+        assert!(
+            super::SessionStore::load_transcript(&store, &missing)
+                .await
+                .is_none()
+        );
+        assert!(
+            super::SessionStore::list_sessions(&store, super::ListSessionsRequest::all())
+                .await
+                .is_empty()
+        );
+        assert!(
+            super::SessionStore::search_sessions(
+                &store,
+                super::SearchSessionsRequest {
+                    query: "",
+                    limit: 10,
+                    window: 1,
+                    exclude_session: None,
+                },
+            )
+            .is_empty()
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn fsck_quarantine_moves_bad_db_session_regression() {
-        let _lock = super::TEST_ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let db = dir.path().join("knowledge.db");
-        let previous = std::env::var_os("JFC_KNOWLEDGE_DB");
-        // SAFETY: guarded by TEST_ENV_LOCK and restored before returning.
-        unsafe { std::env::set_var("JFC_KNOWLEDGE_DB", &db) };
+        let _db = super::TestKnowledgeDb::new();
 
         {
-            let store = KnowledgeStore::open_default().await.unwrap();
+            let store = super::open_default_knowledge_store().await.unwrap();
             store
                 .replace_transcript(
                     &KnowledgeSessionRow {
@@ -207,7 +357,7 @@ mod tests {
         }
 
         let report = fsck_sessions(true).await.unwrap();
-        let store = KnowledgeStore::open_default().await.unwrap();
+        let store = super::open_default_knowledge_store().await.unwrap();
 
         assert_eq!(report.checked, 1);
         assert_eq!(report.ok, 0);
@@ -219,20 +369,12 @@ mod tests {
             .unwrap();
         assert_eq!(artifacts.len(), 1);
         assert!(artifacts[0].value_json.contains("\"id\":\"bad-session\""));
-
-        // SAFETY: guarded by TEST_ENV_LOCK.
-        unsafe {
-            match previous {
-                Some(value) => std::env::set_var("JFC_KNOWLEDGE_DB", value),
-                None => std::env::remove_var("JFC_KNOWLEDGE_DB"),
-            }
-        }
     }
 }
 
 fn fork_session_in_db(source_id: &str, fork_id: &str, description: &str) -> std::io::Result<bool> {
     jfc_knowledge::block_on_knowledge(async {
-        let store = match jfc_knowledge::KnowledgeStore::open_default().await {
+        let store = match open_default_knowledge_store().await {
             Ok(store) => store,
             Err(_) => return Ok(false),
         };
@@ -259,7 +401,7 @@ pub async fn delete_session(session_id: &str) -> std::io::Result<bool> {
 
 fn delete_session_from_db(session_id: &str) -> std::io::Result<bool> {
     jfc_knowledge::block_on_knowledge(async {
-        let store = match jfc_knowledge::KnowledgeStore::open_default().await {
+        let store = match open_default_knowledge_store().await {
             Ok(store) => store,
             Err(_) => return Ok(false),
         };
@@ -294,7 +436,7 @@ impl SessionFsckReport {
 pub async fn fsck_sessions(quarantine: bool) -> std::io::Result<SessionFsckReport> {
     tokio::task::spawn_blocking(move || {
         jfc_knowledge::block_on_knowledge(async {
-            let mut store = match KnowledgeStore::open_default().await {
+            let mut store = match open_default_knowledge_store().await {
                 Ok(store) => store,
                 Err(_) => return Ok(SessionFsckReport::default()),
             };

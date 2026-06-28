@@ -110,6 +110,38 @@ pub fn unacknowledged<'a>(
 static GLOBAL_DIAGNOSTICS: std::sync::RwLock<Vec<DiagnosticEntry>> =
     std::sync::RwLock::new(Vec::new());
 
+pub struct GlobalDiagnosticsService;
+
+impl crate::runtime::RuntimeService for GlobalDiagnosticsService {
+    fn service_name(&self) -> &'static str {
+        "global-diagnostics"
+    }
+}
+
+impl crate::runtime::RuntimeDiagnostics for GlobalDiagnosticsService {
+    fn snapshot(&self) -> crate::runtime::RuntimeDiagnosticsSnapshot {
+        let entries = global_snapshot();
+        let status = if entries
+            .iter()
+            .any(|entry| matches!(entry.severity, Severity::Error | Severity::Warning))
+        {
+            crate::runtime::RuntimeDiagnosticsStatus::Degraded
+        } else {
+            crate::runtime::RuntimeDiagnosticsStatus::Healthy
+        };
+
+        crate::runtime::RuntimeDiagnosticsSnapshot {
+            service_name: <Self as crate::runtime::RuntimeService>::service_name(self),
+            status,
+            detail: Some(format!("{} diagnostic entries", entries.len())),
+        }
+    }
+
+    fn diagnostic_entries(&self) -> Vec<DiagnosticEntry> {
+        global_snapshot()
+    }
+}
+
 pub fn set_global_snapshot(entries: Vec<DiagnosticEntry>) {
     if let Ok(mut guard) = GLOBAL_DIAGNOSTICS.write() {
         *guard = entries;
@@ -206,6 +238,7 @@ pub fn format_entry(entry: &DiagnosticEntry) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::RuntimeDiagnostics;
 
     fn d(file: &str, line: u32, col: u32, msg: &str, sev: Severity) -> DiagnosticEntry {
         DiagnosticEntry {
@@ -448,5 +481,23 @@ mod tests {
         // Reset so we don't pollute other tests in this process.
         set_global_snapshot(Vec::new());
         assert!(global_snapshot().is_empty());
+    }
+
+    #[test]
+    fn global_diagnostics_service_preserves_global_snapshot_compatibility_normal() {
+        let service = GlobalDiagnosticsService;
+        let entries = vec![d("service.rs", 3, 9, "via service", Severity::Warning)];
+        set_global_snapshot(entries.clone());
+
+        assert_eq!(service.diagnostic_entries(), entries);
+        let snapshot = service.snapshot();
+        assert_eq!(snapshot.service_name, "global-diagnostics");
+        assert_eq!(
+            snapshot.status,
+            crate::runtime::RuntimeDiagnosticsStatus::Degraded
+        );
+        assert_eq!(snapshot.detail.as_deref(), Some("1 diagnostic entries"));
+
+        set_global_snapshot(Vec::new());
     }
 }

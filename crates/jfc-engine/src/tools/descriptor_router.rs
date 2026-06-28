@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use jfc_plugin_host::{PluginHost, PluginHostError, PluginRegistration};
+use jfc_plugin_host::{PluginHost, PluginHostError, PluginRegistration, PluginRuntime};
 use jfc_plugin_sdk::{
     PluginId, PluginManifest, PluginSource, PluginVersion, ToolApprovalPolicy, ToolDescriptor,
     ToolExecutorKind,
@@ -15,19 +15,20 @@ use super::descriptor_builtin_routes::BuiltinToolRoute;
 pub(crate) use super::descriptor_builtin_routes::DescriptorExecutionContext;
 use super::descriptor_catalog::snapshot_external_tool_descriptors;
 use super::descriptor_external_routes::execute_mcp_descriptor_route;
-use super::descriptor_filesystem_defs::filesystem_descriptors;
-use super::descriptor_process_bridge::execute_process_bridge_descriptor_route;
-use super::descriptor_search_defs::search_descriptors;
-use super::descriptor_shell_defs::shell_descriptors;
-
-const BUILTIN_TOOLS_PLUGIN_ID: &str = "jfc.builtin.tools";
-#[cfg(test)]
 pub(crate) use super::descriptor_filesystem_defs::{
     EDIT_HANDLER as EDIT_TOOL_HANDLER, MULTI_EDIT_HANDLER as MULTI_EDIT_TOOL_HANDLER,
     NOTEBOOK_EDIT_HANDLER as NOTEBOOK_EDIT_TOOL_HANDLER,
     NOTEBOOK_READ_HANDLER as NOTEBOOK_READ_TOOL_HANDLER, READ_HANDLER as READ_TOOL_HANDLER,
-    WRITE_HANDLER as WRITE_TOOL_HANDLER,
+    WRITE_HANDLER as WRITE_TOOL_HANDLER, filesystem_descriptors,
 };
+use super::descriptor_process_bridge::execute_process_bridge_descriptor_route;
+use super::descriptor_search_defs::search_descriptors;
+pub(crate) use super::descriptor_search_defs::{GLOB_HANDLER, GREP_HANDLER};
+use super::descriptor_shell_defs::shell_descriptors;
+
+const BUILTIN_TOOLS_PLUGIN_ID: &str = "jfc.builtin.tools";
+pub(crate) const BUILTIN_FILESYSTEM_TOOL_PACK_ID: &str = "jfc.builtin.tools.filesystem";
+pub(crate) const BUILTIN_SEARCH_TOOL_PACK_ID: &str = "jfc.builtin.tools.search";
 #[cfg(test)]
 pub(crate) use super::descriptor_search_defs::{
     GLOB_HANDLER as GLOB_TOOL_HANDLER, GREP_HANDLER as GREP_TOOL_HANDLER,
@@ -189,7 +190,22 @@ fn external_descriptor_matches(descriptor: &ToolDescriptor, name: &str) -> bool 
 
 fn load_builtin_tool_descriptors() -> Vec<ToolDescriptor> {
     match builtin_tool_host() {
-        Ok(host) => host.tool_descriptors(),
+        Ok(host) => match runtime_tool_descriptors(&host) {
+            Ok(runtime_descriptors) => {
+                let legacy_plugin_id = PluginId::new(BUILTIN_TOOLS_PLUGIN_ID);
+                let mut descriptors = shell_descriptors(legacy_plugin_id.clone());
+                descriptors.extend(runtime_descriptors);
+                descriptors
+            }
+            Err(error) => {
+                tracing::warn!(
+                    target: "jfc::plugin_tools",
+                    error = %error,
+                    "failed to map builtin runtime tool descriptors"
+                );
+                Vec::new()
+            }
+        },
         Err(error) => {
             tracing::warn!(
                 target: "jfc::plugin_tools",
@@ -202,6 +218,15 @@ fn load_builtin_tool_descriptors() -> Vec<ToolDescriptor> {
 }
 
 fn builtin_tool_host() -> Result<PluginHost, PluginHostError> {
+    let mut host = PluginHost::new();
+    register_legacy_builtin_tool_pack(&mut host)?;
+    register_builtin_search_tool_pack(&mut host)?;
+    register_builtin_filesystem_tool_pack(&mut host)?;
+    host.activate_all()?;
+    Ok(host)
+}
+
+fn register_legacy_builtin_tool_pack(host: &mut PluginHost) -> Result<(), PluginHostError> {
     let plugin_id = PluginId::new(BUILTIN_TOOLS_PLUGIN_ID);
     let manifest = PluginManifest::new(
         plugin_id.clone(),
@@ -209,11 +234,59 @@ fn builtin_tool_host() -> Result<PluginHost, PluginHostError> {
         PluginSource::built_in("jfc-engine"),
     )
     .with_display_name("JFC built-in tools");
-    let mut descriptors = shell_descriptors(plugin_id.clone());
-    descriptors.extend(search_descriptors(plugin_id.clone()));
-    descriptors.extend(filesystem_descriptors(plugin_id));
-    let mut host = PluginHost::new();
-    host.register_internal(PluginRegistration::new(manifest).with_tool_descriptors(descriptors))?;
-    host.activate_all()?;
-    Ok(host)
+    host.register_internal(
+        PluginRegistration::new(manifest).with_tool_descriptors(shell_descriptors(plugin_id)),
+    )
+}
+
+pub(crate) fn register_builtin_filesystem_tool_pack(
+    host: &mut PluginHost,
+) -> Result<(), PluginHostError> {
+    let plugin_id = PluginId::new(BUILTIN_FILESYSTEM_TOOL_PACK_ID);
+    let manifest = PluginManifest::new(
+        plugin_id.clone(),
+        PluginVersion::new("0.1.0"),
+        PluginSource::built_in("jfc-engine-filesystem-tools"),
+    )
+    .with_display_name("JFC built-in filesystem tools");
+    host.register_internal(
+        PluginRegistration::new(manifest).with_tool_descriptors(filesystem_descriptors(plugin_id)),
+    )
+}
+
+pub(crate) fn register_builtin_search_tool_pack(
+    host: &mut PluginHost,
+) -> Result<(), PluginHostError> {
+    let plugin_id = PluginId::new(BUILTIN_SEARCH_TOOL_PACK_ID);
+    let manifest = PluginManifest::new(
+        plugin_id.clone(),
+        PluginVersion::new("0.1.0"),
+        PluginSource::built_in("jfc-engine-search-tools"),
+    )
+    .with_display_name("JFC built-in search tools");
+    host.register_internal(
+        PluginRegistration::new(manifest).with_tool_descriptors(search_descriptors(plugin_id)),
+    )
+}
+
+fn runtime_tool_descriptors(host: &PluginHost) -> Result<Vec<ToolDescriptor>, PluginHostError> {
+    let runtime = PluginRuntime::from_host(host)?;
+    Ok([
+        GLOB_HANDLER,
+        GREP_HANDLER,
+        READ_TOOL_HANDLER,
+        WRITE_TOOL_HANDLER,
+        EDIT_TOOL_HANDLER,
+        MULTI_EDIT_TOOL_HANDLER,
+        NOTEBOOK_READ_TOOL_HANDLER,
+        NOTEBOOK_EDIT_TOOL_HANDLER,
+    ]
+    .into_iter()
+    .filter_map(|handler| {
+        runtime
+            .tools()
+            .get(handler)
+            .map(|runtime_descriptor| runtime_descriptor.descriptor().clone())
+    })
+    .collect())
 }

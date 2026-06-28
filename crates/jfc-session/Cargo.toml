@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+async-trait = { workspace = true }
 chrono = { workspace = true }
 dirs = "5"
 fs2 = { workspace = true }

@@ -2,7 +2,7 @@
 //! session save, continuation logic.
 
 use crate::app::{self, EngineState};
-use crate::runtime::{EventSender, drain_queued_prompts};
+use crate::runtime::{EventSender, dispatch_goal_evaluator_if_active, drain_queued_prompts};
 use crate::types::*;
 use crate::{config, stream, types};
 use serde::Serialize;
@@ -827,6 +827,16 @@ pub async fn handle_stream_done(
     crate::runtime::session_save::force_save(state);
     if turn_genuinely_done {
         crate::auto_review::maybe_spawn_after_turn(state, tx).await;
+    }
+    if stop_reason == jfc_provider::StopReason::EndTurn
+        && turn_genuinely_done
+        && dispatch_goal_evaluator_if_active(state, tx)
+    {
+        tracing::info!(
+            target: "jfc::goal",
+            "goal evaluator dispatched on plain EndTurn — deferring drain"
+        );
+        return;
     }
     // v126 queued-prompt drain on plain end_turn: model finished
     // without tools to call → if anything's queued, fire it now.
@@ -1885,6 +1895,35 @@ mod stream_done_lifecycle_tests {
         assert!(state.active_stream_handle.is_none());
         assert!(!state.has_interruptible_work());
         handle.abort();
+    }
+
+    #[tokio::test]
+    async fn end_turn_with_active_goal_dispatches_evaluator_before_stopping_regression() {
+        // Given: a text-only assistant turn is ending while a session goal is active.
+        let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
+        state.task_store = jfc_session::TaskStore::in_memory();
+        state.is_streaming = true;
+        state.goal = Some(crate::goal::ActiveGoal::new("finish the task".to_owned()));
+        state.messages.push(ChatMessage::user("start".into()));
+        state
+            .messages
+            .push(ChatMessage::assistant("working".into()));
+        state.streaming_assistant_idx = Some(1);
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        // When: the provider reports a plain EndTurn with no tools pending.
+        handle_stream_done(&mut state, &tx, jfc_provider::StopReason::EndTurn).await;
+
+        // Then: the goal stop-hook evaluator owns the next step instead of the
+        // turn stopping as if no goal existed.
+        assert!(
+            state.goal_evaluator_in_flight,
+            "plain EndTurn must dispatch the /goal evaluator"
+        );
+        assert_eq!(
+            state.goal_evaluator_epoch_in_flight,
+            state.goal.as_ref().map(|goal| goal.epoch)
+        );
     }
 
     /// Scripted provider whose `complete()` drives the over-refusal rewrite gate

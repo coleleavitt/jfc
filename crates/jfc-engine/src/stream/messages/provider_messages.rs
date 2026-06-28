@@ -144,16 +144,17 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
             while let Some(part) = iter.next() {
                 match part {
                     MessagePart::Reasoning(text) if !text.is_empty() => {
-                        let signature = match iter.peek() {
+                        if let Some(signature) = match iter.peek() {
                             Some(MessagePart::ReasoningSignature(signature)) => {
                                 Some((*signature).clone())
                             }
                             _ => None,
-                        };
-                        assistant_content.push(ProviderContent::Thinking {
-                            text: text.clone(),
-                            signature,
-                        });
+                        } {
+                            assistant_content.push(ProviderContent::Thinking {
+                                text: text.clone(),
+                                signature: Some(signature),
+                            });
+                        }
                     }
                     MessagePart::RedactedThinking(data) => {
                         assistant_content
@@ -345,6 +346,27 @@ mod tests {
             } if text == "thinking" && signature == "sig_1"
         ));
         assert!(matches!(&out[0].content[1], ProviderContent::Text(text) if text == "answer"));
+    }
+
+    #[test]
+    fn build_drops_unsigned_anthropic_reasoning_regression() {
+        // Given: a persisted assistant turn has visible reasoning but no provider signature.
+        let msgs = vec![assistant_with_parts(vec![
+            MessagePart::Reasoning("unsigned thinking".into()),
+            MessagePart::Text("answer".into()),
+        ])];
+
+        // When: the transcript is lowered into provider history for the next request.
+        let out = build_provider_messages(&msgs);
+
+        // Then: unsigned historical thinking is omitted so Anthropic cannot reject it.
+        assert!(
+            out[0]
+                .content
+                .iter()
+                .all(|content| !matches!(content, ProviderContent::Thinking { .. }))
+        );
+        assert!(matches!(&out[0].content[0], ProviderContent::Text(text) if text == "answer"));
     }
 
     // Robust: empty / whitespace-only messages drop out entirely so the API

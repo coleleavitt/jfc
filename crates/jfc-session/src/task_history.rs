@@ -82,7 +82,7 @@ pub fn append_records(history_key: Option<&str>, records: &[TaskHistoryRecord]) 
     }
 
     let result = jfc_knowledge::block_on_knowledge(async {
-        let store = match jfc_knowledge::KnowledgeStore::open_default().await {
+        let store = match crate::open_default_knowledge_store().await {
             Ok(store) => store,
             Err(error) => {
                 tracing::warn!(
@@ -151,7 +151,7 @@ pub fn read_records(
     }
 
     let rows = jfc_knowledge::block_on_knowledge(async {
-        let store = match jfc_knowledge::KnowledgeStore::open_default().await {
+        let store = match crate::open_default_knowledge_store().await {
             Ok(store) => store,
             Err(_) => return Vec::new(),
         };
@@ -259,7 +259,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let _guard = test_db(tmp.path());
         let key = Some("test-history:malformed");
-        let store = jfc_knowledge::KnowledgeStore::open_default().await.unwrap();
+        let store = crate::open_default_knowledge_store().await.unwrap();
         store
             .append_session_artifact_event(
                 TASK_HISTORY_SESSION_ID,

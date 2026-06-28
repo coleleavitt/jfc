@@ -53,7 +53,14 @@ pub fn force_save(state: &mut EngineState) {
     let cwd = state.cwd.clone();
     let model = state.model.clone();
     tokio::spawn(async move {
-        session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
+        let store = session::default_session_store();
+        store
+            .save_transcript(
+                session::SaveTranscriptRequest::new(&sid, &msgs)
+                    .with_cwd(Some(cwd.as_str()))
+                    .with_model(Some(model.as_str())),
+            )
+            .await;
     });
     state.last_session_save_at = Some(Instant::now());
 }
@@ -81,6 +88,8 @@ mod tests {
     use std::sync::Arc;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+    use serial_test::serial;
+    use tempfile::TempDir;
 
     struct TestProvider;
 
@@ -102,6 +111,45 @@ mod tests {
     }
 
     impl jfc_provider::seal::Sealed for TestProvider {}
+
+    struct TempSessionEnv {
+        _dir: TempDir,
+        prior_config: Option<String>,
+        prior_db: Option<String>,
+    }
+
+    impl TempSessionEnv {
+        fn new() -> Self {
+            let dir = TempDir::new().expect("tempdir");
+            let prior_config = std::env::var("XDG_CONFIG_HOME").ok();
+            let prior_db = std::env::var("JFC_KNOWLEDGE_DB").ok();
+            let db_path = dir.path().join("knowledge.db");
+            unsafe {
+                std::env::set_var("XDG_CONFIG_HOME", dir.path());
+                std::env::set_var("JFC_KNOWLEDGE_DB", db_path);
+            }
+            Self {
+                _dir: dir,
+                prior_config,
+                prior_db,
+            }
+        }
+    }
+
+    impl Drop for TempSessionEnv {
+        fn drop(&mut self) {
+            unsafe {
+                match self.prior_config.take() {
+                    Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
+                    None => std::env::remove_var("XDG_CONFIG_HOME"),
+                }
+                match self.prior_db.take() {
+                    Some(value) => std::env::set_var("JFC_KNOWLEDGE_DB", value),
+                    None => std::env::remove_var("JFC_KNOWLEDGE_DB"),
+                }
+            }
+        }
+    }
 
     fn state_with_session() -> EngineState {
         let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
@@ -163,5 +211,50 @@ mod tests {
         request_save(&mut state);
         assert!(state.last_session_save_at.is_none());
         assert!(!state.session_save_pending);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn flush_pending_save_persists_load_title_model_shape_normal() {
+        let _env = TempSessionEnv::new();
+        let mut state = state_with_session();
+        let session_id = state
+            .current_session_id
+            .clone()
+            .expect("test state has session id");
+        state.cwd = "/tmp/jfc-session-save-facade".to_owned();
+        state.model = "facade-autosave-model".to_owned().into();
+        state.messages = vec![
+            crate::types::ChatMessage::user("autosave through facade".into()),
+            crate::types::ChatMessage::assistant("loaded through facade".into()),
+        ];
+        state.session_save_pending = true;
+        state.last_session_save_at = Some(Instant::now() - MIN_SAVE_INTERVAL);
+
+        assert!(flush_pending_save(&mut state));
+
+        let mut loaded = None;
+        for _ in 0..20 {
+            if let Some(result) = crate::session::load_session_with_model(&session_id).await {
+                loaded = Some(result);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        let (messages, model) = loaded.expect("autosave transcript persisted");
+        crate::session::set_session_title(&session_id, "Autosave facade title").await;
+        let metadata = jfc_session::load_session_metadata(&session_id)
+            .await
+            .expect("metadata persisted");
+
+        assert_eq!(model.as_deref(), Some("facade-autosave-model"));
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].parts[0].text_only(), "autosave through facade");
+        assert_eq!(messages[1].parts[0].text_only(), "loaded through facade");
+        assert_eq!(metadata.title.as_deref(), Some("Autosave facade title"));
+        assert_eq!(
+            metadata.cwd.as_deref(),
+            Some("/tmp/jfc-session-save-facade")
+        );
     }
 }

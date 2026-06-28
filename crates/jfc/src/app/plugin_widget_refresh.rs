@@ -1,9 +1,9 @@
 use std::time::Instant;
 
 use anyhow::Context;
+use jfc_plugin_host::PluginRuntime;
 use jfc_plugin_sdk::{UiWidgetDescriptor, UiWidgetRefreshKind};
 
-use super::plugin_widget_bridge::execute_process_bridge_widget_refresh;
 use super::plugin_widget_refresh_policy::{
     refresh_debounce_remaining, widget_refresh_auto_interval,
 };
@@ -47,18 +47,21 @@ impl App {
             .ui_widget_snapshots
             .get(&snapshot_key)
             .and_then(|snapshot| snapshot.state.clone());
-        let result =
-            match execute_process_bridge_widget_refresh(widget, &refresh.handler, state).await {
-                Ok(result) => result,
-                Err(error) => {
-                    self.plugins
-                        .ui_widget_refresh_status
-                        .entry(snapshot_key)
-                        .or_default()
-                        .record_error(error.to_string());
-                    return Err(error);
-                }
-            };
+        let runtime = PluginRuntime::from_ui_widget_descriptors(std::iter::once(widget.clone()))?;
+        let result = match runtime
+            .refresh_ui_widget_snapshot(&widget.plugin_id, widget.scope, &widget.id, state)
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                self.plugins
+                    .ui_widget_refresh_status
+                    .entry(snapshot_key)
+                    .or_default()
+                    .record_error(error.to_string());
+                return Err(error.into());
+            }
+        };
         self.plugins
             .ui_widget_snapshots
             .insert(snapshot_key.clone(), UiWidgetSnapshot::from(result));

@@ -41,6 +41,7 @@ fn test_task_input() -> jfc_core::TaskInput {
         category: None,
         run_in_background: true,
         model: None,
+        launcher: None,
         name: None,
         team_name: None,
         mode: None,

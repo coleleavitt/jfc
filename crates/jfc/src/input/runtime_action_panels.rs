@@ -1,4 +1,5 @@
 use crate::app::App;
+use jfc_engine::runtime::{FrontendOpenPanelRequest, RuntimeActionSource};
 use jfc_plugin_sdk::{RuntimeActionDescriptor, UiMutationScope, UiPanelDescriptor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,29 +11,20 @@ pub(super) enum InfoSidebarPanelFocusStep {
 struct PanelFocusTarget<'a> {
     plugin_id: &'a str,
     panel_id: &'a str,
-    action: &'a RuntimeActionDescriptor,
+    source: &'a RuntimeActionSource,
 }
 
-pub(super) fn focus_info_sidebar_panel(
+pub(super) fn focus_info_sidebar_panel_request(
     app: &mut App,
-    action: &RuntimeActionDescriptor,
+    request: &FrontendOpenPanelRequest,
 ) -> Option<RuntimeActionDescriptor> {
-    let Ok(open_panel) = action.open_panel_payload() else {
+    let Some(panel) = request.panel.as_ref() else {
         return None;
     };
-    let Some(panel_id) = open_panel.panel_id else {
-        return None;
-    };
-    let plugin_id = open_panel
-        .panel_plugin_id
-        .or(open_panel.plugin_id)
-        .unwrap_or_else(|| action.plugin_id.as_str());
-    let plugin_id = plugin_id.to_owned();
-    let panel_id = panel_id.to_owned();
     let target = PanelFocusTarget {
-        plugin_id: plugin_id.as_str(),
-        panel_id: panel_id.as_str(),
-        action,
+        plugin_id: panel.plugin_id.as_str(),
+        panel_id: panel.panel_id.as_str(),
+        source: &request.source,
     };
 
     let Some(runtime_action_id) = runtime_action_id_for_info_sidebar_panel(app, target) else {
@@ -40,16 +32,16 @@ pub(super) fn focus_info_sidebar_panel(
     };
 
     app.info_sidebar
-        .focus_panel(plugin_id.clone(), panel_id.clone());
+        .focus_panel(panel.plugin_id.clone(), panel.panel_id.clone());
     let runtime_action_id = runtime_action_id?;
     let runtime_action =
-        runtime_action_for_panel_id(app, plugin_id.as_str(), runtime_action_id.as_str());
+        runtime_action_for_panel_id(app, panel.plugin_id.as_str(), runtime_action_id.as_str());
     if runtime_action.is_none() {
         tracing::warn!(
             target: "jfc::palette",
-            plugin = action.plugin_id.as_str(),
-            action = action.id.as_str(),
-            panel_plugin = plugin_id.as_str(),
+            plugin = request.source.plugin_id.as_str(),
+            action = request.source.action_id.as_str(),
+            panel_plugin = panel.plugin_id.as_str(),
             panel_action = runtime_action_id.as_str(),
             "focused plugin panel references a missing runtime action"
         );
@@ -119,8 +111,8 @@ fn runtime_action_id_for_info_sidebar_panel(
         app.info_sidebar.clear_panel_focus();
         tracing::warn!(
             target: "jfc::palette",
-            plugin = target.action.plugin_id.as_str(),
-            action = target.action.id.as_str(),
+            plugin = target.source.plugin_id.as_str(),
+            action = target.source.action_id.as_str(),
             panel_plugin = target.plugin_id,
             panel_id = target.panel_id,
             "runtime action targeted an unknown info-sidebar panel"

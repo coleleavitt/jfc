@@ -28,18 +28,11 @@ pub(super) async fn handle_submit(
                 .clone()
                 .flatten()
                 .unwrap_or_else(|| std::path::PathBuf::from(&app.engine.cwd));
-            let toast_msg = match jfc_memory::create_memory(
-                jfc_memory::MemoryLevel::Project,
-                jfc_memory::MemoryType::Context,
-                jfc_memory::MemoryScope::Private,
-                fact,
-                &root,
-            )
-            .await
-            {
-                Ok(id) => format!("remembered -> {id}"),
-                Err(e) => format!("memory save failed: {e}"),
-            };
+            let toast_msg =
+                match jfc_engine::memory::create_project_context_memory(fact, &root).await {
+                    Ok(id) => format!("remembered -> {id}"),
+                    Err(e) => format!("memory save failed: {e}"),
+                };
             jfc_engine::toast::push_with_cap(
                 &mut app.engine.toasts,
                 jfc_engine::toast::Toast::new(jfc_engine::toast::ToastKind::Info, toast_msg),

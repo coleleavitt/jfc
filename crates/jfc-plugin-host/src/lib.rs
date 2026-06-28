@@ -30,8 +30,10 @@ mod process_bridge;
 mod registration;
 mod registration_activation;
 mod resource_registration;
+mod runtime;
 mod state_cache;
 mod status;
+mod ui_widget_refresh;
 
 pub use builtin_agent_workflow::{
     BUILTIN_AGENT_LAUNCH_HANDLER, BUILTIN_AGENT_LAUNCH_ID, BUILTIN_AGENT_RESOURCE_PATH,
@@ -99,6 +101,7 @@ pub use resource_registration::{
     DiscoveredPluginReload, discovered_resource_plugin_host, register_discovered_resource_plugins,
     reload_discovered_resource_plugin_host,
 };
+pub use runtime::{PluginRuntime, RuntimeDescriptor, UiSlotKey, UiWidgetRuntimeKey};
 pub use state_cache::{
     CachedDiscoveredPluginState, cached_discovered_resource_plugin_state,
     clear_discovered_plugin_state_cache_for_tests, reload_cached_discovered_resource_plugin_state,

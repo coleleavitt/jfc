@@ -12,7 +12,7 @@
 //! paused / archived) and run history. The firing decision reuses
 //! [`crate::cron::should_fire_cron`] so there is one schedule engine.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
@@ -168,6 +168,116 @@ impl ScheduledTask {
         run.ok = ok;
         run.note = note.into();
         true
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduledTaskSnapshot {
+    pub id: String,
+    pub title: String,
+    pub prompt: String,
+    pub lifecycle: TaskLifecycle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduledTaskCreate {
+    pub id: String,
+    pub title: String,
+    pub cron_expr: String,
+    pub prompt: String,
+}
+
+pub trait ScheduledTaskManagementService: Send + Sync + 'static {
+    fn list_scheduled_tasks(&self, archived: bool) -> Result<Vec<ScheduledTaskSnapshot>, String>;
+
+    fn create_scheduled_task(&self, request: ScheduledTaskCreate) -> Result<String, String>;
+
+    fn set_scheduled_task_lifecycle(
+        &self,
+        id: &str,
+        lifecycle: TaskLifecycle,
+    ) -> Result<(), String>;
+}
+
+#[derive(Debug, Clone)]
+pub struct ScheduledTaskRegistryService {
+    base_dir: PathBuf,
+}
+
+impl ScheduledTaskRegistryService {
+    pub fn new(base_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            base_dir: base_dir.into(),
+        }
+    }
+
+    pub fn for_default_user() -> Self {
+        Self::new(crate::state::DaemonPaths::default_user().base_dir)
+    }
+
+    fn registry_path(&self) -> PathBuf {
+        ScheduledTaskRegistry::default_path(&self.base_dir)
+    }
+
+    fn load_registry(&self) -> Result<(ScheduledTaskRegistry, PathBuf), String> {
+        let path = self.registry_path();
+        let registry = ScheduledTaskRegistry::load(&path).map_err(|e| e.to_string())?;
+        Ok((registry, path))
+    }
+}
+
+impl ScheduledTaskManagementService for ScheduledTaskRegistryService {
+    fn list_scheduled_tasks(&self, archived: bool) -> Result<Vec<ScheduledTaskSnapshot>, String> {
+        let (registry, _) = self.load_registry()?;
+        let tasks = if archived {
+            registry.list_archived()
+        } else {
+            registry.list_scheduled()
+        };
+        Ok(tasks.into_iter().map(ScheduledTaskSnapshot::from).collect())
+    }
+
+    fn create_scheduled_task(&self, request: ScheduledTaskCreate) -> Result<String, String> {
+        let (mut registry, path) = self.load_registry()?;
+        let schedule = crate::cron::parse_schedule(&request.cron_expr)
+            .map_err(|e| format!("bad cron: {e}"))?;
+        let task = ScheduledTask::new(
+            request.id.clone(),
+            request.title,
+            request.prompt,
+            schedule,
+            SystemTime::now(),
+        );
+        registry.create(task)?;
+        registry
+            .save(&path)
+            .map_err(|e| format!("Created but failed to persist: {e}"))?;
+        Ok(request.id)
+    }
+
+    fn set_scheduled_task_lifecycle(
+        &self,
+        id: &str,
+        lifecycle: TaskLifecycle,
+    ) -> Result<(), String> {
+        let (mut registry, path) = self.load_registry()?;
+        match lifecycle {
+            TaskLifecycle::Active => registry.resume(id),
+            TaskLifecycle::Paused => registry.pause(id),
+            TaskLifecycle::Archived => registry.archive(id),
+        }?;
+        registry.save(&path).map_err(|e| e.to_string())
+    }
+}
+
+impl From<&ScheduledTask> for ScheduledTaskSnapshot {
+    fn from(task: &ScheduledTask) -> Self {
+        Self {
+            id: task.id.clone(),
+            title: task.title.clone(),
+            prompt: task.prompt.clone(),
+            lifecycle: task.lifecycle,
+        }
     }
 }
 
@@ -387,6 +497,33 @@ mod tests {
 
     fn task(id: &str, sched: CronSchedule, now: SystemTime) -> ScheduledTask {
         ScheduledTask::new(id, format!("title-{id}"), "do the thing", sched, now)
+    }
+
+    #[test]
+    fn registry_service_creates_lists_and_mutates_via_daemon_pack_seam_normal() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let service = ScheduledTaskRegistryService::new(dir.path());
+
+        let id = service
+            .create_scheduled_task(ScheduledTaskCreate {
+                id: "task-a".to_owned(),
+                title: "Morning check".to_owned(),
+                cron_expr: "* * * * *".to_owned(),
+                prompt: "summarize overnight changes".to_owned(),
+            })
+            .unwrap();
+        let scheduled = service.list_scheduled_tasks(false).unwrap();
+
+        assert_eq!(id, "task-a");
+        assert_eq!(scheduled.len(), 1);
+        assert_eq!(scheduled[0].id, "task-a");
+        assert_eq!(scheduled[0].lifecycle, TaskLifecycle::Active);
+
+        service
+            .set_scheduled_task_lifecycle("task-a", TaskLifecycle::Archived)
+            .unwrap();
+        assert!(service.list_scheduled_tasks(false).unwrap().is_empty());
+        assert_eq!(service.list_scheduled_tasks(true).unwrap()[0].id, "task-a");
     }
 
     // ── CRUD ───────────────────────────────────────────────────────────────────

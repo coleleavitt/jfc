@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use serial_test::serial;
 
 use super::navigation::{scan_path_refs, user_prompts};
 use super::*;
@@ -85,6 +86,30 @@ impl Drop for TemperatureGlobalGuard {
     }
 }
 
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let previous = std::env::var_os(key);
+        unsafe { std::env::set_var(key, value) };
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        unsafe {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+}
+
 /// Build a minimal `ToolCall` of the requested kind. The status defaults
 /// to `Pending` so tests can drive it through the approval lifecycle
 /// without preseeding extra state.
@@ -132,6 +157,28 @@ fn make_bash_tool(id: &str, command: &str) -> ToolCall {
             run_in_background: None,
             suppress_output: None,
         },
+        output: ToolOutput::Empty,
+        display: jfc_core::ToolDisplayState::DEFAULT,
+        elapsed_ms: None,
+        started_at: None,
+        thought_signature: None,
+    }
+}
+
+fn make_question_tool(id: &str) -> ToolCall {
+    ToolCall {
+        id: id.into(),
+        kind: ToolKind::AskUserQuestion,
+        status: ToolStatus::Pending,
+        input: ToolInput::from_value(
+            "AskUserQuestion",
+            serde_json::json!({
+                "question": "Continue?",
+                "options": [{"label": "yes"}, {"label": "no"}],
+                "multi_select": false,
+            }),
+        )
+        .expect("valid AskUserQuestion input"),
         output: ToolOutput::Empty,
         display: jfc_core::ToolDisplayState::DEFAULT,
         elapsed_ms: None,
@@ -564,6 +611,45 @@ async fn approval_ctrl_c_interrupts_instead_of_being_swallowed_robust() {
     );
     assert!(matches!(
         rx.recv().await,
+        Some(EngineEvent::Tool(ToolEvent::AllComplete))
+    ));
+}
+
+#[tokio::test]
+async fn question_submit_preserves_result_before_all_complete_under_backpressure_regression() {
+    // Given: the event channel is full when the user answers AskUserQuestion.
+    let mut app = test_app();
+    let question = make_question_tool("toolu_q");
+    app.engine.pending_question = jfc_engine::runtime::approvals::build_pending_question(&question);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    tx.try_send(EngineEvent::Tool(ToolEvent::AllComplete))
+        .expect("prefill channel");
+
+    // When: Enter commits the focused answer and submits the modal.
+    let exit = handle_key(&mut app, key(KeyCode::Enter), &tx)
+        .await
+        .expect("question key handled");
+
+    // Then: the result is queued before AllComplete, even though the channel was full.
+    assert!(!exit);
+    assert!(app.engine.pending_question.is_none());
+    assert!(matches!(
+        rx.recv().await,
+        Some(EngineEvent::Tool(ToolEvent::AllComplete))
+    ));
+    let result_event = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("question result event should arrive before timeout");
+    assert!(matches!(
+        result_event,
+        Some(EngineEvent::Tool(ToolEvent::Result { ref tool_id, .. }))
+            if tool_id.as_str() == "toolu_q"
+    ));
+    let complete_event = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("AllComplete should arrive after result");
+    assert!(matches!(
+        complete_event,
         Some(EngineEvent::Tool(ToolEvent::AllComplete))
     ));
 }
@@ -2354,6 +2440,28 @@ async fn direct_submit_queues_during_compaction_regression() {
     assert!(!app.engine.queued_prompts[0].is_meta);
     assert!(app.engine.messages.iter().all(|message| message.queued));
     assert!(!app.engine.is_streaming);
+}
+
+#[tokio::test]
+#[serial]
+async fn hash_prefixed_submit_saves_project_context_memory_normal() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let _knowledge_db = EnvVarGuard::set("JFC_KNOWLEDGE_DB", tmp.path().join("knowledge.db"));
+    let mut app = test_app();
+    app.engine.cwd = tmp.path().to_string_lossy().into_owned();
+    app.engine.git_root = Some(Some(tmp.path().to_path_buf()));
+    app.textarea = TextArea::from(vec!["# remember this seam".to_owned()]);
+    let (tx, mut rx) = channel();
+
+    submit::handle_submit(&mut app, "# remember this seam".into(), &tx)
+        .await
+        .unwrap();
+
+    assert!(rx.try_recv().is_err());
+    assert!(app.textarea.lines().iter().all(|line| line.is_empty()));
+    assert!(app.engine.toasts.iter().any(|toast| {
+        toast.kind == jfc_engine::toast::ToastKind::Info && toast.text.starts_with("remembered -> ")
+    }));
 }
 
 #[tokio::test]

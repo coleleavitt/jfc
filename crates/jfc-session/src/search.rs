@@ -102,7 +102,7 @@ fn slice_messages(all: &[SessionMessage], center: usize, radius: usize) -> Vec<S
 }
 
 fn open_session_db() -> Option<KnowledgeStore> {
-    jfc_knowledge::block_on_knowledge(async { KnowledgeStore::open_default().await.ok() })
+    jfc_knowledge::block_on_knowledge(async { crate::open_default_knowledge_store().await.ok() })
 }
 
 fn db_row_title(row: &jfc_knowledge::SessionRow) -> String {
@@ -556,7 +556,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn default_search_uses_db_and_ignores_legacy_json_normal() {
         let _env = EnvGuard::new();
-        let store = KnowledgeStore::open_default().await.unwrap();
+        let store = crate::open_default_knowledge_store().await.unwrap();
         let row = jfc_knowledge::SessionRow {
             id: "ses_db_only".into(),
             cwd: Some("/repo".into()),

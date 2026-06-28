@@ -32,7 +32,7 @@ pub async fn write_message(
     };
     tokio::task::spawn_blocking(move || {
         jfc_knowledge::block_on_knowledge(async {
-            let store = jfc_knowledge::KnowledgeStore::open_default()
+            let store = crate::open_default_knowledge_store()
                 .await
                 .map_err(io_other)?;
             let json = serde_json::to_string(&msg).map_err(io_invalid)?;
@@ -52,7 +52,7 @@ pub async fn read_messages(session_id: &str) -> Vec<SessionInboxMessage> {
     let session_id = session_id.to_owned();
     tokio::task::spawn_blocking(move || {
         jfc_knowledge::block_on_knowledge(async {
-            let store = jfc_knowledge::KnowledgeStore::open_default().await.ok()?;
+            let store = crate::open_default_knowledge_store().await.ok()?;
             let rows = store
                 .list_session_artifact_events(&session_id, INBOX_KIND, Some(INBOX_KEY), 10_000)
                 .await
@@ -77,7 +77,7 @@ pub async fn clear_inbox(session_id: &str) -> std::io::Result<()> {
     let session_id = session_id.to_owned();
     tokio::task::spawn_blocking(move || {
         jfc_knowledge::block_on_knowledge(async {
-            let store = jfc_knowledge::KnowledgeStore::open_default()
+            let store = crate::open_default_knowledge_store()
                 .await
                 .map_err(io_other)?;
             store

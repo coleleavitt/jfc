@@ -84,6 +84,8 @@ Source anchors used for this map:
 - `crates/jfc/src/input/runtime_action_router.rs`: safe TUI runtime-action executor for descriptor-declared actions.
 - `crates/jfc/src/input/runtime_action_smoke.rs`: TUI runtime-action adapter for plugin smoke checks and pass/fail toasts.
 - `crates/jfc/src/input/runtime_action_plugin_diagnostics.rs`: TUI runtime-action adapter that refreshes plugin descriptor state, summarizes descriptor issues, and runs discovered plugin-smoke checks.
+- `.research/magic-context/ARCHITECTURE.md` and `.research/magic-context/STRUCTURE.md`: reference implementation for cache-stable context layout, historian compartments, memory capture, recall/search, and dreamer maintenance.
+- `PLAN.md`: current SQLx migration plan and follow-on Magic Context parity roadmap for JFC.
 - `crates/jfc/src/cli/plugin/descriptor_rows.rs`: `jfc plugin doctor` inventory rows for tool and provider descriptors.
 - `crates/jfc/src/cli/plugin/template_definitions.rs`: installable first-party SDK plugin template catalog and copied example sources.
 - `crates/jfc/src/cli/plugin/template_definitions/template_render.rs`: first-party SDK plugin template manifests and README bodies.
@@ -111,6 +113,8 @@ opencode's main move is a small public plugin contract plus a typed service grap
 Pi's main move is a live extension runtime. `createExtensionAPI` lets extensions register tools, slash commands, shortcuts, flags, custom message renderers, and providers. It also exposes curated runtime actions: send messages, append entries, set session name/labels, get and set active tools, refresh tools, set model/thinking level, execute commands, register/unregister providers, and use the event bus. `ExtensionRunner` starts with safe stubs, then `bindCore()` attaches those actions to the live session/UI/provider registry once the runtime exists. That is why Pi feels more "mod the whole agent" than opencode.
 
 JFC has more raw machinery than both in several areas: hooks, MCP, plugin install/list/remove CLI, skills, agents, providers, task/session stores, Dreamer/RSI jobs, goals, economy/cost/trust, design tools, voice, and a richer TUI. The gap is not capability. The gap is seam placement: JFC usually wires the feature first inside `jfc-engine` or `jfc`, then exposes a partial hook later. opencode and Pi expose a stable extension seam first, then hang features from it.
+
+This document treats the current JFC shape as a teardown target, not as the architecture to preserve. The goal is to keep useful capabilities while replacing the primitives underneath them with Pi/opencode-shaped primitives: session runtime factory, service graph, extension runner, descriptor registries, typed append entries, and curated runtime actions. That includes the repository shape itself: the current `jfc-*` crate sprawl is not the target style.
 
 ```mermaid
 flowchart LR
@@ -168,6 +172,7 @@ Copy opencode's contract discipline:
 - schema-backed tool definitions
 - service graph / layer replacement mindset
 - permission and policy kept central
+- small plugin units that register through an effect/service context, not direct engine calls
 
 Copy Pi's runtime affordances:
 
@@ -177,6 +182,7 @@ Copy Pi's runtime affordances:
 - dynamic provider registration
 - extension UI context without raw TUI ownership
 - stale-context invalidation after reload/session replacement
+- typed append-only session entries for model changes, labels, custom messages, compactions, and branches
 
 Do not copy the loose parts:
 
@@ -185,6 +191,147 @@ Do not copy the loose parts:
 - do not let plugins mutate arbitrary app state
 - do not make UI plugins depend on ratatui widget internals
 - do not keep adding enum variants for external tools
+- do not preserve `EngineState` as the real kernel API
+- do not keep feature code in flat root-level files when it belongs below a domain module
+
+## Current Folder and Crate Audit
+
+JFC's present layout is strong on crate count but weak on ownership clarity.
+
+| Current shape | Problem | Target primitive |
+| --- | --- | --- |
+| `crates/jfc-engine/src/*.rs` with many top-level domains | A flat engine root makes every capability look engine-owned | Domain directories: `runtime/`, `context/`, `tools/`, `plugins/`, `providers/`, `workflow/`, each with a curated `mod.rs` |
+| `EngineState` as shared bag | Features couple through one mutable struct | `AgentRuntime { session, services, diagnostics }` plus typed service traits |
+| `tools/dispatch.rs` + `ToolKind` / `ToolInput` | Closed enum growth fights plugin descriptors | Descriptor registry + handler table; built-ins register like plugins |
+| Session JSON + sidecars + archives + task stores | State is spread across files with partial invariants | Typed append-entry log with side tables derived from entries |
+| TUI reads app/runtime internals directly | UI features cannot be replaced or tested as plugins | UI slots/widgets/runtime actions with DTOs |
+| Memory/learn/session/compaction split by implementation | Hippocampus behavior is scattered | One `context` domain: layout, history, memory, recall, reduce, health, maintenance |
+| Every crate/folder named `jfc-*` | Product prefix hides ownership and encourages crate-per-feature sprawl | Short package roots like `kernel`, `runtime`, `session`, `context`, `plugin`, `tui`, `cli`, `packs` |
+
+Rust module rule for the rewrite: use module trees like `std::collections::btree` or `rustc_middle::ty` — parent modules curate vocabulary and public surface, child modules own roles. Split crates only for dependency isolation, reuse, or public versioning; otherwise split modules first.
+
+**Engine Root Module Freeze:** the existing root-level `crates/jfc-engine/src/*.rs`
+files are migration debt, not precedent. New product-domain Rust files must live
+under an owning domain directory or destination crate; any temporary root-level
+exception must be added to the explicit architecture-test allowlist with evidence.
+
+## Bare Kernel Definition
+
+The future JFC kernel should be boring. If a subsystem could be shipped as a
+first-party plugin, it should not live in the kernel.
+
+Kernel responsibilities:
+
+- typed event bus and scoped stream/task lifecycle;
+- append-only session entry interface and active-leaf coordination;
+- service graph / registry for providers, tools, context, policy, sessions,
+  plugins, and UI view models;
+- permission/safe-mode/provenance gate before actions execute;
+- cancellation, backpressure, and lifecycle cleanup;
+- frontend-neutral effects and diagnostics.
+
+Non-kernel responsibilities:
+
+- concrete tools, provider implementations, slash commands, GitHub, web search,
+  research, council, economy, voice, design, LSP, workflow optimizer, memory,
+  dreamer, context reduction, dashboard/sidebar widgets, plugin management, and
+  prompt contributors.
+
+```mermaid
+flowchart TB
+    kernel["kernel\nevent bus + RuntimeServices + lifecycle"]
+    session["session\ntyped append-entry log"]
+    context["context\ncache-stable prompt layout"]
+    policy["policy\npermissions + safety"]
+    plugins["plugin\nextension runner + descriptors"]
+    tools["tool packs\nbuilt-in + external descriptors"]
+    providers["provider packs\nregistry + auth"]
+    orchestration["orchestration packs\nagents / swarm / council / workflows"]
+    ui["ui-model\nstatus/widgets/transcript DTOs"]
+    ratatui["tui + cli\nfrontend shells only"]
+
+    kernel --> session
+    kernel --> context
+    kernel --> policy
+    kernel --> plugins
+    plugins --> tools
+    plugins --> providers
+    plugins --> orchestration
+    plugins --> ui
+    ratatui --> ui
+    ratatui --> kernel
+
+    classDef kernel fill:#3b1d1d,stroke:#ff6b6b,color:#fff;
+    classDef service fill:#17324d,stroke:#58a6ff,color:#fff;
+    classDef pack fill:#153d28,stroke:#2ea043,color:#fff;
+    class kernel kernel;
+    class session,context,policy,plugins,ui service;
+    class tools,providers,orchestration,ratatui pack;
+```
+
+## Crate Teardown Map
+
+| Current owner | Keep | Move out |
+| --- | --- | --- |
+| `jfc-engine` | event types, turn lifecycle, runtime service traits, minimal runtime ops | tools, commands, prompt assembly, compaction policy, session serialization, agents/swarm/council, daemon, GitHub, web/research, LSP, review/slop, provider bridges, UI/status concerns |
+| `jfc` | ratatui drawing, terminal input polling, CLI arg parsing, frontend effect application | plugin UI state/refresh, runtime-action semantics, plugin management/smoke, auth workflows, daemon/bridge/remote/memory/audit command logic, voice runtime, domain row construction |
+| `jfc-session` | typed session entries, task store, catalog/search/inbox, derived side tables | none; expand it to absorb engine-local session serialization and archives |
+| `jfc-learn` | historian/dreamer/user-memory/RSI jobs as background services | hot-path prompt contributors should become `jfc-context` contributors |
+| `jfc-memory` / `jfc-knowledge` | memory model + durable store | runtime injection policy and cache layout decisions move to `jfc-context` |
+| `jfc-plugin-host` / `jfc-plugin-sdk` | descriptors, manifests, process bridge, extension/runtime action DTOs | broaden to own first-party pack registration; do not leave built-ins hard-wired |
+
+Migration rule: introduce the destination service trait first, then move concrete
+code behind it. Moving files before cutting the trait seams will create circular
+dependencies and preserve the god crate under a different name.
+
+## Target File Structure
+
+The destination should look closer to Pi/opencode package roots than to the
+current `jfc-*` crate fan-out:
+
+```text
+crates/
+  kernel/        # minimal runnable kernel
+  protocol/      # stable DTOs and typed IDs
+  runtime/       # session runtime factory + service graph
+  session/       # typed append-entry log and projections
+  plugin/        # public SDK + host + extension runner
+  context/       # Magic Context-style hippocampus subsystem
+  policy/        # permissions / trust / safe mode
+  tools/         # built-in tool pack registry and implementations
+  providers/     # provider registry and built-in provider packs
+  orchestration/ # agents / swarm / council / workflow / goals
+  daemon/        # scheduled and detached execution
+  ui-model/      # frontend-neutral view models
+  tui/           # ratatui frontend
+  cli/           # command-line frontend
+```
+
+Rust package names may still publish as `jfc-kernel` etc. if needed, but repo
+paths should be ownership names. The folder tree should teach contributors where
+new code belongs before they open a file.
+
+## Magic Context Translation Target
+
+Magic Context's useful lesson for JFC is not its TypeScript implementation; it is the cache-stable hippocampus architecture. JFC should absorb that as a first-party context plugin pack backed by Rust crates:
+
+| Magic Context concept | JFC destination | Notes |
+| --- | --- | --- |
+| m[0] stable baseline + m[1] volatile delta | `jfc-engine` request prep + `jfc-session` persisted layout state | Rename to domain types such as `StableContextBaseline` and `ContextDelta`; do not expose index-shaped internals. |
+| Historian compartments + decay renderer | `jfc-learn` + `jfc-session` | Historian proposes typed compartments; host validates and stores; hot path uses deterministic decay, not an LLM. |
+| `ctx_memory` taxonomy | `jfc-memory` + `jfc-knowledge` | Map categories to typed memory kinds: project rules, architecture, constraints, config values, naming. |
+| `ctx_search` across memory/history/git | `jfc-memory`, `jfc-session`, `jfc-graph`, git-commit index | One search API should rank durable facts, raw transcript, compartments, commit messages, and codegraph. |
+| `ctx_reduce` / drop replay | `jfc-engine` context reducer + tool descriptors | Queue drops and replay deterministically; preserve provider tool adjacency. |
+| Dreamer maintenance | `jfc-learn` + `jfc-daemon` | Scheduled map/verify/curate/classify/docs/smart-note jobs with validated output and durable diagnostics. |
+| Dashboard/sidebar status | `jfc` TUI + plugin metric descriptors | Context health must be visible without grepping logs: cache bust cause, embedding health, historian state, memory coverage. |
+
+Architectural invariants for the port:
+
+1. The stable context prefix must be byte-identical across defer/no-op passes.
+2. Background memory/dreamer writes ride the next cache-safe bust; they do not force their own prompt rebuild.
+3. Hidden LLM workers produce typed manifests only; host code applies durable writes.
+4. Search and embedding degradation is user-visible health state, not just a tracing line.
+5. All of this is registered through the plugin spine so external context packs can be built later without expanding `EngineState`.
 
 ## Factory Legend
 
@@ -329,6 +476,8 @@ Rules for this floor:
 - `jfc-plugin-sdk` must not depend on `jfc-engine`, `jfc`, ratatui, concrete providers, concrete tools, design, voice, daemon, or config loader internals.
 - `jfc-plugin-host` owns discovery, activation order, lifecycle, hook execution, and plugin status.
 - `jfc-engine` stops being the place where every product capability is wired by hand.
+- The Engine Root Module Freeze blocks new root-level `crates/jfc-engine/src/*.rs`
+  product modules unless an allowlisted migration exception is recorded.
 - The SDK exposes descriptors and DTOs, not `EngineState`, `EngineEvent`, or the current dispatch internals.
 
 ## Floor 2: Built-Ins Become Plugin Packs
@@ -508,6 +657,34 @@ flowchart LR
     class g0,g1,g2,g3,g4,g5,g6,g7,g8 gate;
     class invariant0,invariant1,invariant2,invariant3,invariant4,invariant5,invariant6,invariant8 invariant;
 ```
+
+## Current Bare-Kernel Progress
+
+The active kernel-overhaul plan has completed Waves 0 through 6. The work is not
+a physical crate-collapse yet. It is a set of tested ownership cuts that prepare
+the repo for short roots such as `kernel`, `protocol`, `runtime`, `session`,
+`plugin`, `context`, `policy`, `tools`, `providers`, `orchestration`, `daemon`,
+`ui-model`, `tui`, and `cli`.
+
+Completed progress by slice:
+
+| Area | Current landed state | Evidence |
+| --- | --- | --- |
+| Architecture guards | Target roots are documented and guarded, with no new product-domain files allowed at the flat `jfc-engine` root outside explicit evidence-backed allowlists. | `.omo/evidence/task-1-jfc-pi-opencode-kernel-overhaul.md`, `.omo/evidence/task-6-jfc-pi-opencode-kernel-overhaul.md` |
+| Session substrate | `jfc-session` now owns typed `SessionEntry` modules, constructors, validation helpers, transcript compatibility fixtures, and the `SessionStore` seam, while engine paths remain compatibility wrappers. | `.omo/evidence/task-2-jfc-pi-opencode-kernel-overhaul.md` through `.omo/evidence/task-5-jfc-pi-opencode-kernel-overhaul.md` |
+| Runtime services | `RuntimeServices` and `AgentRuntime` are the construction boundary for new paths, with provider, tool, diagnostics, and frontend-directive seams proven by focused tests. | `.omo/evidence/task-7-jfc-pi-opencode-kernel-overhaul.md` through `.omo/evidence/task-11-jfc-pi-opencode-kernel-overhaul.md` |
+| Plugin spine | `jfc-plugin-sdk` and `jfc-plugin-host` own descriptors, discovery, provenance, process-bridge frames, runtime actions, UI slots, widgets, panels, metrics, provider/tool descriptors, and diagnostics. | `.omo/evidence/task-12-jfc-pi-opencode-kernel-overhaul.md` plus the progressive refactor ledger below |
+| Tool and provider packs | Built-in filesystem tools and the OpenAI-compatible provider family now register through descriptor packs while old execution routes remain available as compatibility. | `.omo/evidence/task-23-jfc-pi-opencode-kernel-overhaul.md`, `.omo/evidence/task-24-jfc-pi-opencode-kernel-overhaul.md` |
+| Context and orchestration roots | `crates/context` and `crates/orchestration` are present short-root skeletons. Context health is visible through a doctor data DTO, and orchestration exposes agent, swarm, council, workflow, and goal DTO seams. | `.omo/evidence/task-15-jfc-pi-opencode-kernel-overhaul.md` through `.omo/evidence/task-19-jfc-pi-opencode-kernel-overhaul.md`, `.omo/evidence/task-25-jfc-pi-opencode-kernel-overhaul.md`, `.omo/evidence/task-27-jfc-pi-opencode-kernel-overhaul.md` |
+| TUI, CLI, and daemon seams | Status-row view models, CLI command extraction, plugin UI ownership, and daemon scheduled-task management have first seams, with `jfc-engine` and `jfc` keeping compatibility adapters only where needed. | `.omo/evidence/task-20-jfc-pi-opencode-kernel-overhaul.md` through `.omo/evidence/task-22-jfc-pi-opencode-kernel-overhaul.md`, `.omo/evidence/task-26-jfc-pi-opencode-kernel-overhaul.md` |
+
+Docs must keep this distinction clear: the target short roots are real ownership
+rules, but many current crates still exist under `jfc-*` package names until the
+later crate-collapse wave.
+
+Compatibility re-exports and shims retained during this transition are tracked
+in `docs/compatibility-reexport-ledger.md`; update that ledger before adding,
+renaming, or deleting a temporary compatibility surface.
 
 ## Workspace Disposition Map
 

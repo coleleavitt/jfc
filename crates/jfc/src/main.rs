@@ -19,6 +19,7 @@ pub mod render_cache;
 pub mod runtime;
 pub mod spinner;
 pub mod theme;
+pub(crate) mod view_model;
 pub mod voice;
 
 pub(crate) use cli::{

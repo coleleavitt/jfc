@@ -34,6 +34,38 @@ jfc daemon start              # Run background daemon
 - **MCP + Skills** — Model Context Protocol servers, declarative skill files, learning/memory subsystem, and remote control.
 - **Multi-provider** — Anthropic API/OAuth, OpenAI, Codex, OpenWebUI/LiteLLM, Bedrock, Vertex with unified auth layer.
 
+The active roadmap in `PLAN.md` now starts with an architecture reset: reduce JFC
+to a bare runnable kernel, replace the current `jfc-*` crate sprawl with
+Pi/opencode-style primitives (service graph, session runtime factory, extension
+runner, typed append entries, descriptor registries), then bring Magic Context's
+cache-stable historian/memory/recall model into JFC as a native Rust subsystem.
+
+### Architecture Reset Status
+
+The destination repo shape uses short ownership roots, not more product-prefixed
+folders: `kernel`, `protocol`, `runtime`, `session`, `plugin`, `context`,
+`policy`, `tools`, `providers`, `orchestration`, `daemon`, `ui-model`, `tui`,
+and `cli`. During migration, some Rust package names still use `jfc-*`, but new
+domain work should move toward those roots and stay out of flat engine files.
+
+Completed slices have already put the main rails in place:
+
+- Architecture guards enforce target roots and freeze new product-domain files at
+  the `jfc-engine` root.
+- `jfc-session` owns typed append entries, session store seams, and transcript
+  compatibility fixtures.
+- Runtime construction now goes through `RuntimeServices` seams for sessions,
+  providers, tools, diagnostics, and frontend-neutral directives.
+- `jfc-plugin-sdk` and `jfc-plugin-host` provide descriptor registries,
+  process-bridge frames, resource discovery, runtime actions, UI slots, widgets,
+  panels, metrics, provider/tool descriptors, and plugin diagnostics.
+- First-party filesystem tools and OpenAI-compatible providers now register
+  through descriptor packs while legacy execution stays as compatibility.
+- `crates/context` and `crates/orchestration` are present short-root skeletons,
+  with context health surfaced through a doctor data DTO.
+- The daemon scheduled-task service seam is daemon-owned, with `jfc-engine`
+  retaining only the compatibility facade.
+
 ---
 
 ## Crates Overview
@@ -361,6 +393,22 @@ cargo test -p jfc-graph
 cargo test -p jfc-economy
 cargo clippy --workspace
 ```
+
+### Focused Test Matrix
+
+CI still runs the broad workspace gates in `.github/workflows/ci.yml`: format,
+clippy, build, workspace tests, public build, CLI and daemon integration tests,
+and the changeset performance gate. When touching the split kernel seams, run
+the smallest focused command first, then widen to `cargo test --workspace` or
+`cargo clippy --workspace --all-targets` before a release boundary.
+
+| Seam | Package or root | Focused command | Covers |
+| --- | --- | --- | --- |
+| Context pack | `crates/context` | `cargo test -p jfc-context context_ -- --nocapture` | Context layout, health, memory and history anchors, reduction queue, search facade, and doctor data output |
+| Orchestration pack | `crates/orchestration` | `cargo test -p jfc-orchestration --test orchestration_skeleton -- --nocapture` | Agent, swarm, council, workflow, and goal DTOs plus fake orchestration event service |
+| UI model pack | `crates/ui-model` | `cargo test -p ui-model status_row_collects_segments_normal -- --nocapture` | Frontend-neutral status row model without ratatui or crossterm coupling |
+| Plugin host seam | `crates/jfc-plugin-host` | `cargo test -p jfc-plugin-host --test resource_registration -- --nocapture` | Descriptor registration for providers, command palette actions, metrics, runtime actions, UI widgets, UI panels, runtime extensions, and agent launch descriptors |
+| Daemon seam | `crates/jfc-daemon` | `cargo test -p jfc-daemon registry_service_creates_lists_and_mutates_via_daemon_pack_seam_normal -- --nocapture` | Scheduled-task service ownership, list/create/archive behavior, and daemon-owned registry seam |
 
 Each crate has its own `Cargo.toml` and tests. Use `.claude/skills/`, `.claude/agents/`, and `.claude/workflows/` for project-specific instructions.
 

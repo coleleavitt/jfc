@@ -4,50 +4,12 @@ use std::time::Duration;
 use anyhow::Context;
 use jfc_plugin_sdk::{
     BridgeEnvelope, BridgeRequest, BridgeResponse, BridgeUiPanelRefreshRequest,
-    BridgeUiPanelRefreshResult, BridgeUiWidgetRefreshRequest, BridgeUiWidgetRefreshResult,
-    ProcessBridgeCommand, UiPanelDescriptor, UiWidgetDescriptor,
+    BridgeUiPanelRefreshResult, ProcessBridgeCommand, UiPanelDescriptor,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 const WIDGET_REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
-
-pub(super) async fn execute_process_bridge_widget_refresh(
-    widget: &UiWidgetDescriptor,
-    handler: &str,
-    state: Option<serde_json::Value>,
-) -> anyhow::Result<BridgeUiWidgetRefreshResult> {
-    let command = parse_process_bridge_handler(handler)?;
-    let request_id = format!("ui-widget-{}", uuid::Uuid::new_v4());
-    let mut request = BridgeUiWidgetRefreshRequest::new(widget.id.clone(), widget.scope);
-    if let Some(state) = state {
-        request = request.with_state(state);
-    }
-    let request = BridgeEnvelope::request(
-        request_id.clone(),
-        BridgeRequest::UiWidgetRefresh { refresh: request },
-    );
-    let request_line = serde_json::to_string(&request)
-        .context("UI widget refresh request serialization failed")?;
-    let mut child = spawn_bridge_process(&command, &widget.id, "widget")?;
-    write_request(&mut child, &request_line, &widget.id, "widget").await?;
-    let output = tokio::time::timeout(WIDGET_REFRESH_TIMEOUT, child.wait_with_output())
-        .await
-        .context("UI widget refresh process timed out")??;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let line = stdout
-        .lines()
-        .find(|line| !line.trim().is_empty())
-        .with_context(|| {
-            empty_response_message(
-                &widget.id,
-                "widget",
-                &output.stderr,
-                output.status.success(),
-            )
-        })?;
-    response_line_to_refresh_result(widget, &request_id, line)
-}
 
 pub(super) async fn execute_process_bridge_panel_refresh(
     panel: &UiPanelDescriptor,
@@ -132,39 +94,6 @@ async fn write_request(
         .context("UI widget refresh request newline write failed")?;
     drop(stdin);
     Ok(())
-}
-
-fn response_line_to_refresh_result(
-    widget: &UiWidgetDescriptor,
-    request_id: &str,
-    line: &str,
-) -> anyhow::Result<BridgeUiWidgetRefreshResult> {
-    let frame = serde_json::from_str::<BridgeEnvelope>(line)
-        .context("UI widget refresh returned invalid JSONL")?;
-    let BridgeEnvelope::Response { id, response } = frame else {
-        anyhow::bail!("UI widget `{}` refresh returned a request frame", widget.id);
-    };
-    if id != request_id {
-        anyhow::bail!(
-            "UI widget `{}` refresh response id `{id}` did not match `{request_id}`",
-            widget.id
-        );
-    }
-    match response {
-        BridgeResponse::UiWidgetRefresh { result } => Ok(result),
-        BridgeResponse::Error(error) => {
-            anyhow::bail!(
-                "UI widget `{}` refresh bridge error `{}`: {}",
-                widget.id,
-                error.code,
-                error.message
-            )
-        }
-        other => anyhow::bail!(
-            "UI widget `{}` refresh returned unexpected response: {other:?}",
-            widget.id
-        ),
-    }
 }
 
 fn response_line_to_panel_refresh_result(

@@ -245,9 +245,6 @@ fn scrub_loaded_thinking_poison(messages: &mut [ChatMessage]) -> usize {
     removed
 }
 
-/// Load a session's messages from the DB transcript store. Each `meta` column
-/// holds the verbatim `SerializedMessage` JSON, so we deserialize it and run the
-/// same `deserialize_message` path used by legacy migration.
 async fn load_session_header_from_db(session_id_str: &str) -> Option<jfc_knowledge::SessionRow> {
     let id = session_id_str.to_owned();
     jfc_knowledge::block_on_knowledge(async move {
@@ -258,42 +255,31 @@ async fn load_session_header_from_db(session_id_str: &str) -> Option<jfc_knowled
     .unwrap_or_default()
 }
 
-async fn load_session_from_db(session_id_str: &str) -> Option<SerializedSession> {
-    let id = session_id_str.to_owned();
-    let (header, rows) = match jfc_knowledge::block_on_knowledge(async move {
-        let store = jfc_knowledge::KnowledgeStore::open_default().await?;
-        let header = store.get_session(&id).await.ok().flatten();
-        if header.is_none() {
-            return Ok(None);
-        }
-        let header = header.unwrap();
-        let msgs = store.load_transcript(&id).await.ok().unwrap_or_default();
-        if msgs.is_empty() {
-            return Ok(None);
-        }
-        Ok::<_, jfc_knowledge::KnowledgeError>(Some((header, msgs)))
-    }) {
-        Ok(Some(result)) => result,
-        _ => return None,
-    };
+struct LoadedSessionFromStore {
+    messages: Vec<ChatMessage>,
+    model: Option<String>,
+}
 
-    let mut serialized = Vec::with_capacity(rows.len());
-    for row in rows {
+async fn load_session_from_store<S>(
+    store: &S,
+    session_id: &SessionId,
+) -> Option<LoadedSessionFromStore>
+where
+    S: jfc_session::SessionStore + ?Sized,
+{
+    let transcript = jfc_session::SessionStore::load_transcript(store, session_id).await?;
+    let mut serialized = Vec::with_capacity(transcript.messages.len());
+    for row in transcript.messages {
         let meta = row.meta?;
         match serde_json::from_str::<SerializedMessage>(&meta) {
-            Ok(m) => serialized.push(m),
+            Ok(message) => serialized.push(message),
             Err(_) => return None,
         }
     }
-    Some(SerializedSession {
-        id: header.id,
-        created_at: header.created_at.unwrap_or_default(),
-        updated_at: header.updated_at,
-        first_prompt: header.first_prompt,
-        model: header.model,
-        cwd: header.cwd,
-        title: header.title,
-        messages: serialized,
+
+    Some(LoadedSessionFromStore {
+        messages: serialized.into_iter().map(deserialize_message).collect(),
+        model: transcript.model,
     })
 }
 
@@ -301,20 +287,15 @@ pub async fn load_session(session_id: &SessionId) -> Option<Vec<ChatMessage>> {
     let session_id_str = session_id.as_str();
     debug!(target: "jfc::session", session_id = session_id_str, "loading session");
 
-    let session: SerializedSession = if let Some(session) =
-        load_session_from_db(session_id_str).await
-    {
-        debug!(target: "jfc::session", session_id = session_id_str, count = session.messages.len(), "loaded session from DB transcript");
-        session
+    let store = jfc_session::default_session_store();
+    let loaded = if let Some(loaded) = load_session_from_store(&store, session_id).await {
+        debug!(target: "jfc::session", session_id = session_id_str, count = loaded.messages.len(), "loaded session from facade transcript");
+        loaded
     } else {
         return None;
     };
-    let message_count = session.messages.len();
-    let messages: Vec<ChatMessage> = session
-        .messages
-        .into_iter()
-        .map(deserialize_message)
-        .collect();
+    let message_count = loaded.messages.len();
+    let messages = loaded.messages;
     // Record any pre-existing invariant violation BEFORE callers run
     // their own sanitizers. The plan-continuation phantom-assistant
     // bug only surfaced after the renderer composed two layers of
@@ -362,16 +343,10 @@ pub async fn load_session(session_id: &SessionId) -> Option<Vec<ChatMessage>> {
 pub async fn load_session_with_model(
     session_id: &SessionId,
 ) -> Option<(Vec<ChatMessage>, Option<String>)> {
-    let session_id_str = session_id.as_str();
-
-    if let Some(session) = load_session_from_db(session_id_str).await {
-        let model = session.model.clone();
-        let messages: Vec<ChatMessage> = session
-            .messages
-            .into_iter()
-            .map(deserialize_message)
-            .collect();
-        let mut messages = repair_loaded_messages(messages);
+    let store = jfc_session::default_session_store();
+    if let Some(loaded) = load_session_from_store(&store, session_id).await {
+        let model = loaded.model;
+        let mut messages = repair_loaded_messages(loaded.messages);
         let _ = scrub_loaded_thinking_poison(&mut messages);
         return Some((messages, model));
     }
@@ -382,6 +357,50 @@ pub async fn load_session_with_model(
 mod tests {
     use super::*;
     use crate::types::{MessagePart, Role};
+    use async_trait::async_trait;
+
+    struct FacadeLoadStore {
+        messages: Vec<jfc_session::StoredSessionMessage>,
+        model: Option<String>,
+    }
+
+    #[async_trait]
+    impl jfc_session::SessionStore for FacadeLoadStore {
+        async fn save_transcript(&self, _request: jfc_session::SaveTranscriptRequest<'_>) {}
+
+        async fn load_transcript(
+            &self,
+            _session_id: &SessionId,
+        ) -> Option<jfc_session::SessionTranscript> {
+            Some(jfc_session::SessionTranscript {
+                messages: self.messages.clone(),
+                model: self.model.clone(),
+            })
+        }
+
+        async fn set_title(&self, _session_id: &SessionId, _title: &str) {}
+
+        async fn list_sessions(
+            &self,
+            _request: jfc_session::ListSessionsRequest<'_>,
+        ) -> Vec<jfc_session::SessionMetadata> {
+            Vec::new()
+        }
+
+        fn search_sessions(
+            &self,
+            _request: jfc_session::SearchSessionsRequest<'_>,
+        ) -> Vec<jfc_session::SessionHit> {
+            Vec::new()
+        }
+
+        async fn request_autosave(
+            &self,
+            _request: jfc_session::AutosaveRequest<'_>,
+        ) -> jfc_session::AutosaveOutcome {
+            jfc_session::AutosaveOutcome::Saved
+        }
+    }
 
     #[test]
     fn scrub_loaded_thinking_poison_removes_redacted_blocks_regression() {
@@ -409,6 +428,36 @@ mod tests {
                 .iter()
                 .any(|part| matches!(part, MessagePart::Text(text) if text == "answer"))
         );
+    }
+
+    #[tokio::test]
+    async fn load_session_uses_session_store_facade_unit_normal() {
+        let serialized = SerializedMessage {
+            role: "user".to_owned(),
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: None,
+            usage: None,
+            created_at: 0,
+            parts: vec![super::super::serialization::SerializedPart::Text {
+                content: "from facade".to_owned(),
+            }],
+        };
+        let rows = crate::to_session_messages(&[serialized]);
+        let store = FacadeLoadStore {
+            messages: rows,
+            model: Some("facade-model".to_owned()),
+        };
+        let id = SessionId::new("ses_20260628_facade_unit");
+
+        let loaded = load_session_from_store(&store, &id)
+            .await
+            .expect("facade store load succeeds");
+
+        assert_eq!(loaded.model.as_deref(), Some("facade-model"));
+        assert_eq!(loaded.messages.len(), 1);
+        assert_eq!(loaded.messages[0].parts[0].text_only(), "from facade");
     }
 }
 

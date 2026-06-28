@@ -102,7 +102,7 @@ impl OpenAIProvider {
         format!("{}/models", self.base_url)
     }
 
-    fn fallback_models() -> Vec<ModelInfo> {
+    pub(crate) fn fallback_models() -> Vec<ModelInfo> {
         [
             ("gpt-5.1", "GPT-5.1", Some(400_000), Some(128_000)),
             ("gpt-5", "GPT-5", Some(400_000), Some(128_000)),

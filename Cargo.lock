@@ -2909,7 +2909,6 @@ dependencies = [
  "jfc-learn",
  "jfc-markdown",
  "jfc-mcp",
- "jfc-memory",
  "jfc-plugin-host",
  "jfc-plugin-sdk",
  "jfc-provider",
@@ -2943,6 +2942,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "two-face",
+ "ui-model",
  "unicode-segmentation",
  "unicode-width",
  "url",
@@ -3106,6 +3106,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "jfc-context"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "jfc-core"
 version = "0.1.0"
 dependencies = [
@@ -3195,7 +3203,6 @@ dependencies = [
  "jfc-anthropic-sdk",
  "jfc-audit",
  "jfc-auth",
- "jfc-bridge",
  "jfc-changeset",
  "jfc-compress",
  "jfc-config",
@@ -3333,6 +3340,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "jfc-orchestration"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "jfc-plugin-host"
 version = "0.1.0"
 dependencies = [
@@ -3342,8 +3357,10 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
+ "tokio",
  "toml",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3394,6 +3411,7 @@ dependencies = [
  "jfc-auth",
  "jfc-compress",
  "jfc-core",
+ "jfc-plugin-sdk",
  "jfc-provider",
  "rand 0.10.1",
  "regex",
@@ -3434,6 +3452,7 @@ dependencies = [
 name = "jfc-session"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "dirs 5.0.1",
  "fs2",
@@ -6994,6 +7013,10 @@ name = "ucd-trie"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2896d95c02a80c6d6a5d6e953d479f5ddf2dfdb6a244441010e373ac0fb88971"
+
+[[package]]
+name = "ui-model"
+version = "0.1.0"
 
 [[package]]
 name = "unarray"

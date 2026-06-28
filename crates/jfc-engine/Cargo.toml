@@ -47,7 +47,6 @@ notify = { workspace = true }
 jfc-config = { path = "../jfc-config" }
 jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
 jfc-auth = { path = "../jfc-auth" }
-jfc-bridge = { path = "../jfc-bridge" }
 jfc-agents = { path = "../jfc-agents" }
 jfc-agent = { path = "../jfc-agent" }
 jfc-core = { path = "../jfc-core" }
