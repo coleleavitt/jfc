@@ -249,6 +249,7 @@ fn rsi_metric_rows_read_latest_request_metadata_normal() {
         action_expected: false,
         tool_choice: jfc_engine::runtime::StreamToolChoice::Auto,
         resolved_model: None,
+        context_budget: None,
         provider_history_archive_recall_ids: Vec::new(),
         rsi_prompt_sections: 3,
         rsi_tool_visibility_rules: 1,

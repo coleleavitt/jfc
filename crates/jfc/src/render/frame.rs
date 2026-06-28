@@ -34,9 +34,8 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     f.render_widget(Block::default().style(Style::default().bg(t.bg)), f.area());
 
-    // Input box width = full terminal width minus the input's own
-    // chrome: 2 border cols + 2 padding cols + 2 prompt-strip cols
-    // = 6 cols. The earlier "subtract sidebars" math was wrong —
+    // Input composer width = full terminal width minus its own text chrome:
+    // 2 padding cols + prompt-strip cols. The earlier "subtract sidebars" math was wrong —
     // sidebars only split `chunks[0]` (the messages row); the
     // input lives in `chunks[4]` which gets the FULL terminal
     // width regardless of which sidebars are open. So the wrap
@@ -50,16 +49,13 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // Keep only a one-line task tab strip plus the compact status line.
     let in_task_view = app.task_panel.viewing_task_id.is_some();
 
-    // Input box is now a flat strip with only top/bottom rules (no full
-    // rounded box). Width chrome is 4 (2 padding + prompt strip), not 6
-    // (no left/right borders).
     let total_w_pre = f.area().width as usize;
     let input_content_w = total_w_pre.saturating_sub(4);
     let input_lines = input_visual_line_count(app, input_content_w);
     let input_height = if in_task_view {
         0
     } else {
-        (input_lines + 2).min(8) as u16
+        input_lines.min(8) as u16
     };
     // One quiet task-view tab strip. Navigation hints fit on the same row when
     // there is room; the transcript gets the rest.
@@ -202,23 +198,19 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // `sidebar_anim_target: f32` and `sidebar_anim_current: f32` fields to
     // App, lerp `sidebar_anim_current` toward `sidebar_anim_target` on each
     // tick, and use `sidebar_anim_current` here. Low priority — snap feels fine.
-    // The right info sidebar is gone entirely — Context, the git diff
-    // stat (Δ), and MCP/LSP health all live in the status bar now, so a
-    // whole column of chrome bought nothing. The left sessions sidebar
-    // still toggles, but never in task view (transcript wants the width).
+    let total_w = f.area().width as usize;
     let sidebar_progress: f32 = if app.session_sidebar.visible && !in_task_view {
         1.0
     } else {
         0.0
     };
-    let show_right = false;
+    let show_right = app.info_sidebar.visible && !in_task_view && total_w >= 120;
 
     // Responsive sidebars: at narrow widths the sessions sidebar
     // shrinks toward 20 cols and the info sidebar drops below 32, so
     // the message column always retains a usable working area. v126
     // does the same — sidebars scale with terminal width instead of
     // pinning to fixed column counts.
-    let total_w = f.area().width as usize;
     let left_w_full = (total_w / 5).clamp(20, 32) as u16;
     let left_w = (left_w_full as f32 * ease_out_cubic(sidebar_progress)) as u16;
     let show_left = left_w > 0;

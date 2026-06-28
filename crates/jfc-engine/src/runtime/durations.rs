@@ -7,7 +7,23 @@ use std::time::Duration;
 /// `5s` under a minute, `2m04s` above.
 pub fn fmt_elapsed(elapsed: Duration) -> String {
     let secs = elapsed.as_secs();
-    if secs >= 60 {
+    if secs >= 86_400 {
+        let days = secs / 86_400;
+        let hours = (secs % 86_400) / 3_600;
+        if hours > 0 {
+            format!("{days}d{hours}h")
+        } else {
+            format!("{days}d")
+        }
+    } else if secs >= 3_600 {
+        let hours = secs / 3_600;
+        let minutes = (secs % 3_600) / 60;
+        if minutes > 0 {
+            format!("{hours}h{minutes:02}m")
+        } else {
+            format!("{hours}h")
+        }
+    } else if secs >= 60 {
         format!("{}m{:02}s", secs / 60, secs % 60)
     } else {
         format!("{secs}s")
@@ -51,5 +67,8 @@ mod tests {
         assert_eq!(fmt_elapsed(Duration::from_secs(59)), "59s");
         assert_eq!(fmt_elapsed(Duration::from_secs(60)), "1m00s");
         assert_eq!(fmt_elapsed(Duration::from_secs(124)), "2m04s");
+        assert_eq!(fmt_elapsed(Duration::from_secs(3_661)), "1h01m");
+        assert_eq!(fmt_elapsed(Duration::from_secs(37_045)), "10h17m");
+        assert_eq!(fmt_elapsed(Duration::from_secs(90_000)), "1d1h");
     }
 }

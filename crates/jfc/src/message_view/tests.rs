@@ -3780,6 +3780,36 @@ fatal: external diff died, stopping at crates/jfc/src/agents.rs\n";
         );
     }
 
+    #[test]
+    fn user_prompt_render_is_inline_not_full_width_slab_regression() {
+        let mut app = stub_app();
+        app.engine
+            .messages
+            .push(ChatMessage::user("how are you doing".to_owned()));
+
+        let w = 60usize;
+        let ctx = RenderCtx::from_app(&app);
+        let row = build_render_items_ctx(&ctx, w)
+            .iter()
+            .filter_map(|item| match item {
+                super::core::RenderItem::TextLine(line) => Some(
+                    line.spans
+                        .iter()
+                        .map(|span| span.content.as_ref())
+                        .collect::<String>(),
+                ),
+                _ => None,
+            })
+            .find(|line| line.contains("how are you doing"))
+            .expect("user prompt row");
+
+        assert_eq!(row, "› how are you doing");
+        assert!(
+            row.len() < w / 2,
+            "user prompt should not be padded to terminal width: {row:?}"
+        );
+    }
+
     /// CompactBoundary on a narrow viewport — the decorative line wraps.
     #[test]
     fn predictor_matches_renderer_compact_boundary_narrow() {

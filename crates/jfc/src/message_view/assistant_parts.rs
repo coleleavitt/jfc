@@ -36,20 +36,15 @@ pub(super) fn push_reasoning_lines<'a>(
             Style::default().fg(t.text_muted),
         ));
         items.push(RenderItem::TextLine(Line::from(spans)));
-        // Reasoning ribbon: each thinking line gets a `┃` prefix in
-        // `t.reasoning_fg` so the block visually nests inside the
-        // assistant message. The ribbon's own color is the same as
-        // the reasoning text, so the indent reads as a soft "this is
-        // a thought" guide rather than a competing structural
-        // element. Mirrors how Discord / Slack indent quoted blocks.
+        // Reasoning body: dimmed inline text, no full-height left ribbon. The
+        // transcript already uses muted color + italic header to differentiate
+        // thinking from final answer text; a repeated side bar adds visual
+        // strain and makes the message view feel boxed-in.
         for l in summary.body.lines() {
-            items.push(RenderItem::TextLine(Line::from(vec![
-                Span::styled(
-                    format!("{} ", crate::glyphs::REASONING_RIBBON),
-                    Style::default().fg(t.reasoning_fg),
-                ),
-                Span::styled(l.to_string(), t.reasoning()),
-            ])));
+            items.push(RenderItem::TextLine(Line::from(vec![Span::styled(
+                l.to_string(),
+                t.reasoning(),
+            )])));
         }
     } else {
         // The collapsed preview is a single-line teaser. Without flattening
@@ -540,5 +535,39 @@ mod reasoning_preview_tests {
         };
         assert!(rendered.contains("∴ Thought"), "got: {rendered:?}");
         assert!(rendered.contains("123 tokens"), "got: {rendered:?}");
+    }
+
+    #[test]
+    fn expanded_reasoning_body_has_no_left_ribbon_regression() {
+        let mut items: Vec<RenderItem<'_>> = Vec::new();
+        let theme = crate::theme::Theme::dark();
+        push_reasoning_lines(
+            &mut items,
+            "first thought\nsecond thought",
+            true,
+            false,
+            Some(123),
+            &theme,
+        );
+        let rendered = items
+            .into_iter()
+            .filter_map(|item| match item {
+                RenderItem::TextLine(line) => Some(
+                    line.spans
+                        .into_iter()
+                        .map(|s| s.content.into_owned())
+                        .collect::<String>(),
+                ),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("first thought"), "got: {rendered:?}");
+        assert!(rendered.contains("123 tokens"), "got: {rendered:?}");
+        assert!(
+            !rendered.contains(crate::glyphs::REASONING_RIBBON),
+            "reasoning body should be dimmed inline, not ribboned: {rendered:?}"
+        );
     }
 }

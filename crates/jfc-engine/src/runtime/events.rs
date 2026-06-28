@@ -269,6 +269,7 @@ pub struct StreamRequestMetadata {
     pub action_expected: bool,
     pub tool_choice: StreamToolChoice,
     pub resolved_model: Option<ResolvedModel>,
+    pub context_budget: Option<jfc_core::context_budget::ContextBudget>,
     pub provider_history_archive_recall_ids: Vec<String>,
     pub rsi_prompt_sections: usize,
     pub rsi_tool_visibility_rules: usize,

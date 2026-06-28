@@ -78,16 +78,21 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     if super::status_plugins::has_status_line_slot(
         &app.plugins.ui_slots,
         jfc_plugin_host::BUILTIN_PLUGIN_HEALTH_SLOT_ID,
-    ) && let Some(label) = super::status_plugins::plugin_health_badge(&app.plugins.health)
-    {
-        let style = if super::status_plugins::plugin_health_is_alert(&app.plugins.health) {
-            Style::default().fg(t.error)
-        } else if super::status_plugins::plugin_health_is_warning(&app.plugins.health) {
-            alert
-        } else {
-            muted
-        };
-        push1!(label, style, 63);
+    ) {
+        let plugin_health = super::status_plugins::plugin_detail_health(
+            &app.plugins.health,
+            app.plugins.reload_report.as_ref(),
+        );
+        if let Some(label) = super::status_plugins::plugin_health_badge(plugin_health) {
+            let style = if super::status_plugins::plugin_health_is_alert(plugin_health) {
+                Style::default().fg(t.error)
+            } else if super::status_plugins::plugin_health_is_warning(plugin_health) {
+                alert
+            } else {
+                muted
+            };
+            push1!(label, style, 63);
+        }
     }
     // Problems / actionable state get the highest priority.
     let mcp_down: Vec<&str> = app

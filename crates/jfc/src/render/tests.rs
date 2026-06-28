@@ -1516,6 +1516,175 @@ mod render_snapshot_tests {
     }
 
     #[test]
+    fn input_composer_is_borderless_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+
+        let backend = TestBackend::new(40, 3);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            super::super::input_box::input(f, &mut app, ratatui::layout::Rect::new(0, 0, 40, 3));
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        let lines = text.lines().collect::<Vec<_>>();
+        assert!(
+            lines.first().is_some_and(|line| line.trim().is_empty()),
+            "composer should keep opencode-style top padding:\n{text}"
+        );
+        assert!(
+            lines.get(2).is_some_and(|line| line.trim().is_empty()),
+            "composer should keep opencode-style bottom padding:\n{text}"
+        );
+        assert!(
+            lines.get(1).is_some_and(|line| line.contains('›')),
+            "composer body should put prompt glyph on the middle row:\n{text}"
+        );
+        assert!(
+            !text.contains('─') && !text.contains('│'),
+            "normal composer should not render borders:\n{text}"
+        );
+    }
+
+    #[test]
+    fn wide_frame_restores_context_sidebar_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.engine.max_context_tokens = 1_000_000;
+        app.info_sidebar.visible = true;
+        app.engine.current_stream_request = Some(jfc_engine::runtime::StreamRequestMetadata {
+            advertised_tool_count: 2,
+            action_expected: false,
+            tool_choice: jfc_engine::runtime::StreamToolChoice::Auto,
+            resolved_model: None,
+            context_budget: Some(jfc_core::context_budget::ContextBudget {
+                system_prompt_tokens: 13_000,
+                tool_definition_tokens: 26_000,
+                memory_tokens: 800,
+                project_instructions_tokens: 4_000,
+                user_message_tokens: 16_000,
+            }),
+            provider_history_archive_recall_ids: Vec::new(),
+            rsi_prompt_sections: 0,
+            rsi_tool_visibility_rules: 0,
+        });
+
+        let backend = TestBackend::new(140, 20);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| super::super::frame::frame(f, &mut app))
+            .expect("draw");
+
+        let text = buffer_text(&term);
+        assert!(
+            text.contains("▼ Context"),
+            "wide frame should render the plugin-style context card:\n{text}"
+        );
+        assert!(
+            text.contains("System")
+                && text.contains("Docs")
+                && text.contains("Compartments")
+                && text.contains("Memories")
+                && text.contains("Conversation")
+                && text.contains("Tool Calls")
+                && text.contains("Tool Defs"),
+            "context sidebar should expose composition rows:\n{text}"
+        );
+        let system_line = text
+            .lines()
+            .find(|line| line.contains("System"))
+            .expect("system row");
+        let docs_line = text
+            .lines()
+            .find(|line| line.contains("Docs"))
+            .expect("docs row");
+        let system_side = system_line
+            .rsplit_once('│')
+            .map(|(_, side)| side)
+            .unwrap_or(system_line);
+        let docs_side = docs_line
+            .rsplit_once('│')
+            .map(|(_, side)| side)
+            .unwrap_or(docs_line);
+        let system_col = system_side
+            .find("13,000")
+            .expect("system token value column")
+            + "13,000".len();
+        let docs_col = docs_side.find("4,000").expect("docs token value column") + "4,000".len();
+        assert_eq!(
+            system_col, docs_col,
+            "context token values should share a fixed right-aligned count column:\n{text}"
+        );
+        let system_pct_col =
+            system_side.find("(21%)").expect("system percent column") + "(21%)".len();
+        let docs_pct_col = docs_side.find("(6%)").expect("docs percent column") + "(6%)".len();
+        assert_eq!(
+            system_pct_col, docs_pct_col,
+            "context percentages should share a fixed right-aligned percent column:\n{text}"
+        );
+    }
+
+    #[test]
+    fn context_sidebar_keeps_last_budget_when_request_metadata_clears_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.engine.max_context_tokens = 1_000_000;
+        app.info_sidebar.visible = true;
+        app.engine.last_context_budget = Some(jfc_core::context_budget::ContextBudget {
+            system_prompt_tokens: 13_000,
+            tool_definition_tokens: 26_000,
+            memory_tokens: 800,
+            project_instructions_tokens: 4_000,
+            user_message_tokens: 16_000,
+        });
+        app.engine.current_stream_request = None;
+
+        let backend = TestBackend::new(140, 20);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| super::super::frame::frame(f, &mut app))
+            .expect("draw");
+
+        let text = buffer_text(&term);
+        assert!(
+            text.contains("System") && text.contains("13,000"),
+            "sticky context budget should keep system row visible after request metadata clears:\n{text}"
+        );
+        assert!(
+            text.contains("Tool Defs") && text.contains("26,000"),
+            "sticky context budget should keep tool-definition row visible after request metadata clears:\n{text}"
+        );
+    }
+
+    #[test]
+    fn frame_with_sidebar_keeps_composer_bounded_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.session_sidebar.visible = true;
+        app.textarea = ratatui_textarea::TextArea::from(vec![
+            "this is a deliberately long prompt that wraps in the narrow full-frame layout"
+                .to_owned(),
+        ]);
+
+        let backend = TestBackend::new(50, 12);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| super::super::frame::frame(f, &mut app))
+            .expect("draw");
+
+        let text = buffer_text(&term);
+        let max_width = text
+            .lines()
+            .map(unicode_width::UnicodeWidthStr::width)
+            .max()
+            .unwrap_or(0);
+        assert!(max_width <= 50, "frame overflowed 50 cols:\n{text}");
+        assert!(text.contains('›'), "composer prompt missing:\n{text}");
+        assert!(
+            app.input_rect.borrow().is_some_and(|rect| rect.width > 0),
+            "composer input rect should remain hit-testable with sidebar visible"
+        );
+    }
+
+    #[test]
     fn status_row_renders_auto_mode_symbol_normal() {
         let mut app = App::new(Arc::new(TestProvider), "test-model");
         app.engine.task_store = jfc_session::TaskStore::in_memory();
@@ -1607,8 +1776,93 @@ mod render_snapshot_tests {
 
         let text = buffer_text(&term);
         assert!(
-            text.contains("plugins 1 ok"),
+            text.contains("plugins 4 ok"),
             "plugin badge missing:\n{text}"
+        );
+    }
+
+    #[test]
+    fn status_row_uses_reload_report_plugin_health_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        app.plugins.reload_report = Some(jfc_plugin_host::PluginReloadReport {
+            diagnostics: jfc_plugin_host::PluginHostDiagnostics {
+                health: jfc_plugin_host::PluginHealthSummary {
+                    total: 4,
+                    active: 4,
+                    registered: 0,
+                    disabled: 0,
+                    failed: 0,
+                    error_count: 0,
+                },
+                counts: jfc_plugin_host::PluginDescriptorCounts {
+                    plugins: 4,
+                    active_plugins: 4,
+                    failed_plugins: 0,
+                    hooks: 0,
+                    services: 0,
+                    tools: 0,
+                    providers: 0,
+                    resources: 0,
+                    commands: 0,
+                    ui_slots: 0,
+                    ui_panels: 0,
+                    ui_widgets: 0,
+                    runtime_actions: 0,
+                    runtime_extensions: 0,
+                    agent_launches: 0,
+                    metrics: 0,
+                    errors: 0,
+                },
+                descriptor_digest: "digest".to_owned(),
+                descriptor_issues: Vec::new(),
+                active_plugins: vec![
+                    jfc_plugin_sdk::PluginId::new("one"),
+                    jfc_plugin_sdk::PluginId::new("two"),
+                    jfc_plugin_sdk::PluginId::new("three"),
+                    jfc_plugin_sdk::PluginId::new("four"),
+                ],
+                failed_plugins: Vec::new(),
+            },
+            previous_descriptor_digest: None,
+            changed: None,
+        });
+
+        let backend = TestBackend::new(80, 1);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            let area = f.area();
+            super::super::status::status(f, &app, area);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        assert!(
+            text.contains("plugins 4 ok"),
+            "status bar should prefer fresh reload-report plugin health, got:\n{text}"
+        );
+    }
+
+    #[test]
+    fn toast_overlay_renders_warning_toasts_regression() {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.engine.task_store = jfc_session::TaskStore::in_memory();
+        let mut toast =
+            jfc_engine::toast::Toast::new(jfc_engine::toast::ToastKind::Warning, "heads up");
+        toast.created_at -= std::time::Duration::from_secs(1);
+        jfc_engine::toast::push_with_cap(&mut app.engine.toasts, toast);
+
+        let backend = TestBackend::new(80, 8);
+        let mut term = Terminal::new(backend).expect("terminal");
+        term.draw(|f| {
+            super::super::overlays::toast_overlay(f, &app);
+        })
+        .expect("draw");
+
+        let text = buffer_text(&term);
+        assert!(
+            text.contains("heads up"),
+            "warning/info/success toasts must be visible, got:\n{text}"
         );
     }
 
@@ -1673,7 +1927,7 @@ mod render_snapshot_tests {
             changed: Some(true),
         });
 
-        let backend = TestBackend::new(64, 32);
+        let backend = TestBackend::new(64, 44);
         let mut term = Terminal::new(backend).expect("terminal");
         term.draw(|f| {
             let area = f.area();
@@ -2378,7 +2632,10 @@ mod render_snapshot_tests {
         // The fan row (skip the summary header on row 0).
         let fan_row = fan_text
             .lines()
-            .find(|l| l.contains("unified row agent"))
+            .find(|line| {
+                let trimmed = line.trim_start();
+                trimmed.contains("unified row agent") && !trimmed.starts_with("active")
+            })
             .expect("fan row")
             .trim_end()
             .to_owned();

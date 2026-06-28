@@ -94,7 +94,7 @@ fn open_model_picker(app: &mut App) {
 
 fn toggle_thinking(app: &mut App) {
     if let Some(idx) = app.engine.messages.len().checked_sub(1) {
-        let entry = app.reasoning_expanded.entry(idx).or_insert(false);
+        let entry = app.reasoning_expanded.entry(idx).or_insert(true);
         *entry = !*entry;
     }
 }

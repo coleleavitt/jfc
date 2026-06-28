@@ -709,6 +709,7 @@ pub struct EngineState {
     /// arrives; cleared when the turn truly ends. Used to detect narration-only
     /// EndTurn responses on prompts that were expected to call tools.
     pub current_stream_request: Option<StreamRequestMetadata>,
+    pub last_context_budget: Option<jfc_core::context_budget::ContextBudget>,
     pub provider_history_archive_seen: std::collections::BTreeSet<String>,
     pub max_context_tokens: usize,
     /// Provider-reported context limit learned from an overflow rejection.
@@ -1241,6 +1242,7 @@ impl EngineState {
             in_flight_eager_dispatches: 0,
             in_flight_tool_batches: 0,
             current_stream_request: None,
+            last_context_budget: None,
             provider_history_archive_seen: std::collections::BTreeSet::new(),
             force_compact_pending: false,
             pending_pause_turn_resume: false,

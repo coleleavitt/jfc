@@ -322,8 +322,8 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
             .map(str::to_owned);
     let hit = message_view::find_tool_at(&app.tool_hit_regions.borrow(), mouse.column, mouse.row)
         .map(str::to_owned);
-    // Toast click → dismiss. The overlay only renders error toasts, newest
-    // first, so translate the clicked visible row back to the matching entry
+    // Toast click → dismiss. The overlay renders newest first inside a
+    // bordered strip, so translate the clicked body row back to the matching entry
     // in the full toast queue.
     let toast_hit = app
         .toasts_rect
@@ -335,19 +335,20 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
                 && mouse.row >= r.y
                 && mouse.row < r.y + r.height
         })
-        .map(|r| mouse.row.saturating_sub(r.y) as usize);
+        .and_then(|r| {
+            let local = mouse.row.saturating_sub(r.y);
+            (local > 0 && local + 1 < r.height).then(|| (local - 1) as usize)
+        });
     if let Some(local_row) = toast_hit {
-        let visible_error_indices = app
+        let visible_indices = app
             .engine
             .toasts
             .iter()
             .enumerate()
             .rev()
-            .filter_map(|(idx, toast)| {
-                matches!(toast.kind, jfc_engine::toast::ToastKind::Error).then_some(idx)
-            })
+            .map(|(idx, _)| idx)
             .collect::<Vec<_>>();
-        if let Some(drop_idx) = visible_error_indices.get(local_row).copied() {
+        if let Some(drop_idx) = visible_indices.get(local_row).copied() {
             app.engine.toasts.remove(drop_idx);
         }
         return;

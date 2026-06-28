@@ -48,8 +48,8 @@ fn attribution_for_message(msg: &ChatMessage) -> Option<(ProviderStyle, String)>
     None
 }
 
-/// User prompt rows now render as Claude-style grey `› prompt` rows rather
-/// than an accent gutter. Kept public for older tests that import the symbol.
+/// User prompt rows render as inline `› prompt` rows rather than full-width
+/// slabs or accent gutters. Kept public for older tests that import the symbol.
 #[allow(dead_code)]
 pub const MSG_USER_INDENT: u16 = 0;
 
@@ -85,11 +85,9 @@ pub struct RenderCtx<'a> {
     pub reasoning_expanded: &'a HashMap<usize, bool>,
     pub always_show_thinking: bool,
     /// Index of the message whose reasoning is *actively streaming* this turn.
-    /// Its thinking block defaults to expanded (live preview); every other,
-    /// completed reasoning block defaults to collapsed so finished turns don't
-    /// pile full thinking transcripts on screen. The `reasoning_expanded` map
-    /// still overrides this per-message when the user toggles with ctrl+o.
-    /// Mirrors Claude Code: expand streaming thinking, collapse once done.
+    /// Reasoning now defaults expanded/dimmed for readability; the
+    /// `reasoning_expanded` map still overrides this per-message when the user
+    /// toggles with ctrl+o.
     pub active_reasoning_idx: Option<usize>,
     pub live_thinking_tokens: u64,
     pub tool_group_expanded: &'a std::collections::HashSet<String>,
@@ -118,7 +116,8 @@ impl<'a> RenderCtx<'a> {
             reasoning_expanded: &app.reasoning_expanded,
             always_show_thinking: jfc_engine::config::load_arc().always_show_thinking,
             active_reasoning_idx: {
-                // Only the live, still-thinking block defaults expanded.
+                // Track the live block for streaming-token display; expansion
+                // itself now defaults on unless explicitly toggled off.
                 let thinking_live = app.engine.thinking_started_at.is_some()
                     && app.engine.thinking_ended_at.is_none();
                 if thinking_live {
@@ -923,12 +922,13 @@ fn push_user_prompt_lines(
 ) {
     let width = width.max(2);
     let content_w = width.saturating_sub(2).max(1);
-    let tokens = t.claude_ui_tokens();
-    let mut style = Style::default()
-        .fg(t.text_primary)
-        .bg(tokens.user_message_background);
+    let mut text_style = Style::default().fg(t.text_primary);
+    let mut prompt_style = Style::default().fg(t.text_muted);
     if queued {
-        style = style
+        text_style = text_style
+            .fg(t.text_muted)
+            .add_modifier(Modifier::DIM | Modifier::ITALIC);
+        prompt_style = prompt_style
             .fg(t.text_muted)
             .add_modifier(Modifier::DIM | Modifier::ITALIC);
     }
@@ -941,19 +941,18 @@ fn push_user_prompt_lines(
             markdown::hard_wrap_str(raw, content_w)
         };
         for chunk in chunks {
-            let mut row = format!("› {chunk}");
-            let used = unicode_width::UnicodeWidthStr::width(row.as_str());
-            if used < width {
-                row.push_str(&" ".repeat(width - used));
-            }
-            items.push(RenderItem::TextLine(Line::from(Span::styled(row, style))));
+            items.push(RenderItem::TextLine(Line::from(vec![
+                Span::styled("› ", prompt_style),
+                Span::styled(chunk, text_style),
+            ])));
             pushed = true;
         }
     }
     if !pushed {
-        let mut row = "› ".to_owned();
-        row.push_str(&" ".repeat(width.saturating_sub(2)));
-        items.push(RenderItem::TextLine(Line::from(Span::styled(row, style))));
+        items.push(RenderItem::TextLine(Line::from(Span::styled(
+            "› ",
+            prompt_style,
+        ))));
     }
 }
 
@@ -1116,21 +1115,12 @@ pub(crate) fn build_message_items<'a>(
             }
         }
 
-        // Default: expanded only while this block is the actively-streaming
-        // reasoning; completed thinking collapses to the one-line summary
-        // (ctrl+o re-expands via `reasoning_expanded`). Keeps finished turns
-        // from stacking full thinking transcripts on screen.
-        //
-        // `always_show_thinking` in config forces every thinking block to
-        // render expanded, equivalent to the user having pressed ctrl+o on
-        // every message.  A per-message entry in `reasoning_expanded` can
-        // still collapse a block if the user explicitly toggles it to false.
+        // Default: show reasoning inline, dimmed, like opencode's transcript.
+        // The user can still collapse noisy blocks with ctrl+o; explicit
+        // per-message state wins over the default. This favors readability over
+        // hiding the model's thought process behind a one-line teaser.
         let reasoning_active = ctx.active_reasoning_idx == Some(idx);
-        let reasoning_expanded = ctx
-            .reasoning_expanded
-            .get(&idx)
-            .copied()
-            .unwrap_or(ctx.always_show_thinking || reasoning_active);
+        let reasoning_expanded = ctx.reasoning_expanded.get(&idx).copied().unwrap_or(true);
         let final_thinking_tokens = msg
             .usage
             .as_ref()

@@ -5,7 +5,8 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .borders(Borders::LEFT)
         .border_style(t.style_border)
-        .padding(Padding::new(1, 0, 1, 0)); // left=1, right=0, top=1, bottom=0
+        .padding(Padding::new(1, 0, 1, 0))
+        .style(Style::default().bg(t.surface));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -67,57 +68,72 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     lines.push(Line::from(""));
 
-    lines.push(section("Context"));
-
-    // Always render the calibrated `approx_tokens` (input + output +
-    // cache_read + cache_write) — that's what `recompute_token_estimate`
-    // / StreamUsage / compaction all use. Previously this took
-    // `max(last_usage_input, approx_tokens)`, which was a no-op (approx
-    // always ≥ input alone) but obscured the fact that the sidebar and
-    // bottom-bar gauge were already computing the same thing two
-    // different ways, leaving a maintenance footgun where one could
-    // drift from the other.
     let total_tokens = app.engine.tool_ctx.approx_tokens as u64;
     let ctx_max = app.engine.selected_context_window_tokens().max(1) as u64;
     let pct = (total_tokens as f64 / ctx_max as f64 * 100.0).min(100.0);
+    let context_rows = context_breakdown_rows(app, t);
+    let context_row_total = context_rows
+        .iter()
+        .map(|row| row.tokens)
+        .sum::<u64>()
+        .max(total_tokens)
+        .max(1);
 
     lines.push(Line::from(vec![
         Span::styled(
-            format!("{} tokens", fmt_number(total_tokens)),
-            Style::default().fg(t.text_secondary),
+            " ▼ Context ",
+            Style::default()
+                .fg(t.bg)
+                .bg(t.accent)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!(" · {:.0}%", pct),
+            format!(" {:>4.0}%", pct),
             Style::default().fg(gauge_color(pct, t)),
         ),
     ]));
+    lines.push(Line::from(vec![Span::styled(
+        format!("{} / {}", fmt_number(total_tokens), fmt_number(ctx_max)),
+        Style::default().fg(t.text_secondary),
+    )]));
 
-    let bar_width = inner.width.saturating_sub(2) as usize;
+    let bar_width = inner.width.saturating_sub(1) as usize;
     if bar_width > 4 {
-        let filled = ((pct / 100.0) * bar_width as f64).round() as usize;
-        let filled = filled.min(bar_width);
+        lines.push(context_breakdown_bar(
+            &context_rows,
+            context_row_total,
+            bar_width,
+            t,
+        ));
+    }
+
+    for row in &context_rows {
+        let percent = row.tokens.saturating_mul(100) / context_row_total;
+        let inner_width = inner.width as usize;
+        let percent_width = 7.min(inner_width);
+        let token_width = 9.min(inner_width.saturating_sub(percent_width.saturating_add(1)));
+        let spacer_width = usize::from(token_width > 0 && percent_width > 0);
+        let value_width = token_width
+            .saturating_add(spacer_width)
+            .saturating_add(percent_width);
+        let label_width = inner_width.saturating_sub(value_width);
         lines.push(Line::from(vec![
-            Span::styled("█".repeat(filled), Style::default().fg(gauge_color(pct, t))),
             Span::styled(
-                "░".repeat(bar_width - filled),
-                Style::default().fg(t.border),
+                align_left(&truncate_str(row.label, label_width), label_width),
+                Style::default().fg(row.color),
+            ),
+            Span::styled(
+                align_right(&fmt_number(row.tokens), token_width),
+                Style::default().fg(t.text_secondary),
+            ),
+            Span::styled(" ".repeat(spacer_width), Style::default().fg(t.text_muted)),
+            Span::styled(
+                align_right(&format!("({percent}%)"), percent_width),
+                Style::default().fg(t.text_secondary),
             ),
         ]));
     }
 
-    // The per-turn `last_usage_output` row used to render here was
-    // flickering — Anthropic sends cumulative usage frames mid-turn,
-    // then `streaming_response_bytes` gets cleared at message_stop, and
-    // the row blinked in (turn-end Usage) → out (next turn clear) → in
-    // again. The total-tokens + percent above is already the
-    // authoritative view; the per-turn output is surfaced via the
-    // bottom-bar `4 msgs` + `$X.XX` cost row instead. Removed.
-
-    // Per-turn token sparkline rendered inline under the Context
-    // section so it reads as part of *that* group instead of a
-    // disconnected widget glued to the bottom of the panel. Uses
-    // the unicode block-element scale `▁▂▃▄▅▆▇█` so we can render
-    // it as a styled span rather than a separate Sparkline widget.
     if app.engine.token_history.len() >= 2 {
         const BARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
         let max_val = app
@@ -304,4 +320,185 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             .style(Style::default().bg(t.bg)),
         body_area,
     );
+}
+
+struct ContextBreakdownRow {
+    label: &'static str,
+    tokens: u64,
+    color: ratatui::style::Color,
+}
+
+struct TranscriptBreakdown {
+    conversation_tokens: u64,
+    tool_call_tokens: u64,
+    compartment_tokens: u64,
+}
+
+fn context_breakdown_rows(app: &App, theme: Theme) -> Vec<ContextBreakdownRow> {
+    let transcript = transcript_breakdown(&app.engine.messages);
+    let budget = app
+        .engine
+        .current_stream_request
+        .as_ref()
+        .and_then(|metadata| metadata.context_budget)
+        .or(app.engine.last_context_budget);
+    let transcript_total = transcript
+        .conversation_tokens
+        .saturating_add(transcript.tool_call_tokens)
+        .saturating_add(transcript.compartment_tokens);
+    let conversation_tokens = budget
+        .map(|budget| budget.user_message_tokens.saturating_sub(transcript_total))
+        .unwrap_or(0)
+        .saturating_add(transcript.conversation_tokens);
+
+    let system_tokens = budget
+        .map(|budget| budget.system_prompt_tokens)
+        .unwrap_or_else(|| app.engine.last_system_prompt_len.unwrap_or(0) as u64);
+    let docs_tokens = budget
+        .map(|budget| budget.project_instructions_tokens)
+        .unwrap_or(0);
+    let memory_tokens = budget.map(|budget| budget.memory_tokens).unwrap_or(0);
+    let tool_def_tokens = budget
+        .map(|budget| budget.tool_definition_tokens)
+        .unwrap_or(0);
+
+    vec![
+        ContextBreakdownRow {
+            label: "System",
+            tokens: system_tokens,
+            color: theme.accent,
+        },
+        ContextBreakdownRow {
+            label: "Docs",
+            tokens: docs_tokens,
+            color: theme.accent_secondary,
+        },
+        ContextBreakdownRow {
+            label: "Compartments",
+            tokens: transcript.compartment_tokens,
+            color: theme.text_secondary,
+        },
+        ContextBreakdownRow {
+            label: "Memories",
+            tokens: memory_tokens,
+            color: theme.success,
+        },
+        ContextBreakdownRow {
+            label: "Conversation",
+            tokens: conversation_tokens,
+            color: theme.error,
+        },
+        ContextBreakdownRow {
+            label: "Tool Calls",
+            tokens: transcript.tool_call_tokens,
+            color: theme.warning,
+        },
+        ContextBreakdownRow {
+            label: "Tool Defs",
+            tokens: tool_def_tokens,
+            color: theme.reasoning_fg,
+        },
+    ]
+}
+
+fn transcript_breakdown(messages: &[jfc_core::ChatMessage]) -> TranscriptBreakdown {
+    let mut out = TranscriptBreakdown {
+        conversation_tokens: 0,
+        tool_call_tokens: 0,
+        compartment_tokens: 0,
+    };
+    for message in messages {
+        let compartment_message = message
+            .parts
+            .iter()
+            .any(|part| matches!(part, jfc_core::MessagePart::CompactBoundary { .. }));
+        for part in &message.parts {
+            match part {
+                jfc_core::MessagePart::Tool(tool) => {
+                    out.tool_call_tokens = out
+                        .tool_call_tokens
+                        .saturating_add(tokens_from_chars(tool.input.summary().len()))
+                        .saturating_add(tokens_from_chars(tool.output.approx_text_len()));
+                }
+                jfc_core::MessagePart::CompactBoundary { .. }
+                | jfc_core::MessagePart::ReasoningSignature(_) => {}
+                _ if compartment_message => {
+                    out.compartment_tokens = out
+                        .compartment_tokens
+                        .saturating_add(tokens_from_chars(part.approx_text_len()));
+                }
+                _ => {
+                    out.conversation_tokens = out
+                        .conversation_tokens
+                        .saturating_add(tokens_from_chars(part.approx_text_len()));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn context_breakdown_bar<'a>(
+    rows: &[ContextBreakdownRow],
+    total: u64,
+    width: usize,
+    theme: Theme,
+) -> Line<'a> {
+    let active = rows.iter().filter(|row| row.tokens > 0).collect::<Vec<_>>();
+    if active.is_empty() {
+        return Line::from(Span::styled(
+            "░".repeat(width),
+            Style::default().fg(theme.border),
+        ));
+    }
+
+    let mut used = 0usize;
+    let mut spans = Vec::new();
+    for (idx, row) in active.iter().enumerate() {
+        let last = idx + 1 == active.len();
+        let cells = if last {
+            width.saturating_sub(used)
+        } else {
+            ((row.tokens as f64 / total as f64) * width as f64)
+                .round()
+                .max(1.0) as usize
+        }
+        .min(width.saturating_sub(used));
+        if cells > 0 {
+            spans.push(Span::styled(
+                "█".repeat(cells),
+                Style::default().fg(row.color),
+            ));
+            used = used.saturating_add(cells);
+        }
+    }
+    if used < width {
+        spans.push(Span::styled(
+            "░".repeat(width - used),
+            Style::default().fg(theme.border),
+        ));
+    }
+    Line::from(spans)
+}
+
+fn tokens_from_chars(chars: usize) -> u64 {
+    u64::try_from(chars.saturating_add(3) / 4).unwrap_or(u64::MAX)
+}
+
+fn align_right(value: &str, width: usize) -> String {
+    let value_width = unicode_width::UnicodeWidthStr::width(value);
+    if value_width >= width {
+        value.to_owned()
+    } else {
+        format!("{}{}", " ".repeat(width - value_width), value)
+    }
+}
+
+fn align_left(value: &str, width: usize) -> String {
+    let value_width = unicode_width::UnicodeWidthStr::width(value);
+    if value_width >= width {
+        value.to_owned()
+    } else {
+        format!("{}{}", value, " ".repeat(width - value_width))
+    }
 }

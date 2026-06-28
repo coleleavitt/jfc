@@ -240,6 +240,7 @@ pub async fn prepare_stream_request(
                 ModelResolutionReason::Requested,
                 selected_model_info.as_ref(),
             )),
+            context_budget: Some(request_budget),
             provider_history_archive_recall_ids: project_context
                 .provider_history_archive_recall_ids,
             rsi_prompt_sections: rsi_runtime.prompt_sections,

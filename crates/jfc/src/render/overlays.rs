@@ -2,14 +2,8 @@ use super::*;
 use crate::input::slash_commands_table;
 
 pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
-    use jfc_engine::toast::ToastKind;
     let t = app.theme;
-    let visible_toasts = app
-        .engine
-        .toasts
-        .iter()
-        .filter(|toast| matches!(toast.kind, ToastKind::Error))
-        .collect::<Vec<_>>();
+    let visible_toasts = app.engine.toasts.iter().collect::<Vec<_>>();
     if visible_toasts.is_empty() {
         *app.toasts_rect.borrow_mut() = None;
         return;
@@ -77,7 +71,11 @@ pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     }
     *app.toasts_rect.borrow_mut() = Some(area);
     f.render_widget(Clear, area);
-    let border_color = t.error;
+    let border_color = visible_toasts
+        .iter()
+        .map(|toast| toast_style(toast.kind, app.theme).1)
+        .max_by_key(|color| toast_color_rank(*color, app.theme))
+        .unwrap_or(t.border);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
@@ -87,7 +85,7 @@ pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     f.render_widget(block, area);
     let mut lines: Vec<Line> = Vec::new();
     for toast in visible_toasts.into_iter().rev().take(inner.height as usize) {
-        let (icon, color) = ("✘", t.error);
+        let (icon, color) = toast_style(toast.kind, app.theme);
         let max_text = (inner.width as usize).saturating_sub(4);
         let text: String = if toast.text.chars().count() > max_text {
             let mut out: String = toast
@@ -109,6 +107,30 @@ pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
         Paragraph::new(lines).style(Style::default().bg(t.surface)),
         inner,
     );
+}
+
+fn toast_style(
+    kind: jfc_engine::toast::ToastKind,
+    t: crate::theme::Theme,
+) -> (&'static str, Color) {
+    match kind {
+        jfc_engine::toast::ToastKind::Info => ("•", t.accent_secondary),
+        jfc_engine::toast::ToastKind::Success => ("✓", t.success),
+        jfc_engine::toast::ToastKind::Warning => ("!", t.warning),
+        jfc_engine::toast::ToastKind::Error => ("✘", t.error),
+    }
+}
+
+fn toast_color_rank(color: Color, t: crate::theme::Theme) -> u8 {
+    if color == t.error {
+        4
+    } else if color == t.warning {
+        3
+    } else if color == t.success {
+        2
+    } else {
+        1
+    }
 }
 
 /// One-line diagnostic summary row. v126 cli.js:338035-338038 renders this

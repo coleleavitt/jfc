@@ -186,13 +186,14 @@ pub async fn handle_done(
         // that will actually be sent next.
         state.tool_ctx = tool_ctx;
         state.tool_ctx.approx_tokens = post_tokens;
-        // Add a fixed overhead estimate for system prompt, tool defs,
-        // memories, etc. that the local message estimate doesn't include.
-        // Without this, the gauge shows "safe" immediately post-compact
-        // while the next request actually sends system+messages which can
-        // be 50-100k+ of overhead.
-        let overhead = state.last_system_prompt_len.unwrap_or(30_000);
-        state.tool_ctx.approx_tokens = state.tool_ctx.approx_tokens.saturating_add(overhead);
+        let display_tokens = crate::context_accounting::model_visible_tokens_for_display(state);
+        tracing::info!(
+            target: "jfc::compact",
+            transcript_tokens = state.tool_ctx.approx_tokens,
+            display_tokens,
+            last_system_prompt_len = ?state.last_system_prompt_len,
+            "post-compact context gauge recalibrated"
+        );
         // Arm the post-compaction gauge ceiling. Anthropic's prompt cache
         // still holds the pre-compaction prefix for ~5 min, so the very next
         // request reports a `cache_read_tokens` ≈ the OLD (large) prefix —
@@ -401,11 +402,65 @@ mod tests {
 
     use super::*;
     use crate::types::Role;
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+    use std::sync::Arc;
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for TestProvider {}
 
     #[test]
     fn compact_boundary_is_user_role_invariant() {
         let b = ChatMessage::compact_boundary("s", 1);
         assert_eq!(b.role, Role::User);
         assert!(b.is_compact_boundary());
+    }
+
+    #[tokio::test]
+    async fn compaction_done_does_not_double_count_request_overhead_regression() {
+        let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
+        state.task_store = jfc_session::TaskStore::in_memory();
+        state.last_system_prompt_len = Some(30_000);
+        let messages = vec![ChatMessage::compact_boundary(&"summary ".repeat(2_000), 1)];
+        let post_tokens = crate::compact::estimate_tokens(&messages);
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_done(
+            &mut state,
+            &tx,
+            messages,
+            ToolContext::default(),
+            200_000,
+            post_tokens,
+        )
+        .await;
+
+        assert_eq!(
+            state.tool_ctx.approx_tokens, post_tokens,
+            "CompactionDone should store the compacted transcript estimate; display/request accounting adds request overhead separately when needed"
+        );
+        assert_eq!(
+            crate::context_accounting::model_visible_tokens_for_display(&state),
+            post_tokens + 30_000
+        );
     }
 }

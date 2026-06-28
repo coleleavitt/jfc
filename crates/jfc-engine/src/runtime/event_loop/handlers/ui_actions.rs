@@ -129,6 +129,9 @@ pub fn handle_request_metadata(
             );
         }
     }
+    if let Some(budget) = meta.context_budget {
+        state.last_context_budget = Some(budget);
+    }
     state.current_stream_request = Some(meta);
 }
 
@@ -257,6 +260,13 @@ mod tests {
             action_expected: false,
             tool_choice: crate::runtime::StreamToolChoice::Auto,
             resolved_model: None,
+            context_budget: Some(jfc_core::context_budget::ContextBudget {
+                system_prompt_tokens: 10,
+                tool_definition_tokens: 20,
+                memory_tokens: 30,
+                project_instructions_tokens: 40,
+                user_message_tokens: 50,
+            }),
             provider_history_archive_recall_ids: vec!["provider-history-1".to_owned()],
             rsi_prompt_sections: 0,
             rsi_tool_visibility_rules: 0,
@@ -269,6 +279,7 @@ mod tests {
                 .provider_history_archive_seen
                 .contains("provider-history-1")
         );
+        assert_eq!(state.last_context_budget, meta.context_budget);
         assert_eq!(state.current_stream_request, Some(meta));
     }
 }

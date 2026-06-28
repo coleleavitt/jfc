@@ -4,9 +4,6 @@ use crate::markdown;
 pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
     let t = app.theme;
     let ui_tokens = t.claude_ui_tokens();
-    // Flat input strip. The prompt char sits inline at the start of the typing
-    // surface, like a shell prompt; the top/bottom rules provide the only
-    // chrome.
     // Up to 4 cells reserved for the prompt + an animation tail
     // (currently only used by `:comet` mode).
     //
@@ -40,10 +37,10 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
     // Edit-mode / vim-mode badge in the title (top border) so the user
     // can't miss the editing state. Title is otherwise empty.
     let title_line = if let Some(idx) = app.editing_message_idx {
-        Line::from(Span::styled(
+        Some(Line::from(Span::styled(
             format!(" editing #{idx} · Esc to cancel "),
             Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
-        ))
+        )))
     } else if let Some(vim) = app.vim.as_ref() {
         // Mode color tracks vim convention: Normal=accent, Insert=success,
         // Visual=warning. A steady tag, no animation.
@@ -53,23 +50,36 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
             crate::input::vim::VimMode::Visual => t.warning,
             _ => t.accent,
         };
-        Line::from(Span::styled(
+        Some(Line::from(Span::styled(
             format!(" {} ", mode.tag()),
             Style::default().fg(color).add_modifier(Modifier::BOLD),
-        ))
+        )))
     } else {
-        Line::from("")
+        None
     };
 
-    // Claude-style dock: horizontal rules only, no left/right box.
-    let block = Block::default()
-        .borders(Borders::TOP | Borders::BOTTOM)
+    let has_title = title_line.is_some();
+    let mut block = Block::default()
+        .borders(if has_title {
+            Borders::LEFT
+        } else {
+            Borders::NONE
+        })
         .border_style(Style::default().fg(border_color))
         .padding(Padding::horizontal(1))
-        .title(title_line)
         .style(Style::default().bg(t.bg));
+    if let Some(title_line) = title_line {
+        block = block.title(title_line);
+    }
     let inner = block.inner(area);
     f.render_widget(block, area);
+    let vertical_pad = if has_title || inner.height < 3 { 0 } else { 1 };
+    let content_inner = Rect {
+        x: inner.x,
+        y: inner.y.saturating_add(vertical_pad),
+        width: inner.width,
+        height: inner.height.saturating_sub(vertical_pad.saturating_mul(2)),
+    };
 
     // Prompt strip: glyph display width + trailing space. Custom prompt
     // glyphs can be double-width, so fixed 2-cell math lets the textarea
@@ -77,16 +87,15 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
     let prompt_width =
         unicode_width::UnicodeWidthStr::width(prompt_char.as_str()).min(u16::MAX as usize) as u16;
     let prompt_cells: u16 = prompt_width.saturating_add(1);
-    let textarea_x = inner.x + prompt_cells.min(inner.width);
-    let textarea_w = inner.width.saturating_sub(prompt_cells);
+    let textarea_x = content_inner.x + prompt_cells.min(content_inner.width);
+    let textarea_w = content_inner.width.saturating_sub(prompt_cells);
 
-    // Paint the prompt glyph on the first row of inner.
-    if inner.height > 0 && inner.y < f.buffer_mut().area().bottom() {
+    if content_inner.height > 0 && content_inner.y < f.buffer_mut().area().bottom() {
         let buf = f.buffer_mut();
         // Glyph cell.
-        let glyph_x = inner.x;
+        let glyph_x = content_inner.x;
         if glyph_x < buf.area().right() {
-            let cell = &mut buf[(glyph_x, inner.y)];
+            let cell = &mut buf[(glyph_x, content_inner.y)];
             cell.set_symbol(&prompt_char);
             let invert = matches!(
                 std::env::var("JFC_PROMPT_INVERT").as_deref(),
@@ -106,9 +115,9 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
             cell.set_style(style);
         }
         // Trailing space so the glyph isn't glued to text.
-        let space_x = inner.x.saturating_add(prompt_width);
+        let space_x = content_inner.x.saturating_add(prompt_width);
         if space_x < buf.area().right() {
-            let cell = &mut buf[(space_x, inner.y)];
+            let cell = &mut buf[(space_x, content_inner.y)];
             cell.set_symbol(" ");
             cell.set_style(Style::default().bg(t.bg));
         }
@@ -118,9 +127,9 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
     // strip).
     let inner = Rect {
         x: textarea_x,
-        y: inner.y,
+        y: content_inner.y,
         width: textarea_w,
-        height: inner.height,
+        height: content_inner.height,
     };
     *app.input_rect.borrow_mut() = Some(inner);
 
@@ -229,7 +238,11 @@ pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 pub(super) fn input_visual_line_count(app: &App, content_width: usize) -> usize {
-    input_soft_wrapped_lines(app, content_width).0.len().max(1)
+    input_soft_wrapped_lines(app, content_width)
+        .0
+        .len()
+        .max(1)
+        .saturating_add(2)
 }
 
 pub(super) fn input_soft_wrapped_lines(

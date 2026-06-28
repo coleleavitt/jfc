@@ -847,7 +847,7 @@ mod tests {
         assert_eq!(fmt_elapsed(Duration::from_secs(60)), "1m00s");
         assert_eq!(fmt_elapsed(Duration::from_secs(64)), "1m04s");
         assert_eq!(fmt_elapsed(Duration::from_secs(310)), "5m10s");
-        assert_eq!(fmt_elapsed(Duration::from_secs(3661)), "61m01s");
+        assert_eq!(fmt_elapsed(Duration::from_secs(3661)), "1h01m");
     }
 
     #[test]
